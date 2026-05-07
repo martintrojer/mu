@@ -1,0 +1,556 @@
+// mu — tmux substrate.
+//
+// Single source of truth for all tmux interactions. Every tmux invocation
+// goes through `tmux(args)`, which wraps execa and produces structured
+// `TmuxError`s carrying args + stderr.
+//
+// The send protocol is the bracketed-paste sequence canonicalised in
+// PLAN.md §10a:
+//   1. copy-mode -q   (silent if not in copy mode)
+//   2. set-buffer     (load text into a uniquely named buffer)
+//   3. paste-buffer -p -d -r   (bracketed paste, delete buffer, preserve LF)
+//   4. delay (MU_SEND_DELAY_MS, default 500)
+//   5. send-keys Enter
+//
+// Naive `tmux send-keys "<text>"` is broken: characters like /, ?, f get
+// interpreted by the agent's TUI (Claude, Codex, less, vim) or by tmux's
+// copy mode if the user has scrolled up. Use `sendToPane()`.
+
+import { execa } from "execa";
+
+// ─── Error type ────────────────────────────────────────────────────────
+
+export class TmuxError extends Error {
+  constructor(
+    public readonly args: readonly string[],
+    public readonly stderr: string,
+    public readonly stdout: string,
+    public readonly exitCode: number | null,
+  ) {
+    const detail = stderr.trim() || stdout.trim() || "no output";
+    super(`tmux ${args.join(" ")} failed (exit ${exitCode}): ${detail}`);
+    this.name = "TmuxError";
+  }
+}
+
+// ─── Pane ID validation ────────────────────────────────────────────────
+
+/**
+ * Stable tmux pane IDs are of the form `%N` (e.g. "%15"). They never change
+ * for the lifetime of the pane. **Pane indexes** (0, 1, 2…) are volatile and
+ * shift when other panes close — never store or pass them.
+ */
+export const PANE_ID_RE = /^%\d+$/;
+
+export function isValidPaneId(s: string): boolean {
+  return PANE_ID_RE.test(s);
+}
+
+export function assertValidPaneId(s: string): void {
+  if (!isValidPaneId(s)) {
+    throw new TypeError(`invalid tmux pane id: ${JSON.stringify(s)} (expected /^%\\d+$/)`);
+  }
+}
+
+// ─── Configurable delay ────────────────────────────────────────────────
+
+/**
+ * Delay between bracketed-paste and Enter, in milliseconds. Claude/Codex/pi
+ * process pasted text asynchronously; without this delay, Enter can arrive
+ * before the agent has ingested the text. Defaults to 500; lower for tests,
+ * raise for slow remotes via `MU_SEND_DELAY_MS`.
+ */
+export function defaultSendDelayMs(): number {
+  const raw = process.env.MU_SEND_DELAY_MS;
+  if (raw === undefined) return 500;
+  const parsed = Number.parseInt(raw, 10);
+  if (Number.isNaN(parsed) || parsed < 0) return 500;
+  return parsed;
+}
+
+// ─── Executor (swappable for tests) ────────────────────────────────────
+
+export interface TmuxExecResult {
+  stdout: string;
+  stderr: string;
+  exitCode: number | null;
+}
+
+export type TmuxExecutor = (args: readonly string[]) => Promise<TmuxExecResult>;
+
+const realExecutor: TmuxExecutor = async (args) => {
+  const result = await execa("tmux", [...args], { reject: false });
+  return {
+    stdout: result.stdout ?? "",
+    stderr: result.stderr ?? "",
+    exitCode: result.exitCode ?? null,
+  };
+};
+
+let currentExecutor: TmuxExecutor = realExecutor;
+
+/**
+ * Install a custom executor (for tests). Returns the previous executor so
+ * tests can restore it cleanly. Production code should never call this.
+ */
+export function setTmuxExecutor(executor: TmuxExecutor): TmuxExecutor {
+  const previous = currentExecutor;
+  currentExecutor = executor;
+  return previous;
+}
+
+/** Restore the real (execa-backed) executor. */
+export function resetTmuxExecutor(): void {
+  currentExecutor = realExecutor;
+}
+
+/**
+ * Run an arbitrary tmux command. The single point of contact with the
+ * tmux binary; every higher-level operation in this module goes through it.
+ *
+ * Throws `TmuxError` on non-zero exit. Returns stdout on success.
+ */
+export async function tmux(args: readonly string[]): Promise<string> {
+  const result = await currentExecutor(args);
+  if (result.exitCode !== 0) {
+    throw new TmuxError([...args], result.stderr, result.stdout, result.exitCode);
+  }
+  return result.stdout;
+}
+
+// ─── Sleep helper (testable) ──────────────────────────────────────────
+
+let currentSleep: (ms: number) => Promise<void> = (ms) =>
+  new Promise((resolve) => setTimeout(resolve, ms));
+
+export function setSleepForTests(
+  impl: (ms: number) => Promise<void>,
+): (ms: number) => Promise<void> {
+  const previous = currentSleep;
+  currentSleep = impl;
+  return previous;
+}
+
+export function resetSleep(): void {
+  currentSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Test-aware sleep — honours `setSleepForTests`. Public so other modules
+ *  (notably `agents.ts` for spawn liveness polling) get free no-op-ing in
+ *  tests without re-implementing the swap. */
+export function sleep(ms: number): Promise<void> {
+  return currentSleep(ms);
+}
+
+// ─── Domain types ──────────────────────────────────────────────────────
+
+export interface TmuxSession {
+  name: string;
+}
+
+export interface TmuxWindow {
+  /** tmux window id, e.g. "@1". */
+  id: string;
+  name: string;
+  /** Session this window belongs to (only set by cross-session listings). */
+  sessionName?: string;
+}
+
+export interface TmuxPane {
+  /** Stable tmux pane id, e.g. "%15". */
+  paneId: string;
+  /** Pane title set via `select-pane -T`. The agent's name in mu's convention. */
+  title: string;
+  /** Current foreground command (e.g. "claude", "node", "bash"). */
+  command: string;
+  /** Window this pane lives in. Only set by cross-window listings. */
+  windowId?: string;
+  /** Session this pane lives in. Only set by cross-session listings. */
+  sessionName?: string;
+}
+
+// ─── Sessions ──────────────────────────────────────────────────────────
+
+export async function listSessions(): Promise<TmuxSession[]> {
+  // `list-sessions` exits 1 when no sessions exist; treat as empty.
+  try {
+    const out = await tmux(["list-sessions", "-F", "#{session_name}"]);
+    return out
+      .split("\n")
+      .filter((line) => line.length > 0)
+      .map((name) => ({ name }));
+  } catch (err) {
+    if (err instanceof TmuxError && /no server running|no sessions/i.test(err.stderr)) {
+      return [];
+    }
+    throw err;
+  }
+}
+
+export async function sessionExists(name: string): Promise<boolean> {
+  const result = await currentExecutor(["has-session", "-t", name]);
+  return result.exitCode === 0;
+}
+
+export interface NewSessionOptions {
+  detached?: boolean;
+  windowName?: string;
+  command?: string;
+  /** Initial working directory for the first pane (`-c <path>`). */
+  cwd?: string;
+}
+
+export async function newSession(name: string, opts: NewSessionOptions = {}): Promise<void> {
+  const args = ["new-session"];
+  if (opts.detached !== false) args.push("-d");
+  args.push("-s", name);
+  if (opts.windowName) args.push("-n", opts.windowName);
+  if (opts.cwd) args.push("-c", opts.cwd);
+  if (opts.command) args.push(opts.command);
+  await tmux(args);
+}
+
+export interface NewSessionWithPaneOptions {
+  windowName: string;
+  command: string;
+  cwd?: string;
+  detached?: boolean;
+}
+
+/**
+ * Create a tmux session AND its first window+pane in one atomic call.
+ * Returns the new pane's stable id. Used by mu when spawning the first
+ * agent in a workstream so we never end up with an empty `mu-<workstream>`
+ * session left behind by a failed spawn.
+ */
+export async function newSessionWithPane(
+  name: string,
+  opts: NewSessionWithPaneOptions,
+): Promise<string> {
+  const args = ["new-session"];
+  if (opts.detached !== false) args.push("-d");
+  args.push("-s", name, "-n", opts.windowName);
+  if (opts.cwd) args.push("-c", opts.cwd);
+  args.push("-P", "-F", "#{pane_id}", opts.command);
+  const out = (await tmux(args)).trim();
+  assertValidPaneId(out);
+  return out;
+}
+
+/** Idempotent: succeeds even if the session is already gone. */
+export async function killSession(name: string): Promise<void> {
+  const result = await currentExecutor(["kill-session", "-t", name]);
+  if (result.exitCode !== 0 && !/can't find session|session not found/i.test(result.stderr)) {
+    throw new TmuxError(
+      ["kill-session", "-t", name],
+      result.stderr,
+      result.stdout,
+      result.exitCode,
+    );
+  }
+}
+
+// ─── Windows ───────────────────────────────────────────────────────────
+
+export async function listWindows(session?: string): Promise<TmuxWindow[]> {
+  if (session) {
+    const out = await tmux(["list-windows", "-t", session, "-F", "#{window_id}\t#{window_name}"]);
+    return parseWindows(out);
+  }
+  // Cross-session: include the session name.
+  const out = await tmux([
+    "list-windows",
+    "-a",
+    "-F",
+    "#{session_name}\t#{window_id}\t#{window_name}",
+  ]);
+  const windows: TmuxWindow[] = [];
+  for (const line of out.split("\n")) {
+    if (line.length === 0) continue;
+    const [sessionName, id, name] = line.split("\t");
+    if (!sessionName || !id || name === undefined) continue;
+    windows.push({ id, name, sessionName });
+  }
+  return windows;
+}
+
+function parseWindows(output: string): TmuxWindow[] {
+  const windows: TmuxWindow[] = [];
+  for (const line of output.split("\n")) {
+    if (line.length === 0) continue;
+    const [id, name] = line.split("\t");
+    if (!id || name === undefined) continue;
+    windows.push({ id, name });
+  }
+  return windows;
+}
+
+export interface NewWindowOptions {
+  /** Target session. Required if invoking outside an existing tmux client. */
+  session?: string;
+  /** Window name. Maps to the agent's `tab:` value (or its name if no tab). */
+  name: string;
+  /** Command to run in the first pane. */
+  command: string;
+  /** If true, do not switch focus. Defaults to true. */
+  detached?: boolean;
+  /** Initial working directory (`-c <path>`). */
+  cwd?: string;
+}
+
+/**
+ * Create a new tmux window with one pane. Returns the new pane's stable
+ * pane id (e.g. `%15`).
+ */
+export async function newWindow(opts: NewWindowOptions): Promise<string> {
+  const args = ["new-window"];
+  if (opts.detached !== false) args.push("-d");
+  if (opts.session) args.push("-t", opts.session);
+  args.push("-n", opts.name);
+  if (opts.cwd) args.push("-c", opts.cwd);
+  args.push("-P", "-F", "#{pane_id}", opts.command);
+  const out = (await tmux(args)).trim();
+  assertValidPaneId(out);
+  return out;
+}
+
+// ─── Panes ─────────────────────────────────────────────────────────────
+
+/**
+ * List ALL panes in a tmux session (across every window). Used by
+ * reconciliation to find every pane in the workstream's session.
+ *
+ * Note `list-panes -t <session>` (no -s) lists panes in the current
+ * *window* of that session, not the whole session — a common gotcha.
+ * `-s` is the flag that says "all panes in this session."
+ *
+ * Returns `[]` (not throws) when the session doesn't exist or has no
+ * panes. tmux destroys a session as soon as its last pane closes, so the
+ * "session was just here a moment ago" case is normal during reconcile.
+ * tmux's error wording in this case varies ("can't find session" or
+ * "can't find window"), so we match either.
+ */
+export async function listPanesInSession(session: string): Promise<TmuxPane[]> {
+  const args = [
+    "list-panes",
+    "-s",
+    "-t",
+    session,
+    "-F",
+    "#{window_id}\t#{pane_id}\t#{pane_title}\t#{pane_current_command}",
+  ];
+  const result = await currentExecutor(args);
+  if (result.exitCode !== 0) {
+    if (/can't find (session|window)|no server running|no sessions/i.test(result.stderr)) {
+      return [];
+    }
+    throw new TmuxError(args, result.stderr, result.stdout, result.exitCode);
+  }
+  const panes: TmuxPane[] = [];
+  for (const line of result.stdout.split("\n")) {
+    if (line.length === 0) continue;
+    const [windowId, paneId, title, command] = line.split("\t");
+    if (!windowId || !paneId || command === undefined) continue;
+    panes.push({ paneId, title: title ?? "", command, windowId });
+  }
+  return panes;
+}
+
+/**
+ * List panes in the current session, a specific window/session target, or
+ * all panes across all sessions when `target` is the literal "*".
+ */
+export async function listPanes(target?: string): Promise<TmuxPane[]> {
+  if (target === "*") {
+    const out = await tmux([
+      "list-panes",
+      "-a",
+      "-F",
+      "#{session_name}\t#{window_id}\t#{pane_id}\t#{pane_title}\t#{pane_current_command}",
+    ]);
+    const panes: TmuxPane[] = [];
+    for (const line of out.split("\n")) {
+      if (line.length === 0) continue;
+      const [sessionName, windowId, paneId, title, command] = line.split("\t");
+      if (!sessionName || !windowId || !paneId || command === undefined) continue;
+      panes.push({ paneId, title: title ?? "", command, windowId, sessionName });
+    }
+    return panes;
+  }
+
+  const args = ["list-panes"];
+  if (target !== undefined) args.push("-t", target);
+  args.push("-F", "#{pane_id}\t#{pane_title}\t#{pane_current_command}");
+  const out = await tmux(args);
+  const panes: TmuxPane[] = [];
+  for (const line of out.split("\n")) {
+    if (line.length === 0) continue;
+    const [paneId, title, command] = line.split("\t");
+    if (!paneId || command === undefined) continue;
+    panes.push({ paneId, title: title ?? "", command });
+  }
+  return panes;
+}
+
+export interface SplitWindowOptions {
+  /** Target window or pane (e.g. ":Backend" or "%15"). */
+  target: string;
+  command: string;
+  /** Horizontal split (side-by-side). Default true. */
+  horizontal?: boolean;
+  detached?: boolean;
+  /** Initial working directory for the new pane (`-c <path>`). */
+  cwd?: string;
+}
+
+/**
+ * Split a window and run a command in the new pane. Returns the new pane's
+ * stable pane id.
+ */
+export async function splitWindow(opts: SplitWindowOptions): Promise<string> {
+  const args = ["split-window"];
+  if (opts.horizontal !== false) args.push("-h");
+  if (opts.detached !== false) args.push("-d");
+  args.push("-t", opts.target);
+  if (opts.cwd) args.push("-c", opts.cwd);
+  args.push("-P", "-F", "#{pane_id}", opts.command);
+  const out = (await tmux(args)).trim();
+  assertValidPaneId(out);
+  return out;
+}
+
+/** Idempotent: succeeds even if the pane is already gone. */
+export async function killPane(paneId: string): Promise<void> {
+  assertValidPaneId(paneId);
+  const result = await currentExecutor(["kill-pane", "-t", paneId]);
+  if (result.exitCode !== 0 && !/can't find pane/i.test(result.stderr)) {
+    throw new TmuxError(["kill-pane", "-t", paneId], result.stderr, result.stdout, result.exitCode);
+  }
+}
+
+export async function paneExists(paneId: string): Promise<boolean> {
+  if (!isValidPaneId(paneId)) return false;
+  // tmux's `display-message -t <bogus>` exits 0 but emits empty output; we
+  // must check that the echoed pane id matches what we asked for.
+  const result = await currentExecutor(["display-message", "-t", paneId, "-p", "#{pane_id}"]);
+  if (result.exitCode !== 0) return false;
+  return result.stdout.trim() === paneId;
+}
+
+export async function setPaneTitle(paneId: string, title: string): Promise<void> {
+  assertValidPaneId(paneId);
+  await tmux(["select-pane", "-t", paneId, "-T", title]);
+}
+
+export async function getPaneTitle(paneId: string): Promise<string | undefined> {
+  if (!isValidPaneId(paneId)) return undefined;
+  const result = await currentExecutor(["display-message", "-t", paneId, "-p", "#{pane_title}"]);
+  if (result.exitCode !== 0) return undefined;
+  return result.stdout.trimEnd();
+}
+
+/**
+ * Read the title of the *current* pane (the one whose shell is running this
+ * process), via $TMUX_PANE. Returns undefined when not inside tmux. Used by
+ * `mu claim` to derive the agent identity from the pane title — the claim
+ * protocol's zero-config identity step.
+ */
+export async function currentPaneTitle(): Promise<string | undefined> {
+  const paneId = process.env.TMUX_PANE;
+  if (!paneId || !isValidPaneId(paneId)) return undefined;
+  return getPaneTitle(paneId);
+}
+
+export async function selectLayout(window: string, layout: string): Promise<void> {
+  await tmux(["select-layout", "-t", window, layout]);
+}
+
+// ─── Send protocol (the canonical bracketed-paste sequence) ────────────
+
+export interface SendOptions {
+  /** Override the default delay between paste and Enter, in ms. */
+  delayMs?: number;
+}
+
+/**
+ * Send a single line of text to a pane and submit it.
+ *
+ * Sequence (PLAN.md §10a):
+ *   1. exit copy mode (silent if not in copy mode)
+ *   2. load text into a uniquely-named tmux buffer
+ *   3. paste with bracketed-paste mode (-p) so apps treat as literal text;
+ *      delete buffer after paste (-d); preserve LF (-r)
+ *   4. wait MU_SEND_DELAY_MS (default 500) so the agent ingests the text
+ *   5. send Enter as a real key event
+ *
+ * Naive `send-keys "<text>"` would let characters like /, ?, f, : be
+ * interpreted by the agent's TUI or by tmux's copy mode. Always use this.
+ */
+export async function sendToPane(
+  paneId: string,
+  text: string,
+  opts: SendOptions = {},
+): Promise<void> {
+  assertValidPaneId(paneId);
+
+  // 1. Exit copy mode silently. -q suppresses errors when not in copy mode.
+  const copyResult = await currentExecutor(["copy-mode", "-q", "-t", paneId]);
+  // Even with -q, some tmux versions report errors. Swallow non-fatal.
+  if (copyResult.exitCode !== 0 && /can't find pane|no current target/i.test(copyResult.stderr)) {
+    throw new TmuxError(
+      ["copy-mode", "-q", "-t", paneId],
+      copyResult.stderr,
+      copyResult.stdout,
+      copyResult.exitCode,
+    );
+  }
+
+  // 2. Load text into a uniquely-named buffer.
+  const bufferName = `mu-send-${process.pid}-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+  await tmux(["set-buffer", "-b", bufferName, text]);
+
+  // 3. Bracketed paste: -p wraps in \e[200~...\e[201~ so apps see literal
+  //    text; -d deletes buffer after paste; -r preserves LF (no CR conversion).
+  try {
+    await tmux(["paste-buffer", "-p", "-d", "-r", "-b", bufferName, "-t", paneId]);
+  } catch (err) {
+    // Best-effort buffer cleanup if paste failed before -d took effect.
+    await currentExecutor(["delete-buffer", "-b", bufferName]).catch(() => {});
+    throw err;
+  }
+
+  // 4. Wait for the agent CLI to ingest the pasted text.
+  const delay = opts.delayMs ?? defaultSendDelayMs();
+  if (delay > 0) await currentSleep(delay);
+
+  // 5. Submit. Enter must be a real key event, not part of the paste.
+  await tmux(["send-keys", "-t", paneId, "Enter"]);
+}
+
+// ─── Capture ───────────────────────────────────────────────────────────
+
+export interface CaptureOptions {
+  /**
+   * Number of trailing lines to capture. Omitted = full scrollback.
+   * 0 = visible pane only.
+   */
+  lines?: number;
+}
+
+/**
+ * Read pane scrollback as plain text (no ANSI escapes).
+ *
+ * - No options: full scrollback (`-S - -E -`)
+ * - `lines: 0`: visible pane only
+ * - `lines: N`: last N lines (`-S -N`)
+ */
+export async function capturePane(paneId: string, opts: CaptureOptions = {}): Promise<string> {
+  assertValidPaneId(paneId);
+  const args = ["capture-pane", "-t", paneId, "-p"];
+  if (opts.lines === undefined) {
+    args.push("-S", "-", "-E", "-");
+  } else if (opts.lines > 0) {
+    args.push("-S", `-${opts.lines}`);
+  }
+  return tmux(args);
+}

@@ -1,0 +1,991 @@
+// mu — task graph: CRUD primitives, verbs (addTask, addNote, claimTask),
+// view reads (ready / blocked / goals), and DAG traversal helpers.
+//
+// The schema (db.ts) does the heavy lifting: PRIMARY KEYs, CHECK
+// constraints on impact/effort/status, FK cascades on edges and notes.
+// This module adds:
+//   - the cycle check on edge insertion (SQL CHECK can't express it)
+//   - the claim protocol (atomic CAS on tasks.owner via single UPDATE)
+//   - row-shape mapping (snake_case columns → camelCase TS)
+
+import type { Db } from "./db.js";
+import { emitEvent } from "./logs.js";
+import { currentPaneTitle } from "./tmux.js";
+import { ensureWorkstream } from "./workstream.js";
+
+// ─── Domain types ──────────────────────────────────────────────────────
+
+export type TaskStatus = "OPEN" | "IN_PROGRESS" | "CLOSED";
+
+export interface TaskRow {
+  localId: string;
+  workstream: string;
+  title: string;
+  status: TaskStatus;
+  impact: number;
+  effortDays: number;
+  owner: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TaskNoteRow {
+  id: number;
+  taskId: string;
+  author: string | null;
+  content: string;
+  createdAt: string;
+}
+
+interface RawTaskRow {
+  local_id: string;
+  workstream: string;
+  title: string;
+  status: string;
+  impact: number;
+  effort_days: number;
+  owner: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface RawTaskNoteRow {
+  id: number;
+  task_id: string;
+  author: string | null;
+  content: string;
+  created_at: string;
+}
+
+function rowFromDb(row: RawTaskRow): TaskRow {
+  return {
+    localId: row.local_id,
+    workstream: row.workstream,
+    title: row.title,
+    status: row.status as TaskStatus,
+    impact: row.impact,
+    effortDays: row.effort_days,
+    owner: row.owner,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function noteFromDb(row: RawTaskNoteRow): TaskNoteRow {
+  return {
+    id: row.id,
+    taskId: row.task_id,
+    author: row.author,
+    content: row.content,
+    createdAt: row.created_at,
+  };
+}
+
+// ─── ID validation ─────────────────────────────────────────────────────
+
+/** Lowercase alpha first, then alnum / underscore / hyphen, ≤64 chars. */
+const TASK_ID_RE = /^[a-z][a-z0-9_-]{0,63}$/;
+
+/** The `mu_` prefix is reserved for system-generated IDs. Mirrors
+ *  `tg`'s `T<digits>` reservation. */
+const RESERVED_PREFIX = "mu_";
+
+export function isValidTaskId(id: string): boolean {
+  return TASK_ID_RE.test(id) && !id.startsWith(RESERVED_PREFIX);
+}
+
+/**
+ * Derive a task id from a free-form title.
+ *
+ *   "Build the auth module"      → "build_the_auth_module"
+ *   "FILES: foo.ts (refactor)"   → "files_foo_ts_refactor"
+ *
+ * Lowercases, replaces non-alnum runs with a single `_`, trims leading/
+ * trailing `_`, prefixes `t_` if the result starts with a digit (so the
+ * id passes the schema's first-char-letter requirement), truncates to
+ * the 64-char limit. Mirrors `tg`'s `id_from_title()`.
+ *
+ * Throws if `title` yields an empty slug after stripping.
+ */
+export function slugifyTitle(title: string): string {
+  const slug = title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 64);
+  if (slug.length === 0) {
+    throw new Error(`title yields empty slug: ${JSON.stringify(title)}`);
+  }
+  // Two prefix-corrections so derived slugs always pass the schema:
+  //  - first char must be a letter → prefix `t_` if it isn't
+  //  - the `mu_` prefix is reserved for system-generated IDs (see
+  //    RESERVED_PREFIX above) → prefix `t_` so titles like
+  //    "Mu smoke test" don't dead-end at addTask's reserved-prefix
+  //    check. The explicit-id rejection still applies when a caller
+  //    hand-writes `mu_foo`.
+  const fixed = /^[a-z]/.test(slug) ? slug : `t_${slug}`;
+  const safe = fixed.startsWith(RESERVED_PREFIX) ? `t_${fixed}` : fixed;
+  return safe.slice(0, 64);
+}
+
+/**
+ * Generate a unique task id from a title. On collision in `workstream`,
+ * appends `_2`, `_3`, … until unique. Tasks are keyed on `local_id`
+ * globally today, so collision check spans every workstream (a future
+ * composite-PK migration would scope this).
+ */
+export function idFromTitle(db: Db, workstream: string, title: string): string {
+  const base = slugifyTitle(title);
+  if (getTask(db, base) === undefined) return base;
+  for (let i = 2; i < 1000; i++) {
+    const candidate = `${base}_${i}`.slice(0, 64);
+    if (getTask(db, candidate) === undefined) return candidate;
+  }
+  throw new Error(`could not derive a unique id from title in workstream ${workstream}: ${title}`);
+}
+
+// ─── Errors ────────────────────────────────────────────────────────────
+
+export class TaskNotFoundError extends Error {
+  override readonly name = "TaskNotFoundError";
+  constructor(public readonly taskId: string) {
+    super(`no such task: ${taskId}`);
+  }
+}
+
+export class TaskExistsError extends Error {
+  override readonly name = "TaskExistsError";
+  constructor(public readonly taskId: string) {
+    super(`task already exists: ${taskId}`);
+  }
+}
+
+/**
+ * Thrown when a verb is invoked with `-w/--workstream <name>` but the
+ * named task lives in a different workstream. Distinguishes "the user
+ * typo'd the workstream" from "the task doesn't exist anywhere"
+ * (which surfaces as `TaskNotFoundError`). Maps to exit code 4
+ * (conflict / wrong scope).
+ */
+export class TaskNotInWorkstreamError extends Error {
+  override readonly name = "TaskNotInWorkstreamError";
+  constructor(
+    public readonly taskId: string,
+    public readonly expectedWorkstream: string,
+    public readonly actualWorkstream: string,
+  ) {
+    super(`task ${taskId} is in workstream ${actualWorkstream}, not ${expectedWorkstream}`);
+  }
+}
+
+export class TaskAlreadyOwnedError extends Error {
+  override readonly name = "TaskAlreadyOwnedError";
+  constructor(
+    public readonly taskId: string,
+    public readonly currentOwner: string,
+  ) {
+    super(`task ${taskId} is already owned by ${currentOwner}`);
+  }
+}
+
+export class CycleError extends Error {
+  override readonly name = "CycleError";
+  constructor(
+    public readonly from: string,
+    public readonly to: string,
+  ) {
+    super(`adding edge ${from} -> ${to} would create a cycle`);
+  }
+}
+
+export class CrossWorkstreamEdgeError extends Error {
+  override readonly name = "CrossWorkstreamEdgeError";
+  constructor(
+    public readonly blocker: string,
+    public readonly blockerWorkstream: string,
+    public readonly dependent: string,
+    public readonly dependentWorkstream: string,
+  ) {
+    super(
+      `cross-workstream edge: blocker '${blocker}' is in workstream '${blockerWorkstream}', dependent '${dependent}' is in workstream '${dependentWorkstream}'`,
+    );
+  }
+}
+
+// ─── Read primitives ───────────────────────────────────────────────────
+
+export function getTask(db: Db, localId: string): TaskRow | undefined {
+  const row = db.prepare("SELECT * FROM tasks WHERE local_id = ?").get(localId) as
+    | RawTaskRow
+    | undefined;
+  return row ? rowFromDb(row) : undefined;
+}
+
+/**
+ * List tasks. With no `workstream` arg returns every row — used by `mu sql`
+ * and by tests; CLI surfaces always pass a workstream so users only see
+ * their own.
+ */
+export function listTasks(db: Db, workstream?: string): TaskRow[] {
+  const rows =
+    workstream === undefined
+      ? (db.prepare("SELECT * FROM tasks ORDER BY local_id").all() as RawTaskRow[])
+      : (db
+          .prepare("SELECT * FROM tasks WHERE workstream = ? ORDER BY local_id")
+          .all(workstream) as RawTaskRow[]);
+  return rows.map(rowFromDb);
+}
+
+export function listReady(db: Db, workstream: string): TaskRow[] {
+  const rows = db
+    .prepare("SELECT * FROM ready WHERE workstream = ? ORDER BY local_id")
+    .all(workstream) as RawTaskRow[];
+  return rows.map(rowFromDb);
+}
+
+export function listBlocked(db: Db, workstream: string): TaskRow[] {
+  const rows = db
+    .prepare("SELECT * FROM blocked WHERE workstream = ? ORDER BY local_id")
+    .all(workstream) as RawTaskRow[];
+  return rows.map(rowFromDb);
+}
+
+export function listGoals(db: Db, workstream: string): TaskRow[] {
+  const rows = db
+    .prepare("SELECT * FROM goals WHERE workstream = ? ORDER BY local_id")
+    .all(workstream) as RawTaskRow[];
+  return rows.map(rowFromDb);
+}
+
+export function listNotes(db: Db, taskId: string): TaskNoteRow[] {
+  const rows = db
+    .prepare("SELECT * FROM task_notes WHERE task_id = ? ORDER BY id")
+    .all(taskId) as RawTaskNoteRow[];
+  return rows.map(noteFromDb);
+}
+
+/**
+ * All tasks currently owned by `agent`, across every workstream
+ * (agent names are PRIMARY KEY — globally unique — so this is
+ * unambiguous). Sorted by workstream, then local_id.
+ *
+ * Defaults to **excluding CLOSED** since the verb's purpose is "what
+ * is X currently working on?" and a closed task is no longer being
+ * worked on. closeTask intentionally preserves `owner` as a
+ * historical record (so audit/notes can attribute decisions); pass
+ * `{ includeClosed: true }` to surface that history.
+ *
+ * Real bug found in real use: `mu task owned-by worker-1` was
+ * returning CLOSED tasks alongside live ones, making it impossible
+ * to tell at a glance what the agent was actually doing.
+ */
+export function listTasksByOwner(
+  db: Db,
+  owner: string,
+  opts: { includeClosed?: boolean } = {},
+): TaskRow[] {
+  const sql = opts.includeClosed
+    ? "SELECT * FROM tasks WHERE owner = ? ORDER BY workstream, local_id"
+    : "SELECT * FROM tasks WHERE owner = ? AND status != 'CLOSED' ORDER BY workstream, local_id";
+  const rows = db.prepare(sql).all(owner) as RawTaskRow[];
+  return rows.map(rowFromDb);
+}
+
+export interface SearchTasksOptions {
+  /** Restrict to one workstream; undefined = search across all. */
+  workstream?: string;
+  /** Also search `task_notes.content` (default false: titles + ids only). */
+  includeNotes?: boolean;
+}
+
+/**
+ * Substring search on task `title` and `local_id`, case-insensitive.
+ * With `includeNotes: true` also searches `task_notes.content`. The
+ * pattern is wrapped in `%...%` automatically so callers don't need
+ * SQL LIKE knowledge — for explicit globs (or regex), use `mu sql`.
+ */
+export function searchTasks(db: Db, pattern: string, opts: SearchTasksOptions = {}): TaskRow[] {
+  const like = `%${pattern.toLowerCase()}%`;
+  const wsClause = opts.workstream === undefined ? "" : "t.workstream = ? AND";
+  const wsParams = opts.workstream === undefined ? [] : [opts.workstream];
+  const orderBy =
+    opts.workstream === undefined ? "ORDER BY t.workstream, t.local_id" : "ORDER BY t.local_id";
+
+  if (opts.includeNotes) {
+    const sql = `SELECT DISTINCT t.* FROM tasks t
+                 LEFT JOIN task_notes n ON n.task_id = t.local_id
+                 WHERE ${wsClause} (
+                   LOWER(t.title) LIKE ?
+                   OR LOWER(t.local_id) LIKE ?
+                   OR LOWER(n.content) LIKE ?
+                 )
+                 ${orderBy}`;
+    return (db.prepare(sql).all(...wsParams, like, like, like) as RawTaskRow[]).map(rowFromDb);
+  }
+
+  const sql = `SELECT t.* FROM tasks t
+               WHERE ${wsClause} (LOWER(t.title) LIKE ? OR LOWER(t.local_id) LIKE ?)
+               ${orderBy}`;
+  return (db.prepare(sql).all(...wsParams, like, like) as RawTaskRow[]).map(rowFromDb);
+}
+
+export interface TaskEdges {
+  /** Tasks that must close before this one can start (blockers). */
+  blockers: string[];
+  /** Tasks that this one blocks (dependents). */
+  dependents: string[];
+}
+
+/**
+ * Direct (one-hop) edges for a task. For transitive prerequisites, use
+ * `getPrerequisites()`; this helper is the immediate-neighbour view used
+ * by `mu task show`.
+ */
+export function getTaskEdges(db: Db, taskId: string): TaskEdges {
+  const blockers = (
+    db
+      .prepare("SELECT from_task FROM task_edges WHERE to_task = ? ORDER BY from_task")
+      .all(taskId) as { from_task: string }[]
+  ).map((r) => r.from_task);
+  const dependents = (
+    db
+      .prepare("SELECT to_task FROM task_edges WHERE from_task = ? ORDER BY to_task")
+      .all(taskId) as { to_task: string }[]
+  ).map((r) => r.to_task);
+  return { blockers, dependents };
+}
+
+/**
+ * All tasks transitively reachable from `taskId` via reverse-edge
+ * traversal (i.e. the set of tasks that block this one), including the
+ * task itself.
+ */
+export function getPrerequisites(db: Db, taskId: string): Set<string> {
+  const rows = db
+    .prepare(
+      `WITH RECURSIVE reach(node) AS (
+         SELECT ?
+         UNION
+         SELECT from_task FROM task_edges, reach WHERE to_task = reach.node
+       )
+       SELECT node FROM reach`,
+    )
+    .all(taskId) as { node: string }[];
+  return new Set(rows.map((r) => r.node));
+}
+
+// ─── Internal: cycle check ─────────────────────────────────────────────
+
+/**
+ * Adding edge `from -> to` creates a cycle iff there's already a path
+ * `to -> ... -> from`. SQL recursive CTE expresses this exactly.
+ */
+function wouldCreateCycle(db: Db, from: string, to: string): boolean {
+  if (from === to) return true;
+  const result = db
+    .prepare(
+      `WITH RECURSIVE forward(node) AS (
+         SELECT ?
+         UNION
+         SELECT to_task FROM task_edges, forward WHERE from_task = forward.node
+       )
+       SELECT 1 AS hit FROM forward WHERE node = ? LIMIT 1`,
+    )
+    .get(to, from) as { hit: number } | undefined;
+  return result !== undefined;
+}
+
+// ─── addTask (verb) ────────────────────────────────────────────────────
+
+export interface AddTaskOptions {
+  localId: string;
+  workstream: string;
+  title: string;
+  /** 1..100; enforced by schema CHECK. */
+  impact: number;
+  /** > 0; enforced by schema CHECK. */
+  effortDays: number;
+  /**
+   * Tasks that block this one. Edges inserted as `blocker -> newTask`.
+   * Each blocker must already exist AND share this task's workstream
+   * (cross-workstream edges are forbidden); cycle check guards each edge.
+   */
+  blocks?: string[];
+}
+
+/**
+ * Atomically create a task and (optionally) its incoming `blocks` edges.
+ *
+ * The task insert + every edge insert + cycle check happen inside one
+ * SQLite transaction. If any blocker is missing or any edge would create
+ * a cycle, the entire add rolls back.
+ *
+ * Cycle check for `addTask` is structurally trivial (a fresh task has
+ * no outgoing edges, so `to -> ... -> from` is impossible). It's still
+ * called here so the same primitive is exercised by tests, and so a
+ * future `mu task update --blocks` verb can reuse the path.
+ */
+export function addTask(db: Db, opts: AddTaskOptions): TaskRow {
+  if (opts.localId.startsWith("mu_")) {
+    throw new TypeError(
+      `invalid task id: ${JSON.stringify(opts.localId)} (the "mu_" prefix is reserved for system-generated IDs)`,
+    );
+  }
+  if (!isValidTaskId(opts.localId)) {
+    throw new TypeError(
+      `invalid task id: ${JSON.stringify(opts.localId)} (expected /^[a-z][a-z0-9_-]{0,63}$/)`,
+    );
+  }
+  if (getTask(db, opts.localId) !== undefined) {
+    throw new TaskExistsError(opts.localId);
+  }
+
+  return db.transaction(() => {
+    // Auto-create the workstream row so tasks.workstream FK is satisfied
+    // (preserves the spawn-without-init ergonomics; see ensureWorkstream's docstring).
+    ensureWorkstream(db, opts.workstream);
+    const now = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO tasks (local_id, workstream, title, status, impact, effort_days, created_at, updated_at)
+       VALUES (?, ?, ?, 'OPEN', ?, ?, ?, ?)`,
+    ).run(opts.localId, opts.workstream, opts.title, opts.impact, opts.effortDays, now, now);
+
+    if (opts.blocks && opts.blocks.length > 0) {
+      const blockerLookup = db.prepare("SELECT workstream FROM tasks WHERE local_id = ?");
+      const insertEdge = db.prepare(
+        "INSERT INTO task_edges (from_task, to_task, created_at) VALUES (?, ?, ?)",
+      );
+      for (const blocker of opts.blocks) {
+        const row = blockerLookup.get(blocker) as { workstream: string } | undefined;
+        if (!row) {
+          throw new TaskNotFoundError(blocker);
+        }
+        if (row.workstream !== opts.workstream) {
+          throw new CrossWorkstreamEdgeError(
+            blocker,
+            row.workstream,
+            opts.localId,
+            opts.workstream,
+          );
+        }
+        if (wouldCreateCycle(db, blocker, opts.localId)) {
+          throw new CycleError(blocker, opts.localId);
+        }
+        insertEdge.run(blocker, opts.localId, now);
+      }
+    }
+
+    const row = getTask(db, opts.localId);
+    if (!row) throw new Error(`addTask: row missing after insert: ${opts.localId}`);
+    const blockedBy =
+      opts.blocks && opts.blocks.length > 0 ? `, blocked-by=${opts.blocks.join(",")}` : "";
+    emitEvent(
+      db,
+      opts.workstream,
+      `task add ${opts.localId} (impact=${opts.impact}, effort=${opts.effortDays}${blockedBy})`,
+    );
+    return row;
+  })();
+}
+
+// ─── addNote (verb) ────────────────────────────────────────────────────
+
+export interface AddNoteOptions {
+  /** Free-form author label. Convention: agent name, "user", or "orchestrator". */
+  author?: string;
+}
+
+export function addNote(
+  db: Db,
+  taskId: string,
+  content: string,
+  opts: AddNoteOptions = {},
+): TaskNoteRow {
+  const task = getTask(db, taskId);
+  if (!task) {
+    throw new TaskNotFoundError(taskId);
+  }
+  const now = new Date().toISOString();
+  const result = db
+    .prepare("INSERT INTO task_notes (task_id, author, content, created_at) VALUES (?, ?, ?, ?)")
+    .run(taskId, opts.author ?? null, content, now);
+  const noteId = Number(result.lastInsertRowid);
+  emitEvent(
+    db,
+    task.workstream,
+    `task note ${taskId} (note #${noteId} by ${opts.author ?? "orchestrator"})`,
+    opts.author ?? "system",
+  );
+  return {
+    id: noteId,
+    taskId,
+    author: opts.author ?? null,
+    content,
+    createdAt: now,
+  };
+}
+
+// ─── setTaskStatus / closeTask / openTask (verbs) ────────────────────────
+
+export interface SetStatusResult {
+  /** Status before the call. */
+  previousStatus: TaskStatus;
+  /** Status after the call (== requested status). */
+  status: TaskStatus;
+  /** True iff the row actually changed. False on idempotent no-op. */
+  changed: boolean;
+}
+
+/**
+ * Optional evidence string carried on lifecycle verbs (close / open /
+ * claim / release). Lands in the auto-emitted `kind='event'` payload
+ * verbatim, prefixed with `evidence=`. The first inch of distinguishing
+ * "observed" from "claimed" state per an internal critique: the
+ * verb still trusts the caller (it's not a verifier), but the audit
+ * trail records what the caller said it relied on.
+ */
+export interface EvidenceOption {
+  evidence?: string;
+}
+
+/** Render `… evidence="<text>"` suffix when evidence is provided.
+ *  Quoted so multi-word strings stay legible in the event payload. */
+function evidenceSuffix(opts: EvidenceOption | undefined): string {
+  if (!opts || opts.evidence === undefined) return "";
+  return ` evidence=${JSON.stringify(opts.evidence)}`;
+}
+
+/**
+ * Flip a task's status to any of OPEN / IN_PROGRESS / CLOSED.
+ * Idempotent: setting a task to its current status is a no-op (returns
+ * `changed: false`) rather than throwing. Owner is unchanged.
+ */
+export function setTaskStatus(
+  db: Db,
+  localId: string,
+  status: TaskStatus,
+  opts: EvidenceOption = {},
+): SetStatusResult {
+  const before = getTask(db, localId);
+  if (!before) throw new TaskNotFoundError(localId);
+  if (before.status === status) {
+    return { previousStatus: before.status, status, changed: false };
+  }
+  db.prepare("UPDATE tasks SET status = ?, updated_at = ? WHERE local_id = ?").run(
+    status,
+    new Date().toISOString(),
+    localId,
+  );
+  emitEvent(
+    db,
+    before.workstream,
+    `task status ${localId} (${before.status} → ${status})${evidenceSuffix(opts)}`,
+  );
+  return { previousStatus: before.status, status, changed: true };
+}
+
+/** Convenience: setTaskStatus(db, id, "CLOSED"). Accepts evidence. */
+export function closeTask(db: Db, localId: string, opts: EvidenceOption = {}): SetStatusResult {
+  return setTaskStatus(db, localId, "CLOSED", opts);
+}
+
+/** Convenience: setTaskStatus(db, id, "OPEN"). Owner intentionally NOT
+ *  cleared — use `releaseTask` for that. Accepts evidence. */
+export function openTask(db: Db, localId: string, opts: EvidenceOption = {}): SetStatusResult {
+  return setTaskStatus(db, localId, "OPEN", opts);
+}
+
+// ─── releaseTask (verb) ──────────────────────────────────────────────────
+
+export interface ReleaseResult {
+  /** The previous owner (null if the task was already unowned). */
+  previousOwner: string | null;
+  /** Status before the release. */
+  previousStatus: TaskStatus;
+  /** Status after the release. */
+  status: TaskStatus;
+  /** True iff owner OR status actually changed. */
+  changed: boolean;
+}
+
+export interface ReleaseTaskOptions extends EvidenceOption {
+  /** If true, also flip status back to OPEN (so the task is ready for
+   *  another claim). Default false: status preserved. */
+  reopen?: boolean;
+}
+
+/**
+ * Release a task: clear `tasks.owner`. Optionally also flip status back
+ * to OPEN via `--reopen` for the common "agent gave up mid-flight, hand
+ * it back to the pool" workflow.
+ *
+ * Idempotent: releasing an already-unowned task with no `--reopen` is a
+ * no-op (returns `changed: false`). Throws TaskNotFoundError on missing.
+ */
+export function releaseTask(db: Db, localId: string, opts: ReleaseTaskOptions = {}): ReleaseResult {
+  const before = getTask(db, localId);
+  if (!before) throw new TaskNotFoundError(localId);
+
+  const newStatus: TaskStatus = opts.reopen ? "OPEN" : before.status;
+  const ownerChanges = before.owner !== null;
+  const statusChanges = newStatus !== before.status;
+
+  if (!ownerChanges && !statusChanges) {
+    return {
+      previousOwner: before.owner,
+      previousStatus: before.status,
+      status: before.status,
+      changed: false,
+    };
+  }
+
+  db.prepare("UPDATE tasks SET owner = NULL, status = ?, updated_at = ? WHERE local_id = ?").run(
+    newStatus,
+    new Date().toISOString(),
+    localId,
+  );
+  const statusBit = statusChanges ? `, ${before.status} → ${newStatus}` : "";
+  emitEvent(
+    db,
+    before.workstream,
+    `task release ${localId} (was owner=${before.owner ?? "none"}${statusBit})${evidenceSuffix(opts)}`,
+  );
+  return {
+    previousOwner: before.owner,
+    previousStatus: before.status,
+    status: newStatus,
+    changed: true,
+  };
+}
+
+// ─── claimTask (verb) ──────────────────────────────────────────────────
+
+export interface ClaimTaskOptions extends EvidenceOption {
+  /**
+   * Override the agent name. If omitted, derived from the current pane's
+   * title via `tmux display-message -t $TMUX_PANE -p '#{pane_title}'`.
+   */
+  agentName?: string;
+}
+
+export interface ClaimResult {
+  /** The agent now owning the task. */
+  owner: string;
+  /** The previous owner (null if it was unowned). */
+  previousOwner: string | null;
+  /** The status BEFORE the claim; post-claim is IN_PROGRESS unless was CLOSED. */
+  previousStatus: TaskStatus;
+  /** The status AFTER the claim. */
+  status: TaskStatus;
+}
+
+/**
+ * Claim a task for the current agent (the claim protocol).
+ *
+ * Algorithm:
+ *   1. Resolve agent name: from opts.agentName, else from current pane title.
+ *   2. Single-statement atomic UPDATE that succeeds only when
+ *      `owner IS NULL OR owner = <self>` (re-claiming your own task is fine).
+ *   3. If 0 rows changed, distinguish "task doesn't exist" from "already
+ *      owned by someone else" and throw the appropriate typed error.
+ *
+ * Side effects:
+ *   - tasks.owner = <agentName>
+ *   - status: OPEN → IN_PROGRESS; IN_PROGRESS / CLOSED unchanged
+ *   - updated_at bumped
+ */
+export async function claimTask(
+  db: Db,
+  localId: string,
+  opts: ClaimTaskOptions = {},
+): Promise<ClaimResult> {
+  const agentName = opts.agentName ?? (await currentPaneTitle());
+  if (!agentName) {
+    throw new Error(
+      "claimTask: no agent name (pass opts.agentName or run inside an mu-spawned pane with $TMUX_PANE set)",
+    );
+  }
+
+  return db.transaction(() => {
+    const before = getTask(db, localId);
+    if (!before) throw new TaskNotFoundError(localId);
+
+    const now = new Date().toISOString();
+    const result = db
+      .prepare(
+        `UPDATE tasks
+            SET owner = ?,
+                status = CASE WHEN status = 'OPEN' THEN 'IN_PROGRESS' ELSE status END,
+                updated_at = ?
+          WHERE local_id = ?
+            AND (owner IS NULL OR owner = ?)`,
+      )
+      .run(agentName, now, localId, agentName);
+
+    if (result.changes === 0) {
+      // Task exists (we just read it) but the WHERE filter excluded it,
+      // meaning it's owned by someone else.
+      throw new TaskAlreadyOwnedError(localId, before.owner ?? "<unknown>");
+    }
+
+    const after = getTask(db, localId);
+    if (!after) throw new Error(`claimTask: row missing after update: ${localId}`);
+    // Source = the claiming agent, not 'system'. The log row attributes
+    // the action to the actor that caused it.
+    const statusBit = after.status !== before.status ? `, ${before.status} → ${after.status}` : "";
+    emitEvent(
+      db,
+      before.workstream,
+      `task claim ${localId} by ${agentName} (was owner=${before.owner ?? "none"}${statusBit})${evidenceSuffix(opts)}`,
+      agentName,
+    );
+    return {
+      owner: agentName,
+      previousOwner: before.owner,
+      previousStatus: before.status,
+      status: after.status,
+    };
+  })();
+}
+
+// ─── addBlockEdge / removeBlockEdge ────────────────────────────────────────
+
+export interface BlockEdgeResult {
+  /** True iff a row was actually inserted (vs. already present). */
+  added: boolean;
+}
+
+/**
+ * Add the edge `blocker → blocked` ('blocker blocks blocked').
+ * Idempotent (existing edge → `added: false`). Validates:
+ *
+ *   - both tasks exist
+ *   - same workstream (cross-workstream edges forbidden)
+ *   - no cycle (the new edge wouldn't form a path blocked → ... → blocker)
+ *   - blocker ≠ blocked (no self-reference)
+ */
+export function addBlockEdge(db: Db, blocked: string, blocker: string): BlockEdgeResult {
+  if (blocked === blocker) {
+    // Surface as a typed CycleError so the CLI maps it to exit 4 (conflict)
+    // rather than letting the schema CHECK fire as a generic SQL error.
+    throw new CycleError(blocker, blocked);
+  }
+  const blockedRow = getTask(db, blocked);
+  if (!blockedRow) throw new TaskNotFoundError(blocked);
+  const blockerRow = getTask(db, blocker);
+  if (!blockerRow) throw new TaskNotFoundError(blocker);
+  if (blockedRow.workstream !== blockerRow.workstream) {
+    throw new CrossWorkstreamEdgeError(
+      blocker,
+      blockerRow.workstream,
+      blocked,
+      blockedRow.workstream,
+    );
+  }
+  if (wouldCreateCycle(db, blocker, blocked)) {
+    throw new CycleError(blocker, blocked);
+  }
+  const result = db
+    .prepare("INSERT OR IGNORE INTO task_edges (from_task, to_task, created_at) VALUES (?, ?, ?)")
+    .run(blocker, blocked, new Date().toISOString());
+  const added = result.changes > 0;
+  if (added) emitEvent(db, blockedRow.workstream, `task block ${blocked} by ${blocker}`);
+  return { added };
+}
+
+export interface RemoveBlockEdgeResult {
+  /** True iff a row was actually deleted (vs. no such edge). */
+  removed: boolean;
+}
+
+/**
+ * Remove the edge `blocker → blocked`. Idempotent (no edge →
+ * `removed: false`). Does NOT validate task existence — if the
+ * edge is gone there's nothing to do, regardless of whether the
+ * tasks are gone too.
+ */
+export function removeBlockEdge(db: Db, blocked: string, blocker: string): RemoveBlockEdgeResult {
+  const result = db
+    .prepare("DELETE FROM task_edges WHERE from_task = ? AND to_task = ?")
+    .run(blocker, blocked);
+  const removed = result.changes > 0;
+  if (removed) {
+    // Use the blocked task's workstream as the channel (both tasks must
+    // be in the same workstream by the addBlockEdge invariant).
+    const blockedRow = getTask(db, blocked);
+    const ws = blockedRow?.workstream ?? null;
+    emitEvent(db, ws, `task unblock ${blocked} by ${blocker}`);
+  }
+  return { removed };
+}
+
+// ─── deleteTask ───────────────────────────────────────────────────────────
+
+export interface DeleteTaskResult {
+  /** True iff the row existed and was deleted. */
+  deleted: boolean;
+  /** Number of `task_edges` rows cascaded out (informational). */
+  deletedEdges: number;
+  /** Number of `task_notes` rows cascaded out (informational). */
+  deletedNotes: number;
+}
+
+/**
+ * Delete a task. FK CASCADE on `task_edges` (from + to) and
+ * `task_notes` cleans the joined rows automatically. Idempotent on
+ * a missing task (returns `deleted: false`).
+ *
+ * Pre-counts the cascade victims for reporting because SQLite's
+ * `changes()` only reports rows directly affected by the DELETE.
+ */
+export function deleteTask(db: Db, localId: string): DeleteTaskResult {
+  const before = getTask(db, localId);
+  const edgesBefore = (
+    db
+      .prepare("SELECT COUNT(*) AS n FROM task_edges WHERE from_task = ? OR to_task = ?")
+      .get(localId, localId) as { n: number }
+  ).n;
+  const notesBefore = (
+    db.prepare("SELECT COUNT(*) AS n FROM task_notes WHERE task_id = ?").get(localId) as {
+      n: number;
+    }
+  ).n;
+  const result = db.prepare("DELETE FROM tasks WHERE local_id = ?").run(localId);
+  const deleted = result.changes > 0;
+  if (deleted && before) {
+    emitEvent(
+      db,
+      before.workstream,
+      `task delete ${localId} (cascade: ${edgesBefore} edges, ${notesBefore} notes)`,
+    );
+  }
+  return { deleted, deletedEdges: edgesBefore, deletedNotes: notesBefore };
+}
+
+// ─── updateTask ───────────────────────────────────────────────────────────
+
+export interface UpdateTaskOptions {
+  title?: string;
+  /** 1..100; enforced by schema CHECK. */
+  impact?: number;
+  /** > 0; enforced by schema CHECK. */
+  effortDays?: number;
+}
+
+export interface UpdateTaskResult {
+  /** True iff at least one field actually changed. */
+  updated: boolean;
+  /** The fields whose values differ post-update (in `UpdateTaskOptions`'s
+   *  camelCase shape). Empty when `updated: false`. */
+  changedFields: string[];
+}
+
+/**
+ * Update scalar fields on a task. Each option is independently optional;
+ * passing none is a typed no-op (returns `updated: false, changedFields: []`).
+ * Fields whose new value equals the current value are skipped (no row change).
+ *
+ * NOT for status (use `closeTask` / `openTask` / `setTaskStatus`), owner
+ * (use `claimTask` / `releaseTask`), local_id (rename is deferred), or
+ * workstream (cross-workstream moves are deferred).
+ */
+export function updateTask(db: Db, localId: string, opts: UpdateTaskOptions): UpdateTaskResult {
+  const before = getTask(db, localId);
+  if (!before) throw new TaskNotFoundError(localId);
+
+  const setters: string[] = [];
+  const params: unknown[] = [];
+  const changedFields: string[] = [];
+
+  if (opts.title !== undefined && opts.title !== before.title) {
+    setters.push("title = ?");
+    params.push(opts.title);
+    changedFields.push("title");
+  }
+  if (opts.impact !== undefined && opts.impact !== before.impact) {
+    setters.push("impact = ?");
+    params.push(opts.impact);
+    changedFields.push("impact");
+  }
+  if (opts.effortDays !== undefined && opts.effortDays !== before.effortDays) {
+    setters.push("effort_days = ?");
+    params.push(opts.effortDays);
+    changedFields.push("effortDays");
+  }
+
+  if (setters.length === 0) {
+    return { updated: false, changedFields: [] };
+  }
+
+  setters.push("updated_at = ?");
+  params.push(new Date().toISOString());
+  params.push(localId);
+
+  db.prepare(`UPDATE tasks SET ${setters.join(", ")} WHERE local_id = ?`).run(...params);
+  emitEvent(db, before.workstream, `task update ${localId} (changed: ${changedFields.join(", ")})`);
+  return { updated: true, changedFields };
+}
+
+// ─── reparentTask ─────────────────────────────────────────────────────────
+
+export interface ReparentTaskResult {
+  /** Edges removed (i.e. all incoming `to_task = taskId` edges). */
+  removedEdges: number;
+  /** Edges added (== blockers.length on success). */
+  addedEdges: number;
+}
+
+/**
+ * Atomically replace every incoming edge of `taskId` with new ones
+ * `blocker[i] → taskId`. Pass an empty `blockers` array to clear all
+ * incoming edges (the task becomes ready iff its status allows).
+ *
+ * Validates ALL new blockers up-front (existence + same workstream +
+ * cycle check); if any fails, no DELETE happens — the call is fully
+ * atomic via a single transaction.
+ *
+ * Cycle reasoning: removing the existing incoming edges to `taskId`
+ * doesn't change `taskId`'s OUTGOING reachability, so
+ * `wouldCreateCycle(db, blocker, taskId)` evaluated against the
+ * pre-state gives the right answer for each new edge.
+ */
+export function reparentTask(
+  db: Db,
+  taskId: string,
+  blockers: readonly string[],
+): ReparentTaskResult {
+  const task = getTask(db, taskId);
+  if (!task) throw new TaskNotFoundError(taskId);
+
+  for (const blockerId of blockers) {
+    if (blockerId === taskId) {
+      throw new CycleError(blockerId, taskId);
+    }
+    const blocker = getTask(db, blockerId);
+    if (!blocker) throw new TaskNotFoundError(blockerId);
+    if (blocker.workstream !== task.workstream) {
+      throw new CrossWorkstreamEdgeError(blockerId, blocker.workstream, taskId, task.workstream);
+    }
+    if (wouldCreateCycle(db, blockerId, taskId)) {
+      throw new CycleError(blockerId, taskId);
+    }
+  }
+
+  return db.transaction(() => {
+    const removed = db.prepare("DELETE FROM task_edges WHERE to_task = ?").run(taskId);
+    const insertEdge = db.prepare(
+      "INSERT INTO task_edges (from_task, to_task, created_at) VALUES (?, ?, ?)",
+    );
+    const now = new Date().toISOString();
+    for (const blockerId of blockers) {
+      insertEdge.run(blockerId, taskId, now);
+    }
+    const blockersBit = blockers.length > 0 ? `, new=${[...blockers].join(",")}` : "";
+    emitEvent(
+      db,
+      task.workstream,
+      `task reparent ${taskId} (removed ${removed.changes} edges, added ${blockers.length}${blockersBit})`,
+    );
+    return { removedEdges: removed.changes, addedEdges: blockers.length };
+  })();
+}

@@ -1,0 +1,24 @@
+node_modules/
+dist/
+build/
+*.log
+.DS_Store
+.env
+.env.*
+!.env.example
+
+# editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.m-reflow-*
+
+# test artifacts
+coverage/
+.nyc_output/
+*.tsbuildinfo
+
+# mu runtime (when we get there)
+.mu/

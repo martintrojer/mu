@@ -1,0 +1,410 @@
+// Tests for src/workstream.ts. Real SQLite + mocked tmux executor.
+//
+// Covers the destroy verb's idempotency, isolation between workstreams,
+// FK cascade reporting, and the order-of-operations guarantee that the
+// tmux session is torn down before DB rows so a tmux failure leaves the
+// registry intact.
+
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { insertAgent, listAgents } from "../src/agents.js";
+import { type Db, openDb } from "../src/db.js";
+import { addNote, addTask, listTasks } from "../src/tasks.js";
+import {
+  type TmuxExecResult,
+  type TmuxExecutor,
+  resetTmuxExecutor,
+  setTmuxExecutor,
+} from "../src/tmux.js";
+import {
+  destroyWorkstream,
+  ensureWorkstream,
+  listWorkstreams,
+  summarizeWorkstream,
+} from "../src/workstream.js";
+
+// ─── Mock tmux harness ─────────────────────────────────────────────────
+
+function ok(stdout = ""): TmuxExecResult {
+  return { exitCode: 0, stdout, stderr: "" };
+}
+function fail(stderr = ""): TmuxExecResult {
+  return { exitCode: 1, stdout: "", stderr };
+}
+
+interface MockState {
+  sessions: Set<string>;
+  killed: string[];
+}
+
+function mockTmux(state: MockState): { calls: string[][]; executor: TmuxExecutor } {
+  const calls: string[][] = [];
+  const executor: TmuxExecutor = async (args) => {
+    calls.push([...args]);
+    const verb = args[0];
+
+    if (verb === "has-session") {
+      const target = args[2];
+      return state.sessions.has(target ?? "") ? ok() : fail(`can't find session: ${target}`);
+    }
+    if (verb === "kill-session") {
+      const target = args[2];
+      if (!target || !state.sessions.has(target)) {
+        return fail(`can't find session: ${target}`);
+      }
+      state.sessions.delete(target);
+      state.killed.push(target);
+      return ok();
+    }
+    if (verb === "list-sessions") {
+      if (state.sessions.size === 0) return fail("no server running");
+      return ok([...state.sessions].join("\n"));
+    }
+    return fail(`unmocked tmux call: ${args.join(" ")}`);
+  };
+  return { calls, executor };
+}
+
+// ─── Fixture setup ─────────────────────────────────────────────────────
+
+let tmpDir: string;
+let db: Db;
+let state: MockState;
+
+beforeEach(() => {
+  tmpDir = mkdtempSync(join(tmpdir(), "mu-workstream-test-"));
+  db = openDb({ path: join(tmpDir, "mu.db") });
+  state = { sessions: new Set(), killed: [] };
+});
+
+afterEach(() => {
+  resetTmuxExecutor();
+  db.close();
+  rmSync(tmpDir, { recursive: true, force: true });
+});
+
+/** Seed: 2 agents, 3 tasks (with one edge), 2 notes — all in `auth`. */
+function seedAuth(): void {
+  insertAgent(db, { name: "worker-1", workstream: "auth", paneId: "%1", status: "busy" });
+  insertAgent(db, { name: "worker-2", workstream: "auth", paneId: "%2", status: "needs_input" });
+  addTask(db, {
+    localId: "design",
+    workstream: "auth",
+    title: "Design",
+    impact: 80,
+    effortDays: 2,
+  });
+  addTask(db, {
+    localId: "build",
+    workstream: "auth",
+    title: "Build",
+    impact: 80,
+    effortDays: 5,
+    blocks: ["design"],
+  });
+  addTask(db, {
+    localId: "ship",
+    workstream: "auth",
+    title: "Ship",
+    impact: 90,
+    effortDays: 1,
+    blocks: ["build"],
+  });
+  addNote(db, "design", "DECISION: JWT");
+  addNote(db, "design", "FILES: src/auth.rs");
+}
+
+// ─── summarizeWorkstream ───────────────────────────────────────────────
+
+// ─── ensureWorkstream + FK behaviour ───────────────────────────────────
+
+describe("ensureWorkstream", () => {
+  it("inserts the row on first call and is idempotent thereafter", () => {
+    expect(ensureWorkstream(db, "auth")).toBe(true);
+    expect(ensureWorkstream(db, "auth")).toBe(false);
+    const rows = db.prepare("SELECT name FROM workstreams").all() as { name: string }[];
+    expect(rows.map((r) => r.name)).toEqual(["auth"]);
+  });
+
+  it("is auto-called by insertAgent (so spawn-without-init still works)", () => {
+    insertAgent(db, { name: "worker-1", workstream: "fresh", paneId: "%1", status: "busy" });
+    const rows = db.prepare("SELECT name FROM workstreams").all() as { name: string }[];
+    expect(rows.map((r) => r.name)).toEqual(["fresh"]);
+  });
+
+  it("is auto-called by addTask (so add-task-without-init still works)", () => {
+    addTask(db, {
+      localId: "foo",
+      workstream: "fresh",
+      title: "F",
+      impact: 50,
+      effortDays: 1,
+    });
+    const rows = db.prepare("SELECT name FROM workstreams").all() as { name: string }[];
+    expect(rows.map((r) => r.name)).toEqual(["fresh"]);
+  });
+});
+
+describe("FK CASCADE: deleting a workstream wipes its agents and tasks", () => {
+  it("DELETE FROM workstreams cascades to agents and to tasks (then on to task_edges + task_notes)", () => {
+    seedAuth();
+    expect(
+      (db.prepare("SELECT COUNT(*) AS n FROM agents").get() as { n: number }).n,
+    ).toBeGreaterThan(0);
+    expect(
+      (db.prepare("SELECT COUNT(*) AS n FROM tasks").get() as { n: number }).n,
+    ).toBeGreaterThan(0);
+
+    db.prepare("DELETE FROM workstreams WHERE name = 'auth'").run();
+
+    for (const t of ["agents", "tasks", "task_edges", "task_notes"]) {
+      const n = (db.prepare(`SELECT COUNT(*) AS n FROM ${t}`).get() as { n: number }).n;
+      expect(n).toBe(0);
+    }
+  });
+});
+
+describe("FK SET NULL: closing an agent clears tasks.owner automatically", () => {
+  it("deleteAgent clears owner on tasks they owned (historical attribution lives in notes)", () => {
+    addTask(db, {
+      localId: "design",
+      workstream: "auth",
+      title: "D",
+      impact: 50,
+      effortDays: 1,
+    });
+    insertAgent(db, { name: "worker-1", workstream: "auth", paneId: "%1", status: "busy" });
+    db.prepare("UPDATE tasks SET owner = 'worker-1' WHERE local_id = 'design'").run();
+    expect(
+      (
+        db.prepare("SELECT owner FROM tasks WHERE local_id = 'design'").get() as {
+          owner: string;
+        }
+      ).owner,
+    ).toBe("worker-1");
+
+    db.prepare("DELETE FROM agents WHERE name = 'worker-1'").run();
+
+    expect(
+      (
+        db.prepare("SELECT owner FROM tasks WHERE local_id = 'design'").get() as {
+          owner: string | null;
+        }
+      ).owner,
+    ).toBeNull();
+  });
+
+  it("INSERT INTO tasks ... owner='ghost' is rejected by the FK", () => {
+    ensureWorkstream(db, "auth");
+    expect(() =>
+      db
+        .prepare(
+          `INSERT INTO tasks (local_id, workstream, title, status, impact, effort_days, owner, created_at, updated_at)
+           VALUES ('x', 'auth', 'X', 'OPEN', 50, 1, 'ghost', datetime('now'), datetime('now'))`,
+        )
+        .run(),
+    ).toThrow(/FOREIGN KEY constraint failed/);
+  });
+});
+
+describe("summarizeWorkstream", () => {
+  it("counts agents, tasks, edges, notes; reports tmux liveness", async () => {
+    state.sessions.add("mu-auth");
+    setTmuxExecutor(mockTmux(state).executor);
+    seedAuth();
+
+    const summary = await summarizeWorkstream(db, { workstream: "auth" });
+    expect(summary).toEqual({
+      workstream: "auth",
+      tmuxSession: "mu-auth",
+      tmuxAlive: true,
+      agents: 2,
+      tasks: 3,
+      edges: 2,
+      notes: 2,
+    });
+  });
+
+  it("returns all-zero counts and tmuxAlive=false for an unknown workstream", async () => {
+    setTmuxExecutor(mockTmux(state).executor);
+    const summary = await summarizeWorkstream(db, { workstream: "nope" });
+    expect(summary.agents).toBe(0);
+    expect(summary.tasks).toBe(0);
+    expect(summary.edges).toBe(0);
+    expect(summary.notes).toBe(0);
+    expect(summary.tmuxAlive).toBe(false);
+  });
+
+  it("honours tmuxSession override", async () => {
+    state.sessions.add("custom");
+    setTmuxExecutor(mockTmux(state).executor);
+    const summary = await summarizeWorkstream(db, {
+      workstream: "auth",
+      tmuxSession: "custom",
+    });
+    expect(summary.tmuxSession).toBe("custom");
+    expect(summary.tmuxAlive).toBe(true);
+  });
+});
+
+// ─── listWorkstreams ─────────────────────────────────────────────────────
+
+describe("listWorkstreams", () => {
+  it("returns empty when no DB rows and no mu-* tmux sessions", async () => {
+    setTmuxExecutor(mockTmux(state).executor);
+    const list = await listWorkstreams(db);
+    expect(list).toEqual([]);
+  });
+
+  it("unions DB workstreams (agents + tasks) and mu-* tmux sessions", async () => {
+    state.sessions.add("mu-auth"); // both DB rows AND tmux session
+    state.sessions.add("mu-empty"); // tmux only, no DB rows yet
+    state.sessions.add("unrelated"); // not an mu session, ignored
+    setTmuxExecutor(mockTmux(state).executor);
+    seedAuth();
+    insertAgent(db, {
+      name: "billing-1",
+      workstream: "billing", // DB only, no tmux session
+      paneId: "%9",
+      status: "busy",
+    });
+
+    const list = await listWorkstreams(db);
+    expect(list.map((w) => w.workstream)).toEqual(["auth", "billing", "empty"]);
+
+    const auth = list.find((w) => w.workstream === "auth");
+    expect(auth?.tmuxAlive).toBe(true);
+    expect(auth?.agents).toBe(2);
+    expect(auth?.tasks).toBe(3);
+
+    const billing = list.find((w) => w.workstream === "billing");
+    expect(billing?.tmuxAlive).toBe(false);
+    expect(billing?.agents).toBe(1);
+    expect(billing?.tasks).toBe(0);
+
+    const empty = list.find((w) => w.workstream === "empty");
+    expect(empty?.tmuxAlive).toBe(true);
+    expect(empty?.agents).toBe(0);
+    expect(empty?.tasks).toBe(0);
+  });
+
+  it("sorts by workstream name", async () => {
+    state.sessions.add("mu-zeta");
+    state.sessions.add("mu-alpha");
+    state.sessions.add("mu-mike");
+    setTmuxExecutor(mockTmux(state).executor);
+    const list = await listWorkstreams(db);
+    expect(list.map((w) => w.workstream)).toEqual(["alpha", "mike", "zeta"]);
+  });
+});
+
+// ─── destroyWorkstream ─────────────────────────────────────────────────
+
+describe("destroyWorkstream", () => {
+  it("kills tmux session and removes every DB row tagged with the workstream", async () => {
+    state.sessions.add("mu-auth");
+    setTmuxExecutor(mockTmux(state).executor);
+    seedAuth();
+
+    const result = await destroyWorkstream(db, { workstream: "auth" });
+    expect(result).toEqual({
+      killedTmux: true,
+      deletedAgents: 2,
+      deletedTasks: 3,
+      deletedNotes: 2,
+      deletedEdges: 2,
+    });
+
+    expect(state.killed).toEqual(["mu-auth"]);
+    expect(listAgents(db, { workstream: "auth" })).toEqual([]);
+    expect(listTasks(db, "auth")).toEqual([]);
+    // Cascade emptied the join tables too.
+    const noteCount = (db.prepare("SELECT COUNT(*) AS n FROM task_notes").get() as { n: number }).n;
+    const edgeCount = (db.prepare("SELECT COUNT(*) AS n FROM task_edges").get() as { n: number }).n;
+    expect(noteCount).toBe(0);
+    expect(edgeCount).toBe(0);
+  });
+
+  it("leaves other workstreams completely untouched", async () => {
+    state.sessions.add("mu-auth");
+    state.sessions.add("mu-billing");
+    setTmuxExecutor(mockTmux(state).executor);
+    seedAuth();
+    insertAgent(db, { name: "billing-1", workstream: "billing", paneId: "%9", status: "busy" });
+    addTask(db, {
+      localId: "invoice",
+      workstream: "billing",
+      title: "Invoice",
+      impact: 50,
+      effortDays: 1,
+    });
+    addNote(db, "invoice", "FILES: src/billing.rs");
+
+    await destroyWorkstream(db, { workstream: "auth" });
+
+    // Billing intact.
+    expect(state.sessions.has("mu-billing")).toBe(true);
+    expect(listAgents(db, { workstream: "billing" }).map((a) => a.name)).toEqual(["billing-1"]);
+    expect(listTasks(db, "billing").map((t) => t.localId)).toEqual(["invoice"]);
+    const billingNotes = db
+      .prepare("SELECT COUNT(*) AS n FROM task_notes WHERE task_id = 'invoice'")
+      .get() as { n: number };
+    expect(billingNotes.n).toBe(1);
+  });
+
+  it("is idempotent: destroying an unknown workstream is a no-op", async () => {
+    setTmuxExecutor(mockTmux(state).executor);
+    const result = await destroyWorkstream(db, { workstream: "nope" });
+    expect(result).toEqual({
+      killedTmux: false,
+      deletedAgents: 0,
+      deletedTasks: 0,
+      deletedNotes: 0,
+      deletedEdges: 0,
+    });
+  });
+
+  it("succeeds when DB has rows but tmux session is already gone", async () => {
+    setTmuxExecutor(mockTmux(state).executor);
+    seedAuth(); // no tmux session for it
+
+    const result = await destroyWorkstream(db, { workstream: "auth" });
+    expect(result.killedTmux).toBe(false);
+    expect(result.deletedAgents).toBe(2);
+    expect(result.deletedTasks).toBe(3);
+    expect(state.killed).toEqual([]);
+  });
+
+  it("succeeds when tmux session exists but DB has no rows", async () => {
+    state.sessions.add("mu-empty");
+    setTmuxExecutor(mockTmux(state).executor);
+
+    const result = await destroyWorkstream(db, { workstream: "empty" });
+    expect(result).toEqual({
+      killedTmux: true,
+      deletedAgents: 0,
+      deletedTasks: 0,
+      deletedNotes: 0,
+      deletedEdges: 0,
+    });
+    expect(state.killed).toEqual(["mu-empty"]);
+  });
+
+  it("repeated destroy is a clean no-op the second time", async () => {
+    state.sessions.add("mu-auth");
+    setTmuxExecutor(mockTmux(state).executor);
+    seedAuth();
+
+    await destroyWorkstream(db, { workstream: "auth" });
+    const second = await destroyWorkstream(db, { workstream: "auth" });
+    expect(second).toEqual({
+      killedTmux: false,
+      deletedAgents: 0,
+      deletedTasks: 0,
+      deletedNotes: 0,
+      deletedEdges: 0,
+    });
+  });
+});
