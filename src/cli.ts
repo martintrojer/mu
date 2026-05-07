@@ -101,6 +101,7 @@ import {
   listWorkspaces,
 } from "./workspace.js";
 import {
+  WorkstreamNameInvalidError,
   type WorkstreamSummary,
   destroyWorkstream,
   ensureWorkstream,
@@ -149,7 +150,7 @@ function handle(fn: (db: Db) => Promise<void>): () => Promise<void> {
       await fn(db);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      if (err instanceof UsageError) {
+      if (err instanceof UsageError || err instanceof WorkstreamNameInvalidError) {
         console.error(pc.red(`error: ${message}`));
         process.exit(2);
       }

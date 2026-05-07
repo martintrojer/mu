@@ -19,6 +19,39 @@ import { emitEvent } from "./logs.js";
 import { killSession, listSessions, sessionExists } from "./tmux.js";
 
 /**
+ * Allowed workstream-name shape: lowercase alpha first, then alnum,
+ * underscore, or hyphen, up to 32 chars total. Mirrors the agent-name
+ * rule in VOCABULARY.md §"Naming conventions".
+ *
+ * Critically, this rule excludes `.` and `:` — tmux silently rewrites
+ * `.` to `_` in session names (because `.` is the window/pane separator
+ * in tmux's `session:window.pane` target syntax) and `:` is reserved
+ * outright. A workstream name with `.` would create a session that mu
+ * couldn't subsequently look up, breaking every downstream verb. We
+ * fail loud at init time instead.
+ */
+const WORKSTREAM_NAME_RE = /^[a-z][a-z0-9_-]{0,31}$/;
+
+export function isValidWorkstreamName(name: string): boolean {
+  return WORKSTREAM_NAME_RE.test(name);
+}
+
+/** Thrown by `ensureWorkstream` and `mu workstream init` when the name
+ *  doesn't match `WORKSTREAM_NAME_RE`. */
+export class WorkstreamNameInvalidError extends Error {
+  override readonly name = "WorkstreamNameInvalidError";
+  constructor(public readonly attempted: string) {
+    super(
+      `invalid workstream name ${JSON.stringify(attempted)}: must match /^[a-z][a-z0-9_-]{0,31}$/. tmux silently rewrites '.' to '_' and reserves ':' as a target separator, so workstream names containing those characters would create tmux sessions mu couldn't look up afterwards. Use letters, digits, '_', and '-' only.`,
+    );
+  }
+}
+
+function assertValidWorkstreamName(name: string): void {
+  if (!isValidWorkstreamName(name)) throw new WorkstreamNameInvalidError(name);
+}
+
+/**
  * Ensure a row exists in the `workstreams` table for `name`. Idempotent;
  * INSERT OR IGNORE so concurrent callers race safely. Called by
  * `insertAgent` and `addTask` so callers don't need to remember to call
@@ -26,9 +59,14 @@ import { killSession, listSessions, sessionExists } from "./tmux.js";
  * spawn-without-init ergonomics now that agents.workstream and
  * tasks.workstream are real FKs into this table).
  *
+ * Validates the name before inserting; throws `WorkstreamNameInvalidError`
+ * for names tmux would silently mangle (containing '.' or ':') or that
+ * exceed 32 chars / start with a non-letter.
+ *
  * Returns true iff a row was actually inserted (vs. already present).
  */
 export function ensureWorkstream(db: Db, name: string): boolean {
+  assertValidWorkstreamName(name);
   const result = db
     .prepare("INSERT OR IGNORE INTO workstreams (name, created_at) VALUES (?, ?)")
     .run(name, new Date().toISOString());

@@ -29,7 +29,10 @@ describeIfTmux("tmux integration (real tmux server)", () => {
   beforeEach(async () => {
     resetTmuxExecutor();
     // Unique session name per test so parallel test runs don't collide.
-    session = `mu-test-${process.pid}-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+    // Keep the tmux session name short and free of '.' / ':' (which
+    // tmux mangles or reserves). base36 keeps it under tmux's limits.
+    const tag = `${process.pid.toString(36)}-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`;
+    session = `mu-t-${tag}`;
     await newSession(session, {
       windowName: "main",
       command: "sh -c 'while true; do sleep 60; done'",

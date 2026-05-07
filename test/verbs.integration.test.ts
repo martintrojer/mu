@@ -33,7 +33,9 @@ describeIfTmux("verbs integration (real tmux + real DB)", () => {
     process.env.MU_SPAWN_LIVENESS_MS = "0";
     tempDir = mkdtempSync(join(tmpdir(), "mu-verbs-i-"));
     db = openDb({ path: join(tempDir, "mu.db") });
-    workstream = `test-${process.pid}-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+    // Keep within the 32-char workstream-name limit. base36 keeps it short.
+    const tag = `${process.pid.toString(36)}-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`;
+    workstream = `t-${tag}`;
     session = `mu-${workstream}`;
   });
 

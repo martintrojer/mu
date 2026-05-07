@@ -10,6 +10,34 @@ called out under "Breaking" in each entry.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`mu workstream init <name>` now validates the name.** Names
+  containing `.`, `:`, `/`, uppercase, leading digit/hyphen, or
+  >32 chars are rejected with `WorkstreamNameInvalidError` (exit
+  2). The motivating bug: `mu workstream init roadmap-v0.2`
+  succeeded, but tmux silently rewrote the session name to
+  `mu-roadmap-v0_2` (because `.` is the window/pane separator in
+  tmux's `session:window.pane` target syntax). Every downstream
+  verb — `mu agent list`, `mu state`, bare `mu`, `mu agent
+  spawn` — then failed with `can't find pane: 2` or `duplicate
+  session` because mu queried the unmangled name. Fail loud at
+  init time instead.
+  - **Migration:** existing workstreams with invalid names need
+    to be renamed via SQL: `INSERT INTO workstreams (name,
+    created_at) SELECT '<new>', created_at FROM workstreams WHERE
+    name='<old>'; UPDATE tasks SET workstream='<new>' WHERE
+    workstream='<old>'; UPDATE agent_logs SET workstream='<new>'
+    WHERE workstream='<old>'; DELETE FROM workstreams WHERE
+    name='<old>';` (each statement separately; `mu sql` doesn't
+    accept multi-statement scripts yet). Then
+    `tmux kill-session -t <old-mangled-session>`.
+  - The same regex applies to `ensureWorkstream` (the auto-create
+    path on first `mu agent spawn` / `mu task add`), so the
+    invariant holds even for callers that skip `mu workstream init`.
+  - SDK: `WorkstreamNameInvalidError` and `isValidWorkstreamName`
+    exported from `src/index.ts`.
+
 ### Breaking
 
 - **`mu agent close` no longer touches the workspace.** Previously,

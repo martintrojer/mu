@@ -104,9 +104,11 @@ export {
   destroyWorkstream,
   type DestroyResult,
   ensureWorkstream,
+  isValidWorkstreamName,
   listWorkstreams,
   summarizeWorkstream,
   type WorkstreamOptions,
+  WorkstreamNameInvalidError,
   type WorkstreamSummary,
 } from "./workstream.js";
 export {

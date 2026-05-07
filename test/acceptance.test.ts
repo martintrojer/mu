@@ -42,7 +42,10 @@ describeIfTmux("MVP acceptance — full demo end-to-end", () => {
     process.env.MU_SPAWN_LIVENESS_MS = "0";
     tempDir = mkdtempSync(join(tmpdir(), "mu-accept-"));
     db = openDb({ path: join(tempDir, "mu.db") });
-    workstream = `accept-${process.pid}-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+    // Keep within the workstream-name length limit (32 chars). Encode
+    // pid + timestamp + random in base36 for compactness.
+    const tag = `${process.pid.toString(36)}-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`;
+    workstream = `accept-${tag}`;
     session = `mu-${workstream}`;
   });
 

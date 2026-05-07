@@ -19,8 +19,10 @@ import {
   setTmuxExecutor,
 } from "../src/tmux.js";
 import {
+  WorkstreamNameInvalidError,
   destroyWorkstream,
   ensureWorkstream,
+  isValidWorkstreamName,
   listWorkstreams,
   summarizeWorkstream,
 } from "../src/workstream.js";
@@ -406,5 +408,54 @@ describe("destroyWorkstream", () => {
       deletedNotes: 0,
       deletedEdges: 0,
     });
+  });
+});
+
+// ─── Workstream name validation ────────────────────────────────────────
+
+describe("isValidWorkstreamName", () => {
+  it("accepts the documented shape (lowercase alpha first; alnum/_/- after; ≤32)", () => {
+    for (const ok of ["auth", "auth-refactor", "infer_rs", "x", "a1b2", "a".repeat(32)]) {
+      expect(isValidWorkstreamName(ok)).toBe(true);
+    }
+  });
+
+  it("rejects names tmux silently mangles ('.', ':', '/') — the bug-report regression", () => {
+    // The motivating case: `mu workstream init roadmap-v0.2` succeeded
+    // but tmux stored the session as `mu-roadmap-v0_2` (dot → underscore),
+    // breaking every downstream verb that looked up `mu-roadmap-v0.2`.
+    for (const bad of ["roadmap-v0.2", "auth:refactor", "auth/refactor"]) {
+      expect(isValidWorkstreamName(bad)).toBe(false);
+    }
+  });
+
+  it("rejects empty, leading-digit, leading-hyphen, uppercase, and over-long names", () => {
+    for (const bad of ["", "1auth", "-auth", "_auth", "Auth", "AUTH", "a".repeat(33)]) {
+      expect(isValidWorkstreamName(bad)).toBe(false);
+    }
+  });
+});
+
+describe("ensureWorkstream — name validation", () => {
+  it("throws WorkstreamNameInvalidError on a tmux-mangled name", () => {
+    expect(() => ensureWorkstream(db, "roadmap-v0.2")).toThrow(WorkstreamNameInvalidError);
+  });
+
+  it("the thrown error names the offending input and explains why", () => {
+    let caught: WorkstreamNameInvalidError | undefined;
+    try {
+      ensureWorkstream(db, "auth:refactor");
+    } catch (err) {
+      if (err instanceof WorkstreamNameInvalidError) caught = err;
+    }
+    expect(caught).toBeDefined();
+    expect(caught?.attempted).toBe("auth:refactor");
+    expect(caught?.message).toMatch(/tmux/);
+    expect(caught?.message).toMatch(/auth:refactor/);
+  });
+
+  it("accepts valid names without changing existing behaviour", () => {
+    expect(ensureWorkstream(db, "auth-refactor")).toBe(true);
+    expect(ensureWorkstream(db, "auth-refactor")).toBe(false); // idempotent
   });
 });
