@@ -8,6 +8,29 @@ called out under "Breaking" in each entry.
 
 ---
 
+## [Unreleased]
+
+### Breaking
+
+- **`mu agent close` no longer touches the workspace.** Previously,
+  closing an agent auto-freed its workspace dir; the
+  `--keep-workspace` flag opted out. The default lost any
+  uncommitted artifacts (benchmark output, profiles, scratch logs)
+  produced into the workspace cwd. The new behaviour: closing an
+  agent kills the pane and removes the registry row only. Run
+  `mu workspace free <agent>` (or `mu workspace free <agent>
+  --commit`) explicitly to remove the on-disk dir. The
+  `--keep-workspace` and `--commit-workspace` flags on `agent
+  close` are removed.
+  - **Migration:** any script that did `mu agent close X` and
+    relied on the workspace being cleaned up should add
+    `mu workspace free X` after.
+  - **Why:** mu has no `mu undo`; destructive defaults are bad
+    form. The split also matches mu's general principle that each
+    verb does one thing.
+
+---
+
 ## [0.1.0] — Initial release
 
 First public release. Mu is a CLI that manages a persistent crew
@@ -27,7 +50,7 @@ public boundary; see git history for the per-step evolution.
 | Area                     | Verbs                                                                 |
 | ------------------------ | --------------------------------------------------------------------- |
 | **workstream** (3)       | `init`, `list`, `destroy`                                             |
-| **agent** (8)            | `spawn` (with `--workspace*`), `send`, `read`, `show`, `list`, `close` (with `--keep-workspace`), `free`, `attach` |
+| **agent** (8)            | `spawn` (with `--workspace*`), `send`, `read`, `show`, `list`, `close`, `free`, `attach` |
 | **task** (22)            | `add` (id auto-derived from title), `list`, `show`, `notes`, `note`, `tree`, `next`, `ready`, `blocked`, `goals`, `owned-by`, `search`, `claim` (`--evidence`), `release` (`--evidence`), `close` (`--evidence`), `open` (`--evidence`), `block`, `unblock`, `update`, `delete`, `reparent` |
 | **workspace** (4)        | `create`, `list`, `free` (`--commit`), `path`                         |
 | **log** (1, overloaded)  | write, read, `--tail` subscription; auto-emits on every state change  |

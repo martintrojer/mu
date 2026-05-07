@@ -566,7 +566,7 @@ describe("closeAgent", () => {
     expect(state.panes.has(agent.paneId)).toBe(true);
 
     const result = await closeAgent(db, "alice");
-    expect(result).toMatchObject({ killedPane: true, deletedRow: true, freedWorkspace: false });
+    expect(result).toMatchObject({ killedPane: true, deletedRow: true, workspaceKept: false });
     expect(state.panes.has(agent.paneId)).toBe(false);
     expect(getAgent(db, "alice")).toBeUndefined();
   });
@@ -578,7 +578,7 @@ describe("closeAgent", () => {
     expect(result).toMatchObject({
       killedPane: false,
       deletedRow: false,
-      freedWorkspace: false,
+      workspaceKept: false,
     });
     expect(calls).toEqual([]);
   });

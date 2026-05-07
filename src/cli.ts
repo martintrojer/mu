@@ -708,28 +708,21 @@ function formatWorkspacesTable(rows: readonly WorkspaceRow[]): string {
   return table.toString();
 }
 
-async function cmdClose(
-  db: Db,
-  name: string,
-  opts: { keepWorkspace?: boolean; commitWorkspace?: boolean; workstream?: string } = {},
-): Promise<void> {
+async function cmdClose(db: Db, name: string, opts: { workstream?: string } = {}): Promise<void> {
   assertAgentInWorkstream(db, name, opts.workstream);
-  const result = await closeAgent(db, name, {
-    ...(opts.keepWorkspace !== undefined ? { keepWorkspace: opts.keepWorkspace } : {}),
-    ...(opts.commitWorkspace !== undefined ? { commitWorkspace: opts.commitWorkspace } : {}),
-  });
+  const result = await closeAgent(db, name);
   if (!result.killedPane && !result.deletedRow) {
     console.log(pc.dim(`no agent named ${name} (already closed?)`));
     return;
   }
-  let suffix = "";
-  if (result.freedWorkspace) {
-    const committed = result.workspaceCommittedRef
-      ? ` (committed ${result.workspaceCommittedRef.slice(0, 12)})`
-      : "";
-    suffix = pc.dim(` + freed workspace${committed}`);
+  console.log(`Closed ${pc.bold(name)}`);
+  if (result.workspaceKept) {
+    console.log(
+      pc.dim(
+        `  Workspace kept on disk. Run \`mu workspace free ${name}\` to remove it (or \`--commit\` to commit pending changes first).`,
+      ),
+    );
   }
-  console.log(`Closed ${pc.bold(name)}${suffix}`);
 }
 
 async function cmdFree(db: Db, name: string, opts: { workstream?: string } = {}): Promise<void> {
@@ -2356,17 +2349,11 @@ export function buildProgram(): Command {
   agent
     .command("close <name>")
     .description(
-      "Kill an agent's pane and remove its registry row. Auto-frees the agent's workspace by default; pass --keep-workspace to leave the dir.",
+      "Kill an agent's pane and remove its registry row. Does NOT touch the workspace; run `mu workspace free <agent>` separately to remove the on-disk dir.",
     )
-    .option("--keep-workspace", "don't tear down the agent's workspace dir")
-    .option("--commit-workspace", "when freeing the workspace, auto-commit pending changes first")
     .option(...WORKSTREAM_OPT)
     .action(function (name: string) {
-      const opts = (this as Command).opts() as {
-        keepWorkspace?: boolean;
-        commitWorkspace?: boolean;
-        workstream?: string;
-      };
+      const opts = (this as Command).opts() as { workstream?: string };
       return handle((db) => cmdClose(db, name, opts))();
     });
 

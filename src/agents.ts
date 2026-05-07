@@ -36,6 +36,9 @@ import {
 } from "./tmux.js";
 import type { VcsBackendName } from "./vcs.js";
 import { createWorkspace, freeWorkspace, getWorkspaceForAgent } from "./workspace.js";
+// (freeWorkspace is used by the spawn rollback paths below, not by closeAgent.
+// Closing an agent is intentionally a separate concern from freeing its workspace;
+// see the closeAgent docstring.)
 import { ensureWorkstream } from "./workstream.js";
 
 export type { AgentStatus };
@@ -596,25 +599,13 @@ export function freeAgent(db: Db, name: string): FreeAgentResult {
   return { previousStatus: before.status, status: "free", changed: true };
 }
 
-export interface CloseAgentOptions {
-  /** If the agent has a workspace, also tear it down on disk. Default
-   *  true: workspaces are created with the agent (via spawn --workspace)
-   *  so they should die with it; the FK CASCADE would orphan the dir
-   *  otherwise. Pass `keepWorkspace: true` to preserve the working copy. */
-  keepWorkspace?: boolean;
-  /** When freeing the workspace, attempt to auto-commit pending changes
-   *  first. Same semantics as `mu workspace free --commit`. Ignored
-   *  when `keepWorkspace: true`. */
-  commitWorkspace?: boolean;
-}
-
 export interface CloseAgentResult {
   killedPane: boolean;
   deletedRow: boolean;
-  /** True iff a workspace existed and was freed (dir + row). */
-  freedWorkspace: boolean;
-  /** Commit captured by the workspace free, when commitWorkspace was true. */
-  workspaceCommittedRef?: string;
+  /** True iff the agent had an associated workspace row (the on-disk
+   *  dir was NOT freed by closeAgent). The caller should tell the
+   *  user where it is and how to free it. */
+  workspaceKept: boolean;
 }
 
 /**
@@ -622,42 +613,35 @@ export interface CloseAgentResult {
  *   - if the agent doesn't exist in the DB, returns a no-op result
  *   - if the tmux pane is already gone, killPane swallows the error
  *
- * Workspace handling: if the agent has a workspace AND `keepWorkspace`
- * isn't set, free it BEFORE deleting the agent (the FK CASCADE on
- * agent delete would otherwise leave the on-disk dir orphaned). With
- * `keepWorkspace: true`, the row still cascades but the dir survives.
+ * **Does not touch the workspace.** Closing an agent and freeing its
+ * workspace are separate concerns: agent lifecycle vs disk artifacts.
+ * To free the workspace dir, run `mu workspace free <agent>` (or call
+ * `freeWorkspace` from the SDK). This separation prevents accidental
+ * loss of uncommitted benchmark output, profile data, scratch logs,
+ * etc. that live in the workspace.
+ *
+ * The workspace row in `vcs_workspaces` cascades on agent delete, so
+ * after `closeAgent` the on-disk dir is orphaned (no DB row points at
+ * it). It still works as a checkout; you can free it later by
+ * removing the directory directly, or re-creating + freeing via the
+ * verb.
  */
-export async function closeAgent(
-  db: Db,
-  name: string,
-  opts: CloseAgentOptions = {},
-): Promise<CloseAgentResult> {
+export async function closeAgent(db: Db, name: string): Promise<CloseAgentResult> {
   const agent = getAgent(db, name);
   if (!agent) {
-    return { killedPane: false, deletedRow: false, freedWorkspace: false };
+    return { killedPane: false, deletedRow: false, workspaceKept: false };
   }
-  let freedWorkspace = false;
-  let workspaceCommittedRef: string | undefined;
-  if (!opts.keepWorkspace) {
-    const ws = getWorkspaceForAgent(db, name);
-    if (ws) {
-      const r = await freeWorkspace(db, name, { commit: opts.commitWorkspace ?? false });
-      freedWorkspace = r.removed || r.rowDeleted;
-      if (r.committedRef !== undefined) workspaceCommittedRef = r.committedRef;
-    }
-  }
+  const ws = getWorkspaceForAgent(db, name);
   await killPane(agent.paneId).catch(() => {
     /* idempotent — pane may already be gone */
   });
   const deletedRow = deleteAgent(db, name);
   emitEvent(db, agent.workstream, `agent close ${name} (pane=${agent.paneId})`);
-  const result: CloseAgentResult = {
+  return {
     killedPane: true,
     deletedRow,
-    freedWorkspace,
+    workspaceKept: ws !== undefined,
   };
-  if (workspaceCommittedRef !== undefined) result.workspaceCommittedRef = workspaceCommittedRef;
-  return result;
 }
 
 export interface ListLiveAgentsOptions {

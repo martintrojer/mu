@@ -84,8 +84,11 @@ workstreams = multiple tmux sessions, partitioned in the DB by
 For two agents editing the same project, use `--workspace` on spawn.
 Each gets an isolated working copy under
 `<state-dir>/workspaces/<workstream>/<agent>/`. Auto-detects jj/sl/git;
-`cp -a` for non-VCS. Auto-freed on `agent close` (`--keep-workspace`
-to opt out).
+`cp -a` for non-VCS. Workspaces are NOT freed when you close an
+agent (`agent close` is intentionally separate from disk cleanup,
+so uncommitted artifacts — benchmark output, profiles, scratch
+logs — don't get auto-deleted). Run `mu workspace free <agent>`
+explicitly when you want the dir gone.
 
 ### Name agents by role, not by person
 
@@ -208,8 +211,9 @@ mu agent send <name> "text" [-w]      # bracketed-paste send (handles /, ?, !, $
 mu agent read <name> [-n N] [-w]      # tmux capture-pane; default = full scrollback
 mu agent show <name> [-n N] [-w] [--json]  # registry row + last N lines (default 20)
 mu agent list [-w] [--json]           # this workstream's agents (reconciled with tmux)
-mu agent close <name> [-w] [--keep-workspace] [--commit-workspace]
-                                      # kill pane + drop registry row + free workspace
+mu agent close <name> [-w]            # kill pane + drop registry row
+                                      # NOTE: does not touch the workspace; run
+                                      # `mu workspace free <name>` separately.
 mu agent free <name> [-w]             # set agents.status='free' (idempotent; pane untouched)
 mu agent attach <name> [-w]           # print scrollback + tmux command to attach
                                       # Note: -w on send/read/show/close/free is a SCOPE check

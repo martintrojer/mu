@@ -171,7 +171,7 @@ in `<XDG_STATE_HOME or ~/.local/state>/mu/mu.db`.
 | Area | Verbs |
 | --- | --- |
 | **workstream** (3) | `init`, `list`, `destroy` |
-| **agent** (8) | `spawn` (with `--workspace*`), `send`, `read`, `show`, `list`, `close` (with `--keep-workspace`), `free`, `attach` |
+| **agent** (8) | `spawn` (with `--workspace*`), `send`, `read`, `show`, `list`, `close`, `free`, `attach` |
 | **task** (22) | `add` (id auto-derived from title), `list`, `show`, `notes`, `note`, `tree`, `next`, `ready`, `blocked`, `goals`, `owned-by`, `search`, `claim` (`--evidence`), `release` (`--evidence`), `close` (`--evidence`), `open` (`--evidence`), `block`, `unblock`, `update`, `delete`, `reparent` |
 | **workspace** (4) | `create`, `list`, `free` (`--commit`), `path` |
 | **log** (1, overloaded) | write, read, `--tail` subscription; auto-emits on every state change |

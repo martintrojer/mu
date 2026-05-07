@@ -28,6 +28,13 @@ If an item drops below the bar (no longer has criterion 1 met after
 real use), it moves to the bottom or is removed. We don't keep
 phantom plans alive.
 
+**Exception: data-loss footguns.** A change that fixes a default
+that silently destroys user artifacts (uncommitted output, scratch
+logs, benchmark results, etc.) ships on the **first** occurrence,
+not the second. The cost of waiting for criterion 1 is "lose more
+stuff"; that's the wrong cost to optimise. Document the friction
+in the commit message instead.
+
 ---
 
 ## Anti-feature pledges (still in force; reinforced by an internal critique)

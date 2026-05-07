@@ -222,9 +222,9 @@ describeIfTmux("verbs integration (real tmux + real DB)", () => {
     const r1 = await closeAgent(db, "alice");
     const r2 = await closeAgent(db, "bob");
     const r3 = await closeAgent(db, "carol");
-    expect(r1).toMatchObject({ killedPane: true, deletedRow: true, freedWorkspace: false });
-    expect(r2).toMatchObject({ killedPane: true, deletedRow: true, freedWorkspace: false });
-    expect(r3).toMatchObject({ killedPane: true, deletedRow: true, freedWorkspace: false });
+    expect(r1).toMatchObject({ killedPane: true, deletedRow: true, workspaceKept: false });
+    expect(r2).toMatchObject({ killedPane: true, deletedRow: true, workspaceKept: false });
+    expect(r3).toMatchObject({ killedPane: true, deletedRow: true, workspaceKept: false });
 
     const view3 = await listLiveAgents(db, { workstream });
     expect(view3.agents).toEqual([]);
