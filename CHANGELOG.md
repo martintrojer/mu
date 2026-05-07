@@ -12,6 +12,18 @@ called out under "Breaking" in each entry.
 
 ### Fixed
 
+- **Task JSON output now includes `roi`** (impact ÷ effortDays).
+  Previously `mu task next --json | jq 'sort_by(.roi)'` returned
+  rows in arbitrary order because the JSON serialiser dropped the
+  ROI that the table view computes inline. Affected verbs:
+  `task list / next / ready / blocked / goals / owned-by / show`,
+  `my-tasks`, `my-next`, bare `mu --json`, `mu state --json`.
+  Tasks with `effortDays === 0` omit the field (JSON has no
+  Infinity literal); callers can detect via `effortDays === 0`.
+  The `TaskRow` SDK type is unchanged — ROI stays a
+  CLI-rendering concern, decorated only on the JSON emit path.
+
+
 - **`mu workstream init <name>` now validates the name.** Names
   containing `.`, `:`, `/`, uppercase, leading digit/hyphen, or
   >32 chars are rejected with `WorkstreamNameInvalidError` (exit

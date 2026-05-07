@@ -138,6 +138,50 @@ describe("--json output on read verbs", () => {
     expect(parsed[0]?.localId).toBe("a");
   });
 
+  it("task next --json decorates each row with computed roi (impact/effortDays)", async () => {
+    // Real bug found in real use (mu task notes #99): JSON output had no
+    // roi field at all, so `mu task next --json | jq 'sort_by(.roi)'`
+    // returned items in arbitrary order. The table view computed ROI
+    // inline; the JSON path didn't. Now both paths agree.
+    const { stdout } = await runCli(["task", "next", "-w", "auth", "-n", "5", "--json"], dbPath);
+    const parsed = JSON.parse(stdout.trim()) as Array<{
+      localId: string;
+      impact: number;
+      effortDays: number;
+      roi?: number;
+    }>;
+    // Task 'a' has impact=80 effortDays=2 -> roi=40. (Seeded in beforeEach.)
+    expect(parsed[0]?.localId).toBe("a");
+    expect(parsed[0]?.roi).toBe(40);
+  });
+
+  it("task ready --json decorates with roi too", async () => {
+    const { stdout } = await runCli(["task", "ready", "-w", "auth", "--json"], dbPath);
+    const parsed = JSON.parse(stdout.trim()) as Array<{ localId: string; roi?: number }>;
+    expect(parsed[0]?.roi).toBe(40);
+  });
+
+  it("task list --json decorates with roi too", async () => {
+    const { stdout } = await runCli(["task", "list", "-w", "auth", "--json"], dbPath);
+    const parsed = JSON.parse(stdout.trim()) as Array<{
+      localId: string;
+      impact: number;
+      effortDays: number;
+      roi?: number;
+    }>;
+    for (const t of parsed) {
+      // roi field present iff effortDays > 0; in this seed every task has
+      // a positive effort so roi must equal impact/effortDays.
+      expect(t.roi).toBe(t.impact / t.effortDays);
+    }
+  });
+
+  it("task show --json decorates the inner task with roi", async () => {
+    const { stdout } = await runCli(["task", "show", "a", "--json"], dbPath);
+    const parsed = JSON.parse(stdout.trim()) as { task: { roi?: number } };
+    expect(parsed.task.roi).toBe(40);
+  });
+
   it("task ready --json on an empty result emits [] (not '(no ready tasks)')", async () => {
     // Close 'a' so 'b' becomes ready; close 'b' so 'c' becomes ready;
     // close 'c' so nothing is ready.

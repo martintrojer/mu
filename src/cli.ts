@@ -595,7 +595,7 @@ async function cmdMyTasks(
     includeClosed: opts.includeClosed ?? false,
   });
   if (opts.json) {
-    emitJson(tasks);
+    emitJson(withRoiAll(tasks));
     return;
   }
   if (tasks.length === 0) {
@@ -610,7 +610,7 @@ async function cmdMyNext(db: Db, opts: { lines?: number; json?: boolean }): Prom
   const k = opts.lines ?? 1;
   const tasks = listReady(db, self.workstream).sort(byRoiDesc).slice(0, k);
   if (opts.json) {
-    emitJson(tasks);
+    emitJson(withRoiAll(tasks));
     return;
   }
   if (tasks.length === 0) {
@@ -779,16 +779,45 @@ async function cmdTaskList(db: Db, opts: { workstream?: string; json?: boolean }
   const workstream = await resolveWorkstream(opts.workstream);
   const tasks = listTasks(db, workstream);
   if (opts.json) {
-    emitJson(tasks);
+    emitJson(withRoiAll(tasks));
     return;
   }
   console.log(pc.bold(`mu-${workstream}`));
   console.log(formatTaskListTable(tasks));
 }
 
-// ROI = impact / effort_days. Higher first.
+// ROI = impact / effort_days. Higher first. Tasks with effortDays=0
+// (would divide by zero) sort to the top by treating their ROI as Infinity.
+function roiOf(t: TaskRow): number {
+  return t.effortDays > 0 ? t.impact / t.effortDays : Number.POSITIVE_INFINITY;
+}
+
 function byRoiDesc(a: TaskRow, b: TaskRow): number {
-  return b.impact / b.effortDays - a.impact / a.effortDays;
+  return roiOf(b) - roiOf(a);
+}
+
+/**
+ * Decorate a TaskRow (or array of them) with a computed `roi` field for
+ * JSON output. ROI is a CLI-rendering concern (the table view computes
+ * it inline; see formatTaskListTable) but JSON consumers were getting
+ * raw rows with no ROI at all, which broke `mu task next --json | jq
+ * 'sort_by(.roi)'` and similar. We keep `TaskRow` itself ROI-free so
+ * the SDK contract stays minimal; the decorator lives only in the JSON
+ * emit path.
+ *
+ * `roi` is a plain JSON number when finite; for effortDays=0 the field
+ * is omitted (JSON has no Infinity literal and `null` would be a lie).
+ * Callers can detect the infinity case via `effortDays === 0`.
+ */
+function withRoi<T extends TaskRow>(task: T): T & { roi?: number } {
+  if (task.effortDays > 0) {
+    return { ...task, roi: task.impact / task.effortDays };
+  }
+  return task;
+}
+
+function withRoiAll<T extends TaskRow>(tasks: T[]): (T & { roi?: number })[] {
+  return tasks.map(withRoi);
 }
 
 async function cmdTaskNext(
@@ -799,7 +828,7 @@ async function cmdTaskNext(
   const k = opts.lines ?? 1;
   const tasks = listReady(db, workstream).sort(byRoiDesc).slice(0, k);
   if (opts.json) {
-    emitJson(tasks);
+    emitJson(withRoiAll(tasks));
     return;
   }
   if (tasks.length === 0) {
@@ -813,7 +842,7 @@ async function cmdTaskReady(db: Db, opts: { workstream?: string; json?: boolean 
   const workstream = await resolveWorkstream(opts.workstream);
   const tasks = listReady(db, workstream).sort(byRoiDesc);
   if (opts.json) {
-    emitJson(tasks);
+    emitJson(withRoiAll(tasks));
     return;
   }
   if (tasks.length === 0) {
@@ -830,7 +859,7 @@ async function cmdTaskBlocked(
   const workstream = await resolveWorkstream(opts.workstream);
   const tasks = listBlocked(db, workstream);
   if (opts.json) {
-    emitJson(tasks);
+    emitJson(withRoiAll(tasks));
     return;
   }
   if (tasks.length === 0) {
@@ -844,7 +873,7 @@ async function cmdTaskGoals(db: Db, opts: { workstream?: string; json?: boolean 
   const workstream = await resolveWorkstream(opts.workstream);
   const tasks = listGoals(db, workstream);
   if (opts.json) {
-    emitJson(tasks);
+    emitJson(withRoiAll(tasks));
     return;
   }
   if (tasks.length === 0) {
@@ -863,7 +892,7 @@ async function cmdTaskOwnedBy(
     includeClosed: opts.includeClosed ?? false,
   });
   if (opts.json) {
-    emitJson(tasks);
+    emitJson(withRoiAll(tasks));
     return;
   }
   if (tasks.length === 0) {
@@ -1181,7 +1210,12 @@ async function cmdTaskShow(
   const notes = listNotes(db, localId);
 
   if (opts.json) {
-    emitJson({ task, blockers: edges.blockers, dependents: edges.dependents, notes });
+    emitJson({
+      task: withRoi(task),
+      blockers: edges.blockers,
+      dependents: edges.dependents,
+      notes,
+    });
     return;
   }
 
@@ -1886,7 +1920,7 @@ async function cmdMission(db: Db, opts: { workstream?: string; json?: boolean })
       agents: view.agents,
       orphans: view.orphans,
       tracks,
-      ready,
+      ready: withRoiAll(ready),
     });
     return;
   }
@@ -2003,10 +2037,10 @@ async function cmdState(
     orphans: view.orphans,
     tracks,
     tasks: {
-      ready,
-      blocked,
-      in_progress: inProgress,
-      recent_closed: recentClosed,
+      ready: withRoiAll(ready),
+      blocked: withRoiAll(blocked),
+      in_progress: withRoiAll(inProgress),
+      recent_closed: withRoiAll(recentClosed),
     },
     workspaces,
     recent_events: recentEvents,
