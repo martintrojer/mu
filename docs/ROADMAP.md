@@ -35,6 +35,15 @@ not the second. The cost of waiting for criterion 1 is "lose more
 stuff"; that's the wrong cost to optimise. Document the friction
 in the commit message instead.
 
+**Polish doesn't count as promotion.** Bug fixes, ergonomic
+improvements, error-message wording, doc tightening, and similar
+"the existing thing works better" changes don't need promotion
+criteria — they just need to be small and to ship clean (typecheck
++ lint + tests + build). Polish is the dividend the project earns
+by refusing the things on this roadmap. Don't wait for occurrence
+#2 to fix a typo, tighten an error message, or truncate a runaway
+table column.
+
 ---
 
 ## Anti-feature pledges (still in force; reinforced by an internal critique)
@@ -73,11 +82,15 @@ model-facing tool entropy).
 
 ---
 
-## What's next — small additions with an obvious shape
+## Possible — small additions with an obvious shape
 
 These have a clear design but haven't yet hit criterion 1 (proven
 friction in ≥2 real workflows). They earn implementation when real
 use surfaces them.
+
+The section heading is deliberately "Possible," not "Next." "Next"
+implies it's coming. "Possible" doesn't. Items below ship if and
+when they earn it.
 
 ### Pi extension and the three rules
 
