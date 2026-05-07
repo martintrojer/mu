@@ -763,7 +763,6 @@ want. File it in [ROADMAP.md](ROADMAP.md).
 | [VOCABULARY.md](VOCABULARY.md)               | Canonical terms — source of truth for every word        |
 | [VISION.md](VISION.md)                       | The eight load-bearing pillars + design principles      |
 | [ARCHITECTURE.md](ARCHITECTURE.md)           | Module map, reconciliation algorithm, layered design    |
-| [PLAN.md](PLAN.md)                           | Design rationale for unbuilt features (DSL, VCS, ...)   |
 | [skills/mu/SKILL.md](../skills/mu/SKILL.md)  | What an LLM running inside an agent pane sees           |
 
 If you're trying mu and something doesn't work as documented, file an

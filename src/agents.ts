@@ -333,7 +333,7 @@ export class AgentDiedOnSpawnError extends Error {
 /**
  * Spawn a new agent in its tmux pane and register it in the DB.
  *
- * Order of operations (PLAN.md §5 "from_control / attach_runtime split"):
+ * Order of operations (the "from_control / attach_runtime" split):
  *
  *   1. Validate the name and that it's not already taken.
  *   2. Ensure the workstream's tmux session exists (creating it WITH the

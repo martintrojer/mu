@@ -148,7 +148,7 @@ When the docs/code say "you", it must be unambiguous which actor.
 | VISION.md            | The human user                                       |
 | ARCHITECTURE.md      | A developer working on mu's source                   |
 | AGENTS.md (root)     | An AI coding agent working on this repo              |
-| PLAN.md              | A developer implementing mu                          |
+| ROADMAP.md           | A developer implementing one of the listed items     |
 | **SKILL.md**         | **The LLM running inside an agent's pane**           |
 | Agent prompt bodies  | The LLM running as that specific agent               |
 | `mu doctor` output   | The human user running the diagnostic                |

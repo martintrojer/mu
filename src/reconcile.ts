@@ -1,6 +1,6 @@
 // mu — the canonical "reality wins" reconciliation routine.
 //
-// Three steps, in order, per PLAN.md §10b:
+// Three steps, in order:
 //
 //   1. Prune ghost rows whose pane no longer exists in tmux.
 //   2. Detect status from pane scrollback for surviving agents.

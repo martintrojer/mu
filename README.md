@@ -336,8 +336,6 @@ users) and `AGENTS.md` (for AI coding agents working on the repo)
   source of truth for every word in code, docs, error messages.
 - **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** — module map,
   reconciliation algorithm, layered design.
-- **[docs/PLAN.md](docs/PLAN.md)** — design rationale for unbuilt
-  features and rejected ideas.
 - **[skills/mu/SKILL.md](skills/mu/SKILL.md)** — what an LLM
   running inside an agent pane sees: the in-pane working loop,
   approve-before-destructive pattern, subscribe-vs-poll pattern.

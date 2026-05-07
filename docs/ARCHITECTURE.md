@@ -7,8 +7,8 @@ extension are thin facades over the same core modules.
 - For canonical terms (*workstream*, *agent*, *task DAG*, *track*,
   *claim*, *free*, *workspace*, *substrate*, ...) see
   [VOCABULARY.md](VOCABULARY.md). It is the source of truth.
-- For design rationale and rejected alternatives, see
-  [PLAN.md](PLAN.md).
+- For design rationale, rejected alternatives, and what's on the
+  roadmap, see [ROADMAP.md](ROADMAP.md).
 - For principles, see [VISION.md](VISION.md).
 
 ```
@@ -181,7 +181,8 @@ The claim/identity logic depends on the **pane title**, not the
 window name — every agent pane has its title set to the agent's name
 via `select-pane -T <name>` on spawn, regardless of how panes are
 grouped into windows. (See [VOCABULARY.md](VOCABULARY.md) and
-[PLAN.md §10a](PLAN.md) for the canonical tmux protocol.)
+the comment block at the top of `src/tmux.ts` for the canonical
+tmux protocol.)
 
 ### Why one session per workstream
 
@@ -224,9 +225,9 @@ No operation may exist outside the registry. CLI verbs that are not
 operations (e.g., `mu workstream init`, `mu agent attach`, `mu doctor`) are exceptions
 listed explicitly in the CLI module and motivated.
 
-See [PLAN.md §5](PLAN.md) for the `OperationDef` shape and the
-capability tag set (`READ`, `WRITE`, `AGENT_LIFECYCLE`, `VCS`,
-`DESTRUCTIVE`, `EXTERNAL`).
+(A capability-tag system on operations was considered and dropped
+as an abstraction with no current consumer; see
+[ROADMAP.md § Open questions](ROADMAP.md#open-questions).)
 
 ---
 
@@ -246,7 +247,8 @@ returning. Three steps, in order:
    `mu agent list` shows orphans under a separate "(orphans)" section and
    the user runs `mu adopt %15 [--name X]` to formally claim them.
 
-Full algorithm and rationale: [PLAN.md §10b](PLAN.md).
+Full algorithm lives in `src/reconcile.ts` (the canonical
+implementation).
 
 Key properties:
 
@@ -373,5 +375,6 @@ Single npm package `@you/mu`:
 `tsup` bundles everything from `src/`. No runtime build step on the
 user's machine; `npm install` just unpacks.
 
-See [PLAN.md §2](PLAN.md) for the full dependency list and the rules
-for adding new ones.
+The dependency list lives in `package.json`; the rule for adding
+new ones is the anti-feature pledge in
+[ROADMAP.md § Anti-feature pledges](ROADMAP.md#anti-feature-pledges-still-in-force-reinforced-by-an-internal-critique).

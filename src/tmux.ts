@@ -4,8 +4,8 @@
 // goes through `tmux(args)`, which wraps execa and produces structured
 // `TmuxError`s carrying args + stderr.
 //
-// The send protocol is the bracketed-paste sequence canonicalised in
-// PLAN.md §10a:
+// The send protocol is the bracketed-paste sequence (canonical
+// implementation lives in `sendToPane` below):
 //   1. copy-mode -q   (silent if not in copy mode)
 //   2. set-buffer     (load text into a uniquely named buffer)
 //   3. paste-buffer -p -d -r   (bracketed paste, delete buffer, preserve LF)
@@ -475,7 +475,7 @@ export interface SendOptions {
 /**
  * Send a single line of text to a pane and submit it.
  *
- * Sequence (PLAN.md §10a):
+ * Sequence:
  *   1. exit copy mode (silent if not in copy mode)
  *   2. load text into a uniquely-named tmux buffer
  *   3. paste with bracketed-paste mode (-p) so apps treat as literal text;

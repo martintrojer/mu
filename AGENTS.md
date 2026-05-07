@@ -26,8 +26,10 @@ write code. Follow the conventions below.
 6. **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** — module layout,
    reconciliation algorithm, key seams.
 
-For deep design rationale on unbuilt features (DSL, VCS workspaces,
-snapshots, agent_logs, ...): **[docs/PLAN.md](docs/PLAN.md)**.
+Design rationale for rejected and unbuilt features (DSL, snapshots,
+task_artifacts, ...) is now folded into
+[docs/ROADMAP.md](docs/ROADMAP.md) per item, alongside its
+promotion criteria.
 
 ---
 
@@ -43,8 +45,7 @@ mu/
 │   ├── ROADMAP.md         # what's next; promotion criteria
 │   ├── VISION.md
 │   ├── VOCABULARY.md
-│   ├── ARCHITECTURE.md
-│   └── PLAN.md            # design rationale for unbuilt and rejected features
+│   └── ARCHITECTURE.md
 ├── src/                   # all source (12 files, flat — no subdirs)
 │   ├── db.ts              # SQLite schema + openDb
 │   ├── tmux.ts            # tmux wrapper, send protocol, pane validation
