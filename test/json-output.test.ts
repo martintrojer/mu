@@ -426,3 +426,123 @@ describe("--json output on read verbs", () => {
     }
   });
 });
+
+// ─── Table-rendering ergonomics (non-JSON output path) ──────────
+
+describe("table rendering", () => {
+  let tempDir: string;
+  let dbPath: string;
+  let db: Db;
+
+  beforeEach(() => {
+    tempDir = mkdtempSync(join(tmpdir(), "mu-tbl-"));
+    dbPath = join(tempDir, "mu.db");
+    db = openDb({ path: dbPath });
+    ensureWorkstream(db, "auth");
+    addTask(db, { localId: "a", workstream: "auth", title: "A", impact: 80, effortDays: 2 });
+    addTask(db, { localId: "b", workstream: "auth", title: "B", impact: 50, effortDays: 1 });
+    addTask(db, { localId: "c", workstream: "auth", title: "C", impact: 50, effortDays: 1 });
+  });
+
+  afterEach(() => {
+    db.close();
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  function withTerminalWidth<T>(cols: number, fn: () => Promise<T> | T): Promise<T> | T {
+    const original = process.stdout.columns;
+    Object.defineProperty(process.stdout, "columns", { value: cols, configurable: true });
+    try {
+      return fn();
+    } finally {
+      Object.defineProperty(process.stdout, "columns", { value: original, configurable: true });
+    }
+  }
+
+  it("truncates the title column to fit the terminal but never the id column", async () => {
+    // Make 'a' have a very long title so we can observe truncation.
+    const db2 = openDb({ path: dbPath });
+    db2
+      .prepare("UPDATE tasks SET title = ? WHERE local_id = 'a'")
+      .run(
+        "Some absurdly long title that will definitely exceed the title-column budget for an 80-column terminal and would otherwise blow the whole table out to two-hundred-plus characters wide",
+      );
+    db2.close();
+
+    const { stdout } = await withTerminalWidth(80, () =>
+      runCli(["task", "list", "-w", "auth"], dbPath),
+    );
+
+    // Per-line guard: every rendered line ≤ a generous bound around the
+    // 80-col target. cli-table3 plus borders pushes a bit, hence the
+    // looseness; the point is the previous behaviour produced 200+
+    // columns which this assertion catches.
+    const lines = stdout.split("\n");
+    for (const line of lines) {
+      // strip ANSI for length measurement
+      // biome-ignore lint/suspicious/noControlCharactersInRegex: stripping ANSI escapes
+      const visible = line.replace(/\u001b\[[0-9;]*m/g, "");
+      expect(visible.length).toBeLessThanOrEqual(120);
+    }
+    // The full id 'a' must appear verbatim in the output (never
+    // truncated), because users copy IDs to issue follow-up commands.
+    // Match it framed by the table cell (whitespace either side) so we
+    // don't accidentally hit a substring of 'auth' or similar.
+    expect(stdout).toMatch(/[\s│] a [\s│]/);
+    // The title must show evidence of truncation (ellipsis).
+    expect(stdout).toMatch(/Some absurdly long title.*…/);
+  });
+
+  it("renders all task ids in full even when titles are tiny (id column is the contract)", async () => {
+    const { stdout } = await withTerminalWidth(80, () =>
+      runCli(["task", "list", "-w", "auth"], dbPath),
+    );
+    expect(stdout).toContain("a");
+    expect(stdout).toContain("b");
+    expect(stdout).toContain("c");
+  });
+});
+
+// ─── mu task list --status filter (CLI integration) ─────────────
+
+describe("task list --status", () => {
+  let tempDir: string;
+  let dbPath: string;
+  let db: Db;
+
+  beforeEach(() => {
+    tempDir = mkdtempSync(join(tmpdir(), "mu-status-"));
+    dbPath = join(tempDir, "mu.db");
+    db = openDb({ path: dbPath });
+    ensureWorkstream(db, "auth");
+    addTask(db, { localId: "a", workstream: "auth", title: "A", impact: 80, effortDays: 2 });
+    addTask(db, { localId: "b", workstream: "auth", title: "B", impact: 50, effortDays: 1 });
+    addTask(db, { localId: "c", workstream: "auth", title: "C", impact: 50, effortDays: 1 });
+  });
+
+  afterEach(() => {
+    db.close();
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it("filters to OPEN tasks (case-insensitive, lowercase form works)", async () => {
+    // Mark 'a' as CLOSED and 'b' as IN_PROGRESS so all three statuses
+    // are represented.
+    const db2 = openDb({ path: dbPath });
+    db2.prepare("UPDATE tasks SET status='CLOSED' WHERE local_id='a'").run();
+    db2.prepare("UPDATE tasks SET status='IN_PROGRESS' WHERE local_id='b'").run();
+    db2.close();
+
+    const { stdout } = await runCli(
+      ["task", "list", "-w", "auth", "--status", "open", "--json"],
+      dbPath,
+    );
+    const parsed = JSON.parse(stdout.trim()) as Array<{ localId: string }>;
+    expect(parsed.map((t) => t.localId)).toEqual(["c"]);
+  });
+
+  it("rejects an invalid --status value with exit 2", async () => {
+    const { stderr } = await runCli(["task", "list", "-w", "auth", "--status", "RESOLVED"], dbPath);
+    expect(stderr).toMatch(/--status must be one of/);
+  });
+});

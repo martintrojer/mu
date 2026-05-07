@@ -10,7 +10,34 @@ called out under "Breaking" in each entry.
 
 ## [Unreleased]
 
+### Added
+
+- **`mu task list --status <S>` filter.** Accepts case-insensitive
+  `OPEN | IN_PROGRESS | CLOSED`. Invalid values exit 2 with a usage
+  error. SDK gains a `ListTasksOptions` interface and an
+  `isTaskStatus` type guard, both exported from `src/index.ts`.
+  `listTasks` now takes an optional third argument; existing
+  two-argument calls are unaffected.
+
 ### Fixed
+
+- **Workstream names with the `mu-` prefix are now rejected at
+  init time.** `mu workstream init mu-foo` would have produced
+  tmux session `mu-mu-foo` (because mu auto-prepends `mu-` to
+  derive the session name). Almost never intended; same
+  validation seam as the dot-mangle fix —
+  `WorkstreamNameInvalidError`, exit 2, message names the
+  resulting double-prefixed session so the gotcha is obvious.
+
+- **Long task titles no longer blow out the terminal.** The
+  `mu task list / next / ready / blocked / goals / owned-by`
+  table views and the bare `mu` mission-control "Ready" table
+  now compute a title-column budget from `process.stdout.columns`
+  (default 100 when stdout isn't a TTY) and truncate titles with
+  an ellipsis. **The `id` column is never truncated** — IDs are
+  what callers copy to issue follow-up commands; titles are what
+  callers visually scan. Symmetric with `git log --oneline`'s
+  preserve-SHA / truncate-subject convention.
 
 - **Task JSON output now includes `roi`** (impact ÷ effortDays).
   Previously `mu task next --json | jq 'sort_by(.roi)'` returned

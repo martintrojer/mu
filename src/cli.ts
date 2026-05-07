@@ -75,6 +75,7 @@ import {
   getTask,
   getTaskEdges,
   idFromTitle,
+  isTaskStatus,
   listBlocked,
   listGoals,
   listNotes,
@@ -250,6 +251,29 @@ function formatAgentsTable(agents: readonly AgentRow[]): string {
 
 function formatReadyTable(tasks: readonly TaskRow[]): string {
   if (tasks.length === 0) return pc.dim("  (no ready tasks)");
+  // Sort by ROI descending.
+  const sorted = [...tasks].sort((a, b) => b.impact / b.effortDays - a.impact / a.effortDays);
+  // Same title-truncation treatment as formatTaskListTable so the
+  // mission-control table doesn't blow out terminal width.
+  let idW = "id".length;
+  let impactW = "impact".length;
+  let effortW = "effort".length;
+  let roiW = "ROI".length;
+  let ownerW = "owner".length;
+  for (const t of sorted) {
+    idW = Math.max(idW, t.localId.length);
+    impactW = Math.max(impactW, String(t.impact).length);
+    effortW = Math.max(effortW, String(t.effortDays).length);
+    const roi = (t.impact / t.effortDays).toFixed(1);
+    roiW = Math.max(roiW, roi.length);
+    ownerW = Math.max(ownerW, (t.owner ?? "").length);
+  }
+  const padding = 6 * 3 + 1; // 6 cols
+  const titleBudget = Math.max(
+    20,
+    terminalWidth() - (idW + impactW + effortW + roiW + ownerW) - padding,
+  );
+
   const table = new Table({
     head: [
       pc.bold("id"),
@@ -261,11 +285,16 @@ function formatReadyTable(tasks: readonly TaskRow[]): string {
     ],
     style: { head: [] },
   });
-  // Sort by ROI descending.
-  const sorted = [...tasks].sort((a, b) => b.impact / b.effortDays - a.impact / a.effortDays);
   for (const t of sorted) {
     const roi = (t.impact / t.effortDays).toFixed(1);
-    table.push([t.localId, t.title, String(t.impact), String(t.effortDays), roi, t.owner ?? ""]);
+    table.push([
+      t.localId,
+      truncate(t.title, titleBudget),
+      String(t.impact),
+      String(t.effortDays),
+      roi,
+      t.owner ?? "",
+    ]);
   }
   return table.toString();
 }
@@ -775,9 +804,22 @@ async function cmdTaskAdd(
   if (blocks) console.log(pc.dim(`  blocked by: ${blocks.join(", ")}`));
 }
 
-async function cmdTaskList(db: Db, opts: { workstream?: string; json?: boolean }): Promise<void> {
+async function cmdTaskList(
+  db: Db,
+  opts: { workstream?: string; json?: boolean; status?: string },
+): Promise<void> {
   const workstream = await resolveWorkstream(opts.workstream);
-  const tasks = listTasks(db, workstream);
+  const listOpts: Parameters<typeof listTasks>[2] = {};
+  if (opts.status !== undefined) {
+    const wanted = opts.status.toUpperCase();
+    if (!isTaskStatus(wanted)) {
+      throw new UsageError(
+        `--status must be one of OPEN | IN_PROGRESS | CLOSED (got '${opts.status}')`,
+      );
+    }
+    listOpts.status = wanted;
+  }
+  const tasks = listTasks(db, workstream, listOpts);
   if (opts.json) {
     emitJson(withRoiAll(tasks));
     return;
@@ -925,6 +967,28 @@ async function cmdTaskSearch(
   console.log(formatTaskListTable(tasks, { withWorkstream: opts.all === true }));
 }
 
+/**
+ * Default fallback when stdout isn't a TTY (e.g. output is piped to
+ * less/jq) and `process.stdout.columns` is undefined. 100 fits an 80-col
+ * terminal with some breathing room; 100 is wide enough to keep most
+ * rows on one line.
+ */
+const DEFAULT_TERMINAL_WIDTH = 100;
+
+/** Truncate `s` to fit `max` columns (counting display width as length;
+ *  good enough for ASCII titles, undercount for emoji/CJK — acceptable
+ *  trade-off given the terminal will visually clip anyway). Adds an
+ *  ellipsis when truncated. */
+function truncate(s: string, max: number): string {
+  if (max <= 1) return s.slice(0, max);
+  if (s.length <= max) return s;
+  return `${s.slice(0, max - 1)}…`;
+}
+
+function terminalWidth(): number {
+  return process.stdout.columns ?? DEFAULT_TERMINAL_WIDTH;
+}
+
 function formatTaskListTable(
   tasks: readonly TaskRow[],
   opts: { withWorkstream?: boolean } = {},
@@ -933,18 +997,47 @@ function formatTaskListTable(
   const head = opts.withWorkstream
     ? ["id", "workstream", "status", "title", "impact", "effort", "ROI", "owner"]
     : ["id", "status", "title", "impact", "effort", "ROI", "owner"];
+
+  // Compute a budget for the title column so the table fits the terminal.
+  // Other columns are mostly short fixed-shape values; figure out how
+  // wide they actually are, sum them up, and give title the leftover.
+  const otherCols = opts.withWorkstream
+    ? (["localId", "workstream", "status", "impact", "effortDays", "roi", "owner"] as const)
+    : (["localId", "status", "impact", "effortDays", "roi", "owner"] as const);
+  const widths = new Map<string, number>();
+  for (const col of otherCols) widths.set(col, col.length); // header is the floor
+  for (const t of tasks) {
+    widths.set("localId", Math.max(widths.get("localId") ?? 0, t.localId.length));
+    if (opts.withWorkstream) {
+      widths.set("workstream", Math.max(widths.get("workstream") ?? 0, t.workstream.length));
+    }
+    widths.set("status", Math.max(widths.get("status") ?? 0, t.status.length));
+    widths.set("impact", Math.max(widths.get("impact") ?? 0, String(t.impact).length));
+    widths.set("effortDays", Math.max(widths.get("effortDays") ?? 0, String(t.effortDays).length));
+    const roi = t.effortDays > 0 ? (t.impact / t.effortDays).toFixed(1) : "∞";
+    widths.set("roi", Math.max(widths.get("roi") ?? 0, roi.length));
+    widths.set("owner", Math.max(widths.get("owner") ?? 0, (t.owner ?? "—").length));
+  }
+  // cli-table3 adds 2 chars of padding per cell + 1 char border per
+  // column. Account for that to find the title budget.
+  const numCols = head.length;
+  const otherTotal = otherCols.reduce((acc, c) => acc + (widths.get(c) ?? 0), 0);
+  const padding = numCols * 3 + 1;
+  const titleBudget = Math.max(20, terminalWidth() - otherTotal - padding);
+
   const table = new Table({
     head: head.map((h) => pc.bold(h)),
     style: { head: [], border: [] },
   });
   for (const t of tasks) {
     const roi = t.effortDays > 0 ? (t.impact / t.effortDays).toFixed(1) : "∞";
+    const title = truncate(t.title, titleBudget);
     const row = opts.withWorkstream
       ? [
           t.localId,
           t.workstream,
           colorStatus(t.status),
-          t.title,
+          title,
           String(t.impact),
           String(t.effortDays),
           roi,
@@ -953,7 +1046,7 @@ function formatTaskListTable(
       : [
           t.localId,
           colorStatus(t.status),
-          t.title,
+          title,
           String(t.impact),
           String(t.effortDays),
           roi,
@@ -2514,9 +2607,17 @@ export function buildProgram(): Command {
     .command("list")
     .description("List every task in the current workstream (id, status, ROI, owner)")
     .option(...WORKSTREAM_OPT)
+    .option(
+      "--status <status>",
+      "filter by lifecycle status (OPEN | IN_PROGRESS | CLOSED; case-insensitive)",
+    )
     .option(...JSON_OPT)
     .action(function () {
-      const opts = (this as Command).opts() as { workstream?: string; json?: boolean };
+      const opts = (this as Command).opts() as {
+        workstream?: string;
+        json?: boolean;
+        status?: string;
+      };
       return handle((db) => cmdTaskList(db, opts))();
     });
 

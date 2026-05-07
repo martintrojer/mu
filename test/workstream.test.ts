@@ -434,6 +434,30 @@ describe("isValidWorkstreamName", () => {
       expect(isValidWorkstreamName(bad)).toBe(false);
     }
   });
+
+  it("rejects names starting with the reserved 'mu-' prefix (would double-prefix tmux session)", () => {
+    // mu auto-prepends 'mu-' to derive the tmux session name. A workstream
+    // named 'mu-foo' would create session 'mu-mu-foo' — almost never
+    // intended. Fail loud rather than silently double-prefix.
+    for (const bad of ["mu-", "mu-foo", "mu-auth-refactor"]) {
+      expect(isValidWorkstreamName(bad)).toBe(false);
+    }
+    // 'mufoo' (no hyphen after 'mu') is fine — only the literal 'mu-'
+    // prefix is reserved.
+    expect(isValidWorkstreamName("mufoo")).toBe(true);
+  });
+
+  it("the mu- error message explains the double-prefix gotcha specifically", () => {
+    let caught: WorkstreamNameInvalidError | undefined;
+    try {
+      ensureWorkstream(db, "mu-auth");
+    } catch (err) {
+      if (err instanceof WorkstreamNameInvalidError) caught = err;
+    }
+    expect(caught).toBeDefined();
+    expect(caught?.message).toMatch(/mu-mu-auth/);
+    expect(caught?.message).toMatch(/double-prefixed/);
+  });
 });
 
 describe("ensureWorkstream — name validation", () => {

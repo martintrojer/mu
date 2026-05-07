@@ -17,6 +17,12 @@ import { ensureWorkstream } from "./workstream.js";
 
 export type TaskStatus = "OPEN" | "IN_PROGRESS" | "CLOSED";
 
+const TASK_STATUSES: readonly TaskStatus[] = ["OPEN", "IN_PROGRESS", "CLOSED"];
+
+export function isTaskStatus(s: string): s is TaskStatus {
+  return (TASK_STATUSES as readonly string[]).includes(s);
+}
+
 export interface TaskRow {
   localId: string;
   workstream: string;
@@ -226,13 +232,34 @@ export function getTask(db: Db, localId: string): TaskRow | undefined {
  * and by tests; CLI surfaces always pass a workstream so users only see
  * their own.
  */
-export function listTasks(db: Db, workstream?: string): TaskRow[] {
-  const rows =
-    workstream === undefined
-      ? (db.prepare("SELECT * FROM tasks ORDER BY local_id").all() as RawTaskRow[])
-      : (db
-          .prepare("SELECT * FROM tasks WHERE workstream = ? ORDER BY local_id")
-          .all(workstream) as RawTaskRow[]);
+export interface ListTasksOptions {
+  /** Filter to one or more lifecycle statuses. Omitted = all statuses. */
+  status?: TaskStatus | readonly TaskStatus[];
+}
+
+export function listTasks(db: Db, workstream?: string, opts: ListTasksOptions = {}): TaskRow[] {
+  const statuses =
+    opts.status === undefined
+      ? undefined
+      : Array.isArray(opts.status)
+        ? (opts.status as TaskStatus[])
+        : [opts.status as TaskStatus];
+
+  const where: string[] = [];
+  const params: unknown[] = [];
+  if (workstream !== undefined) {
+    where.push("workstream = ?");
+    params.push(workstream);
+  }
+  if (statuses !== undefined) {
+    where.push(`status IN (${statuses.map(() => "?").join(", ")})`);
+    params.push(...statuses);
+  }
+  const sql =
+    where.length === 0
+      ? "SELECT * FROM tasks ORDER BY local_id"
+      : `SELECT * FROM tasks WHERE ${where.join(" AND ")} ORDER BY local_id`;
+  const rows = db.prepare(sql).all(...params) as RawTaskRow[];
   return rows.map(rowFromDb);
 }
 

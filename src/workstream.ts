@@ -32,18 +32,28 @@ import { killSession, listSessions, sessionExists } from "./tmux.js";
  */
 const WORKSTREAM_NAME_RE = /^[a-z][a-z0-9_-]{0,31}$/;
 
+/** Reserved prefix — mu auto-prepends `mu-` to derive the tmux session
+ *  name (so workstream `auth` lives in tmux session `mu-auth`). A
+ *  workstream named `mu-auth` would produce session `mu-mu-auth`,
+ *  which the user almost certainly didn't intend. Fail loud rather
+ *  than silently double-prefix. */
+const RESERVED_WORKSTREAM_PREFIX = "mu-";
+
 export function isValidWorkstreamName(name: string): boolean {
-  return WORKSTREAM_NAME_RE.test(name);
+  if (!WORKSTREAM_NAME_RE.test(name)) return false;
+  if (name.startsWith(RESERVED_WORKSTREAM_PREFIX)) return false;
+  return true;
 }
 
 /** Thrown by `ensureWorkstream` and `mu workstream init` when the name
- *  doesn't match `WORKSTREAM_NAME_RE`. */
+ *  doesn't match the rules. */
 export class WorkstreamNameInvalidError extends Error {
   override readonly name = "WorkstreamNameInvalidError";
   constructor(public readonly attempted: string) {
-    super(
-      `invalid workstream name ${JSON.stringify(attempted)}: must match /^[a-z][a-z0-9_-]{0,31}$/. tmux silently rewrites '.' to '_' and reserves ':' as a target separator, so workstream names containing those characters would create tmux sessions mu couldn't look up afterwards. Use letters, digits, '_', and '-' only.`,
-    );
+    const reason = attempted.startsWith(RESERVED_WORKSTREAM_PREFIX)
+      ? `the 'mu-' prefix is reserved (mu auto-prepends 'mu-' to derive the tmux session name; '${attempted}' would produce session 'mu-${attempted}', which is double-prefixed and almost never what you want). Drop the 'mu-' from the workstream name.`
+      : `must match /^[a-z][a-z0-9_-]{0,31}$/. tmux silently rewrites '.' to '_' and reserves ':' as a target separator, so workstream names containing those characters would create tmux sessions mu couldn't look up afterwards. Use letters, digits, '_', and '-' only.`;
+    super(`invalid workstream name ${JSON.stringify(attempted)}: ${reason}`);
   }
 }
 

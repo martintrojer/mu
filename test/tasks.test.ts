@@ -23,6 +23,7 @@ import {
   getTask,
   getTaskEdges,
   idFromTitle,
+  isTaskStatus,
   isValidTaskId,
   listBlocked,
   listGoals,
@@ -1349,5 +1350,80 @@ describe("evidence on lifecycle verbs", () => {
     const p = lastEventPayload();
     // JSON.stringify preserves the inner quotes and backslash via escaping
     expect(p).toContain('evidence="has \\"quotes\\" and a \\\\backslash"');
+  });
+});
+
+// ─── listTasks --status filter ─────────────────────────────────
+
+describe("listTasks --status filter", () => {
+  beforeEach(() => {
+    addTask(db, { localId: "open1", workstream: "auth", title: "x", impact: 50, effortDays: 1 });
+    addTask(db, { localId: "open2", workstream: "auth", title: "y", impact: 50, effortDays: 1 });
+    addTask(db, { localId: "ip1", workstream: "auth", title: "z", impact: 50, effortDays: 1 });
+    addTask(db, { localId: "done1", workstream: "auth", title: "w", impact: 50, effortDays: 1 });
+    db.prepare("UPDATE tasks SET status='IN_PROGRESS' WHERE local_id='ip1'").run();
+    db.prepare("UPDATE tasks SET status='CLOSED' WHERE local_id='done1'").run();
+  });
+
+  it("returns all tasks when status omitted (existing behaviour)", () => {
+    expect(
+      listTasks(db, "auth")
+        .map((t) => t.localId)
+        .sort(),
+    ).toEqual(["done1", "ip1", "open1", "open2"]);
+  });
+
+  it("filters to a single status (string form)", () => {
+    expect(
+      listTasks(db, "auth", { status: "OPEN" })
+        .map((t) => t.localId)
+        .sort(),
+    ).toEqual(["open1", "open2"]);
+    expect(listTasks(db, "auth", { status: "IN_PROGRESS" }).map((t) => t.localId)).toEqual(["ip1"]);
+    expect(listTasks(db, "auth", { status: "CLOSED" }).map((t) => t.localId)).toEqual(["done1"]);
+  });
+
+  it("filters to multiple statuses (array form)", () => {
+    expect(
+      listTasks(db, "auth", { status: ["OPEN", "IN_PROGRESS"] })
+        .map((t) => t.localId)
+        .sort(),
+    ).toEqual(["ip1", "open1", "open2"]);
+  });
+
+  it("respects workstream + status combined", () => {
+    addTask(db, {
+      localId: "other_open",
+      workstream: "other",
+      title: "x",
+      impact: 50,
+      effortDays: 1,
+    });
+    expect(
+      listTasks(db, "auth", { status: "OPEN" })
+        .map((t) => t.localId)
+        .sort(),
+    ).toEqual(["open1", "open2"]);
+    // Other workstream's OPEN task isn't included when filtered to 'auth'.
+    expect(
+      listTasks(db, undefined, { status: "OPEN" })
+        .map((t) => t.localId)
+        .sort(),
+    ).toEqual(["open1", "open2", "other_open"]);
+  });
+});
+
+describe("isTaskStatus", () => {
+  it("recognises the three valid statuses", () => {
+    expect(isTaskStatus("OPEN")).toBe(true);
+    expect(isTaskStatus("IN_PROGRESS")).toBe(true);
+    expect(isTaskStatus("CLOSED")).toBe(true);
+  });
+
+  it("rejects garbage and case variants (callers should upper-case first)", () => {
+    expect(isTaskStatus("open")).toBe(false);
+    expect(isTaskStatus("RESOLVED")).toBe(false); // not in the enum
+    expect(isTaskStatus("")).toBe(false);
+    expect(isTaskStatus("OPEN ")).toBe(false);
   });
 });
