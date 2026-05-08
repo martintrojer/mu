@@ -387,6 +387,54 @@ export class AgentDiedOnSpawnError extends Error implements HasNextSteps {
 }
 
 /**
+ * Thrown when `closeAgent` is called on an agent that has an associated
+ * workspace AND the caller didn't explicitly opt into discarding it.
+ *
+ * Background: the FK on `vcs_workspaces.agent` cascades on agent
+ * delete, so a naive `closeAgent` drops the workspace registry row
+ * but leaves the on-disk dir orphaned (mu can't see it via
+ * `mu workspace list / free / path` afterwards). Surfaced during
+ * the multi-agent dogfood teardown when three workspaces went
+ * orphaned silently.
+ *
+ * The fix: refuse close if a workspace exists; force the caller to
+ * decide. Two actionable resolutions:
+ *   - `mu workspace free <agent>` first, then close cleanly.
+ *   - `mu agent close <agent> --discard-workspace` to free the
+ *     workspace AND close the agent in one shot (lossy: pending
+ *     changes in the workspace are gone).
+ *
+ * Maps to exit code 4 (conflict) via the cli.ts handler.
+ */
+export class WorkspacePreservedError extends Error implements HasNextSteps {
+  override readonly name = "WorkspacePreservedError";
+  constructor(
+    public readonly agentName: string,
+    public readonly workspacePath: string,
+  ) {
+    super(
+      `agent ${agentName} has a workspace at ${workspacePath}; refusing to close (would orphan the on-disk dir)`,
+    );
+  }
+  errorNextSteps(): NextStep[] {
+    return [
+      {
+        intent: "Free the workspace first (preserves agent for next step)",
+        command: `mu workspace free ${this.agentName}  (--commit to commit pending changes first)`,
+      },
+      {
+        intent: "Or close + discard the workspace in one shot (lossy)",
+        command: `mu agent close ${this.agentName} --discard-workspace`,
+      },
+      {
+        intent: "Or just inspect what's in the workspace",
+        command: `cd ${this.workspacePath}`,
+      },
+    ];
+  }
+}
+
+/**
  * Spawn a new agent in its tmux pane and register it in the DB.
  *
  * Order of operations (the "from_control / attach_runtime" split):
@@ -818,12 +866,31 @@ export function freeAgent(db: Db, name: string): FreeAgentResult {
   return { previousStatus: before.status, status: "free", changed: true };
 }
 
+export interface CloseAgentOptions {
+  /**
+   * When true, free the agent's workspace BEFORE deleting the agent
+   * (so we control the order rather than relying on FK cascade, which
+   * leaves the on-disk dir orphaned). Lossy: any pending changes in
+   * the workspace are gone unless the caller frees with `--commit`
+   * separately first.
+   *
+   * When false (default) and a workspace exists, throws
+   * WorkspacePreservedError so the caller has to decide explicitly.
+   * Surfaced as a real bug in the multi-agent dogfood teardown.
+   */
+  discardWorkspace?: boolean;
+}
+
 export interface CloseAgentResult {
   killedPane: boolean;
   deletedRow: boolean;
-  /** True iff the agent had an associated workspace row (the on-disk
-   *  dir was NOT freed by closeAgent). The caller should tell the
-   *  user where it is and how to free it. */
+  /** True iff the agent had an associated workspace AND the caller
+   *  passed `discardWorkspace: true` so we proactively freed it.
+   *  False on the no-workspace path (nothing to free) and on the
+   *  refused path (we threw before doing anything). */
+  workspaceFreed: boolean;
+  /** Backwards-compat alias of `!workspaceFreed && hadWorkspace`. Kept
+   *  for callers (and tests) that branched on the old signal. */
   workspaceKept: boolean;
 }
 
@@ -832,34 +899,58 @@ export interface CloseAgentResult {
  *   - if the agent doesn't exist in the DB, returns a no-op result
  *   - if the tmux pane is already gone, killPane swallows the error
  *
- * **Does not touch the workspace.** Closing an agent and freeing its
- * workspace are separate concerns: agent lifecycle vs disk artifacts.
- * To free the workspace dir, run `mu workspace free <agent>` (or call
- * `freeWorkspace` from the SDK). This separation prevents accidental
- * loss of uncommitted benchmark output, profile data, scratch logs,
- * etc. that live in the workspace.
+ * Workspace handling: closing an agent and freeing its workspace are
+ * separate concerns (agent lifecycle vs disk artifacts), so by default
+ * `closeAgent` REFUSES if the agent has a workspace — you'd otherwise
+ * orphan the on-disk dir (the FK cascade drops the registry row but
+ * not the directory). Two ways to proceed:
  *
- * The workspace row in `vcs_workspaces` cascades on agent delete, so
- * after `closeAgent` the on-disk dir is orphaned (no DB row points at
- * it). It still works as a checkout; you can free it later by
- * removing the directory directly, or re-creating + freeing via the
- * verb.
+ *   1. `freeWorkspace(db, name)` first, then `closeAgent(db, name)`.
+ *      Preserves the option to `--commit` pending changes.
+ *   2. `closeAgent(db, name, { discardWorkspace: true })`. One-shot;
+ *      lossy.
+ *
+ * The CLI surfaces these as the two actionable nextSteps on the
+ * `WorkspacePreservedError` thrown by the refuse path.
  */
-export async function closeAgent(db: Db, name: string): Promise<CloseAgentResult> {
+export async function closeAgent(
+  db: Db,
+  name: string,
+  opts: CloseAgentOptions = {},
+): Promise<CloseAgentResult> {
   const agent = getAgent(db, name);
   if (!agent) {
-    return { killedPane: false, deletedRow: false, workspaceKept: false };
+    return { killedPane: false, deletedRow: false, workspaceFreed: false, workspaceKept: false };
   }
   const ws = getWorkspaceForAgent(db, name);
+  if (ws !== undefined && opts.discardWorkspace !== true) {
+    throw new WorkspacePreservedError(name, ws.path);
+  }
+  // Free the workspace BEFORE the agent (so the on-disk dir is
+  // removed cleanly, not orphaned by FK cascade). freeWorkspace is
+  // idempotent on missing rows.
+  let workspaceFreed = false;
+  if (ws !== undefined && opts.discardWorkspace === true) {
+    await freeWorkspace(db, name, { commit: false });
+    workspaceFreed = true;
+  }
   await killPane(agent.paneId).catch(() => {
     /* idempotent — pane may already be gone */
   });
   const deletedRow = deleteAgent(db, name);
-  emitEvent(db, agent.workstream, `agent close ${name} (pane=${agent.paneId})`);
+  emitEvent(
+    db,
+    agent.workstream,
+    `agent close ${name} (pane=${agent.paneId}${workspaceFreed ? ", workspace discarded" : ""})`,
+  );
   return {
     killedPane: true,
     deletedRow,
-    workspaceKept: ws !== undefined,
+    workspaceFreed,
+    // Legacy field: true only if there WAS a workspace AND we didn't
+    // free it. With the new refuse-by-default policy this is always
+    // false on the success paths (because we either freed or refused).
+    workspaceKept: false,
   };
 }
 

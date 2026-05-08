@@ -391,39 +391,67 @@ describe("WorkspaceNotFoundError", () => {
 // ─── closeAgent integration with workspace ────────────────────
 
 describe("closeAgent + workspace integration", () => {
-  it("closeAgent leaves the on-disk dir intact (workspace and agent-close are separate concerns)", async () => {
+  it("closeAgent REFUSES (WorkspacePreservedError) when the agent has a workspace and --discard-workspace is not passed", async () => {
     const ws = await createWorkspace(db, {
       agent: "worker-1",
       workstream: "auth",
       projectRoot,
       backend: "none",
     });
-    // Sanity: dir exists.
     expect(() => execFileSync("ls", [ws.path], { stdio: "pipe" })).not.toThrow();
 
-    const { closeAgent } = await import("../src/agents.js");
-    const r = await closeAgent(db, "worker-1");
-    // Result reports workspaceKept=true so the CLI can prompt the user.
-    expect(r.workspaceKept).toBe(true);
-    // Workspace ROW cascades via FK on the agents row — the dir is
-    // now orphaned (no DB pointer) but it still exists on disk and
-    // can be removed manually.
-    expect(getWorkspaceForAgent(db, "worker-1")).toBeUndefined();
+    const { closeAgent, WorkspacePreservedError } = await import("../src/agents.js");
+    await expect(closeAgent(db, "worker-1")).rejects.toBeInstanceOf(WorkspacePreservedError);
+
+    // Refuse path: nothing changed. Agent still in DB, workspace row still
+    // there, dir still on disk.
+    expect(getWorkspaceForAgent(db, "worker-1")).toBeDefined();
     expect(() => execFileSync("ls", [ws.path], { stdio: "pipe" })).not.toThrow();
-    // Cleanup since closeAgent doesn't touch disk anymore.
+    // Cleanup.
     rmSync(ws.path, { recursive: true, force: true });
   });
 
-  it("closeAgent reports workspaceKept=false when the agent had no workspace", async () => {
+  it("closeAgent { discardWorkspace: true } frees workspace AND deletes agent in one shot", async () => {
+    // worker-1 is pre-inserted by the outer beforeEach; create a workspace
+    // for it then close with discard.
+    const ws = await createWorkspace(db, {
+      agent: "worker-1",
+      workstream: "auth",
+      projectRoot,
+      backend: "none",
+    });
+    expect(() => execFileSync("ls", [ws.path], { stdio: "pipe" })).not.toThrow();
+
+    const { closeAgent } = await import("../src/agents.js");
+    const r = await closeAgent(db, "worker-1", { discardWorkspace: true });
+
+    expect(r.killedPane).toBe(true);
+    expect(r.deletedRow).toBe(true);
+    expect(r.workspaceFreed).toBe(true);
+    expect(r.workspaceKept).toBe(false);
+
+    // Workspace gone from DB AND from disk.
+    expect(getWorkspaceForAgent(db, "worker-1")).toBeUndefined();
+    expect(() => execFileSync("ls", [ws.path], { stdio: "pipe" })).toThrow();
+  });
+
+  it("closeAgent succeeds normally when the agent had no workspace", async () => {
     insertAgent(db, { name: "plain-1", workstream: "auth", paneId: "%9", status: "busy" });
     const { closeAgent } = await import("../src/agents.js");
     const r = await closeAgent(db, "plain-1");
+    expect(r.workspaceFreed).toBe(false);
     expect(r.workspaceKept).toBe(false);
+    expect(r.deletedRow).toBe(true);
   });
 
   it("closeAgent without an agent returns false flags", async () => {
     const { closeAgent } = await import("../src/agents.js");
     const r = await closeAgent(db, "ghost");
-    expect(r).toEqual({ killedPane: false, deletedRow: false, workspaceKept: false });
+    expect(r).toEqual({
+      killedPane: false,
+      deletedRow: false,
+      workspaceFreed: false,
+      workspaceKept: false,
+    });
   });
 });

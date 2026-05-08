@@ -50,6 +50,53 @@ called out under "Breaking" in each entry.
 
 ### Added
 
+- **`mu agent close` refuses by default if the agent has a workspace.**
+  Surfaced during the multi-agent dogfood teardown: closing three
+  worker agents silently orphaned their on-disk workspaces (the FK
+  CASCADE drops the `vcs_workspaces` registry row but the directory
+  survives, invisible to every subsequent `mu workspace list / free /
+  path` call).
+
+  New behaviour: if the agent has a workspace, `mu agent close` throws
+  `WorkspacePreservedError` (exit 4 conflict) with three actionable
+  resolutions:
+
+      conflict: agent worker-a has a workspace at /path/to/ws;
+        refusing to close (would orphan the on-disk dir)
+      Next:
+        Free the workspace first (preserves agent for next step) :
+          mu workspace free worker-a  (--commit to commit pending changes first)
+        Or close + discard the workspace in one shot (lossy)     :
+          mu agent close worker-a --discard-workspace
+        Or just inspect what's in the workspace                  :
+          cd /path/to/ws
+
+  The `--discard-workspace` flag (and SDK `closeAgent(db, name,
+  { discardWorkspace: true })`) frees the workspace BEFORE deleting
+  the agent (we control the order; FK cascade no longer leaks the
+  on-disk dir). Lossy: pending changes in the workspace are gone
+  unless the caller frees with `mu workspace free --commit` first.
+
+  Backwards compat: agents WITHOUT a workspace close exactly as
+  before. Existing tests + scripts that closed agents with no
+  workspace are unaffected. The SDK signature gained an optional
+  second arg `opts: CloseAgentOptions` so `closeAgent(db, name)`
+  remains valid.
+
+  `CloseAgentResult` gained a `workspaceFreed: boolean` field; the
+  legacy `workspaceKept` field is preserved (always `false` on the
+  success paths now) so callers branching on it don't break.
+
+  Tests: 4 cases in `test/workspace.test.ts` covering the four
+  outcomes (refuse-default, --discard succeeds + frees, no-workspace
+  agent closes cleanly, no-such-agent returns false flags) plus the
+  generic `errorNextSteps` shape check in `test/error-nextsteps.test.ts`.
+  594 tests total.
+
+  Closes `bug_workspace_orphaned_after_agent_close` in workstream
+  `roadmap-v0-2`. Surfaced as note #122 during the same dogfood
+  that motivated `mu task wait` and `bug_status_detector_pi_solo_misclassifies`.
+
 - **`mu task wait <ids...>` blocks until tasks reach a status.**
   The orchestrator's most common wait pattern, finally first-class.
   Before this verb, multi-task waits were a 30+ line bash+python+sql

@@ -11,6 +11,7 @@ import {
   AgentExistsError,
   AgentNotFoundError,
   AgentNotInWorkstreamError,
+  WorkspacePreservedError,
 } from "../src/agents.js";
 import {
   ApprovalAlreadyDecidedError,
@@ -49,6 +50,7 @@ describe("typed errors all carry actionable errorNextSteps()", () => {
     [new TmuxError(["list-panes"], "no server", "", 1), "TmuxError"],
     [new PaneNotFoundError("%999"), "PaneNotFoundError"],
     [new WorkspaceExistsError("alice"), "WorkspaceExistsError"],
+    [new WorkspacePreservedError("alice", "/path/to/ws"), "WorkspacePreservedError"],
     [new WorkspaceNotFoundError("alice"), "WorkspaceNotFoundError"],
     [new ApprovalNotFoundError("abc12345"), "ApprovalNotFoundError"],
     [new ApprovalAlreadyDecidedError("abc12345", "granted"), "ApprovalAlreadyDecidedError"],

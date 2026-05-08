@@ -30,6 +30,7 @@ import {
   AgentNotInWorkstreamError,
   type AgentRow,
   type AgentStatus,
+  WorkspacePreservedError,
   adoptAgent,
   closeAgent,
   freeAgent,
@@ -187,6 +188,7 @@ function classifyError(err: unknown): { label: string; exitCode: number } {
     err instanceof CycleError ||
     err instanceof CrossWorkstreamEdgeError ||
     err instanceof WorkspaceExistsError ||
+    err instanceof WorkspacePreservedError ||
     err instanceof ApprovalAlreadyDecidedError ||
     err instanceof ClaimerNotRegisteredError
   ) {
@@ -916,15 +918,19 @@ function formatWorkspacesTable(rows: readonly WorkspaceRow[]): string {
 async function cmdClose(
   db: Db,
   name: string,
-  opts: { workstream?: string; json?: boolean } = {},
+  opts: { workstream?: string; json?: boolean; discardWorkspace?: boolean } = {},
 ): Promise<void> {
   assertAgentInWorkstream(db, name, opts.workstream);
-  const result = await closeAgent(db, name);
+  const result = await closeAgent(
+    db,
+    name,
+    opts.discardWorkspace === true ? { discardWorkspace: true } : {},
+  );
   const next: NextStep[] = [];
-  if (result.workspaceKept) {
+  if (result.workspaceFreed) {
     next.push({
-      intent: "Workspace kept on disk; remove with",
-      command: `mu workspace free ${name}  (--commit to commit pending changes first)`,
+      intent: "Workspace was freed alongside the agent (--discard-workspace)",
+      command: "cd /  # the workspace dir is gone",
     });
   }
   next.push({
@@ -940,7 +946,8 @@ async function cmdClose(
     printNextSteps(next);
     return;
   }
-  console.log(`Closed ${pc.bold(name)}`);
+  const wsBit = result.workspaceFreed ? pc.dim(" (workspace discarded)") : "";
+  console.log(`Closed ${pc.bold(name)}${wsBit}`);
   printNextSteps(next);
 }
 
@@ -3426,12 +3433,20 @@ export function buildProgram(): Command {
   agent
     .command("close <name>")
     .description(
-      "Kill an agent's pane and remove its registry row. Does NOT touch the workspace; run `mu workspace free <agent>` separately to remove the on-disk dir.",
+      "Kill an agent's pane and remove its registry row. If the agent has a workspace, refuses by default (would orphan the on-disk dir); pass --discard-workspace to free both, or run `mu workspace free <agent>` first.",
+    )
+    .option(
+      "--discard-workspace",
+      "free the agent's workspace alongside close (lossy: pending changes are gone)",
     )
     .option(...WORKSTREAM_OPT)
     .option(...JSON_OPT)
     .action(function (name: string) {
-      const opts = (this as Command).opts() as { workstream?: string; json?: boolean };
+      const opts = (this as Command).opts() as {
+        workstream?: string;
+        json?: boolean;
+        discardWorkspace?: boolean;
+      };
       return handle((db) => cmdClose(db, name, opts))();
     });
 
