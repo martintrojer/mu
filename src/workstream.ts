@@ -19,6 +19,7 @@ import { join } from "node:path";
 import { type Db, defaultStateDir } from "./db.js";
 import { emitEvent } from "./logs.js";
 import type { HasNextSteps, NextStep } from "./output.js";
+import { captureSnapshot } from "./snapshots.js";
 import { killSession, listSessions, sessionExists } from "./tmux.js";
 import { backendByName } from "./vcs.js";
 import { listWorkspaces } from "./workspace.js";
@@ -229,6 +230,14 @@ function isRegistered(db: Db, workstream: string): boolean {
  */
 export async function destroyWorkstream(db: Db, opts: WorkstreamOptions): Promise<DestroyResult> {
   const tmuxSession = opts.tmuxSession ?? `mu-${opts.workstream}`;
+
+  // Pre-mutation snapshot (snap_design §EDGE CASES > WORKSTREAM
+  // DESTROY). workstream=null because workstream-destroy snapshots
+  // logically span every workstream in the DB (whole-DB backup;
+  // anchoring to one name would lie about scope). If the snapshot
+  // throws (disk full, perms), abort the destroy — better to refuse
+  // than to delete irrecoverably.
+  captureSnapshot(db, `workstream destroy ${opts.workstream}`, null);
 
   // Pre-count the cascade victims so we can report them — SQLite's
   // changes() only reports rows directly affected by the last statement,

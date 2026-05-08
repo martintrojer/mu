@@ -142,6 +142,87 @@ called out under "Breaking" in each entry.
   pi-extension HUD widget tasks (`hud_extension_skeleton`,
   `hud_widget_impl`) — they should be repurposed or rejected next.
 
+- **Snapshots + auto-capture before destructive verbs (schema v4).**
+  Closes `snap_schema` in roadmap-v0-2 (designed in `snap_design`
+  by worker-1, note #293; impl by worker-1 in their
+  ~/.local/state/mu/workspaces/roadmap-v0-2/worker-1 worktree;
+  merged via patch). Lays the substrate for `mu undo` /
+  `mu snapshot list` (snap_undo_verb, next).
+
+  How it works
+  - Each destructive verb (workstream destroy, agent close, task
+    close/reject/defer/release/delete, workspace free, approve
+    grant/deny/timeout) now opens with a `captureSnapshot()`
+    call. The snapshot is a whole-DB SQLite copy via `VACUUM INTO`
+    (synchronous; no async refactor needed; FK-page-level atomic).
+  - Files land in `<dirname(db-path)>/snapshots/<id>.db` (flat;
+    one autoincrement id; colocated with the DB they back so
+    tests sharing `~/.local/state/mu/snapshots/` don't collide).
+  - One sidecar `snapshots` table indexes them: `(id, workstream,
+    label, db_path, schema_version, created_at)`. NO FK on
+    `workstream` — destroying a workstream must NOT cascade-delete
+    its pre-destroy snapshot (the whole point).
+  - Capture-at-the-verb-wrapper, not inside `setTaskStatus`: a
+    `--cascade reject` produces ONE snapshot per user invocation,
+    not N per cascaded child. Reconcile / test plumbing that calls
+    `setTaskStatus` directly stays unsnapshotted.
+  - GC opportunistic in-hook: keep <14 days OR <100 rows,
+    whichever permissive. No daemon, no `--gc` verb.
+  - Schema-version stamp per row enables version-check on restore
+    (`mu undo` will reject cross-version restores; migrations are
+    forward-only).
+
+  Five honest deviations from the design (each documented in
+  task note):
+  1. `VACUUM INTO` instead of `db.backup()` (sync vs async —
+     spares an SDK-wide async refactor; identical on-disk shape).
+  2. `snapshotsDir(db)` colocates snapshots with the live DB (not
+     a single global dir) so per-test isolation works.
+  3. Pre-unlink stale snapshot files before `VACUUM INTO` (handles
+     the abandoned-timeline-after-restore case).
+  4. Re-stamp the pre-restore snapshot row into the post-restore
+     DB (otherwise it vanishes the moment we file-swap, breaking
+     the undo-of-undo invariant from the design).
+  5. Hooks at the verb wrapper, not inside `setTaskStatus` (so
+     `--cascade` produces one snapshot, not N).
+
+  SDK in `src/snapshots.ts` (522 LOC, 288 non-comment):
+  - `captureSnapshot(db, label, workstream?)`
+  - `listSnapshots(db, opts?)`
+  - `restoreSnapshot(db, id)`
+  - `gcSnapshots(db)`
+  - `snapshotsDir(db?)` / `snapshotFileSize(snapshot)`
+  - 3 typed errors (`SnapshotNotFoundError`,
+    `SnapshotVersionMismatchError`, `SnapshotFileMissingError`)
+    all implementing `HasNextSteps`.
+
+  Migration `v3 -> v4`: additive, just one CREATE TABLE +
+  CREATE INDEX. Existing v1 -> v2 -> v3 migration chain still
+  works.
+
+  Tests: 33 new in `test/snapshots.test.ts` (capture round-trip;
+  GC honours both caps; whole-DB integrity; cross-version
+  restore rejected; restore-then-list shows the pre-restore
+  snapshot; cascade behaviour produces one snapshot per verb,
+  not per child). `test/db.test.ts` table-count assertions
+  bumped 8 -> 9. **683 tests pass; gate green.**
+
+  Live verified on the live DB:
+
+  ```
+  $ mu sql 'SELECT version FROM schema_version'
+  4                              # migrated cleanly
+  $ mu task close temp_snap_test -w mufeedback
+  $ ls ~/.local/state/mu/snapshots/
+  1.db
+  $ mu sql 'SELECT id, label, schema_version FROM snapshots'
+  1 | task close temp_snap_test | 4
+  ```
+
+  Closes `snap_schema`. `snap_undo_verb` (mu undo / mu snapshot
+  list) is now ready and the SDK + typed errors it consumes are
+  in place.
+
 - **Pane border + composed pane title carry mu's interpreted state.**
   Closes `hud_visual_cue_design` + `hud_visual_cue_impl` in the
   `roadmap-v0-2` workstream. Two complementary signals shipped

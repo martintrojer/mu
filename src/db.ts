@@ -169,7 +169,7 @@ function applySchema(db: Db): void {
  *  DB gets migrated up to on openDb). Bump this when adding a migration
  *  in src/migrations.ts; also update the CURRENT_SCHEMA block below so
  *  fresh DBs match. */
-export const CURRENT_SCHEMA_VERSION = 3;
+export const CURRENT_SCHEMA_VERSION = 4;
 
 /** Tables a healthy DB must contain. Single source of truth so
  *  `mu doctor` and any other consumer don't drift. Adding a new table
@@ -180,6 +180,7 @@ export const EXPECTED_TABLES: readonly string[] = [
   "agents",
   "approvals",
   "schema_version",
+  "snapshots",
   "task_edges",
   "task_notes",
   "tasks",
@@ -402,6 +403,34 @@ CREATE TABLE IF NOT EXISTS approvals (
 
 CREATE INDEX IF NOT EXISTS idx_approvals_status ON approvals (status);
 CREATE INDEX IF NOT EXISTS idx_approvals_workstream ON approvals (workstream);
+
+-- snapshots: pre-mutation backups of the whole DB.
+--
+-- One row per snapshot. db_path points at a standalone .db file under
+-- <state-dir>/snapshots/<id>.db (flat layout — see snap_design note
+-- #293 for why per-workstream subdirs were rejected). schema_version
+-- captures the source DB's version at write time; restore checks it
+-- against CURRENT_SCHEMA_VERSION to refuse cross-version restores.
+--
+-- workstream is nullable: a workstream-destroy snapshot logically
+-- spans every workstream in the DB (whole-DB backup), so anchoring
+-- it to one name would lie. Per-workstream destructive ops (task
+-- close, agent close, etc.) record their workstream so list/filter
+-- by workstream stays useful.
+--
+-- NO FK on workstream. Destroying a workstream must NOT cascade-delete
+-- its pre-destroy snapshot — that's the whole point.
+CREATE TABLE IF NOT EXISTS snapshots (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  workstream      TEXT,
+  label           TEXT NOT NULL,
+  db_path         TEXT NOT NULL,
+  schema_version  INTEGER NOT NULL,
+  created_at      TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_snapshots_created_at ON snapshots (created_at);
+CREATE INDEX IF NOT EXISTS idx_snapshots_workstream ON snapshots (workstream);
 
 -- ─── Views (always replaced so the latest definition wins) ────────────
 

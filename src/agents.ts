@@ -18,6 +18,7 @@ import type { AgentStatus } from "./detect.js";
 import { emitEvent } from "./logs.js";
 import type { HasNextSteps, NextStep } from "./output.js";
 import { type ReconcileReport, reconcile } from "./reconcile.js";
+import { captureSnapshot } from "./snapshots.js";
 import { addNote, listTasksByOwner } from "./tasks.js";
 import {
   type CaptureOptions,
@@ -1023,6 +1024,11 @@ export async function closeAgent(
   if (ws !== undefined && opts.discardWorkspace !== true) {
     throw new WorkspacePreservedError(name, ws.path);
   }
+  // Pre-mutation snapshot (snap_design §CAPTURE STRATEGY > WHEN).
+  // Captures the agent row + the FK SET NULL ripple onto tasks.owner +
+  // (when --discard-workspace) the vcs_workspaces row. Workstream is
+  // recorded so this snapshot is filterable in `mu snapshot list`.
+  captureSnapshot(db, `agent close ${name}`, agent.workstream);
   // Free the workspace BEFORE the agent (so the on-disk dir is
   // removed cleanly, not orphaned by FK cascade). freeWorkspace is
   // idempotent on missing rows.

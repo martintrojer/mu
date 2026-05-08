@@ -29,7 +29,7 @@ describe("openDb", () => {
     // No throw = parent dirs created.
   });
 
-  it("applies the eight expected tables", () => {
+  it("applies the nine expected tables", () => {
     const db = openDb({ path: dbPath });
     const tables = (
       db
@@ -43,6 +43,7 @@ describe("openDb", () => {
       "agents",
       "approvals",
       "schema_version",
+      "snapshots",
       "task_edges",
       "task_notes",
       "tasks",
@@ -93,6 +94,7 @@ describe("openDb", () => {
       "agents",
       "approvals",
       "schema_version",
+      "snapshots",
       "task_edges",
       "task_notes",
       "tasks",

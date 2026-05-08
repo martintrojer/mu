@@ -21,6 +21,7 @@ import type { Db } from "./db.js";
 import { defaultStateDir } from "./db.js";
 import { emitEvent } from "./logs.js";
 import type { HasNextSteps, NextStep } from "./output.js";
+import { captureSnapshot } from "./snapshots.js";
 import { type VcsBackendName, backendByName, detectBackend } from "./vcs.js";
 
 export interface WorkspaceRow {
@@ -256,6 +257,11 @@ export async function freeWorkspace(
 ): Promise<FreeWorkspaceResult> {
   const row = getWorkspaceForAgent(db, agent);
   if (!row) return { removed: false, rowDeleted: false };
+
+  // Pre-mutation snapshot — the row deletion + on-disk teardown is
+  // not recoverable from history. Snapshot is DB-only (the worktree
+  // is not rolled back; that's the design's tmux/disk honesty point).
+  captureSnapshot(db, `workspace free ${agent}`, row.workstream);
 
   const backend = backendByName(row.backend);
   const result = await backend.freeWorkspace({

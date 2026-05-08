@@ -32,6 +32,10 @@ const MIGRATIONS: ReadonlyMap<number, Migration> = new Map([
   // recreate the `goals` view so it excludes them from the
   // 'still-being-worked-toward' filter.
   [3, migrateV2ToV3],
+  // v3 -> v4: add the snapshots table for the snapshots-and-undo
+  // feature (snap_schema). Pure additive: one CREATE TABLE plus two
+  // CREATE INDEX, no row touching, no FK rebuild.
+  [4, migrateV3ToV4],
 ]);
 
 /**
@@ -394,6 +398,38 @@ function rebuildTable(db: Db, name: string, createNewSql: string, indexSqls: str
  * filters more aggressively — since v2 had no REJECTED/DEFERRED rows,
  * goal counts on a freshly-migrated DB are identical.
  */
+// ─── v3 → v4 ──────────────────────────────────────────────
+
+/**
+ * v3 -> v4: add the `snapshots` table.
+ *
+ * Pure additive migration — no existing rows touched, no FK rebuild.
+ * The table body MUST stay in lock-step with CURRENT_SCHEMA in
+ * src/db.ts. See snap_design note #293 for why workstream is
+ * nullable and why there's deliberately NO FK on it.
+ */
+function migrateV3ToV4(db: Db): void {
+  // IF NOT EXISTS on every statement: applySchema runs BEFORE
+  // runMigrations and CREATEs the v4 snapshots table from
+  // CURRENT_SCHEMA via its own IF NOT EXISTS clauses. So by the time
+  // this migration body fires, the table is already there. The
+  // migration is still defined explicitly so the v3->v4 step in
+  // MIGRATIONS isn't a missing-version error — and so a future hand-
+  // crafted v3 DB without the table still gets it.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS snapshots (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      workstream      TEXT,
+      label           TEXT NOT NULL,
+      db_path         TEXT NOT NULL,
+      schema_version  INTEGER NOT NULL,
+      created_at      TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_snapshots_created_at ON snapshots (created_at);
+    CREATE INDEX IF NOT EXISTS idx_snapshots_workstream ON snapshots (workstream);
+  `);
+}
+
 function migrateV2ToV3(db: Db): void {
   // Drop views first — SQLite refuses to DROP TABLE while a view
   // depends on it.

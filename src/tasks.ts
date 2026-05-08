@@ -11,6 +11,7 @@
 import type { Db } from "./db.js";
 import { emitEvent } from "./logs.js";
 import type { HasNextSteps, NextStep } from "./output.js";
+import { captureSnapshot } from "./snapshots.js";
 import { currentAgentName } from "./tmux.js";
 import { ensureWorkstream } from "./workstream.js";
 
@@ -848,8 +849,15 @@ export function setTaskStatus(
   return { previousStatus: before.status, status, changed: true };
 }
 
-/** Convenience: setTaskStatus(db, id, "CLOSED"). Accepts evidence. */
+/** Convenience: setTaskStatus(db, id, "CLOSED"). Accepts evidence.
+ *  Pre-snapshots the DB (snap_design §CAPTURE STRATEGY > WHEN). Skipped
+ *  for the idempotent no-op (already CLOSED) so we don't accumulate
+ *  empty-delta snapshots on retry loops. */
 export function closeTask(db: Db, localId: string, opts: EvidenceOption = {}): SetStatusResult {
+  const before = getTask(db, localId);
+  if (before && before.status !== "CLOSED") {
+    captureSnapshot(db, `task close ${localId}`, before.workstream);
+  }
   return setTaskStatus(db, localId, "CLOSED", opts);
 }
 
@@ -904,22 +912,33 @@ export interface RejectDeferResult {
 }
 
 /** Reject a task: terminal 'won't do' (out of scope, duplicate, wontfix).
- *  Refuses if dependents are open unless `--cascade`. */
+ *  Refuses if dependents are open unless `--cascade`.
+ *  Pre-snapshots once at the verb level so a cascade onto N children
+ *  produces a single snapshot, not N. Skipped for the idempotent no-op. */
 export function rejectTask(
   db: Db,
   localId: string,
   opts: RejectDeferOptions = {},
 ): RejectDeferResult {
+  const before = getTask(db, localId);
+  if (before && before.status !== "REJECTED") {
+    captureSnapshot(db, `task reject ${localId}`, before.workstream);
+  }
   return setTerminalOrParked(db, localId, "REJECTED", opts);
 }
 
 /** Defer a task: parked, may revisit. Same dependent-stranding semantics
- *  as reject (DEFERRED also doesn't satisfy a `--blocked-by` edge). */
+ *  as reject (DEFERRED also doesn't satisfy a `--blocked-by` edge).
+ *  Pre-snapshots once at the verb level. Skipped for the idempotent no-op. */
 export function deferTask(
   db: Db,
   localId: string,
   opts: RejectDeferOptions = {},
 ): RejectDeferResult {
+  const before = getTask(db, localId);
+  if (before && before.status !== "DEFERRED") {
+    captureSnapshot(db, `task defer ${localId}`, before.workstream);
+  }
   return setTerminalOrParked(db, localId, "DEFERRED", opts);
 }
 
@@ -1054,6 +1073,10 @@ export function releaseTask(db: Db, localId: string, opts: ReleaseTaskOptions = 
       changed: false,
     };
   }
+
+  // Pre-mutation snapshot — release wipes ownership which is
+  // irrecoverable from history (we'd lose 'who was working on this').
+  captureSnapshot(db, `task release ${localId}`, before.workstream);
 
   db.prepare("UPDATE tasks SET owner = NULL, status = ?, updated_at = ? WHERE local_id = ?").run(
     newStatus,
@@ -1542,6 +1565,12 @@ export interface DeleteTaskResult {
  */
 export function deleteTask(db: Db, localId: string): DeleteTaskResult {
   const before = getTask(db, localId);
+  // Pre-mutation snapshot. delete cascades into task_edges and
+  // task_notes; no per-row history can reconstruct it. Skip when the
+  // row doesn't exist (the verb is idempotent on missing).
+  if (before) {
+    captureSnapshot(db, `task delete ${localId}`, before.workstream);
+  }
   const edgesBefore = (
     db
       .prepare("SELECT COUNT(*) AS n FROM task_edges WHERE from_task = ? OR to_task = ?")

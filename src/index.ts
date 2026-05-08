@@ -238,3 +238,18 @@ export {
   type LogKind,
   type LogRow,
 } from "./logs.js";
+export {
+  captureSnapshot,
+  type CaptureSnapshotResult,
+  gcSnapshots,
+  listSnapshots,
+  type ListSnapshotsOptions,
+  restoreSnapshot,
+  type RestoreSnapshotResult,
+  snapshotFileSize,
+  SnapshotFileMissingError,
+  SnapshotNotFoundError,
+  type SnapshotRow,
+  SnapshotVersionMismatchError,
+  snapshotsDir,
+} from "./snapshots.js";

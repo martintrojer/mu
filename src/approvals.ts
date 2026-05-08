@@ -15,6 +15,7 @@ import { randomBytes } from "node:crypto";
 import type { Db } from "./db.js";
 import { emitEvent } from "./logs.js";
 import type { HasNextSteps, NextStep } from "./output.js";
+import { captureSnapshot } from "./snapshots.js";
 import { sleep } from "./tmux.js";
 
 export type ApprovalStatus = "pending" | "granted" | "denied" | "timeout";
@@ -226,6 +227,10 @@ function decide(
   if (before.status !== "pending") {
     throw new ApprovalAlreadyDecidedError(slug, before.status);
   }
+  // Pre-mutation snapshot. Approval decisions are terminal
+  // (pending → granted/denied/timeout); without this an accidental
+  // grant has no recovery path.
+  captureSnapshot(db, `approval ${newStatus} ${slug}`, before.workstream);
   const decidedAt = new Date().toISOString();
   db.prepare("UPDATE approvals SET status = ?, decided_by = ?, decided_at = ? WHERE slug = ?").run(
     newStatus,
