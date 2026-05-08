@@ -985,9 +985,6 @@ export interface CloseAgentResult {
    *  False on the no-workspace path (nothing to free) and on the
    *  refused path (we threw before doing anything). */
   workspaceFreed: boolean;
-  /** Backwards-compat alias of `!workspaceFreed && hadWorkspace`. Kept
-   *  for callers (and tests) that branched on the old signal. */
-  workspaceKept: boolean;
 }
 
 /**
@@ -1016,7 +1013,7 @@ export async function closeAgent(
 ): Promise<CloseAgentResult> {
   const agent = getAgent(db, name);
   if (!agent) {
-    return { killedPane: false, deletedRow: false, workspaceFreed: false, workspaceKept: false };
+    return { killedPane: false, deletedRow: false, workspaceFreed: false };
   }
   const ws = getWorkspaceForAgent(db, name);
   if (ws !== undefined && opts.discardWorkspace !== true) {
@@ -1043,10 +1040,6 @@ export async function closeAgent(
     killedPane: true,
     deletedRow,
     workspaceFreed,
-    // Legacy field: true only if there WAS a workspace AND we didn't
-    // free it. With the new refuse-by-default policy this is always
-    // false on the success paths (because we either freed or refused).
-    workspaceKept: false,
   };
 }
 

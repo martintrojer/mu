@@ -486,7 +486,6 @@ describe("closeAgent + workspace integration", () => {
     expect(r.killedPane).toBe(true);
     expect(r.deletedRow).toBe(true);
     expect(r.workspaceFreed).toBe(true);
-    expect(r.workspaceKept).toBe(false);
 
     // Workspace gone from DB AND from disk.
     expect(getWorkspaceForAgent(db, "worker-1")).toBeUndefined();
@@ -498,7 +497,6 @@ describe("closeAgent + workspace integration", () => {
     const { closeAgent } = await import("../src/agents.js");
     const r = await closeAgent(db, "plain-1");
     expect(r.workspaceFreed).toBe(false);
-    expect(r.workspaceKept).toBe(false);
     expect(r.deletedRow).toBe(true);
   });
 
@@ -509,7 +507,6 @@ describe("closeAgent + workspace integration", () => {
       killedPane: false,
       deletedRow: false,
       workspaceFreed: false,
-      workspaceKept: false,
     });
   });
 });

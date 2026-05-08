@@ -41,12 +41,22 @@ export interface NextStep {
  * The padding aligns the colons so visual scanning is easy.
  */
 export function printNextSteps(steps: readonly NextStep[]): void {
+  printNextStepsTo(steps, "stdout");
+}
+
+/** Same as `printNextSteps` but routes to either stdout or stderr.
+ *  Errors emit nextSteps to stderr (so success vs failure paths
+ *  capture cleanly when scripts redirect them separately); success
+ *  paths emit to stdout. Single source of truth for the formatting
+ *  (review_code_print_next_steps_duplicated). */
+export function printNextStepsTo(steps: readonly NextStep[], sink: "stdout" | "stderr"): void {
   if (steps.length === 0) return;
   const labelWidth = Math.max(...steps.map((s) => s.intent.length));
-  console.log(pc.dim("Next:"));
+  const out = sink === "stderr" ? console.error : console.log;
+  out(pc.dim("Next:"));
   for (const step of steps) {
     const label = step.intent.padEnd(labelWidth);
-    console.log(pc.dim(`  ${label} : ${step.command}`));
+    out(pc.dim(`  ${label} : ${step.command}`));
   }
 }
 

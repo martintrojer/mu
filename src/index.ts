@@ -92,7 +92,6 @@ export {
   type RejectDeferOptions,
   type RejectDeferResult,
   STATUSES_TERMINAL_OR_PARKED,
-  STATUSES_THAT_UNBLOCK,
   removeBlockEdge,
   type RemoveBlockEdgeResult,
   reparentTask,

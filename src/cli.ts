@@ -62,7 +62,13 @@ import {
 import { CURRENT_SCHEMA_VERSION, type Db, EXPECTED_TABLES, defaultDbPath, openDb } from "./db.js";
 import { detectPiStatus } from "./detect.js";
 import { type ListLogsOptions, type LogRow, appendLog, latestSeq, listLogs } from "./logs.js";
-import { type NextStep, hasNextSteps, isJsonMode, printNextSteps } from "./output.js";
+import {
+  type NextStep,
+  hasNextSteps,
+  isJsonMode,
+  printNextSteps,
+  printNextStepsTo,
+} from "./output.js";
 import {
   ClaimerNotRegisteredError,
   CrossWorkstreamEdgeError,
@@ -242,7 +248,10 @@ function classifyError(err: unknown): { label: string; exitCode: number } {
  * mode produces the prose label + message, then nextSteps as dim
  * indented lines (when the error class implements errorNextSteps()).
  */
-function emitError(err: unknown): void {
+/** Render error + nextSteps to stderr and return the resolved exit
+ *  code. Returning the exitCode lets `handle` reuse it instead of
+ *  re-classifying the same error twice (review_code_classify_error_called_twice). */
+function emitError(err: unknown): number {
   const message = err instanceof Error ? err.message : String(err);
   const { label, exitCode } = classifyError(err);
   const errClass = err instanceof Error ? err.name : "Error";
@@ -257,19 +266,16 @@ function emitError(err: unknown): void {
         exitCode,
       })}\n`,
     );
-    return;
+    return exitCode;
   }
 
   console.error(pc.red(`${label}: ${message}`));
   if (steps.length > 0) {
     // Dim the next-step block so humans skim past; agents reading the
     // captured error still get them.
-    console.error(pc.dim("Next:"));
-    const labelWidth = Math.max(...steps.map((s) => s.intent.length));
-    for (const s of steps) {
-      console.error(pc.dim(`  ${s.intent.padEnd(labelWidth)} : ${s.command}`));
-    }
+    printNextStepsTo(steps, "stderr");
   }
+  return exitCode;
 }
 
 /** Wrap an async handler so typed errors become specific exit codes. */
@@ -280,8 +286,8 @@ function handle(fn: (db: Db) => Promise<void>): () => Promise<void> {
       db = openDb();
       await fn(db);
     } catch (err) {
-      emitError(err);
-      process.exit(classifyError(err).exitCode);
+      const exitCode = emitError(err);
+      process.exit(exitCode);
     } finally {
       try {
         db?.close();
@@ -294,23 +300,22 @@ function handle(fn: (db: Db) => Promise<void>): () => Promise<void> {
 
 // ─── Output helpers ────────────────────────────────────────────────────
 
+/** Per-status colour for the table view. The glyph itself comes from
+ *  STATUS_EMOJI in src/agents.ts — single source of truth so the
+ *  table view and the pane-border / composeAgentTitle never drift
+ *  (review_code_status_emoji_two_sources caught a 2-of-7 disagreement). */
+const STATUS_COLORS: Record<AgentStatus, (s: string) => string> = {
+  spawning: pc.yellow,
+  busy: pc.cyan,
+  needs_input: pc.dim,
+  needs_permission: pc.magenta,
+  free: pc.green,
+  unreachable: pc.red,
+  terminated: pc.dim,
+};
+
 function statusIcon(status: AgentStatus): string {
-  switch (status) {
-    case "spawning":
-      return pc.yellow("⏳");
-    case "busy":
-      return pc.cyan("⚙️ ");
-    case "needs_input":
-      return pc.dim("💤");
-    case "needs_permission":
-      return pc.magenta("🔐");
-    case "free":
-      return pc.green("✓");
-    case "unreachable":
-      return pc.red("❓");
-    case "terminated":
-      return pc.dim("✕");
-  }
+  return STATUS_COLORS[status](STATUS_EMOJI[status]);
 }
 
 function formatAgentsTable(agents: readonly AgentRow[]): string {
@@ -1133,15 +1138,23 @@ async function cmdFree(
   assertAgentInWorkstream(db, name, opts.workstream);
   const r = freeAgent(db, name);
   if (r.changed) await refreshAgentTitle(db, name);
+  const ws = await resolveWorkstream(opts.workstream);
+  const nextSteps: NextStep[] = [
+    { intent: "Send work to the freed agent", command: `mu agent send ${name} '...' -w ${ws}` },
+    { intent: "Close the agent", command: `mu agent close ${name} -w ${ws}` },
+    { intent: "See workstream state", command: `mu state -w ${ws}` },
+  ];
   if (opts.json) {
-    emitJson({ agent: name, ...r });
+    emitJson({ agent: name, ...r, nextSteps });
     return;
   }
   if (!r.changed) {
     console.log(pc.dim(`${name} already free (no-op)`));
+    printNextSteps(nextSteps);
     return;
   }
   console.log(`Freed ${pc.bold(name)} ${pc.dim(`(${r.previousStatus} → ${r.status})`)}`);
+  printNextSteps(nextSteps);
 }
 
 async function cmdTaskAdd(
@@ -2443,7 +2456,7 @@ async function cmdLogTail(db: Db, baseOpts: ListLogsOptions, cliOpts: LogReadOpt
       ),
     );
   }
-  const intervalMs = Number(process.env.MU_LOG_TAIL_INTERVAL_MS ?? 1000);
+  const intervalMs = defaultLogTailIntervalMs();
   for (;;) {
     const rows = listLogs(db, { ...baseOpts, since: cursor });
     for (const row of rows) {
@@ -3656,6 +3669,21 @@ function parseLines(value: string): number {
     throw new InvalidArgumentError(`expected a non-negative integer, got ${JSON.stringify(value)}`);
   }
   return n;
+}
+
+/** Resolution + sanitisation for $MU_LOG_TAIL_INTERVAL_MS. Mirrors
+ *  defaultSpawnLivenessMs (src/agents.ts) and defaultSendDelayMs
+ *  (src/tmux.ts). Naive `Number(env)` was a DOS-by-typo: an env value
+ *  of '' parses as 0 and any non-numeric value as NaN, both of which
+ *  Node's setTimeout treats as 1ms — hammering SQLite at ~500 Hz on
+ *  the next mu log --tail. 50ms floor prevents a too-low explicit
+ *  setting from doing the same. */
+function defaultLogTailIntervalMs(): number {
+  const raw = process.env.MU_LOG_TAIL_INTERVAL_MS;
+  if (raw === undefined) return 1000;
+  const parsed = Number.parseInt(raw, 10);
+  if (Number.isNaN(parsed) || parsed < 50) return 1000;
+  return parsed;
 }
 
 // Parses a non-negative integer (0 is valid). Used for --since which
