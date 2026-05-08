@@ -331,6 +331,64 @@ describe("spawnAgent", () => {
     expect(fromDb?.status).toBe("spawning");
   });
 
+  // Verify identity env vars (MU_MANAGED_AGENT / MU_AGENT_NAME /
+  // MU_WORKSTREAM) are injected on every spawn path. The pi-side
+  // consumer (extensions, claim-protocol scripts) branches on
+  // MU_MANAGED_AGENT to detect 'I'm a mu worker' vs 'I'm a regular
+  // interactive pi'.
+
+  /** Find the first call whose first arg matches `verb` and return its
+   *  args; throws if not found. */
+  function callArgs(calls: string[][], verb: string): string[] {
+    const c = calls.find((x) => x[0] === verb);
+    if (!c)
+      throw new Error(`expected a tmux ${verb} call; got ${calls.map((x) => x[0]).join(", ")}`);
+    return c;
+  }
+
+  /** Assert that args contains adjacent `-e`, `KEY=VALUE`. */
+  function expectEnv(args: string[], key: string, value: string): void {
+    const expected = `${key}=${value}`;
+    for (let i = 0; i < args.length - 1; i++) {
+      if (args[i] === "-e" && args[i + 1] === expected) return;
+    }
+    throw new Error(`expected -e ${expected} in args, got: ${args.join(" ")}`);
+  }
+
+  it("injects MU_* env vars on the new-session path (fresh workstream)", async () => {
+    const { executor, calls } = mockTmux(state);
+    setTmuxExecutor(executor);
+    await spawnAgent(db, { name: "alice", workstream: "auth" });
+    const args = callArgs(calls, "new-session");
+    expectEnv(args, "MU_MANAGED_AGENT", "1");
+    expectEnv(args, "MU_AGENT_NAME", "alice");
+    expectEnv(args, "MU_WORKSTREAM", "auth");
+  });
+
+  it("injects MU_* env vars on the new-window path (existing session, new tab)", async () => {
+    state.sessions.add("mu-auth");
+    state.windows.set("mu-auth", [{ id: "@1", name: "_existing" }]);
+    const { executor, calls } = mockTmux(state);
+    setTmuxExecutor(executor);
+    await spawnAgent(db, { name: "alice", workstream: "auth" });
+    const args = callArgs(calls, "new-window");
+    expectEnv(args, "MU_MANAGED_AGENT", "1");
+    expectEnv(args, "MU_AGENT_NAME", "alice");
+    expectEnv(args, "MU_WORKSTREAM", "auth");
+  });
+
+  it("injects MU_* env vars on the split-window path (existing tab)", async () => {
+    state.sessions.add("mu-auth");
+    state.windows.set("mu-auth", [{ id: "@1", name: "Backend" }]);
+    const { executor, calls } = mockTmux(state);
+    setTmuxExecutor(executor);
+    await spawnAgent(db, { name: "alice", workstream: "auth", tab: "Backend" });
+    const args = callArgs(calls, "split-window");
+    expectEnv(args, "MU_MANAGED_AGENT", "1");
+    expectEnv(args, "MU_AGENT_NAME", "alice");
+    expectEnv(args, "MU_WORKSTREAM", "auth");
+  });
+
   it("default cli is 'pi'; custom cli passes through", async () => {
     const { executor } = mockTmux(state);
     setTmuxExecutor(executor);

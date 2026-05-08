@@ -465,11 +465,27 @@ export async function spawnAgent(db: Db, opts: SpawnAgentOptions): Promise<Agent
     }
   }
 
+  // Inject identity env vars into the pane so anything running inside
+  // (pi extensions, claim-protocol scripts, status segments) can branch
+  // on 'I am a mu-managed worker' without scraping pane titles or DB
+  // lookups. Set via tmux `-e KEY=VALUE` (per-pane; doesn't pollute the
+  // tmux server's global env).
+  //
+  // These are NOT exposed via SpawnAgentOptions — mu identity is not
+  // user-tunable. Adding more keys here means every spawned pane sees
+  // them automatically.
+  const paneEnv: Record<string, string> = {
+    MU_MANAGED_AGENT: "1",
+    MU_AGENT_NAME: opts.name,
+    MU_WORKSTREAM: opts.workstream,
+  };
+
   const paneId = await createOrReusePane({
     session,
     windowName,
     command,
     cwd: workspacePathStr ?? opts.cwd,
+    env: paneEnv,
   });
 
   let agent: AgentRow;
@@ -567,12 +583,14 @@ async function createOrReusePane(opts: {
   windowName: string;
   command: string;
   cwd?: string;
+  env?: Record<string, string>;
 }): Promise<string> {
   if (!(await sessionExists(opts.session))) {
     return newSessionWithPane(opts.session, {
       windowName: opts.windowName,
       command: opts.command,
       cwd: opts.cwd,
+      env: opts.env,
     });
   }
 
@@ -584,6 +602,7 @@ async function createOrReusePane(opts: {
       target: `${opts.session}:${opts.windowName}`,
       command: opts.command,
       cwd: opts.cwd,
+      env: opts.env,
     });
   }
 
@@ -592,6 +611,7 @@ async function createOrReusePane(opts: {
     name: opts.windowName,
     command: opts.command,
     cwd: opts.cwd,
+    env: opts.env,
   });
 }
 

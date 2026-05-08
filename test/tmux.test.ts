@@ -19,6 +19,7 @@ import {
   listSessions,
   listWindows,
   newSession,
+  newSessionWithPane,
   newWindow,
   paneExists,
   resetSleep,
@@ -454,6 +455,128 @@ describe("splitWindow", () => {
     setTmuxExecutor(executor);
     await splitWindow({ target: "%15", command: "bash", horizontal: false });
     expect(calls[0]?.args).not.toContain("-h");
+  });
+});
+
+// ─── Pane env injection (-e KEY=VALUE) ───────────────────────────
+//
+// All four pane-creating helpers (newSession, newSessionWithPane,
+// newWindow, splitWindow) accept an optional env: Record<string,string>
+// that emits one tmux `-e KEY=VALUE` flag per entry. The flag must be
+// emitted BEFORE the command argument; tmux 3.0+ supports it on all
+// three subcommands.
+
+/** Assert that args contains the pair `-e`, `KEY=VALUE` adjacent. */
+function expectEnvFlag(args: string[], key: string, value: string): void {
+  const expected = `${key}=${value}`;
+  for (let i = 0; i < args.length - 1; i++) {
+    if (args[i] === "-e" && args[i + 1] === expected) return;
+  }
+  throw new Error(`expected -e ${expected} in args, got: ${args.join(" ")}`);
+}
+
+/** Index of the first `-e` flag in args, or -1 if none. */
+function firstEnvFlagIndex(args: string[]): number {
+  return args.indexOf("-e");
+}
+
+/** Find the index of the command arg in args. tmux helpers always pass
+ *  the command as the LAST positional after `-P -F #{pane_id}` (or as
+ *  the last arg for newSession). */
+function commandIndex(args: string[]): number {
+  return args.length - 1;
+}
+
+describe("newWindow with env", () => {
+  it("emits one -e KEY=VALUE per entry, before the command arg", async () => {
+    const { executor, calls } = harness(() => ok("%20\n"));
+    setTmuxExecutor(executor);
+    await newWindow({
+      session: "foo",
+      name: "Backend",
+      command: "bash",
+      env: { FOO: "bar", BAZ: "qux" },
+    });
+    const args = calls[0]?.args ?? [];
+    expectEnvFlag(args, "FOO", "bar");
+    expectEnvFlag(args, "BAZ", "qux");
+    // -e must come before the command (last positional).
+    expect(firstEnvFlagIndex(args)).toBeLessThan(commandIndex(args));
+  });
+
+  it("emits no -e flags when env is omitted", async () => {
+    const { executor, calls } = harness(() => ok("%21\n"));
+    setTmuxExecutor(executor);
+    await newWindow({ session: "foo", name: "Backend", command: "bash" });
+    expect(calls[0]?.args).not.toContain("-e");
+  });
+
+  it("throws TypeError on empty key", async () => {
+    const { executor } = harness(() => ok("%22\n"));
+    setTmuxExecutor(executor);
+    await expect(
+      newWindow({
+        session: "foo",
+        name: "Backend",
+        command: "bash",
+        env: { "": "x" },
+      }),
+    ).rejects.toBeInstanceOf(TypeError);
+  });
+
+  it("throws TypeError on key containing '='", async () => {
+    const { executor } = harness(() => ok("%23\n"));
+    setTmuxExecutor(executor);
+    await expect(
+      newWindow({
+        session: "foo",
+        name: "Backend",
+        command: "bash",
+        env: { "BAD=KEY": "x" },
+      }),
+    ).rejects.toBeInstanceOf(TypeError);
+  });
+});
+
+describe("splitWindow with env", () => {
+  it("emits one -e KEY=VALUE per entry, before the command arg", async () => {
+    const { executor, calls } = harness(() => ok("%24\n"));
+    setTmuxExecutor(executor);
+    await splitWindow({
+      target: ":Backend",
+      command: "bash",
+      env: { FOO: "bar", BAZ: "qux" },
+    });
+    const args = calls[0]?.args ?? [];
+    expectEnvFlag(args, "FOO", "bar");
+    expectEnvFlag(args, "BAZ", "qux");
+    expect(firstEnvFlagIndex(args)).toBeLessThan(commandIndex(args));
+  });
+});
+
+describe("newSessionWithPane with env", () => {
+  it("emits one -e KEY=VALUE per entry, before the command arg", async () => {
+    const { executor, calls } = harness(() => ok("%25\n"));
+    setTmuxExecutor(executor);
+    await newSessionWithPane("mu-foo", {
+      windowName: "alice",
+      command: "bash",
+      env: { FOO: "bar", BAZ: "qux" },
+    });
+    const args = calls[0]?.args ?? [];
+    expectEnvFlag(args, "FOO", "bar");
+    expectEnvFlag(args, "BAZ", "qux");
+    expect(firstEnvFlagIndex(args)).toBeLessThan(commandIndex(args));
+  });
+});
+
+describe("newSession with env", () => {
+  it("emits -e KEY=VALUE flags (kept symmetric with the other pane-creating helpers)", async () => {
+    const { executor, calls } = harness(() => ok());
+    setTmuxExecutor(executor);
+    await newSession("mu-foo", { env: { FOO: "bar" } });
+    expect(calls[0]?.args).toContain("-e");
+    expect(calls[0]?.args).toContain("FOO=bar");
   });
 });
 

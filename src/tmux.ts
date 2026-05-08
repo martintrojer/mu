@@ -243,6 +243,10 @@ export interface NewSessionOptions {
   command?: string;
   /** Initial working directory for the first pane (`-c <path>`). */
   cwd?: string;
+  /** Extra env vars to set in the new pane via tmux `-e KEY=VALUE`.
+   *  Available since tmux 3.0; sets the variable in the new pane's
+   *  environment without polluting the tmux server's global env. */
+  env?: Record<string, string>;
 }
 
 export async function newSession(name: string, opts: NewSessionOptions = {}): Promise<void> {
@@ -251,6 +255,7 @@ export async function newSession(name: string, opts: NewSessionOptions = {}): Pr
   args.push("-s", name);
   if (opts.windowName) args.push("-n", opts.windowName);
   if (opts.cwd) args.push("-c", opts.cwd);
+  appendEnvFlags(args, opts.env);
   if (opts.command) args.push(opts.command);
   await tmux(args);
 }
@@ -260,6 +265,8 @@ export interface NewSessionWithPaneOptions {
   command: string;
   cwd?: string;
   detached?: boolean;
+  /** Extra env vars to set in the new pane via tmux `-e KEY=VALUE`. */
+  env?: Record<string, string>;
 }
 
 /**
@@ -276,6 +283,7 @@ export async function newSessionWithPane(
   if (opts.detached !== false) args.push("-d");
   args.push("-s", name, "-n", opts.windowName);
   if (opts.cwd) args.push("-c", opts.cwd);
+  appendEnvFlags(args, opts.env);
   args.push("-P", "-F", "#{pane_id}", opts.command);
   const out = (await tmux(args)).trim();
   assertValidPaneId(out);
@@ -341,6 +349,8 @@ export interface NewWindowOptions {
   detached?: boolean;
   /** Initial working directory (`-c <path>`). */
   cwd?: string;
+  /** Extra env vars to set in the new pane via tmux `-e KEY=VALUE`. */
+  env?: Record<string, string>;
 }
 
 /**
@@ -353,6 +363,7 @@ export async function newWindow(opts: NewWindowOptions): Promise<string> {
   if (opts.session) args.push("-t", opts.session);
   args.push("-n", opts.name);
   if (opts.cwd) args.push("-c", opts.cwd);
+  appendEnvFlags(args, opts.env);
   args.push("-P", "-F", "#{pane_id}", opts.command);
   const out = (await tmux(args)).trim();
   assertValidPaneId(out);
@@ -446,6 +457,8 @@ export interface SplitWindowOptions {
   detached?: boolean;
   /** Initial working directory for the new pane (`-c <path>`). */
   cwd?: string;
+  /** Extra env vars to set in the new pane via tmux `-e KEY=VALUE`. */
+  env?: Record<string, string>;
 }
 
 /**
@@ -458,10 +471,34 @@ export async function splitWindow(opts: SplitWindowOptions): Promise<string> {
   if (opts.detached !== false) args.push("-d");
   args.push("-t", opts.target);
   if (opts.cwd) args.push("-c", opts.cwd);
+  appendEnvFlags(args, opts.env);
   args.push("-P", "-F", "#{pane_id}", opts.command);
   const out = (await tmux(args)).trim();
   assertValidPaneId(out);
   return out;
+}
+
+/**
+ * Push one `-e KEY=VALUE` flag per entry into `args`, validating that
+ * keys are non-empty and contain no `=` (tmux would error obscurely
+ * otherwise; throwing TypeError keeps the failure at the call site).
+ * No-op when `env` is undefined or empty.
+ *
+ * Iteration order follows Object.entries (insertion order); tests
+ * shouldn't depend on a specific ordering, only on the presence of
+ * each `-e KEY=VALUE` pair in the captured args.
+ */
+function appendEnvFlags(args: string[], env: Record<string, string> | undefined): void {
+  if (!env) return;
+  for (const [k, v] of Object.entries(env)) {
+    if (k.length === 0) {
+      throw new TypeError("tmux env key must be non-empty");
+    }
+    if (k.includes("=")) {
+      throw new TypeError(`tmux env key must not contain '=': ${JSON.stringify(k)}`);
+    }
+    args.push("-e", `${k}=${v}`);
+  }
 }
 
 /** Idempotent: succeeds even if the pane is already gone. */

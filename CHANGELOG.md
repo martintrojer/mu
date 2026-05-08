@@ -50,6 +50,50 @@ called out under "Breaking" in each entry.
 
 ### Added
 
+- **Spawned agent panes inherit identifying env vars** (`MU_MANAGED_AGENT=1`,
+  `MU_AGENT_NAME=<name>`, `MU_WORKSTREAM=<name>`) so anything running
+  inside (pi extensions, claim-protocol scripts, status segments) can
+  branch on 'I'm a mu-managed worker' vs 'I'm a regular interactive pi'
+  without scraping pane titles or hitting the DB.
+
+  How it works: tmux 3.0+ supports `-e KEY=VALUE` (repeatable) on
+  `new-session`, `new-window`, and `split-window`. The env is set in
+  the new pane's environment only — no global tmux server pollution.
+  All four pane-creating helpers in `src/tmux.ts` (`newSession`,
+  `newSessionWithPane`, `newWindow`, `splitWindow`) gain an optional
+  `env?: Record<string, string>` field. Validation: keys must be
+  non-empty and must not contain `=` (TypeError otherwise; tmux's own
+  error in that case is obscure).
+
+  `spawnAgent` builds the env once and threads it through
+  `createOrReusePane` to whichever path fires:
+
+      const paneEnv: Record<string, string> = {
+        MU_MANAGED_AGENT: "1",
+        MU_AGENT_NAME: opts.name,
+        MU_WORKSTREAM: opts.workstream,
+      };
+
+  Verified live (the spawned shell's `env` dump):
+
+      MU_AGENT_NAME=env_test_2
+      MU_WORKSTREAM=env_smoke2
+      MU_MANAGED_AGENT=1
+
+  And `tmux show-environment -g` is untouched (no global pollution).
+
+  Not exposed via `SpawnAgentOptions` — mu identity is not
+  user-tunable. Adding a new key here is one line and applies to
+  every spawned pane automatically.
+
+  Tests: 6 unit cases in `test/tmux.test.ts` (env-flag emission +
+  ordering before the command + key-validation TypeError) and 3
+  integration cases in `test/verbs.test.ts` (one per spawn path:
+  fresh session, new window in existing session, split into existing
+  window). 582 tests total.
+
+  Closes `pass_mu_env_to_panes` in workstream `roadmap-v0-2`.
+
 - **Auto-generated task IDs trim at a 40-char word boundary**
   (was: hard-truncate at 64 chars). `mu task add --title "NIT:
   this is exactly the kind of title that produces a 60-plus
