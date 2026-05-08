@@ -9,69 +9,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { insertAgent } from "../src/agents.js";
-import { buildProgram } from "../src/cli.js";
 import { type Db, openDb } from "../src/db.js";
 import { addNote, addTask, claimTask } from "../src/tasks.js";
 import { ensureWorkstream } from "../src/workstream.js";
-
-interface Capture {
-  stdout: string;
-  stderr: string;
-}
-
-async function runCli(argv: readonly string[], dbPath: string): Promise<Capture> {
-  const originalDbPath = process.env.MU_DB_PATH;
-  const originalWrite = process.stdout.write.bind(process.stdout);
-  const originalErrWrite = process.stderr.write.bind(process.stderr);
-  const originalLog = console.log;
-  const originalErrLog = console.error;
-
-  let stdout = "";
-  let stderr = "";
-
-  process.env.MU_DB_PATH = dbPath;
-  // biome-ignore lint/suspicious/noExplicitAny: shim signature matches what we need
-  console.log = (...args: any[]) => {
-    stdout += `${args.map((a) => (typeof a === "string" ? a : JSON.stringify(a))).join(" ")}\n`;
-  };
-  // biome-ignore lint/suspicious/noExplicitAny: shim signature matches what we need
-  console.error = (...args: any[]) => {
-    stderr += `${args.map((a) => (typeof a === "string" ? a : JSON.stringify(a))).join(" ")}\n`;
-  };
-  // biome-ignore lint/suspicious/noExplicitAny: shim
-  (process.stdout as any).write = (chunk: any) => {
-    stdout += String(chunk);
-    return true;
-  };
-  // biome-ignore lint/suspicious/noExplicitAny: shim
-  (process.stderr as any).write = (chunk: any) => {
-    stderr += String(chunk);
-    return true;
-  };
-
-  try {
-    const program = buildProgram();
-    program.exitOverride();
-    await program.parseAsync(["node", "mu", ...argv]);
-  } catch {
-    // exitOverride throws on parse errors AND on process.exit inside handlers
-    // (which the CLI's `handle()` wrapper does for typed errors). Either way,
-    // we want to return what was captured so the test can assert on it.
-  } finally {
-    process.stdout.write = originalWrite;
-    process.stderr.write = originalErrWrite;
-    console.log = originalLog;
-    console.error = originalErrLog;
-    if (originalDbPath === undefined) {
-      const key = "MU_DB_PATH";
-      delete process.env[key];
-    } else {
-      process.env.MU_DB_PATH = originalDbPath;
-    }
-  }
-
-  return { stdout, stderr };
-}
+import { runCli } from "./_runCli.js";
 
 describe("--json output on read verbs", () => {
   let tempDir: string;

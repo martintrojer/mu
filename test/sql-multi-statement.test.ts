@@ -10,66 +10,9 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { buildProgram, countTopLevelStatements } from "../src/cli.js";
+import { countTopLevelStatements } from "../src/cli.js";
 import { type Db, openDb } from "../src/db.js";
-
-interface Capture {
-  stdout: string;
-  stderr: string;
-}
-
-async function runCli(argv: readonly string[], dbPath: string): Promise<Capture> {
-  const originalDbPath = process.env.MU_DB_PATH;
-  const originalWrite = process.stdout.write.bind(process.stdout);
-  const originalErrWrite = process.stderr.write.bind(process.stderr);
-  const originalLog = console.log;
-  const originalErrLog = console.error;
-
-  let stdout = "";
-  let stderr = "";
-
-  process.env.MU_DB_PATH = dbPath;
-  // biome-ignore lint/suspicious/noExplicitAny: shim
-  console.log = (...args: any[]) => {
-    stdout += `${args.map((a) => (typeof a === "string" ? a : JSON.stringify(a))).join(" ")}\n`;
-  };
-  // biome-ignore lint/suspicious/noExplicitAny: shim
-  console.error = (...args: any[]) => {
-    stderr += `${args.map((a) => (typeof a === "string" ? a : JSON.stringify(a))).join(" ")}\n`;
-  };
-  // biome-ignore lint/suspicious/noExplicitAny: shim
-  (process.stdout as any).write = (chunk: any) => {
-    stdout += String(chunk);
-    return true;
-  };
-  // biome-ignore lint/suspicious/noExplicitAny: shim
-  (process.stderr as any).write = (chunk: any) => {
-    stderr += String(chunk);
-    return true;
-  };
-
-  try {
-    const program = buildProgram();
-    program.exitOverride();
-    await program.parseAsync(["node", "mu", ...argv]);
-  } catch {
-    // exitOverride + handle() may throw on errors; swallow so the
-    // caller can assert on captured output.
-  } finally {
-    process.stdout.write = originalWrite;
-    process.stderr.write = originalErrWrite;
-    console.log = originalLog;
-    console.error = originalErrLog;
-    if (originalDbPath === undefined) {
-      const key = "MU_DB_PATH";
-      delete process.env[key];
-    } else {
-      process.env.MU_DB_PATH = originalDbPath;
-    }
-  }
-
-  return { stdout, stderr };
-}
+import { runCli } from "./_runCli.js";
 
 describe("countTopLevelStatements", () => {
   it("counts a single trailing-semicolon-less statement", () => {

@@ -15,79 +15,10 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { buildProgram } from "../src/cli.js";
 import { type Db, openDb } from "../src/db.js";
 import { getTaskEdges } from "../src/tasks.js";
 import { ensureWorkstream } from "../src/workstream.js";
-
-interface Capture {
-  stdout: string;
-  stderr: string;
-  exitCode: number | null;
-}
-
-async function runCli(argv: readonly string[], dbPath: string): Promise<Capture> {
-  const originalDbPath = process.env.MU_DB_PATH;
-  const originalWrite = process.stdout.write.bind(process.stdout);
-  const originalErrWrite = process.stderr.write.bind(process.stderr);
-  const originalLog = console.log;
-  const originalErrLog = console.error;
-  const originalExit = process.exit;
-
-  let stdout = "";
-  let stderr = "";
-  let exitCode: number | null = null;
-
-  process.env.MU_DB_PATH = dbPath;
-  // biome-ignore lint/suspicious/noExplicitAny: shim
-  console.log = (...args: any[]) => {
-    stdout += `${args.map((a) => (typeof a === "string" ? a : JSON.stringify(a))).join(" ")}\n`;
-  };
-  // biome-ignore lint/suspicious/noExplicitAny: shim
-  console.error = (...args: any[]) => {
-    stderr += `${args.map((a) => (typeof a === "string" ? a : JSON.stringify(a))).join(" ")}\n`;
-  };
-  // biome-ignore lint/suspicious/noExplicitAny: shim
-  (process.stdout as any).write = (chunk: any) => {
-    stdout += String(chunk);
-    return true;
-  };
-  // biome-ignore lint/suspicious/noExplicitAny: shim
-  (process.stderr as any).write = (chunk: any) => {
-    stderr += String(chunk);
-    return true;
-  };
-  // The CLI's handle() wrapper calls process.exit(N) on typed errors;
-  // intercept it so the test process keeps running.
-  // biome-ignore lint/suspicious/noExplicitAny: shim
-  (process as any).exit = (code?: number) => {
-    exitCode = code ?? 0;
-    throw new Error(`__exit__:${exitCode}`);
-  };
-
-  try {
-    const program = buildProgram();
-    program.exitOverride();
-    await program.parseAsync(["node", "mu", ...argv]);
-  } catch {
-    // exitOverride throws on parse errors; our exit shim throws on typed
-    // errors. Either way we want to return what was captured.
-  } finally {
-    process.stdout.write = originalWrite;
-    process.stderr.write = originalErrWrite;
-    console.log = originalLog;
-    console.error = originalErrLog;
-    process.exit = originalExit;
-    if (originalDbPath === undefined) {
-      const key = "MU_DB_PATH";
-      delete process.env[key];
-    } else {
-      process.env.MU_DB_PATH = originalDbPath;
-    }
-  }
-
-  return { stdout, stderr, exitCode };
-}
+import { runCli } from "./_runCli.js";
 
 describe("mu task add --blocked-by", () => {
   let tempDir: string;
