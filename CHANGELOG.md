@@ -50,6 +50,31 @@ called out under "Breaking" in each entry.
 
 ### Added
 
+- **Docs synced for snapshots + `mu undo` shipping.** Closes
+  `snap_docs` in roadmap-v0-2.
+  - `docs/USAGE_GUIDE.md` — new "You ran a destructive verb and
+    want to undo it" subsection in § 14 (Recovery), explicit
+    callout from § 15 (Cleanup) when describing
+    `mu workstream destroy`, removed the `mu redo` row from the
+    § 18 workaround table, header anchor + "What's NOT in 0.2.0"
+    title aligned with the v0.2 reality.
+  - `docs/ROADMAP.md` — promoted the `mu undo` /
+    `mu snapshot {list,show}` block from SHIPPING to SHIPPED with
+    the as-shipped surface and the design decisions held to
+    (no `mu redo`, cross-version restores rejected, tmux NOT
+    rolled back).
+  - `skills/mu/SKILL.md` — new "Snapshots + undo (3)" block in
+    the verb list, replaced "There is no `mu undo`" in the
+    Cleanup pattern with the snapshot-aware version, added
+    "Recover from a destructive verb (DB only)" in-pane pattern,
+    added the safety belt ("even though both auto-snapshot, the
+    tmux side effects are NOT recoverable") to the irreversible
+    section.
+  - `docs/VOCABULARY.md` — dropped the stale "verb shipping in
+    snap_undo_verb" parenthetical.
+  - `README.md` — "Not undoable" caveat replaced with the more
+    honest "DB-undoable, not tmux-undoable" framing.
+
 - **`mu workstream destroy` advertises `mu undo` in its `Next:`
   block.** Closes `snap_destroy_safety` in roadmap-v0-2. Dry-run
   output now includes a one-line note that a snapshot will be

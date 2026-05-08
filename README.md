@@ -128,9 +128,13 @@ To be useful, a sales pitch has to be honest about scope:
   format.
 - **Not a hosted service.** Local-first SQLite. Zero ops, no
   accounts. Your machine is the deployment.
-- **Not undoable.** No snapshots, no `mu undo` (yet). `mu
-  workstream destroy --yes` is irreversible. `mu doctor` and `mu
-  sql` cover most repair scenarios.
+- **DB-undoable, not tmux-undoable.** Every destructive verb
+  (`mu task delete`, `mu workstream destroy --yes`, the task
+  lifecycle verbs, `mu agent close`, `mu workspace free`,
+  `mu approve grant/deny`) auto-captures a whole-DB snapshot
+  first. `mu undo --yes` restores the DB; `mu snapshot list`
+  inspects available snapshots. The tmux side effects (panes
+  killed, workspace dirs freed) are NOT replayed.
 
 ---
 
@@ -192,7 +196,8 @@ state card (`mu state`), human-in-the-loop approvals
 self-documenting output (`Next:` hints + structured
 `errorNextSteps`), crash recovery (ghost reaper), schema
 migrations (v1→v2→v3→v4), **whole-DB snapshots auto-captured
-before destructive verbs** (substrate for `mu undo`),
+before destructive verbs** (substrate for `mu undo` /
+`mu snapshot {list,show}`),
 pi/pi-meta/wrapper-agnostic status detection (Braille spinner
 fallback covers every TUI runtime), pane-border + composed
 pane-title carrying mu's interpreted state.

@@ -261,6 +261,11 @@ mu approve grant <slug>
 mu approve deny  <slug>
 mu approve wait  <slug> [--timeout SECONDS]   # exit 0 / 4 / 5
 
+# Snapshots + undo (3) — every destructive verb auto-snapshots first
+mu undo [--yes] [--to <id>]          # restore latest snapshot (or one chosen)
+mu snapshot list [-n N]              # newest-first: id | label | ws | size
+mu snapshot show <id>                # full metadata for one row
+
 # Escape hatch + state + health
 mu sql "<query>"                     # SELECT / UPDATE / DELETE / WITH
 mu                                   # bare: quick mission control
@@ -467,12 +472,13 @@ pattern doesn't compose past one task; use `mu task wait`. Don't
 fire-and-forget; the worker stalls in `needs_input` and you
 find out hours later.
 
-### Tear down a workstream (no undo)
+### Tear down a workstream
 
 `mu workstream destroy` is two-phase: dry-run by default, `--yes`
-to commit. There is no `mu undo`; back up `~/.local/state/mu/mu.db`
-before high-stakes destructions. FK CASCADE handles cleanup
-(agents, tasks, edges, notes, workspaces, logs).
+to commit. A pre-destroy snapshot is captured; `mu undo --yes`
+restores the DB but NOT the killed tmux session or freed
+workspace dirs. FK CASCADE handles DB cleanup (agents, tasks,
+edges, notes, workspaces, logs).
 
 ## If you ARE the agent (in-pane patterns)
 
@@ -508,7 +514,8 @@ mu task close <id> --evidence "tests pass: ..."        # close
 ### When you need to do something irreversible
 
 Gate on a human approval. Don't `mu workstream destroy` or
-`mu task delete` autonomously.
+`mu task delete` autonomously — the DB is undoable but the tmux
+side effects (pane kills, workspace dirs freed) are not.
 
 ```bash
 slug=$(mu approve add --reason "..." --json | jq -r .slug)
@@ -516,6 +523,17 @@ if mu approve wait "$slug" --timeout 600; then mu task delete X; else exit 1; fi
 ```
 
 `mu approve wait` exits 0/4/5 for granted/denied/timeout.
+
+### Recover from a destructive verb
+
+`mu snapshot list` then `mu undo --yes` (dry-run by default; add
+`--to <id>` to pick one). Two invariants `mu undo --help` doesn't
+spell out:
+
+- **DB only.** Killed tmux panes and freed workspace dirs do NOT
+  come back; restore output reports the resulting DB-vs-tmux drift.
+- **No `mu redo`.** Each restore takes a pre-restore snapshot, so
+  a second `mu undo --yes` rolls forward.
 
 ### When you need to wait for another agent to finish
 

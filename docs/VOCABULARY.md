@@ -277,9 +277,10 @@ XDG-Base-Directory-Spec compliant. The state directory resolves as:
   `mu state -w <workstream>`.
 - `<state-dir>/snapshots/<id>.db` — whole-DB snapshots auto-captured
   before destructive verbs (schema v4). Indexed by the `snapshots`
-  table; restore via `mu undo` (verb shipping in snap_undo_verb).
-  Default colocation: snapshots live next to the live DB, so per-
-  test isolation works without env gymnastics.
+  table; restore via `mu undo` (inspect via `mu snapshot list` /
+  `mu snapshot show <id>`). Default colocation: snapshots live
+  next to the live DB, so per-test isolation works without env
+  gymnastics.
 - mu does NOT consult any agent-template directory. If pi-subagents
   is installed, its `~/.pi/agent/agents/` and `.pi/agents/` paths
   are pi-subagents' concern — not mu's.

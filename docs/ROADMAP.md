@@ -201,20 +201,35 @@ GC opportunistic in-hook (<14 days OR <100 rows). NO FK on
 `workstream` — destroying a workstream must NOT cascade-delete
 its pre-destroy snapshot.
 
-### `mu undo` / `mu snapshot list` — SHIPPING in v0.2 (snap_undo_verb)
+### `mu undo` + `mu snapshot {list,show}` — SHIPPED in v0.2 (snap_undo_verb)
 
-Design decision: NO `mu redo` in v0.2. Verbs have side-effects
-(tmux kill, git worktree remove) that aren't replayable; honest
-shape is 'every restore IS itself a destructive op, so it gets its
-own pre-restore snapshot, and `mu undo` after `mu undo` restores
-that one'. Promote `mu redo` if real use surfaces a need.
+Three verbs on top of the snapshots substrate:
 
-Cross-version restores rejected (snapshot.schema_version <
-CURRENT_SCHEMA_VERSION); migrations are forward-only.
+- **`mu undo [--yes] [--to <id>]`** — top-level. Restores latest
+  snapshot (or the one named by `--to`). Dry-run by default;
+  `--yes` commits. Post-restore reconciles every workstream
+  (best-effort per workstream, errors swallowed) and reports
+  ghosts pruned + orphans surfaced.
+- **`mu snapshot list [-n N] [--json]`** — newest-first table.
+- **`mu snapshot show <id> [--json]`** — full row metadata.
 
-Tmux state is NOT rolled back. Restore + reconcile prunes ghost
-rows; orphan panes surface in next `mu agent list`. Documented
-honestly in the verb's output.
+Design decisions held to:
+
+- **No `mu redo`.** Verbs have side-effects (tmux kill, git worktree
+  remove) that aren't replayable. Each restore captures a
+  pre-restore snapshot first, so a second `mu undo` rolls forward
+  to that one. Verified end-to-end. Promote `mu redo` only if real
+  use surfaces a need.
+- **Cross-version restores rejected** (snapshot.schema_version <
+  CURRENT_SCHEMA_VERSION); migrations are forward-only. Maps to
+  `SnapshotVersionMismatchError` (exit 4).
+- **Tmux state is NOT rolled back.** Restore + reconcile prunes
+  ghost rows; orphan panes surface in next `mu agent list`.
+  Documented honestly in the verb's stdout.
+
+Destructive verbs that already auto-snapshot now also advertise
+undo in their `Next:` blocks (`mu task delete`, `mu workstream
+destroy --yes`, etc.). Closes `snap_destroy_safety`.
 
 ---
 

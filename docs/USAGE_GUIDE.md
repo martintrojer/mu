@@ -13,9 +13,11 @@ verb list is in `## CLI — complete verb list` of
 > (`mu approve`), evidence on lifecycle verbs. See
 > [CHANGELOG.md](../CHANGELOG.md) for the release entry.
 >
-> A few items remain on the roadmap (e.g. snapshots/undo);
-> see [§ Not in 0.1.0](#whats-not-in-010-and-how-to-work-around-it) at
-> the bottom for what to use instead.
+> A few items remain on the roadmap; see
+> [§ Not in 0.2.0](#whats-not-in-020-and-how-to-work-around-it)
+> at the bottom for what to use instead. Snapshots + `mu undo` /
+> `mu snapshot {list,show}` shipped in v0.2 — see
+> [§ 14. Recovery scenarios](#14-recovery-scenarios).
 
 *If anything below disagrees with `mu --help`, trust `mu --help`.*
 
@@ -40,7 +42,7 @@ verb list is in `## CLI — complete verb list` of
 15. [Cleanup](#15-cleanup)
 16. [One-shot demo script](#16-one-shot-demo-script)
 17. [Mental model in three sentences](#mental-model-in-three-sentences)
-18. [What's NOT in 0.1.0](#whats-not-in-010-and-how-to-work-around-it)
+18. [What's NOT in 0.2.0](#whats-not-in-020-and-how-to-work-around-it)
 19. [Where to go from here](#where-to-go-from-here)
 
 ---
@@ -711,6 +713,41 @@ mu doctor                       # quick health check
 rm ~/.local/state/mu/mu.db                  # nuke (last resort; loses task graph and registry)
 ```
 
+### You ran a destructive verb and want to undo it
+
+Every destructive verb (`mu task delete`, `mu workstream destroy
+--yes`, `mu task close/reject/defer/release`, `mu agent close`,
+`mu workspace free`, `mu approve grant/deny`) auto-captures a
+whole-DB snapshot before it mutates. Restore the latest with
+`mu undo`:
+
+```bash
+mu undo                # dry-run: shows the snapshot summary, does NOT restore
+mu undo --yes          # commit the restore
+mu undo --to 12 --yes  # restore a specific snapshot id
+
+mu snapshot list       # newest-first, with id / label / workstream / size
+mu snapshot show 12    # full metadata for one snapshot
+```
+
+Two important caveats:
+
+- **Tmux state is NOT rolled back.** A snapshot is a copy of
+  `mu.db` only. After restore, mu reconciles every workstream and
+  reports `agents pruned` (DB row → dead pane) and `orphan panes
+  surfaced` (live pane the restored DB doesn't know about) so you
+  can see exactly where DB and tmux disagree. On-disk workspace
+  dirs that `mu workspace free` removed are NOT recreated either.
+- **Each restore captures a pre-restore snapshot first.** That
+  means a second `mu undo` rolls forward to the snapshot taken
+  just before the previous restore — there is no separate
+  `mu redo`, and there doesn't need to be.
+
+Snapshots live next to the live DB at
+`<state-dir>/snapshots/<id>.db`. They GC opportunistically:
+older than 14 days OR more than 100 rows, whichever cap is hit
+first, on every capture.
+
 ### Workspace orphans (dirs on disk with no DB row)
 
 A `--workspace` spawn that aborted partway, an `mu agent close`
@@ -814,6 +851,12 @@ It's idempotent on every leg: missing tmux session is fine, zero DB
 rows is fine, repeated `mu workstream destroy` against an already-gone workstream
 prints "nothing to destroy" and exits 0.
 
+A whole-DB snapshot is captured before the destroy runs. If you
+regret it, `mu undo --yes` restores the DB — but the tmux session
+that was killed and any per-agent workspace dirs that were freed
+are NOT brought back. See
+[§ 14: You ran a destructive verb and want to undo it](#you-ran-a-destructive-verb-and-want-to-undo-it).
+
 The tmux session is killed BEFORE the DB rows so an unexpected tmux
 failure leaves the registry intact (you can retry); if you only want
 the DB cleared, use `mu sql` directly:
@@ -891,6 +934,8 @@ service of those three.
 
 ## What's NOT in 0.2.0 (and how to work around it)
 
+<a id="whats-not-in-020-and-how-to-work-around-it"></a>
+
 The full roadmap with promotion criteria lives in
 [ROADMAP.md](ROADMAP.md). The short list of gaps you might hit
 in real use:
@@ -900,7 +945,6 @@ in real use:
 | Multi-CLI status detection (per-CLI prompts)  | Braille spinner fallback (`f68838f`) covers pi/pi-meta + every TUI wrapper using standard spinner glyphs. Per-CLI permission-prompt patterns still pi-only. | partially shipped |
 | Pi extension (typed tools, HUD, wakeups)      | `mu hud` verb covers the HUD use-case (run via `watch` / `tmux display-popup` / `status-right`). Other extension tools deferred. | partially shipped |
 | Markdown agent-definition discovery           | Spawn accepts `--cli` and `--command` directly; no template registry    | dropped       |
-| `mu redo`                                     | None. Verbs have side-effects (tmux kill, git worktree remove) that aren't replayable. `mu undo` after `mu undo` restores the pre-restore snapshot, which is the practical equivalent. | rejected for v0.2 |
 | `mu run script.ts` (JS DSL)                   | Use `--json` + bash + jq                                                | rejected      |
 | Sync to GitHub Issues / Linear / Asana        | Not in scope; explicitly rejected                                       | —             |
 
