@@ -46,6 +46,13 @@ export interface Capture {
   /** null = CLI returned normally; otherwise the code passed to
    *  process.exit() OR thrown by commander.exitOverride. */
   exitCode: number | null;
+  /** Defined iff buildProgram() / parseAsync() threw an unhandled
+   *  error that was NOT a commander parse-error or our own exit
+   *  shim. Tests should assert `error === undefined` when they
+   *  expect success — a thrown TypeError mid-render would
+   *  otherwise look identical to a clean exit (both stdout='',
+   *  exitCode=null). Surfaced by review_test_runcli_silently_swallows_throws. */
+  error?: Error;
 }
 
 export async function runCli(argv: readonly string[], dbPath: string): Promise<Capture> {
@@ -89,6 +96,7 @@ export async function runCli(argv: readonly string[], dbPath: string): Promise<C
     throw new Error(`__exit__:${exitCode}`);
   };
 
+  let caughtError: Error | undefined;
   try {
     const program = buildProgram();
     // exitOverride() converts commander's process.exit (on parse errors,
@@ -96,10 +104,28 @@ export async function runCli(argv: readonly string[], dbPath: string): Promise<C
     // our own process.exit shim above, ALL exit paths land in this catch.
     program.exitOverride();
     await program.parseAsync(["node", "mu", ...argv]);
-  } catch {
-    // Either commander threw (parse error) or our exit shim threw
-    // (typed-error path). Either way, what was captured is what the
-    // test wants to assert on.
+  } catch (err) {
+    // Three error classes can land here:
+    //   1. our process.exit shim throws Error('__exit__:N') with the
+    //      exit code already captured to `exitCode`. Expected.
+    //   2. commander's exitOverride() throws CommanderError on parse
+    //      errors (its `code` starts with 'commander.'). Expected.
+    //   3. anything else — a real bug in the verb (TypeError mid-
+    //      render, an unhandled rejection, an opendb failure not
+    //      caught by handle()). MUST be surfaced so the test fails
+    //      instead of silently appearing-to-succeed.
+    if (err instanceof Error) {
+      const msg = err.message;
+      const isExitShim = msg.startsWith("__exit__:");
+      // CommanderError has a string `code` like 'commander.unknownOption'.
+      const code = (err as { code?: unknown }).code;
+      const isCommander = typeof code === "string" && code.startsWith("commander.");
+      if (!isExitShim && !isCommander) {
+        caughtError = err;
+      }
+    } else {
+      caughtError = new Error(`non-Error thrown: ${String(err)}`);
+    }
   } finally {
     process.stdout.write = originalWrite;
     process.stderr.write = originalErrWrite;
@@ -114,5 +140,7 @@ export async function runCli(argv: readonly string[], dbPath: string): Promise<C
     }
   }
 
-  return { stdout, stderr, exitCode };
+  return caughtError !== undefined
+    ? { stdout, stderr, exitCode, error: caughtError }
+    : { stdout, stderr, exitCode };
 }
