@@ -69,17 +69,41 @@ describe("mu hud", () => {
 
   // ── --mid (default) ─────────────────────────────────────────────
 
-  it("--mid mode (default) prints counts + agent table", async () => {
+  it("--mid mode (default) prints counts + agent table + ready excerpt + in-progress", async () => {
     const { stdout, exitCode } = await runCli(["hud", "-w", "ws"], dbPath);
     expect(exitCode).toBeNull();
     expect(stdout).toContain("mu-ws");
     expect(stdout).toContain("2 ready");
     expect(stdout).toContain("agents (0 active)");
-    expect(stdout).toContain("(none)");
+    // Ready section now shown in --mid (top-3 by ROI).
+    expect(stdout).toContain("ready (2)");
+    expect(stdout).toMatch(/alpha|beta/);
     // No tracks section in mid mode.
     expect(stdout).not.toContain("tracks (");
     // No recent section in mid mode.
     expect(stdout).not.toContain("recent (");
+  });
+
+  it("--mid caps ready excerpt at 3, suffixes count with '+N more'", async () => {
+    // Add 4 more tasks so total ready = 6.
+    for (const id of ["gamma", "delta", "eps", "zeta"]) {
+      await runCli(
+        ["task", "add", id, "-w", "ws", "--title", id, "-i", "50", "-e", "1", "--json"],
+        dbPath,
+      );
+    }
+    const { stdout } = await runCli(["hud", "-w", "ws"], dbPath);
+    expect(stdout).toContain("ready (6 (+3 more))");
+  });
+
+  it("--mid omits the ready section entirely when there are no ready tasks", async () => {
+    // Close every task so 'ready' is empty.
+    for (const id of ["alpha", "beta"]) {
+      await runCli(["task", "close", id, "-w", "ws", "--evidence", "test", "--json"], dbPath);
+    }
+    const { stdout } = await runCli(["hud", "-w", "ws"], dbPath);
+    expect(stdout).toContain("0 ready");
+    expect(stdout).not.toContain("ready (0");
   });
 
   it("--mid is the default when no mode flag is passed", async () => {
@@ -90,15 +114,18 @@ describe("mu hud", () => {
 
   // ── --full ──────────────────────────────────────────────────────
 
-  it("--full mode adds tracks list + recent-events tail", async () => {
+  it("--full mode adds tracks list + recent-events tail + full ready/in-progress", async () => {
     const { stdout, exitCode } = await runCli(["hud", "-w", "ws", "--full"], dbPath);
     expect(exitCode).toBeNull();
     expect(stdout).toContain("agents (0 active)");
+    // Ready section shown without truncation marker.
+    expect(stdout).toContain("ready (2)");
+    expect(stdout).not.toContain("+0 more");
+    expect(stdout).toContain("alpha");
+    expect(stdout).toContain("beta");
     expect(stdout).toContain("tracks (2)");
-    // Tracks render with the localIds we seeded.
     expect(stdout).toMatch(/Track 1: (alpha|beta)/);
     expect(stdout).toContain("recent (");
-    // The seeded `task add alpha` event should be in the tail.
     expect(stdout).toContain("task add alpha");
   });
 

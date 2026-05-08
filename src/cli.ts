@@ -3454,12 +3454,30 @@ async function cmdHud(db: Db, opts: HudOpts): Promise<void> {
     return;
   }
 
-  // mid + full: counts header + agent table.
+  // mid + full: counts header + agent table + ready + in-progress.
   console.log(
     `${pc.bold(`mu-${workstream}`)} · ${ready.length} ready · ${inProgress.length} in-progress · ${tracks.length} tracks`,
   );
   console.log(pc.bold(`agents (${view.agents.length} active):`));
   console.log(formatHudAgentLines(db, view.agents));
+
+  // mid: top-3 ready by ROI; full: every ready row. Same for
+  // in-progress (mid: top-3, full: all). Operator-facing detail —
+  // 'what should I dispatch next' is the load-bearing question and
+  // the top of the ready list answers it.
+  const readyShown = mode === "full" ? ready : ready.slice(0, 3);
+  if (readyShown.length > 0) {
+    const moreReady = mode === "mid" && ready.length > 3 ? ` (+${ready.length - 3} more)` : "";
+    console.log(pc.bold(`ready (${ready.length}${moreReady}):`));
+    console.log(formatHudTaskLines(readyShown));
+  }
+  const inProgressShown = mode === "full" ? inProgress : inProgress.slice(0, 3);
+  if (inProgressShown.length > 0) {
+    const moreIp =
+      mode === "mid" && inProgress.length > 3 ? ` (+${inProgress.length - 3} more)` : "";
+    console.log(pc.bold(`in-progress (${inProgress.length}${moreIp}):`));
+    console.log(formatHudTaskLines(inProgressShown));
+  }
 
   if (mode === "full") {
     console.log(pc.bold(`tracks (${tracks.length}):`));
@@ -3475,6 +3493,20 @@ async function cmdHud(db: Db, opts: HudOpts): Promise<void> {
       }
     }
   }
+}
+
+/** Render one line per task: '  id  title · impact/effort → ROI'.
+ *  Truncates title to 40 chars so the line stays narrow. */
+function formatHudTaskLines(tasks: readonly TaskRow[]): string {
+  if (tasks.length === 0) return pc.dim("  (none)");
+  const lines: string[] = [];
+  for (const t of tasks) {
+    const title = t.title.length > 40 ? `${t.title.slice(0, 39)}…` : t.title;
+    const roi = t.effortDays > 0 ? (t.impact / t.effortDays).toFixed(0) : pc.dim("∞");
+    const owner = t.owner ? pc.dim(` (→ ${t.owner})`) : "";
+    lines.push(`  ${pc.bold(t.localId)}  ${title} ${pc.dim(`· ROI ${roi}`)}${owner}`);
+  }
+  return lines.join("\n");
 }
 
 /** Compact agent-status histogram for the --small mode. */
