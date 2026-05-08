@@ -225,8 +225,9 @@ mu task claim <id> [--for <worker> | --self [--actor <name>]]
 mu task release <id> [--reopen]      # clear owner; optionally flip OPEN
 mu task close <id>                   # → CLOSED (idempotent)
 mu task open <id>                    # → OPEN (idempotent)
-mu task reject <id> [--cascade]      # → REJECTED (won't do; still blocks ↓)
-mu task defer <id>  [--cascade]      # → DEFERRED (parked; still blocks ↓)
+mu task reject <id> [--cascade [--yes]]   # → REJECTED (won't do; still blocks ↓)
+                                     # --cascade alone is dry-run; --yes commits
+mu task defer <id>  [--cascade [--yes]]   # → DEFERRED (parked; still blocks ↓)
 mu task block <blocked> --by <blocker>     # cycle + workstream checked
 mu task unblock <blocked> --by <blocker>
 mu task update <id> [--title|--impact|--effort-days]
@@ -246,6 +247,7 @@ mu workspace create <agent> [--backend jj|sl|git|none] [--from REF]
 mu workspace list [--all]
 mu workspace free <agent> [--commit]
 mu workspace path <agent>            # cd $(mu workspace path X)
+mu workspace orphans                 # on-disk dirs with no DB row
 
 # Activity log (1, overloaded)
 mu log "text" [--as N] [--kind K]    # write

@@ -711,6 +711,32 @@ mu doctor                       # quick health check
 rm ~/.local/state/mu/mu.db                  # nuke (last resort; loses task graph and registry)
 ```
 
+### Workspace orphans (dirs on disk with no DB row)
+
+A `--workspace` spawn that aborted partway, an `mu agent close`
+from an earlier mu version, or a manual `rm` of `vcs_workspaces`
+rows can leave dirs in `<state-dir>/workspaces/<workstream>/<agent>/`
+that have no DB row. They're invisible to `mu workspace list` but
+they BLOCK subsequent `--workspace` spawns under the same name.
+
+```bash
+mu state -w <workstream>          # 'Workspace orphans' section in yellow
+mu workspace orphans -w <workstream>   # focused list + cleanup recipe
+```
+
+For each orphan, the cleanup is one of:
+
+```bash
+# git-backed workspace: also prunes the worktree registry
+(cd <project-root> && git worktree remove --force <orphan-path>)
+
+# any backend (last resort)
+rm -rf <orphan-path>
+```
+
+The `Next:` block from `mu workspace orphans` interpolates the
+actual paths so you can copy-paste.
+
 ### You typo'd a workstream name and want to rename it
 
 The `workstreams.name` column has `ON UPDATE CASCADE` on every
@@ -863,7 +889,7 @@ service of those three.
 
 ---
 
-## What's NOT in 0.1.0 (and how to work around it)
+## What's NOT in 0.2.0 (and how to work around it)
 
 The full roadmap with promotion criteria lives in
 [ROADMAP.md](ROADMAP.md). The short list of gaps you might hit
@@ -871,11 +897,10 @@ in real use:
 
 | Want                                          | Workaround                                                              | Status        |
 | --------------------------------------------- | ----------------------------------------------------------------------- | ------------- |
-
-| Multi-CLI support (claude/codex/...)          | Not currently planned. mu is a pi orchestrator. The `--cli` flag is a binary-resolver, not a CLI selector. | not planned |
-| Pi extension (typed tools, HUD, wakeups)      | Use the CLI from inside pi via the `bash` tool                          | roadmap       |
+| Multi-CLI status detection (per-CLI prompts)  | Braille spinner fallback (`f68838f`) covers pi/pi-meta + every TUI wrapper using standard spinner glyphs. Per-CLI permission-prompt patterns still pi-only. | partially shipped |
+| Pi extension (typed tools, HUD, wakeups)      | `mu hud` verb covers the HUD use-case (run via `watch` / `tmux display-popup` / `status-right`). Other extension tools deferred. | partially shipped |
 | Markdown agent-definition discovery           | Spawn accepts `--cli` and `--command` directly; no template registry    | dropped       |
-| `mu undo` / `mu redo`                         | None — be careful with `mu sql DELETE`/`UPDATE` and `workstream destroy` | roadmap       |
+| `mu redo`                                     | None. Verbs have side-effects (tmux kill, git worktree remove) that aren't replayable. `mu undo` after `mu undo` restores the pre-restore snapshot, which is the practical equivalent. | rejected for v0.2 |
 | `mu run script.ts` (JS DSL)                   | Use `--json` + bash + jq                                                | rejected      |
 | Sync to GitHub Issues / Linear / Asana        | Not in scope; explicitly rejected                                       | —             |
 

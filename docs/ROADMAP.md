@@ -115,19 +115,25 @@ if it lands, three rules stay non-negotiable:
 If those three rules hold, mu stays driveable from a shell forever
 and the extension stays thin.
 
-### `mu adopt <pane-id> [--name <agent>]`
+### `mu adopt <pane-id> [--name <agent>]` — SHIPPED in v0.2 (`e20af89`)
 
-Reconciliation already surfaces orphan panes. The `adopt` verb
-formally registers one of those panes as a managed agent. Earns
-when orphans become a real annoyance.
+Reconciliation surfaces orphan panes; `mu adopt` formally registers
+one of them as a managed agent. Promotion was triggered by the
+multi-agent dogfood pattern (orchestrator runs in a pane outside
+the `mu-<ws>` session and wants to be claimable as a worker).
 
 ### Heterogeneous CLI status detection (claude, codex, ...)
 
-mu is a pi orchestrator today. The substrate is ready (the `cli`
-column is TEXT; `MU_<UPPER_CLI>_COMMAND` resolution works for any
-string) so multi-CLI can re-earn its way back if real friction
-surfaces. A `Detector` registry keyed by CLI name (~50 LOC per
-CLI) is the obvious shape.
+mu is a pi orchestrator today, BUT v0.2 added a Braille-spinner
+fallback (`f68838f`) that catches every TUI wrapper using
+standard spinner glyphs (U+2800–U+28FF). pi-meta + solo are now
+covered without a per-CLI detector. Other vanilla TUIs (claude,
+codex) inherit the same fallback.
+
+For patterns the spinner fallback misses (e.g. permission
+prompts), a per-CLI `Detector` registry keyed by CLI name (~50
+LOC per CLI) is the obvious shape. Promote when a real
+specific-prompt-misclassification surfaces.
 
 Pattern sketch (ported from a prior internal multi-agent runtime's
 per-CLI detector — kept here for whoever picks it up):
@@ -172,25 +178,43 @@ verbose for a second consumer.
 
 Theme: every destructive action becomes recoverable.
 
-### `snapshots` table + auto-snapshot before mutation
+### `snapshots` table + auto-snapshot before mutation — SHIPPED in v0.2 (schema v4)
 
-Before each write op, dump the affected subtree to
-`<state-dir>/snapshots/<workstream>/<ts>.sql`. Append a row to the
-table.
+`captureSnapshot()` runs at the top of every destructive verb
+(workstream destroy, agent close, task close/reject/defer/release/
+delete, workspace free, approve grant/deny). Whole-DB copy via
+`VACUUM INTO` (synchronous, FK-page-level atomic). Files land in
+`<dirname(db-path)>/snapshots/<id>.db`; one row per capture in:
 
 ```sql
 CREATE TABLE snapshots (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    label       TEXT NOT NULL,            -- operation name + args
-    db_path     TEXT NOT NULL,            -- file path under <state-dir>/snapshots/
+    workstream  TEXT,                    -- nullable: destroy spans all
+    label       TEXT NOT NULL,           -- operation name + args
+    db_path     TEXT NOT NULL,           -- abs path to .db file
+    schema_version INTEGER NOT NULL,     -- for restore-time version check
     created_at  TEXT NOT NULL
 );
 ```
 
-### `mu undo` / `mu redo` / `mu snapshot list`
+GC opportunistic in-hook (<14 days OR <100 rows). NO FK on
+`workstream` — destroying a workstream must NOT cascade-delete
+its pre-destroy snapshot.
 
-Pop the latest snapshot; replay-on-demand for redo. List shows
-timestamps + the operation that triggered each snapshot.
+### `mu undo` / `mu snapshot list` — SHIPPING in v0.2 (snap_undo_verb)
+
+Design decision: NO `mu redo` in v0.2. Verbs have side-effects
+(tmux kill, git worktree remove) that aren't replayable; honest
+shape is 'every restore IS itself a destructive op, so it gets its
+own pre-restore snapshot, and `mu undo` after `mu undo` restores
+that one'. Promote `mu redo` if real use surfaces a need.
+
+Cross-version restores rejected (snapshot.schema_version <
+CURRENT_SCHEMA_VERSION); migrations are forward-only.
+
+Tmux state is NOT rolled back. Restore + reconcile prunes ghost
+rows; orphan panes surface in next `mu agent list`. Documented
+honestly in the verb's output.
 
 ---
 

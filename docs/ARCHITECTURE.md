@@ -273,17 +273,21 @@ anticipatory layering. Each module is concrete and consumed today.
 
 | Module                | Responsibility                                                                            |
 | --------------------- | ----------------------------------------------------------------------------------------- |
-| `src/db.ts`           | SQLite (better-sqlite3) connection, WAL mode, schema (7 tables + 3 views), default paths  |
+| `src/db.ts`           | SQLite (better-sqlite3) connection, WAL mode, schema (10 tables + 3 views, schema v4), default paths |
 | `src/tmux.ts`         | Single tmux executor wrapper, send protocol (bracketed-paste), pane validation            |
 | `src/detect.ts`       | Pi-only status detector (`busy` / `needs_input` / `idle` / `done`)                        |
 | `src/reconcile.ts`    | Ghost prune + status detect + orphan surface; "reality wins"                              |
-| `src/agents.ts`       | CRUD + spawn / send / read / list / show / close / free; spawn liveness; reaper           |
+| `src/agents.ts`       | CRUD + spawn / send / read / list / show / close / free / adopt; spawn liveness; reaper; pane-title composition (`composeAgentTitle`) |
 | `src/tasks.ts`        | CRUD + every read/write verb on the DAG; cycle check; claim CAS; auto-event emission      |
 | `src/tracks.ts`       | Parallel-tracks union-find with diamond merge                                             |
 | `src/workstream.ts`   | ensureWorkstream / list / summarize / destroy                                             |
 | `src/logs.ts`         | `agent_logs` SDK: appendLog / listLogs / latestSeq / emitEvent                            |
 | `src/vcs.ts`          | `VcsBackend` interface + jj / sl / git / none impls; detection precedence                 |
-| `src/workspace.ts`    | Per-agent VCS workspaces (registry layer on top of vcs.ts); CRUD + cascade                |
+| `src/workspace.ts`    | Per-agent VCS workspaces (registry layer on top of vcs.ts); CRUD + cascade; orphan-dir detection (`listWorkspaceOrphans`) |
+| `src/snapshots.ts`    | Whole-DB snapshots (`VACUUM INTO`); auto-captured before destructive verbs (schema v4); SDK for `mu undo` |
+| `src/migrations.ts`   | Forward-only schema migrations (v1→v2 ON UPDATE CASCADE; v2→v3 REJECTED+DEFERRED; v3→v4 snapshots) |
+| `src/output.ts`       | NextStep type + `printNextSteps` + `errorNextSteps` plumbing for self-documenting output |
+| `src/approvals.ts`    | Human-in-the-loop gate: add/grant/deny/wait verbs                                         |
 | `src/cli.ts`          | commander entry; thin wrappers over the SDK; `--json` rendering for every read verb       |
 | `src/index.ts`        | SDK entrypoint (re-exports)                                                               |
 | `skills/mu/`          | Bundled skill teaching the LLM the model + verb list + jq pipelines                       |
@@ -317,18 +321,26 @@ each are deliberately small.
 | Seam                | Add a new impl by...                                                                                                          |
 | ------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | `VcsBackend`        | Implementing `detect / createWorkspace / freeWorkspace` (~80–150 LOC; jj/sl/git/none are working examples)                    |
-| Per-CLI `Detector`  | Replacing `detectPiStatus` switch with a registry; ~50 LOC per added CLI (currently pi-only)                                  |
-| New typed verb      | Add an SDK function in the relevant `src/*.ts`, wire one commander block in `src/cli.ts` (use `handle()` for exit-code map)   |
+| Per-CLI `Detector`  | Adding patterns to `detectPiStatus` (vanilla pi `to interrupt)`; pi-meta + every TUI wrapper covered by Braille spinner glyph fallback `[\u2800-\u28FF]`)                  |
+| New typed verb      | Add an SDK function in the relevant `src/*.ts`, wire one commander block in `src/cli.ts` (use `handle()` for exit-code map; route through `printNextSteps` for self-documenting output) |
+| New schema migration| Bump `CURRENT_SCHEMA_VERSION` in `src/db.ts`; add a `(toVersion -> fn)` to `MIGRATIONS` in `src/migrations.ts`; mirror the new shape in `CURRENT_SCHEMA`. v1→v2→v3→v4 examples in place |
+| Snapshot hook       | Add `await captureSnapshot(db, 'verb-name', workstream)` at the top of any new destructive verb (one-liner; GC + restore behaviour automatic) |
 
 ## State of truth
 
-- **`~/.local/state/mu/mu.db` is canonical.** Everything else is a cache.
-- **Reads are cheap** via SQLite views (`ready`, `blocked`, `goals`,
-  `working`, `idle`, `stuck`).
-- **Writes go through `core/api.ts`** which validates, snapshots,
-  transacts, and reconciles.
-- **In-memory state is short-lived** — the extension's HUD cache, the
-  CLI's per-command connection. Gone on process exit.
+- **`~/.local/state/mu/mu.db` is canonical.** Everything else is a
+  cache, including tmux pane titles (mu re-pushes them via
+  `composeAgentTitle` after every state change).
+- **Reads are cheap** via SQLite views (`ready`, `blocked`, `goals`).
+- **Writes go through the typed SDK functions** (`src/agents.ts`,
+  `src/tasks.ts`, etc.) which validate, transact, snapshot (for
+  destructive verbs), and reconcile.
+- **Snapshots are insurance, not version history.** Captured only
+  before destructive verbs (workstream destroy, agent close, task
+  close/reject/defer/release/delete, workspace free, approve
+  grant/deny). Status flips and additive ops do NOT snapshot.
+- **In-memory state is short-lived** — the CLI's per-command
+  connection. Gone on process exit.
 - **Cross-process coordination** is via SQLite WAL — multiple `mu`
   processes share the file safely.
 

@@ -47,9 +47,10 @@ defined here, fix the doc. If you need a new term, add it here first.
 | **persistent**        | Agent that stays alive across tasks                                      | "long-lived" (only in prose)                       |
 | **one-shot**          | Agent that exists for a single task and then terminates                  | "ephemeral", "transient"                           |
 | **workspace**         | A VCS-isolated checkout (jj workspace / sl worktree / git worktree / cp) | "branch" (it has one but isn't one), "checkout" (only for `none` backend) |
+| **workspace orphan**  | A directory under `<state-dir>/workspaces/<workstream>/` with no row in `vcs_workspaces`. Blocks subsequent `--workspace` spawns. Surfaced by `mu workspace orphans -w X` and `mu state -w X`. | "stray dir", "leftover workspace"                  |
 | **backend**           | Implementation of `AgentBackend` or `VcsBackend`                         | "driver", "provider"                               |
-| **detector**          | Per-CLI pattern matcher for busy/permission/ready. Today mu has one (`detectPiStatus` in `src/detect.ts`); pi-only. Other CLIs spawned via `--cli <other>` always show `needs_input`. | "matcher", "parser"                                |
-| **snapshot**          | A pre-mutation backup of the DB (deferred; see [ROADMAP.md](ROADMAP.md)) | "checkpoint", "backup"                             |
+| **detector**          | Per-CLI pattern matcher for busy/permission/ready. Today mu has one (`detectPiStatus` in `src/detect.ts`); covers vanilla pi + any TUI wrapper that uses Braille spinner glyphs. Other CLIs spawned via `--cli <other>` may misclassify; trust scrollback over the emoji. | "matcher", "parser"                                |
+| **snapshot**          | A whole-DB backup (`<state-dir>/snapshots/<id>.db`) auto-captured before each destructive verb (workstream destroy, agent close, task close/reject/defer/release/delete, workspace free, approve grant/deny). Indexed by the `snapshots` table; restore via `mu undo`. | "checkpoint", "backup"                             |
 | **doctor**            | The diagnostic command + report                                          | "health check", "diagnose"                         |
 | **CLI**               | The `mu` command-line binary                                             | "tool" (overloaded), "binary" (only when relevant) |
 | **extension**         | The pi extension shipped in the same package                             | "plugin"                                           |
@@ -267,11 +268,18 @@ XDG-Base-Directory-Spec compliant. The state directory resolves as:
 - `<state-dir>/mu.db` — the canonical SQLite database (shared across
   all workstreams; partitioned by `workstream` columns)
 - `<state-dir>/workstreams/<workstream>/` — per-workstream artifact
-  directory (created lazily); reserved for future snapshots / tracing
-  logs / forensic pane captures.
+  directory (created lazily); reserved for tracing logs / forensic
+  pane captures.
 - `<state-dir>/workspaces/<workstream>/<agent>/` — per-agent VCS
   workspace (created by `mu agent spawn --workspace` or
-  `mu workspace create`).
+  `mu workspace create`). Orphan dirs (no row in `vcs_workspaces`)
+  surfaced by `mu workspace orphans -w <workstream>` and
+  `mu state -w <workstream>`.
+- `<state-dir>/snapshots/<id>.db` — whole-DB snapshots auto-captured
+  before destructive verbs (schema v4). Indexed by the `snapshots`
+  table; restore via `mu undo` (verb shipping in snap_undo_verb).
+  Default colocation: snapshots live next to the live DB, so per-
+  test isolation works without env gymnastics.
 - mu does NOT consult any agent-template directory. If pi-subagents
   is installed, its `~/.pi/agent/agents/` and `.pi/agents/` paths
   are pi-subagents' concern — not mu's.

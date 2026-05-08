@@ -162,28 +162,42 @@ orchestrator's first decision is whether to reach for mu at all.
 
 ---
 
-## What ships in 0.1.0
+## What ships in 0.2.0
 
-**~50 typed verbs across 6 namespaces, plus `mu`, `mu state`, `mu
-sql`, `mu doctor`.** Every read verb supports `--json`. State lives
-in `<XDG_STATE_HOME or ~/.local/state>/mu/mu.db`.
+**~60 typed verbs across 7 namespaces, plus `mu`, `mu state`, `mu
+hud`, `mu sql`, `mu doctor`, `mu adopt`.** Every verb supports
+`--json`. State lives in
+`<XDG_STATE_HOME or ~/.local/state>/mu/mu.db` (schema v4).
 
 | Area | Verbs |
 | --- | --- |
-| **workstream** (3) | `init`, `list`, `destroy` |
-| **agent** (8) | `spawn` (with `--workspace*`), `send`, `read`, `show`, `list`, `close`, `free`, `attach` |
-| **task** (22) | `add` (id auto-derived from title), `list`, `show`, `notes`, `note`, `tree`, `next`, `ready`, `blocked`, `goals`, `owned-by`, `search`, `claim` (`--evidence`), `release` (`--evidence`), `close` (`--evidence`), `open` (`--evidence`), `block`, `unblock`, `update`, `delete`, `reparent` |
-| **workspace** (4) | `create`, `list`, `free` (`--commit`), `path` |
+| **workstream** (3) | `init` (repairs missing `_mu` window), `list`, `destroy` (cleans workspaces + auto-snapshots) |
+| **agent** (8) | `spawn` (`--workspace`, preflight prints backend + projectRoot), `send`, `read`, `show`, `list`, `close` (refuses if workspace; `--discard-workspace` to opt in), `free`, `attach` |
+| **task** (24) | `add` (id auto-derived from title; `--blocked-by`), `list`, `show`, `notes`, `note` (`--author`), `tree`, `next`, `ready`, `blocked`, `goals`, `owned-by`, `search`, `claim` (`--for` / `--self`; `--evidence`), `release`, `close`, `open`, `reject` (`--cascade --yes`), `defer` (`--cascade --yes`), `block`, `unblock`, `update`, `delete`, `reparent`, `wait` (exit 0/3/5) |
+| **workspace** (5) | `create`, `list`, `free` (`--commit`), `path`, `orphans` (dirs on disk with no DB row) |
 | **log** (1, overloaded) | write, read, `--tail` subscription; auto-emits on every state change |
 | **approve** (5) | `add`, `list`, `grant`, `deny`, `wait` (exit 0/4/5 = granted/denied/timeout) |
 | **self-id** (3) | `whoami`, `my-tasks`, `my-next` (resolves agent via `$TMUX_PANE`) |
-| **utilities** (4) | bare `mu` (quick mission control), `mu state` (canonical state card), `sql`, `doctor` |
+| **utilities** (5) | bare `mu` (quick mission control), `mu state`, `mu hud` (`--line` / `--small` / `--mid` / `--full` / `--json`), `mu sql` (multi-statement; `--confirm-rows`), `mu doctor`, `mu adopt` (register an existing pane) |
 
-Plus: per-agent VCS workspaces (jj/sl/git/none), activity log with
-`--tail` subscription, canonical state card (`mu state`),
-human-in-the-loop approvals (`mu approve`), `--evidence` on
-lifecycle verbs, crash recovery (ghost reaper), pi-only status
-detection (`busy / needs_input / idle / done`).
+Five task lifecycle states: `OPEN`, `IN_PROGRESS`, `CLOSED`,
+`REJECTED` (terminal won't-do; still blocks downstream),
+`DEFERRED` (parked; still blocks). `--cascade` on reject/defer is
+dry-run by default; `--yes` commits.
+
+Plus: per-agent VCS workspaces (jj/sl/git/none) with orphan
+detection, activity log with `--tail` subscription, canonical
+state card (`mu state`), human-in-the-loop approvals
+(`mu approve`), `--evidence` on every lifecycle verb,
+self-documenting output (`Next:` hints + structured
+`errorNextSteps`), crash recovery (ghost reaper), schema
+migrations (v1→v2→v3→v4), **whole-DB snapshots auto-captured
+before destructive verbs** (substrate for `mu undo`),
+pi/pi-meta/wrapper-agnostic status detection (Braille spinner
+fallback covers every TUI runtime), pane-border + composed
+pane-title carrying mu's interpreted state.
+
+A full per-commit changelog lives in [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
