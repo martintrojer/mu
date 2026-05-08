@@ -195,209 +195,120 @@ to reconstruct the why without reading the diff.
 
 ## CLI — complete verb list
 
+One-liners only. Run `mu <verb> --help` for every flag, defaults,
+and interactions — the CLI is the canonical reference. Every verb
+below accepts `--json` for machine-readable output (one exception:
+`mu agent attach`, which prints a tmux command for a human).
+Every successful verb also prints a `Next:` block of suggested
+follow-up commands; agents read it, humans skim past it.
+
 ```bash
 # Workstream (3)
-mu workstream init <name>             # create the tmux session (mu-<name>)
-mu workstream list [--json]           # every workstream on this machine
-mu workstream destroy [-w] [--yes]    # nuke tmux session + all DB rows;
-                                      # default is dry-run, --yes to commit
+mu workstream init <name>            # create tmux session mu-<name> + DB row
+mu workstream list                   # every workstream on this machine
+mu workstream destroy [--yes]        # tear down (dry-run unless --yes)
 
 # Agents (8)
-mu agent spawn <name> [-w] [--cli pi] [--command CMD] [--tab T]
-                      [--role full-access|read-only] [--cwd P]
-                      [--workspace] [--workspace-backend jj|sl|git|none]
-                      [--workspace-from REF] [--workspace-project-root PATH]
-mu agent send <name> "text" [-w]      # bracketed-paste send (handles /, ?, !, $)
-mu agent read <name> [-n N] [-w]      # tmux capture-pane; default = full scrollback
-mu agent show <name> [-n N] [-w] [--json]  # registry row + last N lines (default 20)
-mu agent list [-w] [--json]           # this workstream's agents (reconciled with tmux)
-mu agent close <name> [-w]            # kill pane + drop registry row
-                                      # NOTE: does not touch the workspace; run
-                                      # `mu workspace free <name>` separately.
-mu agent free <name> [-w]             # set agents.status='free' (idempotent; pane untouched)
-mu agent attach <name> [-w]           # print scrollback + tmux command to attach
-                                      # Note: -w on send/read/show/close/free is a SCOPE check
-                                      # (errors with AgentNotInWorkstreamError if mismatch);
-                                      # -w on attach picks WHICH agent (different role).
+mu agent spawn <name> [--workspace]  # spawn into mu-<workstream>
+mu agent send <name> "text"          # bracketed-paste safe
+mu agent read <name> [-n N]          # capture-pane scrollback
+mu agent show <name> [-n N]          # registry row + last N lines
+mu agent list                        # reconciled with tmux; surfaces orphans
+mu agent close <name>                # kill pane + drop row (workspace untouched)
+mu agent free <name>                 # status='free'; pane untouched
+mu agent attach <name>               # print scrollback + tmux attach hint
 
 # Registration (1) — the inverse of spawn
-mu adopt <pane-or-title> [-w] [--name N] [--cli pi] [--role R] [--json]
-                                      # register an existing tmux pane as a managed agent
-                                      # (clears the 'orphan' state from `mu agent list`).
-                                      # pane id form '%15' or pane title form 'worker-2';
-                                      # idempotent; pane must be in mu-<workstream> session.
+mu adopt <pane-id|pane-title>        # register an orphan pane as a managed agent
 
 # Tasks (22)
-mu task add [id] [-w] --title T --impact N --effort-days N [--blocks A,B,C]
-                                      # id optional — derived from title via slugify when omitted
-mu task list [-w] [--json]            # every task in the workstream
-mu task next [-w] [-n K] [--json]     # top-K ready tasks by ROI (default K=1)
-mu task ready [-w] [--json]           # all ready tasks, sorted by ROI
-mu task blocked [-w] [--json]         # OPEN tasks with at least one non-CLOSED blocker
-mu task goals [-w] [--json]           # tasks with no dependents (graph endpoints; excludes CLOSED)
-mu task owned-by <agent> [--include-closed] [--json]
-                                      # what is <agent> currently working on? (cross-workstream)
-                                      # excludes CLOSED by default (closeTask preserves owner
-                                      # as historical record); --include-closed to surface that
-mu task search <pattern> [-w] [--all] [--in-notes] [--json]
-                                      # case-insensitive substring on title + id
-mu task show <id> [-w] [--json]            # row + edges + notes
-mu task tree <id> [-w] [--down] [--json]   # ASCII tree of blockers (default) or dependents (--down);
-                                           # diamonds collapse with an arrow marker
-mu task notes <id> [-w] [--json]           # just the notes (oldest first)
-mu task note <id> "text" [-w]              # append a note (\n / \t / \\ escapes interpreted)
-mu task claim <id> [-w] [--for <agent>] [--self [--actor <name>]]
-                                           # default: derive worker from $TMUX_PANE pane title (must be registered).
-                                           # --for <agent>: dispatch to a registered worker (orchestrator pattern).
-                                           # --self: anonymous claim (orchestrator does direct work);
-                                           #   owner stays NULL; actor recorded in agent_logs.source.
-                                           # --self and --for are mutually exclusive.
-mu task release <id> [-w] [--reopen]       # clear tasks.owner; --reopen flips status back to OPEN
-mu task close <id> [-w]                    # OPEN/IN_PROGRESS → CLOSED (idempotent)
-mu task open <id> [-w]                     # CLOSED → OPEN (e.g. reopen mistakenly closed)
-mu task block <blocked> [-w] --by <blocker>    # add a blocking edge (cycle + workstream check)
-mu task unblock <blocked> [-w] --by <blocker>  # remove a blocking edge (idempotent)
-mu task update <id> [-w] [--title T] [--impact N] [--effort-days N]
-                                           # modify scalar fields; one or more required
-mu task reparent <id> [-w] --blocks <a,b,c>    # atomically replace incoming edges; '' clears all
-mu task delete <id> [-w]                   # delete; FK CASCADE cleans edges + notes (idempotent)
-                                           # On all task verbs: -w is a scope check — if the task
-                                           # exists in a different workstream, errors with
-                                           # TaskNotInWorkstreamError (exit 4).
+mu task add [id] --title T --impact N --effort-days N [--blocks A,B]
+mu task list [--status S]            # every task; --status filters
+mu task next [-n K]                  # top-K ready tasks by ROI
+mu task ready                        # all ready, sorted by ROI
+mu task blocked                      # OPEN with non-CLOSED blockers
+mu task goals                        # graph endpoints (no dependents)
+mu task owned-by <agent>             # what is <agent> working on?
+mu task search <pattern> [--all] [--in-notes]
+mu task show <id>                    # row + edges + notes
+mu task tree <id> [--down]           # ASCII blockers (or dependents)
+mu task notes <id>                   # notes only, oldest first
+mu task note <id> "text"             # append (\n / \t / \\ escapes work)
+mu task claim <id> [--for <worker> | --self [--actor <name>]]
+mu task release <id> [--reopen]      # clear owner; optionally flip OPEN
+mu task close <id>                   # → CLOSED (idempotent)
+mu task open <id>                    # → OPEN (idempotent)
+mu task block <blocked> --by <blocker>     # cycle + workstream checked
+mu task unblock <blocked> --by <blocker>
+mu task update <id> [--title|--impact|--effort-days]
+mu task reparent <id> --blocks A,B   # atomic edge replacement
+mu task delete <id>                  # cascades to edges+notes; no undo
 
-# Self-identification (3) — only useful inside a managed pane
-mu whoami [--include-closed] [--json] # name + workstream + cli + owned tasks (via $TMUX_PANE);
-                                      # owned-tasks excludes CLOSED by default
-mu my-tasks [--include-closed] [--json]    # alias for `task owned-by <self>`
-mu my-next [-n K] [--json]            # alias for `task next -w <self.workstream>`
+# Self-identification (3) — in-pane only
+mu whoami                            # name + workstream + cli + owned tasks
+mu my-tasks                          # alias for task owned-by <self>
+mu my-next [-n K]                    # alias for task next -w <self.ws>
 
-# Workspace (4) — per-agent isolated VCS working copies
-mu workspace create <agent> [-w] [--backend jj|sl|git|none] [--from <ref>]
-mu workspace list [-w] [--all] [--json]
-mu workspace free <agent> [-w] [--commit]  # tear down on-disk dir; --commit auto-commits first
-mu workspace path <agent> [-w]        # print the path; usable as `cd $(mu workspace path X)`
-                                      # -w on workspace free/path is a scope check on the agent.
+# Workspace (4) — per-agent VCS working copies
+mu workspace create <agent> [--backend jj|sl|git|none] [--from REF]
+mu workspace list [--all]
+mu workspace free <agent> [--commit]
+mu workspace path <agent>            # cd $(mu workspace path X)
 
-# Activity log (1, overloaded) — async coordination channel
-mu log "text" [--as N] [--kind K]     # write; source defaults to your agent or 'user'
-mu log [-w] [--since SEQ] [-n N] [--source X] [--kind X] [--all] [--json]
-                                      # read latest 50 (or since cursor); filters apply
-mu log --tail [-w] [--since SEQ] [--json]
-                                      # blocking subscription; new entries print every ~1s
+# Activity log (1, overloaded)
+mu log "text" [--as N] [--kind K]    # write
+mu log [-n N] [--source X] [--kind X] [--since SEQ] [--all]
+mu log --tail [--since SEQ]          # subscribe
 
-# Approvals (5) — human-in-the-loop gate for risky actions
-mu approve add --reason "..." [-w] [--slug X] [--requested-by N] [--json]
-                                      # request approval; returns slug
-mu approve list [-w] [--all] [--status pending|granted|denied|timeout] [--json]
-mu approve grant <slug> [-w] [--by N]    # human grants
-mu approve deny  <slug> [-w] [--by N]    # human denies
-mu approve wait  <slug> [-w] [--timeout SECONDS]
-                                      # block; exit 0 granted, 4 denied, 5 timeout
-                                      # -w on grant/deny/wait is a scope check on the approval.
+# Approvals (5) — human-in-the-loop
+mu approve add --reason "..." [--slug X]   # returns slug
+mu approve list [--status S]
+mu approve grant <slug>
+mu approve deny  <slug>
+mu approve wait  <slug> [--timeout SECONDS]   # exit 0 / 4 / 5
 
-# SQL escape hatch (1)
-mu sql "<query>"                      # SELECT / UPDATE / DELETE / WITH RECURSIVE
-
-# State / mission control (2)
-mu [-w] [--json]                      # bare = quick mission control (agents + tracks + ready);
-                                      # if no workstream resolves, falls back to listing all workstreams
-mu state [--events N] [--json]        # canonical state card: agents + tracks + tasks (ready/
-                                      # in_progress/blocked/recent_closed) + workspaces + recent_events
-                                      # — the "what does an LLM look at first?" verb
-
-# Health
-mu doctor                             # tmux/db/schema/workstream + per-workstream stats
+# Escape hatch + state + health
+mu sql "<query>"                     # SELECT / UPDATE / DELETE / WITH
+mu                                   # bare: quick mission control
+mu state                             # canonical state card
+mu doctor                            # tmux + db + schema + workstream stats
 ```
 
-### Evidence on lifecycle verbs
+Universal flags worth knowing without `--help`:
 
-`task close / open / claim / release` accept `--evidence "<text>"`.
-The string is recorded verbatim in the auto-emitted event row,
-suffixed `evidence="..."`. mu doesn't verify it — the audit trail
-just records what the caller said it relied on. Use it for grounding
-("tests pass: npm test exit 0", "reviewed spec"). Empty is fine; the
-verb still works.
-
-Workstream resolution for `--workstream / -w`:
-explicit flag > `$MU_SESSION` > current tmux session minus `mu-` prefix > error.
-
-### Machine-readable output: `--json`
-
-Every read verb accepts `--json`. Output is one JSON document per line.
-Conventions:
-
-- Collections → JSON arrays; `[]` on empty (NOT "(no rows)").
-- Single entities → JSON objects.
-- Composite verbs (`task show`, `task tree`, `whoami`, mission control)
-  emit a top-level object with documented keys.
-- `task tree --json` carries diamond-collapse semantics: a re-visited
-  node renders as `{ task, recurrence: true, children: [] }` instead
-  of expanding twice.
-
-```bash
-mu task next -w auth --json | jq '.[0].localId'
-mu task ready -w auth --json | jq '[.[] | select(.impact > 80)]'
-mu task tree launch --json | jq '.. | .task? | .localId'
-mu agent list -w auth --json | jq '.agents | length'
-mu --json | jq '.ready | length'
-mu whoami --json | jq .agent.name
-```
-
-bash + jq + `--json` covers every scriptable orchestration use case.
-
-### Picking the spawned executable
-
-mu is a pi orchestrator. The `--cli` flag exists primarily to swap
-the pi binary itself. Resolution chain:
-
-`--command <cmd>` flag > `$MU_<UPPER_CLI>_COMMAND` env var > the cli value itself.
-
-If pi is installed under a different binary name, set
-`MU_PI_COMMAND=<name>` once in your shell rc and every spawn
-picks it up. Multi-word values work too (e.g.
-`MU_PI_COMMAND="pi-alt --some-flag"`).
-
-**Spawn liveness check.** After spawn, mu waits
-`MU_SPAWN_LIVENESS_MS` (default 1500ms) and verifies the pane is
-still alive. If the CLI died, the DB row rolls back. Set
-`MU_SPAWN_LIVENESS_MS=0` to disable (CI / fast spawn).
+- **`-w, --workstream <name>`** — explicit > `$MU_SESSION` > current
+  tmux session minus `mu-` prefix > error. On verbs that take an
+  entity by id, `-w` is a SCOPE check (errors with
+  `*NotInWorkstreamError`); on verbs that pick which entity
+  (`mu task next`, `mu agent list`), it picks WHICH.
+- **`--evidence "<text>"`** — on `task close / open / claim /
+  release`. Recorded verbatim in the auto-emitted event payload.
+  Not validated; just preserved. Use for grounding ("tests pass:
+  npm test exit 0").
+- **`--json`** — on every verb. Success path emits one JSON object
+  (or array for collection reads); errors emit
+  `{ error, message, nextSteps, exitCode }` to stderr. No prose
+  parsing required.
 
 ### Picking model + thinking effort per agent
 
-The zen of mu: **mu doesn't reason about models.** Pi already speaks
+The zen of mu: **mu doesn't reason about models.** Pi speaks
 `--model sonnet:high` and `--thinking off|minimal|low|medium|high|xhigh`.
-Mu has no tier abstraction, no provider matrix, no vendor mapping
-on purpose — see [VISION.md § 10](../../docs/VISION.md#10-get-out-of-the-models-way).
-
-Discover what model strings are valid via pi: `pi --list-models`
-(takes an optional fuzzy-search arg, e.g. `pi --list-models opus`).
+Mu has no tier abstraction, no provider matrix, no vendor mapping on
+purpose (see [VISION.md § 10](../../docs/VISION.md#10-get-out-of-the-models-way)).
 
 Three controls, smallest first:
 
-```bash
-# Per-spawn (one-off):
-mu agent spawn reviewer-1 --command "pi --model opus:high"
+- **Per-spawn**: `mu agent spawn r --command "pi --model opus:high"`
+- **Shell default**: `export MU_PI_COMMAND="pi --model sonnet:medium"`
+- **Operator aliases**: any `--cli <key>` uppercases to
+  `$MU_<KEY>_COMMAND` (use underscores; env-var names). Convention
+  for tiers: `pi_mini` / `pi` / `pi_big`. Mu doesn't enforce these.
 
-# Shell default (short sessions):
-export MU_PI_COMMAND="pi --model sonnet:medium"
-
-# Operator-defined aliases (the underlying mechanism: --cli <key>
-# uppercases the key and looks up $MU_<KEY>_COMMAND; the names
-# below are convention, not built-in tiers):
-export MU_PI_COMMAND="pi --model sonnet:medium"      # default for --cli pi
-export MU_PI_MINI_COMMAND="pi --model haiku:off"     # → --cli pi_mini
-export MU_PI_BIG_COMMAND="pi --model opus:high"      # → --cli pi_big
-mu agent spawn worker-1   --cli pi_mini
-mu agent spawn reviewer-1 --cli pi_big
-```
-
-Use underscores (`pi_big`, not `pi-big`) — env-var names need
-valid shell identifiers.
-
-**Suggested rubric** (just convention; mu doesn't enforce it):
-mini for probing / fan-out; modest for build/edit/refactor; big
-for design / review / incident / gnarly debugging. When ambiguous,
-default to `MU_PI_COMMAND`.
+**Rubric (convention)**: mini for probing/fan-out; modest for
+build/edit/refactor; big for design/review/incident/gnarly
+debugging. When ambiguous, default to `MU_PI_COMMAND`. Discover
+valid model strings: `pi --list-models [fuzzy-search]`.
 
 ### The reaper
 
@@ -426,11 +337,12 @@ You don't have to manually `task release --reopen` after a crash.
 
 ## SQL escape hatch
 
-`mu sql "<query>"` for anything not yet typed. Schema: 8 tables
+`mu sql "<query>"` for anything not yet typed. Schema: 9 tables
 (`workstreams`, `agents`, `tasks`, `task_edges`, `task_notes`,
-`agent_logs`, `vcs_workspaces`, `approvals`) + 3 views (`ready`,
-`blocked`, `goals`). Inspect with
-`mu sql "SELECT name FROM sqlite_master WHERE type IN ('table','view')"`.
+`agent_logs`, `vcs_workspaces`, `approvals`, `schema_version`) +
+3 views (`ready`, `blocked`, `goals`). Inspect with
+`mu sql "SELECT name FROM sqlite_master WHERE type IN ('table','view')"`
+or `mu doctor --json | jq .db.schema`.
 
 ```bash
 # Cross-agent join
@@ -454,32 +366,35 @@ mu sql "UPDATE workstreams SET name='auth-refactor' WHERE name='auth-refator'"
 
 ## Common patterns
 
-### Plan + spawn a crew (canonical example)
+For each pattern below, the verbs themselves emit a `Next:` block
+on success that lists the natural follow-ups. The patterns here are
+the **multi-verb composites** that no single verb's hint can show.
+
+### Plan + spawn a crew
 
 IDs auto-derive from titles via slugify; `--blocks` takes a comma
-list of task IDs.
+list of task IDs (named tasks `--blocks` this new task; the new
+task is *blocked by* the listed ones).
 
 ```bash
 mu workstream init payments
 mu task add -w payments --title "Design payments" --impact 70 --effort-days 1
 mu task add -w payments --title "Build payments"  --impact 70 --effort-days 5 --blocks design_payments
 mu task add -w payments --title "Review payments" --impact 60 --effort-days 1 --blocks build_payments
-
 mu agent spawn worker-1   -w payments --workspace
 mu agent spawn reviewer-1 -w payments --workspace --role read-only
-mu -w payments                                    # mission control
+mu -w payments    # mission control
 ```
 
 ### Pick the highest-ROI ready task for the next agent
 
 ```bash
 NEXT=$(mu task next -w payments --json | jq -r '.[0].localId')
-mu task claim "$NEXT" --for worker-1 \
-  --evidence "selected as highest ROI from ready set"
+mu task claim "$NEXT" --for worker-1 --evidence "highest ROI from ready set"
 mu agent send worker-1 "Working on $NEXT."
 ```
 
-### Parallel heavy-task + read-only audit (canonical worked example)
+### Parallel heavy-task + read-only audit
 
 Maps directly to the most common parallelisation shape: one agent
 doing CPU-heavy work, a sibling doing safe read-only auditing.
@@ -584,58 +499,31 @@ stalls in `needs_input` for hours; the operator finds out later.
 The activity log is why mu doesn't need a daemon — it IS the
 coordination channel; use it.
 
-### Tear down a workstream
+### Tear down a workstream (no undo)
 
-`mu workstream destroy` is two-phase by default. **Always run the
-dry-run first** — there is no `mu undo`; recovery is restoring
-`~/.local/state/mu/mu.db` from backup.
-
-```bash
-mu workstream destroy -w payments        # dry-run: counts
-mu workstream destroy -w payments --yes  # commit
-```
-
-FK CASCADE handles the cleanup (agents, tasks, edges, notes,
-workspaces, logs).
-
-### Drop durable context on a task
-
-Follow the [Task note contract](#task-note-contract). `\n` / `\t`
-/ `\\` escapes are interpreted, so multi-field notes can land in
-one call:
-
-```bash
-mu task note design_payments "FILES: src/auth.rs:45-120\nDECISION: JWT, 24h expiry\nVERIFIED: cargo test pass"
-```
-
-`task_notes.author` is auto-filled from `$TMUX_PANE` inside a pane,
-NULL (treat as orchestrator) elsewhere.
+`mu workstream destroy` is two-phase: dry-run by default, `--yes`
+to commit. There is no `mu undo`; back up `~/.local/state/mu/mu.db`
+before high-stakes destructions. FK CASCADE handles cleanup
+(agents, tasks, edges, notes, workspaces, logs).
 
 ## If you ARE the agent (in-pane patterns)
 
 Verbs auto-resolve via `$TMUX_PANE` — `mu whoami`, `mu my-next`,
-`mu task claim` all work without a name argument. This is the
-**worker** path: your pane is registered in the `agents` table
-(`mu agent spawn` put it there), the FK on `tasks.owner` matches
-your pane title, and bare `mu task claim` Just Works.
+`mu task claim` all work without a name argument. The pane title
+(set at spawn) IS the agent identity.
 
-If you're an **orchestrator** — a top-level pi session NOT spawned
-by `mu agent spawn`, e.g. running mu from your host shell to
-coordinate workers — your pane has no `agents` row, and bare
-`mu task claim` will fail with `ClaimerNotRegisteredError`. Three
-options:
+There are two patterns:
 
-  1. **Dispatch to a worker** — `mu task claim <id> --for worker-1`.
-     Most common. Use whenever the work is big enough to warrant a
-     dedicated pane.
-  2. **Do the work directly with `--self`** — `mu task claim <id>
-     --self --evidence "trivial 5-LOC fix"`. Anonymous claim:
-     `tasks.owner` stays NULL; the actor (your pane title or
-     `$USER`) goes into `agent_logs.source`. `mu task show` will
-     surface it as `owner: (self: <actor>)`.
-  3. **Adopt your pane** — `mu adopt <pane-id>`. Only works if
-     your pane is in the workstream's `mu-<ws>` tmux session;
-     usually the orchestrator isn't, so this is rare.
+- **Worker** — your pane was created by `mu agent spawn` (or
+  promoted via `mu adopt`). Has a row in `agents`. Bare
+  `mu task claim <id>` Just Works.
+- **Orchestrator** — a top-level pi session NOT in `agents`
+  (e.g. running mu from a host shell to coordinate workers). Bare
+  `mu task claim` errors with `ClaimerNotRegisteredError` whose
+  `errorNextSteps()` lists three options: `--self` (work directly,
+  owner=NULL, actor in log), `--for <worker>` (dispatch), or
+  `mu adopt <pane>` (promote pane to worker; pane must be in
+  `mu-<ws>` tmux session).
 
 Working loop (worker path):
 

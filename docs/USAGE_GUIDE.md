@@ -130,6 +130,18 @@ Get the full command list:
 mu --help
 ```
 
+Every verb's `--help` is exhaustive (flags, defaults,
+interactions). Every successful invocation also prints a dim
+`Next:` block of suggested follow-up commands at the bottom —
+you never have to leave the terminal to learn what to do next.
+
+Every verb accepts `--json` for machine-readable output. Errors
+in `--json` mode emit a `{ error, message, nextSteps, exitCode }`
+record to stderr; the `nextSteps` array carries actionable
+resolutions you can `eval` directly. (One verb opts out:
+`mu agent attach`, which prints a `tmux attach` command for a
+human to copy.)
+
 ---
 
 ## 3. Create a workstream

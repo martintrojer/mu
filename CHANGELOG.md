@@ -50,6 +50,45 @@ called out under "Breaking" in each entry.
 
 ### Added
 
+- **`skills/mu/SKILL.md` trimmed 771 -> 659 LOC** (−14%) now
+  that per-verb tips live in verb output. Final commit of the
+  selfdoc track. Specific cuts:
+  - CLI verb list collapsed to one-liners (every per-flag
+    commentary deferred to `mu <verb> --help`).
+  - `### Evidence on lifecycle verbs` (12 LOC) -> one bullet in
+    new `Universal flags worth knowing without --help` block.
+  - `### Machine-readable output: --json` (~25 LOC) -> one bullet
+    in same block.
+  - `### Picking the spawned executable` (~25 LOC) -> deleted
+    entirely (covered by `mu agent spawn --help`).
+  - `### Picking model + thinking effort per agent` tightened
+    (~37 -> 18 LOC); rubric kept, env-var examples condensed.
+  - `### Tear down a workstream` collapsed (~13 -> 6 LOC); the
+    `mu workstream destroy` output now hints `--yes`.
+  - `### Drop durable context on a task` (~10 LOC) -> deleted
+    (the task-note contract section above already covers it).
+  - `## If you ARE the agent` orchestrator-pattern subsection
+    rewritten to defer to `ClaimerNotRegisteredError`'s
+    `errorNextSteps()` for the three actionable resolutions.
+  - SQL section header updated: 8 tables -> 9 tables (was stale
+    after the v2 schema_version table landed).
+
+  What stayed (irreducible LLM-only context): vocabulary, when to
+  reach for mu, mental model, orchestrator loop discipline, the
+  multi-verb common patterns (parallel work, quote-rich prompts,
+  status approximation, subscribe-vs-poll, irreversible-needs-
+  approval, when to wait for another agent), DOs / DON'Ts, what
+  mu is NOT.
+
+  `docs/USAGE_GUIDE.md § 2` gains a paragraph explaining the
+  self-documenting verb output (Next: hints, --json everywhere,
+  the `mu agent attach` opt-out).
+
+  Closes selfdoc_skill_cleanup in workstream `roadmap-v0-2`. The
+  whole selfdoc_* track is now complete; only `selfdoc_dogfood`
+  remains (a fresh-agent walkthrough validating that verb output
+  alone is sufficient to drive a plan/spawn/claim/note/close cycle).
+
 - **Every CLI verb accepts `--json` (universal); every write verb
   carries `nextSteps` hints in both human + JSON output.** Third
   commit of the selfdoc track. Combined `selfdoc_verbs_round2` and
