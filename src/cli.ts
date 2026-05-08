@@ -1135,8 +1135,12 @@ async function cmdTaskAdd(
   const nextSteps: NextStep[] = [
     { intent: "Show this task", command: `mu task show ${task.localId} -w ${workstream}` },
     {
-      intent: "Drop a note",
-      command: `mu task note ${task.localId} "..." -w ${workstream}`,
+      // Single-quoted example: shell metachars (`...`, $VAR, $(...))
+      // inside a double-quoted string expand in YOUR shell before mu
+      // sees the note (mufeedback note #257). Single quotes defer
+      // expansion to the agent.
+      intent: "Drop a note (single-quote to defer shell expansion)",
+      command: `mu task note ${task.localId} '...' -w ${workstream}`,
     },
     {
       intent: "Add a blocker",
@@ -1935,8 +1939,12 @@ async function cmdClaim(
   const ws = await resolveWorkstream(opts.workstream);
   const nextSteps: NextStep[] = [
     {
-      intent: "Drop a note",
-      command: `mu task note ${localId} "FILES: ...\\nDECISION: ..." -w ${ws}`,
+      // Single-quoted example: shell metachars (`...`, $VAR, $(...))
+      // inside a double-quoted string expand in YOUR shell before mu
+      // sees the note (mufeedback note #257). Single quotes defer
+      // expansion to the agent.
+      intent: "Drop a note (single-quote to defer shell expansion)",
+      command: `mu task note ${localId} 'FILES: ...\\nDECISION: ...' -w ${ws}`,
     },
     {
       intent: "Close with grounding",
@@ -3813,7 +3821,7 @@ export function buildProgram(): Command {
   task
     .command("note <id> <text>")
     .description(
-      "Append a note to a task. Author defaults to $MU_AGENT_NAME (env injected at spawn) > pane title > $USER > 'orchestrator'; pass --author to override.",
+      "Append a note to a task. Author defaults to $MU_AGENT_NAME (env injected at spawn) > pane title > $USER > 'orchestrator'; pass --author to override. Single-quote the text (or use a quoted heredoc) to defer shell expansion of $VAR / $(...) / `cmd`; double quotes expand them in your shell before mu sees the note.",
     )
     .option("--author <name>", "override the auto-detected author label")
     .option(...WORKSTREAM_OPT)

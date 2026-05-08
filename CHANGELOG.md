@@ -50,6 +50,34 @@ called out under "Breaking" in each entry.
 
 ### Added
 
+- **`mu task note` Next: hints + --help now teach single-quote
+  discipline.** Filed in `mufeedback` notes #256/#257: a worker
+  ran `mu task note id "... `prune e` ..."` from a shell;
+  backticks were executed by the parent shell before mu saw the
+  note, producing 'command not found: prune' and dropping the
+  inline code snippets. Repeat offence in the corrective note.
+
+  Three-line fix:
+  - `cmdTaskAdd` Next: hint changed from
+    `mu task note <id> "..."` to
+    `mu task note <id> '...'` with a 'single-quote to defer shell
+    expansion' label.
+  - Same for `cmdClaim`'s 'Drop a note' Next: hint.
+  - `mu task note --help` description gained a sentence:
+    "Single-quote the text (or use a quoted heredoc) to defer
+    shell expansion of \$VAR / \$(...) / backticks; double
+    quotes expand them in your shell before mu sees the note."
+
+  The skill already documented this; the gap was that the
+  CLI's own self-documenting hints kept showing the unsafe form,
+  so even agents who'd read the skill would see
+  `mu task note ... "..."` printed as the canonical recipe and
+  copy that form. Closing the loop: the hints now match the
+  guidance.
+
+  Closes `nit_task_note_shell_metachar_hint` in the `mufeedback`
+  workstream.
+
 - **Task states gain `REJECTED` and `DEFERRED`; new verbs
   `mu task reject` / `mu task defer`.** Two real mufeedback tasks
   (`git_workspaces_start_without_node` = wontfix; `nit_no_task_move_verb`
