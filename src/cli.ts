@@ -59,9 +59,10 @@ import {
   listApprovals,
   waitApproval,
 } from "./approvals.js";
+import { type LogReadOpts, type LogWriteOpts, cmdLog } from "./cli/log.js";
 import { CURRENT_SCHEMA_VERSION, type Db, EXPECTED_TABLES, defaultDbPath, openDb } from "./db.js";
 import { detectPiStatus } from "./detect.js";
-import { type ListLogsOptions, type LogRow, appendLog, latestSeq, listLogs } from "./logs.js";
+import { type LogRow, listLogs } from "./logs.js";
 import {
   type NextStep,
   hasNextSteps,
@@ -169,7 +170,7 @@ import {
  *
  * Throws UsageError if none of the above produce a name.
  */
-async function resolveWorkstream(explicit?: string): Promise<string> {
+export async function resolveWorkstream(explicit?: string): Promise<string> {
   if (explicit) return explicit;
   if (process.env.MU_SESSION) return process.env.MU_SESSION;
   if (process.env.TMUX) {
@@ -183,6 +184,17 @@ async function resolveWorkstream(explicit?: string): Promise<string> {
   throw new UsageError(
     "workstream required: pass --workstream <name>, set $MU_SESSION, or run inside an mu-<name> tmux session",
   );
+}
+
+/** Like resolveWorkstream but returns null instead of throwing on miss.
+ *  Used by the read-permissive verbs (mu log, mu approve list, mu state,
+ *  bare mu) where 'no workstream' is a legitimate state to render. */
+export async function resolveOptionalWorkstream(): Promise<string | null> {
+  try {
+    return await resolveWorkstream(undefined);
+  } catch {
+    return null;
+  }
 }
 
 // ─── Error handling ────────────────────────────────────────────────────
@@ -426,6 +438,19 @@ function formatTracks(tracks: readonly Track[]): string {
     );
   });
   return lines.join("\n");
+}
+
+/** One agent_logs row, human-formatted. Used by `mu log` (read + tail)
+ *  and by the `recent events` section of `mu state`. Exported so the
+ *  cli/log.ts module can reuse it. */
+export function printLogRow(row: LogRow): void {
+  const ws = row.workstream ?? pc.dim("—");
+  const time = row.createdAt.replace("T", " ").replace(/\.\d+Z$/, "Z");
+  const kindColor =
+    row.kind === "event" ? pc.cyan : row.kind === "broadcast" ? pc.yellow : (s: string) => s;
+  console.log(
+    `${pc.dim(`#${row.seq}`)} ${pc.dim(time)}  ${pc.bold(row.source)}  ${kindColor(row.kind)}  [${ws}]  ${row.payload}`,
+  );
 }
 
 // ─── Verb implementations ──────────────────────────────────────────────
@@ -2460,170 +2485,6 @@ async function cmdTaskWait(
   if (result.timedOut) process.exit(5);
 }
 
-// ─── mu log (write + read + tail) ───────────────────────────────────
-
-interface LogReadOpts {
-  workstream?: string;
-  allWorkstreams?: boolean;
-  since?: number;
-  lines?: number;
-  source?: string;
-  kind?: string;
-  json?: boolean;
-  tail?: boolean;
-}
-
-interface LogWriteOpts {
-  workstream?: string;
-  as?: string;
-  kind?: string;
-}
-
-/**
- * The `mu log` verb is overloaded: with a positional <text>, write
- * an entry; without, read the log (optionally tailing).
- */
-async function cmdLog(
-  db: Db,
-  text: string | undefined,
-  opts: LogReadOpts & LogWriteOpts,
-): Promise<void> {
-  if (text !== undefined && text.length > 0) {
-    await cmdLogWrite(db, text, opts);
-    return;
-  }
-  await cmdLogRead(db, opts);
-}
-
-/**
- * Resolve who/where this log entry belongs to:
- *   --as <name>      explicit override; workstream still resolved below
- *   $TMUX_PANE       agent name + workstream from the agent row
- *   else             source = 'user', workstream from -w / $MU_SESSION /
- *                    tmux session, or null if none of those resolve
- */
-async function resolveLogContext(
-  db: Db,
-  opts: { as?: string; workstream?: string },
-): Promise<{ source: string; workstream: string | null }> {
-  if (opts.as) {
-    const workstream = opts.workstream ? opts.workstream : await resolveOptionalWorkstream();
-    return { source: opts.as, workstream };
-  }
-  const paneId = process.env.TMUX_PANE;
-  if (paneId) {
-    const agent = getAgentByPane(db, paneId);
-    if (agent) {
-      return {
-        source: agent.name,
-        workstream: opts.workstream ?? agent.workstream,
-      };
-    }
-  }
-  const workstream = opts.workstream ?? (await resolveOptionalWorkstream());
-  return { source: "user", workstream };
-}
-
-/** Like resolveWorkstream but returns null instead of throwing on miss. */
-async function resolveOptionalWorkstream(): Promise<string | null> {
-  try {
-    return await resolveWorkstream(undefined);
-  } catch {
-    return null;
-  }
-}
-
-async function cmdLogWrite(db: Db, text: string, opts: LogWriteOpts): Promise<void> {
-  const ctx = await resolveLogContext(db, opts);
-  const row = appendLog(db, {
-    workstream: ctx.workstream,
-    source: ctx.source,
-    kind: opts.kind ?? "message",
-    payload: text,
-  });
-  console.log(
-    pc.dim(
-      `seq ${row.seq}  workstream=${row.workstream ?? "—"}  source=${row.source}  kind=${row.kind}`,
-    ),
-  );
-}
-
-async function cmdLogRead(db: Db, opts: LogReadOpts): Promise<void> {
-  const workstream = await logReadWorkstream(opts);
-  const listOpts: ListLogsOptions = {};
-  if (workstream !== undefined) listOpts.workstream = workstream;
-  if (opts.source !== undefined) listOpts.source = opts.source;
-  if (opts.kind !== undefined) listOpts.kind = opts.kind;
-
-  if (opts.tail) {
-    await cmdLogTail(db, listOpts, opts);
-    return;
-  }
-
-  if (opts.since !== undefined) listOpts.since = opts.since;
-  if (opts.lines !== undefined) listOpts.limit = opts.lines;
-  // Default cap: latest 50 entries when no `since` and no `--lines`.
-  if (opts.since === undefined && opts.lines === undefined) listOpts.limit = 50;
-
-  const rows = listLogs(db, listOpts);
-  if (opts.json) {
-    emitJson(rows);
-    return;
-  }
-  if (rows.length === 0) {
-    console.log(pc.dim("(no log entries)"));
-    return;
-  }
-  for (const row of rows) printLogRow(row);
-}
-
-/**
- * Resolve the `--workstream` filter for log reads:
- *   --all            → undefined (every workstream + machine-wide)
- *   --workstream X   → X
- *   $MU_SESSION etc. → the current workstream (default behaviour)
- *   none             → undefined (be permissive in read mode)
- */
-async function logReadWorkstream(opts: LogReadOpts): Promise<string | undefined> {
-  if (opts.allWorkstreams) return undefined;
-  if (opts.workstream) return opts.workstream;
-  const ws = await resolveOptionalWorkstream();
-  return ws ?? undefined;
-}
-
-async function cmdLogTail(db: Db, baseOpts: ListLogsOptions, cliOpts: LogReadOpts): Promise<void> {
-  // If --since wasn't given, start at "now" so the subscriber only sees
-  // NEW entries. Pass `--since 0` to replay from the beginning.
-  let cursor = cliOpts.since ?? latestSeq(db);
-  if (!cliOpts.json) {
-    console.log(
-      pc.dim(
-        `(tailing log; cursor=${cursor}; ${baseOpts.workstream ? `workstream=${baseOpts.workstream}` : "all workstreams"}; ctrl-c to exit)`,
-      ),
-    );
-  }
-  const intervalMs = defaultLogTailIntervalMs();
-  for (;;) {
-    const rows = listLogs(db, { ...baseOpts, since: cursor });
-    for (const row of rows) {
-      if (cliOpts.json) emitJson(row);
-      else printLogRow(row);
-      cursor = row.seq;
-    }
-    await new Promise((r) => setTimeout(r, intervalMs));
-  }
-}
-
-function printLogRow(row: LogRow): void {
-  const ws = row.workstream ?? pc.dim("—");
-  const time = row.createdAt.replace("T", " ").replace(/\.\d+Z$/, "Z");
-  const kindColor =
-    row.kind === "event" ? pc.cyan : row.kind === "broadcast" ? pc.yellow : (s: string) => s;
-  console.log(
-    `${pc.dim(`#${row.seq}`)} ${pc.dim(time)}  ${pc.bold(row.source)}  ${kindColor(row.kind)}  [${ws}]  ${row.payload}`,
-  );
-}
-
 // ─── mu doctor ───────────────────────────────────────────────────────────────────
 // ─── mu undo / mu snapshot list / mu snapshot show ──────────────────
 //
@@ -4074,8 +3935,7 @@ function formatHudTasksTable(
     // ROI green for high-value (>=100), yellow for mid (>=50),
     // dim for low. Owner bold-cyan (the active worker is the most
     // useful pointer in an in-progress row).
-    const roiColor =
-      roiNum >= 100 ? pc.green : roiNum >= 50 ? pc.yellow : pc.dim;
+    const roiColor = roiNum >= 100 ? pc.green : roiNum >= 50 ? pc.yellow : pc.dim;
     const idCell = `${pc.dim(sectionPrefix)}  ${pc.cyan(t.localId)}`;
     const row: string[] = [
       idCell,
@@ -4434,21 +4294,6 @@ function parseLines(value: string): number {
   return n;
 }
 
-/** Resolution + sanitisation for $MU_LOG_TAIL_INTERVAL_MS. Mirrors
- *  defaultSpawnLivenessMs (src/agents.ts) and defaultSendDelayMs
- *  (src/tmux.ts). Naive `Number(env)` was a DOS-by-typo: an env value
- *  of '' parses as 0 and any non-numeric value as NaN, both of which
- *  Node's setTimeout treats as 1ms — hammering SQLite at ~500 Hz on
- *  the next mu log --tail. 50ms floor prevents a too-low explicit
- *  setting from doing the same. */
-function defaultLogTailIntervalMs(): number {
-  const raw = process.env.MU_LOG_TAIL_INTERVAL_MS;
-  if (raw === undefined) return 1000;
-  const parsed = Number.parseInt(raw, 10);
-  if (Number.isNaN(parsed) || parsed < 50) return 1000;
-  return parsed;
-}
-
 // Parses a non-negative integer (0 is valid). Used for --since which
 // uses 0 as the "replay everything" cursor.
 function parseNonNegativeInt(value: string): number {
@@ -4488,8 +4333,10 @@ const WORKSTREAM_OPT = [
 // document per line so output is grep/jq friendly.
 const JSON_OPT = ["--json", "emit machine-readable JSON instead of a table"] as const;
 
-/** Stable JSON output: one line, no trailing newline beyond console.log's. */
-function emitJson(value: unknown): void {
+/** Stable JSON output: one line, no trailing newline beyond console.log's.
+ *  Exported so cli/*.ts modules can use the same single-source-of-truth
+ *  formatter. */
+export function emitJson(value: unknown): void {
   console.log(JSON.stringify(value));
 }
 
