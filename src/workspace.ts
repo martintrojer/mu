@@ -188,11 +188,29 @@ export async function createWorkspace(db: Db, opts: CreateWorkspaceOptions): Pro
 
   const created = await backend.createWorkspace(createOpts);
 
+  // Roll back the on-disk + VCS-registry side effect if the DB row
+  // insert fails (FK violation, schema constraint, sqlite_busy timeout).
+  // Without this, a failed INSERT leaves a real git worktree (or jj
+  // workspace, or 'cp -a' tree) on disk + registered, with no DB row
+  // to track it. Surfaced by bug_agent_spawn_workspace_fk_failure: the
+  // operator hit 'FOREIGN KEY constraint failed' and was left with a
+  // 226M git worktree at workspaces/<ws>/<agent>/ that mu state
+  // couldn't see and that blocked subsequent spawns.
   const now = new Date().toISOString();
-  db.prepare(
-    `INSERT INTO vcs_workspaces (agent, workstream, backend, path, parent_ref, created_at)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-  ).run(opts.agent, opts.workstream, backend.name, path, created.parentRef, now);
+  try {
+    db.prepare(
+      `INSERT INTO vcs_workspaces (agent, workstream, backend, path, parent_ref, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    ).run(opts.agent, opts.workstream, backend.name, path, created.parentRef, now);
+  } catch (err) {
+    // Best-effort backend-level cleanup. If the backend's free fails
+    // (e.g. git worktree remove --force errors), the on-disk state
+    // is still there — but at this point we're already failing the
+    // verb; surface the original error and let the user clean up
+    // via mu workspace orphans (or git worktree remove --force).
+    await backend.freeWorkspace({ workspacePath: path, commit: false }).catch(() => {});
+    throw err;
+  }
 
   emitEvent(
     db,

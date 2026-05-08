@@ -20,6 +20,7 @@ import {
   freeWorkspace,
   getWorkspaceForAgent,
   listWorkspaces,
+  workspacePath,
 } from "../src/workspace.js";
 import { ensureWorkstream } from "../src/workstream.js";
 
@@ -369,6 +370,37 @@ describe("workspace SDK (with noneBackend)", () => {
         backend: "none",
       }),
     ).rejects.toBeInstanceOf(WorkspacePathNotEmptyError);
+  });
+
+  it("createWorkspace rolls back the on-disk dir when the DB INSERT fails (regression)", async () => {
+    // Pre-stage: insert a row pointing at the path worker-2 WOULD
+    // get, so the path UNIQUE constraint fires when worker-2's
+    // createWorkspace tries to INSERT. Use a DIFFERENT agent name
+    // for the pre-stage so getWorkspaceForAgent(worker-2) returns
+    // undefined (i.e. we don't trip the WorkspaceExistsError early-out).
+    const futurePath = workspacePath("auth", "worker-2");
+    insertAgent(db, { name: "squatter", workstream: "auth", paneId: "%99", status: "busy" });
+    db.prepare(
+      "INSERT INTO vcs_workspaces (agent, workstream, backend, path, parent_ref, created_at) VALUES (?, ?, 'none', ?, NULL, datetime('now'))",
+    ).run("squatter", "auth", futurePath);
+
+    // Trigger: createWorkspace for worker-2. backend.createWorkspace
+    // will succeed (cp -a); the INSERT will fail (UNIQUE on path);
+    // the rollback should remove the on-disk dir.
+    await expect(
+      createWorkspace(db, {
+        agent: "worker-2",
+        workstream: "auth",
+        projectRoot,
+        backend: "none",
+      }),
+    ).rejects.toThrow(/UNIQUE/i);
+
+    // CRITICAL: the on-disk dir from backend.createWorkspace must be
+    // gone, not orphaned. Surfaced by bug_agent_spawn_workspace_fk_failure:
+    // pre-fix, the dir survived the failed INSERT, leaving the operator
+    // with an orphan dir blocking subsequent spawns.
+    expect(() => execFileSync("ls", [futurePath], { stdio: "pipe" })).toThrow();
   });
 
   it("listWorkspaces filters by workstream", async () => {
