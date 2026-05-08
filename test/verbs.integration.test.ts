@@ -11,7 +11,14 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { closeAgent, getAgent, listLiveAgents, readAgent, spawnAgent } from "../src/agents.js";
+import {
+  adoptAgent,
+  closeAgent,
+  getAgent,
+  listLiveAgents,
+  readAgent,
+  spawnAgent,
+} from "../src/agents.js";
 import { type Db, openDb } from "../src/db.js";
 import { killSession, resetTmuxExecutor } from "../src/tmux.js";
 
@@ -230,6 +237,67 @@ describeIfTmux("verbs integration (real tmux + real DB)", () => {
 
     const view3 = await listLiveAgents(db, { workstream });
     expect(view3.agents).toEqual([]);
+  });
+
+  // ─── Adopt: register an unmanaged tmux pane as a managed agent ───
+
+  it("adoptAgent registers an existing tmux pane as a managed agent", async () => {
+    // Create the mu-<workstream> session by spawning a managed agent.
+    // Then create a SECOND pane in that session OUTSIDE mu (via raw tmux
+    // splitWindow) so it has no agents row — a real orphan. Then adopt it.
+    await spawnAgent(db, { name: "alice", workstream, cli: "sh", command: SH_COMMAND });
+    const { splitWindow, getPaneTitle, listPanesInSession, setPaneTitle } = await import(
+      "../src/tmux.js"
+    );
+    const orphanPaneId = await splitWindow({
+      target: `${session}:alice`,
+      command: SH_COMMAND,
+    });
+    // Title it so adopt's default-name path has something valid to use.
+    await setPaneTitle(orphanPaneId, "worker-2");
+
+    // Sanity: pane exists in session, no agents row for 'worker-2' yet.
+    const before = await listPanesInSession(session);
+    expect(before.find((p) => p.paneId === orphanPaneId)?.title).toBe("worker-2");
+    expect(getAgent(db, "worker-2")).toBeUndefined();
+
+    const result = await adoptAgent(db, { paneId: orphanPaneId, workstream });
+    expect(result.alreadyAdopted).toBe(false);
+    expect(result.agent.name).toBe("worker-2");
+    expect(result.agent.paneId).toBe(orphanPaneId);
+    expect(result.previousTitle).toBe("worker-2");
+    expect(result.paneTitleSetTo).toBe("worker-2");
+
+    // Pane title still 'worker-2' (no retitle needed).
+    expect(await getPaneTitle(orphanPaneId)).toBe("worker-2");
+
+    // listLiveAgents now sees both agents (no more orphans for this pane).
+    const view = await listLiveAgents(db, { workstream });
+    expect(view.agents.map((a) => a.name).sort()).toEqual(["alice", "worker-2"]);
+    expect(view.orphans.find((p) => p.paneId === orphanPaneId)).toBeUndefined();
+
+    // Idempotent: adopting again returns alreadyAdopted=true.
+    const second = await adoptAgent(db, { paneId: orphanPaneId, workstream });
+    expect(second.alreadyAdopted).toBe(true);
+  });
+
+  it("adoptAgent --name retitles the pane in real tmux", async () => {
+    await spawnAgent(db, { name: "alice", workstream, cli: "sh", command: SH_COMMAND });
+    const { splitWindow, getPaneTitle, setPaneTitle } = await import("../src/tmux.js");
+    const orphanPaneId = await splitWindow({
+      target: `${session}:alice`,
+      command: SH_COMMAND,
+    });
+    await setPaneTitle(orphanPaneId, "old-title");
+
+    const result = await adoptAgent(db, {
+      paneId: orphanPaneId,
+      workstream,
+      name: "worker-2",
+    });
+    expect(result.previousTitle).toBe("old-title");
+    expect(result.paneTitleSetTo).toBe("worker-2");
+    expect(await getPaneTitle(orphanPaneId)).toBe("worker-2");
   });
 });
 

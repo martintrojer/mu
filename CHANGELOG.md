@@ -50,6 +50,36 @@ called out under "Breaking" in each entry.
 
 ### Added
 
+- **`mu adopt <pane-or-title>` verb.** Register an existing tmux
+  pane as a managed mu agent — the inverse of `mu agent list`'s
+  "orphan" state. The orphan-list message has been advertising
+  this verb since v0.1.0 ("`mu adopt` is on the roadmap"); now
+  it ships.
+
+  - Pane id form (`mu adopt %15`) or pane title form
+    (`mu adopt worker-2`); both look up the pane and adopt it.
+  - Defaults to using the pane's current title as the agent
+    name; pass `--name <name>` to override (and retitle the
+    pane in the process so the claim protocol invariant holds).
+  - Idempotent: adopting the same pane twice is a no-op (returns
+    `alreadyAdopted: true` from the SDK).
+  - Scope-aware: pane must be in the matching `mu-<workstream>`
+    tmux session, otherwise `AgentNotInWorkstreamError` (exit 4).
+  - Emits an `agent adopt` event into `agent_logs` so the
+    adoption is auditable.
+  - SDK: `adoptAgent(db, opts)` in `src/agents.ts`; types
+    `AdoptAgentOptions` and `AdoptAgentResult` exported.
+  - New typed error `PaneNotFoundError` in `src/tmux.ts` for the
+    "pane id doesn't exist on the tmux server" case (exit 5
+    substrate).
+  - Test cases mirror the design (`adopt_design` task note #100):
+    8 unit cases (mocked tmux) + 2 integration cases (real tmux).
+
+  The orphan-list message in `mu agent list` is updated to point
+  at the new verb instead of the previous "is on the roadmap"
+  copy. The `mu sql 'INSERT INTO agents ...'` workaround is
+  removed from USAGE_GUIDE.md § "What's NOT in 0.1.0".
+
 - **`mu task list --status <S>` filter.** Accepts case-insensitive
   `OPEN | IN_PROGRESS | CLOSED`. Invalid values exit 2 with a usage
   error. SDK gains a `ListTasksOptions` interface and an

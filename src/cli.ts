@@ -22,12 +22,15 @@ import Table from "cli-table3";
 import { Command, InvalidArgumentError } from "commander";
 import pc from "picocolors";
 import {
+  type AdoptAgentOptions,
+  type AdoptAgentResult,
   AgentDiedOnSpawnError,
   AgentExistsError,
   AgentNotFoundError,
   AgentNotInWorkstreamError,
   type AgentRow,
   type AgentStatus,
+  adoptAgent,
   closeAgent,
   freeAgent,
   getAgent,
@@ -89,7 +92,15 @@ import {
   searchTasks,
   updateTask,
 } from "./tasks.js";
-import { TmuxError, capturePane, newSession, sessionExists, tmux } from "./tmux.js";
+import {
+  PaneNotFoundError,
+  TmuxError,
+  capturePane,
+  listPanesInSession,
+  newSession,
+  sessionExists,
+  tmux,
+} from "./tmux.js";
 import { type Track, getParallelTracks } from "./tracks.js";
 import type { VcsBackendName } from "./vcs.js";
 import {
@@ -186,7 +197,7 @@ function handle(fn: (db: Db) => Promise<void>): () => Promise<void> {
         console.error(pc.red(`spawn failed: ${message}`));
         process.exit(1);
       }
-      if (err instanceof TmuxError) {
+      if (err instanceof TmuxError || err instanceof PaneNotFoundError) {
         console.error(pc.red(`tmux: ${message}`));
         process.exit(5);
       }
@@ -480,7 +491,9 @@ async function cmdList(
     console.log(pc.yellow(`Orphan panes (${view.orphans.length})`));
     console.log(pc.dim("  Panes that look like agents but aren't in the registry."));
     console.log(
-      pc.dim("  Run `mu sql 'INSERT INTO agents ...'` to adopt (mu adopt verb is on the roadmap)."),
+      pc.dim(
+        "  Run `mu adopt <pane-id>` to register one as a managed agent (e.g. `mu adopt %15`).",
+      ),
     );
     for (const orphan of view.orphans) {
       console.log(
@@ -752,6 +765,68 @@ async function cmdClose(db: Db, name: string, opts: { workstream?: string } = {}
         `  Workspace kept on disk. Run \`mu workspace free ${name}\` to remove it (or \`--commit\` to commit pending changes first).`,
       ),
     );
+  }
+}
+
+interface AdoptCliOpts {
+  workstream?: string;
+  name?: string;
+  cli?: string;
+  role?: string;
+  json?: boolean;
+}
+
+async function cmdAdopt(db: Db, paneOrTitle: string, opts: AdoptCliOpts): Promise<void> {
+  const ws = await resolveWorkstream(opts.workstream);
+
+  // Allow `mu adopt <pane-id>` (literal '%15') OR `mu adopt <pane-title>`
+  // (a string that looks like an agent name; we look it up in the
+  // workstream's tmux session). Pane-id form is preferred for scripting;
+  // pane-title form is the ergonomic form for interactive use.
+  let paneId: string;
+  if (paneOrTitle.startsWith("%")) {
+    paneId = paneOrTitle;
+  } else {
+    const session = `mu-${ws}`;
+    const panes = await listPanesInSession(session);
+    const match = panes.find((p) => p.title === paneOrTitle);
+    if (!match) {
+      throw new UsageError(
+        `no pane with title '${paneOrTitle}' in tmux session ${session} (try \`mu agent list -w ${ws}\` and pass the pane id)`,
+      );
+    }
+    paneId = match.paneId;
+  }
+
+  const adoptOpts: AdoptAgentOptions = {
+    paneId,
+    workstream: ws,
+    name: opts.name,
+    cli: opts.cli,
+    role: opts.role,
+  };
+  const result: AdoptAgentResult = await adoptAgent(db, adoptOpts);
+
+  if (opts.json) {
+    emitJson({
+      adopted: !result.alreadyAdopted,
+      alreadyAdopted: result.alreadyAdopted,
+      agent: result.agent,
+      previousTitle: result.previousTitle,
+      paneTitleSetTo: result.paneTitleSetTo,
+    });
+    return;
+  }
+
+  if (result.alreadyAdopted) {
+    console.log(pc.dim(`already adopted: ${result.agent.name} (pane ${result.agent.paneId})`));
+    return;
+  }
+  console.log(
+    `Adopted ${pc.bold(result.agent.name)} ${pc.dim(`(pane ${result.agent.paneId}, workstream ${result.agent.workstream})`)}`,
+  );
+  if (result.previousTitle !== null && result.previousTitle !== result.paneTitleSetTo) {
+    console.log(pc.dim(`  pane title: '${result.previousTitle}' -> '${result.paneTitleSetTo}'`));
   }
 }
 
@@ -3080,6 +3155,21 @@ export function buildProgram(): Command {
         json?: boolean;
       };
       return handle((db) => cmdState(db, opts))();
+    });
+
+  program
+    .command("adopt <pane-or-title>")
+    .description(
+      "Register an existing tmux pane as a managed mu agent (the inverse of `mu agent list`'s 'orphan' state). Pane id form '%15' or pane title form 'worker-2'.",
+    )
+    .option("--name <name>", "agent name (defaults to the pane's current title)")
+    .option("--cli <cli>", "agent CLI key (default: pi)")
+    .option("--role <role>", "full-access | read-only", "full-access")
+    .option(...WORKSTREAM_OPT)
+    .option(...JSON_OPT)
+    .action(function (paneOrTitle: string) {
+      const opts = (this as Command).optsWithGlobals() as AdoptCliOpts;
+      return handle((db) => cmdAdopt(db, paneOrTitle, opts))();
     });
 
   program

@@ -33,6 +33,20 @@ export class TmuxError extends Error {
   }
 }
 
+/**
+ * Thrown when a verb references a tmux pane id that doesn't exist on
+ * the running tmux server. Distinct from TmuxError (which wraps any
+ * tmux command failure) so callers can map it to a specific exit code
+ * (`mu` maps it to 5 — substrate failure — alongside other tmux
+ * issues, but the message is more actionable than a raw tmux stderr).
+ */
+export class PaneNotFoundError extends Error {
+  override readonly name = "PaneNotFoundError";
+  constructor(public readonly paneId: string) {
+    super(`tmux pane not found: ${paneId}`);
+  }
+}
+
 // ─── Pane ID validation ────────────────────────────────────────────────
 
 /**

@@ -13,7 +13,7 @@ verb list is in `## CLI — complete verb list` of
 > (`mu approve`), evidence on lifecycle verbs. See
 > [CHANGELOG.md](../CHANGELOG.md) for the release entry.
 >
-> A few items remain on the roadmap (e.g. `mu adopt`, snapshots/undo);
+> A few items remain on the roadmap (e.g. snapshots/undo);
 > see [§ Not in 0.1.0](#whats-not-in-010-and-how-to-work-around-it) at
 > the bottom for what to use instead.
 
@@ -333,6 +333,35 @@ build needs extra flags (e.g. to skip a single-instance lock), set
 Same pattern for `MU_CLAUDE_COMMAND` / `MU_CODEX_COMMAND` once those
 land.
 
+### Adopt an existing tmux pane
+
+Not every agent gets born via `mu agent spawn`. Sometimes you
+launched a `pi` (or `claude`, or `codex`) by hand for a one-off
+task, decided mid-flow it deserves to be in the graph, and now
+want to drive it via `mu`. Or `mu` crashed mid-spawn and left an
+orphan pane with no DB row. Either way:
+
+```bash
+mu agent list -w auth-refactor   # surfaces orphans at the bottom
+# Orphan panes (1)
+#   %15 title=worker-2 cli=pi
+
+mu adopt %15 -w auth-refactor                    # adopt by pane id
+mu adopt worker-2 -w auth-refactor               # adopt by pane title (same effect)
+mu adopt %15 --name investigator -w auth-refactor  # adopt and rename the pane
+```
+
+The pane title becomes the agent name (`mu`'s claim protocol
+invariant), so adopting a pane titled `worker-2` registers it as
+agent `worker-2` with no further config. Use `--name` when the
+pane's current title isn't a valid agent name (or when you want a
+different name).
+
+Adopt is **idempotent**: running it twice on the same pane is a
+no-op. It's also **scope-aware**: the pane must be in the
+`mu-<workstream>` tmux session, otherwise the adopt is rejected
+(no silent cross-session moves).
+
 ---
 
 ## 7. Watch the crew live
@@ -585,7 +614,7 @@ Reconciliation runs on every `mu agent list` / `mu`. Three steps:
 3. **Surface orphan panes** — panes in the workstream's tmux session
    whose `pane.command` looks like an agent CLI (pi) but
    that aren't in the registry. **Not** auto-adopted; mu shows them
-   under "Orphan panes"; `mu adopt` is on the roadmap
+   under "Orphan panes" and tells you `mu adopt <pane-id>` to register
 
 ### You closed your terminal session
 
@@ -764,7 +793,7 @@ in real use:
 
 | Want                                          | Workaround                                                              | Status        |
 | --------------------------------------------- | ----------------------------------------------------------------------- | ------------- |
-| `mu adopt <pane> --name <agent>`              | `mu sql "INSERT INTO agents (...) VALUES (...)"`                        | roadmap       |
+
 | Multi-CLI support (claude/codex/...)          | Not currently planned. mu is a pi orchestrator. The `--cli` flag is a binary-resolver, not a CLI selector. | not planned |
 | Pi extension (typed tools, HUD, wakeups)      | Use the CLI from inside pi via the `bash` tool                          | roadmap       |
 | Markdown agent-definition discovery           | Spawn accepts `--cli` and `--command` directly; no template registry    | dropped       |

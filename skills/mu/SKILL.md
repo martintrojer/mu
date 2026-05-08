@@ -220,6 +220,13 @@ mu agent attach <name> [-w]           # print scrollback + tmux command to attac
                                       # (errors with AgentNotInWorkstreamError if mismatch);
                                       # -w on attach picks WHICH agent (different role).
 
+# Registration (1) — the inverse of spawn
+mu adopt <pane-or-title> [-w] [--name N] [--cli pi] [--role R] [--json]
+                                      # register an existing tmux pane as a managed agent
+                                      # (clears the 'orphan' state from `mu agent list`).
+                                      # pane id form '%15' or pane title form 'worker-2';
+                                      # idempotent; pane must be in mu-<workstream> session.
+
 # Tasks (22)
 mu task add [id] [-w] --title T --impact N --effort-days N [--blocks A,B,C]
                                       # id optional — derived from title via slugify when omitted

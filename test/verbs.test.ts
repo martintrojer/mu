@@ -928,3 +928,205 @@ describe("cmdAgentShow fresh-status reconciliation", () => {
     expect(getAgent(db, "worker-2")?.status).toBe("free");
   });
 });
+
+// ─── adoptAgent ────────────────────────────────────────────────────────
+
+describe("adoptAgent (register an existing tmux pane as a managed agent)", () => {
+  // Seed an orphan pane: pretend a session exists with one pane that
+  // wasn't created via spawn. mu adopt then registers it.
+  function seedOrphanPane(opts: {
+    sessionName: string;
+    title: string;
+    paneId?: string;
+    command?: string;
+  }): { paneId: string; windowId: string } {
+    state.sessions.add(opts.sessionName);
+    const windowId = `@${state.nextWindowId++}`;
+    const paneId = opts.paneId ?? `%${state.nextPaneId++}`;
+    state.windows.set(opts.sessionName, [{ id: windowId, name: "main" }]);
+    state.panes.set(paneId, {
+      windowId,
+      paneId,
+      title: opts.title,
+      command: opts.command ?? "pi",
+    });
+    return { paneId, windowId };
+  }
+
+  it("(case 1) adopt by pane id, pane title is already a valid agent name -> insert, no retitle", async () => {
+    const { calls, executor } = mockTmux(state);
+    setTmuxExecutor(executor);
+    const { adoptAgent } = await import("../src/agents.js");
+
+    const { paneId } = seedOrphanPane({ sessionName: "mu-auth", title: "worker-2" });
+    const result = await adoptAgent(db, { paneId, workstream: "auth" });
+
+    expect(result.alreadyAdopted).toBe(false);
+    expect(result.previousTitle).toBe("worker-2");
+    expect(result.paneTitleSetTo).toBe("worker-2");
+    expect(result.agent.name).toBe("worker-2");
+    expect(result.agent.paneId).toBe(paneId);
+    expect(result.agent.workstream).toBe("auth");
+    expect(result.agent.status).toBe("free");
+    expect(getAgent(db, "worker-2")).toMatchObject({ name: "worker-2", paneId });
+    // No select-pane -T call (no retitle).
+    expect(calls.find((c) => c[0] === "select-pane")).toBeUndefined();
+  });
+
+  it("(case 2) adopt by pane id, --name differs from title -> retitle + insert", async () => {
+    const { calls, executor } = mockTmux(state);
+    setTmuxExecutor(executor);
+    const { adoptAgent } = await import("../src/agents.js");
+
+    const { paneId } = seedOrphanPane({ sessionName: "mu-auth", title: "old-title" });
+    const result = await adoptAgent(db, { paneId, workstream: "auth", name: "worker-2" });
+
+    expect(result.alreadyAdopted).toBe(false);
+    expect(result.previousTitle).toBe("old-title");
+    expect(result.paneTitleSetTo).toBe("worker-2");
+    expect(result.agent.name).toBe("worker-2");
+    // pane retitled
+    expect(state.panes.get(paneId)?.title).toBe("worker-2");
+    // exactly one select-pane -T call
+    const retitleCalls = calls.filter(
+      (c) => c[0] === "select-pane" && c.includes("-T") && c.includes("worker-2"),
+    );
+    expect(retitleCalls.length).toBe(1);
+  });
+
+  it("(case 3) adopt by pane id that doesn't exist -> PaneNotFoundError", async () => {
+    const { executor } = mockTmux(state);
+    setTmuxExecutor(executor);
+    const { adoptAgent } = await import("../src/agents.js");
+    const { PaneNotFoundError } = await import("../src/tmux.js");
+
+    state.sessions.add("mu-auth"); // session exists, pane doesn't
+    state.windows.set("mu-auth", [{ id: "@1", name: "main" }]);
+    await expect(adoptAgent(db, { paneId: "%999", workstream: "auth" })).rejects.toBeInstanceOf(
+      PaneNotFoundError,
+    );
+  });
+
+  it("(case 4) adopt where the resolved name collides with existing agent -> AgentExistsError", async () => {
+    const { executor } = mockTmux(state);
+    setTmuxExecutor(executor);
+    const { adoptAgent } = await import("../src/agents.js");
+
+    // Pre-seed a different agent named "worker-2".
+    insertAgent(db, {
+      name: "worker-2",
+      workstream: "auth",
+      paneId: "%50",
+      status: "free",
+    });
+    const { paneId } = seedOrphanPane({ sessionName: "mu-auth", title: "worker-2" });
+    await expect(adoptAgent(db, { paneId, workstream: "auth" })).rejects.toBeInstanceOf(
+      AgentExistsError,
+    );
+  });
+
+  it("(case 5) adopt by pane id from a different tmux session -> AgentNotInWorkstreamError", async () => {
+    const { executor } = mockTmux(state);
+    setTmuxExecutor(executor);
+    const { adoptAgent } = await import("../src/agents.js");
+    const { AgentNotInWorkstreamError } = await import("../src/agents.js");
+
+    // Pane lives in session 'mu-other', adopt is targeting workstream 'auth'.
+    const { paneId } = seedOrphanPane({ sessionName: "mu-other", title: "worker-2" });
+    state.sessions.add("mu-auth"); // target session also exists, just empty
+    state.windows.set("mu-auth", []);
+    await expect(adoptAgent(db, { paneId, workstream: "auth" })).rejects.toBeInstanceOf(
+      AgentNotInWorkstreamError,
+    );
+  });
+
+  it("(case 6) adopt twice with same input -> alreadyAdopted=true (idempotent)", async () => {
+    const { calls, executor } = mockTmux(state);
+    setTmuxExecutor(executor);
+    const { adoptAgent } = await import("../src/agents.js");
+
+    const { paneId } = seedOrphanPane({ sessionName: "mu-auth", title: "worker-2" });
+    const first = await adoptAgent(db, { paneId, workstream: "auth" });
+    expect(first.alreadyAdopted).toBe(false);
+
+    const callsBefore = calls.length;
+    const second = await adoptAgent(db, { paneId, workstream: "auth" });
+    expect(second.alreadyAdopted).toBe(true);
+    expect(second.agent.name).toBe("worker-2");
+    expect(second.agent.paneId).toBe(paneId);
+    // Idempotent path should not insert again — exactly one row.
+    expect(listAgents(db).length).toBe(1);
+    // The second call may make tmux probe calls (paneExists, list-panes) but
+    // must NOT call select-pane (no retitle on idempotent path).
+    const retitlesAfter = calls
+      .slice(callsBefore)
+      .filter((c) => c[0] === "select-pane" && c.includes("-T"));
+    expect(retitlesAfter.length).toBe(0);
+  });
+
+  it("(case 7) adopt by pane id whose title is not a valid agent name and no --name -> error", async () => {
+    const { executor } = mockTmux(state);
+    setTmuxExecutor(executor);
+    const { adoptAgent } = await import("../src/agents.js");
+
+    // Title is 'pi' (the bare CLI name) — not a valid agent name? Actually
+    // 'pi' IS valid (lowercase, starts with letter). Use a clearly invalid one.
+    const { paneId } = seedOrphanPane({ sessionName: "mu-auth", title: "Bad Title!" });
+    await expect(adoptAgent(db, { paneId, workstream: "auth" })).rejects.toThrow(
+      /not a valid agent name/,
+    );
+  });
+
+  it("(case 8) adopt --cli claude --role read-only sets those columns correctly", async () => {
+    const { executor } = mockTmux(state);
+    setTmuxExecutor(executor);
+    const { adoptAgent } = await import("../src/agents.js");
+
+    const { paneId } = seedOrphanPane({
+      sessionName: "mu-auth",
+      title: "worker-2",
+      command: "claude",
+    });
+    const result = await adoptAgent(db, {
+      paneId,
+      workstream: "auth",
+      cli: "claude",
+      role: "read-only",
+    });
+    expect(result.agent.cli).toBe("claude");
+    expect(result.agent.role).toBe("read-only");
+  });
+
+  it("auto-creates the workstreams row if missing (matches spawn ergonomics)", async () => {
+    const { executor } = mockTmux(state);
+    setTmuxExecutor(executor);
+    const { adoptAgent } = await import("../src/agents.js");
+
+    const { paneId } = seedOrphanPane({ sessionName: "mu-fresh", title: "worker-2" });
+    expect(db.prepare("SELECT COUNT(*) AS n FROM workstreams WHERE name='fresh'").get()).toEqual({
+      n: 0,
+    });
+
+    await adoptAgent(db, { paneId, workstream: "fresh" });
+
+    expect(db.prepare("SELECT COUNT(*) AS n FROM workstreams WHERE name='fresh'").get()).toEqual({
+      n: 1,
+    });
+  });
+
+  it("emits an 'agent adopt' event into agent_logs", async () => {
+    const { executor } = mockTmux(state);
+    setTmuxExecutor(executor);
+    const { adoptAgent } = await import("../src/agents.js");
+    const { listLogs } = await import("../src/logs.js");
+
+    const { paneId } = seedOrphanPane({ sessionName: "mu-auth", title: "worker-2" });
+    await adoptAgent(db, { paneId, workstream: "auth" });
+
+    const logs = listLogs(db, { workstream: "auth", kind: "event" });
+    const adoptEvents = logs.filter((l) => l.payload.startsWith("agent adopt"));
+    expect(adoptEvents.length).toBe(1);
+    expect(adoptEvents[0]?.payload).toContain("worker-2");
+    expect(adoptEvents[0]?.payload).toContain(paneId);
+  });
+});
