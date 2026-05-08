@@ -59,6 +59,7 @@ import { CURRENT_SCHEMA_VERSION, type Db, EXPECTED_TABLES, defaultDbPath, openDb
 import { detectPiStatus } from "./detect.js";
 import { type ListLogsOptions, type LogRow, appendLog, latestSeq, listLogs } from "./logs.js";
 import {
+  ClaimerNotRegisteredError,
   CrossWorkstreamEdgeError,
   CycleError,
   type SearchTasksOptions,
@@ -185,7 +186,8 @@ function handle(fn: (db: Db) => Promise<void>): () => Promise<void> {
         err instanceof CycleError ||
         err instanceof CrossWorkstreamEdgeError ||
         err instanceof WorkspaceExistsError ||
-        err instanceof ApprovalAlreadyDecidedError
+        err instanceof ApprovalAlreadyDecidedError ||
+        err instanceof ClaimerNotRegisteredError
       ) {
         console.error(pc.red(`conflict: ${message}`));
         process.exit(4);

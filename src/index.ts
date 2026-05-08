@@ -86,6 +86,7 @@ export {
   searchTasks,
   type SearchTasksOptions,
   setTaskStatus,
+  ClaimerNotRegisteredError,
   TaskAlreadyOwnedError,
   TaskExistsError,
   TaskNotFoundError,

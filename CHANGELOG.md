@@ -89,6 +89,43 @@ called out under "Breaking" in each entry.
 
 ### Fixed
 
+- **`mu task claim` from an unregistered pane gives an actionable
+  error instead of bare `FOREIGN KEY constraint failed`.** The v2
+  schema migration tightened `tasks.owner`'s FK to `agents.name`,
+  which surfaced a latent bug: claims from a pi session that
+  wasn't itself spawned by mu (or invoked with `--for <ghost>`)
+  failed with the unhelpful raw SQLite error.
+
+  `claimTask` now does a `SELECT 1 FROM agents WHERE name=?`
+  pre-check before the atomic CAS UPDATE, throwing a typed
+  `ClaimerNotRegisteredError` (exit 4 conflict) when the claimer
+  doesn't exist. The error message includes:
+  - the resolved claimer name
+  - the pane id (when resolved from `$TMUX_PANE`) plus the exact
+    `mu adopt %<pane>` command to fix it
+  - a fallback hint suggesting `--for` when the name came from
+    `--for` itself
+
+  Live before/after on the orchestrator's pane:
+
+      $ mu task claim some-task                    # before v0.1.x
+      error: FOREIGN KEY constraint failed
+
+      $ mu task claim some-task                    # after
+      conflict: claimer 'pi-mu' (pane %6441) is not a registered
+        mu agent (no row in agents table).
+        Register this pane with: mu adopt %6441
+      exit: 4
+
+  The pre-check adds essentially no overhead (one indexed lookup
+  before the existing transactional UPDATE); the atomic CAS
+  on `tasks.owner` is preserved end-to-end.
+
+  `ClaimerNotRegisteredError` is exported from the SDK
+  (`src/index.ts`) so programmatic callers can distinguish it
+  from `TaskAlreadyOwnedError` / `TaskNotFoundError` without
+  string-matching.
+
 - **Workstream names with the `mu-` prefix are now rejected at
   init time.** `mu workstream init mu-foo` would have produced
   tmux session `mu-mu-foo` (because mu auto-prepends `mu-` to

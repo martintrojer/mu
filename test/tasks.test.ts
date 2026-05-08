@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { insertAgent } from "../src/agents.js";
 import { type Db, openDb } from "../src/db.js";
 import {
+  ClaimerNotRegisteredError,
   CrossWorkstreamEdgeError,
   CycleError,
   TaskAlreadyOwnedError,
@@ -591,6 +592,54 @@ describe("claimTask", () => {
     await claimTask(db, "auth", { agentName: "alice" });
     const after = getTask(db, "auth")?.updatedAt;
     expect(after).not.toBe(before);
+  });
+
+  // ─ ClaimerNotRegisteredError: pre-check that maps the would-be
+  //   bare 'FOREIGN KEY constraint failed' (from the FK on tasks.owner
+  //   added in the v2 migration) into a typed actionable error.
+  it("throws ClaimerNotRegisteredError when --for names a non-existent agent", async () => {
+    await expect(claimTask(db, "auth", { agentName: "ghost" })).rejects.toBeInstanceOf(
+      ClaimerNotRegisteredError,
+    );
+    // Task untouched (no partial write through the FK).
+    expect(getTask(db, "auth")?.owner).toBeNull();
+    expect(getTask(db, "auth")?.status).toBe("OPEN");
+  });
+
+  it("ClaimerNotRegisteredError suggests --for when name came from --for (no pane id available)", async () => {
+    try {
+      await claimTask(db, "auth", { agentName: "ghost" });
+      throw new Error("expected throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(ClaimerNotRegisteredError);
+      const msg = (err as Error).message;
+      // No pane id (came from --for, not $TMUX_PANE)
+      expect(msg).toContain("ghost");
+      expect(msg).toContain("not a registered mu agent");
+      expect(msg).toContain("--for");
+    }
+  });
+
+  it("ClaimerNotRegisteredError suggests 'mu adopt <pane>' when name came from $TMUX_PANE", async () => {
+    const executor: TmuxExecutor = async (args) => {
+      if (args[0] === "display-message" && args.includes("#{pane_title}")) {
+        return { stdout: "unregistered\n", stderr: "", exitCode: 0 };
+      }
+      return { stdout: "", stderr: "unmocked", exitCode: 1 };
+    };
+    setTmuxExecutor(executor);
+    await withEnv("TMUX_PANE", "%99", async () => {
+      try {
+        await claimTask(db, "auth");
+        throw new Error("expected throw");
+      } catch (err) {
+        expect(err).toBeInstanceOf(ClaimerNotRegisteredError);
+        const msg = (err as Error).message;
+        expect(msg).toContain("unregistered");
+        expect(msg).toContain("%99");
+        expect(msg).toContain("mu adopt %99");
+      }
+    });
   });
 });
 

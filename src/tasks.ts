@@ -194,6 +194,35 @@ export class TaskAlreadyOwnedError extends Error {
   }
 }
 
+/**
+ * Thrown when `mu task claim` resolves a claimer agent name (from the
+ * pane title or --for) that has no matching row in the agents table.
+ *
+ * The FK on `tasks.owner` references `agents.name`; without this guard
+ * the claim attempt would fail with the unhelpful 'FOREIGN KEY constraint
+ * failed' from SQLite. This typed error gives the user actionable next
+ * steps (run `mu adopt <pane-id>` to register, or use --for to pick a
+ * different agent).
+ *
+ * Maps to exit code 4 (conflict) via the cli.ts handler.
+ */
+export class ClaimerNotRegisteredError extends Error {
+  override readonly name = "ClaimerNotRegisteredError";
+  constructor(
+    public readonly agentName: string,
+    public readonly paneId: string | null,
+  ) {
+    const paneHint = paneId !== null ? ` (pane ${paneId})` : "";
+    const adoptHint =
+      paneId !== null
+        ? `\n  Register this pane with: mu adopt ${paneId}`
+        : "\n  Pass --for <agent> to claim as a registered agent.";
+    super(
+      `claimer '${agentName}'${paneHint} is not a registered mu agent (no row in agents table).${adoptHint}`,
+    );
+  }
+}
+
 export class CycleError extends Error {
   override readonly name = "CycleError";
   constructor(
@@ -731,6 +760,27 @@ export async function claimTask(
     throw new Error(
       "claimTask: no agent name (pass opts.agentName or run inside an mu-spawned pane with $TMUX_PANE set)",
     );
+  }
+
+  // Pre-check: the FK on tasks.owner -> agents.name will reject any
+  // claim from an unregistered agent with bare 'FOREIGN KEY constraint
+  // failed'. Fail loud + actionable instead, telling the user how to
+  // self-cure (mu adopt the current pane, or pass --for to use a
+  // registered agent name).
+  //
+  // The FK was added in the v2 migration (ON UPDATE CASCADE work);
+  // before that this check was implicit in the schema's prose-only
+  // 'soft FK'. Now that it's strict, the error has to be explicit too.
+  const claimerExists = db.prepare("SELECT 1 FROM agents WHERE name = ? LIMIT 1").get(agentName) as
+    | { 1: number }
+    | undefined;
+  if (!claimerExists) {
+    // If we resolved the name from $TMUX_PANE, surface the pane id so
+    // the error message can suggest 'mu adopt <pane>'. If --for was
+    // used, we don't know which pane is intended; the message falls
+    // back to suggesting --for.
+    const paneIdFromEnv = opts.agentName === undefined ? (process.env.TMUX_PANE ?? null) : null;
+    throw new ClaimerNotRegisteredError(agentName, paneIdFromEnv);
   }
 
   return db.transaction(() => {
