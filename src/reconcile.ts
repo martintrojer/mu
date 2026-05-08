@@ -33,16 +33,46 @@ export interface ReconcileOptions {
    * created with a non-default name.
    */
   tmuxSession?: string;
+  /**
+   * Read-only mode: report drift WITHOUT mutating any row. `mu undo`
+   * uses this to honour its contract ("the restore brings back the
+   * snapshot's rows verbatim; reconcile reports drift but MUST NOT
+   * delete a row that was just restored"). Discovered via
+   * snap_undo_reconcile_destroys_recovered_agents (snap_dogfood
+   * Finding 2): a `workstream destroy --yes` followed by `mu undo
+   * --yes` was silently dropping the restored agent row because
+   * its pane had been killed by the destroy, and the post-restore
+   * reconcile then pruned the now-recovered row + cascaded its
+   * vcs_workspaces row away via FK ON DELETE CASCADE.
+   *
+   * Effect:
+   *   - prune step counts ghosts but does NOT delete them
+   *     (`prunedGhosts` becomes "would-be-pruned" semantically)
+   *   - status-detect step does NOT run (no scrollback capture, no
+   *     title refresh, no DB writes)
+   *   - orphan-surface step still runs (it's pure read)
+   *
+   * Default: false. `mu agent list` and `mu doctor` keep the
+   * mutating behaviour they always had.
+   */
+  dryRun?: boolean;
 }
 
 export interface ReconcileReport {
-  /** Number of registry rows whose pane was gone. */
+  /** Number of registry rows whose pane was gone. In dryRun mode this
+   *  is the count of rows that WOULD have been pruned; in normal
+   *  mode it's the count actually deleted. */
   prunedGhosts: number;
-  /** Number of agents whose status was changed by scrollback detection. */
+  /** Number of agents whose status was changed by scrollback detection.
+   *  Always 0 in dryRun mode (status detection is skipped). */
   statusChanges: number;
   /** Panes in the workstream's tmux session that look like agents but
    *  aren't in the registry. NOT auto-adopted. */
   orphans: TmuxPane[];
+  /** True iff this report was generated in dryRun mode. Lets callers
+   *  switch their output text ("agents pruned" vs "would-be-pruned
+   *  (suppressed)") without re-deriving from options. */
+  dryRun: boolean;
 }
 
 /**
@@ -66,6 +96,7 @@ function knownAgentCommands(): ReadonlySet<string> {
 
 export async function reconcile(db: Db, opts: ReconcileOptions): Promise<ReconcileReport> {
   const sessionName = opts.tmuxSession ?? `mu-${opts.workstream}`;
+  const dryRun = opts.dryRun ?? false;
   const dbAgents = listAgents(db, { workstream: opts.workstream });
   const tmuxPanes = await listPanesInSession(sessionName);
   const tmuxByPaneId = new Map(tmuxPanes.map((p) => [p.paneId, p]));
@@ -75,47 +106,56 @@ export async function reconcile(db: Db, opts: ReconcileOptions): Promise<Reconci
   const orphans: TmuxPane[] = [];
 
   // 1. Prune ghosts (DB row references a pane that no longer exists).
+  //    In dryRun mode, COUNT them but don't delete. The orphan-surface
+  //    step still treats them as "not-in-tmux" so the orphan list
+  //    semantics don't change.
   const survivors: AgentRow[] = [];
   for (const agent of dbAgents) {
     if (tmuxByPaneId.has(agent.paneId)) {
       survivors.push(agent);
     } else {
-      deleteAgent(db, agent.name);
+      if (!dryRun) deleteAgent(db, agent.name);
       prunedGhosts++;
     }
   }
 
   // 2. Detect status from scrollback for survivors. capturePane uses the
   //    last 100 lines, which is the same window the detector operates on.
-  for (const agent of survivors) {
-    const scrollback = await capturePane(agent.paneId, { lines: 100 });
-    const detected = detectPiStatus(scrollback);
-    if (shouldOverwrite(agent.status, detected) && detected !== agent.status) {
-      updateAgentStatus(db, agent.name, detected);
-      statusChanges++;
+  //    Skipped in dryRun mode — status detection writes to the DB
+  //    (updateAgentStatus + refreshAgentTitle), and the dryRun contract
+  //    is "no mutation".
+  if (!dryRun) {
+    for (const agent of survivors) {
+      const scrollback = await capturePane(agent.paneId, { lines: 100 });
+      const detected = detectPiStatus(scrollback);
+      if (shouldOverwrite(agent.status, detected) && detected !== agent.status) {
+        updateAgentStatus(db, agent.name, detected);
+        statusChanges++;
+      }
+      // ALWAYS refresh the pane title (even when status didn't change),
+      // so that:
+      //   1. Inner CLIs that self-set their pane title (pi, pi-meta, vim,
+      //      tmux's default 'host - dir') get overwritten with mu's
+      //      composed title.
+      //   2. Task-ownership changes that happen between reconciles
+      //      (claim / release / close) re-propagate even if the status
+      //      detector didn't flip.
+      // Best-effort: a tmux failure here never blocks the reconcile report.
+      await refreshAgentTitle(db, agent.name);
     }
-    // ALWAYS refresh the pane title (even when status didn't change),
-    // so that:
-    //   1. Inner CLIs that self-set their pane title (pi, pi-meta, vim,
-    //      tmux's default 'host - dir') get overwritten with mu's
-    //      composed title.
-    //   2. Task-ownership changes that happen between reconciles
-    //      (claim / release / close) re-propagate even if the status
-    //      detector didn't flip.
-    // Best-effort: a tmux failure here never blocks the reconcile report.
-    await refreshAgentTitle(db, agent.name);
   }
 
   // 3. Surface orphan panes. `looksLikeAgentPane` is conservative:
   //    pane.command must be one we recognise as an agent CLI. A bash
   //    pane the user spawned for their own use is never an orphan.
+  //    Pure read; runs in dryRun mode too.
   const dbPaneIds = new Set(survivors.map((a) => a.paneId));
   for (const pane of tmuxPanes) {
     if (dbPaneIds.has(pane.paneId)) continue;
     if (looksLikeAgentPane(pane)) orphans.push(pane);
   }
 
-  return { prunedGhosts, statusChanges, orphans };
+  return { prunedGhosts, statusChanges, orphans, dryRun };
 }
 
 /**

@@ -101,6 +101,7 @@ describe("reconcile — empty cases", () => {
       prunedGhosts: 0,
       statusChanges: 0,
       orphans: [],
+      dryRun: false,
     });
   });
 
@@ -395,8 +396,8 @@ describe("reconcile — combined scenarios", () => {
     const second = await reconcile(db, { workstream: "auth" });
 
     // First pass detects nothing (status already busy, matches BUSY_SCROLLBACK).
-    expect(first).toEqual({ prunedGhosts: 0, statusChanges: 0, orphans: [] });
-    expect(second).toEqual({ prunedGhosts: 0, statusChanges: 0, orphans: [] });
+    expect(first).toEqual({ prunedGhosts: 0, statusChanges: 0, orphans: [], dryRun: false });
+    expect(second).toEqual({ prunedGhosts: 0, statusChanges: 0, orphans: [], dryRun: false });
   });
 
   it("status update bumps updated_at", async () => {
@@ -449,6 +450,92 @@ describe("reconcile — combined scenarios", () => {
 });
 
 // ─── Manual status validation ──────────────────────────────────────────
+
+describe("reconcile — dryRun does not mutate (snap_undo_reconcile_destroys_recovered_agents)", () => {
+  it("counts ghosts but does NOT delete the agent row", async () => {
+    insertAgent(db, { name: "alice", workstream: "auth", paneId: "%99", status: "busy" });
+    // Empty tmux: alice's pane %99 is gone.
+    const { executor } = mockTmux([]);
+    setTmuxExecutor(executor);
+
+    const report = await reconcile(db, { workstream: "auth", dryRun: true });
+
+    expect(report.dryRun).toBe(true);
+    expect(report.prunedGhosts).toBe(1);
+    // The row is still in the DB — the dryRun contract.
+    expect(getAgent(db, "alice")).toBeDefined();
+  });
+
+  it("a non-dryRun pass right after still prunes (dryRun is opt-in per call)", async () => {
+    insertAgent(db, { name: "alice", workstream: "auth", paneId: "%99", status: "busy" });
+    const { executor } = mockTmux([]);
+    setTmuxExecutor(executor);
+
+    const dry = await reconcile(db, { workstream: "auth", dryRun: true });
+    expect(dry.prunedGhosts).toBe(1);
+    expect(getAgent(db, "alice")).toBeDefined();
+
+    // Same setup, dryRun off: deletes for real.
+    const wet = await reconcile(db, { workstream: "auth" });
+    expect(wet.prunedGhosts).toBe(1);
+    expect(wet.dryRun).toBe(false);
+    expect(getAgent(db, "alice")).toBeUndefined();
+  });
+
+  it("skips status detection entirely (statusChanges is always 0)", async () => {
+    insertAgent(db, { name: "alice", workstream: "auth", paneId: "%15", status: "spawning" });
+    // Pane is alive AND its scrollback would normally flip alice
+    // spawning → busy. dryRun must suppress that write.
+    const { executor } = mockTmux([
+      { windowId: "@1", paneId: "%15", title: "alice", command: "pi", scrollback: BUSY_SCROLLBACK },
+    ]);
+    setTmuxExecutor(executor);
+
+    const report = await reconcile(db, { workstream: "auth", dryRun: true });
+    expect(report.dryRun).toBe(true);
+    expect(report.statusChanges).toBe(0);
+    // Status unchanged (no write).
+    expect(getAgent(db, "alice")?.status).toBe("spawning");
+  });
+
+  it("orphan-surface still runs in dryRun mode", async () => {
+    // No agents in DB; one pi pane exists in tmux.
+    const { executor } = mockTmux([
+      { windowId: "@1", paneId: "%42", title: "orphan-1", command: "pi" },
+    ]);
+    setTmuxExecutor(executor);
+
+    const report = await reconcile(db, { workstream: "auth", dryRun: true });
+    expect(report.dryRun).toBe(true);
+    expect(report.orphans.length).toBe(1);
+    expect(report.orphans[0]?.paneId).toBe("%42");
+  });
+
+  it("REGRESSION (snap_dogfood Finding 2): snapshot-then-pane-killed scenario doesn't lose the agent row", async () => {
+    // Mirrors the exact shape that bit dogfood-snap:
+    //   1. snapshot is taken (agent + pane both alive)
+    //   2. destroy kills the pane
+    //   3. mu undo restores the snapshot's agents row
+    //   4. post-restore reconcile sees pane is dead
+    //   5. WITHOUT dryRun: prunes the agents row + cascades vcs_workspaces away
+    //   6. WITH    dryRun: counts the would-be-prune; row stays
+    insertAgent(db, { name: "dog-1", workstream: "auth", paneId: "%2919", status: "needs_input" });
+    // Pane is gone in tmux (the destroy killed it).
+    const { executor } = mockTmux([]);
+    setTmuxExecutor(executor);
+
+    // Simulate the post-restore reconcile pass.
+    const report = await reconcile(db, { workstream: "auth", dryRun: true });
+
+    expect(report.prunedGhosts).toBe(1);
+    expect(report.dryRun).toBe(true);
+    // The contract: the recovered row IS still here.
+    const dog = getAgent(db, "dog-1");
+    expect(dog).toBeDefined();
+    expect(dog?.workstream).toBe("auth");
+    expect(dog?.paneId).toBe("%2919");
+  });
+});
 
 describe("reconcile — status sanity", () => {
   it("does not introduce statuses outside the AgentStatus union", async () => {

@@ -2744,15 +2744,25 @@ async function cmdUndo(
   // can honestly say how much DB-vs-tmux drift exists. We open a fresh
   // handle here; handle()'s finally `db?.close()` will silently fail on
   // the old (now-closed) handle, which is the documented behaviour.
+  //
+  // **dryRun: true** is the load-bearing flag. Without it, the
+  // reconcile pass would prune any agent row whose pane is no
+  // longer in tmux — which is EVERY agent row in a snapshot taken
+  // before `mu workstream destroy --yes`, because the destroy
+  // killed the panes. The contract `mu undo` advertises is "the
+  // restore brings back the snapshot's rows verbatim"; a mutating
+  // post-restore reconcile silently breaks that. Dry-run reports
+  // drift but doesn't delete (the user can still do a real
+  // reconcile later via `mu agent list` once they've decided
+  // which would-be-pruned rows to re-spawn vs let go).
+  // (snap_undo_reconcile_destroys_recovered_agents.)
   const fresh = openDb({ path: restored.restoredTo });
-  let totalGhostsPruned = 0;
+  let totalGhostsWouldBePruned = 0;
   let totalOrphans = 0;
-  let totalStatusChanges = 0;
   const reconcilePerWorkstream: Array<{
     workstream: string;
-    prunedGhosts: number;
+    wouldBePrunedGhosts: number;
     orphans: number;
-    statusChanges: number;
   }> = [];
   try {
     const workstreams = await listWorkstreams(fresh);
@@ -2762,15 +2772,16 @@ async function cmdUndo(
       // single bad workstream doesn't poison the post-restore
       // summary.
       try {
-        const report = await reconcile(fresh, { workstream: ws.workstream });
-        totalGhostsPruned += report.prunedGhosts;
+        const report = await reconcile(fresh, {
+          workstream: ws.workstream,
+          dryRun: true,
+        });
+        totalGhostsWouldBePruned += report.prunedGhosts;
         totalOrphans += report.orphans.length;
-        totalStatusChanges += report.statusChanges;
         reconcilePerWorkstream.push({
           workstream: ws.workstream,
-          prunedGhosts: report.prunedGhosts,
+          wouldBePrunedGhosts: report.prunedGhosts,
           orphans: report.orphans.length,
-          statusChanges: report.statusChanges,
         });
       } catch {
         // Best-effort; the restore itself succeeded.
@@ -2791,15 +2802,23 @@ async function cmdUndo(
       restoredTo: restored.restoredTo,
       schemaVersion: restored.schemaVersion,
       reconcile: {
-        ghostsPruned: totalGhostsPruned,
+        // Renamed from `ghostsPruned` because we no longer prune
+        // during restore. The shape is informational — callers
+        // wanting to actually prune should run `mu agent list`
+        // (which still mutates) after deciding which rows to keep.
+        wouldBePrunedGhosts: totalGhostsWouldBePruned,
         orphansSurfaced: totalOrphans,
-        statusChanges: totalStatusChanges,
+        dryRun: true,
         perWorkstream: reconcilePerWorkstream,
       },
       nextSteps: [
         {
           intent: "See orphan panes (DB doesn't know about them)",
           command: "mu agent list -w '*' --json | jq '.[].orphans'",
+        },
+        {
+          intent: "Confirm + actually prune dead-pane rows you don't want to re-spawn",
+          command: "mu agent list -w <ws>  (a normal list reconciles + prunes)",
         },
         { intent: "Roll forward (undo the undo)", command: "mu undo --yes" },
       ],
@@ -2810,14 +2829,19 @@ async function cmdUndo(
     `Restored snapshot ${pc.bold(`#${target.id}`)} (${target.label}, taken ${target.createdAt})`,
   );
   console.log("");
-  console.log(pc.bold("Reconcile (tmux NOT rolled back):"));
-  console.log(`  agents pruned (DB row → dead pane) : ${pc.yellow(String(totalGhostsPruned))}`);
-  console.log(`  orphan panes surfaced              : ${pc.yellow(String(totalOrphans))}`);
-  console.log(`  status changes detected            : ${totalStatusChanges}`);
+  console.log(pc.bold("Reconcile (tmux NOT rolled back; rows NOT pruned):"));
+  console.log(
+    `  would-be-pruned (DB row → dead pane) : ${pc.yellow(String(totalGhostsWouldBePruned))} ${pc.dim("(suppressed: rows preserved as restored)")}`,
+  );
+  console.log(`  orphan panes surfaced                 : ${pc.yellow(String(totalOrphans))}`);
   printNextSteps([
     {
       intent: "See orphan panes (DB doesn't know about them)",
       command: "mu agent list -w '*' --json | jq '.[].orphans'",
+    },
+    {
+      intent: "Confirm + actually prune dead-pane rows you don't want to re-spawn",
+      command: "mu agent list -w <ws>  (a normal list reconciles + prunes)",
     },
     { intent: "Re-spawn an agent the DB now lacks", command: "mu agent spawn <name> -w <ws>" },
     { intent: "Roll forward (undo the undo)", command: "mu undo --yes" },

@@ -135,7 +135,9 @@ describe("mu undo", () => {
     expect(error).toBeUndefined();
     expect(exitCode).toBeNull();
     expect(stdout).toContain("Restored snapshot");
-    expect(stdout).toContain("Reconcile (tmux NOT rolled back)");
+    // The reconcile pass now runs in dryRun mode (snap_undo_reconcile_destroys_recovered_agents)
+    // so the heading reflects "rows NOT pruned" too.
+    expect(stdout).toContain("Reconcile (tmux NOT rolled back; rows NOT pruned)");
 
     db = openDb({ path: dbPath });
     expect(getTask(db, "design")?.status).toBe("OPEN");
@@ -180,16 +182,21 @@ describe("mu undo", () => {
       restoredTo: string;
       schemaVersion: number;
       reconcile: {
-        ghostsPruned: number;
+        wouldBePrunedGhosts: number;
         orphansSurfaced: number;
-        statusChanges: number;
+        dryRun: boolean;
       };
     };
     expect(parsed.restored).toBe(true);
     expect(parsed.snapshot.label).toBe("task close design");
     expect(parsed.restoredTo).toBe(dbPath);
     expect(typeof parsed.schemaVersion).toBe("number");
-    expect(parsed.reconcile.ghostsPruned).toBeGreaterThanOrEqual(0);
+    // Field rename: ghostsPruned → wouldBePrunedGhosts (the post-restore
+    // reconcile is now dry-run by default to honour the
+    // "restore brings back snapshot rows verbatim" contract —
+    // snap_undo_reconcile_destroys_recovered_agents).
+    expect(parsed.reconcile.wouldBePrunedGhosts).toBeGreaterThanOrEqual(0);
+    expect(parsed.reconcile.dryRun).toBe(true);
   });
 });
 

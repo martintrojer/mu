@@ -14,9 +14,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { closeAgent, insertAgent } from "../src/agents.js";
+import { closeAgent, getAgent, insertAgent } from "../src/agents.js";
 import { addApproval, denyApproval, grantApproval } from "../src/approvals.js";
 import { CURRENT_SCHEMA_VERSION, type Db, defaultStateDir, openDb } from "../src/db.js";
+import { reconcile } from "../src/reconcile.js";
 import {
   CaptureSnapshotResult,
   SnapshotFileMissingError,
@@ -519,5 +520,99 @@ describe("migration v3 -> v4: snapshots table", () => {
   it("the snapshots table has NO foreign key on workstream (by design)", () => {
     const fks = db.prepare("SELECT * FROM pragma_foreign_key_list('snapshots')").all();
     expect(fks).toEqual([]);
+  });
+});
+
+// ─── snap_undo_reconcile_destroys_recovered_agents (snap_dogfood Finding 2) ──
+//
+// End-to-end regression test for the contract `mu undo` advertises:
+// the restore brings back the snapshot's rows verbatim, and the
+// post-restore reconcile pass MUST NOT mutate them.
+//
+// Pre-fix behaviour (what dogfood-snap caught):
+//   1. Insert agent + vcs_workspaces row.
+//   2. Take a snapshot ("workstream destroy auth").
+//   3. Delete the agent (simulating destroy + FK cascade).
+//   4. restoreSnapshot brings back the agent + vcs_workspaces rows.
+//   5. A FRESH reconcile pass with dryRun=false would prune the
+//      agent (its pane is dead in the mocked tmux) and FK CASCADE
+//      would silently drop the vcs_workspaces row too.
+//
+// Post-fix:
+//   - reconcile(db, { dryRun: true }) reports the would-be-prune
+//     COUNT but doesn't delete. The agent + workspace rows survive
+//     the entire restore-and-reconcile cycle.
+
+describe("snap_undo_reconcile_destroys_recovered_agents (regression)", () => {
+  it("restore + dryRun reconcile preserves the agent row whose pane is dead", async () => {
+    seedAuth();
+    insertAgent(db, { name: "dog-1", workstream: "auth", paneId: "%2919", status: "needs_input" });
+    db.prepare(
+      "INSERT INTO vcs_workspaces (agent, workstream, backend, path, created_at) VALUES (?, ?, ?, ?, datetime('now'))",
+    ).run("dog-1", "auth", "git", "/tmp/dogfood-test/dog-1");
+
+    // Snapshot now (mirrors a pre-destroy snapshot).
+    const snap = captureSnapshot(db, "workstream destroy auth", null);
+
+    // Simulate destroy + cascade: drop the agent (which CASCADEs
+    // the vcs_workspaces row away).
+    db.prepare("DELETE FROM agents WHERE name = 'dog-1'").run();
+    expect(getAgent(db, "dog-1")).toBeUndefined();
+    expect(
+      db.prepare("SELECT COUNT(*) AS n FROM vcs_workspaces WHERE agent='dog-1'").get(),
+    ).toEqual({ n: 0 });
+
+    // Restore. restoreSnapshot CLOSES the live db handle, so we re-open.
+    restoreSnapshot(db, snap.id);
+    db = openDb({ path: dbPath });
+
+    // Sanity: the rows came back from the snapshot file.
+    expect(getAgent(db, "dog-1")).toBeDefined();
+    expect(
+      db.prepare("SELECT COUNT(*) AS n FROM vcs_workspaces WHERE agent='dog-1'").get(),
+    ).toEqual({ n: 1 });
+
+    // Now run the post-restore reconcile pass that `mu undo` runs.
+    // tmux is empty (the destroy killed the pane). dryRun:true is
+    // load-bearing: without it, dog-1's row would be pruned (pane is
+    // dead) and the workspace would FK-CASCADE away.
+    mockTmuxAlive();
+    const report = await reconcile(db, { workstream: "auth", dryRun: true });
+
+    expect(report.dryRun).toBe(true);
+    // seedAuth() inserts worker-1 (pane %1, also dead in mock) AND we
+    // inserted dog-1 (pane %2919). Both are reported as would-be-pruned
+    // but neither is actually deleted.
+    expect(report.prunedGhosts).toBe(2);
+    expect(getAgent(db, "dog-1")).toBeDefined();
+    expect(getAgent(db, "worker-1")).toBeDefined();
+    expect(
+      db.prepare("SELECT COUNT(*) AS n FROM vcs_workspaces WHERE agent='dog-1'").get(),
+    ).toEqual({ n: 1 });
+  });
+
+  it("counter-test: same scenario WITHOUT dryRun loses the rows (proves the fix is load-bearing)", async () => {
+    seedAuth();
+    insertAgent(db, { name: "dog-1", workstream: "auth", paneId: "%2919", status: "needs_input" });
+    db.prepare(
+      "INSERT INTO vcs_workspaces (agent, workstream, backend, path, created_at) VALUES (?, ?, ?, ?, datetime('now'))",
+    ).run("dog-1", "auth", "git", "/tmp/dogfood-test2/dog-1");
+    const snap = captureSnapshot(db, "workstream destroy auth", null);
+    db.prepare("DELETE FROM agents WHERE name = 'dog-1'").run();
+
+    restoreSnapshot(db, snap.id);
+    db = openDb({ path: dbPath });
+    expect(getAgent(db, "dog-1")).toBeDefined(); // restored
+
+    // dryRun:false is the OLD behaviour. Documents what the bug looked like.
+    mockTmuxAlive();
+    await reconcile(db, { workstream: "auth", dryRun: false });
+
+    // The recovered agent row is GONE again — the bug.
+    expect(getAgent(db, "dog-1")).toBeUndefined();
+    // And FK CASCADE took the workspace too.
+    expect(
+      db.prepare("SELECT COUNT(*) AS n FROM vcs_workspaces WHERE agent='dog-1'").get(),
+    ).toEqual({ n: 0 });
   });
 });

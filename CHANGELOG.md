@@ -10,6 +10,76 @@ called out under "Breaking" in each entry.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`mu undo` no longer silently drops recovered agent rows whose
+  panes are dead.** Closes
+  `snap_undo_reconcile_destroys_recovered_agents` in roadmap-v0-2;
+  caught live in `snap_dogfood` Section D (note #362, Finding 2).
+
+  Pre-fix, `mu workstream destroy --yes` followed by `mu undo --yes`
+  recovered the workstreams + tasks + edges + notes from the
+  snapshot, but the `agents` row and `vcs_workspaces` row were
+  silently dropped — even though the snapshot file on disk
+  contained them. Root cause: `cmdUndo`'s post-restore `reconcile()`
+  loop would prune any agent row whose pane no longer existed in
+  tmux; the destroy had killed every pane in the workstream just
+  moments before the snapshot was taken read; the prune ran and
+  the FK ON DELETE CASCADE on `vcs_workspaces.agent` did the rest.
+  The "agents pruned: N" line in the undo output was honest
+  diagnostic but the recovery PROMISE was broken.
+
+  Fix (Option C from the issue's three-options sketch, narrowed to
+  the smallest cut): `reconcile(opts)` gains a `dryRun?: boolean`
+  flag. `cmdUndo` passes `dryRun: true`. In dryRun mode:
+  - **prune step**: counts ghosts but doesn't `deleteAgent()`
+  - **status-detect step**: skipped entirely (no scrollback
+    capture, no `refreshAgentTitle`, no DB writes)
+  - **orphan-surface step**: still runs (pure read)
+
+  `mu agent list` and `mu doctor` keep the mutating behaviour
+  they always had (dryRun defaults to false). The user-visible
+  output reflects the new contract:
+
+  ```
+  Reconcile (tmux NOT rolled back; rows NOT pruned):
+    would-be-pruned (DB row → dead pane) : 1 (suppressed: rows preserved as restored)
+    orphan panes surfaced                 : 0
+  Next:
+    Confirm + actually prune dead-pane rows you don't want to re-spawn : mu agent list -w <ws>
+    Re-spawn an agent the DB now lacks                                 : mu agent spawn <name> -w <ws>
+  ```
+
+  JSON shape changed: `reconcile.ghostsPruned` is now
+  `reconcile.wouldBePrunedGhosts`; `reconcile.statusChanges` is
+  removed (always 0 in dryRun mode); `reconcile.dryRun: true`
+  added. `mu agent list` / `mu doctor` consumers see no change.
+
+  `ReconcileReport` likewise gains `dryRun: boolean`.
+
+  Tests: 5 new in `test/reconcile.test.ts` (dryRun preserves
+  rows; non-dryRun pass right after still prunes; status-detect
+  skipped; orphan-surface still works; the snap_dogfood Finding
+  2 regression test). 2 new end-to-end in `test/snapshots.test.ts`
+  (full restore-then-reconcile cycle through the SDK; counter-test
+  proves the fix is load-bearing). Existing
+  `test/cli-snapshot.test.ts` JSON shape assertion + heading text
+  assertion updated. **Gate green at 711 tests (2 pre-existing
+  `claimTask --self` flakes from snap_schema unchanged).**
+
+  Smoke verified live on a temp DB:
+  ```
+  $ mu workstream init dogfix
+  $ mu task add design -w dogfix --title D --impact 80 --effort-days 1
+  $ # ...insert agents row + vcs_workspaces row via mu sql...
+  $ mu workstream destroy -w dogfix --yes
+  $ mu undo --yes
+  Reconcile (tmux NOT rolled back; rows NOT pruned):
+    would-be-pruned (DB row → dead pane) : 1 (suppressed: rows preserved as restored)
+  $ mu sql "SELECT * FROM agents WHERE workstream='dogfix'"   # → dog-1 still there
+  $ mu sql "SELECT * FROM vcs_workspaces WHERE workstream='dogfix'"  # → still there
+  ```
+
 ### Schema
 
 - **`schema_version` table + migration framework.** First
