@@ -1039,6 +1039,7 @@ async function cmdTaskAdd(
     impact: number;
     effortDays: number;
     blocks?: string;
+    blockedBy?: string;
     workstream?: string;
     json?: boolean;
   },
@@ -1048,8 +1049,19 @@ async function cmdTaskAdd(
   // CLI's `<id>` positional is now optional; idFromTitle handles
   // collisions with `_2`, `_3`, … suffixes.
   const id = localId ?? idFromTitle(db, workstream, opts.title);
-  const blocks = opts.blocks
-    ? opts.blocks
+  // --blocked-by is the preferred (clearer) spelling; --blocks is the
+  // deprecated alias kept for backwards compatibility. Both mean the
+  // same thing: "this task is blocked by these tasks". If both are
+  // passed and disagree, error out — the user almost certainly meant
+  // one or the other and silently picking would be a footgun.
+  if (opts.blockedBy !== undefined && opts.blocks !== undefined && opts.blockedBy !== opts.blocks) {
+    throw new UsageError(
+      "--blocked-by and --blocks (deprecated alias) were both passed with different values; pick one",
+    );
+  }
+  const blockersSpec = opts.blockedBy ?? opts.blocks;
+  const blocks = blockersSpec
+    ? blockersSpec
         .split(",")
         .map((s) => s.trim())
         .filter(Boolean)
@@ -3377,7 +3389,14 @@ export function buildProgram(): Command {
     .requiredOption("-t, --title <title>", "task title")
     .requiredOption("-i, --impact <n>", "impact 1..100", parseImpact)
     .requiredOption("-e, --effort-days <days>", "effort in days (>0)", parsePositiveNumber)
-    .option("-b, --blocks <ids>", "comma-separated list of blocker task ids")
+    .option(
+      "--blocked-by <ids>",
+      "comma-separated task ids that block this task (i.e. this task is blocked by them)",
+    )
+    .option(
+      "-b, --blocks <ids>",
+      "deprecated alias for --blocked-by (kept for backwards compatibility; the name is misleading because the listed tasks block THIS one)",
+    )
     .option(...WORKSTREAM_OPT)
     .option(...JSON_OPT)
     .action(function (id: string | undefined) {
@@ -3386,6 +3405,7 @@ export function buildProgram(): Command {
         impact: number;
         effortDays: number;
         blocks?: string;
+        blockedBy?: string;
         workstream?: string;
         json?: boolean;
       };
