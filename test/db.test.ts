@@ -7,6 +7,7 @@ import { join } from "node:path";
 import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { CURRENT_SCHEMA_VERSION, type Db, defaultDbPath, openDb } from "../src/db.js";
+import { _runOneMigration } from "../src/migrations.js";
 
 describe("openDb", () => {
   let tempDir: string;
@@ -711,29 +712,48 @@ describe("schema migrations: framework integrity (rollback on FK violations)", (
     db.close();
   });
 
-  it("rolls back the schema_version bump when the migration body throws (regression test)", () => {
-    // Stage a v1 DB. Then poison the migrations module by swapping
-    // in a deliberately failing migration, and confirm schema_version
-    // stays at 1 after the failed open.
+  it("rolls back the schema_version bump AND intermediate writes when a migration throws", () => {
+    // Open a fresh DB (stamps to CURRENT_SCHEMA_VERSION). Then call
+    // _runOneMigration directly with a custom migration that creates
+    // a canary table THEN throws. Assert (a) schema_version is
+    // unchanged (stayed at CURRENT_SCHEMA_VERSION, didn't bump to
+    // CURRENT_SCHEMA_VERSION+1) and (b) the canary table doesn't
+    // exist (transaction rolled back).
     //
-    // We do this by importing runMigrations directly and calling it
-    // with a hand-crafted bad migration registered. But MIGRATIONS
-    // is module-private; the cleanest way to test rollback is to
-    // verify it via the data-integrity path: a migration that
-    // produces FK violations must throw AND leave schema_version
-    // unchanged.
-    //
-    // Easiest path: fabricate a v1 DB whose data WOULD violate a
-    // bogus FK we add, then run a temporary migration that adds it.
-    // Too invasive for a unit test. Instead: rely on the cleanup
-    // logic itself \u2014 if we DON'T clear orphans (regression case),
-    // the post-condition check should fire AND schema_version should
-    // remain 1.
-    //
-    // We can't easily exercise that without a custom migration. But
-    // the logic-level guarantee is: foreign_key_check now runs INSIDE
-    // the transaction, BEFORE the schema_version bump. Code review
-    // covers it. Skipping.
+    // Surfaced by review_test_migration_rollback_stub: the previous
+    // test for this contract was a 22-line comment with zero expects,
+    // passing as a no-op. Schema migrations are highest-blast-radius
+    // (a half-applied migration leaves users unable to open the DB);
+    // this test is the actual guard.
+    const db = openDb({ path: dbPath });
+    const startVersion = (
+      db.prepare("SELECT version FROM schema_version WHERE id = 1").get() as {
+        version: number;
+      }
+    ).version;
+
+    expect(() =>
+      _runOneMigration(db, startVersion + 1, (tx) => {
+        tx.exec("CREATE TABLE _canary (x INTEGER)");
+        throw new Error("deliberate test failure post-canary");
+      }),
+    ).toThrow(/deliberate test failure/);
+
+    // schema_version unchanged
+    const after = (
+      db.prepare("SELECT version FROM schema_version WHERE id = 1").get() as {
+        version: number;
+      }
+    ).version;
+    expect(after).toBe(startVersion);
+
+    // canary table rolled back
+    const canary = db
+      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='_canary'")
+      .get();
+    expect(canary).toBeUndefined();
+
+    db.close();
   });
 
   it("handles the no-orphan case cleanly (no agent_logs row emitted)", () => {

@@ -87,6 +87,15 @@ function currentSchemaVersion(db: Db): number {
  * state that openDb couldn't recover from on the next run. Real DB
  * surfaced this on first attempt.
  */
+// Exported as a test seam: test/db.test.ts uses this to assert the
+// rollback contract directly (canary-table-then-throw migration
+// confirms (a) schema_version unchanged, (b) intermediate writes
+// rolled back). Not part of the public SDK — hidden behind the
+// underscore-prefixed export so it doesn't show up in src/index.ts.
+export function _runOneMigration(db: Db, toVersion: number, migrate: (db: Db) => void): void {
+  runOneMigration(db, toVersion, migrate);
+}
+
 function runOneMigration(db: Db, toVersion: number, migrate: Migration): void {
   db.pragma("foreign_keys = OFF");
   try {
