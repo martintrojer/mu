@@ -22,8 +22,6 @@ import Table from "cli-table3";
 import { Command, InvalidArgumentError } from "commander";
 import pc from "picocolors";
 import {
-  type AdoptAgentOptions,
-  type AdoptAgentResult,
   AgentDiedOnSpawnError,
   AgentExistsError,
   AgentNotFoundError,
@@ -32,24 +30,26 @@ import {
   type AgentStatus,
   STATUS_EMOJI,
   WorkspacePreservedError,
-  adoptAgent,
-  closeAgent,
-  freeAgent,
   getAgent,
   getAgentByPane,
-  listLiveAgents,
-  readAgent,
-  refreshAgentTitle,
-  resolveCliCommand,
-  sendToAgent,
-  spawnAgent,
-  updateAgentStatus,
 } from "./agents.js";
 import {
   ApprovalAlreadyDecidedError,
   ApprovalNotFoundError,
   ApprovalNotInWorkstreamError,
 } from "./approvals.js";
+import {
+  cmdAdopt,
+  cmdAgentShow,
+  cmdAttach,
+  cmdClose,
+  cmdFree,
+  cmdList,
+  cmdRead,
+  cmdSend,
+  cmdSpawn,
+  cmdWhoami,
+} from "./cli/agents.js";
 import {
   cmdApprovalAdd,
   cmdApprovalDeny,
@@ -98,16 +98,10 @@ import {
   cmdWorkspaceOrphans,
   cmdWorkspacePath,
 } from "./cli/workspace.js";
+import { cmdDestroy, cmdInit, cmdWorkstreamList } from "./cli/workstream.js";
 import { type Db, openDb } from "./db.js";
-import { detectPiStatus } from "./detect.js";
 import type { LogRow } from "./logs.js";
-import {
-  type NextStep,
-  hasNextSteps,
-  isJsonMode,
-  printNextSteps,
-  printNextStepsTo,
-} from "./output.js";
+import { type NextStep, hasNextSteps, isJsonMode, printNextStepsTo } from "./output.js";
 import {
   SnapshotFileMissingError,
   SnapshotNotFoundError,
@@ -126,39 +120,17 @@ import {
   type TaskRow,
   type TaskStatus,
   isTaskStatus,
-  listTasksByOwner,
 } from "./tasks.js";
-import {
-  PaneNotFoundError,
-  TmuxError,
-  capturePane,
-  enableMuPaneBorders,
-  enableMuPaneBordersForSession,
-  getWindowIdForPane,
-  listPanesInSession,
-  listWindows,
-  newSession,
-  newWindow,
-  sessionExists,
-  tmux,
-} from "./tmux.js";
+import { PaneNotFoundError, TmuxError, tmux } from "./tmux.js";
 import type { Track } from "./tracks.js";
-import { type VcsBackendName, detectBackend } from "./vcs.js";
+import type { VcsBackendName } from "./vcs.js";
 import {
   WorkspaceExistsError,
   WorkspaceNotFoundError,
   WorkspacePathNotEmptyError,
   type WorkspaceRow,
-  getWorkspaceForAgent,
 } from "./workspace.js";
-import {
-  WorkstreamNameInvalidError,
-  type WorkstreamSummary,
-  destroyWorkstream,
-  ensureWorkstream,
-  listWorkstreams,
-  summarizeWorkstream,
-} from "./workstream.js";
+import { WorkstreamNameInvalidError, type WorkstreamSummary } from "./workstream.js";
 
 // ─── Workstream resolution ─────────────────────────────────────────────
 
@@ -506,6 +478,54 @@ export function printLogRow(row: LogRow): void {
   );
 }
 
+/**
+ * Workstreams summary table renderer. Used by `mu workstream list`
+ * and `bare mu` (no-workstream discovery fallback). Both verbs render
+ * the same shape; the helper lives in cli.ts so cli/workstream.ts and
+ * cli/state.ts can both import it without a lateral cli/* dependency.
+ */
+export function formatWorkstreamsTable(rows: WorkstreamSummary[]): string {
+  const table = new Table({
+    head: ["name", "tmux", "agents", "tasks", "edges", "notes"].map((h) => pc.bold(h)),
+    style: { head: [], border: [] },
+  });
+  for (const r of rows) {
+    table.push([
+      r.workstream,
+      r.tmuxAlive ? pc.green("alive") : pc.dim("—"),
+      String(r.agents),
+      String(r.tasks),
+      String(r.edges),
+      String(r.notes),
+    ]);
+  }
+  return table.toString();
+}
+
+/**
+ * Resolve "the agent running this process" by reading `$TMUX_PANE` and
+ * looking up the matching agent row. Throws UsageError with a helpful
+ * message if either step fails. Used by `mu whoami` / `my-tasks` /
+ * `my-next` to give an LLM-in-a-pane zero-config self-identification.
+ * Lives in cli.ts so cli/agents.ts and cli/tasks.ts can both import
+ * it without a lateral cli/* dependency.
+ */
+export function resolveSelf(db: Db): AgentRow {
+  const paneId = process.env.TMUX_PANE;
+  if (!paneId) {
+    throw new UsageError(
+      "$TMUX_PANE is not set; this verb only works inside an mu-spawned tmux pane (or any tmux pane, but the pane has to be a managed agent)",
+    );
+  }
+  const agent = getAgentByPane(db, paneId);
+  if (!agent) {
+    throw new UsageError(
+      `pane ${paneId} is not a managed agent. Use \`mu agent list\` to see managed panes, or \`mu agent spawn\` to register a new one.`,
+    );
+  }
+  return agent;
+}
+
 // ─── Shared SDK-CLI bridge helpers (used by cli/*.ts) ──────────────
 //
 // These were extracted from inline-with-task-verbs in cli.ts; the
@@ -671,719 +691,6 @@ export function assertAgentInWorkstream(
 const DEFAULT_TERMINAL_WIDTH = 100;
 
 // ─── Verb implementations ──────────────────────────────────────────────
-
-async function cmdInit(db: Db, name: string, opts: { json?: boolean } = {}): Promise<void> {
-  const sessionName = `mu-${name}`;
-  const dbCreated = ensureWorkstream(db, name);
-  const tmuxAlready = await sessionExists(sessionName);
-  let muWindowRepaired = false;
-  if (!tmuxAlready) {
-    await newSession(sessionName, { detached: true, windowName: "_mu" });
-  } else {
-    // Session already exists — check whether the placeholder `_mu`
-    // window is still there. Common reason for it being missing:
-    // operator killed it manually after spawning the first agent.
-    // Without it, tmux a -t mu-<ws> lands on the most recent agent's
-    // pane, which surprises the operator who expects an empty
-    // orchestration shell. Recreate idempotently.
-    // (review_bug_workstream_init_does_not_repair_missing_mu_window)
-    const windows = await listWindows(sessionName).catch(() => []);
-    const hasMuWindow = windows.some((w) => w.name === "_mu");
-    if (!hasMuWindow) {
-      await newWindow({
-        session: sessionName,
-        name: "_mu",
-        command: process.env.SHELL ?? "/bin/sh",
-        detached: true,
-      });
-      muWindowRepaired = true;
-    }
-  }
-  // Always (re)apply the pane-border-status options so re-init or
-  // upgrade-from-pre-banner-mu sessions both pick up the cue. tmux
-  // set-option is idempotent. Opt-out via MU_BANNER_QUIET=1 (covers
-  // both this and the spawn-time scrollback banner; see spawnAgent).
-  if (process.env.MU_BANNER_QUIET !== "1") {
-    await enableMuPaneBordersForSession(sessionName).catch(() => {
-      // Older tmux without pane-border-status support is benign here:
-      // the cue is a nice-to-have, not load-bearing. Don't fail init.
-    });
-  }
-  const created = !tmuxAlready || dbCreated;
-  const nextSteps: NextStep[] = [
-    { intent: "Attach the tmux session", command: `tmux a -t ${sessionName}` },
-    {
-      intent: "Plan tasks",
-      command: `mu task add -w ${name} --title "..." --impact 50 --effort-days 1`,
-    },
-    { intent: "Spawn an agent", command: `mu agent spawn <name> -w ${name}` },
-    { intent: "See state", command: `mu state -w ${name}` },
-  ];
-  if (opts.json) {
-    emitJson({
-      workstream: name,
-      sessionName,
-      created,
-      tmuxSessionAlreadyExisted: tmuxAlready,
-      dbRowAlreadyExisted: !dbCreated,
-      muWindowRepaired,
-      nextSteps,
-    });
-    return;
-  }
-  if (tmuxAlready && !dbCreated) {
-    const repaired = muWindowRepaired ? ` — ${pc.yellow("repaired missing _mu window")}` : "";
-    console.log(
-      pc.dim(
-        `workstream "${name}" already exists (tmux session ${sessionName}, DB row registered)${repaired}`,
-      ),
-    );
-    printNextSteps(nextSteps);
-    return;
-  }
-  console.log(`Created workstream ${pc.bold(name)} (tmux session ${pc.bold(sessionName)})`);
-  printNextSteps(nextSteps);
-}
-
-async function cmdWorkstreamList(db: Db, opts: { json?: boolean } = {}): Promise<void> {
-  const summaries = await listWorkstreams(db);
-  if (opts.json) {
-    emitJson(summaries);
-    return;
-  }
-  if (summaries.length === 0) {
-    console.log(pc.dim("no workstreams found (no DB rows, no mu-* tmux sessions)"));
-    return;
-  }
-  console.log(formatWorkstreamsTable(summaries));
-}
-
-export function formatWorkstreamsTable(rows: WorkstreamSummary[]): string {
-  const table = new Table({
-    head: ["name", "tmux", "agents", "tasks", "edges", "notes"].map((h) => pc.bold(h)),
-    style: { head: [], border: [] },
-  });
-  for (const r of rows) {
-    table.push([
-      r.workstream,
-      r.tmuxAlive ? pc.green("alive") : pc.dim("—"),
-      String(r.agents),
-      String(r.tasks),
-      String(r.edges),
-      String(r.notes),
-    ]);
-  }
-  return table.toString();
-}
-
-async function cmdDestroy(
-  db: Db,
-  opts: { workstream?: string; yes?: boolean; json?: boolean },
-): Promise<void> {
-  const workstream = await resolveWorkstream(opts.workstream);
-  const summary = await summarizeWorkstream(db, { workstream });
-  // Empty-but-registered workstreams (a row in `workstreams` with no
-  // agents/tasks/etc.) ARE worth destroying — otherwise the bare
-  // registry row is orphaned forever. nothingToDo is the strict
-  // intersection: nothing on disk, in tmux, OR in the DB.
-  const nothingToDo =
-    !summary.tmuxAlive &&
-    !summary.registered &&
-    summary.agents === 0 &&
-    summary.tasks === 0 &&
-    summary.notes === 0 &&
-    summary.workspaces === 0;
-
-  if (nothingToDo) {
-    if (opts.json) {
-      emitJson({ workstream, destroyed: false, reason: "nothing to destroy", summary });
-      return;
-    }
-    console.log(
-      pc.dim(`workstream "${workstream}" has no tmux session and no DB rows; nothing to destroy`),
-    );
-    return;
-  }
-
-  if (!opts.yes) {
-    if (opts.json) {
-      emitJson({
-        workstream,
-        destroyed: false,
-        dryRun: true,
-        summary,
-        nextSteps: [
-          {
-            intent: "Confirm and actually destroy",
-            command: `mu workstream destroy -w ${workstream} --yes`,
-          },
-          {
-            intent: "After destroying, undo if you regret it (DB only; tmux NOT rolled back)",
-            command: "mu undo --yes",
-          },
-        ],
-      });
-      return;
-    }
-    console.log(pc.bold(`Workstream ${workstream} (tmux session ${summary.tmuxSession})`));
-    console.log(
-      `  tmux session : ${summary.tmuxAlive ? pc.yellow("alive (will be killed)") : pc.dim("not running")}`,
-    );
-    console.log(`  agents       : ${summary.agents}`);
-    console.log(
-      `  tasks        : ${summary.tasks}  (edges: ${summary.edges}, notes: ${summary.notes})`,
-    );
-    console.log(
-      `  workspaces   : ${summary.workspaces}${summary.workspaces > 0 ? pc.dim(" (will be cleaned via per-backend remove)") : ""}`,
-    );
-    console.log("");
-    console.log(pc.dim("(dry-run; rerun with --yes to actually destroy)"));
-    console.log(
-      pc.dim(
-        "A snapshot will be taken before the destroy; `mu undo --yes` reverts it (DB only — tmux panes / on-disk workspace dirs are NOT rolled back).",
-      ),
-    );
-    printNextSteps([
-      {
-        intent: "Confirm and actually destroy",
-        command: `mu workstream destroy -w ${workstream} --yes`,
-      },
-      {
-        intent: "After destroying, undo if you regret it",
-        command: "mu undo --yes",
-      },
-    ]);
-    return;
-  }
-
-  const result = await destroyWorkstream(db, { workstream });
-  if (opts.json) {
-    emitJson({
-      workstream,
-      destroyed: true,
-      ...result,
-      // snap_destroy_safety: machine-readable hint that the destroy is
-      // reversible (DB-only) via mu undo. Suppressed when there are
-      // workspace failures so the cleanup steps stay the headline.
-      nextSteps:
-        result.failedWorkspaces.length === 0
-          ? [
-              {
-                intent:
-                  "Undo (a snapshot was taken before the destroy; DB only, tmux not rolled back)",
-                command: "mu undo --yes",
-              },
-            ]
-          : undefined,
-    });
-    return;
-  }
-  console.log(pc.bold(`Workstream ${workstream} (tmux session ${summary.tmuxSession})`));
-  console.log(
-    `  tmux session : ${summary.tmuxAlive ? pc.yellow("alive (will be killed)") : pc.dim("not running")}`,
-  );
-  console.log(`  agents       : ${summary.agents}`);
-  console.log(
-    `  tasks        : ${summary.tasks}  (edges: ${summary.edges}, notes: ${summary.notes})`,
-  );
-  console.log(`  workspaces   : ${summary.workspaces}`);
-  console.log("");
-  console.log(
-    `Destroyed ${pc.bold(workstream)}: killed tmux=${result.killedTmux}, agents=${result.deletedAgents}, tasks=${result.deletedTasks}, edges=${result.deletedEdges}, notes=${result.deletedNotes}, workspaces=${result.freedWorkspaces}/${summary.workspaces}`,
-  );
-  // snap_destroy_safety: advertise the undo path that destroyWorkstream
-  // gave us via captureSnapshot. Suppressed when there are workspace
-  // failures so the WARNING + cleanup steps below stay the headline.
-  if (result.failedWorkspaces.length === 0) {
-    printNextSteps([
-      {
-        intent: "Undo (a snapshot was taken before the destroy; DB only, tmux not rolled back)",
-        command: "mu undo --yes",
-      },
-    ]);
-  }
-  if (result.failedWorkspaces.length > 0) {
-    console.log("");
-    console.log(
-      pc.yellow(
-        `WARNING: ${result.failedWorkspaces.length} workspace(s) could not be freed cleanly. The DB rows are gone (FK cascade); the on-disk paths remain and need manual cleanup:`,
-      ),
-    );
-    for (const f of result.failedWorkspaces) {
-      console.log(`  - ${f.agent} (${f.backend}): ${f.path}`);
-      console.log(`    error: ${f.error}`);
-    }
-    printNextSteps([
-      {
-        intent: "For each git worktree above, run",
-        command: "git worktree remove --force <path>",
-      },
-      { intent: "For each jj workspace above, run", command: "jj workspace forget <name>" },
-      { intent: "As a last resort", command: "rm -rf <path>" },
-    ]);
-  }
-}
-
-interface SpawnOpts {
-  cli?: string;
-  command?: string;
-  tab?: string;
-  role?: string;
-  cwd?: string;
-  workstream?: string;
-  workspace?: boolean;
-  workspaceBackend?: VcsBackendName;
-  workspaceFrom?: string;
-  workspaceProjectRoot?: string;
-  json?: boolean;
-}
-async function cmdSpawn(db: Db, name: string, opts: SpawnOpts): Promise<void> {
-  const workstream = await resolveWorkstream(opts.workstream);
-
-  // Preflight: when --workspace is set, resolve+announce the backend
-  // and projectRoot BEFORE the long-running git-worktree-add /
-  // jj-workspace-add / cp -a, so the operator can ctrl-c if the
-  // detected backend is wrong (e.g. cp -a falling through to a
-  // 60GB project tree because --workspace-project-root pointed at a
-  // non-VCS dir; surfaced by bug_agent_spawn_workspace_aborts_without_status).
-  // Skipped on --json so machine consumers get a single structured
-  // output, not preflight chatter.
-  if (opts.workspace && !opts.json) {
-    const projectRoot = opts.workspaceProjectRoot ?? process.cwd();
-    const backend: VcsBackendName =
-      opts.workspaceBackend ?? (await detectBackend(projectRoot)).name;
-    const warn =
-      backend === "none"
-        ? pc.yellow(
-            " — WARNING: 'none' backend will cp -a the entire projectRoot. Verify --workspace-project-root.",
-          )
-        : "";
-    console.log(
-      pc.dim(
-        `[mu] workspace preflight: backend=${pc.bold(backend)} projectRoot=${pc.bold(projectRoot)}${warn}`,
-      ),
-    );
-  }
-
-  const agent = await spawnAgent(db, {
-    name,
-    workstream,
-    ...(opts.cli !== undefined ? { cli: opts.cli } : {}),
-    ...(opts.command !== undefined ? { command: opts.command } : {}),
-    ...(opts.tab !== undefined ? { tab: opts.tab } : {}),
-    ...(opts.role !== undefined ? { role: opts.role } : {}),
-    ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}),
-    ...(opts.workspace !== undefined ? { workspace: opts.workspace } : {}),
-    ...(opts.workspaceBackend !== undefined ? { workspaceBackend: opts.workspaceBackend } : {}),
-    ...(opts.workspaceFrom !== undefined ? { workspaceFrom: opts.workspaceFrom } : {}),
-    ...(opts.workspaceProjectRoot !== undefined
-      ? { workspaceProjectRoot: opts.workspaceProjectRoot }
-      : {}),
-  });
-  const workspace = opts.workspace ? getWorkspaceForAgent(db, name) : undefined;
-  // Resolve the actual command that landed in the pane, so the operator
-  // can confirm `--command 'pi-meta --no-solo'` (etc.) took effect.
-  // Mirrors the resolution chain in spawnAgent: explicit --command >
-  // $MU_<UPPER_CLI>_COMMAND > the cli value itself. Surfaced from
-  // mufeedback note #159: 'Spawned ... (pi)' was misleading when
-  // --command overrode the binary.
-  const resolvedCommand = opts.command ?? resolveCliCommand(agent.cli);
-  const commandOverridden = resolvedCommand !== agent.cli;
-  const nextSteps: NextStep[] = [
-    { intent: "Send work", command: `mu agent send ${name} "..." -w ${workstream}` },
-    { intent: "Read pane", command: `mu agent read ${name} -w ${workstream}` },
-    { intent: "Watch live events", command: `mu log -w ${workstream} --tail` },
-    {
-      intent: "Close (drops registry row, kills pane)",
-      command: `mu agent close ${name} -w ${workstream}`,
-    },
-  ];
-  if (opts.json) {
-    emitJson({
-      agent,
-      workspace: workspace ?? null,
-      resolvedCommand,
-      commandOverridden,
-      nextSteps,
-    });
-    return;
-  }
-  const wsBit = opts.workspace ? pc.dim(" with auto-workspace") : "";
-  // Show 'pi (cmd: pi-meta --no-solo)' when overridden; just '(pi)'
-  // when running the default binary for the cli key. Avoids the
-  // misleading 'Spawned X (pi)' for pi-meta workers.
-  const cliDisplay = commandOverridden
-    ? `${agent.cli} ${pc.dim(`(cmd: ${resolvedCommand})`)}`
-    : agent.cli;
-  console.log(
-    `Spawned ${pc.bold(agent.name)} (${cliDisplay}) in window ${pc.bold(agent.tab ?? agent.name)} of ${pc.bold(`mu-${workstream}`)}, pane ${pc.dim(agent.paneId)}${wsBit}`,
-  );
-  if (workspace) console.log(pc.dim(`  workspace: ${workspace.path} (${workspace.backend})`));
-  printNextSteps(nextSteps);
-}
-
-async function cmdSend(
-  db: Db,
-  name: string,
-  text: string,
-  opts: { workstream?: string; json?: boolean } = {},
-): Promise<void> {
-  assertAgentInWorkstream(db, name, opts.workstream);
-  await sendToAgent(db, name, text);
-  const ws = await resolveWorkstream(opts.workstream);
-  const nextSteps: NextStep[] = [
-    { intent: "Read response", command: `mu agent read ${name} -n 50 -w ${ws}` },
-    { intent: "Watch live events", command: `mu log -w ${ws} --tail` },
-  ];
-  if (opts.json) {
-    emitJson({ agent: name, sentBytes: text.length, nextSteps });
-    return;
-  }
-  console.log(pc.dim(`sent ${text.length} bytes to ${name}`));
-  printNextSteps(nextSteps);
-}
-
-async function cmdRead(
-  db: Db,
-  name: string,
-  opts: { lines?: number; workstream?: string; json?: boolean },
-): Promise<void> {
-  assertAgentInWorkstream(db, name, opts.workstream);
-  const text = await readAgent(db, name, opts.lines !== undefined ? { lines: opts.lines } : {});
-  if (opts.json) {
-    emitJson({
-      agent: name,
-      lines: opts.lines ?? null,
-      scrollback: text,
-      scrollbackLines: text.split("\n").length,
-    });
-    return;
-  }
-  process.stdout.write(text);
-  if (!text.endsWith("\n")) process.stdout.write("\n");
-}
-
-async function cmdList(
-  db: Db,
-  opts: { workstream?: string; all?: boolean; json?: boolean },
-): Promise<void> {
-  const workstream = await resolveWorkstream(opts.workstream);
-  const view = await listLiveAgents(db, { workstream });
-  if (opts.json) {
-    emitJson({ workstream, agents: view.agents, orphans: view.orphans });
-    return;
-  }
-  console.log(pc.bold(`mu-${workstream}`));
-  console.log(formatAgentsTable(view.agents));
-  if (view.orphans.length > 0) {
-    console.log("");
-    console.log(pc.yellow(`Orphan panes (${view.orphans.length})`));
-    console.log(pc.dim("  Panes that look like agents but aren't in the registry."));
-    console.log(
-      pc.dim(
-        "  Run `mu adopt <pane-id>` to register one as a managed agent (e.g. `mu adopt %15`).",
-      ),
-    );
-    for (const orphan of view.orphans) {
-      console.log(
-        `  ${pc.dim(orphan.paneId)} title=${pc.bold(orphan.title)} cli=${orphan.command}`,
-      );
-    }
-  }
-}
-
-/**
- * Same shouldOverwrite policy as `reconcile.ts` (kept private there to
- * encapsulate the periodic-reconcile path). Re-implemented here for
- * `mu agent show` which reconciles a single agent inline using the
- * scrollback it just captured. `free` is sticky until real activity;
- * everything else is auto-derived.
- */
-function shouldOverwriteAgentStatus(
-  current: AgentRow["status"],
-  detected: AgentRow["status"],
-): boolean {
-  if (current === "free") return detected === "busy" || detected === "needs_permission";
-  return true;
-}
-
-async function cmdAgentShow(
-  db: Db,
-  name: string,
-  opts: { lines?: number; json?: boolean; workstream?: string },
-): Promise<void> {
-  assertAgentInWorkstream(db, name, opts.workstream);
-  const agent = getAgent(db, name);
-  if (!agent) throw new AgentNotFoundError(name);
-  const lines = opts.lines ?? 20;
-  let scrollback: string;
-  try {
-    scrollback = await capturePane(agent.paneId, { lines });
-  } catch {
-    scrollback = "";
-  }
-
-  // Fresh-status reconciliation. The persisted `agents.status` is
-  // whatever the last reconcile pass wrote (typically via
-  // `mu agent list` or `mu state`). For `mu agent show <name>` the
-  // operator's expectation is "give me the *current* picture," so we
-  // re-run the detector against the scrollback we just captured and
-  // update the row if status changed. Same shouldOverwrite rules as
-  // listLiveAgents (free is sticky until real activity, etc).
-  // Real bug found in real use: status was reading stale, especially
-  // bad with custom --command wrappers where the orchestrator never noticed needs_input.
-  let displayed = agent;
-  if (scrollback.trim() !== "") {
-    const detected = detectPiStatus(scrollback);
-    if (detected !== agent.status && shouldOverwriteAgentStatus(agent.status, detected)) {
-      updateAgentStatus(db, agent.name, detected);
-      const refreshed = getAgent(db, name);
-      if (refreshed) displayed = refreshed;
-    }
-  }
-
-  if (opts.json) {
-    emitJson({ agent: displayed, scrollback, scrollbackLines: lines });
-    return;
-  }
-
-  console.log(pc.bold(`${displayed.name}  ${statusIcon(displayed.status)} ${displayed.status}`));
-  console.log(`  workstream : ${agent.workstream}`);
-  console.log(`  cli        : ${agent.cli}`);
-  console.log(`  pane       : ${pc.dim(agent.paneId)}`);
-  console.log(`  window     : ${agent.tab ?? agent.name}`);
-  console.log(`  role       : ${agent.role}`);
-  console.log(`  created    : ${pc.dim(agent.createdAt)}`);
-  console.log(`  updated    : ${pc.dim(agent.updatedAt)}`);
-
-  console.log("");
-  console.log(pc.bold(`Recent scrollback (last ${lines} lines)`));
-  if (scrollback.trim() === "") {
-    console.log(pc.dim("  (pane gone or empty)"));
-    return;
-  }
-  for (const line of scrollback.replace(/\n+$/, "").split("\n")) {
-    console.log(`  ${line}`);
-  }
-}
-
-/**
- * Resolve "the agent running this process" by reading `$TMUX_PANE` and
- * looking up the matching agent row. Throws UsageError with a helpful
- * message if either step fails. Used by `mu whoami` / `my-tasks` /
- * `my-next` to give an LLM-in-a-pane zero-config self-identification.
- */
-export function resolveSelf(db: Db): AgentRow {
-  const paneId = process.env.TMUX_PANE;
-  if (!paneId) {
-    throw new UsageError(
-      "$TMUX_PANE is not set; this verb only works inside an mu-spawned tmux pane (or any tmux pane, but the pane has to be a managed agent)",
-    );
-  }
-  const agent = getAgentByPane(db, paneId);
-  if (!agent) {
-    throw new UsageError(
-      `pane ${paneId} is not a managed agent. Use \`mu agent list\` to see managed panes, or \`mu agent spawn\` to register a new one.`,
-    );
-  }
-  return agent;
-}
-
-async function cmdWhoami(
-  db: Db,
-  opts: { json?: boolean; includeClosed?: boolean } = {},
-): Promise<void> {
-  const self = resolveSelf(db);
-  const owned = listTasksByOwner(db, self.name, {
-    includeClosed: opts.includeClosed ?? false,
-  });
-
-  if (opts.json) {
-    emitJson({ agent: self, ownedTasks: owned });
-    return;
-  }
-
-  console.log(pc.bold(`${self.name}  ${statusIcon(self.status)} ${self.status}`));
-  console.log(`  workstream : ${self.workstream}`);
-  console.log(`  cli        : ${self.cli}`);
-  console.log(`  pane       : ${pc.dim(self.paneId)}`);
-  console.log(`  role       : ${self.role}`);
-  console.log("");
-  if (owned.length === 0) {
-    console.log(pc.dim("Currently owns no tasks. Try `mu my-next` for a recommendation."));
-    return;
-  }
-  console.log(pc.bold(`Currently owns ${owned.length} task${owned.length === 1 ? "" : "s"}`));
-  console.log(formatTaskListTable(owned));
-}
-
-async function cmdClose(
-  db: Db,
-  name: string,
-  opts: { workstream?: string; json?: boolean; discardWorkspace?: boolean } = {},
-): Promise<void> {
-  assertAgentInWorkstream(db, name, opts.workstream);
-  const result = await closeAgent(
-    db,
-    name,
-    opts.discardWorkspace === true ? { discardWorkspace: true } : {},
-  );
-  const next: NextStep[] = [];
-  if (result.workspaceFreed) {
-    next.push({
-      intent: "Workspace was freed alongside the agent (--discard-workspace)",
-      command: "cd /  # the workspace dir is gone",
-    });
-  }
-  next.push({
-    intent: "Re-spawn under the same name",
-    command: `mu agent spawn ${name} -w <workstream>`,
-  });
-  if (opts.json) {
-    emitJson({ agent: name, ...result, nextSteps: next });
-    return;
-  }
-  if (!result.killedPane && !result.deletedRow) {
-    console.log(pc.dim(`no agent named ${name} (already closed?)`));
-    printNextSteps(next);
-    return;
-  }
-  const wsBit = result.workspaceFreed ? pc.dim(" (workspace discarded)") : "";
-  console.log(`Closed ${pc.bold(name)}${wsBit}`);
-  printNextSteps(next);
-}
-
-interface AdoptCliOpts {
-  workstream?: string;
-  name?: string;
-  cli?: string;
-  role?: string;
-  json?: boolean;
-}
-
-async function cmdAdopt(db: Db, paneOrTitle: string, opts: AdoptCliOpts): Promise<void> {
-  const ws = await resolveWorkstream(opts.workstream);
-
-  // Allow `mu adopt <pane-id>` (literal '%15') OR `mu adopt <pane-title>`
-  // (a string that looks like an agent name; we look it up in the
-  // workstream's tmux session). Pane-id form is preferred for scripting;
-  // pane-title form is the ergonomic form for interactive use.
-  let paneId: string;
-  if (paneOrTitle.startsWith("%")) {
-    paneId = paneOrTitle;
-  } else {
-    const session = `mu-${ws}`;
-    const panes = await listPanesInSession(session);
-    const match = panes.find((p) => p.title === paneOrTitle);
-    if (!match) {
-      throw new UsageError(
-        `no pane with title '${paneOrTitle}' in tmux session ${session} (try \`mu agent list -w ${ws}\` and pass the pane id)`,
-      );
-    }
-    paneId = match.paneId;
-  }
-
-  const adoptOpts: AdoptAgentOptions = {
-    paneId,
-    workstream: ws,
-    name: opts.name,
-    cli: opts.cli,
-    role: opts.role,
-  };
-  const result: AdoptAgentResult = await adoptAgent(db, adoptOpts);
-  // Refresh title with composed state. Adopt may have set it to just
-  // the agent name; this re-renders with status emoji etc.
-  await refreshAgentTitle(db, result.agent.name);
-
-  // Window-scoped border for the adopted pane's window. (cmdInit set
-  // it on _mu but adopted panes can be in any window.)
-  if (process.env.MU_BANNER_QUIET !== "1") {
-    const wid = await getWindowIdForPane(paneId).catch(() => undefined);
-    if (wid) await enableMuPaneBorders(wid).catch(() => {});
-  }
-
-  const nextSteps: NextStep[] = [
-    { intent: "Send work", command: `mu agent send ${result.agent.name} "..." -w ${ws}` },
-    { intent: "Read pane", command: `mu agent read ${result.agent.name} -w ${ws}` },
-    { intent: "Verify in agent list", command: `mu agent list -w ${ws}` },
-  ];
-
-  if (opts.json) {
-    emitJson({
-      adopted: !result.alreadyAdopted,
-      alreadyAdopted: result.alreadyAdopted,
-      agent: result.agent,
-      previousTitle: result.previousTitle,
-      paneTitleSetTo: result.paneTitleSetTo,
-      nextSteps,
-    });
-    return;
-  }
-
-  if (result.alreadyAdopted) {
-    console.log(pc.dim(`already adopted: ${result.agent.name} (pane ${result.agent.paneId})`));
-    printNextSteps(nextSteps);
-    return;
-  }
-  console.log(
-    `Adopted ${pc.bold(result.agent.name)} ${pc.dim(`(pane ${result.agent.paneId}, workstream ${result.agent.workstream})`)}`,
-  );
-  if (result.previousTitle !== null && result.previousTitle !== result.paneTitleSetTo) {
-    console.log(pc.dim(`  pane title: '${result.previousTitle}' -> '${result.paneTitleSetTo}'`));
-  }
-  printNextSteps(nextSteps);
-}
-
-async function cmdFree(
-  db: Db,
-  name: string,
-  opts: { workstream?: string; json?: boolean } = {},
-): Promise<void> {
-  assertAgentInWorkstream(db, name, opts.workstream);
-  const r = freeAgent(db, name);
-  if (r.changed) await refreshAgentTitle(db, name);
-  const ws = await resolveWorkstream(opts.workstream);
-  const nextSteps: NextStep[] = [
-    { intent: "Send work to the freed agent", command: `mu agent send ${name} '...' -w ${ws}` },
-    { intent: "Close the agent", command: `mu agent close ${name} -w ${ws}` },
-    { intent: "See workstream state", command: `mu state -w ${ws}` },
-  ];
-  if (opts.json) {
-    emitJson({ agent: name, ...r, nextSteps });
-    return;
-  }
-  if (!r.changed) {
-    console.log(pc.dim(`${name} already free (no-op)`));
-    printNextSteps(nextSteps);
-    return;
-  }
-  console.log(`Freed ${pc.bold(name)} ${pc.dim(`(${r.previousStatus} → ${r.status})`)}`);
-  printNextSteps(nextSteps);
-}
-
-async function cmdAttach(db: Db, name: string, opts: { workstream?: string }): Promise<void> {
-  const workstream = await resolveWorkstream(opts.workstream);
-  const sessionName = `mu-${workstream}`;
-  if (!(await sessionExists(sessionName))) {
-    throw new UsageError(`workstream "${workstream}" has no tmux session yet`);
-  }
-  // mu agent attach prints scrollback + an attach hint; it has no
-  // business pruning the registry. dryRun.
-  const view = await listLiveAgents(db, { workstream, dryRun: true });
-  const agent = view.agents.find((a) => a.name === name);
-  if (!agent) {
-    throw new AgentNotFoundError(name);
-  }
-  // Capture and print its scrollback.
-  const text = await capturePane(agent.paneId);
-  process.stdout.write(text);
-  console.log("");
-  console.log(
-    pc.dim(
-      `Attach with: tmux a -t ${sessionName} && tmux select-window -t ${agent.tab ?? agent.name}`,
-    ),
-  );
-}
 
 // ─── Numeric arg parser (for --impact, --effort-days) ────────────────
 
@@ -1578,7 +885,19 @@ export function buildProgram(): Command {
     .option(...WORKSTREAM_OPT)
     .option(...JSON_OPT)
     .action(function (name: string) {
-      const opts = (this as Command).opts() as SpawnOpts;
+      const opts = (this as Command).opts() as {
+        cli?: string;
+        command?: string;
+        tab?: string;
+        role?: string;
+        cwd?: string;
+        workstream?: string;
+        workspace?: boolean;
+        workspaceBackend?: VcsBackendName;
+        workspaceFrom?: string;
+        workspaceProjectRoot?: string;
+        json?: boolean;
+      };
       return handle((db) => cmdSpawn(db, name, opts))();
     });
 
@@ -2419,7 +1738,13 @@ export function buildProgram(): Command {
     .option(...WORKSTREAM_OPT)
     .option(...JSON_OPT)
     .action(function (paneOrTitle: string) {
-      const opts = (this as Command).optsWithGlobals() as AdoptCliOpts;
+      const opts = (this as Command).optsWithGlobals() as {
+        name?: string;
+        cli?: string;
+        role?: string;
+        workstream?: string;
+        json?: boolean;
+      };
       return handle((db) => cmdAdopt(db, paneOrTitle, opts))();
     });
 
