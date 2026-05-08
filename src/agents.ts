@@ -1056,6 +1056,23 @@ export async function closeAgent(
 export interface ListLiveAgentsOptions {
   workstream: string;
   tmuxSession?: string;
+  /**
+   * Read-only: report drift WITHOUT mutating any row. Forwarded to
+   * `reconcile()`'s same-name option. Read-only callers (`mu hud`,
+   * `mu state`, bare `mu`, `mu agent attach`, `mu doctor`) MUST set
+   * this so the periodic `watch -n 5 mu hud -w X` invocation doesn't
+   * race a long-running spawn (`git worktree add` of a 13k-file repo
+   * takes seconds; the placeholder agent row's `pane_id` =
+   * `%pending-<name>` looks like a ghost to reconcile, which then
+   * deletes the row mid-spawn — the FK on `vcs_workspaces.agent` then
+   * fires when `createWorkspace` tries to insert the row, surfacing
+   * as a confusing FOREIGN KEY constraint failure). Surfaced live by
+   * bug_agent_spawn_workspace_fk_failure.
+   *
+   * Default: false. Only `mu agent list` keeps the mutating behaviour
+   * (it's the documented escape hatch for forcing a real prune).
+   */
+  dryRun?: boolean;
 }
 
 export interface LiveAgentsView {
@@ -1069,12 +1086,16 @@ export interface LiveAgentsView {
 
 /**
  * Return the live, reality-reconciled view of agents in a workstream.
- * `mu list` calls this. Step 7 will pretty-print with cli-table3.
+ * `mu agent list` calls this with `dryRun: false` (mutating); every
+ * read-only verb (`mu hud`, `mu state`, bare `mu`, `mu agent attach`,
+ * `mu doctor`) calls it with `dryRun: true` to avoid racing in-flight
+ * spawns / status changes.
  */
 export async function listLiveAgents(db: Db, opts: ListLiveAgentsOptions): Promise<LiveAgentsView> {
   const report = await reconcile(db, {
     workstream: opts.workstream,
     ...(opts.tmuxSession !== undefined ? { tmuxSession: opts.tmuxSession } : {}),
+    ...(opts.dryRun !== undefined ? { dryRun: opts.dryRun } : {}),
   });
   const agents = listAgents(db, { workstream: opts.workstream });
   return { agents, orphans: report.orphans, report };

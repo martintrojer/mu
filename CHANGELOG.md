@@ -12,6 +12,52 @@ called out under "Breaking" in each entry.
 
 ### Fixed
 
+- **Read-only verbs no longer race in-flight `--workspace` spawns.**
+  Closes (re-opened) `bug_agent_spawn_workspace_fk_failure` in
+  `mufeedback`. Surfaced live: `mu agent spawn ... --workspace` in
+  the `infer-rs` workstream consistently failed with a confusing
+  `error: FOREIGN KEY constraint failed` whenever there was a
+  `watch -n 5 mu hud -w infer-rs` running in another pane (the
+  common live-monitoring pattern documented in the SKILL).
+
+  Root cause: the spawn path inserts a placeholder agent row
+  (`pane_id = '%pending-<name>'`) BEFORE calling
+  `gitBackend.createWorkspace`, which `git worktree add`s a
+  detached checkout of the project into the workspace path. For a
+  large repo (`infer-rs` is 13k files) this takes 2-3 seconds.
+  Meanwhile, the `watch mu hud` invocation calls `listLiveAgents`
+  every 5s, which calls `reconcile()`, which prunes any agent row
+  whose `pane_id` doesn't match a live tmux pane — and
+  `'%pending-<name>'` is not a live tmux pane. The placeholder
+  row gets DELETEd mid-spawn; the subsequent `INSERT INTO
+  vcs_workspaces` then fails its `agent` FK because the agent row
+  is gone. Surfaces as the FOREIGN KEY error on the wrong line.
+
+  Fix: `ListLiveAgentsOptions` gains a `dryRun?: boolean`,
+  forwarded to `reconcile()`'s same-name option (which already
+  exists since `snap_undo_reconcile_destroys_recovered_agents`).
+  Every read-only call site sets it:
+  - `cmdHud` (the surfacer-of-the-bug verb)
+  - `cmdState` (`mu state` — canonical state card)
+  - `cmdMission` (bare `mu` — quick mission control)
+  - `cmdAttach` (`mu agent attach` — reads scrollback)
+  - `cmdDoctor` + `cmdDoctorJson` (`mu doctor` — diagnostic)
+
+  `cmdList` (`mu agent list`) keeps the mutating behaviour: it's
+  the documented escape hatch for forcing a real prune. Same shape
+  as the snap_undo fix: read verbs are read-only by default; the
+  one explicit "refresh and prune" verb keeps its mutating semantics.
+
+  Tests: 3 new in `test/verbs.test.ts` covering dryRun propagation
+  through `listLiveAgents` (ghost survives in dryRun mode; default
+  remains mutating; orphan-detection still runs in dryRun).
+  710 + 3 = 713/713 green.
+
+  Smoke-tested: a tight `while true; do mu hud > /dev/null; sleep
+  0.1; done` loop in one shell + `mu agent spawn ... --workspace
+  --workspace-project-root /Users/mtrojer/infer-rs` in another now
+  succeeds; pre-fix this raced reliably on every attempt.
+
 - **`mu undo` no longer silently drops recovered agent rows whose
   panes are dead.** Closes
   `snap_undo_reconcile_destroys_recovered_agents` in roadmap-v0-2;

@@ -3045,8 +3045,11 @@ async function cmdDoctor(db: Db, opts: { json?: boolean } = {}): Promise<void> {
     console.log(`  agent_logs rows  : ${counts.logs}`);
 
     // Reconciliation: ghost detection (DB rows with dead panes) + orphans.
+    // mu doctor is diagnostic — dryRun so it never deletes rows just
+    // for being polled (would race in-flight spawns; see
+    // bug_agent_spawn_workspace_fk_failure).
     try {
-      const view = await listLiveAgents(db, { workstream: ws });
+      const view = await listLiveAgents(db, { workstream: ws, dryRun: true });
       const ghostNote =
         view.report.prunedGhosts > 0
           ? pc.yellow(`pruned ${view.report.prunedGhosts} during this check`)
@@ -3163,7 +3166,8 @@ async function cmdDoctorJson(db: Db): Promise<void> {
     };
     let reconcile: Record<string, unknown> | null = null;
     try {
-      const view = await listLiveAgents(db, { workstream: ws });
+      // mu doctor --json: dryRun for the same reason as the human path.
+      const view = await listLiveAgents(db, { workstream: ws, dryRun: true });
       reconcile = {
         prunedGhosts: view.report.prunedGhosts,
         orphanCount: view.orphans.length,
@@ -3652,7 +3656,9 @@ async function cmdMission(db: Db, opts: { workstream?: string; json?: boolean })
     return;
   }
   // From here on, workstream is a string — explicit or resolved.
-  const view = await listLiveAgents(db, { workstream });
+  // Bare `mu` (mission control) is read-only: dryRun avoids racing
+  // in-flight spawns when polled (e.g. by `watch -n 5 mu`).
+  const view = await listLiveAgents(db, { workstream, dryRun: true });
   const tracks = getParallelTracks(db, workstream);
   const ready = listReady(db, workstream);
 
@@ -3745,7 +3751,10 @@ async function cmdState(
   opts: { workstream?: string; json?: boolean; events?: number },
 ): Promise<void> {
   const workstream = await resolveWorkstream(opts.workstream);
-  const view = await listLiveAgents(db, { workstream });
+  // mu state is the read-only canonical-state-card verb. dryRun so
+  // polling it doesn't race in-flight spawns. To force a real prune,
+  // run `mu agent list -w <ws>` (the documented escape hatch).
+  const view = await listLiveAgents(db, { workstream, dryRun: true });
   const tracks = getParallelTracks(db, workstream);
   const ready = listReady(db, workstream).sort(byRoiDesc);
   const blocked = listBlocked(db, workstream);
@@ -4146,7 +4155,14 @@ function agentStatusHistogram(agents: readonly AgentRow[]): string {
 
 async function cmdHud(db: Db, opts: HudOpts): Promise<void> {
   const workstream = await resolveWorkstream(opts.workstream);
-  const view = await listLiveAgents(db, { workstream });
+  // mu hud is print-once-and-compose by design (`watch -n 5 mu hud`,
+  // `tmux display-popup -E 'mu hud ...'`). dryRun so the periodic
+  // poll doesn't race a long-running `git worktree add` mid-spawn,
+  // which would otherwise prune the spawn's placeholder agent row
+  // and surface as a confusing FOREIGN KEY constraint failure on the
+  // subsequent `INSERT INTO vcs_workspaces`. (Surfaced live by
+  // bug_agent_spawn_workspace_fk_failure.)
+  const view = await listLiveAgents(db, { workstream, dryRun: true });
   const tracks = getParallelTracks(db, workstream);
   const ready = listReady(db, workstream).sort(byRoiDesc);
   const inProgress = (
@@ -4322,7 +4338,9 @@ async function cmdAttach(db: Db, name: string, opts: { workstream?: string }): P
   if (!(await sessionExists(sessionName))) {
     throw new UsageError(`workstream "${workstream}" has no tmux session yet`);
   }
-  const view = await listLiveAgents(db, { workstream });
+  // mu agent attach prints scrollback + an attach hint; it has no
+  // business pruning the registry. dryRun.
+  const view = await listLiveAgents(db, { workstream, dryRun: true });
   const agent = view.agents.find((a) => a.name === name);
   if (!agent) {
     throw new AgentNotFoundError(name);
