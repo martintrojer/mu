@@ -12,6 +12,7 @@ import {
   ClaimerNotRegisteredError,
   CrossWorkstreamEdgeError,
   CycleError,
+  TASK_STATUS_LIST,
   TaskAlreadyOwnedError,
   TaskExistsError,
   TaskHasOpenDependentsError,
@@ -1965,5 +1966,17 @@ describe("rejectTask / deferTask", () => {
         .map((t) => t.localId)
         .sort(),
     ).toEqual(["def", "live", "rej"]);
+  });
+});
+
+// ─── TASK_STATUS_LIST drift guard ────────────────────────────────────
+
+describe("TASK_STATUS_LIST mirrors every TaskStatus", () => {
+  it("contains every legal status in canonical order", () => {
+    // If a future task status is added to TaskStatus / TASK_STATUSES
+    // but the LIST helper isn't kept in sync, every CLI surface that
+    // names statuses (--help, error messages, --status validators)
+    // will silently lie. Guard rail against that.
+    expect(TASK_STATUS_LIST).toBe("OPEN | IN_PROGRESS | CLOSED | REJECTED | DEFERRED");
   });
 });

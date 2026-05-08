@@ -73,6 +73,8 @@ export {
   getTaskEdges,
   type TaskEdges,
   isTaskStatus,
+  TASK_STATUSES,
+  TASK_STATUS_LIST,
   isValidTaskId,
   type ListTasksOptions,
   listBlocked,

@@ -66,6 +66,7 @@ import {
   CrossWorkstreamEdgeError,
   CycleError,
   type SearchTasksOptions,
+  TASK_STATUS_LIST,
   TaskAlreadyOwnedError,
   TaskExistsError,
   TaskHasOpenDependentsError,
@@ -73,6 +74,7 @@ import {
   TaskNotInWorkstreamError,
   type TaskNoteRow,
   type TaskRow,
+  type TaskStatus,
   type TaskWaitResult,
   type UpdateTaskOptions,
   addBlockEdge,
@@ -162,6 +164,21 @@ async function resolveWorkstream(explicit?: string): Promise<string> {
 
 class UsageError extends Error {
   override readonly name = "UsageError";
+}
+
+/** Standard --status validation: case-insensitive, returns the
+ *  canonical TaskStatus or throws UsageError naming every legal
+ *  value. Centralised so adding a status updates every CLI surface
+ *  at once (the OPEN | IN_PROGRESS | CLOSED list used to drift
+ *  across `mu task list --status`, `mu task wait --status`, the
+ *  --help text, and error messages). Source list lives in
+ *  src/tasks.ts as TASK_STATUS_LIST. */
+function parseStatusOption(raw: string, flag = "--status"): TaskStatus {
+  const upper = raw.toUpperCase();
+  if (!isTaskStatus(upper)) {
+    throw new UsageError(`${flag} must be one of ${TASK_STATUS_LIST} (got ${JSON.stringify(raw)})`);
+  }
+  return upper;
 }
 
 /**
@@ -1172,13 +1189,7 @@ async function cmdTaskList(
   const workstream = await resolveWorkstream(opts.workstream);
   const listOpts: Parameters<typeof listTasks>[2] = {};
   if (opts.status !== undefined) {
-    const wanted = opts.status.toUpperCase();
-    if (!isTaskStatus(wanted)) {
-      throw new UsageError(
-        `--status must be one of OPEN | IN_PROGRESS | CLOSED (got '${opts.status}')`,
-      );
-    }
-    listOpts.status = wanted;
+    listOpts.status = parseStatusOption(opts.status);
   }
   const tasks = listTasks(db, workstream, listOpts);
   if (opts.json) {
@@ -2129,12 +2140,7 @@ async function cmdTaskWait(
     throw new UsageError("mu task wait: at least one task id is required");
   }
   // Validate status (default CLOSED). Same parser as mu task list --status.
-  const statusOpt = opts.status?.toUpperCase();
-  if (statusOpt !== undefined && !isTaskStatus(statusOpt)) {
-    throw new UsageError(
-      `--status must be one of OPEN | IN_PROGRESS | CLOSED (got ${JSON.stringify(opts.status)})`,
-    );
-  }
+  const statusOpt = opts.status !== undefined ? parseStatusOption(opts.status) : undefined;
   // Scope: every id must be in the workstream we resolved (-w error
   // semantics matching every other task verb).
   for (const id of ids) {
@@ -3725,7 +3731,7 @@ export function buildProgram(): Command {
     .option(...WORKSTREAM_OPT)
     .option(
       "--status <status>",
-      "filter by lifecycle status (OPEN | IN_PROGRESS | CLOSED; case-insensitive)",
+      `filter by lifecycle status (${TASK_STATUS_LIST}; case-insensitive)`,
     )
     .option(...JSON_OPT)
     .action(function () {
@@ -4079,7 +4085,7 @@ export function buildProgram(): Command {
     )
     .option(
       "--status <status>",
-      "target status (OPEN | IN_PROGRESS | CLOSED, case-insensitive); default CLOSED",
+      `target status (${TASK_STATUS_LIST}, case-insensitive); default CLOSED`,
     )
     .option("--any", "succeed as soon as ONE listed task reaches the target (default: all must)")
     .option("--timeout <seconds>", "max seconds to wait (0 = forever, default 600)", parseLines)
