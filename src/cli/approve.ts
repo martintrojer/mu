@@ -219,3 +219,102 @@ async function resolveSelfNameOrUser(db: Db): Promise<string> {
   const agent = getAgentByPane(db, paneId);
   return agent ? agent.name : "user";
 }
+
+// ─── commander wiring ────────────────────────────────────────────────
+//
+// wireApproveCommands is called by buildProgram() in src/cli.ts. Wired here so
+// every per-namespace builder lives next to its cmd functions.
+
+import type { Command } from "commander";
+import { JSON_OPT, WORKSTREAM_OPT, handle, parseLines } from "../cli.js";
+
+export function wireApproveCommands(program: Command): void {
+  const approve = program
+    .command("approve")
+    .description("Human-in-the-loop approvals for risky agent actions");
+
+  approve
+    .command("add")
+    .description(
+      "Request approval. Returns the slug (use --json for scripting). Default workstream is auto-detected; default requester is the calling agent (via $TMUX_PANE) or 'user'.",
+    )
+    .requiredOption("-r, --reason <text>", "what is being approved")
+    .option("--slug <slug>", "override the auto-generated slug")
+    .option("--requested-by <name>", "override the requester name")
+    .option(...WORKSTREAM_OPT)
+    .option(...JSON_OPT)
+    .action(function () {
+      const opts = (this as Command).opts() as {
+        reason: string;
+        slug?: string;
+        requestedBy?: string;
+        workstream?: string;
+        json?: boolean;
+      };
+      return handle((db) => cmdApprovalAdd(db, opts))();
+    });
+
+  approve
+    .command("list")
+    .description(
+      "List approvals in the current workstream. --status filters; --all spans every workstream.",
+    )
+    .option("--status <s>", "pending | granted | denied | timeout")
+    .option("--all", "span every workstream")
+    .option(...WORKSTREAM_OPT)
+    .option(...JSON_OPT)
+    .action(function () {
+      const opts = (this as Command).opts() as {
+        status?: string;
+        all?: boolean;
+        workstream?: string;
+        json?: boolean;
+      };
+      return handle((db) => cmdApprovalList(db, opts))();
+    });
+
+  approve
+    .command("grant <slug>")
+    .description("Grant a pending approval (sets status='granted')")
+    .option("--by <name>", "override decider name (default: agent via $TMUX_PANE, else 'user')")
+    .option(...WORKSTREAM_OPT)
+    .option(...JSON_OPT)
+    .action(function (slug: string) {
+      const opts = (this as Command).opts() as {
+        by?: string;
+        workstream?: string;
+        json?: boolean;
+      };
+      return handle((db) => cmdApprovalGrant(db, slug, opts))();
+    });
+
+  approve
+    .command("deny <slug>")
+    .description("Deny a pending approval (sets status='denied')")
+    .option("--by <name>", "override decider name (default: agent via $TMUX_PANE, else 'user')")
+    .option(...WORKSTREAM_OPT)
+    .option(...JSON_OPT)
+    .action(function (slug: string) {
+      const opts = (this as Command).opts() as {
+        by?: string;
+        workstream?: string;
+        json?: boolean;
+      };
+      return handle((db) => cmdApprovalDeny(db, slug, opts))();
+    });
+
+  approve
+    .command("wait <slug>")
+    .description("Block until the approval is decided. Exits 0 (granted), 4 (denied), 5 (timeout).")
+    .option("--timeout <seconds>", "max seconds to wait (0 = forever, default 600)", parseLines)
+    .option(...WORKSTREAM_OPT)
+    .option(...JSON_OPT)
+    .action(function (slug: string) {
+      const opts = (this as Command).opts() as {
+        timeout?: number;
+        json?: boolean;
+        workstream?: string;
+      };
+      return handle((db) => cmdApprovalWait(db, slug, opts))();
+    });
+}

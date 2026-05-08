@@ -318,3 +318,60 @@ export async function cmdSnapshotShow(
     },
   ]);
 }
+
+// ─── commander wiring ────────────────────────────────────────────────
+//
+// wireSnapshotCommands is called by buildProgram() in src/cli.ts. Wired here so
+// every per-namespace builder lives next to its cmd functions.
+
+import type { Command } from "commander";
+import { JSON_OPT, handle, parseLines } from "../cli.js";
+
+export function wireSnapshotCommands(program: Command): void {
+  //
+  // `mu undo` lives at the top level (not under `mu snapshot`) because
+  // it's the user-facing recovery verb — same prominence as `mu state`,
+  // `mu doctor`. The list/show inspector verbs nest under `mu snapshot`
+  // since they're scoped operations on the snapshots collection.
+
+  program
+    .command("undo")
+    .description(
+      "Restore the most recent snapshot (or one selected via --to). Pass --yes to actually restore; otherwise prints a dry-run summary. tmux state is NOT rolled back — the post-restore reconcile prunes ghost agents and surfaces orphan panes; re-spawn or `mu adopt` as needed.",
+    )
+    .option("--to <id>", "snapshot id to restore (default: most recent)", parseLines)
+    .option("-y, --yes", "actually restore (without this flag, prints a dry-run summary)")
+    .option(...JSON_OPT)
+    .action(function () {
+      const opts = (this as Command).opts() as {
+        to?: number;
+        yes?: boolean;
+        json?: boolean;
+      };
+      return handle((db) => cmdUndo(db, opts))();
+    });
+
+  const snapshot = program
+    .command("snapshot")
+    .description("Snapshot inspection (use `mu undo` to restore one)");
+
+  snapshot
+    .command("list")
+    .description("List snapshots, newest first.")
+    .option("-n, --lines <n>", "cap rows; default 20", parseLines)
+    .option(...JSON_OPT)
+    .action(function () {
+      const opts = (this as Command).opts() as { lines?: number; json?: boolean };
+      return handle((db) => cmdSnapshotList(db, opts))();
+    });
+
+  snapshot
+    .command("show <id>")
+    .description("Show one snapshot's full metadata.")
+    .option(...JSON_OPT)
+    .action(function (idArg: string) {
+      const id = parseLines(idArg);
+      const opts = (this as Command).opts() as { json?: boolean };
+      return handle((db) => cmdSnapshotShow(db, id, opts))();
+    });
+}

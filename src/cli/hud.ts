@@ -516,3 +516,34 @@ export async function cmdHud(db: Db, opts: HudOpts): Promise<void> {
     `mu log -w ${workstream} --kind event`,
   );
 }
+
+// ─── commander wiring ────────────────────────────────────────────────
+//
+// wireHudCommand is called by buildProgram() in src/cli.ts. Wired here so
+// every per-namespace builder lives next to its cmd functions.
+
+import type { Command } from "commander";
+import { JSON_OPT, WORKSTREAM_OPT, handle, parseLines } from "../cli.js";
+
+export function wireHudCommand(program: Command): void {
+  program
+    .command("hud")
+    .description(
+      "Print-once HUD card for a workstream. Default: dynamic table layout that fills the terminal (or tmux pane) height + width with as much useful data as fits — header + agents + ready + in-progress + tracks + recent-events, each rendered as a cli-table3 with width-aware truncation. Use --json for the structured machine view. No loop, no tmux side effects — user composes redraw via `watch -n 5 mu hud -w X` or `tmux display-popup -E 'mu hud -w X'`.",
+    )
+    .option(
+      "-n, --lines <n>",
+      "recent-events tail cap (default 10; bounds the human view too)",
+      parseLines,
+    )
+    .option(...WORKSTREAM_OPT)
+    .option(...JSON_OPT)
+    .action(function () {
+      const opts = (this as Command).opts() as {
+        workstream?: string;
+        json?: boolean;
+        lines?: number;
+      };
+      return handle((db) => cmdHud(db, opts))();
+    });
+}

@@ -148,3 +148,94 @@ export async function cmdWorkspaceOrphans(
   }
   printNextSteps(nextSteps);
 }
+
+// ─── commander wiring ────────────────────────────────────────────────
+//
+// wireWorkspaceCommands is called by buildProgram() in src/cli.ts. Wired here so
+// every per-namespace builder lives next to its cmd functions.
+
+import type { Command } from "commander";
+import { JSON_OPT, WORKSTREAM_OPT, handle } from "../cli.js";
+
+export function wireWorkspaceCommands(program: Command): void {
+  const workspace = program
+    .command("workspace")
+    .description("VCS workspace commands (per-agent isolated working copies)");
+
+  workspace
+    .command("create <agent>")
+    .description(
+      "Create a fresh isolated working copy for an agent. Backend auto-detected (jj > sl > git > none) unless --backend overrides.",
+    )
+    .option("--backend <name>", "force a backend instead of auto-detecting (jj | sl | git | none)")
+    .option("--from <ref>", "base the workspace on a specific commit / branch / changeset")
+    .option("--project-root <path>", "override the project root to branch from (default: cwd)")
+    .option(...WORKSTREAM_OPT)
+    .option(...JSON_OPT)
+    .action(function (agent: string) {
+      const opts = (this as Command).opts() as {
+        backend?: VcsBackendName;
+        from?: string;
+        projectRoot?: string;
+        workstream?: string;
+        json?: boolean;
+      };
+      return handle((db) => cmdWorkspaceCreate(db, agent, opts))();
+    });
+
+  workspace
+    .command("list")
+    .description("List workspaces in the current workstream (--all spans every workstream)")
+    .option("--all", "list workspaces across every workstream")
+    .option(...WORKSTREAM_OPT)
+    .option(...JSON_OPT)
+    .action(function () {
+      const opts = (this as Command).opts() as {
+        all?: boolean;
+        workstream?: string;
+        json?: boolean;
+      };
+      return handle((db) => cmdWorkspaceList(db, opts))();
+    });
+
+  workspace
+    .command("free <agent>")
+    .description(
+      "Tear down an agent's workspace. With --commit, attempt to auto-commit pending changes first; without it, pending changes are lost.",
+    )
+    .option("--commit", "auto-commit pending changes before removing the workspace")
+    .option(...WORKSTREAM_OPT)
+    .option(...JSON_OPT)
+    .action(function (agent: string) {
+      const opts = (this as Command).opts() as {
+        commit?: boolean;
+        workstream?: string;
+        json?: boolean;
+      };
+      return handle((db) => cmdWorkspaceFree(db, agent, opts))();
+    });
+
+  workspace
+    .command("path <agent>")
+    .description(
+      "Print the on-disk path of an agent's workspace. Usable as `cd $(mu workspace path foo)`.",
+    )
+    .option(...WORKSTREAM_OPT)
+    .option(...JSON_OPT)
+    .action(function (agent: string) {
+      const opts = (this as Command).opts() as { workstream?: string; json?: boolean };
+      return handle((db) => cmdWorkspacePath(db, agent, opts))();
+    });
+
+  workspace
+    .command("orphans")
+    .description(
+      "List on-disk workspace dirs in <state-dir>/workspaces/<workstream>/ that have no DB row. These block subsequent `--workspace` spawns; surfaced by bug_workspace_orphan_not_in_state. Cleanup recipe shown in Next: hints.",
+    )
+    .option(...WORKSTREAM_OPT)
+    .option(...JSON_OPT)
+    .action(function () {
+      const opts = (this as Command).opts() as { workstream?: string; json?: boolean };
+      return handle((db) => cmdWorkspaceOrphans(db, opts))();
+    });
+}

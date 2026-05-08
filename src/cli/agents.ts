@@ -487,3 +487,203 @@ export async function cmdAttach(
     ),
   );
 }
+
+// ─── commander wiring ────────────────────────────────────────────────
+//
+// wireAgentCommands is called by buildProgram() in src/cli.ts. Wired here so
+// every per-namespace builder lives next to its cmd functions.
+
+import type { Command } from "commander";
+import { JSON_OPT, WORKSTREAM_OPT, handle, parseLines } from "../cli.js";
+// wireSelfCommands needs cmdMyTasks / cmdMyNext which live in cli/tasks.ts
+// (they're task queries scoped to the resolved-self agent). Lateral
+// cluster→cluster import documented as the single intentional edge.
+import { cmdMyNext, cmdMyTasks } from "./tasks.js";
+
+export function wireAgentCommands(program: Command): void {
+  const agent = program.command("agent").description("Agent-level commands");
+
+  agent
+    .command("spawn <name>")
+    .description("Spawn a new agent in a tmux pane")
+    .option(
+      "--cli <cli>",
+      "agent CLI key (default: pi); also used as the lookup key for $MU_<UPPER_CLI>_COMMAND, e.g. --cli pi_big resolves $MU_PI_BIG_COMMAND",
+      "pi",
+    )
+    .option(
+      "--command <cmd>",
+      "executable to run in the pane (defaults to $MU_<CLI>_COMMAND or the cli value)",
+    )
+    .option("--tab <tab>", "tmux window name to group under (defaults to agent name)")
+    .option("--role <role>", "full-access | read-only", "full-access")
+    .option("--cwd <cwd>", "initial working directory (ignored when --workspace is set)")
+    .option("--workspace", "auto-create a VCS workspace for this agent and use its path as cwd")
+    .option(
+      "--workspace-backend <name>",
+      "force a specific VCS backend for --workspace (jj | sl | git | none)",
+    )
+    .option(
+      "--workspace-from <ref>",
+      "base the workspace on a specific commit / branch / changeset",
+    )
+    .option(
+      "--workspace-project-root <path>",
+      "override the project root the workspace branches from (default: cwd)",
+    )
+    .option(...WORKSTREAM_OPT)
+    .option(...JSON_OPT)
+    .action(function (name: string) {
+      const opts = (this as Command).opts() as {
+        cli?: string;
+        command?: string;
+        tab?: string;
+        role?: string;
+        cwd?: string;
+        workstream?: string;
+        workspace?: boolean;
+        workspaceBackend?: VcsBackendName;
+        workspaceFrom?: string;
+        workspaceProjectRoot?: string;
+        json?: boolean;
+      };
+      return handle((db) => cmdSpawn(db, name, opts))();
+    });
+
+  agent
+    .command("send <name> <text>")
+    .description("Send text to an agent's pane (bracketed-paste protocol)")
+    .option(...WORKSTREAM_OPT)
+    .option(...JSON_OPT)
+    .action(function (name: string, text: string) {
+      const opts = (this as Command).opts() as { workstream?: string; json?: boolean };
+      return handle((db) => cmdSend(db, name, text, opts))();
+    });
+
+  agent
+    .command("read <name>")
+    .description("Read an agent's pane scrollback")
+    .option("-n, --lines <n>", "show last N lines (default: full scrollback)", parseLines)
+    .option(...WORKSTREAM_OPT)
+    .option(...JSON_OPT)
+    .action(function (name: string) {
+      const opts = (this as Command).opts() as {
+        lines?: number;
+        workstream?: string;
+        json?: boolean;
+      };
+      return handle((db) => cmdRead(db, name, opts))();
+    });
+
+  agent
+    .command("list")
+    .description("List agents in the current workstream (reconciled with tmux)")
+    .option(...WORKSTREAM_OPT)
+    .option(...JSON_OPT)
+    .action(function () {
+      const opts = (this as Command).opts() as {
+        workstream?: string;
+        json?: boolean;
+      };
+      return handle((db) => cmdList(db, opts))();
+    });
+
+  agent
+    .command("show <name>")
+    .description("Show an agent: registry row + recent scrollback (last N lines, default 20)")
+    .option("-n, --lines <n>", "how many scrollback lines to show (default 20)", parseLines)
+    .option(...WORKSTREAM_OPT)
+    .option(...JSON_OPT)
+    .action(function (name: string) {
+      const opts = (this as Command).opts() as {
+        lines?: number;
+        json?: boolean;
+        workstream?: string;
+      };
+      return handle((db) => cmdAgentShow(db, name, opts))();
+    });
+
+  agent
+    .command("close <name>")
+    .description(
+      "Kill an agent's pane and remove its registry row. If the agent has a workspace, refuses by default (would orphan the on-disk dir); pass --discard-workspace to free both, or run `mu workspace free <agent>` first.",
+    )
+    .option(
+      "--discard-workspace",
+      "free the agent's workspace alongside close (lossy: pending changes are gone)",
+    )
+    .option(...WORKSTREAM_OPT)
+    .option(...JSON_OPT)
+    .action(function (name: string) {
+      const opts = (this as Command).opts() as {
+        workstream?: string;
+        json?: boolean;
+        discardWorkspace?: boolean;
+      };
+      return handle((db) => cmdClose(db, name, opts))();
+    });
+
+  agent
+    .command("free <name>")
+    .description(
+      "Mark an agent's status as 'free' (idempotent). Pane untouched; reconcile flips back to busy on real activity.",
+    )
+    .option(...WORKSTREAM_OPT)
+    .option(...JSON_OPT)
+    .action(function (name: string) {
+      const opts = (this as Command).opts() as { workstream?: string; json?: boolean };
+      return handle((db) => cmdFree(db, name, opts))();
+    });
+
+  agent
+    .command("attach <name>")
+    .description("Print an agent's full scrollback and the tmux command to attach")
+    .option(...WORKSTREAM_OPT)
+    .action(function (name: string) {
+      const opts = (this as Command).opts() as { workstream?: string };
+      // Routed through handle() like every other verb — errorNextSteps
+      // fire on typed errors, exit codes classify uniformly
+      // (review_code_attach_bypasses_handle).
+      return handle((db) => cmdAttach(db, name, opts))();
+    });
+
+  // ─── task ───────────────────────────────────────────────────────────
+}
+
+export function wireSelfCommands(program: Command): void {
+  program
+    .command("whoami")
+    .description(
+      "Identify the agent running this process (via $TMUX_PANE) plus its currently-owned tasks (excludes CLOSED by default)",
+    )
+    .option("--include-closed", "include CLOSED tasks in the owned-tasks list")
+    .option(...JSON_OPT)
+    .action(function () {
+      const opts = (this as Command).opts() as { json?: boolean; includeClosed?: boolean };
+      return handle((db) => cmdWhoami(db, opts))();
+    });
+
+  program
+    .command("my-tasks")
+    .description(
+      "List tasks owned by the current agent (alias for `task owned-by <self>`). Excludes CLOSED by default.",
+    )
+    .option("--include-closed", "include CLOSED tasks in the list")
+    .option(...JSON_OPT)
+    .action(function () {
+      const opts = (this as Command).opts() as { json?: boolean; includeClosed?: boolean };
+      return handle((db) => cmdMyTasks(db, opts))();
+    });
+
+  program
+    .command("my-next")
+    .description(
+      "Top-K ready tasks in the current agent's workstream (alias for `task next -w <self.workstream>`)",
+    )
+    .option("-n, --lines <k>", "how many top-K tasks to return (default 1)", parseLines)
+    .option(...JSON_OPT)
+    .action(function () {
+      const opts = (this as Command).opts() as { lines?: number; json?: boolean };
+      return handle((db) => cmdMyNext(db, opts))();
+    });
+}

@@ -171,3 +171,65 @@ function defaultLogTailIntervalMs(): number {
   if (Number.isNaN(parsed) || parsed < 50) return 1000;
   return parsed;
 }
+
+// ─── commander wiring ────────────────────────────────────────────────
+//
+// wireLogCommand is called by buildProgram() in src/cli.ts. Wired here so
+// every per-namespace builder lives next to its cmd functions.
+
+import type { Command } from "commander";
+import { JSON_OPT, WORKSTREAM_OPT, handle, parseLines, parseNonNegativeInt } from "../cli.js";
+
+export function wireLogCommand(program: Command): void {
+  // mu log — overloaded:
+  //   mu log "text"            → write
+  //   mu log                    → read latest 50
+  //   mu log --tail             → blocking subscription (poll every 1s)
+  //   mu log --since <seq>      → cursor read (everything after seq)
+  program
+    .command("log [text]")
+    .description(
+      "Write a log entry (with text) or read the log (without). --tail blocks and prints new entries as they land.",
+    )
+    .option("--as <name>", "override the source name (default: agent via $TMUX_PANE, else 'user')")
+    .option("--kind <kind>", "kind tag (default: 'message' on write)")
+    .option("--tail", "block and print entries as they're appended")
+    .option(
+      "--since <seq>",
+      "return entries with seq strictly greater than this (use 0 to replay everything)",
+      parseNonNegativeInt,
+    )
+    .option(
+      "-n, --lines <n>",
+      "cap to the latest N entries (default 50, no cap with --since)",
+      parseLines,
+    )
+    .option("--source <name>", "filter by source")
+    .option("--all", "read across every workstream (and machine-wide entries)")
+    .option(...WORKSTREAM_OPT)
+    .option(...JSON_OPT)
+    .action(function (text: string | undefined) {
+      const raw = (this as Command).opts() as {
+        as?: string;
+        kind?: string;
+        tail?: boolean;
+        since?: number;
+        lines?: number;
+        source?: string;
+        all?: boolean;
+        workstream?: string;
+        json?: boolean;
+      };
+      const opts: LogReadOpts & LogWriteOpts = {};
+      if (raw.as !== undefined) opts.as = raw.as;
+      if (raw.kind !== undefined) opts.kind = raw.kind;
+      if (raw.tail !== undefined) opts.tail = raw.tail;
+      if (raw.since !== undefined) opts.since = raw.since;
+      if (raw.lines !== undefined) opts.lines = raw.lines;
+      if (raw.source !== undefined) opts.source = raw.source;
+      if (raw.all !== undefined) opts.allWorkstreams = raw.all;
+      if (raw.workstream !== undefined) opts.workstream = raw.workstream;
+      if (raw.json !== undefined) opts.json = raw.json;
+      return handle((db) => cmdLog(db, text, opts))();
+    });
+}

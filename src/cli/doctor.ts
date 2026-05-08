@@ -299,3 +299,22 @@ function countBlocked(db: Db, workstream: string): number {
     }
   ).n;
 }
+
+// ─── commander wiring ────────────────────────────────────────────────
+//
+// wireDoctorCommand is called by buildProgram() in src/cli.ts. Wired here so
+// every per-namespace builder lives next to its cmd functions.
+
+import type { Command } from "commander";
+import { JSON_OPT, handle } from "../cli.js";
+
+export function wireDoctorCommand(program: Command): void {
+  program
+    .command("doctor")
+    .description("Environment + state health check")
+    .option(...JSON_OPT)
+    .action(function () {
+      const opts = (this as Command).opts() as { json?: boolean };
+      return handle((db) => cmdDoctor(db, opts))();
+    });
+}

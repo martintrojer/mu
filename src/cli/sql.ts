@@ -265,3 +265,27 @@ function formatCell(v: unknown): string {
   if (typeof v === "string") return v;
   return String(v);
 }
+
+// ─── commander wiring ────────────────────────────────────────────────
+//
+// wireSqlCommand is called by buildProgram() in src/cli.ts. Wired here so
+// every per-namespace builder lives next to its cmd functions.
+
+import type { Command } from "commander";
+import { JSON_OPT, handle, parseLines } from "../cli.js";
+
+export function wireSqlCommand(program: Command): void {
+  program
+    .command("sql <query>")
+    .description("Run a SQL query against the live mu DB (SELECT / UPDATE / DELETE all allowed)")
+    .option(...JSON_OPT)
+    .option(
+      "--confirm-rows <n>",
+      "abort if affected-row count differs from N (rollback)",
+      parseLines,
+    )
+    .action(function (query: string) {
+      const opts = (this as Command).opts() as { json?: boolean; confirmRows?: number };
+      return handle((db) => cmdSql(db, query, opts))();
+    });
+}

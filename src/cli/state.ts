@@ -263,3 +263,34 @@ export async function cmdState(
 
 // (RawTaskRowForState + rawTaskRowToTask live in src/cli.ts so cmdHud
 // can reuse them.)
+
+// ─── commander wiring ────────────────────────────────────────────────
+//
+// wireStateCommands is called by buildProgram() in src/cli.ts. Wired here so
+// every per-namespace builder lives next to its cmd functions.
+
+import type { Command } from "commander";
+import { JSON_OPT, WORKSTREAM_OPT, handle, parseLines } from "../cli.js";
+
+export function wireStateCommands(program: Command): void {
+  program
+    .command("state")
+    .description(
+      "Canonical state card: agents + tracks + ready/in-progress/blocked/recent-closed tasks + workspaces + recent events. The 'what does an LLM look at first?' verb. JSON-first.",
+    )
+    .option(...WORKSTREAM_OPT)
+    .option(
+      "--events <n>",
+      "how many recent kind=event log entries to include (default 20)",
+      parseLines,
+    )
+    .option(...JSON_OPT)
+    .action(function () {
+      const opts = (this as Command).opts() as {
+        workstream?: string;
+        events?: number;
+        json?: boolean;
+      };
+      return handle((db) => cmdState(db, opts))();
+    });
+}

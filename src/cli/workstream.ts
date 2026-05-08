@@ -259,3 +259,50 @@ export async function cmdDestroy(
     ]);
   }
 }
+
+// ─── commander wiring ────────────────────────────────────────────────
+//
+// wireWorkstreamCommands is called by buildProgram() in src/cli.ts. Wired here so
+// every per-namespace builder lives next to its cmd functions.
+
+import type { Command } from "commander";
+import { JSON_OPT, WORKSTREAM_OPT, handle } from "../cli.js";
+
+export function wireWorkstreamCommands(program: Command): void {
+  const workstream = program.command("workstream").description("Workstream-level commands");
+
+  workstream
+    .command("init <name>")
+    .description("Create the workstream's tmux session and register it in the DB")
+    .option(...JSON_OPT)
+    .action(function (name: string) {
+      const opts = (this as Command).opts() as { json?: boolean };
+      return handle((db) => cmdInit(db, name, opts))();
+    });
+
+  workstream
+    .command("list")
+    .description("List every workstream on this machine (DB rows + mu-* tmux sessions)")
+    .option(...JSON_OPT)
+    .action(function () {
+      const opts = (this as Command).opts() as { json?: boolean };
+      return handle((db) => cmdWorkstreamList(db, opts))();
+    });
+
+  workstream
+    .command("destroy")
+    .description(
+      "Tear down a workstream: kill its tmux session and cascade-delete every DB row tagged with its name. Pass --yes to actually destroy; otherwise prints a dry-run summary.",
+    )
+    .option(...WORKSTREAM_OPT)
+    .option("-y, --yes", "actually destroy (without this flag, prints a dry-run summary)")
+    .option(...JSON_OPT)
+    .action(function () {
+      const opts = (this as Command).opts() as {
+        workstream?: string;
+        yes?: boolean;
+        json?: boolean;
+      };
+      return handle((db) => cmdDestroy(db, opts))();
+    });
+}
