@@ -98,43 +98,20 @@ Use `worker-1`, `worker-2`, `reviewer-1`, `scout-1`, `auditor-1`,
 `[a-z][a-z0-9_-]{0,31}` but stick to the convention — names show up
 in `mu agent list`, in tmux's window list, and as the pane title.
 
-## Orchestrator loop (the canonical operational discipline)
+## Orchestrator loop
 
-This is what the orchestrator pi (or human operator) does, every
-turn. Internalise it before you start delegating; skipping steps
-is how fire-and-forget creeps in.
+Every turn:
 
-**Before assigning work:**
-
-1. Run `mu state -w <ws>` (or bare `mu -w <ws>` for the lighter
-   table). Read the card.
-2. Check four things:
-   - **current agents** — who's alive, who's `busy / needs_input /
-     idle / done`?
-   - **`IN_PROGRESS` tasks** — what's already claimed?
-   - **ready tasks** — what could be picked up now?
-   - **parallel tracks** — how many independent threads exist?
-3. **Do not spawn more agents than independent ready tracks.**
-   The track count is the upper bound; more agents than tracks
-   means agents fighting over the same prerequisite chain.
-4. Claim before sending instructions:
-   ```bash
-   mu task claim <id> -w <ws> --for <agent> --evidence "why this task, why this agent"
-   ```
-5. Send task-specific instructions that include:
-   - the task ID (so the agent can `mu task show <id>`)
-   - which files / notes to read first
-   - what NOT to do (scope guards)
-   - expected note + close behaviour (the task note contract —
-     see below)
-6. Monitor (don't walk away — see "After spawning, observe" below):
-   - `mu state -w <ws>` between turns
-   - `mu agent show <agent> -n N` for a focused look
-   - task notes and status as they accumulate
-7. When a task closes, re-run `mu state` and repeat from step 1.
-
-The loop is short on purpose. Every step exists because skipping
-it was a real friction point in early use.
+1. `mu state -w <ws>` — read the card. Check agents, IN_PROGRESS
+   tasks, ready tasks, parallel tracks.
+2. **Don't spawn more agents than independent ready tracks.**
+3. Claim before sending: `mu task claim <id> -w <ws> --for <agent>
+   --evidence "..."`.
+4. Send task-specific instructions: task ID, files/notes to read,
+   scope guards, the task note contract.
+5. Monitor via `mu state` / `mu agent show` / task notes — don't
+   walk away (see "After spawning, observe" below).
+6. On close, repeat from 1.
 
 ### Parallelisation decision table
 
@@ -150,23 +127,21 @@ it was a real friction point in early use.
 
 ### Default workspace rule
 
-**If an agent may edit files, build, run tests, or generate
-artifacts while another agent is active in the same repo, spawn
-with `--workspace`.** The main checkout should be reserved for
-orchestration or single-agent work.
+**If an agent may edit, build, test, or generate artifacts while
+another agent is active in the same repo, spawn with
+`--workspace`.** Reserve the main checkout for orchestration.
 
 ```bash
-mu agent spawn worker-1   -w infer-rs --workspace
-mu agent spawn reviewer-1 -w infer-rs --workspace --role read-only
+mu agent spawn worker-1   -w <ws> --workspace
+mu agent spawn reviewer-1 -w <ws> --workspace --role read-only
 ```
 
-Why: jj/git workspaces share the repo root, but each gets its own
-working copy. Two builds in the same checkout will corrupt each
-other's `target/` (Rust), `node_modules/.cache/` (JS), or any
-generated artifact. Read-only agents (no build, no edit) can skip
-`--workspace` if you're sure they'll stay read-only — but the
-cost of `--workspace` is small enough that "always on" is a fine
-default.
+Two builds in the same checkout corrupt each other's build
+artifacts. `--workspace` is cheap; default-on.
+
+**Prompt workspace agents with repo-relative paths only.** The
+agent's cwd is the workspace root; absolute paths bypass it and
+edit the main checkout.
 
 ### Task note contract
 
@@ -375,51 +350,42 @@ the **multi-verb composites** that no single verb's hint can show.
 
 ### Plan + spawn a crew
 
-IDs auto-derive from titles via slugify; `--blocked-by` takes a
-comma list of task IDs that block the new one.
-
 ```bash
-mu workstream init payments
-mu task add -w payments --title "Design payments" --impact 70 --effort-days 1
-mu task add -w payments --title "Build payments"  --impact 70 --effort-days 5 --blocked-by design_payments
-mu task add -w payments --title "Review payments" --impact 60 --effort-days 1 --blocked-by build_payments
-mu agent spawn worker-1   -w payments --workspace
-mu agent spawn reviewer-1 -w payments --workspace --role read-only
-mu -w payments    # mission control
+mu workstream init <ws>
+mu task add -w <ws> --title "Design X" --impact 70 --effort-days 1
+mu task add -w <ws> --title "Build X"  --impact 70 --effort-days 5 --blocked-by design_x
+mu task add -w <ws> --title "Review X" --impact 60 --effort-days 1 --blocked-by build_x
+mu agent spawn worker-1   -w <ws> --workspace
+mu agent spawn reviewer-1 -w <ws> --workspace --role read-only
+mu -w <ws>    # mission control
 ```
+
+IDs auto-derive from titles via slugify.
 
 ### Pick the highest-ROI ready task for the next agent
 
 ```bash
-NEXT=$(mu task next -w payments --json | jq -r '.[0].localId')
+NEXT=$(mu task next -w <ws> --json | jq -r '.[0].localId')
 mu task claim "$NEXT" --for worker-1 --evidence "highest ROI from ready set"
 mu agent send worker-1 "Working on $NEXT."
 ```
 
 ### Parallel heavy-task + read-only audit
 
-Maps directly to the most common parallelisation shape: one agent
-doing CPU-heavy work, a sibling doing safe read-only auditing.
+One worker does CPU-heavy work; a sibling audits read-only.
 
 ```bash
-# Heavy task: gets its own workspace because it'll build + benchmark.
-mu agent spawn worker-1 -w perf --workspace
-mu task claim profile_hotspot -w perf --for worker-1 \
-  --evidence "only ready CPU-bound task"
-mu agent send worker-1 'Run cargo bench --bench hotspot; capture flame graph.'
+mu agent spawn worker-1 -w <ws> --workspace
+mu task claim profile_hotspot -w <ws> --for worker-1 --evidence "only ready CPU-bound task"
+mu agent send worker-1 'Run the benchmark; capture results.'
 
-# Parallel read-only audit. No workspace needed (read-only role,
-# no build/edit), but explicit instruction not to mutate.
-mu agent spawn scout-1 -w perf --role read-only
-mu task claim audit_retention -w perf --for scout-1 \
-  --evidence "safe to parallelise; read-only audit task"
-mu agent send scout-1 'Read-only audit. Do NOT build, test, or benchmark; just inspect docs/src and report findings via task notes.'
+mu agent spawn scout-1 -w <ws> --role read-only
+mu task claim audit_x -w <ws> --for scout-1 --evidence "safe parallel; read-only"
+mu agent send scout-1 'Read-only audit. Do NOT build/test; report via task notes.'
 ```
 
-The role flag is the safety belt; the prompt repeats it for the
-LLM's benefit. Together they prevent the read-only agent from
-accidentally kicking off a parallel `cargo build` and trashing
-`worker-1`'s timing.
+`--role read-only` is the safety belt; the prompt reinforces it.
+Without both, a parallel build can trash the other agent's timing.
 
 ### Quote command-rich prompts (avoid `$VAR` expanding in YOUR shell)
 
@@ -445,74 +411,44 @@ When in doubt, single-quote.
 
 ### Status is approximate; scrollback + log are authoritative
 
-All status-reading verbs (`mu state`, `mu agent list`,
-`mu agent show`) reconcile fresh from scrollback. But status is
-a 4-state heuristic (`busy / needs_input / idle / done`) derived
-from prompt shape — it can't tell you WHAT the agent is doing.
-For the rich picture, combine three reads:
+The status emoji is a 4-state heuristic from prompt shape — it
+doesn't say WHAT the agent is doing. For high-stakes calls,
+combine:
 
 ```bash
-mu agent read worker-1 -n 100             # pane scrollback
-mu log -w infer-rs --kind event --tail    # state-change stream
-mu task notes <id>                        # decisions + grounding
+mu agent read worker-1 -n 100         # pane scrollback
+mu log -w <ws> --kind event --tail    # state-change stream
+mu task notes <id>                    # decisions + grounding
 ```
 
-With custom `--command` wrappers, heuristics may misclassify edge
-cases. Trust scrollback + notes + log over
-the status emoji for high-stakes calls.
+Custom `--command` wrappers can misclassify; trust the three
+above over the emoji.
 
 ### After spawning, observe — don't fire-and-forget
 
-Orchestrator loop step 6 in operational form. Three patterns,
-three distinct shapes:
-
-**Wait for tasks (the common case; one verb):**
+Three patterns, three shapes:
 
 ```bash
+# Block until N tasks reach a status (the common case)
 mu task wait worker-task-a worker-task-b --timeout 1200
-# Block until both reach CLOSED. exit 0 = done; exit 5 = timeout.
-# Use --any to exit on first one done.
-```
 
-This covers the orchestrator loop's most common shape: dispatch
-N workers, wait for all of them, review/merge. Don't reach for
-`mu log --tail | awk '...'` here; the awk pattern doesn't
-compose past one task.
+# Stream all events as a dashboard tab
+mu log -w <ws> --kind event --tail
 
-**Stream events (dashboard; never exits on its own):**
-
-```bash
-mu log -w infer-rs --kind event --tail
-```
-
-For watching state changes scroll by as they happen. Useful as a
-background tab the operator glances at; not a programmatic
-coordination primitive.
-
-**Heartbeat poll (per-agent narrative; rare):**
-
-```bash
+# Watch agent-status transitions (per-agent narrative; rare)
 last=""
 while true; do
   cur=$(mu agent show worker-1 --json | jq -r .agent.status)
-  if [[ "$cur" != "$last" ]]; then
-    echo "[$(date -Iseconds)] worker-1: $last → $cur"
-    last="$cur"
-  fi
+  [[ "$cur" != "$last" ]] && echo "[$(date -Iseconds)] worker-1: $last → $cur" && last="$cur"
   [[ "$cur" == "needs_input" || "$cur" == "done" ]] && break
   sleep 5
 done
 ```
 
-For watching agent-status transitions specifically (which `mu task
-wait` doesn't cover — status is per-agent, not per-task). 5–10s
-intervals are fine; faster adds tmux capture-pane load with no
-real-time benefit.
-
-Anti-pattern: bare `mu agent send` with no follow-up. The worker
-stalls in `needs_input` for hours; the operator finds out later.
-The activity log + `mu task wait` are why mu doesn't need a
-daemon — the DB IS the coordination channel; use it.
+Don't pipe `mu log --tail | awk '...'` for waits — the awk
+pattern doesn't compose past one task; use `mu task wait`. Don't
+fire-and-forget; the worker stalls in `needs_input` and you
+find out hours later.
 
 ### Tear down a workstream (no undo)
 
@@ -543,140 +479,82 @@ There are two patterns:
 Working loop (worker path):
 
 ```bash
-# 1. Orient yourself
-mu whoami                              # who am I, what workstream, what do I own?
-mu state                               # what's the canonical picture right now?
-
-# 2. Find work
-mu my-next                             # top ready task by ROI in my workstream
-mu task show <id>                      # row + edges + existing notes
-mu task notes <id>                     # what previous agents recorded
-
-# 3. Claim with grounding
-mu task claim <id> --evidence "reviewed task + notes; have implementation plan"
-
-# 4. Work; drop durable context as you go
-mu task note <id> "FILES: src/auth.rs:45-120"
-mu task note <id> "DECISION: chose JWT, 24h expiry, refresh via cookie"
-
-# 5. Close with grounding
-mu task close <id> --evidence "tests pass: npm test exit 0; diff posted as D12345"
-
-# 6. Repeat from step 2
+mu whoami                                              # orient
+mu my-next                                             # find work
+mu task show <id>; mu task notes <id>                  # read context
+mu task claim <id> --evidence "..."                    # claim
+mu task note <id> "FILES: ...\nDECISION: ..."          # work; drop notes
+mu task close <id> --evidence "tests pass: ..."        # close
+# repeat
 ```
 
 ### When you need to do something irreversible
 
-Gate it on a human approval. Don't `mu workstream destroy` or
+Gate on a human approval. Don't `mu workstream destroy` or
 `mu task delete` autonomously.
 
 ```bash
-slug=$(mu approve add --reason "delete the abandoned 'design_v1' task" --json | jq -r .slug)
-if mu approve wait "$slug" --timeout 600; then
-  mu task delete design_v1
-else
-  echo "denied or timed out"; exit 1
-fi
+slug=$(mu approve add --reason "..." --json | jq -r .slug)
+if mu approve wait "$slug" --timeout 600; then mu task delete X; else exit 1; fi
 ```
 
-The `wait` exits 0 (granted) / 4 (denied) / 5 (timeout) for clean
-shell control flow.
+`mu approve wait` exits 0/4/5 for granted/denied/timeout.
 
 ### When you need to wait for another agent to finish
-
-Use `mu task wait`. One verb for every wait-for-tasks shape:
 
 ```bash
 # Wait until 'design' closes, then start the next thing
 mu task wait design && mu task claim build_auth --self --evidence 'design closed'
 
-# Dispatch 3 workers, wait for ALL of them, then review
-for t in design build_a build_b; do mu task claim $t --for worker-${t} --evidence ...; done
+# Dispatch N workers, wait for ALL
 mu task wait design build_a build_b --timeout 1200
-# exit 0 = all closed; exit 5 = timeout (per-task investigate hint shown).
 
-# Race: act on the FIRST worker to close (--any)
-mu task wait probe_a probe_b probe_c --any --timeout 600 --json | jq .tasks
-
-# Other terminal states (rare)
-mu task wait foo --status IN_PROGRESS --timeout 30
+# Race: act on the FIRST done (--any)
+mu task wait probe_a probe_b probe_c --any --json | jq .tasks
 ```
 
-Semantics: block until all listed tasks reach `--status CLOSED`
-(default), or until `--timeout SECONDS` (default 600). Pass `--any`
-to exit on the first one. Exit 0 = condition met; exit 5 = timeout.
-Missing task ids fail-loud (exit 3) before any waiting begins.
-
-`mu log --tail` still exists for streaming dashboards ("show me
-every state change as it happens") — different shape, different
-job. Don't reach for `mu log --tail | awk '...'` for wait-style
-coordination; `mu task wait` is the right tool.
+Default target status is CLOSED. Exit 0 = met; 5 = timeout; 3 =
+missing task id. See `mu task wait --help`.
 
 ## DOs
 
-- **Run `mu state -w <ws>` before every action** (claim, send,
-  spawn). The state card is the single source of truth.
+- **`mu state -w <ws>` before every action.** State card is the
+  source of truth.
 - **Add a task before assigning work.** "What is worker-1 doing?"
-  is a graph query if there's a task, "I forget" otherwise.
-- **Claim BEFORE sending.** Audit trail attributes the work
-  cleanly; ownership is murky if you `send` first and the agent
-  later closes a task it never claimed.
-- **Read existing notes before claiming.** Previous agents may
-  have left context that changes your approach.
-- **Always pass `--evidence` on claim AND close.** "Tests pass:
-  npm test exit 0" beats silence. Even on claim: "selected from
-  ready set; reviewed task + notes."
+  is a graph query, not a memory test.
+- **Claim BEFORE sending.** Otherwise ownership is murky.
+- **Read existing notes before claiming.**
+- **Pass `--evidence` on claim AND close.** Audit trail is only
+  as useful as what's recorded.
 - **Drop notes per the task note contract** (FILES / COMMANDS /
-  FINDINGS / DECISION / NEXT / VERIFIED / ODDITIES). The DAG is
-  only as useful as the notes attached to it.
-- **Set `impact` and `effort_days` honestly.** They drive ROI
-  ordering in the `ready` view.
-- **Check parallel tracks before spawning.** Don't spawn more
-  agents than independent ready tracks.
-- **Use `--workspace` whenever the agent might edit, build, test,
-  or generate artifacts** while another agent is active in the
-  same repo. Default-on, not exception.
-- **Single-quote prompts containing `$VAR`, `$(...)`, backticks.**
-  Otherwise your shell expands them before mu sees them.
-- **Use `mu task wait` to block until task(s) reach a status**
-  (the orchestrator's most common wait pattern). For a streaming
-  view of all events, `mu log --tail`; don't pipe `--tail | awk` for
-  multi-task waits.
-- **Use `--json` for scripting; `mu sql` for what the typed verbs
-  don't cover.**
-- **Prefer narrow, correct changes over broad rewrites.**
-- **Run `mu doctor` if anything looks off.**
+  FINDINGS / DECISION / NEXT / VERIFIED / ODDITIES).
+- **Set `impact` and `effort_days` honestly.** They drive ROI.
+- **Don't spawn more agents than independent ready tracks.**
+- **`--workspace` whenever the agent might edit/build/test.**
+  Default-on.
+- **Single-quote prompts with `$VAR`, `$(...)`, backticks.**
+- **`mu task wait` for waits; `mu log --tail` for streaming.**
+- **`--json` for scripting; `mu sql` for what's not yet typed.**
+- **`mu doctor` if anything looks off.**
 
 ## DON'Ts
 
-- **Don't fire-and-forget** after `mu agent send`. Use `mu log
-  --tail` (subscribe) or poll `mu agent show` (heartbeat).
-  Walking away is how workers stall in `needs_input` for hours
-  unnoticed.
+- **Don't fire-and-forget** after `mu agent send`. See "After
+  spawning, observe".
 - **Don't trust the status emoji alone for high-stakes calls.**
-  Especially with custom `--command` wrappers, heuristics can
-  misclassify. Cross-check
-  scrollback + task notes + event log.
-- **Don't double-quote a `$VAR`-laden prompt.** Your shell expands
-  it; the agent receives the empty string. Single-quote or use a
-  quoted heredoc.
-- **Don't bypass mu and edit the DB with `sqlite3` directly.**
-  Use `mu sql` so the invocation goes through the same code path.
-- **Don't spawn an agent without a workstream.** Pass `-w` or run
-  inside the workstream's tmux session.
+  Cross-check scrollback + notes + event log.
+- **Don't double-quote a `$VAR`-laden prompt** — your shell
+  expands it. Single-quote or quoted-heredoc.
+- **Don't bypass mu with `sqlite3`.** Use `mu sql`.
+- **Don't spawn an agent without a workstream.**
 - **Don't anthropomorphize agent names.** `worker-1`, not `alice`.
-- **Don't poll `mu agent read` in tight loops.** Each call is a
-  tmux capture-pane; for state changes use `mu log --tail`
-  instead.
-- **Don't add tasks across workstreams.** Cross-workstream edges
-  are rejected (`CrossWorkstreamEdgeError`). If B depends on A,
-  model them as one workstream.
-- **Don't `mu workstream destroy --yes` without the dry-run
-  first.** No `mu undo`.
-- **Don't name tasks with the `mu_` prefix.** Reserved for
-  system-generated IDs.
-- **Don't try to message agents directly.** Coordinate via task
-  notes and the activity log; agents are peers, not chat partners.
+- **Don't poll `mu agent read` in tight loops.** Use
+  `mu log --tail` instead.
+- **Don't add cross-workstream edges.** Model as one workstream.
+- **Don't `mu workstream destroy --yes` without the dry-run.**
+- **Don't use the `mu_` task-id prefix.** Reserved.
+- **Don't message agents directly.** Coordinate via task notes
+  and the activity log.
 
 ## What mu is NOT
 

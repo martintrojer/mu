@@ -50,6 +50,46 @@ called out under "Breaking" in each entry.
 
 ### Added
 
+- **`skills/mu/SKILL.md` second terseness pass: 701 -> 574 LOC**
+  (−18% on top of the earlier 771 -> 701 trim, −26% total since
+  the last trim). User feedback: "keep it terse and to the point.
+  Just the point."
+
+  Cuts:
+  - Orchestrator loop reduced from prose-heavy 7-step + sub-bullets
+    to 6 numbered lines.
+  - Default workspace rule + workspaces-stop-trampling: dropped
+    `~/hacking/repo/...` and `target/` / `node_modules/.cache/`
+    examples; the why is generic, the example is project-specific.
+  - Plan + spawn a crew: project-name examples (`payments`,
+    `infer-rs`) replaced with `<ws>`.
+  - Parallel heavy-task + read-only audit: dropped storytelling
+    ("Maps directly to the most common parallelisation shape");
+    kept the actual safety-belt point.
+  - Status section: cut the "reconcile fresh from scrollback"
+    explanation; the four-line code block carries the point.
+  - After spawning, observe: collapsed three-section three-pattern
+    explanation into one block of three commented examples.
+  - When you need to wait: dropped duplicate semantics paragraph
+    (now lives in `mu task wait --help`).
+  - Working loop: 25-line annotated script -> 8-line minimal
+    script; comments only mark phase boundaries.
+  - DOs / DON'Ts: removed the explanation paragraphs after each
+    bullet (the bullet is the point).
+
+  Kept: the multi-verb composites, the actually-load-bearing
+  vocabulary, the irreducible-discipline orchestrator loop, the
+  approval-pattern code, the `mu task wait` quick examples.
+
+  No project-specific names in examples (`<ws>` placeholder used
+  consistently). Only exception: the rename-recovery `mu sql`
+  example uses `auth-refator` deliberately because the typo IS
+  the point.
+
+  Closes `skill_nudge_prompt_agents_with_relative` in the
+  `mufeedback` workstream (added the relative-paths nudge as part
+  of this trim).
+
 - **Agent identity propagates to task notes; spawn output surfaces
   `--command` overrides.** Two related UX nits from the
   `mufeedback` workstream addressed in one pass.
