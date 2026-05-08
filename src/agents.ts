@@ -283,13 +283,15 @@ export interface SpawnAgentOptions {
 export class AgentExistsError extends Error implements HasNextSteps {
   override readonly name = "AgentExistsError";
   constructor(public readonly agentName: string) {
-    super(`agent already exists: ${agentName}`);
+    super(
+      `agent already exists: ${agentName} (agent names are globally unique across workstreams)`,
+    );
   }
   errorNextSteps(): NextStep[] {
     return [
       {
         intent: "Find which workstream the existing agent is in",
-        command: `mu agent list -w * --json | jq '.[] | select(.agents[].name == "${this.agentName}")'`,
+        command: `mu sql "SELECT name, workstream FROM agents WHERE name='${this.agentName}'"`,
       },
       {
         intent: "Close the existing agent and re-spawn",
