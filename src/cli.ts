@@ -58,6 +58,13 @@ import {
   cmdApprovalWait,
 } from "./cli/approve.js";
 import { type LogReadOpts, type LogWriteOpts, cmdLog } from "./cli/log.js";
+import {
+  cmdWorkspaceCreate,
+  cmdWorkspaceFree,
+  cmdWorkspaceList,
+  cmdWorkspaceOrphans,
+  cmdWorkspacePath,
+} from "./cli/workspace.js";
 import { CURRENT_SCHEMA_VERSION, type Db, EXPECTED_TABLES, defaultDbPath, openDb } from "./db.js";
 import { detectPiStatus } from "./detect.js";
 import { type LogRow, listLogs } from "./logs.js";
@@ -143,8 +150,6 @@ import {
   WorkspaceNotFoundError,
   WorkspacePathNotEmptyError,
   type WorkspaceRow,
-  createWorkspace,
-  freeWorkspace,
   getWorkspaceForAgent,
   listWorkspaceOrphans,
   listWorkspaces,
@@ -436,6 +441,29 @@ function formatTracks(tracks: readonly Track[]): string {
     );
   });
   return lines.join("\n");
+}
+
+/** Workspaces table renderer. Used by `mu workspace list` and by
+ *  `mu state`'s Workspaces section — exported so cli/workspace.ts
+ *  can reuse it. */
+export function formatWorkspacesTable(rows: readonly WorkspaceRow[]): string {
+  const table = new Table({
+    head: ["agent", "workstream", "backend", "path", "parent_ref", "created"].map((h) =>
+      pc.bold(h),
+    ),
+    style: { head: [], border: [] },
+  });
+  for (const r of rows) {
+    table.push([
+      r.agent,
+      r.workstream,
+      r.backend,
+      r.path,
+      r.parentRef ? pc.dim(r.parentRef.slice(0, 12)) : pc.dim("—"),
+      pc.dim(r.createdAt),
+    ]);
+  }
+  return table.toString();
 }
 
 /** One agent_logs row, human-formatted. Used by `mu log` (read + tail)
@@ -1032,154 +1060,6 @@ async function cmdMyNext(db: Db, opts: { lines?: number; json?: boolean }): Prom
   console.log(formatTaskListTable(tasks));
 }
 
-// ─── mu workspace (create/list/free/path) ────────────────────────
-
-async function cmdWorkspaceCreate(
-  db: Db,
-  agent: string,
-  opts: {
-    workstream?: string;
-    backend?: VcsBackendName;
-    from?: string;
-    projectRoot?: string;
-    json?: boolean;
-  },
-): Promise<void> {
-  const workstream = await resolveWorkstream(opts.workstream);
-  const createOpts: Parameters<typeof createWorkspace>[1] = { agent, workstream };
-  if (opts.backend !== undefined) createOpts.backend = opts.backend;
-  if (opts.from !== undefined) createOpts.parentRef = opts.from;
-  if (opts.projectRoot !== undefined) createOpts.projectRoot = opts.projectRoot;
-  const ws = await createWorkspace(db, createOpts);
-  const nextSteps: NextStep[] = [
-    { intent: "cd into the workspace", command: `cd $(mu workspace path ${agent})` },
-    {
-      intent: "Free it later (with optional --commit)",
-      command: `mu workspace free ${agent}  (--commit to commit pending changes first)`,
-    },
-    {
-      intent: "Spawn an agent that uses this workspace as cwd",
-      command: `mu agent spawn <name> -w ${workstream} --workspace`,
-    },
-  ];
-  if (opts.json) {
-    emitJson({ workspace: ws, nextSteps });
-    return;
-  }
-  console.log(
-    `Created workspace ${pc.bold(ws.path)} ${pc.dim(`(backend=${ws.backend}, agent=${ws.agent}, parent=${ws.parentRef ?? "—"})`)}`,
-  );
-  printNextSteps(nextSteps);
-}
-
-async function cmdWorkspaceList(
-  db: Db,
-  opts: { workstream?: string; all?: boolean; json?: boolean },
-): Promise<void> {
-  const workstream = opts.all ? undefined : await resolveWorkstream(opts.workstream);
-  const rows = listWorkspaces(db, workstream);
-  if (opts.json) {
-    emitJson(rows);
-    return;
-  }
-  if (rows.length === 0) {
-    console.log(pc.dim(workstream ? `(no workspaces in ${workstream})` : "(no workspaces)"));
-    return;
-  }
-  console.log(formatWorkspacesTable(rows));
-}
-
-async function cmdWorkspaceFree(
-  db: Db,
-  agent: string,
-  opts: { commit?: boolean; workstream?: string; json?: boolean },
-): Promise<void> {
-  assertAgentInWorkstream(db, agent, opts.workstream);
-  const r = await freeWorkspace(db, agent, { commit: opts.commit ?? false });
-  if (opts.json) {
-    emitJson({ agent, ...r });
-    return;
-  }
-  if (!r.removed && !r.rowDeleted) {
-    console.log(pc.dim(`no workspace for ${agent} (already gone?)`));
-    return;
-  }
-  const committed = r.committedRef
-    ? pc.dim(` (auto-committed: ${r.committedRef.slice(0, 12)})`)
-    : "";
-  console.log(`Freed workspace for ${pc.bold(agent)}${committed}`);
-}
-
-async function cmdWorkspacePath(
-  db: Db,
-  agent: string,
-  opts: { workstream?: string; json?: boolean } = {},
-): Promise<void> {
-  assertAgentInWorkstream(db, agent, opts.workstream);
-  const ws = getWorkspaceForAgent(db, agent);
-  if (!ws) throw new WorkspaceNotFoundError(agent);
-  if (opts.json) {
-    emitJson({ agent, path: ws.path, backend: ws.backend });
-    return;
-  }
-  // Print just the path, no decoration: usable for `cd $(mu workspace path X)`.
-  console.log(ws.path);
-}
-
-async function cmdWorkspaceOrphans(
-  db: Db,
-  opts: { workstream?: string; json?: boolean } = {},
-): Promise<void> {
-  const workstream = await resolveWorkstream(opts.workstream);
-  const orphans = listWorkspaceOrphans(db, workstream);
-  const nextSteps: NextStep[] =
-    orphans.length === 0
-      ? []
-      : [
-          {
-            intent: "Remove a specific orphan dir (git: also prunes worktree registry)",
-            command: `(cd <project-root> && git worktree remove --force ${orphans[0]?.path}) || rm -rf ${orphans[0]?.path}`,
-          },
-          {
-            intent: "Adopt the dir as a managed workspace",
-            command: "mu workspace adopt  (deferred; see roadmap)",
-          },
-        ];
-  if (opts.json) {
-    emitJson({ workstream, orphans, nextSteps });
-    return;
-  }
-  if (orphans.length === 0) {
-    console.log(pc.dim(`(no orphan workspace dirs in ${workstream})`));
-    return;
-  }
-  console.log(pc.yellow(`${orphans.length} orphan workspace dir(s) in ${pc.bold(workstream)}:`));
-  for (const o of orphans) {
-    console.log(`  ${pc.bold(o.agent)}  ${pc.dim(o.path)}`);
-  }
-  printNextSteps(nextSteps);
-}
-
-function formatWorkspacesTable(rows: readonly WorkspaceRow[]): string {
-  const table = new Table({
-    head: ["agent", "workstream", "backend", "path", "parent_ref", "created"].map((h) =>
-      pc.bold(h),
-    ),
-    style: { head: [], border: [] },
-  });
-  for (const r of rows) {
-    table.push([
-      r.agent,
-      r.workstream,
-      r.backend,
-      r.path,
-      r.parentRef ? pc.dim(r.parentRef.slice(0, 12)) : pc.dim("—"),
-      pc.dim(r.createdAt),
-    ]);
-  }
-  return table.toString();
-}
-
 async function cmdClose(
   db: Db,
   name: string,
@@ -1704,7 +1584,11 @@ function assertTaskInWorkstream(db: Db, taskId: string, workstream: string | und
  * undefined or the agent doesn't exist (downstream handler raises
  * `AgentNotFoundError`).
  */
-function assertAgentInWorkstream(db: Db, agentName: string, workstream: string | undefined): void {
+export function assertAgentInWorkstream(
+  db: Db,
+  agentName: string,
+  workstream: string | undefined,
+): void {
   if (!workstream) return;
   const agent = getAgent(db, agentName);
   if (agent && agent.workstream !== workstream) {
