@@ -50,6 +50,58 @@ called out under "Breaking" in each entry.
 
 ### Added
 
+- **`mu task reject --cascade` / `mu task defer --cascade` are now
+  dry-run by default; require `--yes` to commit.** Surfaced live
+  during roadmap-v0-2 hud cleanup: an accidental cascade reject
+  swept `hud_dogfood` (which had independent merit and needed
+  reopening). The DB rebuild was recoverable via `mu task open`,
+  but the lossy step — silently sweeping the dependents — is
+  exactly the class of footgun ROADMAP's 'data-loss footguns ship
+  on first occurrence' rule promotes.
+
+  Now mirrors `mu workstream destroy --yes`: cascade alone shows
+  the affected list as a preview, `--yes` commits.
+
+  ```
+  $ mu task reject design --cascade
+  Reject design would sweep 3 task(s) (root + 2 dependent(s)):
+    * design  Design X
+      build   Build X
+      review  Review X
+  (dry-run; rerun with --yes to actually sweep)
+  Next:
+    Commit the cascade after reviewing the list  : mu task reject design --cascade --yes
+    Address one dependent first, then re-preview : mu task reject <dep>
+  ```
+
+  - SDK: `RejectDeferOptions` gains `yes?: boolean`.
+  - SDK: `RejectDeferResult` gains `dryRun: boolean` and
+    `affectedIds: string[]`. `affectedIds` is the would-touch
+    list on dry-run AND the did-touch list on commit — callers
+    always know what was/will-be swept.
+  - CLI: `--yes` flag added to both `mu task reject` and
+    `mu task defer`. `--yes` without `--cascade` errors with
+    `UsageError` (single-task case is unconditional commit; the
+    flag is meaningless there).
+  - CLI: dry-run human output renders one line per affected task
+    (`* root` / `  dep`) with truncated titles, then the next
+    steps. JSON dry-run carries `dryRun: true` + the
+    `affectedIds` array.
+  - Single-task case (no open dependents, cascade flag passed
+    anyway) skips the dry-run since there's nothing to preview.
+  - errorNextSteps for `TaskHasOpenDependentsError` now lists
+    both the `--cascade` preview AND `--cascade --yes` commit
+    recipes (4 hints total: preview, commit, drop edge, address
+    dependents one at a time).
+
+  Tests: 4 new cases (dryRun shape; commit shape; single-task
+  bypass; affectedIds populated on commit). 2 existing tests
+  updated (`cascade: true` -> `cascade: true, yes: true`). 647
+  tests total.
+
+  Closes `bug_cascade_reject_too_aggressive` in the `mufeedback`
+  workstream.
+
 - **`mu hud` verb: print-once HUD card with five mode flags.**
   Operator-side complement to the agent-side pane border. Exits
   after one render — mu owns the data, the user owns the redraw.

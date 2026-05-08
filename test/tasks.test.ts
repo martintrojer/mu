@@ -1866,7 +1866,7 @@ describe("rejectTask / deferTask", () => {
       effortDays: 1,
       blockedBy: ["build"],
     });
-    const r = rejectTask(db, "design", { cascade: true, evidence: "feature dropped" });
+    const r = rejectTask(db, "design", { cascade: true, yes: true, evidence: "feature dropped" });
     expect(r.changed).toBe(true);
     expect(new Set(r.changedIds)).toEqual(new Set(["design", "build", "review"]));
     expect(getTask(db, "design")?.status).toBe("REJECTED");
@@ -1897,7 +1897,7 @@ describe("rejectTask / deferTask", () => {
     // open dependents but is open itself and depends transitively on design
     // through CLOSED build — and CLOSED satisfies the edge → ship is NOT
     // an open dependent of design via the open-dependents query.
-    const r = deferTask(db, "design", { cascade: true });
+    const r = deferTask(db, "design", { cascade: true, yes: true });
     expect(r.changed).toBe(true);
     expect(getTask(db, "design")?.status).toBe("DEFERRED");
     expect(getTask(db, "build")?.status).toBe("CLOSED");
@@ -1978,5 +1978,73 @@ describe("TASK_STATUS_LIST mirrors every TaskStatus", () => {
     // names statuses (--help, error messages, --status validators)
     // will silently lie. Guard rail against that.
     expect(TASK_STATUS_LIST).toBe("OPEN | IN_PROGRESS | CLOSED | REJECTED | DEFERRED");
+  });
+});
+
+// ─── --cascade dry-run by default; --yes commits ─────────────────────
+
+describe("rejectTask / deferTask --cascade dry-run", () => {
+  it("--cascade WITHOUT --yes returns dryRun:true and does NOT touch the DB", () => {
+    addTask(db, { localId: "design", workstream: "ws", title: "D", impact: 50, effortDays: 1 });
+    addTask(db, {
+      localId: "build",
+      workstream: "ws",
+      title: "B",
+      impact: 50,
+      effortDays: 1,
+      blockedBy: ["design"],
+    });
+    const r = rejectTask(db, "design", { cascade: true });
+    // dryRun shape
+    expect(r.dryRun).toBe(true);
+    expect(r.changed).toBe(false);
+    expect(r.changedIds).toEqual(["design", "build"]); // would-affect list
+    expect(r.affectedIds).toEqual(["design", "build"]);
+    // DB unchanged
+    expect(getTask(db, "design")?.status).toBe("OPEN");
+    expect(getTask(db, "build")?.status).toBe("OPEN");
+  });
+
+  it("--cascade --yes commits the sweep (matches the old default behaviour)", () => {
+    addTask(db, { localId: "design", workstream: "ws", title: "D", impact: 50, effortDays: 1 });
+    addTask(db, {
+      localId: "build",
+      workstream: "ws",
+      title: "B",
+      impact: 50,
+      effortDays: 1,
+      blockedBy: ["design"],
+    });
+    const r = rejectTask(db, "design", { cascade: true, yes: true });
+    expect(r.dryRun).toBe(false);
+    expect(r.changed).toBe(true);
+    expect(new Set(r.changedIds)).toEqual(new Set(["design", "build"]));
+    expect(getTask(db, "design")?.status).toBe("REJECTED");
+    expect(getTask(db, "build")?.status).toBe("REJECTED");
+  });
+
+  it("single-task case (no dependents) skips the dry-run and commits immediately", () => {
+    // No --yes needed when there's nothing to preview.
+    addTask(db, { localId: "alone", workstream: "ws", title: "A", impact: 50, effortDays: 1 });
+    const r = rejectTask(db, "alone", { cascade: true });
+    expect(r.dryRun).toBe(false);
+    expect(r.changed).toBe(true);
+    expect(r.changedIds).toEqual(["alone"]);
+    expect(r.affectedIds).toEqual(["alone"]);
+    expect(getTask(db, "alone")?.status).toBe("REJECTED");
+  });
+
+  it("affectedIds is populated even on commit (so callers can report what was swept)", () => {
+    addTask(db, { localId: "design", workstream: "ws", title: "D", impact: 50, effortDays: 1 });
+    addTask(db, {
+      localId: "build",
+      workstream: "ws",
+      title: "B",
+      impact: 50,
+      effortDays: 1,
+      blockedBy: ["design"],
+    });
+    const r = rejectTask(db, "design", { cascade: true, yes: true });
+    expect(r.affectedIds).toEqual(["design", "build"]);
   });
 });

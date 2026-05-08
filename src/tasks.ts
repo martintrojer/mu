@@ -327,8 +327,12 @@ export class TaskHasOpenDependentsError extends Error implements HasNextSteps {
   errorNextSteps(): NextStep[] {
     return [
       {
-        intent: `${this.verb.charAt(0).toUpperCase() + this.verb.slice(1)} the whole sub-tree (recommended when the parent decision applies)`,
+        intent: `Preview the cascade (lists dependents that would be ${this.verb}ed; --cascade alone is dry-run)`,
         command: `mu task ${this.verb} ${this.taskId} --cascade`,
+      },
+      {
+        intent: `${this.verb.charAt(0).toUpperCase() + this.verb.slice(1)} the whole sub-tree (commit; rerun with --yes after previewing)`,
+        command: `mu task ${this.verb} ${this.taskId} --cascade --yes`,
       },
       {
         intent: "Drop the blocking edge from a dependent first",
@@ -865,10 +869,19 @@ export function openTask(db: Db, localId: string, opts: EvidenceOption = {}): Se
 // dependent.
 
 export interface RejectDeferOptions extends EvidenceOption {
-  /** If true, walk the transitive dependent closure and apply the same
-   *  status to every dependent, atomically. Logs one event per task
-   *  (via setTaskStatus). */
+  /** If true, walk the transitive dependent closure and (with `yes`)
+   *  apply the same status to every dependent, atomically. Without
+   *  `yes`, runs as a dry-run: returns the list of tasks that WOULD
+   *  be swept (changedIds) with `dryRun: true` and changes nothing.
+   *  Logs one event per task (via setTaskStatus) on commit. */
   cascade?: boolean;
+  /** Required to actually commit a `cascade` operation. Without it,
+   *  cascade is dry-run only — prints the affected dependents so the
+   *  caller can verify before sweeping. Mirrors `mu workstream destroy
+   *  --yes`. Surfaced in mufeedback bug_cascade_reject_too_aggressive
+   *  when an accidentally-cascaded reject swept hud_dogfood (which had
+   *  independent merit and needed reopening). */
+  yes?: boolean;
 }
 
 export interface RejectDeferResult {
@@ -879,6 +892,14 @@ export interface RejectDeferResult {
   /** True iff anything changed. False on a clean idempotent no-op
    *  (root task already in target status, no dependents). */
   changed: boolean;
+  /** True iff this was a `cascade` dry-run (cascade requested without
+   *  `yes`). In that case `changedIds` lists tasks that WOULD be
+   *  swept; the DB is unchanged. */
+  dryRun: boolean;
+  /** Tasks that would be touched by a cascade. Same as `changedIds`
+   *  on a dry-run; populated even on a commit so the caller can
+   *  report what was swept. */
+  affectedIds: string[];
 }
 
 /** Reject a task: terminal 'won't do' (out of scope, duplicate, wontfix).
@@ -919,13 +940,30 @@ function setTerminalOrParked(
     throw new TaskHasOpenDependentsError(localId, verb, openDependents);
   }
 
+  const affectedIds =
+    openDependents.length > 0 && opts.cascade ? [localId, ...openDependents] : [localId];
+
+  // Cascade dry-run: cascade requested but --yes missing. Don't touch
+  // the DB; return the would-be-affected list so the CLI can render
+  // a 'about to sweep these N tasks; rerun with --yes' preview.
+  // Mirrors `mu workstream destroy` semantics. Single-task case
+  // (openDependents == 0, cascade flag irrelevant) skips the dry-run
+  // since there's nothing to preview.
+  if (opts.cascade && !opts.yes && openDependents.length > 0) {
+    return {
+      changedIds: affectedIds,
+      status,
+      changed: false,
+      dryRun: true,
+      affectedIds,
+    };
+  }
+
   // Apply to root first, then dependents in BFS order. setTaskStatus
   // emits one event per task and is idempotent (no-op if already in
   // target status).
   const changedIds: string[] = [];
-  const targets =
-    openDependents.length > 0 && opts.cascade ? [localId, ...openDependents] : [localId];
-  for (const id of targets) {
+  for (const id of affectedIds) {
     const r = setTaskStatus(db, id, status, opts);
     if (r.changed) changedIds.push(id);
   }
@@ -934,6 +972,8 @@ function setTerminalOrParked(
     changedIds,
     status,
     changed: changedIds.length > 0,
+    dryRun: false,
+    affectedIds,
   };
 }
 
