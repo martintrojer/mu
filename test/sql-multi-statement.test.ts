@@ -10,7 +10,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { countTopLevelStatements } from "../src/cli.js";
+import { countTopLevelStatements } from "../src/cli/sql.js";
 import { type Db, openDb } from "../src/db.js";
 import { runCli } from "./_runCli.js";
 
