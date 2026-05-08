@@ -2963,10 +2963,12 @@ async function cmdSql(
   const trimmed = query.trim();
   // Probe whether this is a single statement by trying prepare(); if
   // better-sqlite3 throws 'more than one statement', use exec() instead.
-  // Otherwise re-prepare in-line below so TS keeps type inference.
+  // Capture the prepared statement so the single-statement path below
+  // doesn't re-prepare (review_code_sql_double_prepare).
+  let stmt: ReturnType<typeof db.prepare> | undefined;
   let isMulti = false;
   try {
-    db.prepare(trimmed);
+    stmt = db.prepare(trimmed);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (/more than one statement/i.test(msg)) {
@@ -3041,7 +3043,8 @@ async function cmdSql(
     );
   }
   if (isRead) {
-    const rows = db.prepare(trimmed).all();
+    if (!stmt) throw new Error("unreachable: stmt should be set on the single-statement path");
+    const rows = stmt.all([]);
     if (opts.json) {
       emitJson(rows);
       return;
@@ -3063,9 +3066,10 @@ async function cmdSql(
     if (opts.confirmRows !== undefined) {
       const expected = opts.confirmRows;
       db.exec("BEGIN");
+      if (!stmt) throw new Error("unreachable: stmt should be set on the single-statement path");
       let result: { changes: number; lastInsertRowid: number | bigint };
       try {
-        result = db.prepare(trimmed).run();
+        result = stmt.run([]);
       } catch (e) {
         try {
           db.exec("ROLLBACK");
@@ -3091,7 +3095,8 @@ async function cmdSql(
       console.log(pc.dim(`${result.changes} row${result.changes === 1 ? "" : "s"} affected`));
       return;
     }
-    const result = db.prepare(trimmed).run();
+    if (!stmt) throw new Error("unreachable: stmt should be set on the single-statement path");
+    const result = stmt.run([]);
     if (opts.json) {
       emitJson({
         changes: result.changes,
