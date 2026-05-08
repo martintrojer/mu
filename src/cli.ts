@@ -120,7 +120,9 @@ import {
   enableMuPaneBordersForSession,
   getWindowIdForPane,
   listPanesInSession,
+  listWindows,
   newSession,
+  newWindow,
   sessionExists,
   tmux,
 } from "./tmux.js";
@@ -413,8 +415,28 @@ async function cmdInit(db: Db, name: string, opts: { json?: boolean } = {}): Pro
   const sessionName = `mu-${name}`;
   const dbCreated = ensureWorkstream(db, name);
   const tmuxAlready = await sessionExists(sessionName);
+  let muWindowRepaired = false;
   if (!tmuxAlready) {
     await newSession(sessionName, { detached: true, windowName: "_mu" });
+  } else {
+    // Session already exists — check whether the placeholder `_mu`
+    // window is still there. Common reason for it being missing:
+    // operator killed it manually after spawning the first agent.
+    // Without it, tmux a -t mu-<ws> lands on the most recent agent's
+    // pane, which surprises the operator who expects an empty
+    // orchestration shell. Recreate idempotently.
+    // (review_bug_workstream_init_does_not_repair_missing_mu_window)
+    const windows = await listWindows(sessionName).catch(() => []);
+    const hasMuWindow = windows.some((w) => w.name === "_mu");
+    if (!hasMuWindow) {
+      await newWindow({
+        session: sessionName,
+        name: "_mu",
+        command: process.env.SHELL ?? "/bin/sh",
+        detached: true,
+      });
+      muWindowRepaired = true;
+    }
   }
   // Always (re)apply the pane-border-status options so re-init or
   // upgrade-from-pre-banner-mu sessions both pick up the cue. tmux
@@ -443,14 +465,16 @@ async function cmdInit(db: Db, name: string, opts: { json?: boolean } = {}): Pro
       created,
       tmuxSessionAlreadyExisted: tmuxAlready,
       dbRowAlreadyExisted: !dbCreated,
+      muWindowRepaired,
       nextSteps,
     });
     return;
   }
   if (tmuxAlready && !dbCreated) {
+    const repaired = muWindowRepaired ? " — " + pc.yellow("repaired missing _mu window") : "";
     console.log(
       pc.dim(
-        `workstream "${name}" already exists (tmux session ${sessionName}, DB row registered)`,
+        `workstream "${name}" already exists (tmux session ${sessionName}, DB row registered)${repaired}`,
       ),
     );
     printNextSteps(nextSteps);
