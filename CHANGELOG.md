@@ -50,6 +50,46 @@ called out under "Breaking" in each entry.
 
 ### Added
 
+- **`mu hud` verb: print-once HUD card with five mode flags.**
+  Operator-side complement to the agent-side pane border. Exits
+  after one render — mu owns the data, the user owns the redraw.
+
+  Modes (mutually exclusive; default `--mid`):
+
+  | flag | shape |
+  |---|---|
+  | `--line` | one-liner: `<ws> · Nr · Np · Ntrk · last: <event> +T` |
+  | `--small` | counts header + agent-status histogram |
+  | `--mid` | counts + agent table (default) |
+  | `--full` | + tracks list + recent-events tail |
+  | `--json` | structured: workstream / summary / agents / orphans / tracks / ready / inProgress / recent |
+
+  `-n N` overrides recent-events tail length (only meaningful for
+  `--full` / `--json`; default 5).
+
+  Composition recipes:
+
+  ```bash
+  watch -n 5 mu hud -w X                       # live pane
+  tmux display-popup -E 'mu hud -w X'          # peek overlay
+  tmux set-option -wg @mu_summary '#(mu hud -w X --line)'
+                                               # dotfile injection
+  mu hud -w X --json | jq .summary             # script
+  ```
+
+  No `--watch`, no auto-spawn, no tmux side effects — mu prints,
+  the user composes. Substrate-aligned with every other typed
+  verb (print, exit, compose).
+
+  Tests: 8 cases covering each mode + the mutual-exclusion check.
+  641 tests total.
+
+  Closes part of `hud_design` in roadmap-v0-2; the remaining
+  pi-extension framing is rejected as out-of-scope (would violate
+  'don't bundle pi'). The verb-in-a-pane shape obviates the
+  pi-extension HUD widget tasks (`hud_extension_skeleton`,
+  `hud_widget_impl`) — they should be repurposed or rejected next.
+
 - **Pane border + composed pane title carry mu's interpreted state.**
   Closes `hud_visual_cue_design` + `hud_visual_cue_impl` in the
   `roadmap-v0-2` workstream. Two complementary signals shipped

@@ -30,6 +30,7 @@ import {
   AgentNotInWorkstreamError,
   type AgentRow,
   type AgentStatus,
+  STATUS_EMOJI,
   WorkspacePreservedError,
   adoptAgent,
   closeAgent,
@@ -3343,6 +3344,179 @@ function rawTaskRowToTask(r: RawTaskRowForState): TaskRow {
   };
 }
 
+// ─── mu hud (modes: line / small / mid / full / json) ────────────────
+//
+// Print-once renderer of the workstream HUD card. No loop, no tmux side
+// effects. The user composes redraw / placement: `watch -n 5 mu hud -w X`,
+// `tmux display-popup -E 'mu hud -w X'`, status-bar interpolation via
+// `#(mu hud -w X --line)`, etc. mu's contract is 'print, exit, compose'.
+
+type HudMode = "line" | "small" | "mid" | "full" | "json";
+
+interface HudOpts {
+  workstream?: string;
+  line?: boolean;
+  small?: boolean;
+  mid?: boolean;
+  full?: boolean;
+  json?: boolean;
+  lines?: number; // for --full / --json: recent-events tail length
+}
+
+function resolveHudMode(opts: HudOpts): HudMode {
+  // First-pick precedence (each mode is its own boolean alias).
+  // Mutually exclusive: passing two flips errors.
+  const flags: HudMode[] = [];
+  if (opts.line) flags.push("line");
+  if (opts.small) flags.push("small");
+  if (opts.mid) flags.push("mid");
+  if (opts.full) flags.push("full");
+  if (opts.json) flags.push("json");
+  if (flags.length > 1) {
+    throw new UsageError(
+      `mu hud: --line / --small / --mid / --full / --json are mutually exclusive (got: ${flags.map((f) => `--${f}`).join(", ")})`,
+    );
+  }
+  return flags[0] ?? "mid"; // default
+}
+
+/** Format an elapsed duration (in ms) as a compact relative string:
+ *  '12s', '3m', '1h', '2d'. Used by HUD modes to surface 'how stale'. */
+function relTime(ms: number): string {
+  const sec = Math.max(0, Math.floor(ms / 1000));
+  if (sec < 60) return `${sec}s`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h`;
+  return `${Math.floor(hr / 24)}d`;
+}
+
+async function cmdHud(db: Db, opts: HudOpts): Promise<void> {
+  const mode = resolveHudMode(opts);
+  const workstream = await resolveWorkstream(opts.workstream);
+  const view = await listLiveAgents(db, { workstream });
+  const tracks = getParallelTracks(db, workstream);
+  const ready = listReady(db, workstream).sort(byRoiDesc);
+  const inProgress = (
+    db
+      .prepare(
+        "SELECT * FROM tasks WHERE workstream = ? AND status = 'IN_PROGRESS' ORDER BY updated_at DESC",
+      )
+      .all(workstream) as RawTaskRowForState[]
+  ).map(rawTaskRowToTask);
+  const eventLimit = opts.lines ?? 5;
+  const recentEvents =
+    mode === "full" || mode === "json"
+      ? listLogs(db, { workstream, kind: "event", limit: eventLimit })
+      : [];
+
+  if (mode === "json") {
+    emitJson({
+      workstream,
+      summary: {
+        ready: ready.length,
+        inProgress: inProgress.length,
+        tracks: tracks.length,
+        agents: view.agents.length,
+        orphans: view.orphans.length,
+      },
+      agents: view.agents,
+      orphans: view.orphans,
+      tracks,
+      ready: withRoiAll(ready),
+      inProgress: withRoiAll(inProgress),
+      recent: recentEvents,
+    });
+    return;
+  }
+
+  if (mode === "line") {
+    const last = recentLogPreview(db, workstream);
+    const bits = [
+      `${pc.bold(workstream)}`,
+      `${ready.length}r`,
+      `${inProgress.length}p`,
+      `${tracks.length}trk`,
+    ];
+    if (last !== undefined) bits.push(`last: ${last}`);
+    console.log(bits.join(" · "));
+    return;
+  }
+
+  // Common header for small/mid/full.
+  const histo = agentStatusHistogram(view.agents);
+  if (mode === "small") {
+    console.log(
+      `${pc.bold(`mu-${workstream}`)} · ${ready.length} ready · ${inProgress.length} in-progress · ${tracks.length} tracks`,
+    );
+    console.log(`agents: ${view.agents.length} active (${histo})`);
+    return;
+  }
+
+  // mid + full: counts header + agent table.
+  console.log(
+    `${pc.bold(`mu-${workstream}`)} · ${ready.length} ready · ${inProgress.length} in-progress · ${tracks.length} tracks`,
+  );
+  console.log(pc.bold(`agents (${view.agents.length} active):`));
+  console.log(formatHudAgentLines(db, view.agents));
+
+  if (mode === "full") {
+    console.log(pc.bold(`tracks (${tracks.length}):`));
+    console.log(formatTracks(tracks));
+    console.log(pc.bold(`recent (${recentEvents.length}):`));
+    if (recentEvents.length === 0) {
+      console.log(pc.dim("  (none)"));
+    } else {
+      const now = Date.now();
+      for (const e of recentEvents) {
+        const ago = relTime(now - new Date(e.createdAt).getTime());
+        console.log(`  +${ago}  ${e.payload}`);
+      }
+    }
+  }
+}
+
+/** Compact agent-status histogram for the --small mode. */
+function agentStatusHistogram(agents: readonly AgentRow[]): string {
+  const counts = new Map<AgentStatus, number>();
+  for (const a of agents) counts.set(a.status, (counts.get(a.status) ?? 0) + 1);
+  if (counts.size === 0) return pc.dim("none");
+  const parts: string[] = [];
+  for (const [status, n] of counts) parts.push(`${STATUS_EMOJI[status]}${n}`);
+  return parts.join(" ");
+}
+
+/** Render one line per agent: '  emoji name · task · +elapsed' */
+function formatHudAgentLines(db: Db, agents: readonly AgentRow[]): string {
+  if (agents.length === 0) return pc.dim("  (none)");
+  const now = Date.now();
+  const lines: string[] = [];
+  for (const a of agents) {
+    const owned = listTasksByOwner(db, a.name);
+    const taskBit =
+      owned.length === 0
+        ? pc.dim("-")
+        : owned.length === 1
+          ? owned[0]?.localId
+          : `⊕${owned.length}`;
+    const ago = relTime(now - new Date(a.updatedAt).getTime());
+    lines.push(`  ${STATUS_EMOJI[a.status]} ${pc.bold(a.name)} · ${taskBit} ${pc.dim(`+${ago}`)}`);
+  }
+  return lines.join("\n");
+}
+
+/** Most-recent event for the line mode: 'build_x closed +12s'. */
+function recentLogPreview(db: Db, workstream: string): string | undefined {
+  const rows = listLogs(db, { workstream, kind: "event", limit: 1 });
+  const e = rows[0];
+  if (!e) return undefined;
+  const ago = relTime(Date.now() - new Date(e.createdAt).getTime());
+  // Truncate payload so the line stays narrow.
+  const payload = e.payload.length > 50 ? `${e.payload.slice(0, 49)}…` : e.payload;
+  return `${payload} +${ago}`;
+}
+
 async function cmdAttach(name: string, opts: { workstream?: string }): Promise<void> {
   const workstream = await resolveWorkstream(opts.workstream);
   const sessionName = `mu-${workstream}`;
@@ -4350,6 +4524,27 @@ export function buildProgram(): Command {
         json?: boolean;
       };
       return handle((db) => cmdState(db, opts))();
+    });
+
+  program
+    .command("hud")
+    .description(
+      "Print-once HUD card for a workstream. Modes: --line (one-liner; for tmux status / dotfile injection), --small (counts + agent histogram), --mid (default; counts + agent table), --full (+ tracks + recent events tail), --json (everything, structured). No loop, no tmux side effects — user composes redraw via `watch -n 5 mu hud -w X` or `tmux display-popup -E 'mu hud -w X'`.",
+    )
+    .option("--line", "one-liner mode (for tmux status, dotfile injection)")
+    .option("--small", "compact: counts + agent-status histogram")
+    .option("--mid", "counts + agent table (default)")
+    .option("--full", "counts + agent table + tracks + recent-events tail")
+    .option(
+      "-n, --lines <n>",
+      "recent-events tail length (only meaningful with --full / --json; default 5)",
+      parseLines,
+    )
+    .option(...WORKSTREAM_OPT)
+    .option(...JSON_OPT)
+    .action(function () {
+      const opts = (this as Command).opts() as HudOpts;
+      return handle((db) => cmdHud(db, opts))();
     });
 
   program

@@ -263,6 +263,7 @@ mu approve wait  <slug> [--timeout SECONDS]   # exit 0 / 4 / 5
 mu sql "<query>"                     # SELECT / UPDATE / DELETE / WITH
 mu                                   # bare: quick mission control
 mu state                             # canonical state card
+mu hud                               # print-once HUD (see --help)
 mu doctor                            # tmux + db + schema + workstream stats
 ```
 
