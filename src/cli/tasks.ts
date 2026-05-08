@@ -1,0 +1,1102 @@
+// mu — every `mu task ...` verb + the `mu my-tasks` / `mu my-next`
+// agent-self aliases.
+//
+// Coverage:
+//   mu my-tasks                       owned-by-self
+//   mu my-next                        top-K ready in self.workstream
+//   mu task add / list / next / ready / blocked / goals / owned-by /
+//                search / show / tree / notes / note
+//   mu task claim / release / close / open / reject / defer / block /
+//                unblock / update / reparent / delete / wait
+//
+// Extracted from src/cli.ts as part of refactor_split_large_src_files.
+
+import pc from "picocolors";
+import { refreshAgentTitle } from "../agents.js";
+import {
+  UsageError,
+  byRoiDesc,
+  colorStatus,
+  emitJson,
+  formatTaskListTable,
+  parseStatusOption,
+  resolveSelf,
+  resolveWorkstream,
+  withRoiAll,
+} from "../cli.js";
+import type { Db } from "../db.js";
+import { listLogs } from "../logs.js";
+import { type NextStep, printNextSteps } from "../output.js";
+import {
+  type SearchTasksOptions,
+  TaskNotFoundError,
+  TaskNotInWorkstreamError,
+  type TaskNoteRow,
+  type TaskRow,
+  type TaskWaitResult,
+  type UpdateTaskOptions,
+  addBlockEdge,
+  addNote,
+  addTask,
+  claimTask,
+  closeTask,
+  deferTask,
+  deleteTask,
+  getTask,
+  getTaskEdges,
+  idFromTitle,
+  listBlocked,
+  listGoals,
+  listNotes,
+  listReady,
+  listTasks,
+  listTasksByOwner,
+  openTask,
+  rejectTask,
+  releaseTask,
+  removeBlockEdge,
+  reparentTask,
+  resolveActorIdentity,
+  searchTasks,
+  updateTask,
+  waitForTasks,
+} from "../tasks.js";
+
+export async function cmdMyTasks(
+  db: Db,
+  opts: { json?: boolean; includeClosed?: boolean } = {},
+): Promise<void> {
+  const self = resolveSelf(db);
+  const tasks = listTasksByOwner(db, self.name, {
+    includeClosed: opts.includeClosed ?? false,
+  });
+  if (opts.json) {
+    emitJson(withRoiAll(tasks));
+    return;
+  }
+  if (tasks.length === 0) {
+    console.log(pc.dim(`(${self.name} owns no tasks)`));
+    return;
+  }
+  console.log(formatTaskListTable(tasks));
+}
+
+export async function cmdMyNext(db: Db, opts: { lines?: number; json?: boolean }): Promise<void> {
+  const self = resolveSelf(db);
+  const k = opts.lines ?? 1;
+  const tasks = listReady(db, self.workstream).sort(byRoiDesc).slice(0, k);
+  if (opts.json) {
+    emitJson(withRoiAll(tasks));
+    return;
+  }
+  if (tasks.length === 0) {
+    console.log(pc.dim(`(no ready tasks in ${self.workstream})`));
+    return;
+  }
+  console.log(formatTaskListTable(tasks));
+}
+
+export async function cmdTaskAdd(
+  db: Db,
+  localId: string | undefined,
+  opts: {
+    title: string;
+    impact: number;
+    effortDays: number;
+    blockedBy?: string;
+    workstream?: string;
+    json?: boolean;
+  },
+): Promise<void> {
+  const workstream = await resolveWorkstream(opts.workstream);
+  // Derive the id from the title if the user didn't provide one. The
+  // CLI's `<id>` positional is now optional; idFromTitle handles
+  // collisions with `_2`, `_3`, … suffixes.
+  const id = localId ?? idFromTitle(db, workstream, opts.title);
+  const blockedBy = opts.blockedBy
+    ? opts.blockedBy
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean)
+    : undefined;
+  const task = addTask(db, {
+    localId: id,
+    workstream,
+    title: opts.title,
+    impact: opts.impact,
+    effortDays: opts.effortDays,
+    ...(blockedBy ? { blockedBy } : {}),
+  });
+  const nextSteps: NextStep[] = [
+    { intent: "Show this task", command: `mu task show ${task.localId} -w ${workstream}` },
+    {
+      // Single-quoted example: shell metachars (`...`, $VAR, $(...))
+      // inside a double-quoted string expand in YOUR shell before mu
+      // sees the note (mufeedback note #257). Single quotes defer
+      // expansion to the agent.
+      intent: "Drop a note (single-quote to defer shell expansion)",
+      command: `mu task note ${task.localId} '...' -w ${workstream}`,
+    },
+    {
+      intent: "Add a blocker",
+      command: `mu task block ${task.localId} --by <other-id> -w ${workstream}`,
+    },
+    {
+      intent: "Claim and start",
+      command: `mu task claim ${task.localId} -w ${workstream} --self  (or --for <worker>)`,
+    },
+  ];
+  if (opts.json) {
+    emitJson({ task: withRoiAll([task])[0], blockers: blockedBy ?? [], nextSteps });
+    return;
+  }
+  const idHint = localId === undefined ? pc.dim(" (id derived from title)") : "";
+  console.log(
+    `Added task ${pc.bold(task.localId)}${idHint} ${pc.dim(
+      `(workstream=${workstream}, impact=${task.impact}, effort=${task.effortDays})`,
+    )}`,
+  );
+  if (blockedBy) console.log(pc.dim(`  blocked by: ${blockedBy.join(", ")}`));
+  printNextSteps(nextSteps);
+}
+
+export async function cmdTaskList(
+  db: Db,
+  opts: { workstream?: string; json?: boolean; status?: string },
+): Promise<void> {
+  const workstream = await resolveWorkstream(opts.workstream);
+  const listOpts: Parameters<typeof listTasks>[2] = {};
+  if (opts.status !== undefined) {
+    listOpts.status = parseStatusOption(opts.status);
+  }
+  const tasks = listTasks(db, workstream, listOpts);
+  if (opts.json) {
+    emitJson(withRoiAll(tasks));
+    return;
+  }
+  console.log(pc.bold(`mu-${workstream}`));
+  console.log(formatTaskListTable(tasks));
+}
+
+// ROI = impact / effort_days. Higher first. Tasks with effortDays=0
+// (would divide by zero) sort to the top by treating their ROI as Infinity.
+export async function cmdTaskNext(
+  db: Db,
+  opts: { workstream?: string; lines?: number; json?: boolean },
+): Promise<void> {
+  const workstream = await resolveWorkstream(opts.workstream);
+  const k = opts.lines ?? 1;
+  const tasks = listReady(db, workstream).sort(byRoiDesc).slice(0, k);
+  if (opts.json) {
+    emitJson(withRoiAll(tasks));
+    return;
+  }
+  if (tasks.length === 0) {
+    console.log(pc.dim("(no ready tasks)"));
+    return;
+  }
+  console.log(formatTaskListTable(tasks));
+}
+
+export async function cmdTaskReady(
+  db: Db,
+  opts: { workstream?: string; json?: boolean },
+): Promise<void> {
+  const workstream = await resolveWorkstream(opts.workstream);
+  const tasks = listReady(db, workstream).sort(byRoiDesc);
+  if (opts.json) {
+    emitJson(withRoiAll(tasks));
+    return;
+  }
+  if (tasks.length === 0) {
+    console.log(pc.dim("(no ready tasks)"));
+    return;
+  }
+  console.log(formatTaskListTable(tasks));
+}
+
+export async function cmdTaskBlocked(
+  db: Db,
+  opts: { workstream?: string; json?: boolean },
+): Promise<void> {
+  const workstream = await resolveWorkstream(opts.workstream);
+  const tasks = listBlocked(db, workstream);
+  if (opts.json) {
+    emitJson(withRoiAll(tasks));
+    return;
+  }
+  if (tasks.length === 0) {
+    console.log(pc.dim("(no blocked tasks)"));
+    return;
+  }
+  console.log(formatTaskListTable(tasks));
+}
+
+export async function cmdTaskGoals(
+  db: Db,
+  opts: { workstream?: string; json?: boolean },
+): Promise<void> {
+  const workstream = await resolveWorkstream(opts.workstream);
+  const tasks = listGoals(db, workstream);
+  if (opts.json) {
+    emitJson(withRoiAll(tasks));
+    return;
+  }
+  if (tasks.length === 0) {
+    console.log(pc.dim("(no goals — every task has a dependent)"));
+    return;
+  }
+  console.log(formatTaskListTable(tasks));
+}
+
+export async function cmdTaskOwnedBy(
+  db: Db,
+  agent: string,
+  opts: { json?: boolean; includeClosed?: boolean } = {},
+): Promise<void> {
+  const tasks = listTasksByOwner(db, agent, {
+    includeClosed: opts.includeClosed ?? false,
+  });
+  if (opts.json) {
+    emitJson(withRoiAll(tasks));
+    return;
+  }
+  if (tasks.length === 0) {
+    console.log(pc.dim(`(no tasks owned by ${agent})`));
+    return;
+  }
+  // owned-by is cross-workstream by design (agent names are global)
+  // so always show the workstream column.
+  console.log(formatTaskListTable(tasks, { withWorkstream: true }));
+}
+
+export async function cmdTaskSearch(
+  db: Db,
+  pattern: string,
+  opts: { workstream?: string; all?: boolean; inNotes?: boolean; json?: boolean },
+): Promise<void> {
+  const searchOpts: SearchTasksOptions = {};
+  if (opts.inNotes) searchOpts.includeNotes = true;
+  if (!opts.all) searchOpts.workstream = await resolveWorkstream(opts.workstream);
+
+  const tasks = searchTasks(db, pattern, searchOpts);
+  if (opts.json) {
+    emitJson(tasks);
+    return;
+  }
+  if (tasks.length === 0) {
+    console.log(pc.dim(`(no matches for "${pattern}")`));
+    return;
+  }
+  console.log(formatTaskListTable(tasks, { withWorkstream: opts.all === true }));
+}
+
+/**
+ * Translate the conventional shell escapes \n / \t / \r / \\ in note text
+ * into their literal characters. Lets shell callers pass multi-line
+ * notes without bash-only $'\n' or printf gymnastics:
+ *
+ *   mu task note auth "FILES: a.rs:45\nDECISION: chose JWT"
+ *
+ * Backslashes are protected via a NUL placeholder so `\\n` stays as
+ * a literal `\n` in the output rather than being processed twice.
+ */
+function unescapeNoteText(s: string): string {
+  // Two-pass: first protect literal backslashes by swapping every `\\`
+  // for an unlikely placeholder, then translate the remaining shell
+  // escapes, then restore the placeholder as a single backslash.
+  // Without the placeholder, `\\n` would yield a newline (wrong) instead
+  // of a literal `\n`.
+  const PLACEHOLDER = "\u{1F511}backslash\u{1F511}";
+  return s
+    .split("\\\\")
+    .join(PLACEHOLDER)
+    .replace(/\\n/g, "\n")
+    .replace(/\\t/g, "\t")
+    .replace(/\\r/g, "\r")
+    .split(PLACEHOLDER)
+    .join("\\");
+}
+
+/**
+ * Optional `-w/--workstream <name>` scope check for verbs that target
+ * a single task by ID. Globally-unique task IDs mean these verbs
+ * could ignore the flag, but accepting it gives the operator a
+ * sanity check ("yes, I think this task is in that workstream") and
+ * raises a clear `TaskNotInWorkstreamError` instead of silently
+ * acting on the task they didn't mean. No-op when `workstream` is
+ * undefined or the task doesn't exist (downstream handler raises
+ * `TaskNotFoundError` for the latter).
+ */
+function assertTaskInWorkstream(db: Db, taskId: string, workstream: string | undefined): void {
+  if (!workstream) return;
+  const task = getTask(db, taskId);
+  if (task && task.workstream !== workstream) {
+    throw new TaskNotInWorkstreamError(taskId, workstream, task.workstream);
+  }
+}
+
+export async function cmdTaskNote(
+  db: Db,
+  localId: string,
+  content: string,
+  opts: { workstream?: string; json?: boolean; author?: string } = {},
+): Promise<void> {
+  assertTaskInWorkstream(db, localId, opts.workstream);
+  // Author resolution: explicit --author wins; otherwise consult
+  // MU_AGENT_NAME (env var injected at spawn) > pane title > $USER >
+  // 'orchestrator'. Surfaced from mufeedback note #176: notes from
+  // spawned agents were appearing as <orchestrator> because the CLI
+  // wasn't propagating identity. After this fix, mu-spawned workers'
+  // notes are correctly attributed to the agent name.
+  const author = opts.author ?? (await resolveActorIdentity());
+  const note = addNote(db, localId, unescapeNoteText(content), { author });
+  const ws = await resolveWorkstream(opts.workstream);
+  const nextSteps: NextStep[] = [
+    { intent: "Show all notes on this task", command: `mu task notes ${localId} -w ${ws}` },
+    { intent: "Show full task state", command: `mu task show ${localId} -w ${ws}` },
+  ];
+  if (opts.json) {
+    emitJson({ task: localId, note, nextSteps });
+    return;
+  }
+  console.log(pc.dim(`note #${note.id} appended to ${localId}`));
+  printNextSteps(nextSteps);
+}
+
+export async function cmdTaskClose(
+  db: Db,
+  localId: string,
+  opts: { evidence?: string; workstream?: string; json?: boolean } = {},
+): Promise<void> {
+  assertTaskInWorkstream(db, localId, opts.workstream);
+  const sdkOpts = opts.evidence !== undefined ? { evidence: opts.evidence } : {};
+  // Capture the owner BEFORE closeTask so we can refresh their title
+  // even though closeTask doesn't return owner info. owner won't
+  // change as a result of close (FK SET NULL only fires on delete).
+  const taskRow = getTask(db, localId);
+  const r = closeTask(db, localId, sdkOpts);
+  if (r.changed && taskRow?.owner) await refreshAgentTitle(db, taskRow.owner);
+  const ws = await resolveWorkstream(opts.workstream);
+  const nextSteps: NextStep[] = [
+    { intent: "Reopen if needed", command: `mu task open ${localId} -w ${ws}` },
+    { intent: "Pick the next ready task", command: `mu task next -w ${ws}` },
+    { intent: "See full state", command: `mu state -w ${ws}` },
+  ];
+  if (opts.json) {
+    emitJson({ task: localId, ...r, nextSteps });
+    return;
+  }
+  if (!r.changed) {
+    console.log(pc.dim(`${localId} already CLOSED (no-op)`));
+    printNextSteps(nextSteps);
+    return;
+  }
+  const ev = opts.evidence ? pc.dim(`  evidence: ${opts.evidence}`) : "";
+  console.log(`Closed ${pc.bold(localId)} ${pc.dim(`(${r.previousStatus} → ${r.status})`)}`);
+  if (ev) console.log(ev);
+  printNextSteps(nextSteps);
+}
+
+export async function cmdTaskOpen(
+  db: Db,
+  localId: string,
+  opts: { evidence?: string; workstream?: string; json?: boolean } = {},
+): Promise<void> {
+  assertTaskInWorkstream(db, localId, opts.workstream);
+  const sdkOpts = opts.evidence !== undefined ? { evidence: opts.evidence } : {};
+  const r = openTask(db, localId, sdkOpts);
+  const ws = await resolveWorkstream(opts.workstream);
+  const nextSteps: NextStep[] = [
+    {
+      intent: "Claim it",
+      command: `mu task claim ${localId} -w ${ws}  (--self / --for <worker>)`,
+    },
+    { intent: "Close again", command: `mu task close ${localId} -w ${ws}` },
+  ];
+  if (opts.json) {
+    emitJson({ task: localId, ...r, nextSteps });
+    return;
+  }
+  if (!r.changed) {
+    console.log(pc.dim(`${localId} already OPEN (no-op)`));
+    printNextSteps(nextSteps);
+    return;
+  }
+  const ev = opts.evidence ? pc.dim(`  evidence: ${opts.evidence}`) : "";
+  console.log(`Reopened ${pc.bold(localId)} ${pc.dim(`(${r.previousStatus} → ${r.status})`)}`);
+  if (ev) console.log(ev);
+  printNextSteps(nextSteps);
+}
+
+// ─── reject / defer (terminal-but-blocking transitions) ────────────────
+
+interface RejectDeferOpts {
+  evidence?: string;
+  cascade?: boolean;
+  yes?: boolean;
+  workstream?: string;
+  json?: boolean;
+}
+
+export async function cmdTaskReject(
+  db: Db,
+  localId: string,
+  opts: RejectDeferOpts = {},
+): Promise<void> {
+  return cmdTaskRejectOrDefer(db, localId, "reject", opts);
+}
+
+export async function cmdTaskDefer(
+  db: Db,
+  localId: string,
+  opts: RejectDeferOpts = {},
+): Promise<void> {
+  return cmdTaskRejectOrDefer(db, localId, "defer", opts);
+}
+
+export async function cmdTaskRejectOrDefer(
+  db: Db,
+  localId: string,
+  verb: "reject" | "defer",
+  opts: RejectDeferOpts,
+): Promise<void> {
+  assertTaskInWorkstream(db, localId, opts.workstream);
+  if (opts.yes && !opts.cascade) {
+    throw new UsageError(
+      `--yes requires --cascade (--yes only meaningful when committing a cascade preview; for single-task ${verb}, --yes is a no-op)`,
+    );
+  }
+  const sdkOpts: { evidence?: string; cascade?: boolean; yes?: boolean } = {};
+  if (opts.evidence !== undefined) sdkOpts.evidence = opts.evidence;
+  if (opts.cascade) sdkOpts.cascade = true;
+  if (opts.yes) sdkOpts.yes = true;
+  const r = verb === "reject" ? rejectTask(db, localId, sdkOpts) : deferTask(db, localId, sdkOpts);
+  // Title push for every affected task's owner (the verb compresses
+  // potentially-multi-task work; refresh each owner once). Skipped
+  // on dry-run since nothing changed.
+  if (r.changed) {
+    const owners = new Set<string>();
+    for (const id of r.changedIds) {
+      const t = getTask(db, id);
+      if (t?.owner) owners.add(t.owner);
+    }
+    for (const owner of owners) await refreshAgentTitle(db, owner);
+  }
+  const ws = await resolveWorkstream(opts.workstream);
+  const past = verb === "reject" ? "Rejected" : "Deferred";
+  const status = verb === "reject" ? "REJECTED" : "DEFERRED";
+
+  // Cascade dry-run: render the affected list with each task's
+  // current status + title so the operator can spot 'wait, that
+  // dependent has independent merit, I want to keep it'. Surfaced
+  // in mufeedback bug_cascade_reject_too_aggressive.
+  if (r.dryRun) {
+    if (opts.json) {
+      emitJson({
+        task: localId,
+        ...r,
+        nextSteps: [
+          {
+            intent: "Commit the cascade after reviewing the list",
+            command: `mu task ${verb} ${localId} --cascade --yes -w ${ws}`,
+          },
+          {
+            intent: "Address one dependent first, then re-preview",
+            command: `mu task ${verb} <dep> -w ${ws}`,
+          },
+        ],
+      });
+      return;
+    }
+    console.log(
+      `${past === "Rejected" ? "Reject" : "Defer"} ${pc.bold(localId)} would sweep ${r.affectedIds.length} task(s) (root + ${r.affectedIds.length - 1} dependent(s)):`,
+    );
+    for (const id of r.affectedIds) {
+      const t = getTask(db, id);
+      const title = t ? (t.title.length > 50 ? `${t.title.slice(0, 49)}…` : t.title) : "?";
+      const marker = id === localId ? pc.bold("  *") : "   ";
+      console.log(`${marker} ${pc.bold(id)}  ${pc.dim(title)}`);
+    }
+    console.log("");
+    console.log(pc.dim("(dry-run; rerun with --yes to actually sweep)"));
+    printNextSteps([
+      {
+        intent: "Commit the cascade after reviewing the list",
+        command: `mu task ${verb} ${localId} --cascade --yes -w ${ws}`,
+      },
+      {
+        intent: "Address one dependent first, then re-preview",
+        command: `mu task ${verb} <dep> -w ${ws}`,
+      },
+    ]);
+    return;
+  }
+
+  const nextSteps: NextStep[] = [
+    { intent: "Reopen if reconsidered", command: `mu task open ${localId} -w ${ws}` },
+    { intent: "See full state", command: `mu state -w ${ws}` },
+  ];
+  if (opts.json) {
+    emitJson({ task: localId, ...r, nextSteps });
+    return;
+  }
+  if (!r.changed) {
+    console.log(pc.dim(`${localId} already ${status} (no-op)`));
+    printNextSteps(nextSteps);
+    return;
+  }
+  console.log(`${past} ${pc.bold(localId)} ${pc.dim(`(→ ${status})`)}`);
+  if (opts.evidence) console.log(pc.dim(`  evidence: ${opts.evidence}`));
+  if (r.changedIds.length > 1) {
+    const cascaded = r.changedIds.slice(1);
+    console.log(
+      pc.dim(
+        `  cascaded to ${cascaded.length} dependent(s): ${cascaded.slice(0, 8).join(", ")}${cascaded.length > 8 ? ", …" : ""}`,
+      ),
+    );
+  }
+  printNextSteps(nextSteps);
+}
+
+interface TreeOpts {
+  /** Show dependents (what this task blocks) instead of blockers. */
+  down?: boolean;
+  json?: boolean;
+  workstream?: string;
+}
+
+/** JSON shape: each node carries its full TaskRow plus a recursive
+ *  `children` array (whose contents depend on direction — blockers if
+ *  --no-down, dependents if --down). Diamond-recurrent nodes carry
+ *  `recurrence: true` and an empty `children` (instead of expanding). */
+interface TreeJsonNode {
+  task: TaskRow;
+  recurrence?: true;
+  children: TreeJsonNode[];
+}
+
+export async function cmdTaskTree(db: Db, rootId: string, opts: TreeOpts): Promise<void> {
+  assertTaskInWorkstream(db, rootId, opts.workstream);
+  const root = getTask(db, rootId);
+  if (!root) throw new TaskNotFoundError(rootId);
+  const down = opts.down ?? false;
+  const seen = new Set<string>([rootId]);
+
+  if (opts.json) {
+    const node: TreeJsonNode = { task: root, children: buildJsonTree(db, rootId, down, seen) };
+    emitJson({ direction: down ? "dependents" : "blockers", root: node });
+    return;
+  }
+
+  const direction = down ? "dependents" : "blockers";
+  const swapHint = down ? "swap to --no-down for blockers" : "--down for dependents";
+  console.log(pc.bold(`Tree of ${rootId}  ${pc.dim(`(${direction} below; ${swapHint})`)}`));
+  console.log(formatTreeNodeLabel(root));
+  // Global "already rendered" set: a node visited once gets its full
+  // subtree drawn; subsequent visits (in a DAG diamond) print a one-line
+  // recurrence marker and don't recurse. Schema forbids cycles, so this
+  // only fires on diamonds in practice; double-edged as defence against
+  // future bugs.
+  renderTree(db, rootId, "", down, seen);
+}
+
+function buildJsonTree(db: Db, taskId: string, down: boolean, seen: Set<string>): TreeJsonNode[] {
+  const edges = getTaskEdges(db, taskId);
+  const childIds = down ? edges.dependents : edges.blockers;
+  const out: TreeJsonNode[] = [];
+  for (const childId of childIds) {
+    const child = getTask(db, childId);
+    if (!child) continue;
+    if (seen.has(childId)) {
+      out.push({ task: child, recurrence: true, children: [] });
+      continue;
+    }
+    seen.add(childId);
+    out.push({ task: child, children: buildJsonTree(db, childId, down, seen) });
+  }
+  return out;
+}
+
+function renderTree(
+  db: Db,
+  taskId: string,
+  prefix: string,
+  down: boolean,
+  seen: Set<string>,
+): void {
+  const edges = getTaskEdges(db, taskId);
+  const children = down ? edges.dependents : edges.blockers;
+  if (children.length === 0) return;
+
+  for (let i = 0; i < children.length; i++) {
+    const childId = children[i];
+    if (childId === undefined) continue;
+    const isLast = i === children.length - 1;
+    const branch = isLast ? "└── " : "├── ";
+    const childPrefix = prefix + (isLast ? "    " : "│   ");
+
+    const child = getTask(db, childId);
+    if (!child) {
+      // Defensive: schema FKs prevent this, but the cascade-on-delete
+      // could in theory race a sibling read. Render a clear marker.
+      console.log(`${prefix}${branch}${pc.red(`${childId}  (missing!)`)}`);
+      continue;
+    }
+
+    if (seen.has(childId)) {
+      console.log(
+        `${prefix}${branch}${formatTreeNodeLabel(child)}  ${pc.dim("(↻ already shown above)")}`,
+      );
+      continue;
+    }
+
+    console.log(`${prefix}${branch}${formatTreeNodeLabel(child)}`);
+    seen.add(childId);
+    renderTree(db, childId, childPrefix, down, seen);
+  }
+}
+
+function formatTreeNodeLabel(t: TaskRow): string {
+  return `${pc.bold(t.localId)}  ${colorStatus(t.status)}  ${pc.dim(t.title)}`;
+}
+
+/**
+ * Find the actor of the most recent `task claim <id>` event for a task.
+ * Used to surface 'who's working on this' when `tasks.owner IS NULL`
+ * (the --self / anonymous-claim case). Returns null when there's been
+ * no claim event for this task.
+ *
+ * Implementation: scan the latest few claim events for this workstream
+ * (small bounded N), pattern-match for `task claim <id>` in the payload.
+ * Cheap; called only when owner is NULL.
+ */
+function lastClaimActor(db: Db, workstream: string, localId: string): string | null {
+  const recent = listLogs(db, {
+    workstream,
+    kind: "event",
+    limit: 100,
+  });
+  for (let i = recent.length - 1; i >= 0; i--) {
+    const ev = recent[i];
+    if (!ev) continue;
+    if (ev.payload.startsWith(`task claim ${localId} `)) return ev.source;
+  }
+  return null;
+}
+
+export async function cmdTaskShow(
+  db: Db,
+  localId: string,
+  opts: { json?: boolean; workstream?: string } = {},
+): Promise<void> {
+  assertTaskInWorkstream(db, localId, opts.workstream);
+  const task = getTask(db, localId);
+  if (!task) throw new TaskNotFoundError(localId);
+  const edges = getTaskEdges(db, localId);
+  const notes = listNotes(db, localId);
+
+  // When owner IS NULL but the task is IN_PROGRESS (or recently was),
+  // the actor is in agent_logs. Surface it so 'who's working on this'
+  // is answerable from `mu task show` alone.
+  const lastActor =
+    task.owner === null && task.status !== "OPEN"
+      ? lastClaimActor(db, task.workstream, task.localId)
+      : null;
+
+  if (opts.json) {
+    emitJson({
+      task: withRoiAll([task])[0],
+      blockers: edges.blockers,
+      dependents: edges.dependents,
+      notes,
+      lastClaimActor: lastActor,
+    });
+    return;
+  }
+
+  const roi = task.effortDays > 0 ? (task.impact / task.effortDays).toFixed(1) : "∞";
+  console.log(pc.bold(`${task.localId}  —  ${task.title}`));
+  console.log(`  workstream : ${task.workstream}`);
+  console.log(`  status     : ${task.status}`);
+  // owner: registered worker name, or '(self: <actor>)' for an anonymous
+  // claim, or '(unowned)' for OPEN tasks.
+  const ownerLine =
+    task.owner !== null
+      ? task.owner
+      : lastActor !== null
+        ? pc.dim(`(self: ${lastActor})`)
+        : pc.dim("(unowned)");
+  console.log(`  owner      : ${ownerLine}`);
+  console.log(`  impact     : ${task.impact}`);
+  console.log(`  effort     : ${task.effortDays}  ${pc.dim(`(ROI ${roi})`)}`);
+  console.log(`  created    : ${pc.dim(task.createdAt)}`);
+  console.log(`  updated    : ${pc.dim(task.updatedAt)}`);
+
+  console.log("");
+  console.log(pc.bold("Edges"));
+  console.log(
+    `  blocked by : ${edges.blockers.length === 0 ? pc.dim("—") : edges.blockers.join(", ")}`,
+  );
+  console.log(
+    `  blocks     : ${edges.dependents.length === 0 ? pc.dim("—") : edges.dependents.join(", ")}`,
+  );
+
+  console.log("");
+  console.log(pc.bold(`Notes (${notes.length})`));
+  if (notes.length === 0) {
+    console.log(pc.dim("  (no notes)"));
+  } else {
+    for (const n of notes) printNote(n);
+  }
+}
+
+export async function cmdTaskNotes(
+  db: Db,
+  localId: string,
+  opts: { json?: boolean; workstream?: string } = {},
+): Promise<void> {
+  assertTaskInWorkstream(db, localId, opts.workstream);
+  if (!getTask(db, localId)) throw new TaskNotFoundError(localId);
+  const notes = listNotes(db, localId);
+  if (opts.json) {
+    emitJson(notes);
+    return;
+  }
+  if (notes.length === 0) {
+    console.log(pc.dim(`(no notes on ${localId})`));
+    return;
+  }
+  for (const n of notes) printNote(n);
+}
+
+function printNote(n: TaskNoteRow): void {
+  const author = n.author ?? "<orchestrator>";
+  console.log(`  ${pc.dim(`#${n.id} ${n.createdAt}`)}  ${pc.bold(author)}`);
+  for (const line of n.content.split("\n")) {
+    console.log(`    ${line}`);
+  }
+}
+
+export async function cmdTaskRelease(
+  db: Db,
+  localId: string,
+  opts: { reopen?: boolean; evidence?: string; workstream?: string; json?: boolean },
+): Promise<void> {
+  assertTaskInWorkstream(db, localId, opts.workstream);
+  const sdkOpts: { reopen: boolean; evidence?: string } = { reopen: opts.reopen ?? false };
+  if (opts.evidence !== undefined) sdkOpts.evidence = opts.evidence;
+  const r = releaseTask(db, localId, sdkOpts);
+  // Title push for the agent that just lost the task. Prev-owner could
+  // be null (anonymous claim release — nothing to refresh).
+  if (r.previousOwner) await refreshAgentTitle(db, r.previousOwner);
+  const ws = await resolveWorkstream(opts.workstream);
+  const nextSteps: NextStep[] = [
+    {
+      intent: "Reclaim",
+      command: `mu task claim ${localId} -w ${ws}  (--self / --for <worker>)`,
+    },
+    { intent: "Show current state", command: `mu task show ${localId} -w ${ws}` },
+  ];
+  if (opts.json) {
+    emitJson({ task: localId, ...r, nextSteps });
+    return;
+  }
+  if (!r.changed) {
+    console.log(pc.dim(`${localId} already unowned (no-op)`));
+    printNextSteps(nextSteps);
+    return;
+  }
+  const ownerBit = r.previousOwner ? `was ${pc.bold(r.previousOwner)}` : "was unowned";
+  const statusBit = r.previousStatus !== r.status ? ` (${r.previousStatus} → ${r.status})` : "";
+  console.log(`Released ${pc.bold(localId)} ${pc.dim(`(${ownerBit})${statusBit}`)}`);
+  if (opts.evidence) console.log(pc.dim(`  evidence: ${opts.evidence}`));
+  printNextSteps(nextSteps);
+}
+
+export async function cmdClaim(
+  db: Db,
+  localId: string,
+  opts: {
+    for?: string;
+    self?: boolean;
+    actor?: string;
+    evidence?: string;
+    workstream?: string;
+    json?: boolean;
+  },
+): Promise<void> {
+  assertTaskInWorkstream(db, localId, opts.workstream);
+  if (opts.self === true && opts.for !== undefined) {
+    throw new UsageError("--self and --for are mutually exclusive");
+  }
+  if (opts.actor !== undefined && opts.self !== true) {
+    throw new UsageError("--actor only meaningful with --self (it overrides the actor name)");
+  }
+  const sdkOpts: {
+    agentName?: string;
+    self?: boolean;
+    actor?: string;
+    evidence?: string;
+  } = {};
+  if (opts.for) sdkOpts.agentName = opts.for;
+  if (opts.self) sdkOpts.self = true;
+  if (opts.actor !== undefined) sdkOpts.actor = opts.actor;
+  if (opts.evidence !== undefined) sdkOpts.evidence = opts.evidence;
+  const result = await claimTask(db, localId, sdkOpts);
+  // Title push for the new owner. Anonymous claims (--self) leave
+  // owner=null — nothing to refresh.
+  if (result.owner) await refreshAgentTitle(db, result.owner);
+  const ws = await resolveWorkstream(opts.workstream);
+  const nextSteps: NextStep[] = [
+    {
+      // Single-quoted example: shell metachars (`...`, $VAR, $(...))
+      // inside a double-quoted string expand in YOUR shell before mu
+      // sees the note (mufeedback note #257). Single quotes defer
+      // expansion to the agent.
+      intent: "Drop a note (single-quote to defer shell expansion)",
+      command: `mu task note ${localId} 'FILES: ...\\nDECISION: ...' -w ${ws}`,
+    },
+    {
+      intent: "Close with grounding",
+      command: `mu task close ${localId} --evidence "..." -w ${ws}`,
+    },
+    { intent: "Release if blocked", command: `mu task release ${localId} -w ${ws}` },
+  ];
+  if (opts.json) {
+    emitJson({ ...result, nextSteps });
+    return;
+  }
+  if (result.owner === null) {
+    console.log(
+      `Claimed ${pc.bold(localId)} ${pc.dim(`(--self by ${result.actor}; ${result.previousStatus} → ${result.status}; owner=NULL)`)}`,
+    );
+  } else {
+    console.log(
+      `Claimed ${pc.bold(localId)} for ${pc.bold(result.owner)} ${pc.dim(`(${result.previousStatus} → ${result.status})`)}`,
+    );
+  }
+  if (opts.evidence) console.log(pc.dim(`  evidence: ${opts.evidence}`));
+  printNextSteps(nextSteps);
+}
+
+export async function cmdTaskBlock(
+  db: Db,
+  blocked: string,
+  opts: { by: string; workstream?: string; json?: boolean },
+): Promise<void> {
+  assertTaskInWorkstream(db, blocked, opts.workstream);
+  const r = addBlockEdge(db, blocked, opts.by);
+  const ws = await resolveWorkstream(opts.workstream);
+  const nextSteps: NextStep[] = [
+    { intent: "Show the dependency tree", command: `mu task tree ${blocked} -w ${ws}` },
+    { intent: "Remove this edge", command: `mu task unblock ${blocked} --by ${opts.by} -w ${ws}` },
+  ];
+  if (opts.json) {
+    emitJson({ blocked, blocker: opts.by, ...r, nextSteps });
+    return;
+  }
+  if (!r.added) {
+    console.log(pc.dim(`${opts.by} → ${blocked}: edge already exists (no-op)`));
+    printNextSteps(nextSteps);
+    return;
+  }
+  console.log(`Added edge ${pc.bold(opts.by)} → ${pc.bold(blocked)}`);
+  printNextSteps(nextSteps);
+}
+
+export async function cmdTaskUnblock(
+  db: Db,
+  blocked: string,
+  opts: { by: string; workstream?: string; json?: boolean },
+): Promise<void> {
+  assertTaskInWorkstream(db, blocked, opts.workstream);
+  const r = removeBlockEdge(db, blocked, opts.by);
+  const ws = await resolveWorkstream(opts.workstream);
+  const nextSteps: NextStep[] = [
+    { intent: "Show what now blocks this task", command: `mu task tree ${blocked} -w ${ws}` },
+    { intent: "Re-add the edge", command: `mu task block ${blocked} --by ${opts.by} -w ${ws}` },
+  ];
+  if (opts.json) {
+    emitJson({ blocked, blocker: opts.by, ...r, nextSteps });
+    return;
+  }
+  if (!r.removed) {
+    console.log(pc.dim(`${opts.by} → ${blocked}: no such edge (no-op)`));
+    printNextSteps(nextSteps);
+    return;
+  }
+  console.log(`Removed edge ${pc.bold(opts.by)} → ${pc.bold(blocked)}`);
+  printNextSteps(nextSteps);
+}
+
+export async function cmdTaskDelete(
+  db: Db,
+  localId: string,
+  opts: { workstream?: string; json?: boolean } = {},
+): Promise<void> {
+  assertTaskInWorkstream(db, localId, opts.workstream);
+  const r = deleteTask(db, localId);
+  const nextSteps: NextStep[] = [
+    {
+      // A snapshot was taken by deleteTask itself before the cascade
+      // (snap_schema commit ab82a11). `mu undo` reverts the latest one.
+      intent: "Undo (a snapshot was taken before the delete)",
+      command: "mu undo --yes",
+    },
+    {
+      intent: "List remaining tasks",
+      command: `mu task list -w ${await resolveWorkstream(opts.workstream)}`,
+    },
+  ];
+  if (opts.json) {
+    emitJson({ task: localId, ...r, nextSteps });
+    return;
+  }
+  if (!r.deleted) {
+    console.log(pc.dim(`no task named ${localId} (already deleted?)`));
+    return;
+  }
+  console.log(
+    `Deleted ${pc.bold(localId)} ${pc.dim(`(edges: ${r.deletedEdges}, notes: ${r.deletedNotes})`)}`,
+  );
+  printNextSteps(nextSteps);
+}
+
+export async function cmdTaskUpdate(
+  db: Db,
+  localId: string,
+  opts: {
+    title?: string;
+    impact?: number;
+    effortDays?: number;
+    workstream?: string;
+    json?: boolean;
+  },
+): Promise<void> {
+  assertTaskInWorkstream(db, localId, opts.workstream);
+  const updateOpts: UpdateTaskOptions = {};
+  if (opts.title !== undefined) updateOpts.title = opts.title;
+  if (opts.impact !== undefined) updateOpts.impact = opts.impact;
+  if (opts.effortDays !== undefined) updateOpts.effortDays = opts.effortDays;
+  if (Object.keys(updateOpts).length === 0) {
+    throw new UsageError(
+      "nothing to update; pass at least one of --title, --impact, --effort-days",
+    );
+  }
+  const r = updateTask(db, localId, updateOpts);
+  const ws = await resolveWorkstream(opts.workstream);
+  const nextSteps: NextStep[] = [
+    { intent: "Show updated task", command: `mu task show ${localId} -w ${ws}` },
+  ];
+  if (opts.json) {
+    emitJson({ task: localId, ...r, nextSteps });
+    return;
+  }
+  if (!r.updated) {
+    console.log(pc.dim(`${localId}: no fields differ from current (no-op)`));
+    return;
+  }
+  console.log(`Updated ${pc.bold(localId)} ${pc.dim(`(${r.changedFields.join(", ")})`)}`);
+  printNextSteps(nextSteps);
+}
+
+export async function cmdTaskReparent(
+  db: Db,
+  localId: string,
+  opts: { blockedBy: string; workstream?: string; json?: boolean },
+): Promise<void> {
+  assertTaskInWorkstream(db, localId, opts.workstream);
+  const blockers = opts.blockedBy
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const r = reparentTask(db, localId, blockers);
+  const ws = await resolveWorkstream(opts.workstream);
+  const nextSteps: NextStep[] = [
+    { intent: "Show the new dependency tree", command: `mu task tree ${localId} -w ${ws}` },
+    { intent: "Show the task", command: `mu task show ${localId} -w ${ws}` },
+  ];
+  if (opts.json) {
+    emitJson({ task: localId, blockers, ...r, nextSteps });
+    return;
+  }
+  console.log(
+    `Reparented ${pc.bold(localId)} ${pc.dim(`(removed ${r.removedEdges} edges, added ${r.addedEdges})`)}`,
+  );
+  printNextSteps(nextSteps);
+}
+
+export async function cmdTaskWait(
+  db: Db,
+  ids: readonly string[],
+  opts: {
+    status?: string;
+    any?: boolean;
+    timeout?: number;
+    workstream?: string;
+    json?: boolean;
+  },
+): Promise<void> {
+  if (ids.length === 0) {
+    throw new UsageError("mu task wait: at least one task id is required");
+  }
+  // Validate status (default CLOSED). Same parser as mu task list --status.
+  const statusOpt = opts.status !== undefined ? parseStatusOption(opts.status) : undefined;
+  // Scope: every id must be in the workstream we resolved (-w error
+  // semantics matching every other task verb).
+  for (const id of ids) {
+    assertTaskInWorkstream(db, id, opts.workstream);
+  }
+  const ws = await resolveWorkstream(opts.workstream);
+
+  // --timeout in seconds for shell ergonomics; SDK takes ms.
+  // 0 in the SDK = wait forever; same convention here.
+  const timeoutMs = opts.timeout !== undefined ? opts.timeout * 1000 : 600_000;
+
+  const sdkOpts: {
+    status?: TaskWaitResult["tasks"][number]["status"];
+    any?: boolean;
+    timeoutMs: number;
+  } = { timeoutMs };
+  if (statusOpt !== undefined) sdkOpts.status = statusOpt;
+  if (opts.any) sdkOpts.any = true;
+
+  const result = await waitForTasks(db, ids, sdkOpts);
+
+  // Build nextSteps: for each task that DIDN'T reach the target, suggest
+  // mu task show so the operator can investigate. Always include
+  // 'pick the next ready task' for the unblocked-orchestrator pattern.
+  const stuck = result.tasks.filter((t) => !t.reachedTarget);
+  const nextSteps: NextStep[] = [];
+  for (const t of stuck) {
+    nextSteps.push({
+      intent: `Investigate ${t.localId} (status=${t.status})`,
+      command: `mu task show ${t.localId} -w ${ws}`,
+    });
+  }
+  if (!result.timedOut) {
+    nextSteps.push({ intent: "Pick the next ready task", command: `mu task next -w ${ws}` });
+  }
+
+  if (opts.json) {
+    emitJson({ ...result, nextSteps });
+    if (result.timedOut) process.exit(5);
+    return;
+  }
+
+  // Human output: per-task line with status + reached marker.
+  const targetStatus = statusOpt ?? "CLOSED";
+  const summary = result.timedOut
+    ? pc.yellow(`Timed out after ${result.elapsedMs}ms`)
+    : pc.green(
+        `${opts.any ? "any-of" : "all-of"} ${ids.length} reached ${targetStatus} in ${result.elapsedMs}ms`,
+      );
+  console.log(summary);
+  for (const t of result.tasks) {
+    const marker = t.reachedTarget ? pc.green("✓") : pc.dim("•");
+    console.log(`  ${marker} ${pc.bold(t.localId)} ${pc.dim(`(${t.status})`)}`);
+  }
+  printNextSteps(nextSteps);
+  if (result.timedOut) process.exit(5);
+}
