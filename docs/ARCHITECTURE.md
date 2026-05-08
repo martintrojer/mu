@@ -288,7 +288,8 @@ anticipatory layering. Each module is concrete and consumed today.
 | `src/migrations.ts`   | Forward-only schema migrations (v1→v2 ON UPDATE CASCADE; v2→v3 REJECTED+DEFERRED; v3→v4 snapshots) |
 | `src/output.ts`       | NextStep type + `printNextSteps` + `errorNextSteps` plumbing for self-documenting output |
 | `src/approvals.ts`    | Human-in-the-loop gate: add/grant/deny/wait verbs                                         |
-| `src/cli.ts`          | commander entry; thin wrappers over the SDK; `--json` rendering for every read verb       |
+| `src/cli.ts`          | commander entry; `buildProgram()` + `handle()` (exit-code map); shared format helpers (`formatTaskListTable` / `formatAgentsTable` / `formatReadyTable` / `formatTracks`); `pc.dim`/`pc.cyan` colour palette helpers |
+| `src/cli/*.ts`        | one file per verb-namespace; thin wrappers over the SDK; `--json` rendering for every read verb. Currently: `workstream.ts`, `agents.ts`, `tasks.ts`, `workspace.ts`, `log.ts`, `approve.ts`, `hud.ts`, `snapshot.ts`, `sql.ts`, `doctor.ts`. Imports flow cluster → root (never the other way). |
 | `src/index.ts`        | SDK entrypoint (re-exports)                                                               |
 | `skills/mu/`          | Bundled skill teaching the LLM the model + verb list + jq pipelines                       |
 | `agents/`             | Two builtin agent .md role docs (read by the LLM in the pane; not part of spawn contract) |
@@ -322,7 +323,7 @@ each are deliberately small.
 | ------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | `VcsBackend`        | Implementing `detect / createWorkspace / freeWorkspace` (~80–150 LOC; jj/sl/git/none are working examples)                    |
 | Per-CLI `Detector`  | Adding patterns to `detectPiStatus` (vanilla pi `to interrupt)`; pi-meta + every TUI wrapper covered by Braille spinner glyph fallback `[\u2800-\u28FF]`)                  |
-| New typed verb      | Add an SDK function in the relevant `src/*.ts`, wire one commander block in `src/cli.ts` (use `handle()` for exit-code map; route through `printNextSteps` for self-documenting output) |
+| New typed verb      | Add an SDK function in the relevant `src/*.ts`; add a `cmd<Verb>` to the matching `src/cli/<namespace>.ts` (or create a new namespace if the verb doesn't fit existing ones); wire one commander block in `src/cli.ts`'s `buildProgram()` (use `handle()` for the exit-code map; route through `printNextSteps` for self-documenting output) |
 | New schema migration| Bump `CURRENT_SCHEMA_VERSION` in `src/db.ts`; add a `(toVersion -> fn)` to `MIGRATIONS` in `src/migrations.ts`; mirror the new shape in `CURRENT_SCHEMA`. v1→v2→v3→v4 examples in place |
 | Snapshot hook       | Add `await captureSnapshot(db, 'verb-name', workstream)` at the top of any new destructive verb (one-liner; GC + restore behaviour automatic) |
 

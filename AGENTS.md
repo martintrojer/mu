@@ -46,7 +46,9 @@ mu/
 │   ├── VISION.md
 │   ├── VOCABULARY.md
 │   └── ARCHITECTURE.md
-├── src/                   # all source (12 files, flat — no subdirs)
+├── src/                   # all source (root files: SDK + shared infra; one
+│                          # level of subdirs OK for cohesive clusters — see
+│                          # `src/cli/` below)
 │   ├── db.ts              # SQLite schema + openDb
 │   ├── tmux.ts            # tmux wrapper, send protocol, pane validation
 │   ├── detect.ts          # pi-only status detector
@@ -58,8 +60,22 @@ mu/
 │   ├── logs.ts            # agent_logs SDK (append, list, latestSeq, emitEvent)
 │   ├── vcs.ts             # VcsBackend interface + jj/sl/git/none impls
 │   ├── workspace.ts       # per-agent VCS workspaces (CRUD over vcs_workspaces)
+│   ├── snapshots.ts       # whole-DB snapshots (VACUUM INTO) + auto-capture hook
+│   ├── migrations.ts      # forward-only schema migrations
+│   ├── output.ts          # NextStep type + printNextSteps / errorNextSteps
 │   ├── approvals.ts       # human-in-the-loop gate (add/grant/deny/wait)
-│   ├── cli.ts             # commander wiring, mission control rendering
+│   ├── cli.ts             # commander wiring, handle()/classifyError, shared format helpers
+│   ├── cli/               # one-file-per-verb-namespace; thin wrappers over the SDK
+│   │   ├── workstream.ts  # init / list / destroy / state
+│   │   ├── agents.ts      # spawn / send / read / list / show / close / free / adopt / attach
+│   │   ├── tasks.ts       # add / claim / release / close / open / reject / defer / note / show / tree / ...
+│   │   ├── workspace.ts   # workspace create / list / free / path / orphans
+│   │   ├── log.ts         # log read / write / tail
+│   │   ├── approve.ts     # approve add / list / grant / deny / wait
+│   │   ├── hud.ts         # hud (dynamic table layout)
+│   │   ├── snapshot.ts    # undo / snapshot list / snapshot show
+│   │   ├── sql.ts         # sql escape hatch
+│   │   └── doctor.ts      # doctor diagnostic
 │   └── index.ts           # SDK entrypoint (re-exports)
 ├── test/                  # 17 test files; 443 tests; many use real tmux/git/jj/sl
 ├── skills/mu/SKILL.md     # what the LLM running inside an agent pane sees
@@ -119,6 +135,15 @@ those tests skip themselves; CI runs inside tmux.
   pattern for env deletion is `const key = "FOO"; delete
   process.env[key];` (computed-key form).
 - Hard cap: 1500 LOC per file. Refactor signal at 800.
+- **Layout: flat at the root; one level of subdirs is allowed when a
+  cluster of files is naturally cohesive** (e.g. `src/cli/` for the
+  thin commander wrappers, one file per verb-namespace). The original
+  flat-only rule was authored when `src/` had ~12 files; past ~20 the
+  flat layout starts hurting (Finder/IDE listing becomes noise; `ls
+  src/` no longer reads as architecture). Each subdir cluster needs:
+  (1) a clear theme (every file does the same kind of thing),
+  (2) imports go from cluster-files → root-files (no upward imports),
+  (3) ARCHITECTURE.md's module table has a row covering it.
 
 ### Tests
 
