@@ -479,6 +479,69 @@ You can also claim explicitly from outside any pane:
 mu task claim build --for worker-2
 ```
 
+### The orchestrator pattern: `--self`
+
+Not every action comes from a registered worker pane. Often the
+*orchestrator* (a top-level pi session, a human at a shell, a
+deploy script) wants to do small work directly without spinning up
+a worker pane just for a 5-minute job. Two patterns split here:
+
+- **Worker** — a pane mu spawned (or you adopted). Has a row in the
+  `agents` table. Identity = pane title. Claims with bare
+  `mu task claim <id>`. `tasks.owner` is set to the worker's name.
+
+- **Actor** — anything that *causes* a state change. Includes
+  workers, but also includes the orchestrator. May or may not have
+  a row in `agents`. The actor is *always* recorded in the
+  auto-emitted `agent_logs` event for every state change
+  (the `source` field).
+
+If the orchestrator tries `mu task claim some-task` directly:
+
+```
+conflict: claimer 'pi-mu' (pane %6441) is not a registered mu agent.
+  Working directly?           Pass --self to attribute via log instead.
+  Dispatching to a worker?    Pass --for <worker> to assign.
+  Want full registration?     Run: mu adopt %6441
+```
+
+Three actionable next steps. Pick one based on intent:
+
+```bash
+# Orchestrator does the work itself (most common):
+mu task claim some-task --self --evidence "trivial 5-line fix"
+#   -> tasks.owner stays NULL
+#   -> agent_logs records 'task claim some-task by pi-mu --self (anonymous)'
+#   -> mu task show surfaces it as 'owner: (self: pi-mu)'
+
+# Orchestrator dispatches to a worker:
+mu task claim some-task --for worker-1
+#   -> tasks.owner = 'worker-1'
+
+# Orchestrator wants to BE a registered worker (rare):
+mu adopt %6441 -w <ws>      # only if pane is in mu-<ws> session
+mu task claim some-task     # now works as a normal worker claim
+```
+
+`--self` is **only** for unregistered actors. Workers continue to
+claim with bare `mu task claim` — nothing changes for them. The
+`--actor <name>` flag overrides the auto-detected actor name (defaults
+to pane title, or `$USER`, or `unknown`):
+
+```bash
+mu task claim deploy --self --actor deploy-bot --evidence "prod release"
+```
+
+When `tasks.owner IS NULL` because of `--self`, `mu task show` looks
+up the most recent `task claim` event for that task and surfaces it:
+
+```
+owner      : (self: pi-mu)
+```
+
+So provenance is preserved — it just lives in `agent_logs` rather
+than being conflated with the FK that points at registered workers.
+
 ---
 
 ## 11. Drop notes (durable context)

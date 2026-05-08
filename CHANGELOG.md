@@ -50,6 +50,61 @@ called out under "Breaking" in each entry.
 
 ### Added
 
+- **`mu task claim --self` for the orchestrator pattern.** Two
+  things mu has always conflated: a *worker* (a tmux pane mu
+  spawned, with a row in `agents`, identity = pane title) and an
+  *actor* (anything that causes a state change — may or may not
+  be a worker; orchestrators, scripts, and humans are actors but
+  not workers). The v2 schema migration tightened the FK on
+  `tasks.owner` to `agents.name`, which exposed the conflation:
+  bare `mu task claim` from an orchestrator pane (one not spawned
+  by `mu agent spawn`) now had nowhere to write the claim.
+
+  `--self` is the actor's opt-out:
+  - `tasks.owner` stays NULL (no FK lookup; no synthetic agents
+    row pollution).
+  - The actor name is recorded in `agent_logs.source` for the
+    auto-emitted `task claim` event — provenance is preserved,
+    just attributed to the log instead of the FK column.
+  - Resolution order for the actor name: `--actor <name>`, then
+    pane title, then `$USER`, then the literal `unknown`.
+  - Mutually exclusive with `--for` (they're alternative answers
+    to "who's the actor for this claim?").
+  - Workers are unaffected — they keep using bare
+    `mu task claim` exactly as before. `--self` is opt-in for the
+    unregistered-actor case.
+
+  `mu task show` and `mu task show --json` now surface the actor
+  for tasks where `owner IS NULL` by scanning recent `task claim`
+  events, so 'who's working on this' is answerable from
+  `mu task show` alone:
+
+      $ mu task claim foo --self
+      Claimed foo (--self by pi-mu; OPEN → IN_PROGRESS; owner=NULL)
+
+      $ mu task show foo
+      foo  —  ...
+        owner      : (self: pi-mu)
+        ...
+
+  The `ClaimerNotRegisteredError` message (shipped in dbfc84d)
+  has been updated to list `--self` as the first actionable next
+  step, ahead of `--for` and `mu adopt`. Three actionable paths
+  for an orchestrator who hits 'not a registered mu agent', in
+  order of expected frequency.
+
+  SDK: `claimTask({ self: true, actor?: string })` returns
+  `{ owner: string | null, actor: string, ... }`. Existing
+  `{ self: false }` callers are unchanged. The `ClaimResult.owner`
+  type widens from `string` to `string | null`.
+
+  **Vocabulary update:** `docs/VOCABULARY.md` adds canonical
+  entries for **worker** (the registered side of identity),
+  **actor** (the party that caused a state change), and
+  **anonymous claim** (the `--self` operation). The **owner**
+  entry now notes its NULL-on-self semantics. The **adopt** entry
+  is updated from "deferred" to its current state.
+
 - **`mu adopt <pane-or-title>` verb.** Register an existing tmux
   pane as a managed mu agent — the inverse of `mu agent list`'s
   "orphan" state. The orphan-list message has been advertising

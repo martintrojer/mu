@@ -19,7 +19,9 @@ defined here, fix the doc. If you need a new term, add it here first.
 | **pane**              | A tmux pane (one shell view inside a window); identified by **stable pane id** like `%15` | "terminal", "shell"                          |
 | **pane title**        | The string set on a pane via `select-pane -T`. **Equals the agent's name.** Read by the claim protocol. | "pane name"                          |
 | **window name**       | The tmux window's name. **Equals the agent's `tab:` value** (groups one or more agents). | "tab name" (in code; `tab:` only in frontmatter) |
-| **agent**             | A named worker running in a pane; identity = pane title                  | "subagent" (reserved for pi-subagents), "worker" (only the specific role) |
+| **agent**             | A named worker running in a pane; identity = pane title; row in `agents` table | "subagent" (reserved for pi-subagents), "worker" (only the specific role) |
+| **worker**            | An **agent** in its role-as-task-claimer. Synonym for the registered side of identity — a row in `agents`, owns tasks via the FK. | (when ambiguous, prefer **agent**)                 |
+| **actor**             | The party that *caused* a state change. May or may not be a registered worker. Recorded in `agent_logs.source` for every event. The orchestrator running mu from a top-level shell is an actor but not a worker. | "caller", "author" (only on notes)            |
 | **crew**              | *Informal* collective noun for the agents in a workstream                | (no API surface; prose only)                       |
 | **task**              | A node in the DAG. Has mandatory `impact` and `effort_days`. Status `OPEN → IN_PROGRESS → CLOSED`. | "issue", "ticket", "item"                          |
 | **task DAG** / **graph** | The directed acyclic graph of tasks. Cloned from a prior internal task-graph crate. | "task list", "todo", "tree" (it's a DAG, not a tree) |
@@ -32,7 +34,8 @@ defined here, fix the doc. If you need a new term, add it here first.
 | **note**              | An append-only piece of context attached to a task                       | "comment" (reserved for VCS), "log" (reserved for `agent_logs`) |
 | **log entry**         | A row in `agent_logs` (broadcast channel)                                | "message" (overloaded), "event" (overloaded)       |
 | **claim**             | Verb: set `tasks.owner` to an agent. Atomic CAS.                         | "assign" (use only in prose), "lock"               |
-| **owner**             | The agent name in `tasks.owner`. Set by claim.                           | "claimer", "assignee"                              |
+| **owner**             | The **worker** name in `tasks.owner`. Set by claim. NULL when the task is unowned OR was claimed via `--self` (anonymous, attributed via `agent_logs.source` instead). | "claimer", "assignee"                              |
+| **anonymous claim**   | A claim made via `--self` where the **actor** isn't a registered **worker**. `tasks.owner` stays NULL; the actor is recorded in `agent_logs.source` for the auto-emitted `task claim` event. The orchestrator-doing-direct-work pattern. | "self-claim" (in code; "anonymous claim" in prose), "unowned claim" |
 | **release**           | Verb: clear `tasks.owner`                                                | "unclaim", "unassign"                              |
 | **free**              | Verb: mark an agent's `status = 'free'` (idle, available)                | "park", "idle" (verb)                              |
 | **status**            | Persisted enum on `agents` (busy/needs_input/free/...)                   | "state" (use only "lifecycle state")               |
@@ -52,7 +55,7 @@ defined here, fix the doc. If you need a new term, add it here first.
 | **substrate**         | An external system mu depends on (tmux, jj, sl, git, sqlite)             | "dependency" (means npm dep), "service"            |
 | **operation**         | A canonical mu verb (e.g. `mu task add`). Each verb is a thin CLI wrapper over a typed function in `src/*.ts` — the SDK and the CLI share one surface. | "command" (overloaded), "action"             |
 | **reconcile**         | Verb: re-derive registry rows from substrate reality (tmux). Always runs in `mu agent list` and `mu doctor`. | "sync", "refresh"                              |
-| **adopt**             | Verb (deferred; see [ROADMAP.md](ROADMAP.md)): add an existing tmux pane to the registry as a managed agent. | "import", "absorb"                       |
+| **adopt**             | Verb: register an existing tmux pane as a managed **agent**. The inverse of `mu agent list`'s 'orphan' state. Pane must be in the workstream's tmux session. | "import", "absorb"                       |
 | **pi-subagents**      | A different package by Nico Bailon for in-pi focused delegation. Mu and pi-subagents are complementary, not competing. | conflating with mu                                 |
 
 ---

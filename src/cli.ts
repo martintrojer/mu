@@ -1368,6 +1368,30 @@ function formatTreeNodeLabel(t: TaskRow): string {
   return `${pc.bold(t.localId)}  ${colorStatus(t.status)}  ${pc.dim(t.title)}`;
 }
 
+/**
+ * Find the actor of the most recent `task claim <id>` event for a task.
+ * Used to surface 'who's working on this' when `tasks.owner IS NULL`
+ * (the --self / anonymous-claim case). Returns null when there's been
+ * no claim event for this task.
+ *
+ * Implementation: scan the latest few claim events for this workstream
+ * (small bounded N), pattern-match for `task claim <id>` in the payload.
+ * Cheap; called only when owner is NULL.
+ */
+function lastClaimActor(db: Db, workstream: string, localId: string): string | null {
+  const recent = listLogs(db, {
+    workstream,
+    kind: "event",
+    limit: 100,
+  });
+  for (let i = recent.length - 1; i >= 0; i--) {
+    const ev = recent[i];
+    if (!ev) continue;
+    if (ev.payload.startsWith(`task claim ${localId} `)) return ev.source;
+  }
+  return null;
+}
+
 async function cmdTaskShow(
   db: Db,
   localId: string,
@@ -1379,12 +1403,21 @@ async function cmdTaskShow(
   const edges = getTaskEdges(db, localId);
   const notes = listNotes(db, localId);
 
+  // When owner IS NULL but the task is IN_PROGRESS (or recently was),
+  // the actor is in agent_logs. Surface it so 'who's working on this'
+  // is answerable from `mu task show` alone.
+  const lastActor =
+    task.owner === null && task.status !== "OPEN"
+      ? lastClaimActor(db, task.workstream, task.localId)
+      : null;
+
   if (opts.json) {
     emitJson({
       task: withRoi(task),
       blockers: edges.blockers,
       dependents: edges.dependents,
       notes,
+      lastClaimActor: lastActor,
     });
     return;
   }
@@ -1393,7 +1426,15 @@ async function cmdTaskShow(
   console.log(pc.bold(`${task.localId}  —  ${task.title}`));
   console.log(`  workstream : ${task.workstream}`);
   console.log(`  status     : ${task.status}`);
-  console.log(`  owner      : ${task.owner ?? pc.dim("(unowned)")}`);
+  // owner: registered worker name, or '(self: <actor>)' for an anonymous
+  // claim, or '(unowned)' for OPEN tasks.
+  const ownerLine =
+    task.owner !== null
+      ? task.owner
+      : lastActor !== null
+        ? pc.dim(`(self: ${lastActor})`)
+        : pc.dim("(unowned)");
+  console.log(`  owner      : ${ownerLine}`);
   console.log(`  impact     : ${task.impact}`);
   console.log(`  effort     : ${task.effortDays}  ${pc.dim(`(ROI ${roi})`)}`);
   console.log(`  created    : ${pc.dim(task.createdAt)}`);
@@ -1466,16 +1507,41 @@ async function cmdTaskRelease(
 async function cmdClaim(
   db: Db,
   localId: string,
-  opts: { for?: string; evidence?: string; workstream?: string },
+  opts: {
+    for?: string;
+    self?: boolean;
+    actor?: string;
+    evidence?: string;
+    workstream?: string;
+  },
 ): Promise<void> {
   assertTaskInWorkstream(db, localId, opts.workstream);
-  const sdkOpts: { agentName?: string; evidence?: string } = {};
+  if (opts.self === true && opts.for !== undefined) {
+    throw new UsageError("--self and --for are mutually exclusive");
+  }
+  if (opts.actor !== undefined && opts.self !== true) {
+    throw new UsageError("--actor only meaningful with --self (it overrides the actor name)");
+  }
+  const sdkOpts: {
+    agentName?: string;
+    self?: boolean;
+    actor?: string;
+    evidence?: string;
+  } = {};
   if (opts.for) sdkOpts.agentName = opts.for;
+  if (opts.self) sdkOpts.self = true;
+  if (opts.actor !== undefined) sdkOpts.actor = opts.actor;
   if (opts.evidence !== undefined) sdkOpts.evidence = opts.evidence;
   const result = await claimTask(db, localId, sdkOpts);
-  console.log(
-    `Claimed ${pc.bold(localId)} for ${pc.bold(result.owner)} ${pc.dim(`(${result.previousStatus} → ${result.status})`)}`,
-  );
+  if (result.owner === null) {
+    console.log(
+      `Claimed ${pc.bold(localId)} ${pc.dim(`(--self by ${result.actor}; ${result.previousStatus} → ${result.status}; owner=NULL)`)}`,
+    );
+  } else {
+    console.log(
+      `Claimed ${pc.bold(localId)} for ${pc.bold(result.owner)} ${pc.dim(`(${result.previousStatus} → ${result.status})`)}`,
+    );
+  }
   if (opts.evidence) console.log(pc.dim(`  evidence: ${opts.evidence}`));
 }
 
@@ -2888,13 +2954,26 @@ export function buildProgram(): Command {
 
   task
     .command("claim <id>")
-    .description("Claim a task for the current agent (derived from pane title via $TMUX_PANE)")
-    .option("-f, --for <agent>", "claim on behalf of an agent (overrides pane title)")
+    .description(
+      "Claim a task. Default: derive agent from $TMUX_PANE's title (must be a registered worker). " +
+        "Use --for <worker> to dispatch. Use --self for orchestrator-direct work (anonymous claim, owner=NULL, actor recorded in agent_logs).",
+    )
+    .option("-f, --for <agent>", "claim on behalf of a registered worker (dispatch)")
+    .option(
+      "--self",
+      "anonymous claim (orchestrator pattern): owner stays NULL; actor recorded in agent_logs.source. Mutually exclusive with --for.",
+    )
+    .option(
+      "--actor <name>",
+      "override the actor name used for the log (only valid with --self; defaults to pane title or $USER)",
+    )
     .option(...WORKSTREAM_OPT)
     .option(...EVIDENCE_OPT)
     .action(function (taskId: string) {
       const opts = (this as Command).opts() as {
         for?: string;
+        self?: boolean;
+        actor?: string;
         evidence?: string;
         workstream?: string;
       };

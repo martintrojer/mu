@@ -246,7 +246,12 @@ mu task tree <id> [-w] [--down] [--json]   # ASCII tree of blockers (default) or
                                            # diamonds collapse with an arrow marker
 mu task notes <id> [-w] [--json]           # just the notes (oldest first)
 mu task note <id> "text" [-w]              # append a note (\n / \t / \\ escapes interpreted)
-mu task claim <id> [-w] [--for <agent>]    # CAS on tasks.owner; reads pane title via $TMUX_PANE
+mu task claim <id> [-w] [--for <agent>] [--self [--actor <name>]]
+                                           # default: derive worker from $TMUX_PANE pane title (must be registered).
+                                           # --for <agent>: dispatch to a registered worker (orchestrator pattern).
+                                           # --self: anonymous claim (orchestrator does direct work);
+                                           #   owner stays NULL; actor recorded in agent_logs.source.
+                                           # --self and --for are mutually exclusive.
 mu task release <id> [-w] [--reopen]       # clear tasks.owner; --reopen flips status back to OPEN
 mu task close <id> [-w]                    # OPEN/IN_PROGRESS → CLOSED (idempotent)
 mu task open <id> [-w]                     # CLOSED → OPEN (e.g. reopen mistakenly closed)
@@ -609,7 +614,30 @@ NULL (treat as orchestrator) elsewhere.
 ## If you ARE the agent (in-pane patterns)
 
 Verbs auto-resolve via `$TMUX_PANE` — `mu whoami`, `mu my-next`,
-`mu task claim` all work without a name argument. Working loop:
+`mu task claim` all work without a name argument. This is the
+**worker** path: your pane is registered in the `agents` table
+(`mu agent spawn` put it there), the FK on `tasks.owner` matches
+your pane title, and bare `mu task claim` Just Works.
+
+If you're an **orchestrator** — a top-level pi session NOT spawned
+by `mu agent spawn`, e.g. running mu from your host shell to
+coordinate workers — your pane has no `agents` row, and bare
+`mu task claim` will fail with `ClaimerNotRegisteredError`. Three
+options:
+
+  1. **Dispatch to a worker** — `mu task claim <id> --for worker-1`.
+     Most common. Use whenever the work is big enough to warrant a
+     dedicated pane.
+  2. **Do the work directly with `--self`** — `mu task claim <id>
+     --self --evidence "trivial 5-LOC fix"`. Anonymous claim:
+     `tasks.owner` stays NULL; the actor (your pane title or
+     `$USER`) goes into `agent_logs.source`. `mu task show` will
+     surface it as `owner: (self: <actor>)`.
+  3. **Adopt your pane** — `mu adopt <pane-id>`. Only works if
+     your pane is in the workstream's `mu-<ws>` tmux session;
+     usually the orchestrator isn't, so this is rare.
+
+Working loop (worker path):
 
 ```bash
 # 1. Orient yourself

@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { insertAgent } from "../src/agents.js";
 import { type Db, openDb } from "../src/db.js";
+import { listLogs } from "../src/logs.js";
 import {
   ClaimerNotRegisteredError,
   CrossWorkstreamEdgeError,
@@ -606,21 +607,23 @@ describe("claimTask", () => {
     expect(getTask(db, "auth")?.status).toBe("OPEN");
   });
 
-  it("ClaimerNotRegisteredError suggests --for when name came from --for (no pane id available)", async () => {
+  it("ClaimerNotRegisteredError lists all three actionable next steps (--self, --for, mu adopt)", async () => {
     try {
       await claimTask(db, "auth", { agentName: "ghost" });
       throw new Error("expected throw");
     } catch (err) {
       expect(err).toBeInstanceOf(ClaimerNotRegisteredError);
       const msg = (err as Error).message;
-      // No pane id (came from --for, not $TMUX_PANE)
       expect(msg).toContain("ghost");
       expect(msg).toContain("not a registered mu agent");
+      // All three actionable hints present.
+      expect(msg).toContain("--self");
       expect(msg).toContain("--for");
+      expect(msg).toContain("mu adopt");
     }
   });
 
-  it("ClaimerNotRegisteredError suggests 'mu adopt <pane>' when name came from $TMUX_PANE", async () => {
+  it("ClaimerNotRegisteredError suggests 'mu adopt <pane>' with the actual pane id when name came from $TMUX_PANE", async () => {
     const executor: TmuxExecutor = async (args) => {
       if (args[0] === "display-message" && args.includes("#{pane_title}")) {
         return { stdout: "unregistered\n", stderr: "", exitCode: 0 };
@@ -638,7 +641,86 @@ describe("claimTask", () => {
         expect(msg).toContain("unregistered");
         expect(msg).toContain("%99");
         expect(msg).toContain("mu adopt %99");
+        // --self is presented BEFORE mu adopt since it's the most-common
+        // resolution for an orchestrator.
+        expect(msg.indexOf("--self")).toBeLessThan(msg.indexOf("mu adopt"));
       }
+    });
+  });
+
+  // ─ --self anonymous claim path (orchestrator pattern) ─
+  it("--self skips the FK check; sets owner=NULL; records actor in result + log", async () => {
+    const result = await claimTask(db, "auth", { self: true, actor: "orchestrator" });
+    expect(result.owner).toBeNull();
+    expect(result.actor).toBe("orchestrator");
+    expect(result.previousStatus).toBe("OPEN");
+    expect(result.status).toBe("IN_PROGRESS");
+    expect(getTask(db, "auth")?.owner).toBeNull();
+    expect(getTask(db, "auth")?.status).toBe("IN_PROGRESS");
+  });
+
+  it("--self emits an agent_logs event with the actor as source", async () => {
+    await claimTask(db, "auth", { self: true, actor: "deploy-bot" });
+    const events = listLogs(db, { workstream: "test", kind: "event" });
+    const claim = events.find((e) => e.payload.includes("task claim auth"));
+    expect(claim).toBeDefined();
+    expect(claim?.source).toBe("deploy-bot");
+    expect(claim?.payload).toContain("--self");
+    expect(claim?.payload).toContain("anonymous");
+  });
+
+  it("--self does NOT require the actor to exist in the agents table", async () => {
+    // 'phantom' has no row in agents — worker-claim path would reject;
+    // --self happily proceeds because owner stays NULL (no FK to satisfy).
+    const result = await claimTask(db, "auth", { self: true, actor: "phantom" });
+    expect(result.owner).toBeNull();
+    expect(result.actor).toBe("phantom");
+  });
+
+  it("--self with an unowned task succeeds; --self with an owned task throws TaskAlreadyOwnedError", async () => {
+    await claimTask(db, "auth", { agentName: "alice" });
+    await expect(
+      claimTask(db, "auth", { self: true, actor: "orchestrator" }),
+    ).rejects.toBeInstanceOf(TaskAlreadyOwnedError);
+    // Alice still owns it (no overwrite).
+    expect(getTask(db, "auth")?.owner).toBe("alice");
+  });
+
+  it("--self and agentName together is a usage error", async () => {
+    await expect(claimTask(db, "auth", { self: true, agentName: "alice" })).rejects.toThrow(
+      /mutually exclusive/,
+    );
+  });
+
+  it("--self resolves actor from $TMUX_PANE when not explicit", async () => {
+    const executor: TmuxExecutor = async (args) => {
+      if (args[0] === "display-message" && args.includes("#{pane_title}")) {
+        return { stdout: "orchestrator-pane\n", stderr: "", exitCode: 0 };
+      }
+      return { stdout: "", stderr: "unmocked", exitCode: 1 };
+    };
+    setTmuxExecutor(executor);
+    await withEnv("TMUX_PANE", "%42", async () => {
+      const result = await claimTask(db, "auth", { self: true });
+      expect(result.actor).toBe("orchestrator-pane");
+    });
+  });
+
+  it("--self resolves actor from $USER when no $TMUX_PANE", async () => {
+    await withEnv("TMUX_PANE", undefined, async () => {
+      await withEnv("USER", "martin", async () => {
+        const result = await claimTask(db, "auth", { self: true });
+        expect(result.actor).toBe("martin");
+      });
+    });
+  });
+
+  it("--self falls back to 'unknown' when no $TMUX_PANE and no $USER", async () => {
+    await withEnv("TMUX_PANE", undefined, async () => {
+      await withEnv("USER", undefined, async () => {
+        const result = await claimTask(db, "auth", { self: true });
+        expect(result.actor).toBe("unknown");
+      });
     });
   });
 });
