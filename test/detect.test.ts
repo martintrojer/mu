@@ -237,3 +237,61 @@ Allow this command?
     expect(detectPiStatus(scrollback)).toBe("needs_input");
   });
 });
+
+// ─── Braille spinner fallback (pi-meta / wrapper-agnostic) ─────────────
+
+describe("detectPiStatus — braille-spinner fallback (pi-meta / wrappers)", () => {
+  it("⠧ Working... (pi-meta chrome, no '(Esc to interrupt)') → busy", () => {
+    // Real scrollback shape from the multi-agent dogfood:
+    // pi-meta wraps pi with solo; the bottom bar carries an ↑↓R/W
+    // counter and the spinner glyph but no '(Esc to interrupt)'
+    // literal. Vanilla detector falls through to needs_input;
+    // the braille fallback rescues it.
+    const scrollback = `⠧ Working...
+──────────────────────────────────────────────
+edit src/agents.ts
+──────────────────────────────────────────────
+~/.local/state/mu/workspaces/roadmap-v0-2/worker-a (detached)
+↑10 ↓624 R13k W58k 2.1%/800k (auto)                         (anthropic) claude-opus-4-7 • high`;
+    expect(detectPiStatus(scrollback)).toBe("busy");
+  });
+
+  it("any Braille glyph (U+2800-U+28FF) in the tail triggers busy", () => {
+    // Different spinner libraries cycle different subsets; check a
+    // sampling. The full block is in scope.
+    for (const glyph of ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏", "⣿"]) {
+      const scrollback = `random output line\n${glyph} processing\n> `;
+      expect(detectPiStatus(scrollback)).toBe("busy");
+    }
+  });
+
+  it("permission pattern STILL wins over braille fallback (need_permission has highest priority)", () => {
+    // A pane showing both a spinner AND a confirm dialog: the dialog
+    // is the actionable signal; status should be needs_permission.
+    const scrollback = `⠧ Working...
+proceed?
+(Esc to cancel, Enter to submit)`;
+    expect(detectPiStatus(scrollback)).toBe("needs_permission");
+  });
+
+  it("vanilla pi 'to interrupt)' STILL wins (kept for fixture compatibility)", () => {
+    const scrollback = "Working... (Esc to interrupt)";
+    expect(detectPiStatus(scrollback)).toBe("busy");
+  });
+
+  it("no spinner, no busy literal → needs_input (no false-positive on prose)", () => {
+    // 'Working' as plain prose without spinner glyph or paren marker
+    // should NOT trigger busy. Braille fallback only fires on actual
+    // glyphs.
+    const scrollback = `I am Working on this now.
+> `;
+    expect(detectPiStatus(scrollback)).toBe("needs_input");
+  });
+
+  it("spinner glyph that has scrolled OUT of the tail does NOT trigger", () => {
+    // 100 lines of blanks/output after a stale spinner: the tail
+    // window doesn't see it.
+    const stale = `⠧ Working...\n${Array(110).fill("> ").join("\n")}`;
+    expect(detectPiStatus(stale)).toBe("needs_input");
+  });
+});

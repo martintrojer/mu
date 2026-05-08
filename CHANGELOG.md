@@ -50,6 +50,47 @@ called out under "Breaking" in each entry.
 
 ### Added
 
+- **Status detector recognises Braille spinner glyphs as busy
+  (covers pi-meta + every TUI wrapper).** Filed in roadmap-v0-2
+  `bug_status_detector_pi_solo_misclassifies` after the
+  multi-agent dogfood: 3 workers spawned with
+  `--command pi-meta --solo-name <X> --solo-force` all reported
+  `needs_input` while actively grinding (scrollback showed
+  `⠋ Working...`).
+
+  Root cause: `src/detect.ts` looked for the literal
+  `'to interrupt)'` in the pane tail; pi-meta's solo-wrapped
+  chrome doesn't render that exact string. Falls through to
+  `needs_input`. SKILL.md acknowledged this category
+  ('Status detection lags with custom --command wrappers') but
+  there was no fix.
+
+  Fix (~5 LOC, regex `/[\u2800-\u28FF]/`): if no permission
+  pattern and no `'to interrupt)'` literal matched, fall back to
+  'any Unicode Braille block character in the tail = busy'.
+  Every TUI spinner library worth using cycles a subset of these
+  glyphs (⠇⠏⠙⠧⠷⠿⠟⠋…); they essentially never appear
+  in agent prose, so the false-positive risk is negligible. The
+  fallback is wrapper-agnostic — no per-CLI patches needed for
+  pi-meta, claude-code, codex, or any future TUI runtime.
+
+  Order of precedence preserved: needs_permission > busy literal
+  > braille fallback > needs_input. Permission still wins over a
+  spinner-AND-dialog scrollback (the dialog is the actionable
+  signal).
+
+  Tests: 6 new cases including the actual dogfood scrollback
+  fixture, glyph variations across the block, the priority
+  ordering, the no-false-positive-on-prose check, and the
+  tail-window staleness rule. 622 tests total.
+
+  Live verified: spawned a real pi-meta worker, sent a 'count to
+  200' prompt, `mu agent list` correctly shows `busy` (was
+  `needs_input` before).
+
+  Closes `bug_status_detector_pi_solo_misclassifies` in the
+  `roadmap-v0-2` workstream.
+
 - **`mu task note` Next: hints + --help now teach single-quote
   discipline.** Filed in `mufeedback` notes #256/#257: a worker
   ran `mu task note id "... `prune e` ..."` from a shell;

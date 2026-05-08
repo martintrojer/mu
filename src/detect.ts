@@ -59,6 +59,22 @@ const TAIL_LINES = 20;
 const PI_BUSY_PATTERNS: readonly string[] = ["to interrupt)"];
 
 /**
+ * Fallback busy signal: any character in the Unicode Braille block
+ * (U+2800–U+28FF). Every TUI spinner library worth using cycles a
+ * subset of these glyphs (⠇⠏⠙⠧⠷⠿⠟⠋⠈ …) every ~80ms while
+ * blocking work runs. They essentially never appear in agent prose
+ * output, so the false-positive risk is tiny.
+ *
+ * This catches every wrapper around pi (pi-meta + solo, claude-code,
+ * codex …) whose chrome differs from vanilla pi enough that the
+ * `to interrupt)` literal isn't in the tail — surfaced by the
+ * multi-agent dogfood when pi-meta workers all classified as
+ * `needs_input` mid-work. Tracked in roadmap-v0-2
+ * `bug_status_detector_pi_solo_misclassifies`.
+ */
+const BRAILLE_SPINNER_RE = /[\u2800-\u28FF]/;
+
+/**
  * Pi's confirm / select / input dialogs render footer hints like
  * `(Esc to cancel, Enter to submit)`. Both `to submit)` (with closing
  * paren) and `to cancel,` (with the comma artifact of being the first of
@@ -75,6 +91,7 @@ export function detectPiStatus(scrollback: string): DetectedStatus {
   const tail = extractTail(scrollback);
   if (matchesAny(tail, PI_PERMISSION_PATTERNS)) return "needs_permission";
   if (matchesAny(tail, PI_BUSY_PATTERNS)) return "busy";
+  if (BRAILLE_SPINNER_RE.test(tail)) return "busy";
   return "needs_input";
 }
 
