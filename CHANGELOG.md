@@ -50,6 +50,39 @@ called out under "Breaking" in each entry.
 
 ### Added
 
+- **`mu sql` accepts multi-statement scripts** (BEGIN/COMMIT
+  blocks, semicolon-separated batches, top-level migrations).
+  Previously, `prepare()` rejected anything with more than one
+  statement, forcing N invocations for any cleanup or migration
+  script.
+
+  How it works: `cmdSql` first probes via `db.prepare(query)`. If
+  better-sqlite3 throws `'more than one statement'`, the verb
+  falls back to `db.exec(query)` which runs the script verbatim
+  (BEGIN/COMMIT honoured). The single-statement path is
+  unchanged — still reports row counts for writes, structured
+  rows for reads.
+
+  Multi-statement output:
+
+      $ mu sql "BEGIN; INSERT INTO t VALUES(1); INSERT INTO t VALUES(2); COMMIT;"
+      ran 4 statements
+
+      $ mu sql "..." --json
+      {"statements":4,"multiStatement":true}
+
+  The statement count comes from a hand-rolled
+  `countTopLevelStatements()` that respects single-quote / double-
+  quote / line-comment / block-comment / SQL-escape contexts when
+  splitting on `;`. Pure function, exported from `src/cli.ts`,
+  covered by 13 unit tests in `test/sql-multi-statement.test.ts`.
+
+  Surfaced via `nit_sql_multi_statement` (note #96) when the
+  v0.1.0 dot-mangle workstream-rename recipe required N
+  invocations to do an UPDATE-then-cleanup. Now it's one shot.
+
+  Closes `nit_sql_multi_statement` in workstream `roadmap-v0-2`.
+
 - **`skills/mu/SKILL.md` trimmed 771 -> 659 LOC** (−14%) now
   that per-verb tips live in verb output. Final commit of the
   selfdoc track. Specific cuts:

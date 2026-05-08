@@ -2601,7 +2601,36 @@ async function resolveSelfNameOrUser(db: Db): Promise<string> {
 
 async function cmdSql(db: Db, query: string, opts: { json?: boolean } = {}): Promise<void> {
   // Read OR write — `mu sql` is the explicit escape hatch.
+  //
+  // Single-statement path uses better-sqlite3's prepare() so we can
+  // distinguish read (.all() rows) from write (.run() change count).
+  // Multi-statement path uses db.exec() which handles BEGIN/COMMIT and
+  // multiple semicolon-separated statements but returns nothing
+  // structured. We try prepare() first; if it throws the
+  // 'more than one statement' SqliteError, we fall back to exec().
+  // This keeps the simple case fast and well-typed while making
+  // multi-statement migrations / cleanup scripts a one-shot.
   const trimmed = query.trim();
+  // Probe whether this is a single statement by trying prepare(); if
+  // better-sqlite3 throws 'more than one statement', use exec() instead.
+  // Otherwise re-prepare in-line below so TS keeps type inference.
+  try {
+    db.prepare(trimmed);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (/more than one statement/i.test(msg)) {
+      db.exec(trimmed);
+      const n = countTopLevelStatements(trimmed);
+      if (opts.json) {
+        emitJson({ statements: n, multiStatement: true });
+        return;
+      }
+      console.log(pc.dim(`ran ${n} statement${n === 1 ? "" : "s"}`));
+      return;
+    }
+    throw err;
+  }
+
   const lower = trimmed.toLowerCase();
   const isRead =
     lower.startsWith("select") || lower.startsWith("with") || lower.startsWith("explain");
@@ -2635,6 +2664,87 @@ async function cmdSql(db: Db, query: string, opts: { json?: boolean } = {}): Pro
     }
     console.log(pc.dim(`${result.changes} row${result.changes === 1 ? "" : "s"} affected`));
   }
+}
+
+/**
+ * Count top-level SQL statements in `sql`, ignoring semicolons inside
+ * single-quoted strings, double-quoted identifiers, line comments
+ * (`-- ...`), and block comments (`/* ... *\/`). Used by `mu sql`'s
+ * multi-statement path to report 'ran N statements'.
+ *
+ * Hand-rolled rather than pulling in a SQL parser — mu's escape hatch
+ * is for human-typed scripts, not arbitrary SQL. The state machine
+ * covers the cases we care about; pathological inputs (nested
+ * comments, dollar-quoted strings, etc.) may miscount but won't crash
+ * the verb (db.exec already ran successfully by then).
+ */
+export function countTopLevelStatements(sql: string): number {
+  let count = 0;
+  let inSingle = false;
+  let inDouble = false;
+  let inLineComment = false;
+  let inBlockComment = false;
+  let sawNonWs = false;
+  for (let i = 0; i < sql.length; i++) {
+    const c = sql[i];
+    const next = sql[i + 1];
+    if (inLineComment) {
+      if (c === "\n") inLineComment = false;
+      continue;
+    }
+    if (inBlockComment) {
+      if (c === "*" && next === "/") {
+        inBlockComment = false;
+        i++;
+      }
+      continue;
+    }
+    if (inSingle) {
+      // SQL-style escaped single quote: '' inside a string
+      if (c === "'" && next === "'") {
+        i++;
+        continue;
+      }
+      if (c === "'") inSingle = false;
+      continue;
+    }
+    if (inDouble) {
+      if (c === '"' && next === '"') {
+        i++;
+        continue;
+      }
+      if (c === '"') inDouble = false;
+      continue;
+    }
+    if (c === "-" && next === "-") {
+      inLineComment = true;
+      i++;
+      continue;
+    }
+    if (c === "/" && next === "*") {
+      inBlockComment = true;
+      i++;
+      continue;
+    }
+    if (c === "'") {
+      inSingle = true;
+      continue;
+    }
+    if (c === '"') {
+      inDouble = true;
+      continue;
+    }
+    if (c === ";") {
+      if (sawNonWs) {
+        count++;
+        sawNonWs = false;
+      }
+      continue;
+    }
+    if (c !== undefined && /\S/.test(c)) sawNonWs = true;
+  }
+  if (sawNonWs) count++; // trailing statement without `;`
+  return count;
 }
 
 function formatCell(v: unknown): string {
