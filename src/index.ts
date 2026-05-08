@@ -124,6 +124,7 @@ export {
   listWorkstreams,
   summarizeWorkstream,
   type WorkstreamOptions,
+  type WorkspaceFailure,
   WorkstreamNameInvalidError,
   type WorkstreamSummary,
 } from "./workstream.js";

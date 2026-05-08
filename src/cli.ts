@@ -456,8 +456,17 @@ async function cmdDestroy(
 ): Promise<void> {
   const workstream = await resolveWorkstream(opts.workstream);
   const summary = await summarizeWorkstream(db, { workstream });
+  // Empty-but-registered workstreams (a row in `workstreams` with no
+  // agents/tasks/etc.) ARE worth destroying — otherwise the bare
+  // registry row is orphaned forever. nothingToDo is the strict
+  // intersection: nothing on disk, in tmux, OR in the DB.
   const nothingToDo =
-    !summary.tmuxAlive && summary.agents === 0 && summary.tasks === 0 && summary.notes === 0;
+    !summary.tmuxAlive &&
+    !summary.registered &&
+    summary.agents === 0 &&
+    summary.tasks === 0 &&
+    summary.notes === 0 &&
+    summary.workspaces === 0;
 
   if (nothingToDo) {
     if (opts.json) {
@@ -494,6 +503,9 @@ async function cmdDestroy(
     console.log(
       `  tasks        : ${summary.tasks}  (edges: ${summary.edges}, notes: ${summary.notes})`,
     );
+    console.log(
+      `  workspaces   : ${summary.workspaces}${summary.workspaces > 0 ? pc.dim(" (will be cleaned via per-backend remove)") : ""}`,
+    );
     console.log("");
     console.log(pc.dim("(dry-run; rerun with --yes to actually destroy)"));
     printNextSteps([
@@ -518,10 +530,31 @@ async function cmdDestroy(
   console.log(
     `  tasks        : ${summary.tasks}  (edges: ${summary.edges}, notes: ${summary.notes})`,
   );
+  console.log(`  workspaces   : ${summary.workspaces}`);
   console.log("");
   console.log(
-    `Destroyed ${pc.bold(workstream)}: killed tmux=${result.killedTmux}, agents=${result.deletedAgents}, tasks=${result.deletedTasks}, edges=${result.deletedEdges}, notes=${result.deletedNotes}`,
+    `Destroyed ${pc.bold(workstream)}: killed tmux=${result.killedTmux}, agents=${result.deletedAgents}, tasks=${result.deletedTasks}, edges=${result.deletedEdges}, notes=${result.deletedNotes}, workspaces=${result.freedWorkspaces}/${summary.workspaces}`,
   );
+  if (result.failedWorkspaces.length > 0) {
+    console.log("");
+    console.log(
+      pc.yellow(
+        `WARNING: ${result.failedWorkspaces.length} workspace(s) could not be freed cleanly. The DB rows are gone (FK cascade); the on-disk paths remain and need manual cleanup:`,
+      ),
+    );
+    for (const f of result.failedWorkspaces) {
+      console.log(`  - ${f.agent} (${f.backend}): ${f.path}`);
+      console.log(`    error: ${f.error}`);
+    }
+    printNextSteps([
+      {
+        intent: "For each git worktree above, run",
+        command: "git worktree remove --force <path>",
+      },
+      { intent: "For each jj workspace above, run", command: "jj workspace forget <name>" },
+      { intent: "As a last resort", command: "rm -rf <path>" },
+    ]);
+  }
 }
 
 interface SpawnOpts {

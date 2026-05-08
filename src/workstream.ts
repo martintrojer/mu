@@ -14,10 +14,14 @@
 // tests (and the rare workstream whose tmux session was created with a
 // non-default name) work without env-var gymnastics.
 
-import type { Db } from "./db.js";
+import { existsSync, readdirSync, rmdirSync } from "node:fs";
+import { join } from "node:path";
+import { type Db, defaultStateDir } from "./db.js";
 import { emitEvent } from "./logs.js";
 import type { HasNextSteps, NextStep } from "./output.js";
 import { killSession, listSessions, sessionExists } from "./tmux.js";
+import { backendByName } from "./vcs.js";
+import { listWorkspaces } from "./workspace.js";
 
 /**
  * Allowed workstream-name shape: lowercase alpha first, then alnum,
@@ -116,6 +120,17 @@ export interface WorkstreamSummary {
   notes: number;
   /** Rows in `task_edges` whose `from_task` is in this workstream. */
   edges: number;
+  /** Rows in `vcs_workspaces` for this workstream. Surfaced so the
+   *  destroy dry-run can warn about per-agent worktrees that need
+   *  cleanup before the FK cascade silently nukes their rows. */
+  workspaces: number;
+  /** True iff a row exists in the `workstreams` table itself. False
+   *  for tmux-only `mu-*` sessions that mu never observed via
+   *  `mu workstream init`. Surfaced so destroy can clean up bare
+   *  registry rows (workstream row exists, no agents/tasks/etc.) —
+   *  otherwise such rows are orphaned forever (the previous
+   *  `nothingToDo` heuristic short-circuited on them). */
+  registered: boolean;
 }
 
 export interface DestroyResult {
@@ -129,6 +144,21 @@ export interface DestroyResult {
   deletedNotes: number;
   /** Number of `task_edges` deleted by the cascade — informational. */
   deletedEdges: number;
+  /** Number of vcs_workspaces successfully freed (backend cleanup +
+   *  on-disk path removed). */
+  freedWorkspaces: number;
+  /** Workspaces whose backend cleanup failed (e.g. `git worktree
+   *  remove` refused because of uncommitted changes). The DB row
+   *  was still cascade-deleted; the on-disk path remains and needs
+   *  manual cleanup. */
+  failedWorkspaces: WorkspaceFailure[];
+}
+
+export interface WorkspaceFailure {
+  agent: string;
+  backend: string;
+  path: string;
+  error: string;
 }
 
 export interface WorkstreamOptions {
@@ -176,7 +206,16 @@ export async function summarizeWorkstream(
     tasks: countTasks(db, opts.workstream),
     notes: countNotes(db, opts.workstream),
     edges: countEdges(db, opts.workstream),
+    workspaces: listWorkspaces(db, opts.workstream).length,
+    registered: isRegistered(db, opts.workstream),
   };
+}
+
+function isRegistered(db: Db, workstream: string): boolean {
+  const row = db.prepare("SELECT 1 AS x FROM workstreams WHERE name = ?").get(workstream) as
+    | { x: number }
+    | undefined;
+  return row !== undefined;
 }
 
 /**
@@ -198,6 +237,7 @@ export async function destroyWorkstream(db: Db, opts: WorkstreamOptions): Promis
   const tasksBefore = countTasks(db, opts.workstream);
   const notesBefore = countNotes(db, opts.workstream);
   const edgesBefore = countEdges(db, opts.workstream);
+  const workspacesBefore = listWorkspaces(db, opts.workstream);
 
   // Tmux first: if killSession throws we don't want the DB rows already
   // gone with no way to recover. (killSession is itself idempotent on
@@ -207,12 +247,63 @@ export async function destroyWorkstream(db: Db, opts: WorkstreamOptions): Promis
     await killSession(tmuxSession);
   }
 
+  // Workspaces SECOND, before the FK cascade. The cascade silently
+  // deletes vcs_workspaces rows but leaves the on-disk worktrees
+  // (and the git worktree registry entries) behind — the bug from
+  // mufeedback note #195. Per backend, the right cleanup is
+  // 'git worktree remove --force' / 'jj workspace forget' / etc.,
+  // not 'rm -rf'. We surface failures so the user can recover; we
+  // do NOT abort the destroy on workspace failure (the workstream
+  // semantics are 'tear it all down', not 'partial cleanup').
+  let freedWorkspaces = 0;
+  const failedWorkspaces: WorkspaceFailure[] = [];
+  for (const ws of workspacesBefore) {
+    try {
+      const backend = backendByName(ws.backend);
+      const result = await backend.freeWorkspace({
+        workspacePath: ws.path,
+        commit: false,
+      });
+      if (result.removed) {
+        freedWorkspaces += 1;
+      } else {
+        // Path was already gone (manual rm -rf); count as freed since
+        // the user's intent ('not on disk anymore') is satisfied.
+        freedWorkspaces += 1;
+      }
+    } catch (err) {
+      failedWorkspaces.push({
+        agent: ws.agent,
+        backend: ws.backend,
+        path: ws.path,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  // After every per-agent worktree is freed, the parent
+  // <state>/workspaces/<workstream>/ directory is empty — reap it
+  // too. Best-effort: rmdir refuses if non-empty (e.g. backend
+  // removal failed and left files behind), which is the right
+  // outcome (don't silently rm -rf user data). Skipped if the
+  // parent doesn't exist (workstream never had any workspaces).
+  const parentDir = join(defaultStateDir(), "workspaces", opts.workstream);
+  if (existsSync(parentDir)) {
+    try {
+      if (readdirSync(parentDir).length === 0) rmdirSync(parentDir);
+    } catch {
+      // Non-empty or otherwise unreapable. The failed-workspaces
+      // list above already tells the user what to clean.
+    }
+  }
+
   // One DELETE: the FK CASCADE chain (workstreams → agents,
   // workstreams → tasks → task_edges + task_notes, workstreams →
-  // agent_logs) cleans every row in one shot, atomically. If the
-  // workstream was never registered (e.g. an orphan tmux session
-  // that mu never observed), changes() = 0 and we still report
-  // the killed tmux session honestly.
+  // agent_logs, workstreams → vcs_workspaces) cleans every row in
+  // one shot, atomically. If the workstream was never registered
+  // (e.g. an orphan tmux session that mu never observed),
+  // changes() = 0 and we still report the killed tmux session
+  // honestly.
   const result = db.prepare("DELETE FROM workstreams WHERE name = ?").run(opts.workstream);
   // The destroy event itself goes to workstream=null (machine-wide)
   // because the FK CASCADE we just triggered would otherwise wipe
@@ -221,7 +312,7 @@ export async function destroyWorkstream(db: Db, opts: WorkstreamOptions): Promis
     emitEvent(
       db,
       null,
-      `workstream destroy ${opts.workstream} (agents=${agentsBefore}, tasks=${tasksBefore}, edges=${edgesBefore}, notes=${notesBefore}, tmux=${tmuxAliveBefore})`,
+      `workstream destroy ${opts.workstream} (agents=${agentsBefore}, tasks=${tasksBefore}, edges=${edgesBefore}, notes=${notesBefore}, workspaces=${freedWorkspaces}/${workspacesBefore.length}, tmux=${tmuxAliveBefore})`,
     );
   }
 
@@ -231,6 +322,8 @@ export async function destroyWorkstream(db: Db, opts: WorkstreamOptions): Promis
     deletedTasks: tasksBefore,
     deletedNotes: notesBefore,
     deletedEdges: edgesBefore,
+    freedWorkspaces,
+    failedWorkspaces,
   };
 }
 

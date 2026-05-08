@@ -226,6 +226,8 @@ describe("summarizeWorkstream", () => {
       tasks: 3,
       edges: 2,
       notes: 2,
+      workspaces: 0,
+      registered: true,
     });
   });
 
@@ -317,6 +319,8 @@ describe("destroyWorkstream", () => {
       deletedTasks: 3,
       deletedNotes: 2,
       deletedEdges: 2,
+      freedWorkspaces: 0,
+      failedWorkspaces: [],
     });
 
     expect(state.killed).toEqual(["mu-auth"]);
@@ -365,6 +369,8 @@ describe("destroyWorkstream", () => {
       deletedTasks: 0,
       deletedNotes: 0,
       deletedEdges: 0,
+      freedWorkspaces: 0,
+      failedWorkspaces: [],
     });
   });
 
@@ -390,6 +396,8 @@ describe("destroyWorkstream", () => {
       deletedTasks: 0,
       deletedNotes: 0,
       deletedEdges: 0,
+      freedWorkspaces: 0,
+      failedWorkspaces: [],
     });
     expect(state.killed).toEqual(["mu-empty"]);
   });
@@ -407,7 +415,56 @@ describe("destroyWorkstream", () => {
       deletedTasks: 0,
       deletedNotes: 0,
       deletedEdges: 0,
+      freedWorkspaces: 0,
+      failedWorkspaces: [],
     });
+  });
+
+  it("destroys a bare-registry workstream (workstreams row but no agents/tasks)", async () => {
+    // Regression for the temp_confirm_a/temp_confirm_b live bug:
+    // an empty registered workstream was unreachable by destroy
+    // because the cli's nothingToDo short-circuit ignored the
+    // workstreams row itself. summarizeWorkstream now returns
+    // `registered: true` so the cli can factor it in. At the SDK
+    // layer this test pins down that destroyWorkstream itself does
+    // delete the bare row.
+    setTmuxExecutor(mockTmux(state).executor);
+    ensureWorkstream(db, "orphan");
+    expect(
+      (
+        db.prepare("SELECT COUNT(*) AS n FROM workstreams WHERE name='orphan'").get() as {
+          n: number;
+        }
+      ).n,
+    ).toBe(1);
+
+    await destroyWorkstream(db, { workstream: "orphan" });
+    expect(
+      (
+        db.prepare("SELECT COUNT(*) AS n FROM workstreams WHERE name='orphan'").get() as {
+          n: number;
+        }
+      ).n,
+    ).toBe(0);
+  });
+
+  it("summarize reports `registered: true` for an empty registered workstream", async () => {
+    setTmuxExecutor(mockTmux(state).executor);
+    ensureWorkstream(db, "orphan");
+    const summary = await summarizeWorkstream(db, { workstream: "orphan" });
+    expect(summary.registered).toBe(true);
+    expect(summary.tmuxAlive).toBe(false);
+    expect(summary.agents).toBe(0);
+    expect(summary.tasks).toBe(0);
+    expect(summary.workspaces).toBe(0);
+  });
+
+  it("summarize reports `registered: false` for a tmux-only workstream mu never observed", async () => {
+    state.sessions.add("mu-tmuxonly");
+    setTmuxExecutor(mockTmux(state).executor);
+    const summary = await summarizeWorkstream(db, { workstream: "tmuxonly" });
+    expect(summary.registered).toBe(false);
+    expect(summary.tmuxAlive).toBe(true);
   });
 });
 

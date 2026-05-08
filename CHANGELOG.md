@@ -50,6 +50,43 @@ called out under "Breaking" in each entry.
 
 ### Added
 
+- **`mu workstream destroy` now actually cleans workspaces.** Filed
+  in `mufeedback` note #195: destroying a workstream killed the
+  tmux session and cascade-deleted every DB row but left the
+  per-agent on-disk worktrees behind, plus the git worktree
+  registry entries pointing at them. Surfaced after closing a
+  14-task workstream with 3 historical worktrees — every one had
+  to be cleaned by hand with `git worktree remove --force`.
+
+  - `summarizeWorkstream` now returns `workspaces: number` and
+    `registered: boolean`. Both surface in the destroy dry-run
+    and final summary.
+  - `destroyWorkstream` enumerates `vcs_workspaces` for the
+    target workstream and calls each row's backend
+    `freeWorkspace()` before the FK cascade nukes the rows.
+    Return type gains `freedWorkspaces: number` and
+    `failedWorkspaces: WorkspaceFailure[]` so the CLI can surface
+    paths + recovery hints when (e.g.) `git worktree remove`
+    refuses because of uncommitted changes.
+  - Empty `<state>/workspaces/<ws>/` parent dir is reaped via
+    `rmdir` after every per-agent worktree is freed (best-effort:
+    refuses if non-empty, which is the right outcome).
+  - `cmdDestroy`'s `nothingToDo` short-circuit factored
+    `summary.registered` in. The earlier behaviour treated
+    bare-registry workstreams (a row in `workstreams` with 0
+    agents/tasks/notes) as 'nothing to destroy' and refused to
+    clean them — making such rows orphaned forever. Two such
+    rows on the live DB (`temp_confirm_a/b` from earlier
+    `--confirm-rows` testing) were unreachable until this fix.
+
+  Net diff: 178 insertions across 4 files (workstream.ts +75,
+  cli.ts +25, index.ts +1, workstream.test.ts +60). Live
+  verified end-to-end (sh + git workspace) and on the two live
+  orphan rows.
+
+  Closes `workstream_destroy_yes_leaves_workspace` in the
+  `mufeedback` workstream.
+
 - **`skills/mu/SKILL.md` second terseness pass: 701 -> 574 LOC**
   (−18% on top of the earlier 771 -> 701 trim, −26% total since
   the last trim). User feedback: "keep it terse and to the point.
