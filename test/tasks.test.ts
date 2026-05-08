@@ -170,7 +170,7 @@ describe("addTask", () => {
     expect(listTasks(db)).toEqual([]);
   });
 
-  it("inserts edges when --blocks specified", () => {
+  it("inserts edges when blockedBy specified", () => {
     addTask(db, {
       localId: "design",
       workstream: "test",
@@ -184,7 +184,7 @@ describe("addTask", () => {
       title: "Build",
       impact: 80,
       effortDays: 5,
-      blocks: ["design"],
+      blockedBy: ["design"],
     });
     expect(build.localId).toBe("build");
     // Verify edge inserted: design blocks build → build is blocked.
@@ -202,7 +202,7 @@ describe("addTask", () => {
         title: "Build",
         impact: 80,
         effortDays: 5,
-        blocks: ["nonexistent"],
+        blockedBy: ["nonexistent"],
       }),
     ).toThrow(TaskNotFoundError);
     // Atomic rollback: build should NOT exist after failed insert.
@@ -218,7 +218,7 @@ describe("addTask", () => {
         title: "B",
         impact: 80,
         effortDays: 5,
-        blocks: ["design", "ghost", "design"],
+        blockedBy: ["design", "ghost", "design"],
       }),
     ).toThrow(TaskNotFoundError);
     expect(getTask(db, "build")).toBeUndefined();
@@ -240,14 +240,14 @@ describe("addTask", () => {
         title: "L",
         impact: 50,
         effortDays: 1,
-        blocks: ["loop"],
+        blockedBy: ["loop"],
       }),
     ).toThrow();
     expect(getTask(db, "loop")).toBeUndefined();
   });
 });
 
-// ─── Cycle check via addTask --blocks ──────────────────────────────────
+// ─── Cycle check via addTask blockedBy ───────────────────────────────
 
 describe("addTask cycle check", () => {
   it("rejects an edge that would close a 2-task cycle", () => {
@@ -259,7 +259,7 @@ describe("addTask cycle check", () => {
       title: "B",
       impact: 50,
       effortDays: 1,
-      blocks: ["a"],
+      blockedBy: ["a"],
     });
     // Now try to add a task `c` that creates a cycle: c → a, and we'd want a → c.
     // Easier: try to add a task that puts an edge in a way that cycles.
@@ -295,7 +295,7 @@ describe("getPrerequisites", () => {
       title: "B",
       impact: 50,
       effortDays: 1,
-      blocks: ["a"],
+      blockedBy: ["a"],
     });
     addTask(db, {
       localId: "c",
@@ -303,7 +303,7 @@ describe("getPrerequisites", () => {
       title: "C",
       impact: 50,
       effortDays: 1,
-      blocks: ["b"],
+      blockedBy: ["b"],
     });
     addTask(db, {
       localId: "d",
@@ -311,7 +311,7 @@ describe("getPrerequisites", () => {
       title: "D",
       impact: 50,
       effortDays: 1,
-      blocks: ["c"],
+      blockedBy: ["c"],
     });
     expect(getPrerequisites(db, "d")).toEqual(new Set(["d", "c", "b", "a"]));
   });
@@ -325,7 +325,7 @@ describe("getPrerequisites", () => {
       title: "L",
       impact: 50,
       effortDays: 1,
-      blocks: ["shared"],
+      blockedBy: ["shared"],
     });
     addTask(db, {
       localId: "right",
@@ -333,7 +333,7 @@ describe("getPrerequisites", () => {
       title: "R",
       impact: 50,
       effortDays: 1,
-      blocks: ["shared"],
+      blockedBy: ["shared"],
     });
     addTask(db, {
       localId: "top",
@@ -341,7 +341,7 @@ describe("getPrerequisites", () => {
       title: "T",
       impact: 50,
       effortDays: 1,
-      blocks: ["left", "right"],
+      blockedBy: ["left", "right"],
     });
     expect(getPrerequisites(db, "top")).toEqual(new Set(["top", "left", "right", "shared"]));
   });
@@ -403,7 +403,7 @@ describe("listReady / listBlocked / listGoals", () => {
       title: "API",
       impact: 80,
       effortDays: 2,
-      blocks: ["specs"],
+      blockedBy: ["specs"],
     });
     addTask(db, {
       localId: "ui",
@@ -411,7 +411,7 @@ describe("listReady / listBlocked / listGoals", () => {
       title: "UI",
       impact: 70,
       effortDays: 2,
-      blocks: ["specs"],
+      blockedBy: ["specs"],
     });
     addTask(db, {
       localId: "lib",
@@ -419,7 +419,7 @@ describe("listReady / listBlocked / listGoals", () => {
       title: "Lib",
       impact: 80,
       effortDays: 3,
-      blocks: ["api", "ui"],
+      blockedBy: ["api", "ui"],
     });
     addTask(db, {
       localId: "backend",
@@ -427,7 +427,7 @@ describe("listReady / listBlocked / listGoals", () => {
       title: "Backend",
       impact: 80,
       effortDays: 5,
-      blocks: ["lib"],
+      blockedBy: ["lib"],
     });
     addTask(db, {
       localId: "frontend",
@@ -435,7 +435,7 @@ describe("listReady / listBlocked / listGoals", () => {
       title: "Frontend",
       impact: 70,
       effortDays: 5,
-      blocks: ["lib"],
+      blockedBy: ["lib"],
     });
     addTask(db, {
       localId: "tests",
@@ -443,7 +443,7 @@ describe("listReady / listBlocked / listGoals", () => {
       title: "Tests",
       impact: 60,
       effortDays: 3,
-      blocks: ["backend", "frontend"],
+      blockedBy: ["backend", "frontend"],
     });
     addTask(db, {
       localId: "docs",
@@ -451,7 +451,7 @@ describe("listReady / listBlocked / listGoals", () => {
       title: "Docs",
       impact: 50,
       effortDays: 2,
-      blocks: ["api", "ui"],
+      blockedBy: ["api", "ui"],
     });
     addTask(db, {
       localId: "deploy",
@@ -459,7 +459,7 @@ describe("listReady / listBlocked / listGoals", () => {
       title: "Deploy",
       impact: 70,
       effortDays: 1,
-      blocks: ["tests"],
+      blockedBy: ["tests"],
     });
     addTask(db, {
       localId: "launch",
@@ -467,7 +467,7 @@ describe("listReady / listBlocked / listGoals", () => {
       title: "Launch",
       impact: 100,
       effortDays: 1,
-      blocks: ["deploy", "docs"],
+      blockedBy: ["deploy", "docs"],
     });
   });
 
@@ -742,7 +742,7 @@ describe("getTaskEdges", () => {
       title: "B",
       impact: 80,
       effortDays: 5,
-      blocks: ["design"],
+      blockedBy: ["design"],
     });
     addTask(db, {
       localId: "ship",
@@ -750,7 +750,7 @@ describe("getTaskEdges", () => {
       title: "S",
       impact: 90,
       effortDays: 1,
-      blocks: ["build"],
+      blockedBy: ["build"],
     });
   });
 
@@ -786,7 +786,7 @@ describe("getTaskEdges", () => {
       title: "A",
       impact: 10,
       effortDays: 1,
-      blocks: ["design"],
+      blockedBy: ["design"],
     });
     addTask(db, {
       localId: "z",
@@ -794,7 +794,7 @@ describe("getTaskEdges", () => {
       title: "Z",
       impact: 10,
       effortDays: 1,
-      blocks: ["design"],
+      blockedBy: ["design"],
     });
     expect(getTaskEdges(db, "design").dependents).toEqual(["a", "build", "z"]);
   });
@@ -1113,7 +1113,7 @@ describe("removeBlockEdge", () => {
       title: "B",
       impact: 50,
       effortDays: 1,
-      blocks: ["a"],
+      blockedBy: ["a"],
     });
   });
 
@@ -1143,7 +1143,7 @@ describe("deleteTask", () => {
       title: "B",
       impact: 50,
       effortDays: 1,
-      blocks: ["a"],
+      blockedBy: ["a"],
     });
     addTask(db, {
       localId: "c",
@@ -1151,7 +1151,7 @@ describe("deleteTask", () => {
       title: "C",
       impact: 50,
       effortDays: 1,
-      blocks: ["b"],
+      blockedBy: ["b"],
     });
     addNote(db, "b", "note 1");
     addNote(db, "b", "note 2");
@@ -1259,7 +1259,7 @@ describe("reparentTask", () => {
       title: "target",
       impact: 50,
       effortDays: 1,
-      blocks: ["a", "b"],
+      blockedBy: ["a", "b"],
     });
   });
 
@@ -1282,7 +1282,7 @@ describe("reparentTask", () => {
       title: "D",
       impact: 50,
       effortDays: 1,
-      blocks: ["target"],
+      blockedBy: ["target"],
     });
     // target -> downstream exists. Reparenting target to be blocked by
     // downstream creates a cycle.

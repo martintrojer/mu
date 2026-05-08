@@ -594,22 +594,23 @@ export interface AddTaskOptions {
   /**
    * Tasks that block this one. Edges inserted as `blocker -> newTask`.
    * Each blocker must already exist AND share this task's workstream
-   * (cross-workstream edges are forbidden); cycle check guards each edge.
+   * (cross-workstream edges are forbidden); cycle check guards each
+   * edge. The CLI surfaces this as `--blocked-by`; the SDK key matches.
    */
-  blocks?: string[];
+  blockedBy?: string[];
 }
 
 /**
- * Atomically create a task and (optionally) its incoming `blocks` edges.
+ * Atomically create a task and (optionally) its incoming blocked-by
+ * edges.
  *
  * The task insert + every edge insert + cycle check happen inside one
- * SQLite transaction. If any blocker is missing or any edge would create
- * a cycle, the entire add rolls back.
+ * SQLite transaction. If any blocker is missing or any edge would
+ * create a cycle, the entire add rolls back.
  *
  * Cycle check for `addTask` is structurally trivial (a fresh task has
  * no outgoing edges, so `to -> ... -> from` is impossible). It's still
- * called here so the same primitive is exercised by tests, and so a
- * future `mu task update --blocks` verb can reuse the path.
+ * called here so the same primitive is exercised by tests.
  */
 export function addTask(db: Db, opts: AddTaskOptions): TaskRow {
   if (opts.localId.startsWith("mu_")) {
@@ -636,12 +637,12 @@ export function addTask(db: Db, opts: AddTaskOptions): TaskRow {
        VALUES (?, ?, ?, 'OPEN', ?, ?, ?, ?)`,
     ).run(opts.localId, opts.workstream, opts.title, opts.impact, opts.effortDays, now, now);
 
-    if (opts.blocks && opts.blocks.length > 0) {
+    if (opts.blockedBy && opts.blockedBy.length > 0) {
       const blockerLookup = db.prepare("SELECT workstream FROM tasks WHERE local_id = ?");
       const insertEdge = db.prepare(
         "INSERT INTO task_edges (from_task, to_task, created_at) VALUES (?, ?, ?)",
       );
-      for (const blocker of opts.blocks) {
+      for (const blocker of opts.blockedBy) {
         const row = blockerLookup.get(blocker) as { workstream: string } | undefined;
         if (!row) {
           throw new TaskNotFoundError(blocker);
@@ -664,7 +665,7 @@ export function addTask(db: Db, opts: AddTaskOptions): TaskRow {
     const row = getTask(db, opts.localId);
     if (!row) throw new Error(`addTask: row missing after insert: ${opts.localId}`);
     const blockedBy =
-      opts.blocks && opts.blocks.length > 0 ? `, blocked-by=${opts.blocks.join(",")}` : "";
+      opts.blockedBy && opts.blockedBy.length > 0 ? `, blocked-by=${opts.blockedBy.join(",")}` : "";
     emitEvent(
       db,
       opts.workstream,

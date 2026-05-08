@@ -1,16 +1,11 @@
-// CLI-level tests for the `mu task add --blocked-by` flag (and the
-// deprecated `--blocks` alias).
+// CLI-level tests for the `mu task add --blocked-by` flag.
 //
-// Surfaced by nit_blocks_flag_naming on the roadmap-v0-2 workstream:
-// the original `-b/--blocks <ids>` flag on `mu task add` reads as
-// "this task BLOCKS those" but actually means "this task is BLOCKED BY
-// those" — a recurring footgun. The fix:
-//
-//   1. Add a clearer `--blocked-by <ids>` option that means the same
-//      thing as `--blocks` (which is now a deprecated alias).
-//   2. If both are passed with different values, error with a typed
-//      UsageError so the user knows to pick one. Identical values are
-//      tolerated (the same string snuck in via shell aliasing etc.).
+// Surfaced by nit_blocks_flag_naming: the original `-b/--blocks <ids>`
+// flag read as 'this task BLOCKS those' but actually meant 'this task
+// is BLOCKED BY those' — a recurring footgun. We renamed the flag to
+// `-b, --blocked-by <ids>` and removed the old name entirely
+// (pre-public-release; no compat burden). Same rename applies to
+// `mu task reparent --blocked-by`.
 //
 // We drive the program directly via buildProgram() + parseAsync() with
 // stdout captured (same pattern as test/json-output.test.ts) so we
@@ -94,7 +89,7 @@ async function runCli(argv: readonly string[], dbPath: string): Promise<Capture>
   return { stdout, stderr, exitCode };
 }
 
-describe("mu task add --blocked-by (and deprecated --blocks alias)", () => {
+describe("mu task add --blocked-by", () => {
   let tempDir: string;
   let dbPath: string;
 
@@ -110,36 +105,7 @@ describe("mu task add --blocked-by (and deprecated --blocks alias)", () => {
     rmSync(tempDir, { recursive: true, force: true });
   });
 
-  it("--blocks (deprecated alias) inserts incoming edges (back-compat)", async () => {
-    await runCli(
-      ["task", "add", "design", "-w", "test", "-t", "Design", "-i", "80", "-e", "2"],
-      dbPath,
-    );
-    await runCli(
-      [
-        "task",
-        "add",
-        "build",
-        "-w",
-        "test",
-        "-t",
-        "Build",
-        "-i",
-        "70",
-        "-e",
-        "3",
-        "--blocks",
-        "design",
-      ],
-      dbPath,
-    );
-    const db = openDb({ path: dbPath });
-    const edges = getTaskEdges(db, "build");
-    db.close();
-    expect(edges.blockers).toEqual(["design"]);
-  });
-
-  it("--blocked-by inserts the same incoming edges as --blocks", async () => {
+  it("--blocked-by inserts incoming edges", async () => {
     await runCli(
       ["task", "add", "design", "-w", "test", "-t", "Design", "-i", "80", "-e", "2"],
       dbPath,
@@ -168,7 +134,22 @@ describe("mu task add --blocked-by (and deprecated --blocks alias)", () => {
     expect(edges.blockers).toEqual(["design"]);
   });
 
-  it("--blocked-by accepts comma-separated lists same as --blocks", async () => {
+  it("-b is a short form for --blocked-by", async () => {
+    await runCli(
+      ["task", "add", "design", "-w", "test", "-t", "Design", "-i", "80", "-e", "2"],
+      dbPath,
+    );
+    await runCli(
+      ["task", "add", "build", "-w", "test", "-t", "Build", "-i", "70", "-e", "3", "-b", "design"],
+      dbPath,
+    );
+    const db = openDb({ path: dbPath });
+    const edges = getTaskEdges(db, "build");
+    db.close();
+    expect(edges.blockers).toEqual(["design"]);
+  });
+
+  it("--blocked-by accepts comma-separated lists", async () => {
     for (const id of ["a", "b", "c"]) {
       await runCli(
         ["task", "add", id, "-w", "test", "-t", id.toUpperCase(), "-i", "50", "-e", "1"],
@@ -199,7 +180,7 @@ describe("mu task add --blocked-by (and deprecated --blocks alias)", () => {
     expect(edges.blockers.sort()).toEqual(["a", "b", "c"]);
   });
 
-  it("--blocked-by + --blocks with the SAME value is tolerated (idempotent)", async () => {
+  it("--blocks (the old name) is rejected by commander as unknown option", async () => {
     await runCli(
       ["task", "add", "design", "-w", "test", "-t", "Design", "-i", "80", "-e", "2"],
       dbPath,
@@ -219,51 +200,13 @@ describe("mu task add --blocked-by (and deprecated --blocks alias)", () => {
         "3",
         "--blocks",
         "design",
-        "--blocked-by",
-        "design",
       ],
       dbPath,
     );
-    expect(exitCode).toBeNull();
-    expect(stderr).toBe("");
-    const db = openDb({ path: dbPath });
-    const edges = getTaskEdges(db, "build");
-    db.close();
-    expect(edges.blockers).toEqual(["design"]);
-  });
-
-  it("--blocked-by + --blocks with DIFFERENT values is a UsageError", async () => {
-    await runCli(
-      ["task", "add", "design", "-w", "test", "-t", "Design", "-i", "80", "-e", "2"],
-      dbPath,
-    );
-    await runCli(
-      ["task", "add", "review", "-w", "test", "-t", "Review", "-i", "60", "-e", "1"],
-      dbPath,
-    );
-    const { stderr, exitCode } = await runCli(
-      [
-        "task",
-        "add",
-        "build",
-        "-w",
-        "test",
-        "-t",
-        "Build",
-        "-i",
-        "70",
-        "-e",
-        "3",
-        "--blocks",
-        "design",
-        "--blocked-by",
-        "review",
-      ],
-      dbPath,
-    );
-    expect(exitCode).not.toBeNull();
-    expect(stderr).toMatch(/--blocked-by.*--blocks/);
-    // Task should NOT have been created.
+    // commander.exitOverride throws on unknown options; runCli swallows.
+    // Either way: 'build' must NOT have been created.
+    expect(exitCode === null || exitCode !== 0).toBe(true);
+    expect(stderr).toMatch(/unknown option|--blocks/);
     const db = openDb({ path: dbPath });
     const row = db.prepare("SELECT 1 FROM tasks WHERE local_id = 'build'").get();
     db.close();

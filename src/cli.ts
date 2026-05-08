@@ -1038,7 +1038,6 @@ async function cmdTaskAdd(
     title: string;
     impact: number;
     effortDays: number;
-    blocks?: string;
     blockedBy?: string;
     workstream?: string;
     json?: boolean;
@@ -1049,19 +1048,8 @@ async function cmdTaskAdd(
   // CLI's `<id>` positional is now optional; idFromTitle handles
   // collisions with `_2`, `_3`, … suffixes.
   const id = localId ?? idFromTitle(db, workstream, opts.title);
-  // --blocked-by is the preferred (clearer) spelling; --blocks is the
-  // deprecated alias kept for backwards compatibility. Both mean the
-  // same thing: "this task is blocked by these tasks". If both are
-  // passed and disagree, error out — the user almost certainly meant
-  // one or the other and silently picking would be a footgun.
-  if (opts.blockedBy !== undefined && opts.blocks !== undefined && opts.blockedBy !== opts.blocks) {
-    throw new UsageError(
-      "--blocked-by and --blocks (deprecated alias) were both passed with different values; pick one",
-    );
-  }
-  const blockersSpec = opts.blockedBy ?? opts.blocks;
-  const blocks = blockersSpec
-    ? blockersSpec
+  const blockedBy = opts.blockedBy
+    ? opts.blockedBy
         .split(",")
         .map((s) => s.trim())
         .filter(Boolean)
@@ -1072,7 +1060,7 @@ async function cmdTaskAdd(
     title: opts.title,
     impact: opts.impact,
     effortDays: opts.effortDays,
-    ...(blocks ? { blocks } : {}),
+    ...(blockedBy ? { blockedBy } : {}),
   });
   const nextSteps: NextStep[] = [
     { intent: "Show this task", command: `mu task show ${task.localId} -w ${workstream}` },
@@ -1090,7 +1078,7 @@ async function cmdTaskAdd(
     },
   ];
   if (opts.json) {
-    emitJson({ task: withRoi(task), blockers: blocks ?? [], nextSteps });
+    emitJson({ task: withRoi(task), blockers: blockedBy ?? [], nextSteps });
     return;
   }
   const idHint = localId === undefined ? pc.dim(" (id derived from title)") : "";
@@ -1099,7 +1087,7 @@ async function cmdTaskAdd(
       `(workstream=${workstream}, impact=${task.impact}, effort=${task.effortDays})`,
     )}`,
   );
-  if (blocks) console.log(pc.dim(`  blocked by: ${blocks.join(", ")}`));
+  if (blockedBy) console.log(pc.dim(`  blocked by: ${blockedBy.join(", ")}`));
   printNextSteps(nextSteps);
 }
 
@@ -1957,10 +1945,10 @@ async function cmdTaskUpdate(
 async function cmdTaskReparent(
   db: Db,
   localId: string,
-  opts: { blocks: string; workstream?: string; json?: boolean },
+  opts: { blockedBy: string; workstream?: string; json?: boolean },
 ): Promise<void> {
   assertTaskInWorkstream(db, localId, opts.workstream);
-  const blockers = opts.blocks
+  const blockers = opts.blockedBy
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
@@ -3481,12 +3469,8 @@ export function buildProgram(): Command {
     .requiredOption("-i, --impact <n>", "impact 1..100", parseImpact)
     .requiredOption("-e, --effort-days <days>", "effort in days (>0)", parsePositiveNumber)
     .option(
-      "--blocked-by <ids>",
-      "comma-separated task ids that block this task (i.e. this task is blocked by them)",
-    )
-    .option(
-      "-b, --blocks <ids>",
-      "deprecated alias for --blocked-by (kept for backwards compatibility; the name is misleading because the listed tasks block THIS one)",
+      "-b, --blocked-by <ids>",
+      "comma-separated task ids that block this one (this task is blocked by them)",
     )
     .option(...WORKSTREAM_OPT)
     .option(...JSON_OPT)
@@ -3495,7 +3479,6 @@ export function buildProgram(): Command {
         title: string;
         impact: number;
         effortDays: number;
-        blocks?: string;
         blockedBy?: string;
         workstream?: string;
         json?: boolean;
@@ -3794,14 +3777,17 @@ export function buildProgram(): Command {
   task
     .command("reparent <id>")
     .description(
-      "Atomically replace every incoming edge of <id> with the new --blocks list. Pass --blocks '' to clear all blockers.",
+      "Atomically replace every incoming edge of <id> with the new --blocked-by list. Pass --blocked-by '' to clear all blockers.",
     )
-    .requiredOption("-b, --blocks <ids>", "comma-separated blockers (empty string clears all)")
+    .requiredOption(
+      "-b, --blocked-by <ids>",
+      "comma-separated tasks that block <id> (empty string clears all)",
+    )
     .option(...WORKSTREAM_OPT)
     .option(...JSON_OPT)
     .action(function (id: string) {
       const opts = (this as Command).opts() as {
-        blocks: string;
+        blockedBy: string;
         workstream?: string;
         json?: boolean;
       };

@@ -205,9 +205,11 @@ mu-auth-refactor`, every command "just works" without flags.
 ## 4. Plan some work as a DAG
 
 Tasks have **mandatory** `impact` (1–100) and `effort-days` (>0).
-Edges are `--blocks` relationships: `--blocks design` means "this task
-can't start until `design` closes." Tasks are **scoped to a workstream**
-— mission control only shows tasks for the workstream you're in.
+Edges are blocks-relationships, modelled as **`--blocked-by`** on `mu
+task add` (and `mu task reparent`): `--blocked-by design` means "this
+task is blocked by `design`; it can't start until `design` closes."
+Tasks are **scoped to a workstream** — mission control only shows
+tasks for the workstream you're in.
 
 ```bash
 # --workstream can be omitted if you're inside the workstream's tmux
@@ -221,18 +223,18 @@ mu task add build \
   --workstream auth-refactor \
   --title "Build auth module" \
   --impact 80 --effort-days 5 \
-  --blocks design
+  --blocked-by design
 
 mu task add review \
   --workstream auth-refactor \
   --title "Review auth module" \
   --impact 60 --effort-days 1 \
-  --blocks build
+  --blocked-by build
 ```
 
 Each task validates its id (`/^[a-z][a-z0-9_-]{0,63}$/`) and rejects
-duplicates. If you tried `mu task add x --blocks y` while `y` already
-transitively depended on `x`, mu would refuse with a `CycleError`.
+duplicates. If you tried `mu task add x --blocked-by y` while `y`
+already transitively depended on `x`, mu would refuse with a `CycleError`.
 
 **Task ids are globally unique** (PRIMARY KEY across all workstreams)
 but tasks are scoped to one workstream. Cross-workstream blocks-edges
@@ -635,7 +637,7 @@ mu sql "SELECT name FROM sqlite_master WHERE type IN ('table','view') ORDER BY t
 | Show row + edges + notes                              | `mu task show <id> [--json]`            |
 | Delete + cascade edges/notes                          | `mu task delete <id>`                   |
 | Add / remove a single edge                            | `mu task block` / `mu task unblock`     |
-| Replace all blockers atomically                       | `mu task reparent <id> --blocks ...`    |
+| Replace all blockers atomically                       | `mu task reparent <id> --blocked-by ...`    |
 | Modify scalar fields                                  | `mu task update <id> [--title ...]`     |
 | Read the activity log / subscribe to events           | `mu log [--tail] [--kind event]`        |
 
@@ -814,8 +816,8 @@ rm -f ~/.local/state/mu/mu.db
 # Plan
 mu workstream init demo
 mu task add design --title "Design"  --impact 80 --effort-days 2
-mu task add build  --title "Build"   --impact 80 --effort-days 5 --blocks design
-mu task add ship   --title "Ship"    --impact 90 --effort-days 1 --blocks build
+mu task add build  --title "Build"   --impact 80 --effort-days 5 --blocked-by design
+mu task add ship   --title "Ship"    --impact 90 --effort-days 1 --blocked-by build
 
 # Crew
 mu agent spawn worker-1 --workstream demo --cli sh

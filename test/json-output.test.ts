@@ -96,7 +96,7 @@ describe("--json output on read verbs", () => {
       title: "B",
       impact: 70,
       effortDays: 3,
-      blocks: ["a"],
+      blockedBy: ["a"],
     });
     addTask(db, {
       localId: "c",
@@ -104,7 +104,7 @@ describe("--json output on read verbs", () => {
       title: "C",
       impact: 95,
       effortDays: 1,
-      blocks: ["b"],
+      blockedBy: ["b"],
     });
     addNote(db, "a", "FILES: src/auth.ts");
     db.close();
@@ -237,7 +237,7 @@ describe("--json output on read verbs", () => {
       title: "D",
       impact: 50,
       effortDays: 1,
-      blocks: ["a"],
+      blockedBy: ["a"],
     });
     addTask(db3, {
       localId: "e",
@@ -245,7 +245,7 @@ describe("--json output on read verbs", () => {
       title: "E",
       impact: 50,
       effortDays: 1,
-      blocks: ["a"],
+      blockedBy: ["a"],
     });
     addTask(db3, {
       localId: "f",
@@ -253,7 +253,7 @@ describe("--json output on read verbs", () => {
       title: "F",
       impact: 50,
       effortDays: 1,
-      blocks: ["d", "e"],
+      blockedBy: ["d", "e"],
     });
     db3.close();
     const { stdout } = await runCli(["task", "tree", "f", "--json"], dbPath);

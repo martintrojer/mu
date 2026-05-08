@@ -60,7 +60,7 @@ describe("getParallelTracks — independent subtrees", () => {
       title: "B",
       impact: 50,
       effortDays: 1,
-      blocks: ["a"],
+      blockedBy: ["a"],
     });
     addTask(db, {
       localId: "c",
@@ -68,7 +68,7 @@ describe("getParallelTracks — independent subtrees", () => {
       title: "C",
       impact: 50,
       effortDays: 1,
-      blocks: ["b"],
+      blockedBy: ["b"],
     });
     // Chain 2: x → y → z
     addTask(db, { localId: "x", workstream: "test", title: "X", impact: 50, effortDays: 1 });
@@ -78,7 +78,7 @@ describe("getParallelTracks — independent subtrees", () => {
       title: "Y",
       impact: 50,
       effortDays: 1,
-      blocks: ["x"],
+      blockedBy: ["x"],
     });
     addTask(db, {
       localId: "z",
@@ -86,7 +86,7 @@ describe("getParallelTracks — independent subtrees", () => {
       title: "Z",
       impact: 50,
       effortDays: 1,
-      blocks: ["y"],
+      blockedBy: ["y"],
     });
 
     const tracks = getParallelTracks(db, "test");
@@ -130,7 +130,7 @@ describe("getParallelTracks — diamond merge", () => {
       title: "Goal A",
       impact: 80,
       effortDays: 1,
-      blocks: ["shared"],
+      blockedBy: ["shared"],
     });
     addTask(db, {
       localId: "goal_b",
@@ -138,7 +138,7 @@ describe("getParallelTracks — diamond merge", () => {
       title: "Goal B",
       impact: 80,
       effortDays: 1,
-      blocks: ["shared"],
+      blockedBy: ["shared"],
     });
 
     const tracks = getParallelTracks(db, "test");
@@ -158,7 +158,7 @@ describe("getParallelTracks — diamond merge", () => {
       title: "G1A",
       impact: 50,
       effortDays: 1,
-      blocks: ["s1"],
+      blockedBy: ["s1"],
     });
     addTask(db, {
       localId: "g1b",
@@ -166,7 +166,7 @@ describe("getParallelTracks — diamond merge", () => {
       title: "G1B",
       impact: 50,
       effortDays: 1,
-      blocks: ["s1"],
+      blockedBy: ["s1"],
     });
     // Second diamond, completely separate
     addTask(db, { localId: "s2", workstream: "test", title: "S2", impact: 50, effortDays: 1 });
@@ -176,7 +176,7 @@ describe("getParallelTracks — diamond merge", () => {
       title: "G2A",
       impact: 50,
       effortDays: 1,
-      blocks: ["s2"],
+      blockedBy: ["s2"],
     });
     addTask(db, {
       localId: "g2b",
@@ -184,7 +184,7 @@ describe("getParallelTracks — diamond merge", () => {
       title: "G2B",
       impact: 50,
       effortDays: 1,
-      blocks: ["s2"],
+      blockedBy: ["s2"],
     });
 
     const tracks = getParallelTracks(db, "test");
@@ -205,7 +205,7 @@ describe("getParallelTracks — diamond merge", () => {
       title: "GA",
       impact: 50,
       effortDays: 1,
-      blocks: ["shared"],
+      blockedBy: ["shared"],
     });
     addTask(db, {
       localId: "g_b",
@@ -213,7 +213,7 @@ describe("getParallelTracks — diamond merge", () => {
       title: "GB",
       impact: 50,
       effortDays: 1,
-      blocks: ["shared"],
+      blockedBy: ["shared"],
     });
     addTask(db, {
       localId: "g_c",
@@ -221,7 +221,7 @@ describe("getParallelTracks — diamond merge", () => {
       title: "GC",
       impact: 50,
       effortDays: 1,
-      blocks: ["shared"],
+      blockedBy: ["shared"],
     });
     const tracks = getParallelTracks(db, "test");
     expect(tracks).toHaveLength(1);
@@ -238,7 +238,7 @@ describe("getParallelTracks — diamond merge", () => {
       title: "A",
       impact: 50,
       effortDays: 1,
-      blocks: ["x"],
+      blockedBy: ["x"],
     });
     addTask(db, {
       localId: "b",
@@ -246,7 +246,7 @@ describe("getParallelTracks — diamond merge", () => {
       title: "B",
       impact: 50,
       effortDays: 1,
-      blocks: ["x", "y"],
+      blockedBy: ["x", "y"],
     });
     addTask(db, {
       localId: "c",
@@ -254,7 +254,7 @@ describe("getParallelTracks — diamond merge", () => {
       title: "C",
       impact: 50,
       effortDays: 1,
-      blocks: ["y"],
+      blockedBy: ["y"],
     });
     const tracks = getParallelTracks(db, "test");
     expect(tracks).toHaveLength(1);
@@ -281,7 +281,7 @@ describe("getParallelTracks — MVP acceptance graph (10 tasks, 1 diamond)", () 
       title: "Design API",
       impact: 80,
       effortDays: 2,
-      blocks: ["specs"],
+      blockedBy: ["specs"],
     });
     addTask(db, {
       localId: "ui",
@@ -289,7 +289,7 @@ describe("getParallelTracks — MVP acceptance graph (10 tasks, 1 diamond)", () 
       title: "Design UI",
       impact: 70,
       effortDays: 2,
-      blocks: ["specs"],
+      blockedBy: ["specs"],
     });
     addTask(db, {
       localId: "lib",
@@ -297,7 +297,7 @@ describe("getParallelTracks — MVP acceptance graph (10 tasks, 1 diamond)", () 
       title: "Build shared lib",
       impact: 80,
       effortDays: 3,
-      blocks: ["api", "ui"],
+      blockedBy: ["api", "ui"],
     });
     addTask(db, {
       localId: "backend",
@@ -305,7 +305,7 @@ describe("getParallelTracks — MVP acceptance graph (10 tasks, 1 diamond)", () 
       title: "Build backend",
       impact: 80,
       effortDays: 5,
-      blocks: ["lib"],
+      blockedBy: ["lib"],
     });
     addTask(db, {
       localId: "frontend",
@@ -313,7 +313,7 @@ describe("getParallelTracks — MVP acceptance graph (10 tasks, 1 diamond)", () 
       title: "Build frontend",
       impact: 70,
       effortDays: 5,
-      blocks: ["lib"],
+      blockedBy: ["lib"],
     });
     addTask(db, {
       localId: "tests",
@@ -321,7 +321,7 @@ describe("getParallelTracks — MVP acceptance graph (10 tasks, 1 diamond)", () 
       title: "Write tests",
       impact: 60,
       effortDays: 3,
-      blocks: ["backend", "frontend"],
+      blockedBy: ["backend", "frontend"],
     });
     addTask(db, {
       localId: "docs",
@@ -329,7 +329,7 @@ describe("getParallelTracks — MVP acceptance graph (10 tasks, 1 diamond)", () 
       title: "Write docs",
       impact: 50,
       effortDays: 2,
-      blocks: ["api", "ui"],
+      blockedBy: ["api", "ui"],
     });
     addTask(db, {
       localId: "deploy",
@@ -337,7 +337,7 @@ describe("getParallelTracks — MVP acceptance graph (10 tasks, 1 diamond)", () 
       title: "Deploy to staging",
       impact: 70,
       effortDays: 1,
-      blocks: ["tests"],
+      blockedBy: ["tests"],
     });
     addTask(db, {
       localId: "launch",
@@ -345,7 +345,7 @@ describe("getParallelTracks — MVP acceptance graph (10 tasks, 1 diamond)", () 
       title: "Launch",
       impact: 100,
       effortDays: 1,
-      blocks: ["deploy", "docs"],
+      blockedBy: ["deploy", "docs"],
     });
   });
 
@@ -380,7 +380,7 @@ describe("getParallelTracks — MVP acceptance graph (10 tasks, 1 diamond)", () 
       title: "Release notes",
       impact: 60,
       effortDays: 1,
-      blocks: ["docs"],
+      blockedBy: ["docs"],
     });
     const tracks = getParallelTracks(db, "test");
     expect(tracks).toHaveLength(1);

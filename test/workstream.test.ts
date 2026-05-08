@@ -104,7 +104,7 @@ function seedAuth(): void {
     title: "Build",
     impact: 80,
     effortDays: 5,
-    blocks: ["design"],
+    blockedBy: ["design"],
   });
   addTask(db, {
     localId: "ship",
@@ -112,7 +112,7 @@ function seedAuth(): void {
     title: "Ship",
     impact: 90,
     effortDays: 1,
-    blocks: ["build"],
+    blockedBy: ["build"],
   });
   addNote(db, "design", "DECISION: JWT");
   addNote(db, "design", "FILES: src/auth.rs");

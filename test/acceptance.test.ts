@@ -70,7 +70,7 @@ describeIfTmux("MVP acceptance — full demo end-to-end", () => {
       title: "Design API",
       impact: 80,
       effortDays: 2,
-      blocks: ["specs"],
+      blockedBy: ["specs"],
     });
     addTask(db, {
       localId: "ui",
@@ -78,7 +78,7 @@ describeIfTmux("MVP acceptance — full demo end-to-end", () => {
       title: "Design UI",
       impact: 70,
       effortDays: 2,
-      blocks: ["specs"],
+      blockedBy: ["specs"],
     });
     addTask(db, {
       localId: "lib",
@@ -86,7 +86,7 @@ describeIfTmux("MVP acceptance — full demo end-to-end", () => {
       title: "Build shared lib",
       impact: 80,
       effortDays: 3,
-      blocks: ["api", "ui"],
+      blockedBy: ["api", "ui"],
     });
     addTask(db, {
       localId: "backend",
@@ -94,7 +94,7 @@ describeIfTmux("MVP acceptance — full demo end-to-end", () => {
       title: "Build backend",
       impact: 80,
       effortDays: 5,
-      blocks: ["lib"],
+      blockedBy: ["lib"],
     });
     addTask(db, {
       localId: "frontend",
@@ -102,7 +102,7 @@ describeIfTmux("MVP acceptance — full demo end-to-end", () => {
       title: "Build frontend",
       impact: 70,
       effortDays: 5,
-      blocks: ["lib"],
+      blockedBy: ["lib"],
     });
     addTask(db, {
       localId: "tests",
@@ -110,7 +110,7 @@ describeIfTmux("MVP acceptance — full demo end-to-end", () => {
       title: "Write tests",
       impact: 60,
       effortDays: 3,
-      blocks: ["backend", "frontend"],
+      blockedBy: ["backend", "frontend"],
     });
     addTask(db, {
       localId: "docs",
@@ -118,7 +118,7 @@ describeIfTmux("MVP acceptance — full demo end-to-end", () => {
       title: "Write docs",
       impact: 50,
       effortDays: 2,
-      blocks: ["api", "ui"],
+      blockedBy: ["api", "ui"],
     });
     addTask(db, {
       localId: "deploy",
@@ -126,7 +126,7 @@ describeIfTmux("MVP acceptance — full demo end-to-end", () => {
       title: "Deploy to staging",
       impact: 70,
       effortDays: 1,
-      blocks: ["tests"],
+      blockedBy: ["tests"],
     });
     addTask(db, {
       localId: "launch",
@@ -134,7 +134,7 @@ describeIfTmux("MVP acceptance — full demo end-to-end", () => {
       title: "Launch",
       impact: 100,
       effortDays: 1,
-      blocks: ["deploy", "docs"],
+      blockedBy: ["deploy", "docs"],
     });
 
     // ── Verify the graph: only `specs` is ready, launch is the only goal ──
