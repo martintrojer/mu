@@ -618,6 +618,37 @@ export async function currentPaneTitle(): Promise<string | undefined> {
 }
 
 /**
+ * Read the *current* pane's interior size (`pane_width` x `pane_height`)
+ * via $TMUX_PANE. Returns undefined when not inside tmux or when the
+ * tmux call fails. Used by `mu hud` to size its tables when stdout
+ * isn't a TTY (e.g. when running under `watch -n 5 mu hud -w X` or
+ * `tmux display-popup -E 'mu hud -w X'`, both of which strip TTY-ness
+ * but still run inside a tmux pane whose dimensions matter).
+ */
+export async function currentPaneSize(): Promise<{ width: number; height: number } | undefined> {
+  const paneId = process.env.TMUX_PANE;
+  if (!paneId || !isValidPaneId(paneId)) return undefined;
+  const result = await currentExecutor([
+    "display-message",
+    "-t",
+    paneId,
+    "-p",
+    "#{pane_width} #{pane_height}",
+  ]);
+  if (result.exitCode !== 0) return undefined;
+  const parts = result.stdout.trim().split(/\s+/);
+  if (parts.length !== 2) return undefined;
+  const [wStr, hStr] = parts;
+  if (wStr === undefined || hStr === undefined) return undefined;
+  const width = Number.parseInt(wStr, 10);
+  const height = Number.parseInt(hStr, 10);
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+    return undefined;
+  }
+  return { width, height };
+}
+
+/**
  * Extract the agent-name token from a (possibly composed) pane title.
  * mu's composeAgentTitle renders titles as `name · 💤 · task_id`; the
  * agent name is always the first ' · '-separated token. Adopted /

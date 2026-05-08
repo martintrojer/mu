@@ -48,7 +48,57 @@ called out under "Breaking" in each entry.
   without buying anything (no atomicity to preserve, no
   validation a verb adds, single statement, no side effects).
 
+### Breaking
+
+- **`mu hud` mode flags removed** (`--line`, `--small`, `--mid`,
+  `--full`). The HUD now renders one shape — a dynamic table
+  layout that fills the available pane height + width — by
+  default. `--json` is preserved unchanged. Status-bar / dotfile
+  callers that used `mu hud --line` should switch to the
+  one-line first row of the default render (or `mu hud --json |
+  jq` for structured extraction). See the Added entry below.
+
 ### Added
+
+- **`mu hud` rewritten as a dynamic table layout.** Closes
+  `nit_hud_render_tables` in `mufeedback`. The five mode flags
+  (`--line` / `--small` / `--mid` / `--full`) are gone; `--json`
+  is the only remaining flag (besides `-n` for the events tail
+  cap, default raised 5 → 10). The default human render is now
+  one verb that fills the available terminal (or tmux pane)
+  height + width with as much useful data as fits.
+
+  Layout is greedy top-down by priority — every section is a
+  cli-table3 (header + body, box-drawing border):
+  1. Header line: `mu-<ws> · Nr · Np · Ntrk · N agents (💤N ⚙️N)`
+  2. Agents table
+  3. Ready tasks table (operator's 'what to dispatch next')
+  4. In-progress table
+  5. Tracks table (`#`, `roots`, `tasks`, `ready`, `kind`)
+  6. Recent events table
+
+  Each table has a width-aware truncation budget for the most-
+  compressible cell (title / payload / roots / task). When a
+  section is truncated, an `… +N more (<verb>)` footer points at
+  the follow-up verb.
+
+  Pane size is resolved in this order:
+  1. `MU_HUD_FORCE_SIZE=WxH` env override (test-only / operator
+     escape hatch).
+  2. `process.stdout` if it's a TTY.
+  3. `currentPaneSize()` via `tmux display-message -p
+     '#{pane_width} #{pane_height}'` (catches
+     `watch -n 5 mu hud -w X` and `tmux display-popup -E '...'`,
+     both of which strip TTY-ness but still run inside a tmux pane).
+  4. `120 × 30` fallback for non-tmux pipes.
+
+  `--json` shape is unchanged — same keys, same types. Scripts
+  that consumed the JSON before keep working.
+
+  Tests: 7 cases covering default render at roomy size, tiny
+  pane (truncation + `+N more` footer), narrow width
+  (ellipsis), empty workstream, `MU_HUD_FORCE_SIZE` validation,
+  `--json` shape stability, and `-n` cap.
 
 - **Docs synced for snapshots + `mu undo` shipping.** Closes
   `snap_docs` in roadmap-v0-2.

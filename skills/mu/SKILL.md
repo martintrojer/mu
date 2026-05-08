@@ -270,7 +270,7 @@ mu snapshot show <id>                # full metadata for one row
 mu sql "<query>"                     # SELECT / UPDATE / DELETE / WITH
 mu                                   # bare: quick mission control
 mu state                             # canonical state card
-mu hud                               # print-once HUD (see --help)
+mu hud [--json]                      # dynamic table HUD; fills pane h×w
 mu doctor                            # tmux + db + schema + workstream stats
 ```
 

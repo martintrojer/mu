@@ -126,6 +126,7 @@ import {
   PaneNotFoundError,
   TmuxError,
   capturePane,
+  currentPaneSize,
   enableMuPaneBorders,
   enableMuPaneBordersForSession,
   getWindowIdForPane,
@@ -3852,44 +3853,31 @@ function rawTaskRowToTask(r: RawTaskRowForState): TaskRow {
   };
 }
 
-// ─── mu hud (modes: line / small / mid / full / json) ────────────────
+// ─── mu hud (dynamic table layout + --json) ──────────────────────────
 //
 // Print-once renderer of the workstream HUD card. No loop, no tmux side
 // effects. The user composes redraw / placement: `watch -n 5 mu hud -w X`,
 // `tmux display-popup -E 'mu hud -w X'`, status-bar interpolation via
-// `#(mu hud -w X --line)`, etc. mu's contract is 'print, exit, compose'.
-
-type HudMode = "line" | "small" | "mid" | "full" | "json";
+// `#(mu hud -w X --json) | jq ...`, etc. mu's contract is 'print, exit,
+// compose'.
+//
+// Default mode: greedy top-down table layout that fills the available
+// terminal (or tmux pane) height + width with as much useful data as
+// fits. No flags to pick a size — the substrate is already telling us
+// the size.
+//
+// --json keeps the same structured shape it always had (machine reader).
+// -n N still caps recent-events length (mostly meaningful for --json,
+// but also bounds what the human view can pull from).
 
 interface HudOpts {
   workstream?: string;
-  line?: boolean;
-  small?: boolean;
-  mid?: boolean;
-  full?: boolean;
   json?: boolean;
-  lines?: number; // for --full / --json: recent-events tail length
-}
-
-function resolveHudMode(opts: HudOpts): HudMode {
-  // First-pick precedence (each mode is its own boolean alias).
-  // Mutually exclusive: passing two flips errors.
-  const flags: HudMode[] = [];
-  if (opts.line) flags.push("line");
-  if (opts.small) flags.push("small");
-  if (opts.mid) flags.push("mid");
-  if (opts.full) flags.push("full");
-  if (opts.json) flags.push("json");
-  if (flags.length > 1) {
-    throw new UsageError(
-      `mu hud: --line / --small / --mid / --full / --json are mutually exclusive (got: ${flags.map((f) => `--${f}`).join(", ")})`,
-    );
-  }
-  return flags[0] ?? "mid"; // default
+  lines?: number; // recent-events tail cap; default 10
 }
 
 /** Format an elapsed duration (in ms) as a compact relative string:
- *  '12s', '3m', '1h', '2d'. Used by HUD modes to surface 'how stale'. */
+ *  '12s', '3m', '1h', '2d'. Used by HUD to surface 'how stale'. */
 function relTime(ms: number): string {
   const sec = Math.max(0, Math.floor(ms / 1000));
   if (sec < 60) return `${sec}s`;
@@ -3900,8 +3888,239 @@ function relTime(ms: number): string {
   return `${Math.floor(hr / 24)}d`;
 }
 
+/**
+ * Resolve the HUD's render budget (width × height) from the substrate.
+ *
+ * Order:
+ * 1. `MU_HUD_FORCE_SIZE=WxH` env override — deterministic for tests +
+ *    the only way an operator can force a non-default size on demand.
+ * 2. `process.stdout` if it's a TTY (the easy path — same as every
+ *    other terminal app).
+ * 3. `currentPaneSize()` (tmux's `display-message -p '#{pane_width}
+ *    #{pane_height}'`) — catches `watch -n 5 mu hud -w X`,
+ *    `tmux display-popup -E 'mu hud -w X'`, and any other case where
+ *    stdout is a pipe but the surrounding tmux pane has a real size.
+ * 4. `120 × 30` fallback — a wide-ish dev-laptop shape so a non-tmux
+ *    pipe still gets a usable layout.
+ */
+async function hudPaneSize(): Promise<{ width: number; height: number }> {
+  const forced = process.env.MU_HUD_FORCE_SIZE;
+  if (forced !== undefined) {
+    const m = forced.match(/^(\d+)x(\d+)$/);
+    if (m?.[1] !== undefined && m[2] !== undefined) {
+      const width = Number.parseInt(m[1], 10);
+      const height = Number.parseInt(m[2], 10);
+      if (width > 0 && height > 0) return { width, height };
+    }
+    throw new UsageError(
+      `MU_HUD_FORCE_SIZE must be 'WIDTHxHEIGHT' (e.g. '80x24'); got ${JSON.stringify(forced)}`,
+    );
+  }
+  if (process.stdout.isTTY && process.stdout.columns && process.stdout.rows) {
+    return { width: process.stdout.columns, height: process.stdout.rows };
+  }
+  const tmuxSize = await currentPaneSize().catch(() => undefined);
+  if (tmuxSize !== undefined) return tmuxSize;
+  return { width: 120, height: 30 };
+}
+
+/**
+ * Build a header-less HUD table.
+ *
+ * Every HUD table now self-identifies through hint words baked into
+ * its data cells (e.g. `agent worker-1`, `ready  build_x`, `track 1`,
+ * `2 ready`, `ROI 200`). No column-header row is rendered — saves 2
+ * vertical lines per table and lets every section render with the
+ * exact same shape.
+ *
+ * `wordWrap: false` is the load-bearing setting: when a cell exceeds
+ * its column width cli-table3 truncates with `…` instead of wrapping
+ * to a second visual row. The HUD's row budget assumes one screen row
+ * per data row — wrap would silently blow that out and push lower-
+ * priority sections off the bottom. We pre-truncate every wide cell
+ * via the truncate() helper; wordWrap:false is the safety belt for
+ * anything we miss.
+ */
+function newHudTable(): InstanceType<typeof Table> {
+  return new Table({ style: { border: [] }, wordWrap: false });
+}
+
+// Each formatHud*Table returns { rendered, rowsShown, rowsTotal }.
+// rowsTotal == 0 cases are handled by renderSection's early-return
+// (`if (full === 0) return`), so these helpers can assume non-empty
+// input. The hint words baked into each cell identify the section.
+function formatHudAgentsTable(
+  db: Db,
+  agents: readonly AgentRow[],
+  width: number,
+  rowCap: number,
+): { rendered: string; rowsShown: number; rowsTotal: number } {
+  const total = agents.length;
+  const shown = agents.slice(0, rowCap);
+  const now = Date.now();
+  // No header row — hint words baked into each cell. The leftmost
+  // status emoji + the dim 'agent' prefix on the name identify the
+  // section. Saves 2 vertical lines.
+  let nameW = "agent ".length;
+  let agoW = "+ago".length;
+  const taskBits: string[] = [];
+  for (const a of shown) {
+    nameW = Math.max(nameW, `agent ${a.name}`.length);
+    const owned = listTasksByOwner(db, a.name);
+    const taskBit =
+      owned.length === 0
+        ? "—"
+        : owned.length === 1
+          ? (owned[0]?.localId ?? "—")
+          : `⊕${owned.length}`;
+    taskBits.push(taskBit);
+    const ago = `+${relTime(now - new Date(a.updatedAt).getTime())}`;
+    agoW = Math.max(agoW, ago.length);
+  }
+  const statusW = 2; // emoji + 1
+  const numCols = 4;
+  const padding = numCols * 3 + 1;
+  const taskBudget = Math.max(8, width - statusW - nameW - agoW - padding);
+  const table = newHudTable();
+  shown.forEach((a, i) => {
+    const ago = `+${relTime(now - new Date(a.updatedAt).getTime())}`;
+    const taskBit = taskBits[i] ?? "—";
+    table.push([
+      STATUS_EMOJI[a.status],
+      `${pc.dim("agent")} ${a.name}`,
+      truncate(taskBit, taskBudget),
+      ago,
+    ]);
+  });
+  return { rendered: table.toString(), rowsShown: shown.length, rowsTotal: total };
+}
+
+/**
+ * Render a task table for HUD. Columns: id, status, title, ROI, owner.
+ * `title` cell absorbs slack via terminalWidth - sum(other cols).
+ */
+function formatHudTasksTable(
+  tasks: readonly TaskRow[],
+  width: number,
+  rowCap: number,
+  opts: { withOwner: boolean },
+): { rendered: string; rowsShown: number; rowsTotal: number } {
+  const total = tasks.length;
+  const shown = tasks.slice(0, rowCap);
+  // No header row — we bake the section name INTO the first cell of
+  // each row (`ready  cross_workstream_*` / `in-progress  build_x`)
+  // and a `ROI 200` prefix on the ROI cell. Saves 2 vertical lines.
+  // Status column already dropped (every row in ready is OPEN; every
+  // row in in-progress is IN_PROGRESS by construction).
+  const sectionPrefix = opts.withOwner ? "in-progress" : "ready";
+  // Compute fixed-width columns. Seed from the prefix-decorated cell.
+  let idW = `${sectionPrefix}  `.length; // section + double-space gutter
+  let roiW = "ROI 100".length; // typical ROI width with prefix
+  let ownerW = opts.withOwner ? "owner".length : 0;
+  for (const t of shown) {
+    idW = Math.max(idW, `${sectionPrefix}  ${t.localId}`.length);
+    const roi = t.effortDays > 0 ? (t.impact / t.effortDays).toFixed(0) : "∞";
+    roiW = Math.max(roiW, `ROI ${roi}`.length);
+    ownerW = Math.max(ownerW, (t.owner ?? "—").length);
+  }
+  const numCols = opts.withOwner ? 4 : 3;
+  const padding = numCols * 3 + 1;
+  const fixed = idW + roiW + (opts.withOwner ? ownerW : 0);
+  const titleBudget = Math.max(10, width - fixed - padding);
+  const table = newHudTable();
+  for (const t of shown) {
+    const roi = t.effortDays > 0 ? (t.impact / t.effortDays).toFixed(0) : "∞";
+    const idCell = `${pc.dim(sectionPrefix)}  ${t.localId}`;
+    const row: string[] = [idCell, truncate(t.title, titleBudget), `${pc.dim("ROI")} ${roi}`];
+    if (opts.withOwner) row.push(t.owner ?? pc.dim("—"));
+    table.push(row);
+  }
+  return { rendered: table.toString(), rowsShown: shown.length, rowsTotal: total };
+}
+
+/**
+ * Render the recent-events table for HUD. Columns: +ago, payload.
+ * Payload absorbs slack.
+ */
+function formatHudRecentTable(
+  events: readonly LogRow[],
+  width: number,
+  rowCap: number,
+): { rendered: string; rowsShown: number; rowsTotal: number } {
+  const total = events.length;
+  const shown = events.slice(0, rowCap);
+  const now = Date.now();
+  // No header row — the +ago format and `task note ...` / `agent
+  // spawn ...` style payload self-identify this as the events table.
+  // Saves 2 vertical lines.
+  let agoW = "+ago".length;
+  for (const e of shown) {
+    const ago = `+${relTime(now - new Date(e.createdAt).getTime())}`;
+    agoW = Math.max(agoW, ago.length);
+  }
+  const numCols = 2;
+  const padding = numCols * 3 + 1;
+  const payloadBudget = Math.max(20, width - agoW - padding);
+  const table = newHudTable();
+  for (const e of shown) {
+    const ago = `+${relTime(now - new Date(e.createdAt).getTime())}`;
+    table.push([ago, truncate(e.payload, payloadBudget)]);
+  }
+  return { rendered: table.toString(), rowsShown: shown.length, rowsTotal: total };
+}
+
+/**
+ * Render the tracks table for HUD. Columns: #, roots, tasks, ready, kind.
+ * `roots` cell absorbs slack (it lists every goal in the track and is
+ * the longest cell on a busy diamond).
+ */
+function formatHudTracksTable(
+  tracks: readonly Track[],
+  width: number,
+  rowCap: number,
+): { rendered: string; rowsShown: number; rowsTotal: number } {
+  const total = tracks.length;
+  const shown = tracks.slice(0, rowCap);
+  // No header row — hints baked into each cell ('track 1', '6 tasks',
+  // '2 ready', 'merged'/'track'). Saves 2 vertical lines.
+  let idxW = "track N".length;
+  let tasksW = "N tasks".length;
+  let readyW = "N ready".length;
+  const kindW = "merged".length;
+  shown.forEach((t, i) => {
+    idxW = Math.max(idxW, `track ${i + 1}`.length);
+    tasksW = Math.max(tasksW, `${t.taskIds.size} tasks`.length);
+    readyW = Math.max(readyW, `${t.readyCount} ready`.length);
+  });
+  const numCols = 5;
+  const padding = numCols * 3 + 1;
+  const rootsBudget = Math.max(10, width - idxW - tasksW - readyW - kindW - padding);
+  const table = newHudTable();
+  shown.forEach((t, i) => {
+    const roots = t.roots.map((r) => r.localId).join(", ");
+    const kind = t.roots.length > 1 ? "merged" : "track";
+    table.push([
+      `${pc.dim("track")} ${i + 1}`,
+      truncate(roots, rootsBudget),
+      `${t.taskIds.size} ${pc.dim("tasks")}`,
+      `${t.readyCount} ${pc.dim("ready")}`,
+      kind,
+    ]);
+  });
+  return { rendered: table.toString(), rowsShown: shown.length, rowsTotal: total };
+}
+
+/** Compact agent-status histogram for the HUD header. */
+function agentStatusHistogram(agents: readonly AgentRow[]): string {
+  const counts = new Map<AgentStatus, number>();
+  for (const a of agents) counts.set(a.status, (counts.get(a.status) ?? 0) + 1);
+  if (counts.size === 0) return pc.dim("none");
+  const parts: string[] = [];
+  for (const [status, n] of counts) parts.push(`${STATUS_EMOJI[status]}${n}`);
+  return parts.join(" ");
+}
+
 async function cmdHud(db: Db, opts: HudOpts): Promise<void> {
-  const mode = resolveHudMode(opts);
   const workstream = await resolveWorkstream(opts.workstream);
   const view = await listLiveAgents(db, { workstream });
   const tracks = getParallelTracks(db, workstream);
@@ -3913,13 +4132,10 @@ async function cmdHud(db: Db, opts: HudOpts): Promise<void> {
       )
       .all(workstream) as RawTaskRowForState[]
   ).map(rawTaskRowToTask);
-  const eventLimit = opts.lines ?? 5;
-  const recentEvents =
-    mode === "full" || mode === "json"
-      ? listLogs(db, { workstream, kind: "event", limit: eventLimit })
-      : [];
+  const eventLimit = opts.lines ?? 10;
+  const recentEvents = listLogs(db, { workstream, kind: "event", limit: eventLimit });
 
-  if (mode === "json") {
+  if (opts.json) {
     emitJson({
       workstream,
       summary: {
@@ -3939,122 +4155,141 @@ async function cmdHud(db: Db, opts: HudOpts): Promise<void> {
     return;
   }
 
-  if (mode === "line") {
-    const last = recentLogPreview(db, workstream);
-    const bits = [
-      `${pc.bold(workstream)}`,
-      `${ready.length}r`,
-      `${inProgress.length}p`,
-      `${tracks.length}trk`,
-    ];
-    if (last !== undefined) bits.push(`last: ${last}`);
-    console.log(bits.join(" · "));
-    return;
-  }
+  // ── Human render: greedy top-down layout ──────────────────────────
+  //
+  // Sections (in priority order — the higher one wins the budget when
+  // squeezed):
+  //   1. Header line                                     (1 line)
+  //   2. Agents table          (always; usually small)
+  //   3. Ready tasks table     (operator's 'what to dispatch next')
+  //   4. In-progress table     ('what's already running')
+  //   5. Tracks table          (parallelism overview)
+  //   6. Recent events table   ('what just happened')
+  //
+  // Every section is a cli-table3 with bold column headers and N
+  // data rows. No section-name preamble — the column headers IDENTIFY
+  // the section (a `roots` column ⇒ tracks; `+ago` + `event` ⇒
+  // recent; etc.). Cost: 2N + 3 lines per section.
+  // We deduct each section's cost from the remaining budget before
+  // moving to the next. When we can't fit any rows of a section, we
+  // skip the entire section (don't render anything).
+  //
+  // Width: every table runs to the full pane width; the most
+  // compressible cell (title / payload / task) absorbs slack via the
+  // existing truncate() helper, mirroring formatTaskListTable.
+  const { width, height } = await hudPaneSize();
+  let remaining = height;
 
-  // Common header for small/mid/full.
-  const histo = agentStatusHistogram(view.agents);
-  if (mode === "small") {
-    console.log(
-      `${pc.bold(`mu-${workstream}`)} · ${ready.length} ready · ${inProgress.length} in-progress · ${tracks.length} tracks`,
-    );
-    console.log(`agents: ${view.agents.length} active (${histo})`);
-    return;
-  }
+  // Now that every table is header-less, both the top and bottom
+  // borders of every table are visually similar (`┌─┬─┐` and
+  // `└─┴─┘`). We keep both: the bottom of one table abutting the
+  // top of the next forms a doubled seam that reads as a clear
+  // boundary between sections (which is more honest now that no
+  // section has its own header to separate it). printTable just
+  // emits the rendered string and returns its line count.
+  //
+  // Cost math per section:
+  //   table cost = 2N + 1   (top border + N·(data row + sep), bottom = the last sep)
+  //   footer     = 1        (when truncated)
+  const printTable = (rendered: string): number => {
+    console.log(rendered);
+    return rendered.split("\n").length;
+  };
 
-  // mid + full: counts header + agent table + ready + in-progress.
-  console.log(
-    `${pc.bold(`mu-${workstream}`)} · ${ready.length} ready · ${inProgress.length} in-progress · ${tracks.length} tracks`,
-  );
-  console.log(pc.bold(`agents (${view.agents.length} active):`));
-  console.log(formatHudAgentLines(db, view.agents));
+  // 1. Workstream-summary table. Single data row, no header — each
+  // cell carries its own dim section word (`2 ready`, `0 in-progress`,
+  // ...). Cost with bottom dropped + no header = 2 lines.
+  const headerTable = newHudTable();
+  headerTable.push([
+    pc.bold(`mu-${workstream}`),
+    `${ready.length} ${pc.dim("ready")}`,
+    `${inProgress.length} ${pc.dim("in-progress")}`,
+    `${tracks.length} ${pc.dim("tracks")}`,
+    `${view.agents.length} ${pc.dim("agents")}`,
+    agentStatusHistogram(view.agents),
+  ]);
+  remaining -= printTable(headerTable.toString());
 
-  // mid: top-3 ready by ROI; full: every ready row. Same for
-  // in-progress (mid: top-3, full: all). Operator-facing detail —
-  // 'what should I dispatch next' is the load-bearing question and
-  // the top of the ready list answers it.
-  const readyShown = mode === "full" ? ready : ready.slice(0, 3);
-  if (readyShown.length > 0) {
-    const moreReady = mode === "mid" && ready.length > 3 ? ` (+${ready.length - 3} more)` : "";
-    console.log(pc.bold(`ready (${ready.length}${moreReady}):`));
-    console.log(formatHudTaskLines(readyShown));
-  }
-  const inProgressShown = mode === "full" ? inProgress : inProgress.slice(0, 3);
-  if (inProgressShown.length > 0) {
-    const moreIp =
-      mode === "mid" && inProgress.length > 3 ? ` (+${inProgress.length - 3} more)` : "";
-    console.log(pc.bold(`in-progress (${inProgress.length}${moreIp}):`));
-    console.log(formatHudTaskLines(inProgressShown));
-  }
-
-  if (mode === "full") {
-    console.log(pc.bold(`tracks (${tracks.length}):`));
-    console.log(formatTracks(tracks));
-    console.log(pc.bold(`recent (${recentEvents.length}):`));
-    if (recentEvents.length === 0) {
-      console.log(pc.dim("  (none)"));
+  // Helper: render a section if there's room, deducting its cost.
+  // No section preamble — the table's column headers identify the
+  // section. moreFooter shows '… +N more (<verb>)' when truncated.
+  //
+  // Sizing math (per section, all tables now header-less, bottom kept):
+  //   actualCost(N) = 2N + 1   (top + N·(data + sep))
+  //   footer line   = 1        (when truncated)
+  //
+  // Two cases:
+  //   FULL fit: 2N + 1 <= remaining → render all rows, no footer
+  //   TRUNCATED: pick largest N s.t. 2N + 1 + 1 <= remaining
+  //              ⇒ N <= (remaining - 2) / 2
+  //   If N is 0 we can't render anything useful; skip the section.
+  const renderSection = (
+    ren: (rowCap: number) => { rendered: string; rowsShown: number; rowsTotal: number },
+    full: number,
+    moreVerb: string,
+  ): void => {
+    if (full === 0) return; // section legitimately empty — don't render anything
+    let rowCap: number;
+    let willTruncate: boolean;
+    if (2 * full + 1 <= remaining) {
+      rowCap = full;
+      willTruncate = false;
     } else {
-      const now = Date.now();
-      for (const e of recentEvents) {
-        const ago = relTime(now - new Date(e.createdAt).getTime());
-        console.log(`  +${ago}  ${e.payload}`);
-      }
+      const slot = remaining - 2;
+      rowCap = slot < 2 ? 0 : Math.floor(slot / 2);
+      if (rowCap === 0) return;
+      willTruncate = true;
     }
-  }
-}
+    const out = ren(rowCap);
+    let cost = printTable(out.rendered);
+    if (willTruncate && out.rowsShown < out.rowsTotal) {
+      const extra = out.rowsTotal - out.rowsShown;
+      console.log(pc.dim(`  … +${extra} more (${moreVerb})`));
+      cost += 1;
+    }
+    remaining -= cost;
+  };
 
-/** Render one line per task: '  id  title · impact/effort → ROI'.
- *  Truncates title to 40 chars so the line stays narrow. */
-function formatHudTaskLines(tasks: readonly TaskRow[]): string {
-  if (tasks.length === 0) return pc.dim("  (none)");
-  const lines: string[] = [];
-  for (const t of tasks) {
-    const title = t.title.length > 40 ? `${t.title.slice(0, 39)}…` : t.title;
-    const roi = t.effortDays > 0 ? (t.impact / t.effortDays).toFixed(0) : pc.dim("∞");
-    const owner = t.owner ? pc.dim(` (→ ${t.owner})`) : "";
-    lines.push(`  ${pc.bold(t.localId)}  ${title} ${pc.dim(`· ROI ${roi}`)}${owner}`);
-  }
-  return lines.join("\n");
-}
+  // 2. Agents.
+  renderSection(
+    (cap) => formatHudAgentsTable(db, view.agents, width, cap),
+    view.agents.length,
+    `mu agent list -w ${workstream}`,
+  );
 
-/** Compact agent-status histogram for the --small mode. */
-function agentStatusHistogram(agents: readonly AgentRow[]): string {
-  const counts = new Map<AgentStatus, number>();
-  for (const a of agents) counts.set(a.status, (counts.get(a.status) ?? 0) + 1);
-  if (counts.size === 0) return pc.dim("none");
-  const parts: string[] = [];
-  for (const [status, n] of counts) parts.push(`${STATUS_EMOJI[status]}${n}`);
-  return parts.join(" ");
-}
+  // 3. Ready.
+  renderSection(
+    (cap) =>
+      formatHudTasksTable(ready, width, cap, {
+        withOwner: false,
+      }),
+    ready.length,
+    `mu task ready -w ${workstream}`,
+  );
 
-/** Render one line per agent: '  emoji name · task · +elapsed' */
-function formatHudAgentLines(db: Db, agents: readonly AgentRow[]): string {
-  if (agents.length === 0) return pc.dim("  (none)");
-  const now = Date.now();
-  const lines: string[] = [];
-  for (const a of agents) {
-    const owned = listTasksByOwner(db, a.name);
-    const taskBit =
-      owned.length === 0
-        ? pc.dim("-")
-        : owned.length === 1
-          ? owned[0]?.localId
-          : `⊕${owned.length}`;
-    const ago = relTime(now - new Date(a.updatedAt).getTime());
-    lines.push(`  ${STATUS_EMOJI[a.status]} ${pc.bold(a.name)} · ${taskBit} ${pc.dim(`+${ago}`)}`);
-  }
-  return lines.join("\n");
-}
+  // 4. In progress.
+  renderSection(
+    (cap) =>
+      formatHudTasksTable(inProgress, width, cap, {
+        withOwner: true,
+      }),
+    inProgress.length,
+    `mu task list --status IN_PROGRESS -w ${workstream}`,
+  );
 
-/** Most-recent event for the line mode: 'build_x closed +12s'. */
-function recentLogPreview(db: Db, workstream: string): string | undefined {
-  const rows = listLogs(db, { workstream, kind: "event", limit: 1 });
-  const e = rows[0];
-  if (!e) return undefined;
-  const ago = relTime(Date.now() - new Date(e.createdAt).getTime());
-  // Truncate payload so the line stays narrow.
-  const payload = e.payload.length > 50 ? `${e.payload.slice(0, 49)}…` : e.payload;
-  return `${payload} +${ago}`;
+  // 5. Tracks.
+  renderSection(
+    (cap) => formatHudTracksTable(tracks, width, cap),
+    tracks.length,
+    `mu state -w ${workstream}`,
+  );
+
+  // 6. Recent events.
+  renderSection(
+    (cap) => formatHudRecentTable(recentEvents, width, cap),
+    recentEvents.length,
+    `mu log -w ${workstream} --kind event`,
+  );
 }
 
 async function cmdAttach(db: Db, name: string, opts: { workstream?: string }): Promise<void> {
@@ -5093,15 +5328,11 @@ export function buildProgram(): Command {
   program
     .command("hud")
     .description(
-      "Print-once HUD card for a workstream. Modes: --line (one-liner; for tmux status / dotfile injection), --small (counts + agent histogram), --mid (default; counts + agent table), --full (+ tracks + recent events tail), --json (everything, structured). No loop, no tmux side effects — user composes redraw via `watch -n 5 mu hud -w X` or `tmux display-popup -E 'mu hud -w X'`.",
+      "Print-once HUD card for a workstream. Default: dynamic table layout that fills the terminal (or tmux pane) height + width with as much useful data as fits — header + agents + ready + in-progress + tracks + recent-events, each rendered as a cli-table3 with width-aware truncation. Use --json for the structured machine view. No loop, no tmux side effects — user composes redraw via `watch -n 5 mu hud -w X` or `tmux display-popup -E 'mu hud -w X'`.",
     )
-    .option("--line", "one-liner mode (for tmux status, dotfile injection)")
-    .option("--small", "compact: counts + agent-status histogram")
-    .option("--mid", "counts + agent table (default)")
-    .option("--full", "counts + agent table + tracks + recent-events tail")
     .option(
       "-n, --lines <n>",
-      "recent-events tail length (only meaningful with --full / --json; default 5)",
+      "recent-events tail cap (default 10; bounds the human view too)",
       parseLines,
     )
     .option(...WORKSTREAM_OPT)

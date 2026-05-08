@@ -182,7 +182,7 @@ hud`, `mu sql`, `mu doctor`, `mu adopt`.** Every verb supports
 | **log** (1, overloaded) | write, read, `--tail` subscription; auto-emits on every state change |
 | **approve** (5) | `add`, `list`, `grant`, `deny`, `wait` (exit 0/4/5 = granted/denied/timeout) |
 | **self-id** (3) | `whoami`, `my-tasks`, `my-next` (resolves agent via `$TMUX_PANE`) |
-| **utilities** (5) | bare `mu` (quick mission control), `mu state`, `mu hud` (`--line` / `--small` / `--mid` / `--full` / `--json`), `mu sql` (multi-statement; `--confirm-rows`), `mu doctor`, `mu adopt` (register an existing pane) |
+| **utilities** (5) | bare `mu` (quick mission control), `mu state`, `mu hud` (dynamic table layout; fills the terminal/pane height × width; `--json` for scripts), `mu sql` (multi-statement; `--confirm-rows`), `mu doctor`, `mu adopt` (register an existing pane) |
 
 Five task lifecycle states: `OPEN`, `IN_PROGRESS`, `CLOSED`,
 `REJECTED` (terminal won't-do; still blocks downstream),
