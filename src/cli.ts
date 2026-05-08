@@ -370,25 +370,15 @@ function formatTracks(tracks: readonly Track[]): string {
 
 // ─── Verb implementations ──────────────────────────────────────────────
 
-async function cmdInit(db: Db, name: string): Promise<void> {
+async function cmdInit(db: Db, name: string, opts: { json?: boolean } = {}): Promise<void> {
   const sessionName = `mu-${name}`;
-  // Always register the DB row — this is what makes `mu workstream list`
-  // see the workstream and what the agents/tasks FKs need.
   const dbCreated = ensureWorkstream(db, name);
   const tmuxAlready = await sessionExists(sessionName);
-  if (tmuxAlready && !dbCreated) {
-    console.log(
-      pc.dim(
-        `workstream "${name}" already exists (tmux session ${sessionName}, DB row registered)`,
-      ),
-    );
-    return;
-  }
   if (!tmuxAlready) {
     await newSession(sessionName, { detached: true, windowName: "_mu" });
   }
-  console.log(`Created workstream ${pc.bold(name)} (tmux session ${pc.bold(sessionName)})`);
-  printNextSteps([
+  const created = !tmuxAlready || dbCreated;
+  const nextSteps: NextStep[] = [
     { intent: "Attach the tmux session", command: `tmux a -t ${sessionName}` },
     {
       intent: "Plan tasks",
@@ -396,7 +386,29 @@ async function cmdInit(db: Db, name: string): Promise<void> {
     },
     { intent: "Spawn an agent", command: `mu agent spawn <name> -w ${name}` },
     { intent: "See state", command: `mu state -w ${name}` },
-  ]);
+  ];
+  if (opts.json) {
+    emitJson({
+      workstream: name,
+      sessionName,
+      created,
+      tmuxSessionAlreadyExisted: tmuxAlready,
+      dbRowAlreadyExisted: !dbCreated,
+      nextSteps,
+    });
+    return;
+  }
+  if (tmuxAlready && !dbCreated) {
+    console.log(
+      pc.dim(
+        `workstream "${name}" already exists (tmux session ${sessionName}, DB row registered)`,
+      ),
+    );
+    printNextSteps(nextSteps);
+    return;
+  }
+  console.log(`Created workstream ${pc.bold(name)} (tmux session ${pc.bold(sessionName)})`);
+  printNextSteps(nextSteps);
 }
 
 async function cmdWorkstreamList(db: Db, opts: { json?: boolean } = {}): Promise<void> {
@@ -430,19 +442,66 @@ function formatWorkstreamsTable(rows: WorkstreamSummary[]): string {
   return table.toString();
 }
 
-async function cmdDestroy(db: Db, opts: { workstream?: string; yes?: boolean }): Promise<void> {
+async function cmdDestroy(
+  db: Db,
+  opts: { workstream?: string; yes?: boolean; json?: boolean },
+): Promise<void> {
   const workstream = await resolveWorkstream(opts.workstream);
   const summary = await summarizeWorkstream(db, { workstream });
   const nothingToDo =
     !summary.tmuxAlive && summary.agents === 0 && summary.tasks === 0 && summary.notes === 0;
 
   if (nothingToDo) {
+    if (opts.json) {
+      emitJson({ workstream, destroyed: false, reason: "nothing to destroy", summary });
+      return;
+    }
     console.log(
       pc.dim(`workstream "${workstream}" has no tmux session and no DB rows; nothing to destroy`),
     );
     return;
   }
 
+  if (!opts.yes) {
+    if (opts.json) {
+      emitJson({
+        workstream,
+        destroyed: false,
+        dryRun: true,
+        summary,
+        nextSteps: [
+          {
+            intent: "Confirm and actually destroy",
+            command: `mu workstream destroy -w ${workstream} --yes`,
+          },
+        ],
+      });
+      return;
+    }
+    console.log(pc.bold(`Workstream ${workstream} (tmux session ${summary.tmuxSession})`));
+    console.log(
+      `  tmux session : ${summary.tmuxAlive ? pc.yellow("alive (will be killed)") : pc.dim("not running")}`,
+    );
+    console.log(`  agents       : ${summary.agents}`);
+    console.log(
+      `  tasks        : ${summary.tasks}  (edges: ${summary.edges}, notes: ${summary.notes})`,
+    );
+    console.log("");
+    console.log(pc.dim("(dry-run; rerun with --yes to actually destroy)"));
+    printNextSteps([
+      {
+        intent: "Confirm and actually destroy",
+        command: `mu workstream destroy -w ${workstream} --yes`,
+      },
+    ]);
+    return;
+  }
+
+  const result = await destroyWorkstream(db, { workstream });
+  if (opts.json) {
+    emitJson({ workstream, destroyed: true, ...result });
+    return;
+  }
   console.log(pc.bold(`Workstream ${workstream} (tmux session ${summary.tmuxSession})`));
   console.log(
     `  tmux session : ${summary.tmuxAlive ? pc.yellow("alive (will be killed)") : pc.dim("not running")}`,
@@ -451,14 +510,6 @@ async function cmdDestroy(db: Db, opts: { workstream?: string; yes?: boolean }):
   console.log(
     `  tasks        : ${summary.tasks}  (edges: ${summary.edges}, notes: ${summary.notes})`,
   );
-
-  if (!opts.yes) {
-    console.log("");
-    console.log(pc.dim("(dry-run; rerun with --yes to actually destroy)"));
-    return;
-  }
-
-  const result = await destroyWorkstream(db, { workstream });
   console.log("");
   console.log(
     `Destroyed ${pc.bold(workstream)}: killed tmux=${result.killedTmux}, agents=${result.deletedAgents}, tasks=${result.deletedTasks}, edges=${result.deletedEdges}, notes=${result.deletedNotes}`,
@@ -476,6 +527,7 @@ interface SpawnOpts {
   workspaceBackend?: VcsBackendName;
   workspaceFrom?: string;
   workspaceProjectRoot?: string;
+  json?: boolean;
 }
 async function cmdSpawn(db: Db, name: string, opts: SpawnOpts): Promise<void> {
   const workstream = await resolveWorkstream(opts.workstream);
@@ -494,15 +546,8 @@ async function cmdSpawn(db: Db, name: string, opts: SpawnOpts): Promise<void> {
       ? { workspaceProjectRoot: opts.workspaceProjectRoot }
       : {}),
   });
-  const wsBit = opts.workspace ? pc.dim(" with auto-workspace") : "";
-  console.log(
-    `Spawned ${pc.bold(agent.name)} (${agent.cli}) in window ${pc.bold(agent.tab ?? agent.name)} of ${pc.bold(`mu-${workstream}`)}, pane ${pc.dim(agent.paneId)}${wsBit}`,
-  );
-  if (opts.workspace) {
-    const ws = getWorkspaceForAgent(db, name);
-    if (ws) console.log(pc.dim(`  workspace: ${ws.path} (${ws.backend})`));
-  }
-  printNextSteps([
+  const workspace = opts.workspace ? getWorkspaceForAgent(db, name) : undefined;
+  const nextSteps: NextStep[] = [
     { intent: "Send work", command: `mu agent send ${name} "..." -w ${workstream}` },
     { intent: "Read pane", command: `mu agent read ${name} -w ${workstream}` },
     { intent: "Watch live events", command: `mu log -w ${workstream} --tail` },
@@ -510,27 +555,56 @@ async function cmdSpawn(db: Db, name: string, opts: SpawnOpts): Promise<void> {
       intent: "Close (drops registry row, kills pane)",
       command: `mu agent close ${name} -w ${workstream}`,
     },
-  ]);
+  ];
+  if (opts.json) {
+    emitJson({ agent, workspace: workspace ?? null, nextSteps });
+    return;
+  }
+  const wsBit = opts.workspace ? pc.dim(" with auto-workspace") : "";
+  console.log(
+    `Spawned ${pc.bold(agent.name)} (${agent.cli}) in window ${pc.bold(agent.tab ?? agent.name)} of ${pc.bold(`mu-${workstream}`)}, pane ${pc.dim(agent.paneId)}${wsBit}`,
+  );
+  if (workspace) console.log(pc.dim(`  workspace: ${workspace.path} (${workspace.backend})`));
+  printNextSteps(nextSteps);
 }
 
 async function cmdSend(
   db: Db,
   name: string,
   text: string,
-  opts: { workstream?: string } = {},
+  opts: { workstream?: string; json?: boolean } = {},
 ): Promise<void> {
   assertAgentInWorkstream(db, name, opts.workstream);
   await sendToAgent(db, name, text);
+  const ws = await resolveWorkstream(opts.workstream);
+  const nextSteps: NextStep[] = [
+    { intent: "Read response", command: `mu agent read ${name} -n 50 -w ${ws}` },
+    { intent: "Watch live events", command: `mu log -w ${ws} --tail` },
+  ];
+  if (opts.json) {
+    emitJson({ agent: name, sentBytes: text.length, nextSteps });
+    return;
+  }
   console.log(pc.dim(`sent ${text.length} bytes to ${name}`));
+  printNextSteps(nextSteps);
 }
 
 async function cmdRead(
   db: Db,
   name: string,
-  opts: { lines?: number; workstream?: string },
+  opts: { lines?: number; workstream?: string; json?: boolean },
 ): Promise<void> {
   assertAgentInWorkstream(db, name, opts.workstream);
   const text = await readAgent(db, name, opts.lines !== undefined ? { lines: opts.lines } : {});
+  if (opts.json) {
+    emitJson({
+      agent: name,
+      lines: opts.lines ?? null,
+      scrollback: text,
+      scrollbackLines: text.split("\n").length,
+    });
+    return;
+  }
   process.stdout.write(text);
   if (!text.endsWith("\n")) process.stdout.write("\n");
 }
@@ -733,6 +807,7 @@ async function cmdWorkspaceCreate(
     backend?: VcsBackendName;
     from?: string;
     projectRoot?: string;
+    json?: boolean;
   },
 ): Promise<void> {
   const workstream = await resolveWorkstream(opts.workstream);
@@ -741,9 +816,25 @@ async function cmdWorkspaceCreate(
   if (opts.from !== undefined) createOpts.parentRef = opts.from;
   if (opts.projectRoot !== undefined) createOpts.projectRoot = opts.projectRoot;
   const ws = await createWorkspace(db, createOpts);
+  const nextSteps: NextStep[] = [
+    { intent: "cd into the workspace", command: `cd $(mu workspace path ${agent})` },
+    {
+      intent: "Free it later (with optional --commit)",
+      command: `mu workspace free ${agent}  (--commit to commit pending changes first)`,
+    },
+    {
+      intent: "Spawn an agent that uses this workspace as cwd",
+      command: `mu agent spawn <name> -w ${workstream} --workspace`,
+    },
+  ];
+  if (opts.json) {
+    emitJson({ workspace: ws, nextSteps });
+    return;
+  }
   console.log(
     `Created workspace ${pc.bold(ws.path)} ${pc.dim(`(backend=${ws.backend}, agent=${ws.agent}, parent=${ws.parentRef ?? "—"})`)}`,
   );
+  printNextSteps(nextSteps);
 }
 
 async function cmdWorkspaceList(
@@ -766,10 +857,14 @@ async function cmdWorkspaceList(
 async function cmdWorkspaceFree(
   db: Db,
   agent: string,
-  opts: { commit?: boolean; workstream?: string },
+  opts: { commit?: boolean; workstream?: string; json?: boolean },
 ): Promise<void> {
   assertAgentInWorkstream(db, agent, opts.workstream);
   const r = await freeWorkspace(db, agent, { commit: opts.commit ?? false });
+  if (opts.json) {
+    emitJson({ agent, ...r });
+    return;
+  }
   if (!r.removed && !r.rowDeleted) {
     console.log(pc.dim(`no workspace for ${agent} (already gone?)`));
     return;
@@ -783,11 +878,15 @@ async function cmdWorkspaceFree(
 async function cmdWorkspacePath(
   db: Db,
   agent: string,
-  opts: { workstream?: string } = {},
+  opts: { workstream?: string; json?: boolean } = {},
 ): Promise<void> {
   assertAgentInWorkstream(db, agent, opts.workstream);
   const ws = getWorkspaceForAgent(db, agent);
   if (!ws) throw new WorkspaceNotFoundError(agent);
+  if (opts.json) {
+    emitJson({ agent, path: ws.path, backend: ws.backend });
+    return;
+  }
   // Print just the path, no decoration: usable for `cd $(mu workspace path X)`.
   console.log(ws.path);
 }
@@ -812,14 +911,13 @@ function formatWorkspacesTable(rows: readonly WorkspaceRow[]): string {
   return table.toString();
 }
 
-async function cmdClose(db: Db, name: string, opts: { workstream?: string } = {}): Promise<void> {
+async function cmdClose(
+  db: Db,
+  name: string,
+  opts: { workstream?: string; json?: boolean } = {},
+): Promise<void> {
   assertAgentInWorkstream(db, name, opts.workstream);
   const result = await closeAgent(db, name);
-  if (!result.killedPane && !result.deletedRow) {
-    console.log(pc.dim(`no agent named ${name} (already closed?)`));
-    return;
-  }
-  console.log(`Closed ${pc.bold(name)}`);
   const next: NextStep[] = [];
   if (result.workspaceKept) {
     next.push({
@@ -831,6 +929,16 @@ async function cmdClose(db: Db, name: string, opts: { workstream?: string } = {}
     intent: "Re-spawn under the same name",
     command: `mu agent spawn ${name} -w <workstream>`,
   });
+  if (opts.json) {
+    emitJson({ agent: name, ...result, nextSteps: next });
+    return;
+  }
+  if (!result.killedPane && !result.deletedRow) {
+    console.log(pc.dim(`no agent named ${name} (already closed?)`));
+    printNextSteps(next);
+    return;
+  }
+  console.log(`Closed ${pc.bold(name)}`);
   printNextSteps(next);
 }
 
@@ -905,9 +1013,17 @@ async function cmdAdopt(db: Db, paneOrTitle: string, opts: AdoptCliOpts): Promis
   printNextSteps(nextSteps);
 }
 
-async function cmdFree(db: Db, name: string, opts: { workstream?: string } = {}): Promise<void> {
+async function cmdFree(
+  db: Db,
+  name: string,
+  opts: { workstream?: string; json?: boolean } = {},
+): Promise<void> {
   assertAgentInWorkstream(db, name, opts.workstream);
   const r = freeAgent(db, name);
+  if (opts.json) {
+    emitJson({ agent: name, ...r });
+    return;
+  }
   if (!r.changed) {
     console.log(pc.dim(`${name} already free (no-op)`));
     return;
@@ -1319,11 +1435,21 @@ async function cmdTaskNote(
   db: Db,
   localId: string,
   content: string,
-  opts: { workstream?: string } = {},
+  opts: { workstream?: string; json?: boolean } = {},
 ): Promise<void> {
   assertTaskInWorkstream(db, localId, opts.workstream);
   const note = addNote(db, localId, unescapeNoteText(content));
+  const ws = await resolveWorkstream(opts.workstream);
+  const nextSteps: NextStep[] = [
+    { intent: "Show all notes on this task", command: `mu task notes ${localId} -w ${ws}` },
+    { intent: "Show full task state", command: `mu task show ${localId} -w ${ws}` },
+  ];
+  if (opts.json) {
+    emitJson({ task: localId, note, nextSteps });
+    return;
+  }
   console.log(pc.dim(`note #${note.id} appended to ${localId}`));
+  printNextSteps(nextSteps);
 }
 
 async function cmdTaskClose(
@@ -1358,18 +1484,32 @@ async function cmdTaskClose(
 async function cmdTaskOpen(
   db: Db,
   localId: string,
-  opts: { evidence?: string; workstream?: string } = {},
+  opts: { evidence?: string; workstream?: string; json?: boolean } = {},
 ): Promise<void> {
   assertTaskInWorkstream(db, localId, opts.workstream);
   const sdkOpts = opts.evidence !== undefined ? { evidence: opts.evidence } : {};
   const r = openTask(db, localId, sdkOpts);
+  const ws = await resolveWorkstream(opts.workstream);
+  const nextSteps: NextStep[] = [
+    {
+      intent: "Claim it",
+      command: `mu task claim ${localId} -w ${ws}  (--self / --for <worker>)`,
+    },
+    { intent: "Close again", command: `mu task close ${localId} -w ${ws}` },
+  ];
+  if (opts.json) {
+    emitJson({ task: localId, ...r, nextSteps });
+    return;
+  }
   if (!r.changed) {
     console.log(pc.dim(`${localId} already OPEN (no-op)`));
+    printNextSteps(nextSteps);
     return;
   }
   const ev = opts.evidence ? pc.dim(`  evidence: ${opts.evidence}`) : "";
   console.log(`Reopened ${pc.bold(localId)} ${pc.dim(`(${r.previousStatus} → ${r.status})`)}`);
   if (ev) console.log(ev);
+  printNextSteps(nextSteps);
 }
 
 interface TreeOpts {
@@ -1686,38 +1826,74 @@ async function cmdClaim(
 async function cmdTaskBlock(
   db: Db,
   blocked: string,
-  opts: { by: string; workstream?: string },
+  opts: { by: string; workstream?: string; json?: boolean },
 ): Promise<void> {
   assertTaskInWorkstream(db, blocked, opts.workstream);
   const r = addBlockEdge(db, blocked, opts.by);
+  const ws = await resolveWorkstream(opts.workstream);
+  const nextSteps: NextStep[] = [
+    { intent: "Show the dependency tree", command: `mu task tree ${blocked} -w ${ws}` },
+    { intent: "Remove this edge", command: `mu task unblock ${blocked} --by ${opts.by} -w ${ws}` },
+  ];
+  if (opts.json) {
+    emitJson({ blocked, blocker: opts.by, ...r, nextSteps });
+    return;
+  }
   if (!r.added) {
     console.log(pc.dim(`${opts.by} → ${blocked}: edge already exists (no-op)`));
+    printNextSteps(nextSteps);
     return;
   }
   console.log(`Added edge ${pc.bold(opts.by)} → ${pc.bold(blocked)}`);
+  printNextSteps(nextSteps);
 }
 
 async function cmdTaskUnblock(
   db: Db,
   blocked: string,
-  opts: { by: string; workstream?: string },
+  opts: { by: string; workstream?: string; json?: boolean },
 ): Promise<void> {
   assertTaskInWorkstream(db, blocked, opts.workstream);
   const r = removeBlockEdge(db, blocked, opts.by);
+  const ws = await resolveWorkstream(opts.workstream);
+  const nextSteps: NextStep[] = [
+    { intent: "Show what now blocks this task", command: `mu task tree ${blocked} -w ${ws}` },
+    { intent: "Re-add the edge", command: `mu task block ${blocked} --by ${opts.by} -w ${ws}` },
+  ];
+  if (opts.json) {
+    emitJson({ blocked, blocker: opts.by, ...r, nextSteps });
+    return;
+  }
   if (!r.removed) {
     console.log(pc.dim(`${opts.by} → ${blocked}: no such edge (no-op)`));
+    printNextSteps(nextSteps);
     return;
   }
   console.log(`Removed edge ${pc.bold(opts.by)} → ${pc.bold(blocked)}`);
+  printNextSteps(nextSteps);
 }
 
 async function cmdTaskDelete(
   db: Db,
   localId: string,
-  opts: { workstream?: string } = {},
+  opts: { workstream?: string; json?: boolean } = {},
 ): Promise<void> {
   assertTaskInWorkstream(db, localId, opts.workstream);
   const r = deleteTask(db, localId);
+  const nextSteps: NextStep[] = [
+    {
+      intent: "No undo — restore from backup if needed",
+      command: "cp ~/.local/state/mu/mu.db.bak ~/.local/state/mu/mu.db",
+    },
+    {
+      intent: "List remaining tasks",
+      command: `mu task list -w ${await resolveWorkstream(opts.workstream)}`,
+    },
+  ];
+  if (opts.json) {
+    emitJson({ task: localId, ...r, nextSteps });
+    return;
+  }
   if (!r.deleted) {
     console.log(pc.dim(`no task named ${localId} (already deleted?)`));
     return;
@@ -1725,12 +1901,19 @@ async function cmdTaskDelete(
   console.log(
     `Deleted ${pc.bold(localId)} ${pc.dim(`(edges: ${r.deletedEdges}, notes: ${r.deletedNotes})`)}`,
   );
+  printNextSteps(nextSteps);
 }
 
 async function cmdTaskUpdate(
   db: Db,
   localId: string,
-  opts: { title?: string; impact?: number; effortDays?: number; workstream?: string },
+  opts: {
+    title?: string;
+    impact?: number;
+    effortDays?: number;
+    workstream?: string;
+    json?: boolean;
+  },
 ): Promise<void> {
   assertTaskInWorkstream(db, localId, opts.workstream);
   const updateOpts: UpdateTaskOptions = {};
@@ -1743,17 +1926,26 @@ async function cmdTaskUpdate(
     );
   }
   const r = updateTask(db, localId, updateOpts);
+  const ws = await resolveWorkstream(opts.workstream);
+  const nextSteps: NextStep[] = [
+    { intent: "Show updated task", command: `mu task show ${localId} -w ${ws}` },
+  ];
+  if (opts.json) {
+    emitJson({ task: localId, ...r, nextSteps });
+    return;
+  }
   if (!r.updated) {
     console.log(pc.dim(`${localId}: no fields differ from current (no-op)`));
     return;
   }
   console.log(`Updated ${pc.bold(localId)} ${pc.dim(`(${r.changedFields.join(", ")})`)}`);
+  printNextSteps(nextSteps);
 }
 
 async function cmdTaskReparent(
   db: Db,
   localId: string,
-  opts: { blocks: string; workstream?: string },
+  opts: { blocks: string; workstream?: string; json?: boolean },
 ): Promise<void> {
   assertTaskInWorkstream(db, localId, opts.workstream);
   const blockers = opts.blocks
@@ -1761,9 +1953,19 @@ async function cmdTaskReparent(
     .map((s) => s.trim())
     .filter(Boolean);
   const r = reparentTask(db, localId, blockers);
+  const ws = await resolveWorkstream(opts.workstream);
+  const nextSteps: NextStep[] = [
+    { intent: "Show the new dependency tree", command: `mu task tree ${localId} -w ${ws}` },
+    { intent: "Show the task", command: `mu task show ${localId} -w ${ws}` },
+  ];
+  if (opts.json) {
+    emitJson({ task: localId, blockers, ...r, nextSteps });
+    return;
+  }
   console.log(
     `Reparented ${pc.bold(localId)} ${pc.dim(`(removed ${r.removedEdges} edges, added ${r.addedEdges})`)}`,
   );
+  printNextSteps(nextSteps);
 }
 
 // ─── mu log (write + read + tail) ───────────────────────────────────
@@ -1931,7 +2133,10 @@ function printLogRow(row: LogRow): void {
 }
 
 // ─── mu doctor ───────────────────────────────────────────────────────────────────
-async function cmdDoctor(db: Db): Promise<void> {
+async function cmdDoctor(db: Db, opts: { json?: boolean } = {}): Promise<void> {
+  if (opts.json) {
+    return cmdDoctorJson(db);
+  }
   console.log(pc.bold("mu doctor"));
 
   // ─ Environment
@@ -2067,6 +2272,124 @@ async function cmdDoctor(db: Db): Promise<void> {
   }
 }
 
+/**
+ * JSON form of `mu doctor`. Same checks the human form runs, collected
+ * into a single structured record for piping. Surfaces 'ok' / 'warn' /
+ * 'fail' for each subsystem so callers can match on a single field.
+ */
+async function cmdDoctorJson(db: Db): Promise<void> {
+  // environment
+  let tmuxVersion: string | null = null;
+  let tmuxOk = false;
+  try {
+    tmuxVersion = (await tmux(["-V"])).trim();
+    tmuxOk = true;
+  } catch {
+    tmuxOk = false;
+  }
+  const env = {
+    tmux: { ok: tmuxOk, version: tmuxVersion },
+    TMUX: process.env.TMUX ?? null,
+    TMUX_PANE: process.env.TMUX_PANE ?? null,
+    MU_SESSION: process.env.MU_SESSION ?? null,
+  };
+
+  // db / schema
+  let dbReport: Record<string, unknown>;
+  try {
+    const tables = (
+      db
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+        )
+        .all() as { name: string }[]
+    ).map((r) => r.name);
+    const missing = EXPECTED_TABLES.filter((t) => !tables.includes(t));
+    let schemaVersion: number | null = null;
+    let schemaVersionStatus: "ok" | "missing" | "stale" | "future" | "unreadable";
+    try {
+      const row = db.prepare("SELECT version FROM schema_version WHERE id = 1").get() as
+        | { version: number }
+        | undefined;
+      const v = row?.version;
+      if (v === undefined) schemaVersionStatus = "missing";
+      else {
+        schemaVersion = v;
+        if (v === CURRENT_SCHEMA_VERSION) schemaVersionStatus = "ok";
+        else if (v < CURRENT_SCHEMA_VERSION) schemaVersionStatus = "stale";
+        else schemaVersionStatus = "future";
+      }
+    } catch {
+      schemaVersionStatus = "unreadable";
+    }
+    const journal = db.pragma("journal_mode", { simple: true });
+    const fk = db.pragma("foreign_keys", { simple: true });
+    dbReport = {
+      path: defaultDbPath(),
+      schema: { ok: missing.length === 0, expected: EXPECTED_TABLES, missing, present: tables },
+      schemaVersion: {
+        value: schemaVersion,
+        expected: CURRENT_SCHEMA_VERSION,
+        status: schemaVersionStatus,
+      },
+      journalMode: journal,
+      foreignKeys: fk === 1,
+    };
+  } catch (err) {
+    dbReport = { error: err instanceof Error ? err.message : String(err) };
+  }
+
+  // workstream
+  let currentWorkstream: string | null = null;
+  try {
+    currentWorkstream = await resolveWorkstream();
+  } catch {
+    currentWorkstream = null;
+  }
+
+  // per-workstream stats (only when resolvable)
+  let workstreamStats: Record<string, unknown> | null = null;
+  if (currentWorkstream) {
+    const ws = currentWorkstream;
+    const counts = {
+      agents: countWhere(db, "agents", "workstream", ws),
+      tasks: countWhere(db, "tasks", "workstream", ws),
+      ready: countReady(db, ws),
+      blocked: countBlocked(db, ws),
+      inProgress: (
+        db
+          .prepare(
+            "SELECT COUNT(*) AS n FROM tasks WHERE workstream = ? AND status = 'IN_PROGRESS'",
+          )
+          .get(ws) as { n: number }
+      ).n,
+      logs: (
+        db.prepare("SELECT COUNT(*) AS n FROM agent_logs WHERE workstream = ?").get(ws) as {
+          n: number;
+        }
+      ).n,
+    };
+    let reconcile: Record<string, unknown> | null = null;
+    try {
+      const view = await listLiveAgents(db, { workstream: ws });
+      reconcile = {
+        prunedGhosts: view.report.prunedGhosts,
+        orphanCount: view.orphans.length,
+      };
+    } catch (err) {
+      reconcile = { skipped: true, reason: err instanceof Error ? err.message : String(err) };
+    }
+    workstreamStats = { workstream: ws, ...counts, reconcile };
+  }
+
+  emitJson({
+    environment: env,
+    db: dbReport,
+    workstream: { current: currentWorkstream },
+    state: workstreamStats,
+  });
+}
+
 function countWhere(db: Db, table: string, column: string, value: string): number {
   return (
     db.prepare(`SELECT COUNT(*) AS n FROM ${table} WHERE ${column} = ?`).get(value) as {
@@ -2125,15 +2448,24 @@ async function cmdApprovalAdd(
   };
   if (opts.slug !== undefined) addOpts.slug = opts.slug;
   const row = addApproval(db, addOpts);
+  const wsArg = row.workstream ? ` -w ${row.workstream}` : "";
+  const nextSteps: NextStep[] = [
+    {
+      intent: "Block until decided (orchestrator)",
+      command: `mu approve wait ${row.slug}${wsArg} --timeout 600`,
+    },
+    { intent: "Grant", command: `mu approve grant ${row.slug}${wsArg}` },
+    { intent: "Deny", command: `mu approve deny ${row.slug}${wsArg}` },
+  ];
   if (opts.json) {
-    emitJson(row);
+    emitJson({ ...row, nextSteps });
     return;
   }
   console.log(
     `Requested approval ${pc.bold(row.slug)} ${pc.dim(`(workstream=${row.workstream ?? "—"}, by ${row.requestedBy})`)}`,
   );
   console.log(pc.dim(`  reason: ${row.reason}`));
-  console.log(pc.dim(`  next:   mu approve grant ${row.slug}   |   mu approve deny ${row.slug}`));
+  printNextSteps(nextSteps);
 }
 
 async function cmdApprovalList(
@@ -2168,22 +2500,30 @@ async function cmdApprovalList(
 async function cmdApprovalGrant(
   db: Db,
   slug: string,
-  opts: { by?: string; workstream?: string },
+  opts: { by?: string; workstream?: string; json?: boolean },
 ): Promise<void> {
   assertApprovalInWorkstream(db, slug, opts.workstream);
   const decidedBy = opts.by ?? (await resolveSelfNameOrUser(db));
   const row = grantApproval(db, slug, { decidedBy });
+  if (opts.json) {
+    emitJson(row);
+    return;
+  }
   console.log(`Granted ${pc.bold(slug)} ${pc.dim(`(by ${row.decidedBy})`)}`);
 }
 
 async function cmdApprovalDeny(
   db: Db,
   slug: string,
-  opts: { by?: string; workstream?: string },
+  opts: { by?: string; workstream?: string; json?: boolean },
 ): Promise<void> {
   assertApprovalInWorkstream(db, slug, opts.workstream);
   const decidedBy = opts.by ?? (await resolveSelfNameOrUser(db));
   const row = denyApproval(db, slug, { decidedBy });
+  if (opts.json) {
+    emitJson(row);
+    return;
+  }
   console.log(`Denied ${pc.bold(slug)} ${pc.dim(`(by ${row.decidedBy})`)}`);
 }
 
@@ -2259,17 +2599,22 @@ async function resolveSelfNameOrUser(db: Db): Promise<string> {
   return agent ? agent.name : "user";
 }
 
-async function cmdSql(db: Db, query: string): Promise<void> {
+async function cmdSql(db: Db, query: string, opts: { json?: boolean } = {}): Promise<void> {
   // Read OR write — `mu sql` is the explicit escape hatch.
   const trimmed = query.trim();
   const lower = trimmed.toLowerCase();
-  if (lower.startsWith("select") || lower.startsWith("with") || lower.startsWith("explain")) {
+  const isRead =
+    lower.startsWith("select") || lower.startsWith("with") || lower.startsWith("explain");
+  if (isRead) {
     const rows = db.prepare(trimmed).all();
+    if (opts.json) {
+      emitJson(rows);
+      return;
+    }
     if (rows.length === 0) {
       console.log(pc.dim("(no rows)"));
       return;
     }
-    // Pretty-print as a table.
     const first = rows[0] as Record<string, unknown>;
     const keys = Object.keys(first);
     const table = new Table({ head: keys.map((k) => pc.bold(k)), style: { head: [] } });
@@ -2281,6 +2626,13 @@ async function cmdSql(db: Db, query: string): Promise<void> {
     console.log(pc.dim(`(${rows.length} row${rows.length === 1 ? "" : "s"})`));
   } else {
     const result = db.prepare(trimmed).run();
+    if (opts.json) {
+      emitJson({
+        changes: result.changes,
+        lastInsertRowid: Number(result.lastInsertRowid),
+      });
+      return;
+    }
     console.log(pc.dim(`${result.changes} row${result.changes === 1 ? "" : "s"} affected`));
   }
 }
@@ -2665,7 +3017,11 @@ export function buildProgram(): Command {
   workstream
     .command("init <name>")
     .description("Create the workstream's tmux session and register it in the DB")
-    .action((name: string) => handle((db) => cmdInit(db, name))());
+    .option(...JSON_OPT)
+    .action(function (name: string) {
+      const opts = (this as Command).opts() as { json?: boolean };
+      return handle((db) => cmdInit(db, name, opts))();
+    });
 
   workstream
     .command("list")
@@ -2683,8 +3039,13 @@ export function buildProgram(): Command {
     )
     .option(...WORKSTREAM_OPT)
     .option("-y, --yes", "actually destroy (without this flag, prints a dry-run summary)")
+    .option(...JSON_OPT)
     .action(function () {
-      const opts = (this as Command).opts() as { workstream?: string; yes?: boolean };
+      const opts = (this as Command).opts() as {
+        workstream?: string;
+        yes?: boolean;
+        json?: boolean;
+      };
       return handle((db) => cmdDestroy(db, opts))();
     });
 
@@ -2721,6 +3082,7 @@ export function buildProgram(): Command {
       "override the project root the workspace branches from (default: cwd)",
     )
     .option(...WORKSTREAM_OPT)
+    .option(...JSON_OPT)
     .action(function (name: string) {
       const opts = (this as Command).opts() as SpawnOpts;
       return handle((db) => cmdSpawn(db, name, opts))();
@@ -2730,8 +3092,9 @@ export function buildProgram(): Command {
     .command("send <name> <text>")
     .description("Send text to an agent's pane (bracketed-paste protocol)")
     .option(...WORKSTREAM_OPT)
+    .option(...JSON_OPT)
     .action(function (name: string, text: string) {
-      const opts = (this as Command).opts() as { workstream?: string };
+      const opts = (this as Command).opts() as { workstream?: string; json?: boolean };
       return handle((db) => cmdSend(db, name, text, opts))();
     });
 
@@ -2740,8 +3103,13 @@ export function buildProgram(): Command {
     .description("Read an agent's pane scrollback")
     .option("-n, --lines <n>", "show last N lines (default: full scrollback)", parseLines)
     .option(...WORKSTREAM_OPT)
+    .option(...JSON_OPT)
     .action(function (name: string) {
-      const opts = (this as Command).opts() as { lines?: number; workstream?: string };
+      const opts = (this as Command).opts() as {
+        lines?: number;
+        workstream?: string;
+        json?: boolean;
+      };
       return handle((db) => cmdRead(db, name, opts))();
     });
 
@@ -2779,8 +3147,9 @@ export function buildProgram(): Command {
       "Kill an agent's pane and remove its registry row. Does NOT touch the workspace; run `mu workspace free <agent>` separately to remove the on-disk dir.",
     )
     .option(...WORKSTREAM_OPT)
+    .option(...JSON_OPT)
     .action(function (name: string) {
-      const opts = (this as Command).opts() as { workstream?: string };
+      const opts = (this as Command).opts() as { workstream?: string; json?: boolean };
       return handle((db) => cmdClose(db, name, opts))();
     });
 
@@ -2790,8 +3159,9 @@ export function buildProgram(): Command {
       "Mark an agent's status as 'free' (idempotent). Pane untouched; reconcile flips back to busy on real activity.",
     )
     .option(...WORKSTREAM_OPT)
+    .option(...JSON_OPT)
     .action(function (name: string) {
-      const opts = (this as Command).opts() as { workstream?: string };
+      const opts = (this as Command).opts() as { workstream?: string; json?: boolean };
       return handle((db) => cmdFree(db, name, opts))();
     });
 
@@ -2831,12 +3201,14 @@ export function buildProgram(): Command {
     .option("--from <ref>", "base the workspace on a specific commit / branch / changeset")
     .option("--project-root <path>", "override the project root to branch from (default: cwd)")
     .option(...WORKSTREAM_OPT)
+    .option(...JSON_OPT)
     .action(function (agent: string) {
       const opts = (this as Command).opts() as {
         backend?: VcsBackendName;
         from?: string;
         projectRoot?: string;
         workstream?: string;
+        json?: boolean;
       };
       return handle((db) => cmdWorkspaceCreate(db, agent, opts))();
     });
@@ -2863,8 +3235,13 @@ export function buildProgram(): Command {
     )
     .option("--commit", "auto-commit pending changes before removing the workspace")
     .option(...WORKSTREAM_OPT)
+    .option(...JSON_OPT)
     .action(function (agent: string) {
-      const opts = (this as Command).opts() as { commit?: boolean; workstream?: string };
+      const opts = (this as Command).opts() as {
+        commit?: boolean;
+        workstream?: string;
+        json?: boolean;
+      };
       return handle((db) => cmdWorkspaceFree(db, agent, opts))();
     });
 
@@ -2874,8 +3251,9 @@ export function buildProgram(): Command {
       "Print the on-disk path of an agent's workspace. Usable as `cd $(mu workspace path foo)`.",
     )
     .option(...WORKSTREAM_OPT)
+    .option(...JSON_OPT)
     .action(function (agent: string) {
-      const opts = (this as Command).opts() as { workstream?: string };
+      const opts = (this as Command).opts() as { workstream?: string; json?: boolean };
       return handle((db) => cmdWorkspacePath(db, agent, opts))();
     });
 
@@ -3007,8 +3385,9 @@ export function buildProgram(): Command {
     .command("note <id> <text>")
     .description("Append a note to a task")
     .option(...WORKSTREAM_OPT)
+    .option(...JSON_OPT)
     .action(function (id: string, text: string) {
-      const opts = (this as Command).opts() as { workstream?: string };
+      const opts = (this as Command).opts() as { workstream?: string; json?: boolean };
       return handle((db) => cmdTaskNote(db, id, text, opts))();
     });
 
@@ -3075,8 +3454,13 @@ export function buildProgram(): Command {
     .description("Mark a task OPEN — e.g. to reopen something closed by mistake (idempotent)")
     .option(...WORKSTREAM_OPT)
     .option(...EVIDENCE_OPT)
+    .option(...JSON_OPT)
     .action(function (id: string) {
-      const opts = (this as Command).opts() as { evidence?: string; workstream?: string };
+      const opts = (this as Command).opts() as {
+        evidence?: string;
+        workstream?: string;
+        json?: boolean;
+      };
       return handle((db) => cmdTaskOpen(db, id, opts))();
     });
 
@@ -3136,8 +3520,9 @@ export function buildProgram(): Command {
     )
     .requiredOption("-b, --by <blocker>", "the task that should block <blocked>")
     .option(...WORKSTREAM_OPT)
+    .option(...JSON_OPT)
     .action(function (blocked: string) {
-      const opts = (this as Command).opts() as { by: string; workstream?: string };
+      const opts = (this as Command).opts() as { by: string; workstream?: string; json?: boolean };
       return handle((db) => cmdTaskBlock(db, blocked, opts))();
     });
 
@@ -3146,8 +3531,9 @@ export function buildProgram(): Command {
     .description("Remove a single blocking edge (idempotent)")
     .requiredOption("-b, --by <blocker>", "the task whose blocker edge to remove")
     .option(...WORKSTREAM_OPT)
+    .option(...JSON_OPT)
     .action(function (blocked: string) {
-      const opts = (this as Command).opts() as { by: string; workstream?: string };
+      const opts = (this as Command).opts() as { by: string; workstream?: string; json?: boolean };
       return handle((db) => cmdTaskUnblock(db, blocked, opts))();
     });
 
@@ -3157,8 +3543,9 @@ export function buildProgram(): Command {
       "Delete a task. Cascades to task_edges and task_notes via FK. Idempotent on missing.",
     )
     .option(...WORKSTREAM_OPT)
+    .option(...JSON_OPT)
     .action(function (id: string) {
-      const opts = (this as Command).opts() as { workstream?: string };
+      const opts = (this as Command).opts() as { workstream?: string; json?: boolean };
       return handle((db) => cmdTaskDelete(db, id, opts))();
     });
 
@@ -3171,12 +3558,14 @@ export function buildProgram(): Command {
     .option("-i, --impact <n>", "new impact 1..100", parseImpact)
     .option("-e, --effort-days <days>", "new effort in days (>0)", parsePositiveNumber)
     .option(...WORKSTREAM_OPT)
+    .option(...JSON_OPT)
     .action(function (id: string) {
       const opts = (this as Command).opts() as {
         title?: string;
         impact?: number;
         effortDays?: number;
         workstream?: string;
+        json?: boolean;
       };
       return handle((db) => cmdTaskUpdate(db, id, opts))();
     });
@@ -3188,8 +3577,13 @@ export function buildProgram(): Command {
     )
     .requiredOption("-b, --blocks <ids>", "comma-separated blockers (empty string clears all)")
     .option(...WORKSTREAM_OPT)
+    .option(...JSON_OPT)
     .action(function (id: string) {
-      const opts = (this as Command).opts() as { blocks: string; workstream?: string };
+      const opts = (this as Command).opts() as {
+        blocks: string;
+        workstream?: string;
+        json?: boolean;
+      };
       return handle((db) => cmdTaskReparent(db, id, opts))();
     });
 
@@ -3336,8 +3730,13 @@ export function buildProgram(): Command {
     .description("Grant a pending approval (sets status='granted')")
     .option("--by <name>", "override decider name (default: agent via $TMUX_PANE, else 'user')")
     .option(...WORKSTREAM_OPT)
+    .option(...JSON_OPT)
     .action(function (slug: string) {
-      const opts = (this as Command).opts() as { by?: string; workstream?: string };
+      const opts = (this as Command).opts() as {
+        by?: string;
+        workstream?: string;
+        json?: boolean;
+      };
       return handle((db) => cmdApprovalGrant(db, slug, opts))();
     });
 
@@ -3346,8 +3745,13 @@ export function buildProgram(): Command {
     .description("Deny a pending approval (sets status='denied')")
     .option("--by <name>", "override decider name (default: agent via $TMUX_PANE, else 'user')")
     .option(...WORKSTREAM_OPT)
+    .option(...JSON_OPT)
     .action(function (slug: string) {
-      const opts = (this as Command).opts() as { by?: string; workstream?: string };
+      const opts = (this as Command).opts() as {
+        by?: string;
+        workstream?: string;
+        json?: boolean;
+      };
       return handle((db) => cmdApprovalDeny(db, slug, opts))();
     });
 
@@ -3405,12 +3809,20 @@ export function buildProgram(): Command {
   program
     .command("sql <query>")
     .description("Run a SQL query against the live mu DB (SELECT / UPDATE / DELETE all allowed)")
-    .action((query: string) => handle((db) => cmdSql(db, query))());
+    .option(...JSON_OPT)
+    .action(function (query: string) {
+      const opts = (this as Command).opts() as { json?: boolean };
+      return handle((db) => cmdSql(db, query, opts))();
+    });
 
   program
     .command("doctor")
     .description("Environment + state health check")
-    .action(() => handle((db) => cmdDoctor(db))());
+    .option(...JSON_OPT)
+    .action(function () {
+      const opts = (this as Command).opts() as { json?: boolean };
+      return handle((db) => cmdDoctor(db, opts))();
+    });
 
   return program;
 }

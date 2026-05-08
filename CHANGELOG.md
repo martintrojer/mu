@@ -50,6 +50,61 @@ called out under "Breaking" in each entry.
 
 ### Added
 
+- **Every CLI verb accepts `--json` (universal); every write verb
+  carries `nextSteps` hints in both human + JSON output.** Third
+  commit of the selfdoc track. Combined `selfdoc_verbs_round2` and
+  `selfdoc_json_universal` (filed mid-session as a complementary
+  task) into one pass since both touch every cmd handler.
+
+  Verbs that gained `--json` (22 total): `mu workstream init /
+  destroy`, `mu agent spawn / send / read / close / free`,
+  `mu workspace create / free / path`, `mu task note / open /
+  block / unblock / delete / update / reparent`, `mu approve grant
+  / deny`, `mu sql`, `mu doctor`. The remaining read verbs already
+  had `--json` from v0.1.0; this commit closes the write-verb gap.
+
+  `mu sql --json` distinguishes:
+  - Read query (SELECT / WITH / EXPLAIN) — emits the rows array.
+  - Write query (UPDATE / DELETE / INSERT) — emits
+    `{ changes, lastInsertRowid }`.
+  - Errors from SQLite (e.g. `no such column`) flow through the
+    standard structured-error path to stderr, exit 1.
+
+  `mu doctor --json` returns a fully structured
+  `{ environment, db, workstream, state }` report with per-subsystem
+  status fields (`schemaVersion: { value, expected, status }`
+  etc.). Pipe to jq, alerts, monitoring — no prose parsing.
+
+  Verbs that gained `nextSteps` hints (in addition to the 8 from
+  selfdoc_infra): `mu agent send / free`, `mu workspace create /
+  free`, `mu task note / open / block / unblock / delete / update
+  / reparent`, `mu approve add` (revised hints; existing prose
+  retained), `mu workstream destroy`. With selfdoc_infra’s 8, that
+  makes 19 verbs with self-documenting nextSteps. Read verbs and
+  status-only verbs (mu state, mu agent list, etc.) deliberately
+  don't carry nextSteps — the result IS the next-step.
+
+  One verb stays text-only on purpose: `mu agent attach` prints a
+  `tmux attach` command for a human to copy-paste; no
+  machine-actionable output. Documented in the regression test
+  allowlist.
+
+  New regression test (`test/cli-json-universal.test.ts`) parses
+  `src/cli.ts` and asserts every `.command(...).action(...)` block
+  contains either `JSON_OPT` or a literal `"--json"` option (or is
+  in the documented allowlist with a reason). Adding a new verb
+  without `--json` now breaks the build. 544 tests total (+3 from
+  the regression test).
+
+  Friction surfaced and filed mid-commit: `nit_blocks_flag_naming`
+  — the `--blocks <X>` flag on `mu task add` reads as outgoing in
+  English ("this task blocks X") but is incoming in semantics
+  ("X blocks this task"). Filed as a NIT; first occurrence, awaiting
+  promotion.
+
+  Closes selfdoc_verbs_round2 + selfdoc_json_universal in workstream
+  roadmap-v0-2. Last impl piece before selfdoc_skill_cleanup.
+
 - **Every typed error class carries actionable `errorNextSteps()`.**
   Second commit of the selfdoc track (after the infra commit). The
   bare error message identifies what failed; the structured
