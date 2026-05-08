@@ -136,6 +136,7 @@ import {
   createWorkspace,
   freeWorkspace,
   getWorkspaceForAgent,
+  listWorkspaceOrphans,
   listWorkspaces,
 } from "./workspace.js";
 import {
@@ -1041,6 +1042,40 @@ async function cmdWorkspacePath(
   }
   // Print just the path, no decoration: usable for `cd $(mu workspace path X)`.
   console.log(ws.path);
+}
+
+async function cmdWorkspaceOrphans(
+  db: Db,
+  opts: { workstream?: string; json?: boolean } = {},
+): Promise<void> {
+  const workstream = await resolveWorkstream(opts.workstream);
+  const orphans = listWorkspaceOrphans(db, workstream);
+  const nextSteps: NextStep[] =
+    orphans.length === 0
+      ? []
+      : [
+          {
+            intent: "Remove a specific orphan dir (git: also prunes worktree registry)",
+            command: `(cd <project-root> && git worktree remove --force ${orphans[0]?.path}) || rm -rf ${orphans[0]?.path}`,
+          },
+          {
+            intent: "Adopt the dir as a managed workspace",
+            command: "mu workspace adopt  (deferred; see roadmap)",
+          },
+        ];
+  if (opts.json) {
+    emitJson({ workstream, orphans, nextSteps });
+    return;
+  }
+  if (orphans.length === 0) {
+    console.log(pc.dim(`(no orphan workspace dirs in ${workstream})`));
+    return;
+  }
+  console.log(pc.yellow(`${orphans.length} orphan workspace dir(s) in ${pc.bold(workstream)}:`));
+  for (const o of orphans) {
+    console.log(`  ${pc.bold(o.agent)}  ${pc.dim(o.path)}`);
+  }
+  printNextSteps(nextSteps);
 }
 
 function formatWorkspacesTable(rows: readonly WorkspaceRow[]): string {
@@ -3368,6 +3403,7 @@ async function cmdState(
       .all(workstream) as RawTaskRowForState[]
   ).map(rawTaskRowToTask);
   const workspaces = listWorkspaces(db, workstream);
+  const workspaceOrphans = listWorkspaceOrphans(db, workstream);
   const eventLimit = opts.events ?? 20;
   const recentEvents = listLogs(db, { workstream, kind: "event", limit: eventLimit });
 
@@ -3389,6 +3425,7 @@ async function cmdState(
       recent_closed: withRoiAll(recentClosed),
     },
     workspaces,
+    workspace_orphans: workspaceOrphans,
     recent_events: recentEvents,
   };
 
@@ -3429,6 +3466,18 @@ async function cmdState(
     console.log(pc.dim("  (none)"));
   } else {
     console.log(formatWorkspacesTable(workspaces));
+  }
+  if (workspaceOrphans.length > 0) {
+    console.log("");
+    console.log(
+      pc.yellow(
+        `Workspace orphans (${workspaceOrphans.length}, on disk but no DB row — will block --workspace spawns):`,
+      ),
+    );
+    for (const o of workspaceOrphans) {
+      console.log(`  ${pc.bold(o.agent)}  ${pc.dim(o.path)}`);
+    }
+    console.log(pc.dim(`  Run \`mu workspace orphans -w ${workstream}\` for cleanup hints.`));
   }
   console.log("");
   console.log(pc.bold(`Recent events (last ${recentEvents.length} of kind=event)`));
@@ -4072,6 +4121,18 @@ export function buildProgram(): Command {
     .action(function (agent: string) {
       const opts = (this as Command).opts() as { workstream?: string; json?: boolean };
       return handle((db) => cmdWorkspacePath(db, agent, opts))();
+    });
+
+  workspace
+    .command("orphans")
+    .description(
+      "List on-disk workspace dirs in <state-dir>/workspaces/<workstream>/ that have no DB row. These block subsequent `--workspace` spawns; surfaced by bug_workspace_orphan_not_in_state. Cleanup recipe shown in Next: hints.",
+    )
+    .option(...WORKSTREAM_OPT)
+    .option(...JSON_OPT)
+    .action(function () {
+      const opts = (this as Command).opts() as { workstream?: string; json?: boolean };
+      return handle((db) => cmdWorkspaceOrphans(db, opts))();
     });
 
   const task = program.command("task").description("Task graph commands");

@@ -19,6 +19,7 @@ import {
   createWorkspace,
   freeWorkspace,
   getWorkspaceForAgent,
+  listWorkspaceOrphans,
   listWorkspaces,
   workspacePath,
 } from "../src/workspace.js";
@@ -540,5 +541,83 @@ describe("closeAgent + workspace integration", () => {
       deletedRow: false,
       workspaceFreed: false,
     });
+  });
+});
+
+// ─── listWorkspaceOrphans (regression for bug_workspace_orphan_not_in_state) ───
+
+describe("listWorkspaceOrphans", () => {
+  let tempDir: string;
+  let db: Db;
+
+  beforeEach(() => {
+    tempDir = mkdtempSync(join(tmpdir(), "mu-orphans-"));
+    process.env.MU_STATE_DIR = tempDir;
+    db = openDb({ path: join(tempDir, "mu.db") });
+    ensureWorkstream(db, "auth");
+  });
+
+  afterEach(() => {
+    db.close();
+    const key = "MU_STATE_DIR";
+    delete process.env[key];
+    try {
+      rmSync(tempDir, { recursive: true, force: true });
+    } catch {
+      // best effort
+    }
+  });
+
+  it("returns [] when the workspaces dir doesn't exist", () => {
+    expect(listWorkspaceOrphans(db, "auth")).toEqual([]);
+  });
+
+  it("returns [] when every dir on disk has a DB row", async () => {
+    insertAgent(db, { name: "w1", workstream: "auth", paneId: "%1", status: "busy" });
+    await createWorkspace(db, {
+      agent: "w1",
+      workstream: "auth",
+      projectRoot: tempDir,
+      backend: "none",
+    });
+    expect(listWorkspaceOrphans(db, "auth")).toEqual([]);
+  });
+
+  it("flags a dir on disk that has no DB row", async () => {
+    // Create a real workspace, then DELETE the row to leave the dir
+    // orphaned (the bug_workspace_orphan_not_in_state shape).
+    insertAgent(db, { name: "w1", workstream: "auth", paneId: "%1", status: "busy" });
+    const ws = await createWorkspace(db, {
+      agent: "w1",
+      workstream: "auth",
+      projectRoot: tempDir,
+      backend: "none",
+    });
+    db.prepare("DELETE FROM vcs_workspaces WHERE agent = 'w1'").run();
+    const orphans = listWorkspaceOrphans(db, "auth");
+    expect(orphans.length).toBe(1);
+    expect(orphans[0]?.agent).toBe("w1");
+    expect(orphans[0]?.workstream).toBe("auth");
+    expect(orphans[0]?.path).toBe(ws.path);
+  });
+
+  it("only flags dirs missing rows, not dirs that have rows", async () => {
+    insertAgent(db, { name: "live", workstream: "auth", paneId: "%1", status: "busy" });
+    insertAgent(db, { name: "orphaned", workstream: "auth", paneId: "%2", status: "busy" });
+    await createWorkspace(db, {
+      agent: "live",
+      workstream: "auth",
+      projectRoot: tempDir,
+      backend: "none",
+    });
+    await createWorkspace(db, {
+      agent: "orphaned",
+      workstream: "auth",
+      projectRoot: tempDir,
+      backend: "none",
+    });
+    db.prepare("DELETE FROM vcs_workspaces WHERE agent = 'orphaned'").run();
+    const orphans = listWorkspaceOrphans(db, "auth");
+    expect(orphans.map((o) => o.agent)).toEqual(["orphaned"]);
   });
 });

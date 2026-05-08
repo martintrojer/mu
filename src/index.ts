@@ -192,8 +192,11 @@ export {
   createWorkspace,
   freeWorkspace,
   getWorkspaceForAgent,
+  listWorkspaceOrphans,
   listWorkspaces,
+  type WorkspaceOrphan,
   workspacePath,
+  workspacesRoot,
 } from "./workspace.js";
 export {
   type CreateWorkspaceOptions as VcsCreateWorkspaceOptions,

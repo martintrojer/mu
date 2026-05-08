@@ -15,7 +15,7 @@
 // workspace lives under the same state dir as the DB so a single
 // `rm -rf ~/.local/state/mu` cleans everything.
 
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import type { Db } from "./db.js";
 import { defaultStateDir } from "./db.js";
@@ -119,6 +119,10 @@ export class WorkspacePathNotEmptyError extends Error implements HasNextSteps {
   errorNextSteps(): NextStep[] {
     return [
       {
+        intent: "List every orphan workspace dir in this workstream",
+        command: `mu workspace orphans -w ${this.workstream}`,
+      },
+      {
         intent: "If the dir is intentional (orphan from older mu), free it via mu first",
         command: `mu workspace free ${this.agent} -w ${this.workstream}  # also runs backend cleanup if a row remains`,
       },
@@ -141,6 +145,61 @@ export class WorkspacePathNotEmptyError extends Error implements HasNextSteps {
  */
 export function workspacePath(workstream: string, agent: string): string {
   return join(defaultStateDir(), "workspaces", workstream, agent);
+}
+
+/** Root dir for a workstream's workspaces — the parent of all
+ *  per-agent workspace dirs. Used by listWorkspaceOrphans to scan
+ *  the filesystem. */
+export function workspacesRoot(workstream: string): string {
+  return join(defaultStateDir(), "workspaces", workstream);
+}
+
+export interface WorkspaceOrphan {
+  /** The on-disk dir name (the agent name it WOULD be for, if mu had
+   *  registered it). */
+  agent: string;
+  /** Workstream the dir is filed under. */
+  workstream: string;
+  /** Absolute path to the orphan dir. */
+  path: string;
+}
+
+/**
+ * Scan `<state-dir>/workspaces/<workstream>/` for directories that
+ * have no row in `vcs_workspaces`. These are the result of:
+ *   - pre-cccba88 agents closed without --discard-workspace
+ *   - failed spawn rollbacks (pre-bug_agent_spawn_workspace_fk_failure fix)
+ *   - manual cleanup that left the dir but not the row
+ *   - any case where the operator manually rm-rf'd vcs_workspaces rows
+ *
+ * Returns `[]` when the workstream's workspaces dir doesn't exist,
+ * or when every dir on disk has a corresponding DB row. Filesystem
+ * read is best-effort: a missing/inaccessible dir returns `[]`
+ * (caller doesn't have to check existsSync first).
+ *
+ * Surfaced by bug_workspace_orphan_not_in_state: orphan dirs were
+ * invisible to `mu state` and `mu workspace list`, but blocked
+ * subsequent `--workspace` spawns with WorkspacePathNotEmptyError.
+ */
+export function listWorkspaceOrphans(db: Db, workstream: string): WorkspaceOrphan[] {
+  const root = workspacesRoot(workstream);
+  let dirs: string[];
+  try {
+    dirs = readdirSync(root, { withFileTypes: true })
+      .filter((d) => d.isDirectory())
+      .map((d) => d.name);
+  } catch {
+    return [];
+  }
+  const registered = new Set(listWorkspaces(db, workstream).map((w) => w.path));
+  const orphans: WorkspaceOrphan[] = [];
+  for (const agentDir of dirs) {
+    const fullPath = join(root, agentDir);
+    if (!registered.has(fullPath)) {
+      orphans.push({ agent: agentDir, workstream, path: fullPath });
+    }
+  }
+  return orphans;
 }
 
 export interface CreateWorkspaceOptions {
