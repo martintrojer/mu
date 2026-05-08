@@ -50,6 +50,42 @@ called out under "Breaking" in each entry.
 
 ### Added
 
+- **Agent identity propagates to task notes; spawn output surfaces
+  `--command` overrides.** Two related UX nits from the
+  `mufeedback` workstream addressed in one pass.
+
+  - `mu task note` author was always `<orchestrator>` even from
+    spawned-agent panes (mufeedback note #176). Now resolves via
+    `resolveActorIdentity()`: `$MU_AGENT_NAME` (the env var
+    injected at spawn by `f3d4bdd`) > pane title > `$USER` >
+    `'orchestrator'`. Pass `--author <name>` to override.
+
+    Same helper now powers `mu task claim --self`'s actor
+    resolution; the `--self` default fallback changed from
+    `'unknown'` to `'orchestrator'` for symmetry. The `'unknown'`
+    label was a placeholder; `'orchestrator'` is meaningful.
+
+  - `mu agent spawn` output read `Spawned X (pi)` even when
+    `--command pi-meta --no-solo` overrode the binary
+    (mufeedback note #159). Now reads
+    `Spawned X (pi (cmd: pi-meta --no-solo))` when the resolved
+    command differs from the cli value; bare `(pi)` when running
+    the default. JSON gains `resolvedCommand` and
+    `commandOverridden` fields.
+
+  Resolution chain matches `spawnAgent`'s actual behaviour:
+  explicit `--command` > `$MU_<UPPER_CLI>_COMMAND` > the cli value
+  itself. The display logic reuses the existing
+  `resolveCliCommand` SDK function so display + actual-spawn stay
+  in sync.
+
+  Tests: 4 new cases for `resolveActorIdentity` covering each
+  step of the resolution chain; 1 existing claim test updated
+  for the new default. 601 tests total.
+
+  Closes `nit_agent_note_author_identity` and
+  `nit_spawn_custom_command_display` in the `mufeedback` workstream.
+
 - **Workspace-recovery flow no longer bubbles bare backend errors.**
   Two related user-reported bugs from the `mufeedback` workstream
   (notes #143 + #145) addressed in one cohesive pass:

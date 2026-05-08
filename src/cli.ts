@@ -38,6 +38,7 @@ import {
   getAgentByPane,
   listLiveAgents,
   readAgent,
+  resolveCliCommand,
   sendToAgent,
   spawnAgent,
   updateAgentStatus,
@@ -93,6 +94,7 @@ import {
   releaseTask,
   removeBlockEdge,
   reparentTask,
+  resolveActorIdentity,
   searchTasks,
   updateTask,
   waitForTasks,
@@ -553,6 +555,14 @@ async function cmdSpawn(db: Db, name: string, opts: SpawnOpts): Promise<void> {
       : {}),
   });
   const workspace = opts.workspace ? getWorkspaceForAgent(db, name) : undefined;
+  // Resolve the actual command that landed in the pane, so the operator
+  // can confirm `--command 'pi-meta --no-solo'` (etc.) took effect.
+  // Mirrors the resolution chain in spawnAgent: explicit --command >
+  // $MU_<UPPER_CLI>_COMMAND > the cli value itself. Surfaced from
+  // mufeedback note #159: 'Spawned ... (pi)' was misleading when
+  // --command overrode the binary.
+  const resolvedCommand = opts.command ?? resolveCliCommand(agent.cli);
+  const commandOverridden = resolvedCommand !== agent.cli;
   const nextSteps: NextStep[] = [
     { intent: "Send work", command: `mu agent send ${name} "..." -w ${workstream}` },
     { intent: "Read pane", command: `mu agent read ${name} -w ${workstream}` },
@@ -563,12 +573,24 @@ async function cmdSpawn(db: Db, name: string, opts: SpawnOpts): Promise<void> {
     },
   ];
   if (opts.json) {
-    emitJson({ agent, workspace: workspace ?? null, nextSteps });
+    emitJson({
+      agent,
+      workspace: workspace ?? null,
+      resolvedCommand,
+      commandOverridden,
+      nextSteps,
+    });
     return;
   }
   const wsBit = opts.workspace ? pc.dim(" with auto-workspace") : "";
+  // Show 'pi (cmd: pi-meta --no-solo)' when overridden; just '(pi)'
+  // when running the default binary for the cli key. Avoids the
+  // misleading 'Spawned X (pi)' for pi-meta workers.
+  const cliDisplay = commandOverridden
+    ? `${agent.cli} ${pc.dim(`(cmd: ${resolvedCommand})`)}`
+    : agent.cli;
   console.log(
-    `Spawned ${pc.bold(agent.name)} (${agent.cli}) in window ${pc.bold(agent.tab ?? agent.name)} of ${pc.bold(`mu-${workstream}`)}, pane ${pc.dim(agent.paneId)}${wsBit}`,
+    `Spawned ${pc.bold(agent.name)} (${cliDisplay}) in window ${pc.bold(agent.tab ?? agent.name)} of ${pc.bold(`mu-${workstream}`)}, pane ${pc.dim(agent.paneId)}${wsBit}`,
   );
   if (workspace) console.log(pc.dim(`  workspace: ${workspace.path} (${workspace.backend})`));
   printNextSteps(nextSteps);
@@ -1446,10 +1468,17 @@ async function cmdTaskNote(
   db: Db,
   localId: string,
   content: string,
-  opts: { workstream?: string; json?: boolean } = {},
+  opts: { workstream?: string; json?: boolean; author?: string } = {},
 ): Promise<void> {
   assertTaskInWorkstream(db, localId, opts.workstream);
-  const note = addNote(db, localId, unescapeNoteText(content));
+  // Author resolution: explicit --author wins; otherwise consult
+  // MU_AGENT_NAME (env var injected at spawn) > pane title > $USER >
+  // 'orchestrator'. Surfaced from mufeedback note #176: notes from
+  // spawned agents were appearing as <orchestrator> because the CLI
+  // wasn't propagating identity. After this fix, mu-spawned workers'
+  // notes are correctly attributed to the agent name.
+  const author = opts.author ?? (await resolveActorIdentity());
+  const note = addNote(db, localId, unescapeNoteText(content), { author });
   const ws = await resolveWorkstream(opts.workstream);
   const nextSteps: NextStep[] = [
     { intent: "Show all notes on this task", command: `mu task notes ${localId} -w ${ws}` },
@@ -3685,11 +3714,18 @@ export function buildProgram(): Command {
 
   task
     .command("note <id> <text>")
-    .description("Append a note to a task")
+    .description(
+      "Append a note to a task. Author defaults to $MU_AGENT_NAME (env injected at spawn) > pane title > $USER > 'orchestrator'; pass --author to override.",
+    )
+    .option("--author <name>", "override the auto-detected author label")
     .option(...WORKSTREAM_OPT)
     .option(...JSON_OPT)
     .action(function (id: string, text: string) {
-      const opts = (this as Command).opts() as { workstream?: string; json?: boolean };
+      const opts = (this as Command).opts() as {
+        workstream?: string;
+        json?: boolean;
+        author?: string;
+      };
       return handle((db) => cmdTaskNote(db, id, text, opts))();
     });
 

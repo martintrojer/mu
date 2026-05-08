@@ -1007,11 +1007,36 @@ export async function claimTask(
  */
 async function resolveSelfActor(opts: ClaimTaskOptions): Promise<string> {
   if (opts.actor !== undefined && opts.actor !== "") return opts.actor;
+  return resolveActorIdentity();
+}
+
+/**
+ * Resolve the current actor's identity for attribution in task notes,
+ * --self claims, and any other write that wants 'who did this?'.
+ *
+ * Resolution order:
+ *   1. $MU_AGENT_NAME env var (set by mu spawnAgent on every managed
+ *      pane; surfaced from the f3d4bdd commit). Authoritative when
+ *      present — you're inside a mu-spawned worker, no ambiguity.
+ *   2. tmux pane title (the legacy claim-protocol identity step). Works
+ *      when running inside any pane mu manages OR adopted.
+ *   3. $USER (when running outside tmux entirely).
+ *   4. The literal 'orchestrator' as a last-resort default.
+ *
+ * Why prefer env over pane title: pane titles are a tmux-server-wide
+ * resource that anything can rewrite. The env var is set per-pane at
+ * spawn time and is unforgeable from outside without explicit
+ * `--actor` override. Pane title is still the legacy identity for
+ * adopted panes that didn't go through mu's spawn path.
+ */
+export async function resolveActorIdentity(): Promise<string> {
+  const muAgent = process.env.MU_AGENT_NAME;
+  if (muAgent !== undefined && muAgent !== "") return muAgent;
   const paneTitle = await currentPaneTitle();
   if (paneTitle !== undefined && paneTitle !== "") return paneTitle;
   const user = process.env.USER;
   if (user !== undefined && user !== "") return user;
-  return "unknown";
+  return "orchestrator";
 }
 
 async function claimSelf(db: Db, localId: string, opts: ClaimTaskOptions): Promise<ClaimResult> {

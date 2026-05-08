@@ -37,6 +37,7 @@ import {
   releaseTask,
   removeBlockEdge,
   reparentTask,
+  resolveActorIdentity,
   searchTasks,
   setTaskStatus,
   slugifyTitle,
@@ -716,11 +717,17 @@ describe("claimTask", () => {
     });
   });
 
-  it("--self falls back to 'unknown' when no $TMUX_PANE and no $USER", async () => {
-    await withEnv("TMUX_PANE", undefined, async () => {
-      await withEnv("USER", undefined, async () => {
-        const result = await claimTask(db, "auth", { self: true });
-        expect(result.actor).toBe("unknown");
+  it("--self falls back to 'orchestrator' when no $MU_AGENT_NAME, $TMUX_PANE, or $USER", async () => {
+    // Was 'unknown' before the resolveActorIdentity refactor; changed
+    // to 'orchestrator' for symmetry with task_notes.author and the
+    // overall identity-resolution chain. The 'orchestrator' label is
+    // meaningful; 'unknown' was a placeholder.
+    await withEnv("MU_AGENT_NAME", undefined, async () => {
+      await withEnv("TMUX_PANE", undefined, async () => {
+        await withEnv("USER", undefined, async () => {
+          const result = await claimTask(db, "auth", { self: true });
+          expect(result.actor).toBe("orchestrator");
+        });
       });
     });
   });
@@ -1673,5 +1680,66 @@ describe("waitForTasks", () => {
     // 'b' was deleted; defensive snapshot defaults to 'OPEN' / not reached.
     const bState = r.tasks.find((t) => t.localId === "b");
     expect(bState?.reachedTarget).toBe(false);
+  });
+});
+
+// ─── resolveActorIdentity (verb-agnostic identity resolution) ────────────
+
+describe("resolveActorIdentity", () => {
+  it("prefers $MU_AGENT_NAME when set (mu-spawned worker case)", async () => {
+    await withEnv("MU_AGENT_NAME", "worker-7", async () => {
+      // Even with TMUX_PANE pointing somewhere with a different title,
+      // MU_AGENT_NAME wins (it's set at spawn time and unforgeable from
+      // outside without explicit override).
+      const executor: TmuxExecutor = async (args) => {
+        if (args[0] === "display-message" && args.includes("#{pane_title}")) {
+          return { stdout: "different-title\n", stderr: "", exitCode: 0 };
+        }
+        return { stdout: "", stderr: "unmocked", exitCode: 1 };
+      };
+      setTmuxExecutor(executor);
+      await withEnv("TMUX_PANE", "%99", async () => {
+        const actor = await resolveActorIdentity();
+        expect(actor).toBe("worker-7");
+      });
+    });
+  });
+
+  it("falls back to pane title when MU_AGENT_NAME is unset (legacy/adopted pane)", async () => {
+    const executor: TmuxExecutor = async (args) => {
+      if (args[0] === "display-message" && args.includes("#{pane_title}")) {
+        return { stdout: "legacy-pane-title\n", stderr: "", exitCode: 0 };
+      }
+      return { stdout: "", stderr: "unmocked", exitCode: 1 };
+    };
+    setTmuxExecutor(executor);
+    await withEnv("MU_AGENT_NAME", undefined, async () => {
+      await withEnv("TMUX_PANE", "%99", async () => {
+        const actor = await resolveActorIdentity();
+        expect(actor).toBe("legacy-pane-title");
+      });
+    });
+  });
+
+  it("falls back to $USER when no MU_AGENT_NAME and no TMUX_PANE", async () => {
+    await withEnv("MU_AGENT_NAME", undefined, async () => {
+      await withEnv("TMUX_PANE", undefined, async () => {
+        await withEnv("USER", "martin", async () => {
+          const actor = await resolveActorIdentity();
+          expect(actor).toBe("martin");
+        });
+      });
+    });
+  });
+
+  it("falls back to 'orchestrator' as the last-resort default", async () => {
+    await withEnv("MU_AGENT_NAME", undefined, async () => {
+      await withEnv("TMUX_PANE", undefined, async () => {
+        await withEnv("USER", undefined, async () => {
+          const actor = await resolveActorIdentity();
+          expect(actor).toBe("orchestrator");
+        });
+      });
+    });
   });
 });

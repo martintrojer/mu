@@ -86,6 +86,7 @@ export {
   type RemoveBlockEdgeResult,
   reparentTask,
   type ReparentTaskResult,
+  resolveActorIdentity,
   searchTasks,
   type SearchTasksOptions,
   setTaskStatus,
