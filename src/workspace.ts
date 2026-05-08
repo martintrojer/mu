@@ -15,6 +15,7 @@
 // workspace lives under the same state dir as the DB so a single
 // `rm -rf ~/.local/state/mu` cleans everything.
 
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { Db } from "./db.js";
 import { defaultStateDir } from "./db.js";
@@ -89,6 +90,50 @@ export class WorkspaceNotFoundError extends Error implements HasNextSteps {
 }
 
 /**
+ * Thrown by createWorkspace when the on-disk path it would create is
+ * already occupied. Distinct from WorkspaceExistsError (which is about
+ * the DB row) so the recovery is clear: the dir is orphaned (no DB
+ * row points at it) and needs cleanup.
+ *
+ * Surfaced as a real bug from the multi-agent dogfood (mufeedback note
+ * #143): users hit a bare 'vcs git: workspacePath already exists' from
+ * the backend, with no nextSteps. After the cccba88 fix (close-refuses-
+ * with-workspace), this case only fires when an orphan from a previous
+ * mu version persists OR when the dir was manually rm-rf'd while a
+ * stale registration remains (the git-worktree case).
+ *
+ * Maps to exit code 4 (conflict).
+ */
+export class WorkspacePathNotEmptyError extends Error implements HasNextSteps {
+  override readonly name = "WorkspacePathNotEmptyError";
+  constructor(
+    public readonly agent: string,
+    public readonly workstream: string,
+    public readonly workspacePath: string,
+  ) {
+    super(
+      `workspace dir already on disk for agent ${agent} (${workspacePath}); refusing to overwrite`,
+    );
+  }
+  errorNextSteps(): NextStep[] {
+    return [
+      {
+        intent: "If the dir is intentional (orphan from older mu), free it via mu first",
+        command: `mu workspace free ${this.agent} -w ${this.workstream}  # also runs backend cleanup if a row remains`,
+      },
+      {
+        intent: "Or delete it manually if the registry has no row",
+        command: `rm -rf ${this.workspacePath}`,
+      },
+      {
+        intent: "For git workspaces specifically: also prune the worktree registration",
+        command: "cd <project-root> && git worktree prune",
+      },
+    ];
+  }
+}
+
+/**
  * Compose the canonical on-disk path for an agent's workspace. Used by
  * createWorkspace and reachable from `mu workspace path` so the user
  * can `cd $(mu workspace path foo)` even before the directory exists.
@@ -125,6 +170,14 @@ export async function createWorkspace(db: Db, opts: CreateWorkspaceOptions): Pro
   const projectRoot = opts.projectRoot ?? process.cwd();
   const backend = opts.backend ? backendByName(opts.backend) : await detectBackend(projectRoot);
   const path = workspacePath(opts.workstream, opts.agent);
+
+  // Surface the dir-already-exists case as a typed error WITH actionable
+  // nextSteps before we delegate to the backend (which throws a bare
+  // Error). This is the orphan-from-older-mu case: a workspace dir from
+  // before the cccba88 close-refuses fix landed; it has no DB row.
+  if (existsSync(path)) {
+    throw new WorkspacePathNotEmptyError(opts.agent, opts.workstream, path);
+  }
 
   const createOpts: { projectRoot: string; workspacePath: string; parentRef?: string } = {
     projectRoot,

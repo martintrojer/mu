@@ -29,7 +29,11 @@ import {
   TaskNotInWorkstreamError,
 } from "../src/tasks.js";
 import { PaneNotFoundError, TmuxError } from "../src/tmux.js";
-import { WorkspaceExistsError, WorkspaceNotFoundError } from "../src/workspace.js";
+import {
+  WorkspaceExistsError,
+  WorkspaceNotFoundError,
+  WorkspacePathNotEmptyError,
+} from "../src/workspace.js";
 import { WorkstreamNameInvalidError } from "../src/workstream.js";
 
 describe("typed errors all carry actionable errorNextSteps()", () => {
@@ -50,6 +54,7 @@ describe("typed errors all carry actionable errorNextSteps()", () => {
     [new TmuxError(["list-panes"], "no server", "", 1), "TmuxError"],
     [new PaneNotFoundError("%999"), "PaneNotFoundError"],
     [new WorkspaceExistsError("alice"), "WorkspaceExistsError"],
+    [new WorkspacePathNotEmptyError("alice", "auth", "/path/to/ws"), "WorkspacePathNotEmptyError"],
     [new WorkspacePreservedError("alice", "/path/to/ws"), "WorkspacePreservedError"],
     [new WorkspaceNotFoundError("alice"), "WorkspaceNotFoundError"],
     [new ApprovalNotFoundError("abc12345"), "ApprovalNotFoundError"],

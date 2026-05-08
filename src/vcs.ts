@@ -163,6 +163,16 @@ export const gitBackend: VcsBackend = {
       throw new Error(`vcs git: workspacePath already exists: ${opts.workspacePath}`);
     }
     await ensureParent(opts.workspacePath);
+    // Defensive prune: if a previous workspace at the same path was
+    // freed by `rm -rf` (or otherwise lost its dir without proper
+    // teardown), git's worktree registry still points at it. Then
+    // `git worktree add` fails with 'missing but already registered
+    // worktree'. `git worktree prune` is idempotent and cheap; running
+    // it BEFORE every add costs ~10ms and immunises us against the
+    // mufeedback workspace_free_cleanup_leaves_git case.
+    await run("git", ["worktree", "prune"], opts.projectRoot).catch(() => {
+      /* prune is best-effort; if it fails we'll get a clear error from `add` next */
+    });
     // `git worktree add <path> [<ref>]`. Without a ref, the new worktree
     // checks out a detached HEAD at the project's current HEAD, which
     // matches the "fresh per-agent workspace" semantics we want. Use a
@@ -177,6 +187,16 @@ export const gitBackend: VcsBackend = {
   },
 
   async freeWorkspace(opts) {
+    // Disk-missing case: a previous caller (or the user) ran `rm -rf`
+    // out from under us, but the git worktree registry STILL has an
+    // entry pointing here. Without a prune, the next `git worktree
+    // add` at this path errors out (the mufeedback case). We can't
+    // reach the project root via the workspace itself (the .git
+    // pointer file is gone with the dir), but `worktree prune` runs
+    // from inside any git repo and reaps every dead worktree. We
+    // can't reliably guess WHICH project root, so log it as a hint
+    // in the result rather than running prune ourselves; the spawn
+    // path's defensive prune (above) will clean it on next use.
     if (!existsSync(opts.workspacePath)) {
       return { removed: false };
     }

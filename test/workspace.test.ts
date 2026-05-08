@@ -15,6 +15,7 @@ import { detectBackend, gitBackend, jjBackend, noneBackend, slBackend } from "..
 import {
   WorkspaceExistsError,
   WorkspaceNotFoundError,
+  WorkspacePathNotEmptyError,
   createWorkspace,
   freeWorkspace,
   getWorkspaceForAgent,
@@ -278,6 +279,30 @@ gitDescribe("gitBackend", () => {
     const r = await gitBackend.freeWorkspace({ workspacePath: wsPath, commit: true });
     expect(r.committedRef).toBeUndefined();
   });
+
+  // Regression for mufeedback workspace_free_cleanup_leaves_git: a
+  // user who manually rm-rf'd a workspace dir leaves the git worktree
+  // registry pointing at a missing path. Without the defensive prune
+  // in createWorkspace, the next add at that path errors with
+  // 'missing but already registered worktree'. With it, recovery is
+  // automatic.
+  it("createWorkspace recovers when a previous worktree dir was rm-rf'd (defensive prune)", async () => {
+    const wsPath = join(stateRoot, "workspaces", "auth", "worker-1");
+    await gitBackend.createWorkspace({ projectRoot, workspacePath: wsPath });
+    // Simulate the user's exact failure: manual rm -rf without
+    // running freeWorkspace. The git registry still points at wsPath.
+    rmSync(wsPath, { recursive: true, force: true });
+    // Sanity: git knows about the (now missing) worktree.
+    const wtList = execFileSync("git", ["worktree", "list", "--porcelain"], {
+      cwd: projectRoot,
+      encoding: "utf8",
+    });
+    expect(wtList).toContain(wsPath);
+    // Now retry: defensive prune in createWorkspace should clean the
+    // stale registration and let the add succeed.
+    const r = await gitBackend.createWorkspace({ projectRoot, workspacePath: wsPath });
+    expect(r.parentRef).toMatch(/^[0-9a-f]{40}$/);
+  });
 });
 
 // ─── workspace SDK (registry layer on top of backends) ────────────────
@@ -311,6 +336,39 @@ describe("workspace SDK (with noneBackend)", () => {
         backend: "none",
       }),
     ).rejects.toThrow(WorkspaceExistsError);
+  });
+
+  // Regression for mufeedback agent_close_orphans_workspace_dir_from /
+  // agent_spawn_workspace_fails_when_prior: a workspace dir from
+  // before the cccba88 close-refuses fix (or from any other source)
+  // sits on disk with no DB row. Pre-fix, createWorkspace bubbled a
+  // bare backend Error ('vcs <name>: workspacePath already exists').
+  // Post-fix, it throws the typed WorkspacePathNotEmptyError WITH
+  // structured nextSteps.
+  it("createWorkspace throws WorkspacePathNotEmptyError when path exists with no DB row", async () => {
+    // Create then free via raw rm-rf to simulate the orphan case
+    // WITHOUT going through freeWorkspace (which would also drop the
+    // row). Then DELETE the row manually so the dir survives but the
+    // registry doesn't see it.
+    const ws = await createWorkspace(db, {
+      agent: "worker-1",
+      workstream: "auth",
+      projectRoot,
+      backend: "none",
+    });
+    db.prepare("DELETE FROM vcs_workspaces WHERE agent = 'worker-1'").run();
+    // Sanity: registry empty, dir present.
+    expect(getWorkspaceForAgent(db, "worker-1")).toBeUndefined();
+    expect(() => execFileSync("ls", [ws.path], { stdio: "pipe" })).not.toThrow();
+    // Retry: typed error, not bare.
+    await expect(
+      createWorkspace(db, {
+        agent: "worker-1",
+        workstream: "auth",
+        projectRoot,
+        backend: "none",
+      }),
+    ).rejects.toBeInstanceOf(WorkspacePathNotEmptyError);
   });
 
   it("listWorkspaces filters by workstream", async () => {

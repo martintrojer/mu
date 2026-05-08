@@ -111,6 +111,7 @@ import type { VcsBackendName } from "./vcs.js";
 import {
   WorkspaceExistsError,
   WorkspaceNotFoundError,
+  WorkspacePathNotEmptyError,
   type WorkspaceRow,
   createWorkspace,
   freeWorkspace,
@@ -188,6 +189,7 @@ function classifyError(err: unknown): { label: string; exitCode: number } {
     err instanceof CycleError ||
     err instanceof CrossWorkstreamEdgeError ||
     err instanceof WorkspaceExistsError ||
+    err instanceof WorkspacePathNotEmptyError ||
     err instanceof WorkspacePreservedError ||
     err instanceof ApprovalAlreadyDecidedError ||
     err instanceof ClaimerNotRegisteredError

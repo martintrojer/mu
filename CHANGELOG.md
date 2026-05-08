@@ -50,6 +50,57 @@ called out under "Breaking" in each entry.
 
 ### Added
 
+- **Workspace-recovery flow no longer bubbles bare backend errors.**
+  Two related user-reported bugs from the `mufeedback` workstream
+  (notes #143 + #145) addressed in one cohesive pass:
+
+  - `WorkspacePathNotEmptyError` (typed, exit 4) replaces the bare
+    `vcs <name>: workspacePath already exists: <path>` from each
+    backend. Fires when `createWorkspace` finds the on-disk dir
+    occupied with no DB row — the orphan-from-older-mu case, OR a
+    user who manually `rm -rf`'d the dir while a stale registration
+    persists.
+
+    `errorNextSteps()` lists three concrete recovery commands:
+      mu workspace free <agent> -w <ws>   (if a row remains)
+      rm -rf <path>                        (if just orphaned dir)
+      cd <project-root> && git worktree prune   (git-specific)
+
+  - `gitBackend.createWorkspace` runs `git worktree prune`
+    defensively BEFORE `git worktree add`. Cheap (~10ms), idempotent.
+    Immunises against the 'missing but already registered worktree'
+    failure mode that previously required manual operator recovery
+    (`cd <main-repo> && git worktree prune`). Now automatic; no
+    operator intervention.
+
+  Combined with `cccba88` (`mu agent close` refuses with workspace),
+  the natural recovery flow JUST WORKS end-to-end:
+
+      $ mu agent spawn worker -w foo --workspace
+      $ mu agent close worker -w foo
+      conflict: agent worker has a workspace at /path; refusing to close
+      Next: ... mu workspace free worker ... mu agent close --discard-workspace
+      $ mu workspace free worker -w foo
+      $ mu agent close worker -w foo
+      $ mu agent spawn worker -w foo --workspace    # works; defensive prune handles git
+
+  Surfaced as `agent_spawn_workspace_fails_when_prior` (note #143)
+  and `workspace_free_cleanup_leaves_git` (note #145) by another mu
+  user; both closed in this commit. The first user-reported bug
+  (`agent_close_orphans_workspace_dir_from`, note #144) was a
+  duplicate of `bug_workspace_orphaned_after_agent_close` shipped
+  in cccba88; closed with cross-references.
+
+  Tests:
+    - `test/workspace.test.ts`: WorkspacePathNotEmptyError
+      regression case (raw orphan via DELETE FROM vcs_workspaces +
+      verify typed error fires); gitBackend defensive-prune case
+      (rm-rf the workspace dir then re-create at same path; verify
+      the second create succeeds where it would have failed pre-fix).
+    - `test/error-nextsteps.test.ts`: WorkspacePathNotEmptyError
+      added to the generic well-formed-steps registry.
+  597 tests total.
+
 - **`mu agent close` refuses by default if the agent has a workspace.**
   Surfaced during the multi-agent dogfood teardown: closing three
   worker agents silently orphaned their on-disk workspaces (the FK

@@ -172,6 +172,7 @@ export {
   type FreeWorkspaceResult as WorkspaceFreeResult,
   type WorkspaceRow,
   WorkspaceExistsError,
+  WorkspacePathNotEmptyError,
   WorkspaceNotFoundError,
   createWorkspace,
   freeWorkspace,
