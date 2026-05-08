@@ -107,21 +107,52 @@ export function isValidTaskId(id: string): boolean {
  *   "Build the auth module"      → "build_the_auth_module"
  *   "FILES: foo.ts (refactor)"   → "files_foo_ts_refactor"
  *
- * Lowercases, replaces non-alnum runs with a single `_`, trims leading/
- * trailing `_`, prefixes `t_` if the result starts with a digit (so the
- * id passes the schema's first-char-letter requirement), truncates to
- * the 64-char limit. Mirrors `tg`'s `id_from_title()`.
+/**
+ * Soft cap for auto-generated slugs. The collision-suffix loop in
+ * idFromTitle can push past this (`_2`, `_3`, ...) without going past
+ * the hard ceiling. 40 chars hits the sweet spot of 'short enough to
+ * type and to look reasonable in mu task tree' without losing too
+ * much of the title's meaning.
+ */
+const SLUG_SOFT_CAP = 40;
+
+/**
+ * Hard ceiling for any generated id. Schema has no length limit, but
+ * 64 keeps ids comfortable in tables, JSON, and tmux pane titles. The
+ * collision-suffix loop also respects this.
+ */
+const SLUG_HARD_CAP = 64;
+
+/**
+ * Lowercase title; collapse non-alnum runs into single `_`; trim
+ * leading/trailing `_`; prefix `t_` if the result starts with a digit
+ * (schema requires first char letter); apply the soft cap with
+ * word-boundary trim (cut at the last `_` at-or-before SLUG_SOFT_CAP
+ * when one exists, else hard-truncate). Mirrors `tg`'s `id_from_title`
+ * but adds the soft cap.
  *
  * Throws if `title` yields an empty slug after stripping.
  */
 export function slugifyTitle(title: string): string {
-  const slug = title
+  const stripped = title
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "")
-    .slice(0, 64);
-  if (slug.length === 0) {
+    .replace(/^_+|_+$/g, "");
+  if (stripped.length === 0) {
     throw new Error(`title yields empty slug: ${JSON.stringify(title)}`);
+  }
+  // Soft cap with word-boundary preference: if the slug exceeds the
+  // soft cap, look for the last `_` at-or-before the cap and cut there
+  // (so we never break a word). If no underscore is in the cap window
+  // (ie the title is one giant word), fall back to a hard truncate at
+  // the soft cap. The result is always <= SLUG_SOFT_CAP after this.
+  let trimmed: string;
+  if (stripped.length <= SLUG_SOFT_CAP) {
+    trimmed = stripped;
+  } else {
+    const window = stripped.slice(0, SLUG_SOFT_CAP);
+    const lastSep = window.lastIndexOf("_");
+    trimmed = lastSep > 0 ? window.slice(0, lastSep) : window;
   }
   // Two prefix-corrections so derived slugs always pass the schema:
   //  - first char must be a letter → prefix `t_` if it isn't
@@ -130,9 +161,9 @@ export function slugifyTitle(title: string): string {
   //    "Mu smoke test" don't dead-end at addTask's reserved-prefix
   //    check. The explicit-id rejection still applies when a caller
   //    hand-writes `mu_foo`.
-  const fixed = /^[a-z]/.test(slug) ? slug : `t_${slug}`;
+  const fixed = /^[a-z]/.test(trimmed) ? trimmed : `t_${trimmed}`;
   const safe = fixed.startsWith(RESERVED_PREFIX) ? `t_${fixed}` : fixed;
-  return safe.slice(0, 64);
+  return safe.slice(0, SLUG_HARD_CAP);
 }
 
 /**
@@ -145,7 +176,7 @@ export function idFromTitle(db: Db, workstream: string, title: string): string {
   const base = slugifyTitle(title);
   if (getTask(db, base) === undefined) return base;
   for (let i = 2; i < 1000; i++) {
-    const candidate = `${base}_${i}`.slice(0, 64);
+    const candidate = `${base}_${i}`.slice(0, SLUG_HARD_CAP);
     if (getTask(db, candidate) === undefined) return candidate;
   }
   throw new Error(`could not derive a unique id from title in workstream ${workstream}: ${title}`);

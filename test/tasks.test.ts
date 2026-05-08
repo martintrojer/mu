@@ -1344,9 +1344,27 @@ describe("slugifyTitle", () => {
     expect(slugifyTitle("MU_THING")).toBe("t_mu_thing");
   });
 
-  it("truncates to 64 characters", () => {
+  it("caps a one-giant-word title at the 40-char soft cap (no underscore to break on)", () => {
     const long = "x".repeat(100);
-    expect(slugifyTitle(long).length).toBe(64);
+    expect(slugifyTitle(long).length).toBe(40);
+  });
+
+  it("trims at the last underscore at-or-before 40 chars (word boundary)", () => {
+    // Title with several segments; segment boundaries fall at
+    // positions that let us assert a clean cut.
+    const title = "Refactor the authentication and authorisation modules end to end";
+    const slug = slugifyTitle(title);
+    expect(slug.length).toBeLessThanOrEqual(40);
+    expect(slug).not.toMatch(/_$/); // never trailing underscore
+    // The cut must happen on a word boundary, so the last segment
+    // must be a complete word from the original title.
+    expect(["refactor_the_authentication_and", "refactor_the_authentication"]).toContain(slug);
+  });
+
+  it("prefers the soft cap when the title fits below it", () => {
+    const slug = slugifyTitle("Build auth module");
+    expect(slug).toBe("build_auth_module");
+    expect(slug.length).toBeLessThan(40);
   });
 
   it("throws on a title that yields an empty slug", () => {

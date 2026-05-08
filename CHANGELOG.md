@@ -50,6 +50,29 @@ called out under "Breaking" in each entry.
 
 ### Added
 
+- **Auto-generated task IDs trim at a 40-char word boundary**
+  (was: hard-truncate at 64 chars). `mu task add --title "NIT:
+  this is exactly the kind of title that produces a 60-plus
+  char auto-id"` now yields `nit_this_is_exactly_the_kind_of_title`
+  (37 chars) instead of the previous 60+ char truncation. Easier
+  to type and to read in `mu task tree`/list output.
+
+  How it works: `slugifyTitle` does the existing alnum-to-`_`
+  collapse, then if the result exceeds the **40-char soft cap**,
+  cuts at the last `_` at-or-before that position (preserving
+  word boundaries). Falls back to a hard 40-char truncate if the
+  title is one giant word with no separators. The collision-suffix
+  loop in `idFromTitle` (`_2`, `_3`, ...) still respects the
+  **64-char hard ceiling** so collisions never exceed the original
+  cap.
+
+  No schema change; this is purely a slug-generation tweak. The
+  hard cap on the schema column is unchanged. Existing IDs in DBs
+  are untouched (the truncation only happens at slug-derivation
+  time).
+
+  Closes `nit_long_auto_slug` in workstream `roadmap-v0-2`.
+
 - **`mu sql` accepts multi-statement scripts** (BEGIN/COMMIT
   blocks, semicolon-separated batches, top-level migrations).
   Previously, `prepare()` rejected anything with more than one
