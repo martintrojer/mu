@@ -14,12 +14,14 @@ import {
   CycleError,
   TaskAlreadyOwnedError,
   TaskExistsError,
+  TaskHasOpenDependentsError,
   TaskNotFoundError,
   addBlockEdge,
   addNote,
   addTask,
   claimTask,
   closeTask,
+  deferTask,
   deleteTask,
   getPrerequisites,
   getTask,
@@ -34,6 +36,7 @@ import {
   listTasks,
   listTasksByOwner,
   openTask,
+  rejectTask,
   releaseTask,
   removeBlockEdge,
   reparentTask,
@@ -1741,5 +1744,226 @@ describe("resolveActorIdentity", () => {
         });
       });
     });
+  });
+});
+
+// ─── reject / defer (terminal-but-blocking) ──────────────────────────────
+
+describe("rejectTask / deferTask", () => {
+  it("reject succeeds with no dependents and stamps REJECTED", () => {
+    addTask(db, { localId: "alone", workstream: "ws", title: "A", impact: 50, effortDays: 1 });
+    const r = rejectTask(db, "alone", { evidence: "out of scope" });
+    expect(r.changed).toBe(true);
+    expect(r.changedIds).toEqual(["alone"]);
+    expect(r.status).toBe("REJECTED");
+    expect(getTask(db, "alone")?.status).toBe("REJECTED");
+  });
+
+  it("defer succeeds with no dependents and stamps DEFERRED", () => {
+    addTask(db, { localId: "park", workstream: "ws", title: "P", impact: 50, effortDays: 1 });
+    const r = deferTask(db, "park", { evidence: "not now" });
+    expect(r.changed).toBe(true);
+    expect(getTask(db, "park")?.status).toBe("DEFERRED");
+  });
+
+  it("idempotent: rejecting an already-REJECTED task with no dependents is a no-op", () => {
+    addTask(db, { localId: "alone", workstream: "ws", title: "A", impact: 50, effortDays: 1 });
+    rejectTask(db, "alone");
+    const r = rejectTask(db, "alone");
+    expect(r.changed).toBe(false);
+    expect(r.changedIds).toEqual([]);
+  });
+
+  it("REFUSES with TaskHasOpenDependentsError when an OPEN dependent would be stranded", () => {
+    addTask(db, { localId: "design", workstream: "ws", title: "D", impact: 50, effortDays: 1 });
+    addTask(db, {
+      localId: "build",
+      workstream: "ws",
+      title: "B",
+      impact: 50,
+      effortDays: 1,
+      blockedBy: ["design"],
+    });
+    expect(() => rejectTask(db, "design")).toThrow(TaskHasOpenDependentsError);
+    // Root task untouched after the throw.
+    expect(getTask(db, "design")?.status).toBe("OPEN");
+  });
+
+  it("REFUSES on IN_PROGRESS dependent too (not just OPEN)", () => {
+    addTask(db, { localId: "design", workstream: "ws", title: "D", impact: 50, effortDays: 1 });
+    addTask(db, {
+      localId: "build",
+      workstream: "ws",
+      title: "B",
+      impact: 50,
+      effortDays: 1,
+      blockedBy: ["design"],
+    });
+    setTaskStatus(db, "build", "IN_PROGRESS");
+    expect(() => deferTask(db, "design")).toThrow(TaskHasOpenDependentsError);
+  });
+
+  it("ALLOWS reject when the only dependent is already CLOSED (nothing to strand)", () => {
+    addTask(db, { localId: "design", workstream: "ws", title: "D", impact: 50, effortDays: 1 });
+    addTask(db, {
+      localId: "build",
+      workstream: "ws",
+      title: "B",
+      impact: 50,
+      effortDays: 1,
+      blockedBy: ["design"],
+    });
+    closeTask(db, "build");
+    const r = rejectTask(db, "design");
+    expect(r.changed).toBe(true);
+    expect(r.changedIds).toEqual(["design"]);
+  });
+
+  it("ALLOWS reject when dependent is REJECTED/DEFERRED already (terminal/parked, not stranded)", () => {
+    addTask(db, { localId: "design", workstream: "ws", title: "D", impact: 50, effortDays: 1 });
+    addTask(db, {
+      localId: "build_a",
+      workstream: "ws",
+      title: "Ba",
+      impact: 50,
+      effortDays: 1,
+      blockedBy: ["design"],
+    });
+    addTask(db, {
+      localId: "build_b",
+      workstream: "ws",
+      title: "Bb",
+      impact: 50,
+      effortDays: 1,
+      blockedBy: ["design"],
+    });
+    // Reject one dependent, defer the other (each is leaf — no further deps).
+    rejectTask(db, "build_a");
+    deferTask(db, "build_b");
+    // Now design has no OPEN/IN_PROGRESS dependents → reject succeeds.
+    const r = rejectTask(db, "design");
+    expect(r.changed).toBe(true);
+    expect(r.changedIds).toEqual(["design"]);
+  });
+
+  it("--cascade applies the same status to every transitive open dependent", () => {
+    // design <- build <- review chain.
+    addTask(db, { localId: "design", workstream: "ws", title: "D", impact: 50, effortDays: 1 });
+    addTask(db, {
+      localId: "build",
+      workstream: "ws",
+      title: "B",
+      impact: 50,
+      effortDays: 1,
+      blockedBy: ["design"],
+    });
+    addTask(db, {
+      localId: "review",
+      workstream: "ws",
+      title: "R",
+      impact: 50,
+      effortDays: 1,
+      blockedBy: ["build"],
+    });
+    const r = rejectTask(db, "design", { cascade: true, evidence: "feature dropped" });
+    expect(r.changed).toBe(true);
+    expect(new Set(r.changedIds)).toEqual(new Set(["design", "build", "review"]));
+    expect(getTask(db, "design")?.status).toBe("REJECTED");
+    expect(getTask(db, "build")?.status).toBe("REJECTED");
+    expect(getTask(db, "review")?.status).toBe("REJECTED");
+  });
+
+  it("--cascade DEFERRED leaves CLOSED dependents alone (only OPEN/IN_PROGRESS swept)", () => {
+    addTask(db, { localId: "design", workstream: "ws", title: "D", impact: 50, effortDays: 1 });
+    addTask(db, {
+      localId: "build",
+      workstream: "ws",
+      title: "B",
+      impact: 50,
+      effortDays: 1,
+      blockedBy: ["design"],
+    });
+    addTask(db, {
+      localId: "ship",
+      workstream: "ws",
+      title: "S",
+      impact: 50,
+      effortDays: 1,
+      blockedBy: ["build"],
+    });
+    closeTask(db, "build"); // already shipped this one
+    // Cascade defer from design: build is CLOSED so untouched; ship has no
+    // open dependents but is open itself and depends transitively on design
+    // through CLOSED build — and CLOSED satisfies the edge → ship is NOT
+    // an open dependent of design via the open-dependents query.
+    const r = deferTask(db, "design", { cascade: true });
+    expect(r.changed).toBe(true);
+    expect(getTask(db, "design")?.status).toBe("DEFERRED");
+    expect(getTask(db, "build")?.status).toBe("CLOSED");
+    // ship is independent of design once build closed; defer didn't touch it.
+    expect(getTask(db, "ship")?.status).toBe("OPEN");
+  });
+
+  it("REJECTED and DEFERRED still BLOCK downstream (only CLOSED satisfies a blocked-by edge)", () => {
+    addTask(db, { localId: "rj", workstream: "ws", title: "R", impact: 50, effortDays: 1 });
+    addTask(db, {
+      localId: "dep_r",
+      workstream: "ws",
+      title: "DR",
+      impact: 50,
+      effortDays: 1,
+      blockedBy: ["rj"],
+    });
+    addTask(db, { localId: "df", workstream: "ws", title: "Df", impact: 50, effortDays: 1 });
+    addTask(db, {
+      localId: "dep_d",
+      workstream: "ws",
+      title: "DD",
+      impact: 50,
+      effortDays: 1,
+      blockedBy: ["df"],
+    });
+    // First reject/defer the leaves' siblings to clear the strand check.
+    // Actually we WANT depR to remain OPEN to test that it's still BLOCKED.
+    // So reject/defer rj and df WITH --cascade so the dep tasks come
+    // along too — but then we can't observe blocking. Use a different
+    // setup: directly stamp via setTaskStatus to bypass the check.
+    setTaskStatus(db, "rj", "REJECTED");
+    setTaskStatus(db, "df", "DEFERRED");
+    // dep_r / dep_d should be in `blocked` view, NOT in `ready` view.
+    const ready = listReady(db, "ws").map((t) => t.localId);
+    const blocked = listBlocked(db, "ws").map((t) => t.localId);
+    expect(ready).not.toContain("dep_r");
+    expect(ready).not.toContain("dep_d");
+    expect(blocked).toContain("dep_r");
+    expect(blocked).toContain("dep_d");
+  });
+
+  it("REJECTED and DEFERRED leaves are NOT goals (excluded from listGoals)", () => {
+    addTask(db, { localId: "open_leaf", workstream: "ws", title: "OL", impact: 50, effortDays: 1 });
+    addTask(db, { localId: "rej_leaf", workstream: "ws", title: "RL", impact: 50, effortDays: 1 });
+    addTask(db, { localId: "def_leaf", workstream: "ws", title: "DL", impact: 50, effortDays: 1 });
+    setTaskStatus(db, "rej_leaf", "REJECTED");
+    setTaskStatus(db, "def_leaf", "DEFERRED");
+    const goals = listGoals(db, "ws").map((g) => g.localId);
+    expect(goals).toContain("open_leaf");
+    expect(goals).not.toContain("rej_leaf");
+    expect(goals).not.toContain("def_leaf");
+  });
+
+  it("listTasksByOwner default omits REJECTED and DEFERRED (live-work view)", () => {
+    insertAgent(db, { name: "w1", workstream: "ws", paneId: "%1", status: "busy" });
+    addTask(db, { localId: "live", workstream: "ws", title: "L", impact: 50, effortDays: 1 });
+    addTask(db, { localId: "rej", workstream: "ws", title: "R", impact: 50, effortDays: 1 });
+    addTask(db, { localId: "def", workstream: "ws", title: "D", impact: 50, effortDays: 1 });
+    db.prepare("UPDATE tasks SET owner = 'w1' WHERE local_id IN ('live','rej','def')").run();
+    setTaskStatus(db, "rej", "REJECTED");
+    setTaskStatus(db, "def", "DEFERRED");
+    expect(listTasksByOwner(db, "w1").map((t) => t.localId)).toEqual(["live"]);
+    expect(
+      listTasksByOwner(db, "w1", { includeClosed: true })
+        .map((t) => t.localId)
+        .sort(),
+    ).toEqual(["def", "live", "rej"]);
   });
 });

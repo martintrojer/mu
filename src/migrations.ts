@@ -28,6 +28,10 @@ const MIGRATIONS: ReadonlyMap<number, Migration> = new Map([
   // SQLite can't ALTER TABLE to modify FK clauses, so we rebuild
   // every affected table.
   [2, migrateV1ToV2],
+  // v2 -> v3: widen tasks.status CHECK to add REJECTED + DEFERRED;
+  // recreate the `goals` view so it excludes them from the
+  // 'still-being-worked-toward' filter.
+  [3, migrateV2ToV3],
 ]);
 
 /**
@@ -368,4 +372,89 @@ function rebuildTable(db: Db, name: string, createNewSql: string, indexSqls: str
   db.exec(`DROP TABLE ${name};`);
   db.exec(`ALTER TABLE ${name}_new RENAME TO ${name};`);
   for (const idx of indexSqls) db.exec(idx);
+}
+
+// ─── v2 → v3 ──────────────────────────────────────────────────
+
+/**
+ * v2 -> v3: widen tasks.status CHECK to add REJECTED + DEFERRED, and
+ * recreate the `goals` view to exclude them.
+ *
+ * Existing data: every row stays valid (the new CHECK is a strict
+ * superset). The only invariant change is that the goals view now
+ * filters more aggressively — since v2 had no REJECTED/DEFERRED rows,
+ * goal counts on a freshly-migrated DB are identical.
+ */
+function migrateV2ToV3(db: Db): void {
+  // Drop views first — SQLite refuses to DROP TABLE while a view
+  // depends on it.
+  db.exec("DROP VIEW IF EXISTS ready;");
+  db.exec("DROP VIEW IF EXISTS blocked;");
+  db.exec("DROP VIEW IF EXISTS goals;");
+
+  // Rebuild tasks with the widened CHECK. Every other column matches
+  // the v2 shape exactly (kept in lock-step with CURRENT_SCHEMA in
+  // src/db.ts).
+  rebuildTable(
+    db,
+    "tasks",
+    `
+    CREATE TABLE tasks_new (
+      local_id    TEXT PRIMARY KEY,
+      workstream  TEXT NOT NULL,
+      title       TEXT NOT NULL,
+      status      TEXT NOT NULL DEFAULT 'OPEN',
+      impact      INTEGER NOT NULL,
+      effort_days REAL NOT NULL,
+      owner       TEXT,
+      created_at  TEXT NOT NULL,
+      updated_at  TEXT NOT NULL,
+      FOREIGN KEY (workstream) REFERENCES workstreams (name) ON DELETE CASCADE ON UPDATE CASCADE,
+      FOREIGN KEY (owner)      REFERENCES agents (name)      ON DELETE SET NULL ON UPDATE CASCADE,
+      CHECK (impact BETWEEN 1 AND 100),
+      CHECK (effort_days > 0),
+      CHECK (status IN ('OPEN', 'IN_PROGRESS', 'CLOSED', 'REJECTED', 'DEFERRED'))
+    );
+  `,
+    [
+      "CREATE INDEX IF NOT EXISTS idx_tasks_workstream ON tasks (workstream);",
+      "CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks (status);",
+      "CREATE INDEX IF NOT EXISTS idx_tasks_owner ON tasks (owner);",
+    ],
+  );
+
+  // Recreate views — ready/blocked unchanged from v2 (only CLOSED
+  // satisfies a blocked-by edge, both before and after); goals widens
+  // its exclude list to also drop REJECTED + DEFERRED leaves.
+  db.exec(`
+    CREATE VIEW ready AS
+      SELECT t.*
+        FROM tasks t
+       WHERE t.status = 'OPEN'
+         AND NOT EXISTS (
+           SELECT 1
+             FROM task_edges e
+             JOIN tasks      b ON e.from_task = b.local_id
+            WHERE e.to_task = t.local_id
+              AND b.status <> 'CLOSED'
+         );
+    CREATE VIEW blocked AS
+      SELECT t.*
+        FROM tasks t
+       WHERE t.status = 'OPEN'
+         AND EXISTS (
+           SELECT 1
+             FROM task_edges e
+             JOIN tasks      b ON e.from_task = b.local_id
+            WHERE e.to_task = t.local_id
+              AND b.status <> 'CLOSED'
+         );
+    CREATE VIEW goals AS
+      SELECT t.*
+        FROM tasks t
+       WHERE t.status NOT IN ('CLOSED', 'REJECTED', 'DEFERRED')
+         AND NOT EXISTS (
+           SELECT 1 FROM task_edges WHERE from_task = t.local_id
+         );
+  `);
 }

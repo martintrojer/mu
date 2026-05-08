@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { type Db, defaultDbPath, openDb } from "../src/db.js";
+import { CURRENT_SCHEMA_VERSION, type Db, defaultDbPath, openDb } from "../src/db.js";
 
 describe("openDb", () => {
   let tempDir: string;
@@ -493,13 +493,13 @@ describe("schema migrations: v1 -> v2 (add ON UPDATE CASCADE)", () => {
       .all(table) as Array<{ from: string; to: string; on_update: string; on_delete: string }>;
   }
 
-  it("detects a pre-versioning DB and stamps it as v1 before migrating", () => {
+  it("detects a pre-versioning DB and stamps it forward to CURRENT_SCHEMA_VERSION", () => {
     createV1Db();
     const db = openDb({ path: dbPath });
     const row = db.prepare("SELECT version FROM schema_version WHERE id = 1").get() as {
       version: number;
     };
-    expect(row.version).toBe(2);
+    expect(row.version).toBe(CURRENT_SCHEMA_VERSION);
     db.close();
   });
 
@@ -571,12 +571,12 @@ describe("schema migrations: v1 -> v2 (add ON UPDATE CASCADE)", () => {
     db.close();
   });
 
-  it("a fresh DB (no pre-existing tables) skips the migration and stamps v2", () => {
+  it("a fresh DB (no pre-existing tables) skips migrations and stamps CURRENT_SCHEMA_VERSION", () => {
     const db = openDb({ path: dbPath });
     const row = db.prepare("SELECT version FROM schema_version WHERE id = 1").get() as {
       version: number;
     };
-    expect(row.version).toBe(2);
+    expect(row.version).toBe(CURRENT_SCHEMA_VERSION);
     db.close();
   });
 });

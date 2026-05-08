@@ -68,6 +68,7 @@ import {
   type SearchTasksOptions,
   TaskAlreadyOwnedError,
   TaskExistsError,
+  TaskHasOpenDependentsError,
   TaskNotFoundError,
   TaskNotInWorkstreamError,
   type TaskNoteRow,
@@ -79,6 +80,7 @@ import {
   addTask,
   claimTask,
   closeTask,
+  deferTask,
   deleteTask,
   getTask,
   getTaskEdges,
@@ -91,6 +93,7 @@ import {
   listTasks,
   listTasksByOwner,
   openTask,
+  rejectTask,
   releaseTask,
   removeBlockEdge,
   reparentTask,
@@ -189,6 +192,7 @@ function classifyError(err: unknown): { label: string; exitCode: number } {
     err instanceof AgentNotInWorkstreamError ||
     err instanceof ApprovalNotInWorkstreamError ||
     err instanceof CycleError ||
+    err instanceof TaskHasOpenDependentsError ||
     err instanceof CrossWorkstreamEdgeError ||
     err instanceof WorkspaceExistsError ||
     err instanceof WorkspacePathNotEmptyError ||
@@ -1418,6 +1422,10 @@ function colorStatus(status: TaskRow["status"]): string {
       return pc.yellow(status);
     case "CLOSED":
       return pc.green(status);
+    case "REJECTED":
+      return pc.red(status);
+    case "DEFERRED":
+      return pc.dim(status);
   }
 }
 
@@ -1582,6 +1590,63 @@ async function cmdTaskOpen(
   const ev = opts.evidence ? pc.dim(`  evidence: ${opts.evidence}`) : "";
   console.log(`Reopened ${pc.bold(localId)} ${pc.dim(`(${r.previousStatus} → ${r.status})`)}`);
   if (ev) console.log(ev);
+  printNextSteps(nextSteps);
+}
+
+// ─── reject / defer (terminal-but-blocking transitions) ────────────────
+
+interface RejectDeferOpts {
+  evidence?: string;
+  cascade?: boolean;
+  workstream?: string;
+  json?: boolean;
+}
+
+async function cmdTaskReject(db: Db, localId: string, opts: RejectDeferOpts = {}): Promise<void> {
+  return cmdTaskRejectOrDefer(db, localId, "reject", opts);
+}
+
+async function cmdTaskDefer(db: Db, localId: string, opts: RejectDeferOpts = {}): Promise<void> {
+  return cmdTaskRejectOrDefer(db, localId, "defer", opts);
+}
+
+async function cmdTaskRejectOrDefer(
+  db: Db,
+  localId: string,
+  verb: "reject" | "defer",
+  opts: RejectDeferOpts,
+): Promise<void> {
+  assertTaskInWorkstream(db, localId, opts.workstream);
+  const sdkOpts: { evidence?: string; cascade?: boolean } = {};
+  if (opts.evidence !== undefined) sdkOpts.evidence = opts.evidence;
+  if (opts.cascade) sdkOpts.cascade = true;
+  const r = verb === "reject" ? rejectTask(db, localId, sdkOpts) : deferTask(db, localId, sdkOpts);
+  const ws = await resolveWorkstream(opts.workstream);
+  const past = verb === "reject" ? "Rejected" : "Deferred";
+  const status = verb === "reject" ? "REJECTED" : "DEFERRED";
+  const nextSteps: NextStep[] = [
+    { intent: "Reopen if reconsidered", command: `mu task open ${localId} -w ${ws}` },
+    { intent: "See full state", command: `mu state -w ${ws}` },
+  ];
+  if (opts.json) {
+    emitJson({ task: localId, ...r, nextSteps });
+    return;
+  }
+  if (!r.changed) {
+    console.log(pc.dim(`${localId} already ${status} (no-op)`));
+    printNextSteps(nextSteps);
+    return;
+  }
+  console.log(`${past} ${pc.bold(localId)} ${pc.dim(`(→ ${status})`)}`);
+  if (opts.evidence) console.log(pc.dim(`  evidence: ${opts.evidence}`));
+  if (r.changedIds.length > 1) {
+    const cascaded = r.changedIds.slice(1);
+    console.log(
+      pc.dim(
+        `  cascaded to ${cascaded.length} dependent(s): ${cascaded.slice(0, 8).join(", ")}${cascaded.length > 8 ? ", …" : ""}`,
+      ),
+    );
+  }
   printNextSteps(nextSteps);
 }
 
@@ -3833,6 +3898,44 @@ export function buildProgram(): Command {
         json?: boolean;
       };
       return handle((db) => cmdTaskOpen(db, id, opts))();
+    });
+
+  task
+    .command("reject <id>")
+    .description(
+      "Mark a task REJECTED — terminal 'won't do' (out of scope, duplicate, wontfix). Refuses if open dependents would be stranded; pass --cascade to apply to the whole sub-tree.",
+    )
+    .option("--cascade", "also reject every transitive open/in-progress dependent")
+    .option(...WORKSTREAM_OPT)
+    .option(...EVIDENCE_OPT)
+    .option(...JSON_OPT)
+    .action(function (id: string) {
+      const opts = (this as Command).opts() as {
+        cascade?: boolean;
+        evidence?: string;
+        workstream?: string;
+        json?: boolean;
+      };
+      return handle((db) => cmdTaskReject(db, id, opts))();
+    });
+
+  task
+    .command("defer <id>")
+    .description(
+      "Mark a task DEFERRED — parked, may revisit. Like reject, doesn't satisfy a blocked-by edge; refuses if open dependents would be stranded; pass --cascade to apply to the whole sub-tree.",
+    )
+    .option("--cascade", "also defer every transitive open/in-progress dependent")
+    .option(...WORKSTREAM_OPT)
+    .option(...EVIDENCE_OPT)
+    .option(...JSON_OPT)
+    .action(function (id: string) {
+      const opts = (this as Command).opts() as {
+        cascade?: boolean;
+        evidence?: string;
+        workstream?: string;
+        json?: boolean;
+      };
+      return handle((db) => cmdTaskDefer(db, id, opts))();
     });
 
   task

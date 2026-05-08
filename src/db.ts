@@ -169,7 +169,7 @@ function applySchema(db: Db): void {
  *  DB gets migrated up to on openDb). Bump this when adding a migration
  *  in src/migrations.ts; also update the CURRENT_SCHEMA block below so
  *  fresh DBs match. */
-export const CURRENT_SCHEMA_VERSION = 2;
+export const CURRENT_SCHEMA_VERSION = 3;
 
 /** Tables a healthy DB must contain. Single source of truth so
  *  `mu doctor` and any other consumer don't drift. Adding a new table
@@ -264,7 +264,13 @@ CREATE TABLE IF NOT EXISTS tasks (
   local_id    TEXT PRIMARY KEY,
   workstream  TEXT NOT NULL,
   title       TEXT NOT NULL,
-  status      TEXT NOT NULL DEFAULT 'OPEN',  -- OPEN | IN_PROGRESS | CLOSED
+  status      TEXT NOT NULL DEFAULT 'OPEN',
+  -- OPEN | IN_PROGRESS | CLOSED | REJECTED | DEFERRED
+  -- CLOSED   : completed; unblocks downstream dependents.
+  -- REJECTED : terminal 'won't do' (out of scope, duplicate, wontfix);
+  --            still BLOCKS downstream so dependents must be addressed.
+  -- DEFERRED : parked, may revisit. Still blocks downstream too.
+  -- See VOCABULARY.md for the full state-transition table.
   impact      INTEGER NOT NULL,              -- 1..100
   effort_days REAL NOT NULL,                 -- > 0
   owner       TEXT,                          -- FK → agents(name) SET NULL
@@ -274,7 +280,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   FOREIGN KEY (owner)      REFERENCES agents (name)      ON DELETE SET NULL ON UPDATE CASCADE,
   CHECK (impact BETWEEN 1 AND 100),
   CHECK (effort_days > 0),
-  CHECK (status IN ('OPEN', 'IN_PROGRESS', 'CLOSED'))
+  CHECK (status IN ('OPEN', 'IN_PROGRESS', 'CLOSED', 'REJECTED', 'DEFERRED'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_tasks_workstream ON tasks (workstream);
@@ -425,14 +431,17 @@ CREATE VIEW blocked AS
           AND b.status <> 'CLOSED'
      );
 
--- A goal is an open or in-progress endpoint of the DAG — a task with no
--- dependents. CLOSED tasks are excluded: a finished leaf is no longer a
--- goal we're working toward.
+-- A goal is an active endpoint of the DAG — a task with no dependents
+-- that we're still working toward. CLOSED, REJECTED, and DEFERRED are
+-- all excluded: a finished/abandoned/parked leaf is not an active goal.
+-- (REJECTED and DEFERRED still BLOCK dependents per the views above
+-- — they're terminal/parked from the perspective of 'what's a goal',
+-- but they don't satisfy a blocked-by edge: only CLOSED does that.)
 DROP VIEW IF EXISTS goals;
 CREATE VIEW goals AS
   SELECT t.*
     FROM tasks t
-   WHERE t.status <> 'CLOSED'
+   WHERE t.status NOT IN ('CLOSED', 'REJECTED', 'DEFERRED')
      AND NOT EXISTS (
        SELECT 1 FROM task_edges WHERE from_task = t.local_id
      );

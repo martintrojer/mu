@@ -50,6 +50,76 @@ called out under "Breaking" in each entry.
 
 ### Added
 
+- **Task states gain `REJECTED` and `DEFERRED`; new verbs
+  `mu task reject` / `mu task defer`.** Two real mufeedback tasks
+  (`git_workspaces_start_without_node` = wontfix; `nit_no_task_move_verb`
+  = not justified yet) didn't fit `CLOSED`. Closing them as a
+  workaround would lie in the audit trail ("completed work" view
+  would count them as ships).
+
+  Schema v2 -> v3:
+  - `tasks.status` CHECK widened to include `REJECTED` and
+    `DEFERRED`.
+  - `goals` view excludes them too (only OPEN / IN_PROGRESS leaves
+    are 'goals we're working toward').
+  - `ready` / `blocked` views unchanged: only CLOSED satisfies a
+    `--blocked-by` edge — REJECTED and DEFERRED still BLOCK
+    downstream by design (see TaskHasOpenDependentsError below).
+  - Live DB migrated cleanly (no rows changed; only schema +
+    view).
+
+  Predicate matrix (the design constraint that fixes the state
+  count at exactly 5):
+
+  | state       | active | blocks ↓ | terminal |
+  |-------------|--------|----------|----------|
+  | OPEN        | y      | y        | n        |
+  | IN_PROGRESS | y      | y        | n        |
+  | CLOSED      | n      | n        | y        |
+  | REJECTED    | n      | y        | y        |
+  | DEFERRED    | n      | y        | n        |
+
+  CLI:
+  - `mu task reject <id> [--cascade] [--evidence ...]` — terminal
+    'won't do' (out of scope, duplicate, wontfix).
+  - `mu task defer <id> [--cascade] [--evidence ...]` — parked,
+    may revisit. Reopen with `mu task open`.
+
+  SDK: `rejectTask` / `deferTask` exported from src/tasks.ts; both
+  share `RejectDeferOptions` (`evidence`, `cascade`) and return
+  `RejectDeferResult` (`changedIds`, `status`, `changed`).
+
+  Stranded-dependent guard: rejecting/deferring a task with OPEN
+  or IN_PROGRESS dependents throws `TaskHasOpenDependentsError`
+  (exit 4) listing the dependents and three resolutions: pass
+  `--cascade` to apply the same status to the whole sub-tree,
+  drop the now-irrelevant blocking edge first with
+  `mu task unblock <dep> --not-blocked-by <id>`, or
+  reject/defer dependents individually first.
+
+  Cascade walk PRUNES at CLOSED / REJECTED / DEFERRED nodes: a
+  CLOSED intermediate has already satisfied its blocked-by edge,
+  so its downstream is independent of `<id>` and must NOT be
+  swept. (Unit-tested: `--cascade DEFERRED` on `design` with a
+  CLOSED `build` and OPEN `ship` leaves `ship` alone.)
+
+  `listTasksByOwner` default tightened from `status != 'CLOSED'`
+  to `status NOT IN ('CLOSED','REJECTED','DEFERRED')`. The 'live
+  work' view should not include 'won't do' or 'parked' work.
+  `includeClosed: true` re-includes ALL terminal/parked statuses.
+
+  Tests: 12 new cases covering happy path, idempotency, the
+  stranding refusal, all status transitions in the predicate
+  matrix (only-CLOSED-unblocks), and `--cascade` semantics
+  including the prune-at-closed property. 616 tests total.
+
+  Closes `git_workspaces_start_without_node` (REJECTED — not
+  mu's job to seed pnpm/cargo/pip deps; that's a project-level
+  setup script or first task instruction) and
+  `nit_no_task_move_verb` (DEFERRED — the `mu sql` workaround
+  works; ~80 LOC of new typed-verb surface not justified by
+  current friction. Promotion criteria documented on the task.)
+
 - **`mu workstream destroy` now actually cleans workspaces.** Filed
   in `mufeedback` note #195: destroying a workstream killed the
   tmux session and cascade-deleted every DB row but left the

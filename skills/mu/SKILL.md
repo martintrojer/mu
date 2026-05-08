@@ -18,7 +18,11 @@ listed below does not exist; check `mu --help` if in doubt.
 - **workstream** — mu's unit of organization; one tmux session.
 - **agent** — a named worker in a tmux pane (you may be one).
 - **task** — a node in the DAG; mandatory `impact` (1–100) and
-  `effort_days`; status `OPEN → IN_PROGRESS → CLOSED`.
+  `effort_days`; status one of `OPEN` (ready), `IN_PROGRESS`
+  (claimed), `CLOSED` (shipped — the only state that satisfies
+  a `--blocked-by` edge), `REJECTED` (terminal won't-do; still
+  blocks downstream), or `DEFERRED` (parked, may revisit; still
+  blocks downstream).
 - **claim** / **release** — atomic CAS take/clear of `tasks.owner`.
 - **free** — mark the *agent* available (`mu agent free`). Pane
   untouched. Different from release: free is about the agent,
@@ -213,6 +217,8 @@ mu task claim <id> [--for <worker> | --self [--actor <name>]]
 mu task release <id> [--reopen]      # clear owner; optionally flip OPEN
 mu task close <id>                   # → CLOSED (idempotent)
 mu task open <id>                    # → OPEN (idempotent)
+mu task reject <id> [--cascade]      # → REJECTED (won't do; still blocks ↓)
+mu task defer <id>  [--cascade]      # → DEFERRED (parked; still blocks ↓)
 mu task block <blocked> --by <blocker>     # cycle + workstream checked
 mu task unblock <blocked> --by <blocker>
 mu task update <id> [--title|--impact|--effort-days]

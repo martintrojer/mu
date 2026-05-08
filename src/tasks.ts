@@ -16,9 +16,28 @@ import { ensureWorkstream } from "./workstream.js";
 
 // ─── Domain types ──────────────────────────────────────────────────────
 
-export type TaskStatus = "OPEN" | "IN_PROGRESS" | "CLOSED";
+export type TaskStatus = "OPEN" | "IN_PROGRESS" | "CLOSED" | "REJECTED" | "DEFERRED";
 
-const TASK_STATUSES: readonly TaskStatus[] = ["OPEN", "IN_PROGRESS", "CLOSED"];
+const TASK_STATUSES: readonly TaskStatus[] = [
+  "OPEN",
+  "IN_PROGRESS",
+  "CLOSED",
+  "REJECTED",
+  "DEFERRED",
+];
+
+/** Statuses that satisfy a `--blocked-by` edge — only CLOSED. REJECTED
+ *  and DEFERRED still block: a rejected/deferred prereq leaves the
+ *  dependent stranded by design (see TaskHasOpenDependentsError). */
+export const STATUSES_THAT_UNBLOCK: readonly TaskStatus[] = ["CLOSED"];
+
+/** Statuses that count as 'no longer scheduled work' — used by the
+ *  goals view and by the dependent-check on reject/defer. */
+export const STATUSES_TERMINAL_OR_PARKED: readonly TaskStatus[] = [
+  "CLOSED",
+  "REJECTED",
+  "DEFERRED",
+];
 
 export function isTaskStatus(s: string): s is TaskStatus {
   return (TASK_STATUSES as readonly string[]).includes(s);
@@ -275,6 +294,45 @@ export class TaskAlreadyOwnedError extends Error implements HasNextSteps {
 }
 
 /**
+ * Thrown by `rejectTask` / `deferTask` when the target task has
+ * dependents that are still OPEN or IN_PROGRESS. Rejecting or
+ * deferring such a task would silently strand the dependents (they'd
+ * remain blocked by a prereq that's never going to satisfy the edge),
+ * so we refuse and force an explicit decision: pass `--cascade` to
+ * apply the same status to every transitive dependent, drop the
+ * blocking edge first with `mu task unblock`, or address the
+ * dependents individually. Maps to exit code 4.
+ */
+export class TaskHasOpenDependentsError extends Error implements HasNextSteps {
+  override readonly name = "TaskHasOpenDependentsError";
+  constructor(
+    public readonly taskId: string,
+    public readonly verb: "reject" | "defer",
+    public readonly dependents: readonly string[],
+  ) {
+    super(
+      `cannot ${verb} ${taskId}: ${dependents.length} open dependent(s) would be stranded (${dependents.slice(0, 5).join(", ")}${dependents.length > 5 ? ", …" : ""}). Pick one resolution and re-run.`,
+    );
+  }
+  errorNextSteps(): NextStep[] {
+    return [
+      {
+        intent: `${this.verb.charAt(0).toUpperCase() + this.verb.slice(1)} the whole sub-tree (recommended when the parent decision applies)`,
+        command: `mu task ${this.verb} ${this.taskId} --cascade`,
+      },
+      {
+        intent: "Drop the blocking edge from a dependent first",
+        command: `mu task unblock <dep> --not-blocked-by ${this.taskId}`,
+      },
+      {
+        intent: "Address dependents individually first",
+        command: `mu task ${this.verb} <dep>`,
+      },
+    ];
+  }
+}
+
+/**
  * Thrown when `mu task claim` resolves a claimer agent name (from the
  * pane title or --for) that has no matching row in the agents table.
  *
@@ -470,9 +528,13 @@ export function listTasksByOwner(
   owner: string,
   opts: { includeClosed?: boolean } = {},
 ): TaskRow[] {
+  // 'Live work' = not in any terminal-or-parked state. CLOSED is the
+  // obvious one; REJECTED and DEFERRED are also off the agent's plate
+  // (the user has decided 'won't do' or 'not now'). includeClosed
+  // re-includes ALL of those so historical attribution is recoverable.
   const sql = opts.includeClosed
     ? "SELECT * FROM tasks WHERE owner = ? ORDER BY workstream, local_id"
-    : "SELECT * FROM tasks WHERE owner = ? AND status != 'CLOSED' ORDER BY workstream, local_id";
+    : "SELECT * FROM tasks WHERE owner = ? AND status NOT IN ('CLOSED', 'REJECTED', 'DEFERRED') ORDER BY workstream, local_id";
   const rows = db.prepare(sql).all(owner) as RawTaskRow[];
   return rows.map(rowFromDb);
 }
@@ -780,6 +842,122 @@ export function closeTask(db: Db, localId: string, opts: EvidenceOption = {}): S
  *  cleared — use `releaseTask` for that. Accepts evidence. */
 export function openTask(db: Db, localId: string, opts: EvidenceOption = {}): SetStatusResult {
   return setTaskStatus(db, localId, "OPEN", opts);
+}
+
+// ─── rejectTask / deferTask (terminal-but-blocking transitions) ────
+//
+// REJECTED and DEFERRED both leave the task off the active scheduler
+// (gone from `ready`, `goals`, track count) but, unlike CLOSED, do NOT
+// satisfy a `--blocked-by` edge. A REJECTED / DEFERRED task therefore
+// silently strands every OPEN/IN_PROGRESS dependent. We refuse the
+// transition unless either there are no open dependents OR the caller
+// passes `--cascade` to apply the same status to every transitive
+// dependent.
+
+export interface RejectDeferOptions extends EvidenceOption {
+  /** If true, walk the transitive dependent closure and apply the same
+   *  status to every dependent, atomically. Logs one event per task
+   *  (via setTaskStatus). */
+  cascade?: boolean;
+}
+
+export interface RejectDeferResult {
+  /** Tasks that actually changed status, in cascade order (root first). */
+  changedIds: string[];
+  /** The status now stamped on every changedId. */
+  status: TaskStatus;
+  /** True iff anything changed. False on a clean idempotent no-op
+   *  (root task already in target status, no dependents). */
+  changed: boolean;
+}
+
+/** Reject a task: terminal 'won't do' (out of scope, duplicate, wontfix).
+ *  Refuses if dependents are open unless `--cascade`. */
+export function rejectTask(
+  db: Db,
+  localId: string,
+  opts: RejectDeferOptions = {},
+): RejectDeferResult {
+  return setTerminalOrParked(db, localId, "REJECTED", opts);
+}
+
+/** Defer a task: parked, may revisit. Same dependent-stranding semantics
+ *  as reject (DEFERRED also doesn't satisfy a `--blocked-by` edge). */
+export function deferTask(
+  db: Db,
+  localId: string,
+  opts: RejectDeferOptions = {},
+): RejectDeferResult {
+  return setTerminalOrParked(db, localId, "DEFERRED", opts);
+}
+
+function setTerminalOrParked(
+  db: Db,
+  localId: string,
+  status: "REJECTED" | "DEFERRED",
+  opts: RejectDeferOptions,
+): RejectDeferResult {
+  const before = getTask(db, localId);
+  if (!before) throw new TaskNotFoundError(localId);
+
+  // Find all open (OPEN or IN_PROGRESS) tasks that transitively depend
+  // on this one. Forward-edge recursive CTE from localId.
+  const openDependents = findOpenDependents(db, localId);
+
+  if (openDependents.length > 0 && !opts.cascade) {
+    const verb = status === "REJECTED" ? "reject" : "defer";
+    throw new TaskHasOpenDependentsError(localId, verb, openDependents);
+  }
+
+  // Apply to root first, then dependents in BFS order. setTaskStatus
+  // emits one event per task and is idempotent (no-op if already in
+  // target status).
+  const changedIds: string[] = [];
+  const targets =
+    openDependents.length > 0 && opts.cascade ? [localId, ...openDependents] : [localId];
+  for (const id of targets) {
+    const r = setTaskStatus(db, id, status, opts);
+    if (r.changed) changedIds.push(id);
+  }
+
+  return {
+    changedIds,
+    status,
+    changed: changedIds.length > 0,
+  };
+}
+
+/** Open dependents that would be stranded if `taskId` were rejected /
+ *  deferred. The walk PRUNES at CLOSED nodes: a CLOSED intermediate
+ *  has already satisfied its blocked-by edge, so its downstream is
+ *  independent of whatever happens to `taskId` and must NOT be swept.
+ *  REJECTED / DEFERRED intermediates also stop the walk — their
+ *  downstream is already stranded by them, not by `taskId`, and a
+ *  cascade from here would (a) double-flip them or (b) overwrite a
+ *  previous explicit decision.
+ *
+ *  Ordering: BFS-equivalent via DISTINCT + ORDER BY local_id; cascade
+ *  applies one row at a time so each setTaskStatus is logged. */
+function findOpenDependents(db: Db, taskId: string): string[] {
+  const rows = db
+    .prepare(
+      `WITH RECURSIVE forward(node) AS (
+         SELECT e.to_task
+           FROM task_edges e
+           JOIN tasks      t ON t.local_id = e.to_task
+          WHERE e.from_task = ?
+            AND t.status IN ('OPEN', 'IN_PROGRESS')
+         UNION
+         SELECT e.to_task
+           FROM task_edges e
+           JOIN forward    f ON f.node = e.from_task
+           JOIN tasks      t ON t.local_id = e.to_task
+          WHERE t.status IN ('OPEN', 'IN_PROGRESS')
+       )
+       SELECT DISTINCT node AS local_id FROM forward ORDER BY node`,
+    )
+    .all(taskId) as { local_id: string }[];
+  return rows.map((r) => r.local_id);
 }
 
 // ─── releaseTask (verb) ──────────────────────────────────────────────────
