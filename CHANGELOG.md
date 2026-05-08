@@ -10,6 +10,44 @@ called out under "Breaking" in each entry.
 
 ## [Unreleased]
 
+### Schema
+
+- **`schema_version` table + migration framework.** First
+  non-additive schema change earns its first migration. `openDb`
+  now sniffs the existing DB shape, stamps the version, and runs
+  any pending migrations from `src/migrations.ts` (forward-only,
+  one transaction each, post-migration `PRAGMA foreign_key_check`
+  for safety). The framework lives in `src/migrations.ts`;
+  `src/db.ts` keeps the schema definition and exports
+  `CURRENT_SCHEMA_VERSION` as the single source of truth.
+
+- **All 10 foreign keys gain `ON UPDATE CASCADE`** (v1 → v2
+  migration). Previously the FKs only had `ON DELETE CASCADE`,
+  so renaming a workstream / task / agent name would have left
+  every child row dangling. Now every child column follows
+  atomically. Affected FKs:
+  - `agents.workstream` → `workstreams.name`
+  - `tasks.workstream` → `workstreams.name`
+  - `tasks.owner` → `agents.name` (already SET NULL on delete)
+  - `task_edges.from_task` → `tasks.local_id`
+  - `task_edges.to_task` → `tasks.local_id`
+  - `task_notes.task_id` → `tasks.local_id`
+  - `agent_logs.workstream` → `workstreams.name`
+  - `vcs_workspaces.agent` → `agents.name`
+  - `vcs_workspaces.workstream` → `workstreams.name`
+  - `approvals.workstream` → `workstreams.name`
+
+  The migration rebuilds 7 tables in place (CREATE _new / INSERT
+  SELECT / DROP / RENAME) because SQLite can't `ALTER TABLE` to
+  modify FK clauses. Existing data is preserved; the migration
+  is covered end-to-end in `test/db.test.ts`. Recovery recipes
+  for typo'd workstream names live in [USAGE_GUIDE § 14](docs/USAGE_GUIDE.md#you-typod-a-workstream-name-and-want-to-rename-it).
+
+  **No new verb.** Renaming is a single-statement `mu sql`
+  recipe; wrapping it in a typed verb would add surface area
+  without buying anything (no atomicity to preserve, no
+  validation a verb adds, single statement, no side effects).
+
 ### Added
 
 - **`mu task list --status <S>` filter.** Accepts case-insensitive

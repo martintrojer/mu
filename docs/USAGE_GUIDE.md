@@ -604,6 +604,34 @@ mu doctor                       # quick health check
 rm ~/.local/state/mu/mu.db                  # nuke (last resort; loses task graph and registry)
 ```
 
+### You typo'd a workstream name and want to rename it
+
+The `workstreams.name` column has `ON UPDATE CASCADE` on every
+child-table foreign key, so renaming a workstream is a single SQL
+statement that propagates atomically through `agents`, `tasks`,
+`agent_logs`, `vcs_workspaces`, and `approvals`:
+
+```bash
+# 1. Validate the new name fits the rules (or mu will reject it on
+#    next use). Lowercase alpha first, then alnum/_/-, ≤32 chars,
+#    no '.' or ':' (tmux mangles them), no 'mu-' prefix.
+# 2. Rename in the DB. Single statement; cascades to every child.
+mu sql "UPDATE workstreams SET name='auth-refactor' WHERE name='auth-refator'"
+
+# 3. Rename the tmux session too (only if it's currently alive).
+tmux rename-session -t mu-auth-refator mu-auth-refactor
+```
+
+Mu doesn't ship a typed `mu workstream rename` verb because the
+schema does the work — wrapping a single safe statement adds
+surface area without buying anything (no atomicity to preserve, no
+validation to add, no side effects beyond the optional `tmux
+rename-session`). The recipe above is the canonical answer.
+
+The same `ON UPDATE CASCADE` makes future `mu sql` renames safe
+for `tasks.local_id` and `agents.name` too, if you ever need to
+untypo those.
+
 ---
 
 ## 15. Cleanup

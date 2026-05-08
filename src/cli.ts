@@ -52,7 +52,7 @@ import {
   listApprovals,
   waitApproval,
 } from "./approvals.js";
-import { type Db, defaultDbPath, openDb } from "./db.js";
+import { CURRENT_SCHEMA_VERSION, type Db, EXPECTED_TABLES, defaultDbPath, openDb } from "./db.js";
 import { detectPiStatus } from "./detect.js";
 import { type ListLogsOptions, type LogRow, appendLog, latestSeq, listLogs } from "./logs.js";
 import {
@@ -1680,21 +1680,39 @@ async function cmdDoctor(db: Db): Promise<void> {
         )
         .all() as { name: string }[]
     ).map((r) => r.name);
-    const expected = [
-      "agent_logs",
-      "agents",
-      "approvals",
-      "task_edges",
-      "task_notes",
-      "tasks",
-      "vcs_workspaces",
-      "workstreams",
-    ];
-    const missing = expected.filter((t) => !tables.includes(t));
+    const missing = EXPECTED_TABLES.filter((t) => !tables.includes(t));
     if (missing.length === 0) {
-      console.log(`  schema           : ${pc.green("ok")} (${expected.length} tables)`);
+      console.log(`  schema           : ${pc.green("ok")} (${EXPECTED_TABLES.length} tables)`);
     } else {
       console.log(`  schema           : ${pc.red("missing")} — ${missing.join(", ")}`);
+    }
+    // Schema version: should match CURRENT_SCHEMA_VERSION after openDb
+    // (which runs migrations). Mismatch means either a downgrade
+    // attempt or a bug in the migration runner — either way, surface it.
+    try {
+      const row = db.prepare("SELECT version FROM schema_version WHERE id = 1").get() as
+        | { version: number }
+        | undefined;
+      const v = row?.version;
+      if (v === undefined) {
+        console.log(
+          `  schema_version   : ${pc.red("missing row")} (expected ${CURRENT_SCHEMA_VERSION})`,
+        );
+      } else if (v === CURRENT_SCHEMA_VERSION) {
+        console.log(`  schema_version   : ${pc.green(String(v))}`);
+      } else if (v < CURRENT_SCHEMA_VERSION) {
+        console.log(
+          `  schema_version   : ${pc.yellow(String(v))} (code expects ${CURRENT_SCHEMA_VERSION}; openDb should have migrated)`,
+        );
+      } else {
+        console.log(
+          `  schema_version   : ${pc.red(String(v))} (code expects ${CURRENT_SCHEMA_VERSION}; possible downgrade or future-version DB)`,
+        );
+      }
+    } catch {
+      console.log(
+        `  schema_version   : ${pc.red("unreadable")} (schema_version table missing or wrong shape)`,
+      );
     }
     const journal = db.pragma("journal_mode", { simple: true });
     console.log(

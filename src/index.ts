@@ -31,6 +31,8 @@ export {
   type SpawnAgentOptions,
 } from "./agents.js";
 export {
+  CURRENT_SCHEMA_VERSION,
+  EXPECTED_TABLES,
   defaultDbPath,
   defaultStateDir,
   ensureWorkstreamStateDir,

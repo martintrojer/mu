@@ -1,20 +1,34 @@
 // mu — DB module.
 //
 // Opens ~/.mu/mu.db (or MU_DB_PATH override), enables WAL + foreign keys,
-// applies the schema idempotently, and exposes the live Database handle.
+// applies the schema idempotently, runs any pending migrations, and
+// exposes the live Database handle.
 //
 // Schema (see CHANGELOG.md §"Schema"):
 //   - 8 tables: workstreams, agents, tasks, task_edges, task_notes,
 //               agent_logs, vcs_workspaces, approvals
+//   - 1 meta table: schema_version (single row, integer)
 //   - 3 views:  ready, blocked, goals
 //
-// No migrations layer yet — the first non-additive schema change should
-// land alongside a schema_version table.
+// Migrations are versioned via the schema_version table. CURRENT_SCHEMA
+// below is the shape a fresh DB starts with (today: version 2). Existing
+// DBs at older versions get migrated up via the runMigrations() helper
+// on every openDb() call. Migrations are forward-only; downgrades are
+// not supported.
+//
+// Adding a new migration:
+//   1. Bump CURRENT_SCHEMA_VERSION.
+//   2. Update the CURRENT_SCHEMA block so fresh DBs match.
+//   3. Add a (fromVersion -> toVersion) entry to MIGRATIONS that
+//      transforms an existing DB from the previous shape into the new one.
+//   4. Cover both the fresh-create AND the migrate-existing paths
+//      in test/db.test.ts.
 
 import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import Database, { type Database as DatabaseType } from "better-sqlite3";
+import { runMigrations } from "./migrations.js";
 
 export type Db = DatabaseType;
 
@@ -78,12 +92,52 @@ export function openDb(options: OpenDbOptions = {}): Db {
   if (!options.readonly) {
     db.pragma("journal_mode = WAL");
     db.pragma("foreign_keys = ON");
+    // Detect 'pre-existing v1 DB' (had tables but no schema_version row)
+    // BEFORE applySchema, so we can run the v1 -> v2 migration on the
+    // real data instead of stamping it as v2 by accident.
+    const detectedVersion = detectExistingSchemaVersion(db);
     applySchema(db);
+    if (detectedVersion !== null && detectedVersion < CURRENT_SCHEMA_VERSION) {
+      // Existing DB at an older version: reset the version row so
+      // runMigrations sees the real starting point (applySchema's
+      // INSERT OR IGNORE may have stamped it as CURRENT for fresh DBs).
+      db.prepare("UPDATE schema_version SET version = ? WHERE id = 1").run(detectedVersion);
+    }
+    runMigrations(db);
   } else {
     db.pragma("foreign_keys = ON");
   }
 
   return db;
+}
+
+/**
+ * Sniff an existing DB's schema version BEFORE applySchema runs, so we
+ * can distinguish:
+ *   - Brand-new DB: no tables at all -> returns null (fresh, will be
+ *     stamped to CURRENT_SCHEMA_VERSION by applySchema).
+ *   - Pre-versioning DB (had v1 tables before schema_version existed):
+ *     workstreams exists, schema_version doesn't -> returns 1.
+ *   - Already-versioned DB: schema_version row present -> returns its
+ *     value.
+ */
+function detectExistingSchemaVersion(db: Db): number | null {
+  const hasVersionTable = db
+    .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='schema_version'")
+    .get() as { name: string } | undefined;
+  if (hasVersionTable) {
+    const row = db.prepare("SELECT version FROM schema_version WHERE id = 1").get() as
+      | { version: number }
+      | undefined;
+    return row?.version ?? null;
+  }
+  // No schema_version table. Check whether any of the original v1
+  // tables exist; if so this is a pre-versioning v1 DB.
+  const hasWorkstreams = db
+    .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='workstreams'")
+    .get() as { name: string } | undefined;
+  if (hasWorkstreams) return 1;
+  return null;
 }
 
 /** Test seam: ensure a workstream's artifact dir exists. Unused today. */
@@ -96,12 +150,54 @@ export function ensureWorkstreamStateDir(workstream: string): string {
 /**
  * Apply the schema. Idempotent: tables use CREATE TABLE IF NOT EXISTS;
  * views are dropped and recreated so the latest definition always wins.
+ *
+ * For fresh DBs this writes the current schema shape and stamps
+ * schema_version = CURRENT_SCHEMA_VERSION. For existing DBs this is a
+ * no-op for the table CREATEs (IF NOT EXISTS) but DOES recreate the
+ * views. Migrations against older shapes are handled by runMigrations.
  */
 function applySchema(db: Db): void {
-  db.exec(SCHEMA_V0_1);
+  db.exec(CURRENT_SCHEMA);
+  // Stamp the version on a fresh DB. INSERT OR IGNORE so we don't
+  // overwrite an existing version (which the migration logic owns).
+  db.prepare("INSERT OR IGNORE INTO schema_version (id, version) VALUES (1, ?)").run(
+    CURRENT_SCHEMA_VERSION,
+  );
 }
 
-const SCHEMA_V0_1 = `
+/** The schema version a fresh DB starts at (and the target every existing
+ *  DB gets migrated up to on openDb). Bump this when adding a migration
+ *  in src/migrations.ts; also update the CURRENT_SCHEMA block below so
+ *  fresh DBs match. */
+export const CURRENT_SCHEMA_VERSION = 2;
+
+/** Tables a healthy DB must contain. Single source of truth so
+ *  `mu doctor` and any other consumer don't drift. Adding a new table
+ *  = one new entry here AND a CREATE TABLE in CURRENT_SCHEMA AND a
+ *  migration in src/migrations.ts that adds it to existing DBs. */
+export const EXPECTED_TABLES: readonly string[] = [
+  "agent_logs",
+  "agents",
+  "approvals",
+  "schema_version",
+  "task_edges",
+  "task_notes",
+  "tasks",
+  "vcs_workspaces",
+  "workstreams",
+];
+
+const CURRENT_SCHEMA = `
+-- ─── Schema versioning ────────────────────────────────────────────────
+--
+-- Single-row table tracking which schema version this DB is at. Migrations
+-- read and update this; the row is INSERT-OR-IGNOREd by applySchema with
+-- the current version on a fresh DB.
+CREATE TABLE IF NOT EXISTS schema_version (
+  id      INTEGER PRIMARY KEY CHECK (id = 1),
+  version INTEGER NOT NULL
+);
+
 -- ─── Tables ───────────────────────────────────────────────────────────
 
 -- One row per workstream — the unit of organisation. Workstreams are the
@@ -133,7 +229,7 @@ CREATE TABLE IF NOT EXISTS agents (
   tab         TEXT,                          -- window name; NULL = use agent name
   created_at  TEXT NOT NULL,                 -- ISO 8601
   updated_at  TEXT NOT NULL,                 -- ISO 8601
-  FOREIGN KEY (workstream) REFERENCES workstreams (name) ON DELETE CASCADE,
+  FOREIGN KEY (workstream) REFERENCES workstreams (name) ON DELETE CASCADE ON UPDATE CASCADE,
   CHECK (status IN (
     'spawning', 'busy', 'needs_input', 'needs_permission',
     'free', 'unreachable', 'terminated'
@@ -158,10 +254,12 @@ CREATE INDEX IF NOT EXISTS idx_agents_status ON agents (status);
 -- Cross-workstream edges are forbidden: addTask checks that every blocker
 -- shares the new task's workstream.
 --
--- owner is a real FK to agents(name) ON DELETE SET NULL: when an agent
--- is closed, tasks they owned drop their owner automatically (matches
--- the "owner = current ownership, not history" semantics that the
+-- owner is a real FK to agents(name) ON DELETE SET NULL ON UPDATE CASCADE:
+-- when an agent is closed, tasks they owned drop their owner automatically
+-- (matches the "owner = current ownership, not history" semantics that the
 -- mu task release verb encodes; historical attribution lives in notes).
+-- When an agent is renamed (via UPDATE on agents.name), the cascade
+-- updates tasks.owner so it stays in sync.
 CREATE TABLE IF NOT EXISTS tasks (
   local_id    TEXT PRIMARY KEY,
   workstream  TEXT NOT NULL,
@@ -172,8 +270,8 @@ CREATE TABLE IF NOT EXISTS tasks (
   owner       TEXT,                          -- FK → agents(name) SET NULL
   created_at  TEXT NOT NULL,
   updated_at  TEXT NOT NULL,
-  FOREIGN KEY (workstream) REFERENCES workstreams (name) ON DELETE CASCADE,
-  FOREIGN KEY (owner)      REFERENCES agents (name)      ON DELETE SET NULL,
+  FOREIGN KEY (workstream) REFERENCES workstreams (name) ON DELETE CASCADE ON UPDATE CASCADE,
+  FOREIGN KEY (owner)      REFERENCES agents (name)      ON DELETE SET NULL ON UPDATE CASCADE,
   CHECK (impact BETWEEN 1 AND 100),
   CHECK (effort_days > 0),
   CHECK (status IN ('OPEN', 'IN_PROGRESS', 'CLOSED'))
@@ -190,8 +288,8 @@ CREATE TABLE IF NOT EXISTS task_edges (
   to_task     TEXT NOT NULL,                 -- dependent
   created_at  TEXT NOT NULL,
   PRIMARY KEY (from_task, to_task),
-  FOREIGN KEY (from_task) REFERENCES tasks (local_id) ON DELETE CASCADE,
-  FOREIGN KEY (to_task)   REFERENCES tasks (local_id) ON DELETE CASCADE,
+  FOREIGN KEY (from_task) REFERENCES tasks (local_id) ON DELETE CASCADE ON UPDATE CASCADE,
+  FOREIGN KEY (to_task)   REFERENCES tasks (local_id) ON DELETE CASCADE ON UPDATE CASCADE,
   CHECK (from_task <> to_task)
 );
 
@@ -205,7 +303,7 @@ CREATE TABLE IF NOT EXISTS task_notes (
   author     TEXT,
   content    TEXT NOT NULL,
   created_at TEXT NOT NULL,
-  FOREIGN KEY (task_id) REFERENCES tasks (local_id) ON DELETE CASCADE
+  FOREIGN KEY (task_id) REFERENCES tasks (local_id) ON DELETE CASCADE ON UPDATE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_task_notes_task ON task_notes (task_id);
@@ -239,7 +337,7 @@ CREATE TABLE IF NOT EXISTS agent_logs (
   kind       TEXT NOT NULL DEFAULT 'message',
   payload    TEXT NOT NULL,
   created_at TEXT NOT NULL,
-  FOREIGN KEY (workstream) REFERENCES workstreams (name) ON DELETE CASCADE
+  FOREIGN KEY (workstream) REFERENCES workstreams (name) ON DELETE CASCADE ON UPDATE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_agent_logs_seq ON agent_logs (seq);
@@ -261,8 +359,8 @@ CREATE INDEX IF NOT EXISTS idx_agent_logs_source ON agent_logs (source);
 -- too. path is UNIQUE because two agents pointing at the same on-disk
 -- workspace would defeat the purpose.
 CREATE TABLE IF NOT EXISTS vcs_workspaces (
-  agent       TEXT PRIMARY KEY REFERENCES agents (name) ON DELETE CASCADE,
-  workstream  TEXT NOT NULL REFERENCES workstreams (name) ON DELETE CASCADE,
+  agent       TEXT PRIMARY KEY REFERENCES agents (name) ON DELETE CASCADE ON UPDATE CASCADE,
+  workstream  TEXT NOT NULL REFERENCES workstreams (name) ON DELETE CASCADE ON UPDATE CASCADE,
   backend     TEXT NOT NULL CHECK (backend IN ('jj', 'sl', 'git', 'none')),
   path        TEXT NOT NULL UNIQUE,
   parent_ref  TEXT,
@@ -286,7 +384,7 @@ CREATE INDEX IF NOT EXISTS idx_vcs_workspaces_workstream ON vcs_workspaces (work
 -- is FK CASCADE so destroying a workstream cleans pending approvals.
 CREATE TABLE IF NOT EXISTS approvals (
   slug         TEXT PRIMARY KEY,
-  workstream   TEXT REFERENCES workstreams (name) ON DELETE CASCADE,
+  workstream   TEXT REFERENCES workstreams (name) ON DELETE CASCADE ON UPDATE CASCADE,
   reason       TEXT NOT NULL,
   requested_by TEXT NOT NULL,
   status       TEXT NOT NULL DEFAULT 'pending'

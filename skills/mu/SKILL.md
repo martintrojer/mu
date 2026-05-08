@@ -432,6 +432,12 @@ mu sql "WITH RECURSIVE prereqs(node) AS (
           UNION
           SELECT from_task FROM task_edges, prereqs WHERE to_task = prereqs.node
         ) SELECT * FROM prereqs"
+
+# Rename a workstream (typo recovery). Every FK has ON UPDATE CASCADE
+# so children (agents, tasks, agent_logs, vcs_workspaces, approvals)
+# follow the rename atomically. Run `tmux rename-session -t mu-<old>
+# mu-<new>` afterwards if the tmux session is alive.
+mu sql "UPDATE workstreams SET name='auth-refactor' WHERE name='auth-refator'"
 ```
 
 ## Common patterns
