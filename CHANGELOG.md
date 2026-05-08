@@ -50,6 +50,20 @@ called out under "Breaking" in each entry.
 
 ### Added
 
+- **`mu workstream destroy` advertises `mu undo` in its `Next:`
+  block.** Closes `snap_destroy_safety` in roadmap-v0-2. Dry-run
+  output now includes a one-line note that a snapshot will be
+  taken before the destroy plus the explicit caveat that tmux
+  panes / on-disk workspace dirs are NOT rolled back. The `--yes`
+  output adds an `Undo` next-step. Both human and `--json` paths
+  carry the new hints (the JSON path adds a `nextSteps` field on
+  the `--yes` response when no workspace cleanups failed). The
+  destroy itself already auto-snapshotted via `captureSnapshot`
+  in `destroyWorkstream`; this is purely the user-visible
+  surface that promised `mu undo` discoverability. No new tests
+  — the existing 704-test gate exercises the dry-run/--yes/JSON
+  paths and they kept passing.
+
 - **`mu task reject --cascade` / `mu task defer --cascade` are now
   dry-run by default; require `--yes` to commit.** Surfaced live
   during roadmap-v0-2 hud cleanup: an accidental cascade reject

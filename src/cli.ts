@@ -574,6 +574,10 @@ async function cmdDestroy(
             intent: "Confirm and actually destroy",
             command: `mu workstream destroy -w ${workstream} --yes`,
           },
+          {
+            intent: "After destroying, undo if you regret it (DB only; tmux NOT rolled back)",
+            command: "mu undo --yes",
+          },
         ],
       });
       return;
@@ -591,10 +595,19 @@ async function cmdDestroy(
     );
     console.log("");
     console.log(pc.dim("(dry-run; rerun with --yes to actually destroy)"));
+    console.log(
+      pc.dim(
+        "A snapshot will be taken before the destroy; `mu undo --yes` reverts it (DB only — tmux panes / on-disk workspace dirs are NOT rolled back).",
+      ),
+    );
     printNextSteps([
       {
         intent: "Confirm and actually destroy",
         command: `mu workstream destroy -w ${workstream} --yes`,
+      },
+      {
+        intent: "After destroying, undo if you regret it",
+        command: "mu undo --yes",
       },
     ]);
     return;
@@ -602,7 +615,24 @@ async function cmdDestroy(
 
   const result = await destroyWorkstream(db, { workstream });
   if (opts.json) {
-    emitJson({ workstream, destroyed: true, ...result });
+    emitJson({
+      workstream,
+      destroyed: true,
+      ...result,
+      // snap_destroy_safety: machine-readable hint that the destroy is
+      // reversible (DB-only) via mu undo. Suppressed when there are
+      // workspace failures so the cleanup steps stay the headline.
+      nextSteps:
+        result.failedWorkspaces.length === 0
+          ? [
+              {
+                intent:
+                  "Undo (a snapshot was taken before the destroy; DB only, tmux not rolled back)",
+                command: "mu undo --yes",
+              },
+            ]
+          : undefined,
+    });
     return;
   }
   console.log(pc.bold(`Workstream ${workstream} (tmux session ${summary.tmuxSession})`));
@@ -618,6 +648,17 @@ async function cmdDestroy(
   console.log(
     `Destroyed ${pc.bold(workstream)}: killed tmux=${result.killedTmux}, agents=${result.deletedAgents}, tasks=${result.deletedTasks}, edges=${result.deletedEdges}, notes=${result.deletedNotes}, workspaces=${result.freedWorkspaces}/${summary.workspaces}`,
   );
+  // snap_destroy_safety: advertise the undo path that destroyWorkstream
+  // gave us via captureSnapshot. Suppressed when there are workspace
+  // failures so the WARNING + cleanup steps below stay the headline.
+  if (result.failedWorkspaces.length === 0) {
+    printNextSteps([
+      {
+        intent: "Undo (a snapshot was taken before the destroy; DB only, tmux not rolled back)",
+        command: "mu undo --yes",
+      },
+    ]);
+  }
   if (result.failedWorkspaces.length > 0) {
     console.log("");
     console.log(
