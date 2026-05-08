@@ -3617,32 +3617,26 @@ function recentLogPreview(db: Db, workstream: string): string | undefined {
   return `${payload} +${ago}`;
 }
 
-async function cmdAttach(name: string, opts: { workstream?: string }): Promise<void> {
+async function cmdAttach(db: Db, name: string, opts: { workstream?: string }): Promise<void> {
   const workstream = await resolveWorkstream(opts.workstream);
   const sessionName = `mu-${workstream}`;
   if (!(await sessionExists(sessionName))) {
     throw new UsageError(`workstream "${workstream}" has no tmux session yet`);
   }
-  // Verify the agent exists (open DB just for this).
-  const db = openDb();
-  try {
-    const view = await listLiveAgents(db, { workstream });
-    const agent = view.agents.find((a) => a.name === name);
-    if (!agent) {
-      throw new AgentNotFoundError(name);
-    }
-    // Capture and print its scrollback.
-    const text = await capturePane(agent.paneId);
-    process.stdout.write(text);
-    console.log("");
-    console.log(
-      pc.dim(
-        `Attach with: tmux a -t ${sessionName} && tmux select-window -t ${agent.tab ?? agent.name}`,
-      ),
-    );
-  } finally {
-    db.close();
+  const view = await listLiveAgents(db, { workstream });
+  const agent = view.agents.find((a) => a.name === name);
+  if (!agent) {
+    throw new AgentNotFoundError(name);
   }
+  // Capture and print its scrollback.
+  const text = await capturePane(agent.paneId);
+  process.stdout.write(text);
+  console.log("");
+  console.log(
+    pc.dim(
+      `Attach with: tmux a -t ${sessionName} && tmux select-window -t ${agent.tab ?? agent.name}`,
+    ),
+  );
 }
 
 // ─── Numeric arg parser (for --impact, --effort-days) ────────────────
@@ -3944,19 +3938,12 @@ export function buildProgram(): Command {
     .command("attach <name>")
     .description("Print an agent's full scrollback and the tmux command to attach")
     .option(...WORKSTREAM_OPT)
-    .action(async function (name: string) {
+    .action(function (name: string) {
       const opts = (this as Command).opts() as { workstream?: string };
-      try {
-        await cmdAttach(name, opts);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        if (err instanceof AgentNotFoundError) {
-          console.error(pc.red(`not found: ${msg}`));
-          process.exit(3);
-        }
-        console.error(pc.red(`error: ${msg}`));
-        process.exit(1);
-      }
+      // Routed through handle() like every other verb — errorNextSteps
+      // fire on typed errors, exit codes classify uniformly
+      // (review_code_attach_bypasses_handle).
+      return handle((db) => cmdAttach(db, name, opts))();
     });
 
   // ─── task ───────────────────────────────────────────────────────────
