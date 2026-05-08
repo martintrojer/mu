@@ -153,17 +153,40 @@ export function idFromTitle(db: Db, workstream: string, title: string): string {
 
 // ─── Errors ────────────────────────────────────────────────────────────
 
-export class TaskNotFoundError extends Error {
+export class TaskNotFoundError extends Error implements HasNextSteps {
   override readonly name = "TaskNotFoundError";
   constructor(public readonly taskId: string) {
     super(`no such task: ${taskId}`);
   }
+  errorNextSteps(): NextStep[] {
+    return [
+      { intent: "List tasks in workstream", command: "mu task list -w <workstream>" },
+      {
+        intent: "Search by substring (id + title)",
+        command: `mu task search ${this.taskId} --all`,
+      },
+      { intent: "Find which workstream owns it", command: `mu task search ${this.taskId} --all` },
+    ];
+  }
 }
 
-export class TaskExistsError extends Error {
+export class TaskExistsError extends Error implements HasNextSteps {
   override readonly name = "TaskExistsError";
   constructor(public readonly taskId: string) {
     super(`task already exists: ${taskId}`);
+  }
+  errorNextSteps(): NextStep[] {
+    return [
+      { intent: "Show the existing task", command: `mu task show ${this.taskId}` },
+      {
+        intent: "Update fields on the existing task",
+        command: `mu task update ${this.taskId} --title "..." --impact <n> --effort-days <n>`,
+      },
+      {
+        intent: "Pick a different id",
+        command: 'mu task add <new-id> --title "..." --impact <n> --effort-days <n>',
+      },
+    ];
   }
 }
 
@@ -174,7 +197,7 @@ export class TaskExistsError extends Error {
  * (which surfaces as `TaskNotFoundError`). Maps to exit code 4
  * (conflict / wrong scope).
  */
-export class TaskNotInWorkstreamError extends Error {
+export class TaskNotInWorkstreamError extends Error implements HasNextSteps {
   override readonly name = "TaskNotInWorkstreamError";
   constructor(
     public readonly taskId: string,
@@ -183,15 +206,40 @@ export class TaskNotInWorkstreamError extends Error {
   ) {
     super(`task ${taskId} is in workstream ${actualWorkstream}, not ${expectedWorkstream}`);
   }
+  errorNextSteps(): NextStep[] {
+    return [
+      {
+        intent: "Use the correct workstream",
+        command: `mu task show ${this.taskId} -w ${this.actualWorkstream}`,
+      },
+      {
+        intent: "List tasks in the requested workstream",
+        command: `mu task list -w ${this.expectedWorkstream}`,
+      },
+    ];
+  }
 }
 
-export class TaskAlreadyOwnedError extends Error {
+export class TaskAlreadyOwnedError extends Error implements HasNextSteps {
   override readonly name = "TaskAlreadyOwnedError";
   constructor(
     public readonly taskId: string,
     public readonly currentOwner: string,
   ) {
     super(`task ${taskId} is already owned by ${currentOwner}`);
+  }
+  errorNextSteps(): NextStep[] {
+    return [
+      {
+        intent: "See the current owner's task list",
+        command: `mu task owned-by ${this.currentOwner}`,
+      },
+      {
+        intent: "Release the current claim (if you ARE the owner)",
+        command: `mu task release ${this.taskId}`,
+      },
+      { intent: "Show full task state", command: `mu task show ${this.taskId}` },
+    ];
   }
 }
 
@@ -242,7 +290,7 @@ export class ClaimerNotRegisteredError extends Error implements HasNextSteps {
   }
 }
 
-export class CycleError extends Error {
+export class CycleError extends Error implements HasNextSteps {
   override readonly name = "CycleError";
   constructor(
     public readonly from: string,
@@ -250,9 +298,25 @@ export class CycleError extends Error {
   ) {
     super(`adding edge ${from} -> ${to} would create a cycle`);
   }
+  errorNextSteps(): NextStep[] {
+    return [
+      {
+        intent: "Show the dependency tree",
+        command: `mu task tree ${this.to} --down`,
+      },
+      {
+        intent: "Show the prereq tree (what blocks the from-task)",
+        command: `mu task tree ${this.from}`,
+      },
+      {
+        intent: "Remove an edge in the path to break the cycle",
+        command: "mu task unblock <blocked> --by <blocker>",
+      },
+    ];
+  }
 }
 
-export class CrossWorkstreamEdgeError extends Error {
+export class CrossWorkstreamEdgeError extends Error implements HasNextSteps {
   override readonly name = "CrossWorkstreamEdgeError";
   constructor(
     public readonly blocker: string,
@@ -263,6 +327,22 @@ export class CrossWorkstreamEdgeError extends Error {
     super(
       `cross-workstream edge: blocker '${blocker}' is in workstream '${blockerWorkstream}', dependent '${dependent}' is in workstream '${dependentWorkstream}'`,
     );
+  }
+  errorNextSteps(): NextStep[] {
+    return [
+      {
+        intent: "Move the blocker into the dependent's workstream",
+        command: `mu sql "UPDATE tasks SET workstream='${this.dependentWorkstream}' WHERE local_id='${this.blocker}'"`,
+      },
+      {
+        intent: "Or merge the two workstreams (rename one to the other)",
+        command: `mu sql "UPDATE workstreams SET name='${this.dependentWorkstream}' WHERE name='${this.blockerWorkstream}'"`,
+      },
+      {
+        intent: "Or duplicate the blocker (typed verb deferred)",
+        command: `mu task add <new-id> -w ${this.dependentWorkstream} --title "<copy of ${this.blocker}>" --impact <n> --effort-days <n>`,
+      },
+    ];
   }
 }
 

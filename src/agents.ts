@@ -16,6 +16,7 @@
 import type { Db } from "./db.js";
 import type { AgentStatus } from "./detect.js";
 import { emitEvent } from "./logs.js";
+import type { HasNextSteps, NextStep } from "./output.js";
 import { type ReconcileReport, reconcile } from "./reconcile.js";
 import { addNote } from "./tasks.js";
 import {
@@ -279,17 +280,40 @@ export interface SpawnAgentOptions {
   workspaceProjectRoot?: string;
 }
 
-export class AgentExistsError extends Error {
+export class AgentExistsError extends Error implements HasNextSteps {
   override readonly name = "AgentExistsError";
   constructor(public readonly agentName: string) {
     super(`agent already exists: ${agentName}`);
   }
+  errorNextSteps(): NextStep[] {
+    return [
+      {
+        intent: "Find which workstream the existing agent is in",
+        command: `mu agent list -w * --json | jq '.[] | select(.agents[].name == "${this.agentName}")'`,
+      },
+      {
+        intent: "Close the existing agent and re-spawn",
+        command: `mu agent close ${this.agentName}  &&  mu agent spawn ${this.agentName} -w <workstream>`,
+      },
+      { intent: "Pick a different name", command: "mu agent spawn <new-name> -w <workstream>" },
+    ];
+  }
 }
 
-export class AgentNotFoundError extends Error {
+export class AgentNotFoundError extends Error implements HasNextSteps {
   override readonly name = "AgentNotFoundError";
   constructor(public readonly agentName: string) {
     super(`no such agent: ${agentName}`);
+  }
+  errorNextSteps(): NextStep[] {
+    return [
+      { intent: "List agents in current workstream", command: "mu agent list" },
+      { intent: "List agents across ALL workstreams", command: "mu agent list -w *" },
+      {
+        intent: "Spawn it now",
+        command: `mu agent spawn ${this.agentName} -w <workstream>`,
+      },
+    ];
   }
 }
 
@@ -301,7 +325,7 @@ export class AgentNotFoundError extends Error {
  * "the agent doesn't exist anywhere" (which surfaces as
  * `AgentNotFoundError`).
  */
-export class AgentNotInWorkstreamError extends Error {
+export class AgentNotInWorkstreamError extends Error implements HasNextSteps {
   override readonly name = "AgentNotInWorkstreamError";
   constructor(
     public readonly agentName: string,
@@ -309,6 +333,18 @@ export class AgentNotInWorkstreamError extends Error {
     public readonly actualWorkstream: string,
   ) {
     super(`agent ${agentName} is in workstream ${actualWorkstream}, not ${expectedWorkstream}`);
+  }
+  errorNextSteps(): NextStep[] {
+    return [
+      {
+        intent: "Use the agent's actual workstream",
+        command: `mu agent show ${this.agentName} -w ${this.actualWorkstream}`,
+      },
+      {
+        intent: "List agents in the requested workstream",
+        command: `mu agent list -w ${this.expectedWorkstream}`,
+      },
+    ];
   }
 }
 
@@ -320,7 +356,7 @@ export class AgentNotInWorkstreamError extends Error {
  * lock, `claude` rejecting an invalid API key, etc. The agent's last
  * scrollback (when capturable) is attached to help diagnose.
  */
-export class AgentDiedOnSpawnError extends Error {
+export class AgentDiedOnSpawnError extends Error implements HasNextSteps {
   override readonly name = "AgentDiedOnSpawnError";
   constructor(
     public readonly agentName: string,
@@ -332,6 +368,19 @@ export class AgentDiedOnSpawnError extends Error {
     super(
       `agent ${agentName} died within ${defaultSpawnLivenessMs()}ms of spawn (pane ${paneId}). Most common cause: the spawned CLI exited immediately (e.g. a wrapper CLI blocking on its instance lock; set MU_<UPPER_CLI>_COMMAND to a non-blocking variant to bypass).${detail}`,
     );
+  }
+  errorNextSteps(): NextStep[] {
+    return [
+      {
+        intent: "Override the spawn command to a non-blocking variant",
+        command: 'export MU_PI_COMMAND="pi-alt --some-flag"   (or pass --command "..." to spawn)',
+      },
+      {
+        intent: "Disable the liveness check (CI / known long-lived sh subprocess)",
+        command: "export MU_SPAWN_LIVENESS_MS=0",
+      },
+      { intent: "Run health check", command: "mu doctor" },
+    ];
   }
 }
 

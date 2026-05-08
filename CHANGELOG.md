@@ -50,6 +50,59 @@ called out under "Breaking" in each entry.
 
 ### Added
 
+- **Every typed error class carries actionable `errorNextSteps()`.**
+  Second commit of the selfdoc track (after the infra commit). The
+  bare error message identifies what failed; the structured
+  resolutions tell the caller exactly what to try next, in
+  expected-frequency order.
+
+  Errors converted to `HasNextSteps`:
+  - `TaskNotFoundError`        — list / search / find-the-workstream
+  - `TaskExistsError`          — show / update / pick a different id
+  - `TaskNotInWorkstreamError` — use actual ws / list expected ws
+  - `TaskAlreadyOwnedError`    — see owner's tasks / release / show
+  - `CycleError`               — show tree / show prereqs / unblock
+  - `CrossWorkstreamEdgeError` — move task / merge ws / duplicate
+  - `AgentExistsError`         — find ws / close+respawn / new name
+  - `AgentNotFoundError`       — list / list-all / spawn now
+  - `AgentNotInWorkstreamError`— use actual ws / list expected ws
+  - `AgentDiedOnSpawnError`    — override command / disable liveness / doctor
+  - `TmuxError`                — doctor / tmux info / repro the failing tmux call
+  - `PaneNotFoundError`        — list-panes -a / mu agent list -w * / orphans
+  - `WorkspaceExistsError`     — path / free / re-create
+  - `WorkspaceNotFoundError`   — list / list-all / create
+  - `ApprovalNotFoundError`    — list / list-all / filter by status
+  - `ApprovalAlreadyDecidedError` — show existing / create new
+  - `ApprovalNotInWorkstreamError`— use actual ws / list-all
+  - `WorkstreamNameInvalidError` — sanitised name suggestion + list
+
+  Several errors compute resolutions from their carried context:
+  - `TaskNotInWorkstreamError` shows the actual workstream name
+    (not just "the correct one").
+  - `WorkstreamNameInvalidError` lowercases + strips `mu-` + replaces
+    `.`/`:` with `_` to suggest a working name.
+  - `ClaimerNotRegisteredError` (already converted in selfdoc_infra)
+    pins the `$TMUX_PANE` id into the literal `mu adopt %<pane>`
+    command.
+
+  All resolutions surface in both human-prose stderr (dim indented
+  block under "Next:") and JSON-error stderr (`nextSteps` array
+  inside the `{error, message, nextSteps, exitCode}` record).
+
+  Tests: `test/error-nextsteps.test.ts` covers all 18 error
+  classes with a generic well-formed-steps assertion plus 5 class-
+  specific structural assertions (e.g. ClaimerNotRegisteredError
+  pins the pane id, WorkstreamNameInvalidError lowercases the
+  prefix). 26 new tests; 541 total.
+
+  Bug caught by dogfood during this commit:
+  `WorkstreamNameInvalidError` originally matched `^mu-` case-
+  sensitively, so `Mu-Foo.Bar` came out as `mu workstream init
+  mu-foo_bar` — still invalid (mu- prefix). Fixed to lowercase
+  before stripping. Test strengthened to use a mixed-case input.
+
+  Closes `selfdoc_errors` in workstream `roadmap-v0-2`.
+
 - **Self-documenting verb output: `nextSteps` hints + structured
   JSON errors.** Every successful invocation now answers "what
   changed AND what's the natural next step?"; every error answers

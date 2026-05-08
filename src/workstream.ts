@@ -16,6 +16,7 @@
 
 import type { Db } from "./db.js";
 import { emitEvent } from "./logs.js";
+import type { HasNextSteps, NextStep } from "./output.js";
 import { killSession, listSessions, sessionExists } from "./tmux.js";
 
 /**
@@ -47,13 +48,29 @@ export function isValidWorkstreamName(name: string): boolean {
 
 /** Thrown by `ensureWorkstream` and `mu workstream init` when the name
  *  doesn't match the rules. */
-export class WorkstreamNameInvalidError extends Error {
+export class WorkstreamNameInvalidError extends Error implements HasNextSteps {
   override readonly name = "WorkstreamNameInvalidError";
   constructor(public readonly attempted: string) {
     const reason = attempted.startsWith(RESERVED_WORKSTREAM_PREFIX)
       ? `the 'mu-' prefix is reserved (mu auto-prepends 'mu-' to derive the tmux session name; '${attempted}' would produce session 'mu-${attempted}', which is double-prefixed and almost never what you want). Drop the 'mu-' from the workstream name.`
       : `must match /^[a-z][a-z0-9_-]{0,31}$/. tmux silently rewrites '.' to '_' and reserves ':' as a target separator, so workstream names containing those characters would create tmux sessions mu couldn't look up afterwards. Use letters, digits, '_', and '-' only.`;
     super(`invalid workstream name ${JSON.stringify(attempted)}: ${reason}`);
+  }
+  errorNextSteps(): NextStep[] {
+    // Suggest a sanitized form: strip the mu- prefix; replace dots and
+    // colons with underscores; lowercase.
+    const sanitized = this.attempted
+      .toLowerCase()
+      .replace(/^mu-/, "")
+      .replace(/[.:]/g, "_")
+      .slice(0, 32);
+    return [
+      {
+        intent: "Try a sanitized name (best guess)",
+        command: `mu workstream init ${sanitized || "<name>"}`,
+      },
+      { intent: "List existing workstreams", command: "mu workstream list" },
+    ];
   }
 }
 

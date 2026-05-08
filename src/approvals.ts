@@ -14,6 +14,7 @@
 import { randomBytes } from "node:crypto";
 import type { Db } from "./db.js";
 import { emitEvent } from "./logs.js";
+import type { HasNextSteps, NextStep } from "./output.js";
 import { sleep } from "./tmux.js";
 
 export type ApprovalStatus = "pending" | "granted" | "denied" | "timeout";
@@ -53,20 +54,42 @@ function rowFromDb(row: RawApprovalRow): ApprovalRow {
   };
 }
 
-export class ApprovalNotFoundError extends Error {
+export class ApprovalNotFoundError extends Error implements HasNextSteps {
   override readonly name = "ApprovalNotFoundError";
   constructor(public readonly slug: string) {
     super(`no such approval: ${slug}`);
   }
+  errorNextSteps(): NextStep[] {
+    return [
+      { intent: "List approvals in current workstream", command: "mu approve list" },
+      { intent: "List across ALL workstreams", command: "mu approve list --all" },
+      {
+        intent: "Filter by status (pending / granted / denied / timeout)",
+        command: "mu approve list --all --status pending",
+      },
+    ];
+  }
 }
 
-export class ApprovalAlreadyDecidedError extends Error {
+export class ApprovalAlreadyDecidedError extends Error implements HasNextSteps {
   override readonly name = "ApprovalAlreadyDecidedError";
   constructor(
     public readonly slug: string,
     public readonly status: ApprovalStatus,
   ) {
     super(`approval ${slug} already ${status}`);
+  }
+  errorNextSteps(): NextStep[] {
+    return [
+      {
+        intent: "Show the existing approval (look at decided_by / decided_at)",
+        command: `mu sql "SELECT * FROM approvals WHERE slug='${this.slug}'"`,
+      },
+      {
+        intent: "Create a new approval request (slugs are unique)",
+        command: 'mu approve add --reason "..."',
+      },
+    ];
   }
 }
 
@@ -77,7 +100,7 @@ export class ApprovalAlreadyDecidedError extends Error {
  * `AgentNotInWorkstreamError`. Maps to exit code 4 (conflict / wrong
  * scope).
  */
-export class ApprovalNotInWorkstreamError extends Error {
+export class ApprovalNotInWorkstreamError extends Error implements HasNextSteps {
   override readonly name = "ApprovalNotInWorkstreamError";
   constructor(
     public readonly slug: string,
@@ -87,6 +110,22 @@ export class ApprovalNotInWorkstreamError extends Error {
   ) {
     const actual = actualWorkstream ?? "<global, workstream-less>";
     super(`approval ${slug} is in workstream ${actual}, not ${expectedWorkstream}`);
+  }
+  errorNextSteps(): NextStep[] {
+    const steps: NextStep[] = [];
+    if (this.actualWorkstream !== null) {
+      steps.push({
+        intent: "Use the approval's actual workstream",
+        command: `mu approve grant ${this.slug} -w ${this.actualWorkstream}`,
+      });
+    } else {
+      steps.push({
+        intent: "Approval is workstream-less; omit -w",
+        command: `mu approve grant ${this.slug}`,
+      });
+    }
+    steps.push({ intent: "Or list across all workstreams", command: "mu approve list --all" });
+    return steps;
   }
 }
 

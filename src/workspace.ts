@@ -19,6 +19,7 @@ import { join } from "node:path";
 import type { Db } from "./db.js";
 import { defaultStateDir } from "./db.js";
 import { emitEvent } from "./logs.js";
+import type { HasNextSteps, NextStep } from "./output.js";
 import { type VcsBackendName, backendByName, detectBackend } from "./vcs.js";
 
 export interface WorkspaceRow {
@@ -50,17 +51,40 @@ function rowFromDb(row: RawWorkspaceRow): WorkspaceRow {
   };
 }
 
-export class WorkspaceExistsError extends Error {
+export class WorkspaceExistsError extends Error implements HasNextSteps {
   override readonly name = "WorkspaceExistsError";
   constructor(public readonly agent: string) {
     super(`workspace already exists for agent: ${agent}`);
   }
+  errorNextSteps(): NextStep[] {
+    return [
+      { intent: "Show its on-disk path", command: `mu workspace path ${this.agent}` },
+      {
+        intent: "Free it (optionally --commit pending changes first)",
+        command: `mu workspace free ${this.agent}  (--commit to commit pending changes first)`,
+      },
+      {
+        intent: "Then re-create with a different backend or base ref",
+        command: `mu workspace create ${this.agent} --backend <jj|sl|git|none> --from <ref>`,
+      },
+    ];
+  }
 }
 
-export class WorkspaceNotFoundError extends Error {
+export class WorkspaceNotFoundError extends Error implements HasNextSteps {
   override readonly name = "WorkspaceNotFoundError";
   constructor(public readonly agent: string) {
     super(`no workspace for agent: ${agent}`);
+  }
+  errorNextSteps(): NextStep[] {
+    return [
+      { intent: "List workspaces in current workstream", command: "mu workspace list" },
+      { intent: "List workspaces across all workstreams", command: "mu workspace list --all" },
+      {
+        intent: "Create one for this agent",
+        command: `mu workspace create ${this.agent}`,
+      },
+    ];
   }
 }
 

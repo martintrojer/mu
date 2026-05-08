@@ -17,10 +17,11 @@
 // copy mode if the user has scrolled up. Use `sendToPane()`.
 
 import { execa } from "execa";
+import type { HasNextSteps, NextStep } from "./output.js";
 
 // ─── Error type ────────────────────────────────────────────────────────
 
-export class TmuxError extends Error {
+export class TmuxError extends Error implements HasNextSteps {
   constructor(
     public readonly args: readonly string[],
     public readonly stderr: string,
@@ -31,6 +32,19 @@ export class TmuxError extends Error {
     super(`tmux ${args.join(" ")} failed (exit ${exitCode}): ${detail}`);
     this.name = "TmuxError";
   }
+  errorNextSteps(): NextStep[] {
+    return [
+      { intent: "Run health check", command: "mu doctor" },
+      {
+        intent: "Verify tmux is running and reachable",
+        command: "tmux info | head",
+      },
+      {
+        intent: "Check the failing tmux command in isolation",
+        command: `tmux ${this.args.join(" ")}`,
+      },
+    ];
+  }
 }
 
 /**
@@ -40,10 +54,27 @@ export class TmuxError extends Error {
  * (`mu` maps it to 5 — substrate failure — alongside other tmux
  * issues, but the message is more actionable than a raw tmux stderr).
  */
-export class PaneNotFoundError extends Error {
+export class PaneNotFoundError extends Error implements HasNextSteps {
   override readonly name = "PaneNotFoundError";
   constructor(public readonly paneId: string) {
     super(`tmux pane not found: ${paneId}`);
+  }
+  errorNextSteps(): NextStep[] {
+    return [
+      {
+        intent: "List all live panes across all sessions",
+        command:
+          "tmux list-panes -a -F '#{session_name}:#{window_id}.#{pane_id}\\t#{pane_title}\\t#{pane_current_command}'",
+      },
+      {
+        intent: "List mu-managed agents (registered)",
+        command: "mu agent list -w *",
+      },
+      {
+        intent: "List orphan panes (look like agents, not registered)",
+        command: "mu agent list -w * --json | jq '.[] | .orphans'",
+      },
+    ];
   }
 }
 
