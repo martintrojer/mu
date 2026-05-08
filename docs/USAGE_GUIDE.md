@@ -640,6 +640,7 @@ mu sql "SELECT name FROM sqlite_master WHERE type IN ('table','view') ORDER BY t
 | Replace all blockers atomically                       | `mu task reparent <id> --blocked-by ...`    |
 | Modify scalar fields                                  | `mu task update <id> [--title ...]`     |
 | Read the activity log / subscribe to events           | `mu log [--tail] [--kind event]`        |
+| Block until tasks reach a status (orchestrator wait)  | `mu task wait <id> [<id>...] [--any] [--timeout S]` |
 
 ### Common ad-hoc queries
 

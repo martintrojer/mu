@@ -242,6 +242,9 @@ mu task block <blocked> --by <blocker>     # cycle + workstream checked
 mu task unblock <blocked> --by <blocker>
 mu task update <id> [--title|--impact|--effort-days]
 mu task reparent <id> --blocked-by A,B   # atomic edge replacement
+mu task wait <id> [<id>...] [--status S] [--any] [--timeout SECONDS]
+                                         # block until tasks reach status
+                                         # (default CLOSED, all-of); exit 0 / 5
 mu task delete <id>                  # cascades to edges+notes; no undo
 
 # Self-identification (3) — in-pane only
@@ -460,26 +463,38 @@ the status emoji for high-stakes calls.
 
 ### After spawning, observe — don't fire-and-forget
 
-Orchestrator loop step 6 in operational form. Pick one of two
-patterns; never bare `mu agent send` with no follow-up.
+Orchestrator loop step 6 in operational form. Three patterns,
+three distinct shapes:
 
-**Subscribe (react when state changes; zero polling cost):**
+**Wait for tasks (the common case; one verb):**
 
 ```bash
-mu log -w infer-rs --kind event --tail | \
-  awk '/task status .*CLOSED/ { print; system("...") }'
+mu task wait worker-task-a worker-task-b --timeout 1200
+# Block until both reach CLOSED. exit 0 = done; exit 5 = timeout.
+# Use --any to exit on first one done.
 ```
 
-Every state-changing verb auto-emits a `kind='event'` row. Best
-for "start the next worker when this blocker closes" or "escalate
-when a task gets reaped."
+This covers the orchestrator loop's most common shape: dispatch
+N workers, wait for all of them, review/merge. Don't reach for
+`mu log --tail | awk '...'` here; the awk pattern doesn't
+compose past one task.
 
-**Poll (heartbeat narrative; transitions over time):**
+**Stream events (dashboard; never exits on its own):**
+
+```bash
+mu log -w infer-rs --kind event --tail
+```
+
+For watching state changes scroll by as they happen. Useful as a
+background tab the operator glances at; not a programmatic
+coordination primitive.
+
+**Heartbeat poll (per-agent narrative; rare):**
 
 ```bash
 last=""
 while true; do
-  cur=$(mu agent show worker-1 -w infer-rs --json | jq -r .agent.status)
+  cur=$(mu agent show worker-1 --json | jq -r .agent.status)
   if [[ "$cur" != "$last" ]]; then
     echo "[$(date -Iseconds)] worker-1: $last → $cur"
     last="$cur"
@@ -489,14 +504,15 @@ while true; do
 done
 ```
 
-5–10s intervals are fine; faster adds tmux capture-pane load
-without real-time benefit. Best for a running per-worker
-narrative.
+For watching agent-status transitions specifically (which `mu task
+wait` doesn't cover — status is per-agent, not per-task). 5–10s
+intervals are fine; faster adds tmux capture-pane load with no
+real-time benefit.
 
 Anti-pattern: bare `mu agent send` with no follow-up. The worker
 stalls in `needs_input` for hours; the operator finds out later.
-The activity log is why mu doesn't need a daemon — it IS the
-coordination channel; use it.
+The activity log + `mu task wait` are why mu doesn't need a
+daemon — the DB IS the coordination channel; use it.
 
 ### Tear down a workstream (no undo)
 
@@ -568,14 +584,33 @@ shell control flow.
 
 ### When you need to wait for another agent to finish
 
-Subscribe to events instead of polling `mu task ready` every 5s.
+Use `mu task wait`. One verb for every wait-for-tasks shape:
 
 ```bash
 # Wait until 'design' closes, then start the next thing
-mu log -w "$(mu whoami --json | jq -r .agent.workstream)" --kind event --tail | \
-  awk '/task status design.*CLOSED/ { exit 0 }'
-mu task claim build_auth --evidence "design closed at $(date -Iseconds)"
+mu task wait design && mu task claim build_auth --self --evidence 'design closed'
+
+# Dispatch 3 workers, wait for ALL of them, then review
+for t in design build_a build_b; do mu task claim $t --for worker-${t} --evidence ...; done
+mu task wait design build_a build_b --timeout 1200
+# exit 0 = all closed; exit 5 = timeout (per-task investigate hint shown).
+
+# Race: act on the FIRST worker to close (--any)
+mu task wait probe_a probe_b probe_c --any --timeout 600 --json | jq .tasks
+
+# Other terminal states (rare)
+mu task wait foo --status IN_PROGRESS --timeout 30
 ```
+
+Semantics: block until all listed tasks reach `--status CLOSED`
+(default), or until `--timeout SECONDS` (default 600). Pass `--any`
+to exit on the first one. Exit 0 = condition met; exit 5 = timeout.
+Missing task ids fail-loud (exit 3) before any waiting begins.
+
+`mu log --tail` still exists for streaming dashboards ("show me
+every state change as it happens") — different shape, different
+job. Don't reach for `mu log --tail | awk '...'` for wait-style
+coordination; `mu task wait` is the right tool.
 
 ## DOs
 
@@ -603,7 +638,10 @@ mu task claim build_auth --evidence "design closed at $(date -Iseconds)"
   same repo. Default-on, not exception.
 - **Single-quote prompts containing `$VAR`, `$(...)`, backticks.**
   Otherwise your shell expands them before mu sees them.
-- **Subscribe via `mu log --tail` instead of polling.**
+- **Use `mu task wait` to block until task(s) reach a status**
+  (the orchestrator's most common wait pattern). For a streaming
+  view of all events, `mu log --tail`; don't pipe `--tail | awk` for
+  multi-task waits.
 - **Use `--json` for scripting; `mu sql` for what the typed verbs
   don't cover.**
 - **Prefer narrow, correct changes over broad rewrites.**

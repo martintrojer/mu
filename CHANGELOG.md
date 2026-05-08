@@ -50,6 +50,76 @@ called out under "Breaking" in each entry.
 
 ### Added
 
+- **`mu task wait <ids...>` blocks until tasks reach a status.**
+  The orchestrator's most common wait pattern, finally first-class.
+  Before this verb, multi-task waits were a 30+ line bash+python+sql
+  polling loop hand-rolled by the orchestrator; the
+  `mu log --tail | awk '...'` pattern only handled ONE task because
+  the awk script becomes stateful for N.
+
+  Behaviour:
+
+      mu task wait <id> [<id>...] [--status CLOSED] [--any]
+                       [--timeout SECONDS] [-w <ws>] [--json]
+
+  - Default: every listed task must reach `--status` (default CLOSED).
+  - `--any`: succeed as soon as ONE listed task reaches the status.
+    Useful for parallel-race patterns ('act on the first worker done').
+  - `--timeout SECONDS` (default 600 = 10 min). 0 = forever (matches
+    `mu approve wait`).
+  - Exit 0: condition met. Exit 5: timeout (mirrors `mu approve wait`).
+  - Exit 3: any listed task doesn't exist (TaskNotFoundError pre-flight,
+    loud-fail by design — a typo'd id silently waiting forever is
+    the worst-case UX).
+  - `--json`: emits a structured result with per-task state + the
+    `allReached` / `anyReached` / `elapsedMs` / `timedOut` flags +
+    `nextSteps` hints ("investigate <id>" for laggards on timeout).
+
+  Live demo:
+
+      $ mu task wait closed_task open_task --timeout 3
+      Timed out after 3003ms
+        ✓ closed_task (CLOSED)
+        • open_task (OPEN)
+      Next:
+        Investigate open_task (status=OPEN) : mu task show open_task -w roadmap-v0-2
+      exit: 5
+
+      $ mu task wait closed_task --json
+      {"tasks":[{"localId":"closed_task","status":"CLOSED","reachedTarget":true}],
+       "allReached":true,"anyReached":true,"elapsedMs":0,"timedOut":false,...}
+
+  Implementation: `waitForTasks(db, ids, opts)` SDK in `src/tasks.ts`
+  mirrors `waitApproval`'s shape exactly. Initial check (immediate
+  return if already satisfied) + 1s poll loop on the tasks table. We
+  poll the table directly rather than subscribing to `agent_logs`
+  because (a) we'd still need to re-query tasks to learn the current
+  status, (b) some status changes happen via `mu sql` which doesn't
+  emit events, and (c) one indexed SELECT every second is cheaper
+  than parsing the log stream.
+
+  Coordination patterns now have clean separation — each pattern
+  owns its niche, no overlap:
+
+      Want                                          | Use
+      ----------------------------------------------|----------------------
+      Block until task(s) reach status X            | mu task wait ← NEW
+      Stream all events as they happen              | mu log --tail
+      Block until human grants/denies an approval   | mu approve wait
+      Per-agent narrative with status transitions   | hand-rolled poll (rare)
+
+  SKILL.md (§ 'After spawning, observe') is rewritten around the
+  three-pattern split. The previous awk-pipe pattern is gone from
+  the canonical examples; it remains a valid fallback for ad-hoc
+  one-event waits but is no longer the recommended approach.
+
+  Tests: 10 cases in `test/tasks.test.ts` covering immediate-return,
+  block-until, timeout, `--any`, non-default status, missing-task,
+  empty-list, partial-progress timeout, and survives-mid-wait-deletion.
+  592 tests total.
+
+  Closes `nit_no_mu_task_wait` in workstream `roadmap-v0-2`.
+
 - **Spawned agent panes inherit identifying env vars** (`MU_MANAGED_AGENT=1`,
   `MU_AGENT_NAME=<name>`, `MU_WORKSTREAM=<name>`) so anything running
   inside (pi extensions, claim-protocol scripts, status segments) can

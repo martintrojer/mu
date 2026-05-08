@@ -41,6 +41,7 @@ import {
   setTaskStatus,
   slugifyTitle,
   updateTask,
+  waitForTasks,
 } from "../src/tasks.js";
 import { type TmuxExecutor, resetTmuxExecutor, setTmuxExecutor } from "../src/tmux.js";
 
@@ -1574,5 +1575,103 @@ describe("isTaskStatus", () => {
     expect(isTaskStatus("RESOLVED")).toBe(false); // not in the enum
     expect(isTaskStatus("")).toBe(false);
     expect(isTaskStatus("OPEN ")).toBe(false);
+  });
+});
+
+// ─── waitForTasks (verb) ───────────────────────────────────────────────────
+
+describe("waitForTasks", () => {
+  beforeEach(() => {
+    addTask(db, { localId: "a", workstream: "test", title: "A", impact: 50, effortDays: 1 });
+    addTask(db, { localId: "b", workstream: "test", title: "B", impact: 50, effortDays: 1 });
+    addTask(db, { localId: "c", workstream: "test", title: "C", impact: 50, effortDays: 1 });
+  });
+
+  it("returns immediately when the wait condition is already satisfied (--all default)", async () => {
+    setTaskStatus(db, "a", "CLOSED");
+    setTaskStatus(db, "b", "CLOSED");
+    setTaskStatus(db, "c", "CLOSED");
+    const r = await waitForTasks(db, ["a", "b", "c"], { pollMs: 50 });
+    expect(r.allReached).toBe(true);
+    expect(r.anyReached).toBe(true);
+    expect(r.timedOut).toBe(false);
+    expect(r.elapsedMs).toBeLessThan(100); // didn't sleep through any poll cycle
+    expect(r.tasks).toEqual([
+      { localId: "a", status: "CLOSED", reachedTarget: true },
+      { localId: "b", status: "CLOSED", reachedTarget: true },
+      { localId: "c", status: "CLOSED", reachedTarget: true },
+    ]);
+  });
+
+  it("returns immediately on --any when at least one task already reached the target", async () => {
+    setTaskStatus(db, "b", "CLOSED");
+    const r = await waitForTasks(db, ["a", "b", "c"], { any: true, pollMs: 50 });
+    expect(r.allReached).toBe(false);
+    expect(r.anyReached).toBe(true);
+    expect(r.timedOut).toBe(false);
+  });
+
+  it("blocks until the condition is met (poll loop wakes up on the next snapshot)", async () => {
+    // Schedule a status change to fire after one poll interval.
+    const flipAt = Date.now();
+    setTimeout(() => setTaskStatus(db, "a", "CLOSED"), 60);
+    const r = await waitForTasks(db, ["a"], { pollMs: 30, timeoutMs: 1000 });
+    expect(r.allReached).toBe(true);
+    expect(r.timedOut).toBe(false);
+    // Allow generous slack; assert we DID wait (not the immediate-exit path).
+    expect(Date.now() - flipAt).toBeGreaterThanOrEqual(30);
+  });
+
+  it("times out with timedOut=true and exit-code-mappable result when condition not met", async () => {
+    const r = await waitForTasks(db, ["a", "b"], { timeoutMs: 100, pollMs: 30 });
+    expect(r.timedOut).toBe(true);
+    expect(r.allReached).toBe(false);
+    expect(r.anyReached).toBe(false);
+    // Per-task state at exit time still useful for the caller.
+    expect(r.tasks.map((t) => t.status)).toEqual(["OPEN", "OPEN"]);
+  });
+
+  it("--any times out cleanly when no task reaches the target", async () => {
+    const r = await waitForTasks(db, ["a", "b"], { any: true, timeoutMs: 100, pollMs: 30 });
+    expect(r.timedOut).toBe(true);
+    expect(r.anyReached).toBe(false);
+  });
+
+  it("respects a non-default --status target (e.g. IN_PROGRESS)", async () => {
+    setTaskStatus(db, "a", "IN_PROGRESS");
+    setTaskStatus(db, "b", "IN_PROGRESS");
+    const r = await waitForTasks(db, ["a", "b"], { status: "IN_PROGRESS", pollMs: 50 });
+    expect(r.allReached).toBe(true);
+    expect(r.tasks.every((t) => t.status === "IN_PROGRESS")).toBe(true);
+  });
+
+  it("throws TaskNotFoundError pre-flight if any listed task doesn't exist (loud-fail)", async () => {
+    await expect(waitForTasks(db, ["a", "ghost", "b"], { timeoutMs: 1000 })).rejects.toBeInstanceOf(
+      TaskNotFoundError,
+    );
+  });
+
+  it("rejects an empty id list", async () => {
+    await expect(waitForTasks(db, [])).rejects.toThrow(/non-empty/);
+  });
+
+  it("partial-progress on timeout: some tasks reached, others didn't", async () => {
+    setTaskStatus(db, "a", "CLOSED");
+    // b stays OPEN → all-of fails on timeout but anyReached is true.
+    const r = await waitForTasks(db, ["a", "b"], { timeoutMs: 80, pollMs: 30 });
+    expect(r.timedOut).toBe(true);
+    expect(r.allReached).toBe(false);
+    expect(r.anyReached).toBe(true); // 'a' reached
+    expect(r.tasks[0]?.reachedTarget).toBe(true);
+    expect(r.tasks[1]?.reachedTarget).toBe(false);
+  });
+
+  it("survives a task being deleted mid-wait (treats it as 'never reached')", async () => {
+    setTimeout(() => deleteTask(db, "b"), 40);
+    const r = await waitForTasks(db, ["a", "b"], { timeoutMs: 120, pollMs: 30 });
+    expect(r.timedOut).toBe(true);
+    // 'b' was deleted; defensive snapshot defaults to 'OPEN' / not reached.
+    const bState = r.tasks.find((t) => t.localId === "b");
+    expect(bState?.reachedTarget).toBe(false);
   });
 });

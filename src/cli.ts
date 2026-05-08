@@ -70,6 +70,7 @@ import {
   TaskNotInWorkstreamError,
   type TaskNoteRow,
   type TaskRow,
+  type TaskWaitResult,
   type UpdateTaskOptions,
   addBlockEdge,
   addNote,
@@ -93,6 +94,7 @@ import {
   reparentTask,
   searchTasks,
   updateTask,
+  waitForTasks,
 } from "./tasks.js";
 import {
   PaneNotFoundError,
@@ -1968,6 +1970,85 @@ async function cmdTaskReparent(
   printNextSteps(nextSteps);
 }
 
+async function cmdTaskWait(
+  db: Db,
+  ids: readonly string[],
+  opts: {
+    status?: string;
+    any?: boolean;
+    timeout?: number;
+    workstream?: string;
+    json?: boolean;
+  },
+): Promise<void> {
+  if (ids.length === 0) {
+    throw new UsageError("mu task wait: at least one task id is required");
+  }
+  // Validate status (default CLOSED). Same parser as mu task list --status.
+  const statusOpt = opts.status?.toUpperCase();
+  if (statusOpt !== undefined && !isTaskStatus(statusOpt)) {
+    throw new UsageError(
+      `--status must be one of OPEN | IN_PROGRESS | CLOSED (got ${JSON.stringify(opts.status)})`,
+    );
+  }
+  // Scope: every id must be in the workstream we resolved (-w error
+  // semantics matching every other task verb).
+  for (const id of ids) {
+    assertTaskInWorkstream(db, id, opts.workstream);
+  }
+  const ws = await resolveWorkstream(opts.workstream);
+
+  // --timeout in seconds for shell ergonomics; SDK takes ms.
+  // 0 in the SDK = wait forever; same convention here.
+  const timeoutMs = opts.timeout !== undefined ? opts.timeout * 1000 : 600_000;
+
+  const sdkOpts: {
+    status?: TaskWaitResult["tasks"][number]["status"];
+    any?: boolean;
+    timeoutMs: number;
+  } = { timeoutMs };
+  if (statusOpt !== undefined) sdkOpts.status = statusOpt;
+  if (opts.any) sdkOpts.any = true;
+
+  const result = await waitForTasks(db, ids, sdkOpts);
+
+  // Build nextSteps: for each task that DIDN'T reach the target, suggest
+  // mu task show so the operator can investigate. Always include
+  // 'pick the next ready task' for the unblocked-orchestrator pattern.
+  const stuck = result.tasks.filter((t) => !t.reachedTarget);
+  const nextSteps: NextStep[] = [];
+  for (const t of stuck) {
+    nextSteps.push({
+      intent: `Investigate ${t.localId} (status=${t.status})`,
+      command: `mu task show ${t.localId} -w ${ws}`,
+    });
+  }
+  if (!result.timedOut) {
+    nextSteps.push({ intent: "Pick the next ready task", command: `mu task next -w ${ws}` });
+  }
+
+  if (opts.json) {
+    emitJson({ ...result, nextSteps });
+    if (result.timedOut) process.exit(5);
+    return;
+  }
+
+  // Human output: per-task line with status + reached marker.
+  const targetStatus = statusOpt ?? "CLOSED";
+  const summary = result.timedOut
+    ? pc.yellow(`Timed out after ${result.elapsedMs}ms`)
+    : pc.green(
+        `${opts.any ? "any-of" : "all-of"} ${ids.length} reached ${targetStatus} in ${result.elapsedMs}ms`,
+      );
+  console.log(summary);
+  for (const t of result.tasks) {
+    const marker = t.reachedTarget ? pc.green("✓") : pc.dim("•");
+    console.log(`  ${marker} ${pc.bold(t.localId)} ${pc.dim(`(${t.status})`)}`);
+  }
+  printNextSteps(nextSteps);
+  if (result.timedOut) process.exit(5);
+}
+
 // ─── mu log (write + read + tail) ───────────────────────────────────
 
 interface LogReadOpts {
@@ -3792,6 +3873,30 @@ export function buildProgram(): Command {
         json?: boolean;
       };
       return handle((db) => cmdTaskReparent(db, id, opts))();
+    });
+
+  task
+    .command("wait <ids...>")
+    .description(
+      "Block until the listed tasks reach --status (default CLOSED). Default: every task must reach the target (--all). Pass --any to exit on the first one that does. Exit 0 = condition met; 5 = timeout.",
+    )
+    .option(
+      "--status <status>",
+      "target status (OPEN | IN_PROGRESS | CLOSED, case-insensitive); default CLOSED",
+    )
+    .option("--any", "succeed as soon as ONE listed task reaches the target (default: all must)")
+    .option("--timeout <seconds>", "max seconds to wait (0 = forever, default 600)", parseLines)
+    .option(...WORKSTREAM_OPT)
+    .option(...JSON_OPT)
+    .action(function (ids: string[]) {
+      const opts = (this as Command).opts() as {
+        status?: string;
+        any?: boolean;
+        timeout?: number;
+        workstream?: string;
+        json?: boolean;
+      };
+      return handle((db) => cmdTaskWait(db, ids, opts))();
     });
 
   // ─── self-identification (for agents inside panes) ───────────────────
