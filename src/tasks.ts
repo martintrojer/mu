@@ -10,6 +10,7 @@
 
 import type { Db } from "./db.js";
 import { emitEvent } from "./logs.js";
+import type { HasNextSteps, NextStep } from "./output.js";
 import { currentPaneTitle } from "./tmux.js";
 import { ensureWorkstream } from "./workstream.js";
 
@@ -206,25 +207,38 @@ export class TaskAlreadyOwnedError extends Error {
  *
  * Maps to exit code 4 (conflict) via the cli.ts handler.
  */
-export class ClaimerNotRegisteredError extends Error {
+export class ClaimerNotRegisteredError extends Error implements HasNextSteps {
   override readonly name = "ClaimerNotRegisteredError";
   constructor(
     public readonly agentName: string,
     public readonly paneId: string | null,
   ) {
     const paneHint = paneId !== null ? ` (pane ${paneId})` : "";
-    // Three actionable next steps. Order: most-common-first.
-    //   1. --self  : the orchestrator pattern (working directly).
-    //   2. --for   : the dispatcher pattern (assigning to a worker).
-    //   3. mu adopt: the registration pattern (promote pane to worker).
-    const adoptLine =
-      paneId !== null
-        ? `\n  Want full registration?    Run: mu adopt ${paneId}`
-        : "\n  Want full registration?    Run: mu adopt <pane-id> (in the workstream's tmux session)";
-    const hints = `\n  Working directly?           Pass --self to attribute via log instead.\n  Dispatching to a worker?    Pass --for <worker> to assign.${adoptLine}`;
     super(
-      `claimer '${agentName}'${paneHint} is not a registered mu agent (no row in agents table).${hints}`,
+      `claimer '${agentName}'${paneHint} is not a registered mu agent (no row in agents table)`,
     );
+  }
+
+  /**
+   * Three actionable resolutions in expected-frequency order:
+   *   1. --self  : orchestrator pattern (working directly)
+   *   2. --for   : dispatcher pattern (assigning to a worker)
+   *   3. mu adopt: registration pattern (promote pane to worker)
+   */
+  errorNextSteps(): NextStep[] {
+    const steps: NextStep[] = [
+      { intent: "Work directly (anonymous)", command: "mu task claim <id> --self" },
+      { intent: "Dispatch to a worker", command: "mu task claim <id> --for <worker>" },
+    ];
+    steps.push(
+      this.paneId !== null
+        ? { intent: "Register this pane", command: `mu adopt ${this.paneId}` }
+        : {
+            intent: "Register a pane",
+            command: "mu adopt <pane-id>  (must be in mu-<workstream> tmux session)",
+          },
+    );
+    return steps;
   }
 }
 

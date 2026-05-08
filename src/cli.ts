@@ -58,6 +58,7 @@ import {
 import { CURRENT_SCHEMA_VERSION, type Db, EXPECTED_TABLES, defaultDbPath, openDb } from "./db.js";
 import { detectPiStatus } from "./detect.js";
 import { type ListLogsOptions, type LogRow, appendLog, latestSeq, listLogs } from "./logs.js";
+import { type NextStep, hasNextSteps, isJsonMode, printNextSteps } from "./output.js";
 import {
   ClaimerNotRegisteredError,
   CrossWorkstreamEdgeError,
@@ -154,6 +155,89 @@ class UsageError extends Error {
   override readonly name = "UsageError";
 }
 
+/**
+ * Map a typed error to (label, exitCode). The label is the prefix
+ * before the message in human output (e.g. "conflict", "not found");
+ * the exit code is what the process exits with.
+ *
+ * Order matters: more-specific classes first. The fallthrough at the
+ * end is the generic exit-1 catch-all.
+ */
+function classifyError(err: unknown): { label: string; exitCode: number } {
+  if (err instanceof UsageError || err instanceof WorkstreamNameInvalidError) {
+    return { label: "error", exitCode: 2 };
+  }
+  if (
+    err instanceof AgentNotFoundError ||
+    err instanceof TaskNotFoundError ||
+    err instanceof WorkspaceNotFoundError ||
+    err instanceof ApprovalNotFoundError
+  ) {
+    return { label: "not found", exitCode: 3 };
+  }
+  if (
+    err instanceof AgentExistsError ||
+    err instanceof TaskExistsError ||
+    err instanceof TaskAlreadyOwnedError ||
+    err instanceof TaskNotInWorkstreamError ||
+    err instanceof AgentNotInWorkstreamError ||
+    err instanceof ApprovalNotInWorkstreamError ||
+    err instanceof CycleError ||
+    err instanceof CrossWorkstreamEdgeError ||
+    err instanceof WorkspaceExistsError ||
+    err instanceof ApprovalAlreadyDecidedError ||
+    err instanceof ClaimerNotRegisteredError
+  ) {
+    return { label: "conflict", exitCode: 4 };
+  }
+  if (err instanceof AgentDiedOnSpawnError) {
+    // Substrate-level failure (CLI exited at spawn). The message is
+    // already rich (includes captured scrollback). Generic exit 1.
+    return { label: "spawn failed", exitCode: 1 };
+  }
+  if (err instanceof TmuxError || err instanceof PaneNotFoundError) {
+    return { label: "tmux", exitCode: 5 };
+  }
+  return { label: "error", exitCode: 1 };
+}
+
+/**
+ * Emit a typed error to stderr. JSON mode (--json on the invocation)
+ * produces a single-line { error, message, nextSteps, exitCode }
+ * record so callers can pattern-match without parsing prose. Non-JSON
+ * mode produces the prose label + message, then nextSteps as dim
+ * indented lines (when the error class implements errorNextSteps()).
+ */
+function emitError(err: unknown): void {
+  const message = err instanceof Error ? err.message : String(err);
+  const { label, exitCode } = classifyError(err);
+  const errClass = err instanceof Error ? err.name : "Error";
+  const steps: NextStep[] = hasNextSteps(err) ? err.errorNextSteps() : [];
+
+  if (isJsonMode()) {
+    process.stderr.write(
+      `${JSON.stringify({
+        error: errClass,
+        message,
+        nextSteps: steps,
+        exitCode,
+      })}\n`,
+    );
+    return;
+  }
+
+  console.error(pc.red(`${label}: ${message}`));
+  if (steps.length > 0) {
+    // Dim the next-step block so humans skim past; agents reading the
+    // captured error still get them.
+    console.error(pc.dim("Next:"));
+    const labelWidth = Math.max(...steps.map((s) => s.intent.length));
+    for (const s of steps) {
+      console.error(pc.dim(`  ${s.intent.padEnd(labelWidth)} : ${s.command}`));
+    }
+  }
+}
+
 /** Wrap an async handler so typed errors become specific exit codes. */
 function handle(fn: (db: Db) => Promise<void>): () => Promise<void> {
   return async () => {
@@ -162,49 +246,8 @@ function handle(fn: (db: Db) => Promise<void>): () => Promise<void> {
       db = openDb();
       await fn(db);
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      if (err instanceof UsageError || err instanceof WorkstreamNameInvalidError) {
-        console.error(pc.red(`error: ${message}`));
-        process.exit(2);
-      }
-      if (
-        err instanceof AgentNotFoundError ||
-        err instanceof TaskNotFoundError ||
-        err instanceof WorkspaceNotFoundError ||
-        err instanceof ApprovalNotFoundError
-      ) {
-        console.error(pc.red(`not found: ${message}`));
-        process.exit(3);
-      }
-      if (
-        err instanceof AgentExistsError ||
-        err instanceof TaskExistsError ||
-        err instanceof TaskAlreadyOwnedError ||
-        err instanceof TaskNotInWorkstreamError ||
-        err instanceof AgentNotInWorkstreamError ||
-        err instanceof ApprovalNotInWorkstreamError ||
-        err instanceof CycleError ||
-        err instanceof CrossWorkstreamEdgeError ||
-        err instanceof WorkspaceExistsError ||
-        err instanceof ApprovalAlreadyDecidedError ||
-        err instanceof ClaimerNotRegisteredError
-      ) {
-        console.error(pc.red(`conflict: ${message}`));
-        process.exit(4);
-      }
-      if (err instanceof AgentDiedOnSpawnError) {
-        // Surface the rich message (already includes the captured
-        // scrollback). Exit 1 (generic) since this is a substrate-level
-        // failure of the agent CLI, not a usage / not-found / conflict.
-        console.error(pc.red(`spawn failed: ${message}`));
-        process.exit(1);
-      }
-      if (err instanceof TmuxError || err instanceof PaneNotFoundError) {
-        console.error(pc.red(`tmux: ${message}`));
-        process.exit(5);
-      }
-      console.error(pc.red(`error: ${message}`));
-      process.exit(1);
+      emitError(err);
+      process.exit(classifyError(err).exitCode);
     } finally {
       try {
         db?.close();
@@ -345,8 +388,15 @@ async function cmdInit(db: Db, name: string): Promise<void> {
     await newSession(sessionName, { detached: true, windowName: "_mu" });
   }
   console.log(`Created workstream ${pc.bold(name)} (tmux session ${pc.bold(sessionName)})`);
-  console.log(pc.dim(`  Attach with: tmux a -t ${sessionName}`));
-  console.log(pc.dim(`  Spawn agents with: mu agent spawn <name> -w ${name}`));
+  printNextSteps([
+    { intent: "Attach the tmux session", command: `tmux a -t ${sessionName}` },
+    {
+      intent: "Plan tasks",
+      command: `mu task add -w ${name} --title "..." --impact 50 --effort-days 1`,
+    },
+    { intent: "Spawn an agent", command: `mu agent spawn <name> -w ${name}` },
+    { intent: "See state", command: `mu state -w ${name}` },
+  ]);
 }
 
 async function cmdWorkstreamList(db: Db, opts: { json?: boolean } = {}): Promise<void> {
@@ -452,6 +502,15 @@ async function cmdSpawn(db: Db, name: string, opts: SpawnOpts): Promise<void> {
     const ws = getWorkspaceForAgent(db, name);
     if (ws) console.log(pc.dim(`  workspace: ${ws.path} (${ws.backend})`));
   }
+  printNextSteps([
+    { intent: "Send work", command: `mu agent send ${name} "..." -w ${workstream}` },
+    { intent: "Read pane", command: `mu agent read ${name} -w ${workstream}` },
+    { intent: "Watch live events", command: `mu log -w ${workstream} --tail` },
+    {
+      intent: "Close (drops registry row, kills pane)",
+      command: `mu agent close ${name} -w ${workstream}`,
+    },
+  ]);
 }
 
 async function cmdSend(
@@ -761,13 +820,18 @@ async function cmdClose(db: Db, name: string, opts: { workstream?: string } = {}
     return;
   }
   console.log(`Closed ${pc.bold(name)}`);
+  const next: NextStep[] = [];
   if (result.workspaceKept) {
-    console.log(
-      pc.dim(
-        `  Workspace kept on disk. Run \`mu workspace free ${name}\` to remove it (or \`--commit\` to commit pending changes first).`,
-      ),
-    );
+    next.push({
+      intent: "Workspace kept on disk; remove with",
+      command: `mu workspace free ${name}  (--commit to commit pending changes first)`,
+    });
   }
+  next.push({
+    intent: "Re-spawn under the same name",
+    command: `mu agent spawn ${name} -w <workstream>`,
+  });
+  printNextSteps(next);
 }
 
 interface AdoptCliOpts {
@@ -809,6 +873,12 @@ async function cmdAdopt(db: Db, paneOrTitle: string, opts: AdoptCliOpts): Promis
   };
   const result: AdoptAgentResult = await adoptAgent(db, adoptOpts);
 
+  const nextSteps: NextStep[] = [
+    { intent: "Send work", command: `mu agent send ${result.agent.name} "..." -w ${ws}` },
+    { intent: "Read pane", command: `mu agent read ${result.agent.name} -w ${ws}` },
+    { intent: "Verify in agent list", command: `mu agent list -w ${ws}` },
+  ];
+
   if (opts.json) {
     emitJson({
       adopted: !result.alreadyAdopted,
@@ -816,12 +886,14 @@ async function cmdAdopt(db: Db, paneOrTitle: string, opts: AdoptCliOpts): Promis
       agent: result.agent,
       previousTitle: result.previousTitle,
       paneTitleSetTo: result.paneTitleSetTo,
+      nextSteps,
     });
     return;
   }
 
   if (result.alreadyAdopted) {
     console.log(pc.dim(`already adopted: ${result.agent.name} (pane ${result.agent.paneId})`));
+    printNextSteps(nextSteps);
     return;
   }
   console.log(
@@ -830,6 +902,7 @@ async function cmdAdopt(db: Db, paneOrTitle: string, opts: AdoptCliOpts): Promis
   if (result.previousTitle !== null && result.previousTitle !== result.paneTitleSetTo) {
     console.log(pc.dim(`  pane title: '${result.previousTitle}' -> '${result.paneTitleSetTo}'`));
   }
+  printNextSteps(nextSteps);
 }
 
 async function cmdFree(db: Db, name: string, opts: { workstream?: string } = {}): Promise<void> {
@@ -851,6 +924,7 @@ async function cmdTaskAdd(
     effortDays: number;
     blocks?: string;
     workstream?: string;
+    json?: boolean;
   },
 ): Promise<void> {
   const workstream = await resolveWorkstream(opts.workstream);
@@ -872,6 +946,25 @@ async function cmdTaskAdd(
     effortDays: opts.effortDays,
     ...(blocks ? { blocks } : {}),
   });
+  const nextSteps: NextStep[] = [
+    { intent: "Show this task", command: `mu task show ${task.localId} -w ${workstream}` },
+    {
+      intent: "Drop a note",
+      command: `mu task note ${task.localId} "..." -w ${workstream}`,
+    },
+    {
+      intent: "Add a blocker",
+      command: `mu task block ${task.localId} --by <other-id> -w ${workstream}`,
+    },
+    {
+      intent: "Claim and start",
+      command: `mu task claim ${task.localId} -w ${workstream} --self  (or --for <worker>)`,
+    },
+  ];
+  if (opts.json) {
+    emitJson({ task: withRoi(task), blockers: blocks ?? [], nextSteps });
+    return;
+  }
   const idHint = localId === undefined ? pc.dim(" (id derived from title)") : "";
   console.log(
     `Added task ${pc.bold(task.localId)}${idHint} ${pc.dim(
@@ -879,6 +972,7 @@ async function cmdTaskAdd(
     )}`,
   );
   if (blocks) console.log(pc.dim(`  blocked by: ${blocks.join(", ")}`));
+  printNextSteps(nextSteps);
 }
 
 async function cmdTaskList(
@@ -1235,18 +1329,30 @@ async function cmdTaskNote(
 async function cmdTaskClose(
   db: Db,
   localId: string,
-  opts: { evidence?: string; workstream?: string } = {},
+  opts: { evidence?: string; workstream?: string; json?: boolean } = {},
 ): Promise<void> {
   assertTaskInWorkstream(db, localId, opts.workstream);
   const sdkOpts = opts.evidence !== undefined ? { evidence: opts.evidence } : {};
   const r = closeTask(db, localId, sdkOpts);
+  const ws = await resolveWorkstream(opts.workstream);
+  const nextSteps: NextStep[] = [
+    { intent: "Reopen if needed", command: `mu task open ${localId} -w ${ws}` },
+    { intent: "Pick the next ready task", command: `mu task next -w ${ws}` },
+    { intent: "See full state", command: `mu state -w ${ws}` },
+  ];
+  if (opts.json) {
+    emitJson({ task: localId, ...r, nextSteps });
+    return;
+  }
   if (!r.changed) {
     console.log(pc.dim(`${localId} already CLOSED (no-op)`));
+    printNextSteps(nextSteps);
     return;
   }
   const ev = opts.evidence ? pc.dim(`  evidence: ${opts.evidence}`) : "";
   console.log(`Closed ${pc.bold(localId)} ${pc.dim(`(${r.previousStatus} → ${r.status})`)}`);
   if (ev) console.log(ev);
+  printNextSteps(nextSteps);
 }
 
 async function cmdTaskOpen(
@@ -1488,20 +1594,34 @@ function printNote(n: TaskNoteRow): void {
 async function cmdTaskRelease(
   db: Db,
   localId: string,
-  opts: { reopen?: boolean; evidence?: string; workstream?: string },
+  opts: { reopen?: boolean; evidence?: string; workstream?: string; json?: boolean },
 ): Promise<void> {
   assertTaskInWorkstream(db, localId, opts.workstream);
   const sdkOpts: { reopen: boolean; evidence?: string } = { reopen: opts.reopen ?? false };
   if (opts.evidence !== undefined) sdkOpts.evidence = opts.evidence;
   const r = releaseTask(db, localId, sdkOpts);
+  const ws = await resolveWorkstream(opts.workstream);
+  const nextSteps: NextStep[] = [
+    {
+      intent: "Reclaim",
+      command: `mu task claim ${localId} -w ${ws}  (--self / --for <worker>)`,
+    },
+    { intent: "Show current state", command: `mu task show ${localId} -w ${ws}` },
+  ];
+  if (opts.json) {
+    emitJson({ task: localId, ...r, nextSteps });
+    return;
+  }
   if (!r.changed) {
     console.log(pc.dim(`${localId} already unowned (no-op)`));
+    printNextSteps(nextSteps);
     return;
   }
   const ownerBit = r.previousOwner ? `was ${pc.bold(r.previousOwner)}` : "was unowned";
   const statusBit = r.previousStatus !== r.status ? ` (${r.previousStatus} → ${r.status})` : "";
   console.log(`Released ${pc.bold(localId)} ${pc.dim(`(${ownerBit})${statusBit}`)}`);
   if (opts.evidence) console.log(pc.dim(`  evidence: ${opts.evidence}`));
+  printNextSteps(nextSteps);
 }
 
 async function cmdClaim(
@@ -1513,6 +1633,7 @@ async function cmdClaim(
     actor?: string;
     evidence?: string;
     workstream?: string;
+    json?: boolean;
   },
 ): Promise<void> {
   assertTaskInWorkstream(db, localId, opts.workstream);
@@ -1533,6 +1654,22 @@ async function cmdClaim(
   if (opts.actor !== undefined) sdkOpts.actor = opts.actor;
   if (opts.evidence !== undefined) sdkOpts.evidence = opts.evidence;
   const result = await claimTask(db, localId, sdkOpts);
+  const ws = await resolveWorkstream(opts.workstream);
+  const nextSteps: NextStep[] = [
+    {
+      intent: "Drop a note",
+      command: `mu task note ${localId} "FILES: ...\\nDECISION: ..." -w ${ws}`,
+    },
+    {
+      intent: "Close with grounding",
+      command: `mu task close ${localId} --evidence "..." -w ${ws}`,
+    },
+    { intent: "Release if blocked", command: `mu task release ${localId} -w ${ws}` },
+  ];
+  if (opts.json) {
+    emitJson({ ...result, nextSteps });
+    return;
+  }
   if (result.owner === null) {
     console.log(
       `Claimed ${pc.bold(localId)} ${pc.dim(`(--self by ${result.actor}; ${result.previousStatus} → ${result.status}; owner=NULL)`)}`,
@@ -1543,6 +1680,7 @@ async function cmdClaim(
     );
   }
   if (opts.evidence) console.log(pc.dim(`  evidence: ${opts.evidence}`));
+  printNextSteps(nextSteps);
 }
 
 async function cmdTaskBlock(
@@ -2753,6 +2891,7 @@ export function buildProgram(): Command {
     .requiredOption("-e, --effort-days <days>", "effort in days (>0)", parsePositiveNumber)
     .option("-b, --blocks <ids>", "comma-separated list of blocker task ids")
     .option(...WORKSTREAM_OPT)
+    .option(...JSON_OPT)
     .action(function (id: string | undefined) {
       const opts = (this as Command).opts() as {
         title: string;
@@ -2760,6 +2899,7 @@ export function buildProgram(): Command {
         effortDays: number;
         blocks?: string;
         workstream?: string;
+        json?: boolean;
       };
       return handle((db) => cmdTaskAdd(db, id, opts))();
     });
@@ -2920,8 +3060,13 @@ export function buildProgram(): Command {
     .description("Mark a task CLOSED (idempotent)")
     .option(...WORKSTREAM_OPT)
     .option(...EVIDENCE_OPT)
+    .option(...JSON_OPT)
     .action(function (id: string) {
-      const opts = (this as Command).opts() as { evidence?: string; workstream?: string };
+      const opts = (this as Command).opts() as {
+        evidence?: string;
+        workstream?: string;
+        json?: boolean;
+      };
       return handle((db) => cmdTaskClose(db, id, opts))();
     });
 
@@ -2943,11 +3088,13 @@ export function buildProgram(): Command {
     .option("--reopen", "also flip status back to OPEN")
     .option(...WORKSTREAM_OPT)
     .option(...EVIDENCE_OPT)
+    .option(...JSON_OPT)
     .action(function (id: string) {
       const opts = (this as Command).opts() as {
         reopen?: boolean;
         evidence?: string;
         workstream?: string;
+        json?: boolean;
       };
       return handle((db) => cmdTaskRelease(db, id, opts))();
     });
@@ -2969,6 +3116,7 @@ export function buildProgram(): Command {
     )
     .option(...WORKSTREAM_OPT)
     .option(...EVIDENCE_OPT)
+    .option(...JSON_OPT)
     .action(function (taskId: string) {
       const opts = (this as Command).opts() as {
         for?: string;
@@ -2976,6 +3124,7 @@ export function buildProgram(): Command {
         actor?: string;
         evidence?: string;
         workstream?: string;
+        json?: boolean;
       };
       return handle((db) => cmdClaim(db, taskId, opts))();
     });

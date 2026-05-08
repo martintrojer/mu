@@ -50,6 +50,80 @@ called out under "Breaking" in each entry.
 
 ### Added
 
+- **Self-documenting verb output: `nextSteps` hints + structured
+  JSON errors.** Every successful invocation now answers "what
+  changed AND what's the natural next step?"; every error answers
+  "why AND what are the actionable resolutions?". Same data shape
+  feeds both human-prose output (dim text after the success line)
+  and `--json` output (structured `nextSteps: [{intent, command}]`).
+
+  - New module `src/output.ts` with `printNextSteps(steps)`,
+    `NextStep` type, `isJsonMode()`, and `hasNextSteps()` duck-type
+    guard for typed errors carrying actionable resolutions.
+  - The error handler in `src/cli.ts` is refactored: errors call a
+    typed `errorNextSteps()` (when implemented) and the steps are
+    rendered as dim indented lines in human mode or attached to a
+    `{error, message, nextSteps, exitCode}` JSON record in
+    `--json` mode.
+  - `--json` JSON errors go to **stderr** (so stdout stays clean
+    for the success-path JSON when piping); the JSON record
+    carries the same `exitCode` the process exits with.
+  - `ClaimerNotRegisteredError` is the first error converted to
+    structured `errorNextSteps()`. Three resolutions in expected
+    frequency order: `--self` for the orchestrator pattern,
+    `--for <worker>` for dispatch, `mu adopt <pane-id>` for
+    registration.
+  - First batch of verbs grew next-step hints:
+    `mu workstream init` (attach + plan + spawn + state),
+    `mu agent spawn` (send + read + watch + close),
+    `mu agent close` (workspace-kept hint + re-spawn),
+    `mu adopt` (send + read + verify),
+    `mu task add` (show + note + block + claim),
+    `mu task claim` (note + close + release),
+    `mu task release` (reclaim + show),
+    `mu task close` (open + next + state).
+  - `--json` extended to the four touched write verbs
+    (`mu task add / claim / release / close`); each emits a
+    success record with `nextSteps`. Read verbs that already had
+    `--json` (e.g. `mu task show`, `mu task list`) continue
+    unchanged in success mode but now emit structured errors when
+    they fail.
+
+  Live before/after for `mu task add`:
+
+      $ mu task add foo --title "Foo" --impact 50 --effort-days 1
+      Added task foo (workstream=ws, impact=50, effort=1)
+      Next:
+        Show this task  : mu task show foo -w ws
+        Drop a note     : mu task note foo "..." -w ws
+        Add a blocker   : mu task block foo --by <other-id> -w ws
+        Claim and start : mu task claim foo -w ws --self  (or --for <worker>)
+
+      $ mu task add foo --title "Foo" --impact 50 --effort-days 1 --json
+      {"task": {...}, "blockers": [], "nextSteps": [
+        {"intent": "Show this task", "command": "mu task show foo -w ws"},
+        ...
+      ]}
+
+      $ mu task claim ghost --json   # error path, --json
+      {"error":"TaskNotFoundError","message":"no such task: ghost",
+       "nextSteps":[],"exitCode":3}
+      # (-> stderr; exit 3)
+
+  This is the first commit of the `selfdoc_*` track in workstream
+  `roadmap-v0-2`. Follow-ups:
+  - `selfdoc_errors`: every typed error gains `errorNextSteps()`.
+  - `selfdoc_verbs_round2`: hints + `--json` for the rest of the
+    write verbs.
+  - `selfdoc_skill_cleanup`: `skills/mu/SKILL.md` shrinks (~770
+    -> ~500 LOC) by moving per-verb tips into verb output where
+    they belong.
+  - `selfdoc_dogfood`: a fresh-agent walkthrough of plan / spawn /
+    claim / note / close relying ONLY on verb output.
+
+  See note #108 on the (now-CLOSED) `selfdoc_design` task for the
+  full audit and design rationale.
+
 - **`mu task claim --self` for the orchestrator pattern.** Two
   things mu has always conflated: a *worker* (a tmux pane mu
   spawned, with a row in `agents`, identity = pane title) and an

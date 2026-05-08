@@ -607,23 +607,27 @@ describe("claimTask", () => {
     expect(getTask(db, "auth")?.status).toBe("OPEN");
   });
 
-  it("ClaimerNotRegisteredError lists all three actionable next steps (--self, --for, mu adopt)", async () => {
+  it("ClaimerNotRegisteredError carries three structured next-steps via errorNextSteps()", async () => {
     try {
       await claimTask(db, "auth", { agentName: "ghost" });
       throw new Error("expected throw");
     } catch (err) {
       expect(err).toBeInstanceOf(ClaimerNotRegisteredError);
       const msg = (err as Error).message;
+      // The bare message identifies the claimer + condition; resolutions
+      // live in errorNextSteps(), not the prose.
       expect(msg).toContain("ghost");
       expect(msg).toContain("not a registered mu agent");
-      // All three actionable hints present.
-      expect(msg).toContain("--self");
-      expect(msg).toContain("--for");
-      expect(msg).toContain("mu adopt");
+      const steps = (err as ClaimerNotRegisteredError).errorNextSteps();
+      expect(steps).toHaveLength(3);
+      // --self is first (most-common-resolution-first).
+      expect(steps[0]?.command).toContain("--self");
+      expect(steps[1]?.command).toContain("--for");
+      expect(steps[2]?.command).toContain("mu adopt");
     }
   });
 
-  it("ClaimerNotRegisteredError suggests 'mu adopt <pane>' with the actual pane id when name came from $TMUX_PANE", async () => {
+  it("ClaimerNotRegisteredError errorNextSteps() pins the actual pane id when name came from $TMUX_PANE", async () => {
     const executor: TmuxExecutor = async (args) => {
       if (args[0] === "display-message" && args.includes("#{pane_title}")) {
         return { stdout: "unregistered\n", stderr: "", exitCode: 0 };
@@ -637,13 +641,9 @@ describe("claimTask", () => {
         throw new Error("expected throw");
       } catch (err) {
         expect(err).toBeInstanceOf(ClaimerNotRegisteredError);
-        const msg = (err as Error).message;
-        expect(msg).toContain("unregistered");
-        expect(msg).toContain("%99");
-        expect(msg).toContain("mu adopt %99");
-        // --self is presented BEFORE mu adopt since it's the most-common
-        // resolution for an orchestrator.
-        expect(msg.indexOf("--self")).toBeLessThan(msg.indexOf("mu adopt"));
+        const steps = (err as ClaimerNotRegisteredError).errorNextSteps();
+        const adopt = steps.find((s) => s.command.startsWith("mu adopt"));
+        expect(adopt?.command).toBe("mu adopt %99");
       }
     });
   });
