@@ -119,6 +119,7 @@ import {
   TaskNotInWorkstreamError,
   type TaskRow,
   type TaskStatus,
+  getTask,
   isTaskStatus,
 } from "./tasks.js";
 import { PaneNotFoundError, TmuxError, tmux } from "./tmux.js";
@@ -679,6 +680,27 @@ export function assertAgentInWorkstream(
   const agent = getAgent(db, agentName);
   if (agent && agent.workstream !== workstream) {
     throw new AgentNotInWorkstreamError(agentName, workstream, agent.workstream);
+  }
+}
+
+/**
+ * Sister of `assertAgentInWorkstream` for verbs that target a single
+ * task by ID. Globally-unique task IDs mean these verbs could ignore
+ * the flag, but accepting it gives the operator a sanity check ("yes,
+ * I think this task is in that workstream") and raises a clear
+ * `TaskNotInWorkstreamError` instead of silently acting on the task
+ * they didn't mean. No-op when `workstream` is undefined or the task
+ * doesn't exist (downstream handler raises `TaskNotFoundError`).
+ */
+export function assertTaskInWorkstream(
+  db: Db,
+  taskId: string,
+  workstream: string | undefined,
+): void {
+  if (!workstream) return;
+  const task = getTask(db, taskId);
+  if (task && task.workstream !== workstream) {
+    throw new TaskNotInWorkstreamError(taskId, workstream, task.workstream);
   }
 }
 
