@@ -4018,11 +4018,17 @@ function formatHudAgentsTable(
   shown.forEach((a, i) => {
     const ago = `+${relTime(now - new Date(a.updatedAt).getTime())}`;
     const taskBit = taskBits[i] ?? "—";
+    const truncated = truncate(taskBit, taskBudget);
+    // Colour: status emoji per STATUS_COLORS; agent name bold; the
+    // task id (when present) cyan to match the in-progress task
+    // table; '—' / '⊕N' (no-task / multi) stays dim.
+    const taskCell =
+      taskBit === "—" || taskBit.startsWith("⊕") ? pc.dim(truncated) : pc.cyan(truncated);
     table.push([
-      STATUS_EMOJI[a.status],
-      `${pc.dim("agent")} ${a.name}`,
-      truncate(taskBit, taskBudget),
-      ago,
+      statusIcon(a.status),
+      `${pc.dim("agent")} ${pc.bold(a.name)}`,
+      taskCell,
+      pc.dim(ago),
     ]);
   });
   return { rendered: table.toString(), rowsShown: shown.length, rowsTotal: total };
@@ -4062,10 +4068,21 @@ function formatHudTasksTable(
   const titleBudget = Math.max(10, width - fixed - padding);
   const table = newHudTable();
   for (const t of shown) {
-    const roi = t.effortDays > 0 ? (t.impact / t.effortDays).toFixed(0) : "∞";
-    const idCell = `${pc.dim(sectionPrefix)}  ${t.localId}`;
-    const row: string[] = [idCell, truncate(t.title, titleBudget), `${pc.dim("ROI")} ${roi}`];
-    if (opts.withOwner) row.push(t.owner ?? pc.dim("—"));
+    const roiNum = t.effortDays > 0 ? t.impact / t.effortDays : Number.POSITIVE_INFINITY;
+    const roiStr = Number.isFinite(roiNum) ? roiNum.toFixed(0) : "∞";
+    // Colour: id cyan (matches the agent table's task column);
+    // ROI green for high-value (>=100), yellow for mid (>=50),
+    // dim for low. Owner bold-cyan (the active worker is the most
+    // useful pointer in an in-progress row).
+    const roiColor =
+      roiNum >= 100 ? pc.green : roiNum >= 50 ? pc.yellow : pc.dim;
+    const idCell = `${pc.dim(sectionPrefix)}  ${pc.cyan(t.localId)}`;
+    const row: string[] = [
+      idCell,
+      truncate(t.title, titleBudget),
+      `${pc.dim("ROI")} ${roiColor(roiStr)}`,
+    ];
+    if (opts.withOwner) row.push(t.owner ? pc.bold(pc.cyan(t.owner)) : pc.dim("—"));
     table.push(row);
   }
   return { rendered: table.toString(), rowsShown: shown.length, rowsTotal: total };
@@ -4097,9 +4114,30 @@ function formatHudRecentTable(
   const table = newHudTable();
   for (const e of shown) {
     const ago = `+${relTime(now - new Date(e.createdAt).getTime())}`;
-    table.push([ago, truncate(e.payload, payloadBudget)]);
+    // Colour the leading verb token of the payload ('task close',
+    // 'agent spawn', 'workspace create', etc.) so the eye can group
+    // events at a glance. The verb is the first 1-2 tokens up to
+    // (but not including) the entity id (which itself is bolded
+    // when easy to identify). Falls back to the full dim payload
+    // for events that don't fit the verb-shape.
+    table.push([pc.dim(ago), colorEventPayload(truncate(e.payload, payloadBudget))]);
   }
   return { rendered: table.toString(), rowsShown: shown.length, rowsTotal: total };
+}
+
+/** Recolour an event-log payload so the verb token (e.g. 'task close',
+ *  'agent spawn', 'workspace create') stands out. Conservative: matches
+ *  the verbs emitted by mu/src/agents.ts + tasks.ts + workstream.ts +
+ *  workspace.ts; falls back to the original string when nothing matches
+ *  so we never lose information just because we couldn't classify. */
+function colorEventPayload(payload: string): string {
+  const m = payload.match(
+    /^(task (?:add|note|status|claim|release|close|update|delete|reject|defer|reap|edge add|edge remove)|agent (?:spawn|close|free|adopt)|workspace (?:create|free)|workstream (?:init|destroy)|approve (?:add|grant|deny)|snapshot (?:capture|restore|prune))\b/,
+  );
+  if (!m) return payload;
+  const verb = m[1] ?? "";
+  const rest = payload.slice(verb.length);
+  return `${pc.cyan(verb)}${rest}`;
 }
 
 /**
@@ -4132,24 +4170,32 @@ function formatHudTracksTable(
   shown.forEach((t, i) => {
     const roots = t.roots.map((r) => r.localId).join(", ");
     const kind = t.roots.length > 1 ? "merged" : "track";
+    // Colour: 'merged' diamond is structurally interesting (multiple
+    // independent goals share a prerequisite) — yellow to flag it.
+    // Plain 'track' is unremarkable — dim.
+    // Ready count: green if any ready, dim if none.
+    const kindCell = t.roots.length > 1 ? pc.yellow(kind) : pc.dim(kind);
+    const readyCell = `${t.readyCount > 0 ? pc.green(String(t.readyCount)) : pc.dim("0")} ${pc.dim("ready")}`;
     table.push([
-      `${pc.dim("track")} ${i + 1}`,
-      truncate(roots, rootsBudget),
+      `${pc.dim("track")} ${pc.bold(String(i + 1))}`,
+      pc.cyan(truncate(roots, rootsBudget)),
       `${t.taskIds.size} ${pc.dim("tasks")}`,
-      `${t.readyCount} ${pc.dim("ready")}`,
-      kind,
+      readyCell,
+      kindCell,
     ]);
   });
   return { rendered: table.toString(), rowsShown: shown.length, rowsTotal: total };
 }
 
-/** Compact agent-status histogram for the HUD header. */
+/** Compact agent-status histogram for the HUD header. Each emoji is
+ *  STATUS_COLORS-coloured so the same green/cyan/yellow signal that
+ *  appears in the agents table shows up in the summary cell too. */
 function agentStatusHistogram(agents: readonly AgentRow[]): string {
   const counts = new Map<AgentStatus, number>();
   for (const a of agents) counts.set(a.status, (counts.get(a.status) ?? 0) + 1);
   if (counts.size === 0) return pc.dim("none");
   const parts: string[] = [];
-  for (const [status, n] of counts) parts.push(`${STATUS_EMOJI[status]}${n}`);
+  for (const [status, n] of counts) parts.push(`${statusIcon(status)}${n}`);
   return parts.join(" ");
 }
 
@@ -4239,13 +4285,19 @@ async function cmdHud(db: Db, opts: HudOpts): Promise<void> {
   // 1. Workstream-summary table. Single data row, no header — each
   // cell carries its own dim section word (`2 ready`, `0 in-progress`,
   // ...). Cost with bottom dropped + no header = 2 lines.
+  // Colour: workstream bold-cyan (it's the load-bearing identifier);
+  // counts coloured by significance — ready green if any (work to
+  // dispatch), in-progress yellow if any (work in flight), tracks
+  // bold (always meaningful), agents bold.
+  const colorCount = (n: number, color: (s: string) => string): string =>
+    n > 0 ? color(String(n)) : pc.dim("0");
   const headerTable = newHudTable();
   headerTable.push([
-    pc.bold(`mu-${workstream}`),
-    `${ready.length} ${pc.dim("ready")}`,
-    `${inProgress.length} ${pc.dim("in-progress")}`,
-    `${tracks.length} ${pc.dim("tracks")}`,
-    `${view.agents.length} ${pc.dim("agents")}`,
+    pc.bold(pc.cyan(`mu-${workstream}`)),
+    `${colorCount(ready.length, pc.green)} ${pc.dim("ready")}`,
+    `${colorCount(inProgress.length, pc.yellow)} ${pc.dim("in-progress")}`,
+    `${pc.bold(String(tracks.length))} ${pc.dim("tracks")}`,
+    `${pc.bold(String(view.agents.length))} ${pc.dim("agents")}`,
     agentStatusHistogram(view.agents),
   ]);
   remaining -= printTable(headerTable.toString());

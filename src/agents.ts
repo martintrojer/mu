@@ -199,14 +199,28 @@ export function updateAgentStatus(db: Db, name: string, status: AgentStatus): bo
  *  colour). 'spawning' is omitted on purpose — the title gets the
  *  initial render before status detection runs, and 'spawning' is a
  *  transient state. */
+// Single-codepoint, single-cell-width Nerd Font glyphs (nf-fa family).
+// Picked over Unicode emoji so cli-table3's column widths line up:
+// emoji like '⚙️' (gear + variation selector) are TWO codepoints,
+// which cli-table3 counts as length-2 and uses to size columns; but
+// terminals render them as ONE cell wide, so adjacent rows that mix
+// 1-codepoint emoji ('✅') and 2-codepoint emoji ('⚙️') misalign.
+// Nerd Font glyphs are private-use codepoints, all length-1 and all
+// 1-cell-wide.
+//
+// Requires a Nerd Font on the operator's terminal (mu's substrate is
+// pi, which assumes Nerd Fonts; the rest of mu's TUI uses Nerd Font
+// glyphs already in cli-table3 box-drawing). Without one, every
+// glyph below renders as a placeholder box — the columns still align
+// (which was the bug we were fixing).
 export const STATUS_EMOJI: Record<AgentStatus, string> = {
-  spawning: "⏳",
-  busy: "⚙️",
-  needs_input: "💤",
-  needs_permission: "🛂",
-  free: "✅",
-  unreachable: "❓",
-  terminated: "☠️",
+  spawning: "\uf251", // nf-fa-hourglass_start
+  busy: "\uf013", // nf-fa-cog
+  needs_input: "\uf186", // nf-fa-moon_o
+  needs_permission: "\uf023", // nf-fa-lock
+  free: "\uf058", // nf-fa-check_circle
+  unreachable: "\uf059", // nf-fa-question_circle
+  terminated: "\uf057", // nf-fa-times_circle
 };
 
 /** Maximum total length for a composed pane title. tmux truncates
