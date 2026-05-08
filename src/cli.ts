@@ -2611,7 +2611,11 @@ async function resolveSelfNameOrUser(db: Db): Promise<string> {
   return agent ? agent.name : "user";
 }
 
-async function cmdSql(db: Db, query: string, opts: { json?: boolean } = {}): Promise<void> {
+async function cmdSql(
+  db: Db,
+  query: string,
+  opts: { json?: boolean; confirmRows?: number } = {},
+): Promise<void> {
   // Read OR write — `mu sql` is the explicit escape hatch.
   //
   // Single-statement path uses better-sqlite3's prepare() so we can
@@ -2626,26 +2630,82 @@ async function cmdSql(db: Db, query: string, opts: { json?: boolean } = {}): Pro
   // Probe whether this is a single statement by trying prepare(); if
   // better-sqlite3 throws 'more than one statement', use exec() instead.
   // Otherwise re-prepare in-line below so TS keeps type inference.
+  let isMulti = false;
   try {
     db.prepare(trimmed);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (/more than one statement/i.test(msg)) {
-      db.exec(trimmed);
+      isMulti = true;
+    } else {
+      throw err;
+    }
+  }
+
+  if (isMulti) {
+    // Multi-statement: db.exec() doesn't report a per-statement change
+    // count, so for --confirm-rows we wrap the whole script in a manual
+    // transaction and diff total_changes() before/after. Note: scripts
+    // that contain their own BEGIN/COMMIT will fail under --confirm-rows
+    // (sqlite refuses nested transactions); that's the price of an
+    // atomic confirm-or-rollback wrapper around an opaque blob.
+    if (opts.confirmRows !== undefined) {
+      const expected = opts.confirmRows;
+      const before = (db.prepare("SELECT total_changes() AS n").get() as { n: number }).n;
+      db.exec("BEGIN");
+      let actual: number;
+      try {
+        db.exec(trimmed);
+        const after = (db.prepare("SELECT total_changes() AS n").get() as { n: number }).n;
+        actual = after - before;
+      } catch (e) {
+        try {
+          db.exec("ROLLBACK");
+        } catch {}
+        throw e;
+      }
+      if (actual !== expected) {
+        db.exec("ROLLBACK");
+        throw new UsageError(
+          `expected ${expected} rows, would have affected ${actual} (rolled back). Re-run with --confirm-rows ${actual} if intentional.`,
+        );
+      }
+      db.exec("COMMIT");
       const n = countTopLevelStatements(trimmed);
       if (opts.json) {
-        emitJson({ statements: n, multiStatement: true });
+        emitJson({
+          statements: n,
+          multiStatement: true,
+          confirmRows: expected,
+          actualRows: actual,
+        });
         return;
       }
-      console.log(pc.dim(`ran ${n} statement${n === 1 ? "" : "s"}`));
+      console.log(
+        pc.dim(
+          `ran ${n} statement${n === 1 ? "" : "s"} (${actual} row${actual === 1 ? "" : "s"} affected)`,
+        ),
+      );
       return;
     }
-    throw err;
+    db.exec(trimmed);
+    const n = countTopLevelStatements(trimmed);
+    if (opts.json) {
+      emitJson({ statements: n, multiStatement: true });
+      return;
+    }
+    console.log(pc.dim(`ran ${n} statement${n === 1 ? "" : "s"}`));
+    return;
   }
 
   const lower = trimmed.toLowerCase();
   const isRead =
     lower.startsWith("select") || lower.startsWith("with") || lower.startsWith("explain");
+  if (opts.confirmRows !== undefined && isRead) {
+    throw new UsageError(
+      "--confirm-rows is only meaningful on write statements (UPDATE / DELETE / INSERT / REPLACE)",
+    );
+  }
   if (isRead) {
     const rows = db.prepare(trimmed).all();
     if (opts.json) {
@@ -2666,6 +2726,37 @@ async function cmdSql(db: Db, query: string, opts: { json?: boolean } = {}): Pro
     console.log(table.toString());
     console.log(pc.dim(`(${rows.length} row${rows.length === 1 ? "" : "s"})`));
   } else {
+    if (opts.confirmRows !== undefined) {
+      const expected = opts.confirmRows;
+      db.exec("BEGIN");
+      let result: { changes: number; lastInsertRowid: number | bigint };
+      try {
+        result = db.prepare(trimmed).run();
+      } catch (e) {
+        try {
+          db.exec("ROLLBACK");
+        } catch {}
+        throw e;
+      }
+      if (result.changes !== expected) {
+        db.exec("ROLLBACK");
+        throw new UsageError(
+          `expected ${expected} rows, would have affected ${result.changes} (rolled back). Re-run with --confirm-rows ${result.changes} if intentional.`,
+        );
+      }
+      db.exec("COMMIT");
+      if (opts.json) {
+        emitJson({
+          changes: result.changes,
+          lastInsertRowid: Number(result.lastInsertRowid),
+          confirmRows: expected,
+          actualRows: result.changes,
+        });
+        return;
+      }
+      console.log(pc.dim(`${result.changes} row${result.changes === 1 ? "" : "s"} affected`));
+      return;
+    }
     const result = db.prepare(trimmed).run();
     if (opts.json) {
       emitJson({
@@ -3940,8 +4031,13 @@ export function buildProgram(): Command {
     .command("sql <query>")
     .description("Run a SQL query against the live mu DB (SELECT / UPDATE / DELETE all allowed)")
     .option(...JSON_OPT)
+    .option(
+      "--confirm-rows <n>",
+      "abort if affected-row count differs from N (rollback)",
+      parseLines,
+    )
     .action(function (query: string) {
-      const opts = (this as Command).opts() as { json?: boolean };
+      const opts = (this as Command).opts() as { json?: boolean; confirmRows?: number };
       return handle((db) => cmdSql(db, query, opts))();
     });
 

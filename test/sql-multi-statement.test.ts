@@ -10,8 +10,66 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { countTopLevelStatements } from "../src/cli.js";
+import { buildProgram, countTopLevelStatements } from "../src/cli.js";
 import { type Db, openDb } from "../src/db.js";
+
+interface Capture {
+  stdout: string;
+  stderr: string;
+}
+
+async function runCli(argv: readonly string[], dbPath: string): Promise<Capture> {
+  const originalDbPath = process.env.MU_DB_PATH;
+  const originalWrite = process.stdout.write.bind(process.stdout);
+  const originalErrWrite = process.stderr.write.bind(process.stderr);
+  const originalLog = console.log;
+  const originalErrLog = console.error;
+
+  let stdout = "";
+  let stderr = "";
+
+  process.env.MU_DB_PATH = dbPath;
+  // biome-ignore lint/suspicious/noExplicitAny: shim
+  console.log = (...args: any[]) => {
+    stdout += `${args.map((a) => (typeof a === "string" ? a : JSON.stringify(a))).join(" ")}\n`;
+  };
+  // biome-ignore lint/suspicious/noExplicitAny: shim
+  console.error = (...args: any[]) => {
+    stderr += `${args.map((a) => (typeof a === "string" ? a : JSON.stringify(a))).join(" ")}\n`;
+  };
+  // biome-ignore lint/suspicious/noExplicitAny: shim
+  (process.stdout as any).write = (chunk: any) => {
+    stdout += String(chunk);
+    return true;
+  };
+  // biome-ignore lint/suspicious/noExplicitAny: shim
+  (process.stderr as any).write = (chunk: any) => {
+    stderr += String(chunk);
+    return true;
+  };
+
+  try {
+    const program = buildProgram();
+    program.exitOverride();
+    await program.parseAsync(["node", "mu", ...argv]);
+  } catch {
+    // exitOverride + handle() may throw on errors; swallow so the
+    // caller can assert on captured output.
+  } finally {
+    process.stdout.write = originalWrite;
+    process.stderr.write = originalErrWrite;
+    console.log = originalLog;
+    console.error = originalErrLog;
+    if (originalDbPath === undefined) {
+      const key = "MU_DB_PATH";
+      delete process.env[key];
+    } else {
+      process.env.MU_DB_PATH = originalDbPath;
+    }
+  }
+
+  return { stdout, stderr };
+}
 
 describe("countTopLevelStatements", () => {
   it("counts a single trailing-semicolon-less statement", () => {
@@ -124,5 +182,106 @@ describe("multi-statement support via better-sqlite3 db.exec", () => {
       }
     ).n;
     expect(count).toBe(2);
+  });
+});
+
+describe("mu sql --confirm-rows", () => {
+  let tempDir: string;
+  let dbPath: string;
+  let db: Db;
+
+  beforeEach(() => {
+    tempDir = mkdtempSync(join(tmpdir(), "mu-sql-confirm-"));
+    dbPath = join(tempDir, "mu.db");
+    db = openDb({ path: dbPath });
+    // Seed a known set of rows we can DELETE/UPDATE against.
+    db.exec(`
+      INSERT INTO workstreams (name, created_at) VALUES ('cr_a', datetime('now'));
+      INSERT INTO workstreams (name, created_at) VALUES ('cr_b', datetime('now'));
+      INSERT INTO workstreams (name, created_at) VALUES ('cr_c', datetime('now'));
+      INSERT INTO workstreams (name, created_at) VALUES ('keep', datetime('now'));
+    `);
+  });
+
+  afterEach(() => {
+    db.close();
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  function countCr(): number {
+    return (
+      db.prepare("SELECT COUNT(*) AS n FROM workstreams WHERE name LIKE 'cr_%'").get() as {
+        n: number;
+      }
+    ).n;
+  }
+
+  it("single-statement: --confirm-rows N matches actual → commits", async () => {
+    expect(countCr()).toBe(3);
+    const { stdout, stderr } = await runCli(
+      ["sql", "DELETE FROM workstreams WHERE name LIKE 'cr_%'", "--confirm-rows", "3", "--json"],
+      dbPath,
+    );
+    expect(stderr).toBe("");
+    const parsed = JSON.parse(stdout.trim());
+    expect(parsed).toMatchObject({ changes: 3, confirmRows: 3, actualRows: 3 });
+    expect(countCr()).toBe(0);
+  });
+
+  it("single-statement: --confirm-rows N != actual → rollback + UsageError", async () => {
+    expect(countCr()).toBe(3);
+    const { stdout, stderr } = await runCli(
+      ["sql", "DELETE FROM workstreams WHERE name LIKE 'cr_%'", "--confirm-rows", "2"],
+      dbPath,
+    );
+    // Combined output: error message references both expected and actual.
+    const combined = stdout + stderr;
+    expect(combined).toMatch(/expected 2 rows, would have affected 3/);
+    expect(combined).toMatch(/rolled back/);
+    expect(combined).toMatch(/--confirm-rows 3/);
+    // No rows deleted.
+    expect(countCr()).toBe(3);
+  });
+
+  it("--confirm-rows on a SELECT → UsageError, no rows changed", async () => {
+    const { stdout, stderr } = await runCli(
+      ["sql", "SELECT * FROM workstreams WHERE name LIKE 'cr_%'", "--confirm-rows", "3"],
+      dbPath,
+    );
+    const combined = stdout + stderr;
+    expect(combined).toMatch(/--confirm-rows is only meaningful on write statements/);
+    expect(countCr()).toBe(3);
+  });
+
+  it("multi-statement: --confirm-rows N matches actual → commits", async () => {
+    expect(countCr()).toBe(3);
+    const sql = `
+      DELETE FROM workstreams WHERE name = 'cr_a';
+      DELETE FROM workstreams WHERE name = 'cr_b';
+    `;
+    const { stdout, stderr } = await runCli(["sql", sql, "--confirm-rows", "2", "--json"], dbPath);
+    expect(stderr).toBe("");
+    const parsed = JSON.parse(stdout.trim());
+    expect(parsed).toMatchObject({
+      multiStatement: true,
+      confirmRows: 2,
+      actualRows: 2,
+    });
+    expect(countCr()).toBe(1); // only cr_c left
+  });
+
+  it("multi-statement: --confirm-rows N != actual → rollback + UsageError", async () => {
+    expect(countCr()).toBe(3);
+    const sql = `
+      DELETE FROM workstreams WHERE name = 'cr_a';
+      DELETE FROM workstreams WHERE name = 'cr_b';
+    `;
+    const { stdout, stderr } = await runCli(["sql", sql, "--confirm-rows", "3"], dbPath);
+    const combined = stdout + stderr;
+    expect(combined).toMatch(/expected 3 rows, would have affected 2/);
+    expect(combined).toMatch(/rolled back/);
+    expect(combined).toMatch(/--confirm-rows 2/);
+    // Rollback restored both rows.
+    expect(countCr()).toBe(3);
   });
 });
