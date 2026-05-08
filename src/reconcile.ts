@@ -16,6 +16,7 @@ import {
   type AgentStatus,
   deleteAgent,
   listAgents,
+  refreshAgentTitle,
   resolveCliCommand,
   updateAgentStatus,
 } from "./agents.js";
@@ -93,6 +94,16 @@ export async function reconcile(db: Db, opts: ReconcileOptions): Promise<Reconci
       updateAgentStatus(db, agent.name, detected);
       statusChanges++;
     }
+    // ALWAYS refresh the pane title (even when status didn't change),
+    // so that:
+    //   1. Inner CLIs that self-set their pane title (pi, pi-meta, vim,
+    //      tmux's default 'host - dir') get overwritten with mu's
+    //      composed title.
+    //   2. Task-ownership changes that happen between reconciles
+    //      (claim / release / close) re-propagate even if the status
+    //      detector didn't flip.
+    // Best-effort: a tmux failure here never blocks the reconcile report.
+    await refreshAgentTitle(db, agent.name);
   }
 
   // 3. Surface orphan panes. `looksLikeAgentPane` is conservative:

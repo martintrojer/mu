@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  STATUS_EMOJI,
+  composeAgentTitle,
   deleteAgent,
   getAgent,
   getAgentByPane,
@@ -319,5 +321,103 @@ describe("agents CRUD", () => {
     // Task stays CLOSED; only owner (which gets cleared via FK SET NULL).
     expect(getTask(db, "done")?.status).toBe("CLOSED");
     expect(getTask(db, "done")?.owner).toBeNull();
+  });
+});
+
+// ─── composeAgentTitle (mu's interpreted state on the pane border) ───
+
+describe("composeAgentTitle", () => {
+  let tempDir: string;
+  let db: Db;
+
+  beforeEach(() => {
+    tempDir = mkdtempSync(join(tmpdir(), "mu-title-"));
+    db = openDb({ path: join(tempDir, "mu.db") });
+  });
+
+  afterEach(() => {
+    db.close();
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it("renders just the agent name when status is 'spawning' (initial state)", () => {
+    insertAgent(db, { name: "worker-a", workstream: "ws", paneId: "%1", status: "spawning" });
+    const a = getAgent(db, "worker-a");
+    if (!a) throw new Error("agent missing");
+    expect(composeAgentTitle(db, a)).toBe("worker-a");
+  });
+
+  it("renders 'name · emoji' when status is busy / needs_input / etc and no claim", () => {
+    insertAgent(db, { name: "worker-a", workstream: "ws", paneId: "%1", status: "busy" });
+    let a = getAgent(db, "worker-a");
+    if (!a) throw new Error();
+    expect(composeAgentTitle(db, a)).toBe(`worker-a · ${STATUS_EMOJI.busy}`);
+
+    updateAgentStatus(db, "worker-a", "needs_input");
+    a = getAgent(db, "worker-a");
+    if (!a) throw new Error();
+    expect(composeAgentTitle(db, a)).toBe(`worker-a · ${STATUS_EMOJI.needs_input}`);
+
+    updateAgentStatus(db, "worker-a", "free");
+    a = getAgent(db, "worker-a");
+    if (!a) throw new Error();
+    expect(composeAgentTitle(db, a)).toBe(`worker-a · ${STATUS_EMOJI.free}`);
+  });
+
+  it("appends task id when agent owns one task", () => {
+    insertAgent(db, { name: "worker-a", workstream: "ws", paneId: "%1", status: "busy" });
+    addTask(db, { localId: "build_x", workstream: "ws", title: "X", impact: 50, effortDays: 1 });
+    db.prepare("UPDATE tasks SET owner='worker-a' WHERE local_id='build_x'").run();
+    const a = getAgent(db, "worker-a");
+    if (!a) throw new Error();
+    expect(composeAgentTitle(db, a)).toBe(`worker-a · ${STATUS_EMOJI.busy} · build_x`);
+  });
+
+  it("compresses to '⊕N tasks' when agent owns multiple tasks", () => {
+    insertAgent(db, { name: "worker-a", workstream: "ws", paneId: "%1", status: "busy" });
+    for (const id of ["t_a", "t_b", "t_c"]) {
+      addTask(db, { localId: id, workstream: "ws", title: id, impact: 50, effortDays: 1 });
+      db.prepare("UPDATE tasks SET owner='worker-a' WHERE local_id=?").run(id);
+    }
+    const a = getAgent(db, "worker-a");
+    if (!a) throw new Error();
+    expect(composeAgentTitle(db, a)).toBe(`worker-a · ${STATUS_EMOJI.busy} · ⊕3 tasks`);
+  });
+
+  it("excludes CLOSED / REJECTED / DEFERRED tasks from the count (live work view)", () => {
+    insertAgent(db, { name: "worker-a", workstream: "ws", paneId: "%1", status: "busy" });
+    for (const id of ["live", "shipped", "wontdo"]) {
+      addTask(db, { localId: id, workstream: "ws", title: id, impact: 50, effortDays: 1 });
+      db.prepare("UPDATE tasks SET owner='worker-a' WHERE local_id=?").run(id);
+    }
+    db.prepare("UPDATE tasks SET status='CLOSED' WHERE local_id='shipped'").run();
+    db.prepare("UPDATE tasks SET status='REJECTED' WHERE local_id='wontdo'").run();
+    const a = getAgent(db, "worker-a");
+    if (!a) throw new Error();
+    // Only 'live' is OPEN+owned → single-task form, not ⊕N.
+    expect(composeAgentTitle(db, a)).toBe(`worker-a · ${STATUS_EMOJI.busy} · live`);
+  });
+
+  it("truncates titles longer than 64 chars with '…'", () => {
+    const longName = "agent_with_a_very_long_name_that_pushes_us_over";
+    insertAgent(db, { name: longName, workstream: "ws", paneId: "%1", status: "busy" });
+    addTask(db, {
+      localId: "task_with_an_unusually_long_id_too",
+      workstream: "ws",
+      title: "X",
+      impact: 50,
+      effortDays: 1,
+    });
+    db.prepare("UPDATE tasks SET owner=? WHERE local_id='task_with_an_unusually_long_id_too'").run(
+      longName,
+    );
+    const a = getAgent(db, longName);
+    if (!a) throw new Error();
+    const title = composeAgentTitle(db, a);
+    expect(title.length).toBeLessThanOrEqual(64);
+    expect(title.endsWith("…")).toBe(true);
+    // Agent name (canonical identity) MUST remain intact at the start
+    // so the claim-protocol parser keeps working.
+    expect(title.startsWith(longName)).toBe(true);
   });
 });

@@ -524,6 +524,76 @@ export async function setPaneTitle(paneId: string, title: string): Promise<void>
   await tmux(["select-pane", "-t", paneId, "-T", title]);
 }
 
+/**
+ * Look up the window id (e.g. `@42`) that contains a given pane id
+ * (e.g. `%15`). Used by spawn so we can apply window-scoped options
+ * (`pane-border-status`) to the freshly created window.
+ *
+ * Returns undefined if the pane no longer exists.
+ */
+export async function getWindowIdForPane(paneId: string): Promise<string | undefined> {
+  if (!isValidPaneId(paneId)) return undefined;
+  const result = await currentExecutor(["display-message", "-t", paneId, "-p", "#{window_id}"]);
+  if (result.exitCode !== 0) return undefined;
+  const id = result.stdout.trim();
+  return id.length > 0 ? id : undefined;
+}
+
+/**
+ * Apply the mu pane border (status=top, format='[mu] #{pane_title}')
+ * to EVERY window currently in `session`. Idempotent. Best-effort:
+ * windows that have vanished mid-iteration are silently skipped. Used
+ * by `mu workstream init` (covers the placeholder `_mu` window plus
+ * any windows that already exist, e.g. on re-init of an upgraded
+ * mu-pre-border session) and by `mu agent spawn` (covers the
+ * just-created window so the border shows immediately on attach).
+ *
+ * Returns the number of windows that received the option.
+ */
+export async function enableMuPaneBordersForSession(session: string): Promise<number> {
+  const windows = await listWindows(session).catch(() => []);
+  let n = 0;
+  for (const w of windows) {
+    try {
+      await enableMuPaneBorders(w.id);
+      n += 1;
+    } catch {
+      // Window vanished; skip silently. Border is decorative.
+    }
+  }
+  return n;
+}
+
+/**
+ * Enable a one-line top pane border on a specific window/session target,
+ * showing `[mu] <pane-title>`. Idempotent (set-option is a write, not
+ * a toggle).
+ *
+ * IMPORTANT: tmux's `pane-border-status` and `pane-border-format` are
+ * **window** options, not session options. `set-option -t <session>`
+ * only updates the active window at call time — windows created later
+ * inherit from the GLOBAL value (which is `off` by default and which
+ * we deliberately do NOT touch, since changing the global would
+ * affect every other tmux session on the user's machine, including
+ * dotfile-curated ones).
+ *
+ * Therefore mu must call this twice:
+ *   1. At `mu workstream init` time on the placeholder `_mu` window
+ *      (so an attached operator sees a border immediately).
+ *   2. On every `mu agent spawn` (which calls `tmux new-window`),
+ *      against the new window's id.
+ *
+ * The border is tmux chrome, not pane content: it doesn't scroll, it
+ * survives copy-mode, and the inner CLI never sees it.
+ *
+ * Designed in roadmap-v0-2 hud_visual_cue_design (note #283); shipped
+ * in hud_visual_cue_impl.
+ */
+export async function enableMuPaneBorders(target: string): Promise<void> {
+  await tmux(["set-option", "-w", "-t", target, "pane-border-status", "top"]);
+  await tmux(["set-option", "-w", "-t", target, "pane-border-format", " [mu] #{pane_title} "]);
+}
+
 export async function getPaneTitle(paneId: string): Promise<string | undefined> {
   if (!isValidPaneId(paneId)) return undefined;
   const result = await currentExecutor(["display-message", "-t", paneId, "-p", "#{pane_title}"]);
@@ -541,6 +611,29 @@ export async function currentPaneTitle(): Promise<string | undefined> {
   const paneId = process.env.TMUX_PANE;
   if (!paneId || !isValidPaneId(paneId)) return undefined;
   return getPaneTitle(paneId);
+}
+
+/**
+ * Extract the agent-name token from a (possibly composed) pane title.
+ * mu's composeAgentTitle renders titles as `name · 💤 · task_id`; the
+ * agent name is always the first ' · '-separated token. Adopted /
+ * legacy panes that haven't been re-titled by mu have just the name
+ * (one token) — still parses.
+ *
+ * Returns trimmed name, or the input unchanged if no separator.
+ */
+export function parseAgentNameFromTitle(title: string): string {
+  const idx = title.indexOf(" · ");
+  return idx === -1 ? title.trim() : title.slice(0, idx).trim();
+}
+
+/**
+ * Convenience: read the current pane's title and extract the agent name.
+ */
+export async function currentAgentName(): Promise<string | undefined> {
+  const title = await currentPaneTitle();
+  if (title === undefined) return undefined;
+  return parseAgentNameFromTitle(title);
 }
 
 export async function selectLayout(window: string, layout: string): Promise<void> {

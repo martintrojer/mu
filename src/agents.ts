@@ -18,19 +18,22 @@ import type { AgentStatus } from "./detect.js";
 import { emitEvent } from "./logs.js";
 import type { HasNextSteps, NextStep } from "./output.js";
 import { type ReconcileReport, reconcile } from "./reconcile.js";
-import { addNote } from "./tasks.js";
+import { addNote, listTasksByOwner } from "./tasks.js";
 import {
   type CaptureOptions,
   PaneNotFoundError,
   type SendOptions,
   type TmuxPane,
   capturePane,
+  enableMuPaneBorders,
+  getWindowIdForPane,
   killPane,
   listPanesInSession,
   listWindows,
   newSessionWithPane,
   newWindow,
   paneExists,
+  parseAgentNameFromTitle,
   sendToPane,
   sessionExists,
   setPaneTitle,
@@ -168,6 +171,80 @@ export function updateAgentStatus(db: Db, name: string, status: AgentStatus): bo
     .prepare("UPDATE agents SET status = ?, updated_at = ? WHERE name = ?")
     .run(status, new Date().toISOString(), name);
   return result.changes > 0;
+}
+
+// ─── Pane title composition (mu's interpreted state on the border) ───
+//
+// The pane border (set by enableMuPaneBorders) renders
+// `[mu] #{pane_title}` as tmux chrome. mu owns the pane title and uses
+// it to carry interpreted state at a glance:
+//
+//   worker-a                            (no claim, status not
+//                                        worth surfacing yet)
+//   worker-a · ⚙️                         (busy, no claim)
+//   worker-a · ⚙️ · build_x               (busy, owns one task)
+//   worker-a · 💤 · build_x               (needs_input, owns one task)
+//   worker-a · 🛂 · build_x               (needs_permission)
+//   worker-a · ✅                         (free, no claim)
+//   worker-a · ⚙️ · ⊕2 tasks             (multi-claim case)
+//
+// The agent name MUST remain the first ' · '-separated token so the
+// claim protocol's pane-title-as-identity fallback (currentPaneTitle
+// in src/tmux.ts) keeps working. Adopted panes that haven't been
+// re-titled by mu just have the name (one token) — still parses.
+
+/** Plain-text emoji map for the agent status. Mirrors statusIcon in
+ *  cli.ts but without picocolors (tmux pane titles don't render ANSI
+ *  colour). 'spawning' is omitted on purpose — the title gets the
+ *  initial render before status detection runs, and 'spawning' is a
+ *  transient state. */
+export const STATUS_EMOJI: Record<AgentStatus, string> = {
+  spawning: "⏳",
+  busy: "⚙️",
+  needs_input: "💤",
+  needs_permission: "🛂",
+  free: "✅",
+  unreachable: "❓",
+  terminated: "☠️",
+};
+
+/** Maximum total length for a composed pane title. tmux truncates
+ *  silently in some chrome positions; we truncate the task id
+ *  ourselves so the suffix is predictable. */
+const MAX_TITLE_LEN = 64;
+
+/** Build the pane title for `agent` based on current DB state.
+ *  Pure (no tmux side effect; no DB write). Read-only on the DB. */
+export function composeAgentTitle(db: Db, agent: AgentRow): string {
+  // 'spawning' is the initial state at row insert. Don't decorate —
+  // surfaces as just the agent name until detection runs.
+  const showStatus = agent.status !== "spawning";
+  const tasks = listTasksByOwner(db, agent.name); // already filters CLOSED/REJECTED/DEFERRED
+  let title = agent.name;
+  if (showStatus) {
+    title += ` · ${STATUS_EMOJI[agent.status]}`;
+  }
+  if (tasks.length === 1) {
+    title += ` · ${tasks[0]?.localId}`;
+  } else if (tasks.length > 1) {
+    title += ` · ⊕${tasks.length} tasks`;
+  }
+  if (title.length > MAX_TITLE_LEN) {
+    // Truncate from the END (preserves agent name + status prefix).
+    title = `${title.slice(0, MAX_TITLE_LEN - 1)}…`;
+  }
+  return title;
+}
+
+/** Push a fresh pane title for `agentName`. Best-effort — a missing
+ *  agent, a placeholder pane id, or a tmux failure are all swallowed
+ *  silently (titles are decorative; never block the calling verb). */
+export async function refreshAgentTitle(db: Db, agentName: string): Promise<void> {
+  const agent = getAgent(db, agentName);
+  if (!agent) return;
+  if (agent.paneId.startsWith("%pending-")) return; // workspace pre-stage placeholder
+  const title = composeAgentTitle(db, agent);
+  await setPaneTitle(agent.paneId, title).catch(() => {});
 }
 
 /**
@@ -539,6 +616,14 @@ export async function spawnAgent(db: Db, opts: SpawnAgentOptions): Promise<Agent
   let agent: AgentRow;
   try {
     await setPaneTitle(paneId, opts.name);
+    // Apply the mu pane border to the new window. Window-scoped option;
+    // see enableMuPaneBorders docstring for why this is required per
+    // window (and not just per session). Best-effort — older tmux or
+    // tmux server hiccups are non-fatal; the border is decorative.
+    if (process.env.MU_BANNER_QUIET !== "1") {
+      const wid = await getWindowIdForPane(paneId).catch(() => undefined);
+      if (wid) await enableMuPaneBorders(wid).catch(() => {});
+    }
     if (workspacePathStr !== undefined) {
       // Agent row already exists from the workspace pre-stage; just
       // patch the pane id (and bump updated_at to reflect the change).
@@ -592,6 +677,11 @@ export async function spawnAgent(db: Db, opts: SpawnAgentOptions): Promise<Agent
     opts.workstream,
     `agent spawn ${opts.name} (cli=${cli}, role=${opts.role ?? "full-access"}, pane=${paneId})`,
   );
+  // Initial title push: the agent row is in 'spawning' state at this
+  // point, which composeAgentTitle renders as bare name (no decoration
+  // until the first detect cycle). Reconcile will re-push as soon as
+  // the operator runs any status-reading verb.
+  await refreshAgentTitle(db, opts.name);
   return agent;
 }
 
@@ -750,9 +840,15 @@ export async function adoptAgent(db: Db, opts: AdoptAgentOptions): Promise<Adopt
     );
   }
 
-  // Step 4: resolved name. Default to the pane's current title.
+  // Step 4: resolved name. Default to the pane's current title —
+  // unwrapping a possibly-composed mu title ('name · 💤 · task') back
+  // to just the name token. Re-adoption of a pane that mu previously
+  // owned must work; without parseAgentNameFromTitle the ' · 💤'
+  // suffix would fail isValidAgentName.
   const previousTitle = matchingPane.title.length > 0 ? matchingPane.title : null;
-  const resolvedName = opts.name ?? previousTitle ?? "";
+  const candidate =
+    opts.name ?? (previousTitle !== null ? parseAgentNameFromTitle(previousTitle) : "");
+  const resolvedName = candidate;
   if (!isValidAgentName(resolvedName)) {
     if (opts.name === undefined) {
       throw new Error(

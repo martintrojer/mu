@@ -12,6 +12,7 @@ import {
   assertValidPaneId,
   capturePane,
   defaultSendDelayMs,
+  enableMuPaneBorders,
   isValidPaneId,
   killPane,
   killSession,
@@ -22,6 +23,7 @@ import {
   newSessionWithPane,
   newWindow,
   paneExists,
+  parseAgentNameFromTitle,
   resetSleep,
   resetTmuxExecutor,
   selectLayout,
@@ -650,6 +652,28 @@ describe("setPaneTitle", () => {
   });
 });
 
+describe("enableMuPaneBorders", () => {
+  it("sets pane-border-status=top and pane-border-format='[mu] #{pane_title}' as window options", async () => {
+    const { executor, calls } = harness(() => ok());
+    setTmuxExecutor(executor);
+    await enableMuPaneBorders("@42");
+    expect(calls.length).toBe(2);
+    // -w is critical: pane-border-status is a WINDOW option in tmux,
+    // not a session option. Without -w, set-option on a session
+    // target only updates the currently-active window; windows
+    // created later inherit from the global default ('off').
+    expect(calls[0]?.args).toEqual(["set-option", "-w", "-t", "@42", "pane-border-status", "top"]);
+    expect(calls[1]?.args).toEqual([
+      "set-option",
+      "-w",
+      "-t",
+      "@42",
+      "pane-border-format",
+      " [mu] #{pane_title} ",
+    ]);
+  });
+});
+
 describe("selectLayout", () => {
   it("invokes select-layout", async () => {
     const { executor, calls } = harness(() => ok());
@@ -792,5 +816,25 @@ describe("capturePane", () => {
     setTmuxExecutor(executor);
     await expect(capturePane("garbage")).rejects.toThrow(/invalid tmux pane id/);
     expect(calls).toEqual([]);
+  });
+});
+
+// ─── parseAgentNameFromTitle (back-compat with adopted/legacy panes) ──
+
+describe("parseAgentNameFromTitle", () => {
+  it("returns the input unchanged when no ' · ' separator (adopted/legacy panes)", () => {
+    expect(parseAgentNameFromTitle("worker-a")).toBe("worker-a");
+    expect(parseAgentNameFromTitle("reviewer-1")).toBe("reviewer-1");
+  });
+
+  it("returns the first ' · '-separated token (composed titles)", () => {
+    expect(parseAgentNameFromTitle("worker-a · 💤")).toBe("worker-a");
+    expect(parseAgentNameFromTitle("worker-a · ⚙️ · build_x")).toBe("worker-a");
+    expect(parseAgentNameFromTitle("worker-a · ⚙️ · ⊕3 tasks")).toBe("worker-a");
+  });
+
+  it("trims whitespace around the name token", () => {
+    expect(parseAgentNameFromTitle("  worker-a  ")).toBe("worker-a");
+    expect(parseAgentNameFromTitle("  worker-a · 💤  ")).toBe("worker-a");
   });
 });

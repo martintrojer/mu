@@ -102,6 +102,14 @@ Use `worker-1`, `worker-2`, `reviewer-1`, `scout-1`, `auditor-1`,
 `[a-z][a-z0-9_-]{0,31}` but stick to the convention — names show up
 in `mu agent list`, in tmux's window list, and as the pane title.
 
+### Pane border carries mu's interpreted state
+
+In `mu-<ws>` sessions every pane shows a one-row top border with
+`[mu] <name> · <emoji> · <task-id>` (e.g. `[mu] worker-a · ⚙️ · build_x`).
+Updated on every state-touching verb and on every `mu state` /
+`mu agent list` reconcile. Glance at the pane to see what mu thinks.
+Opt-out: `MU_BANNER_QUIET=1`.
+
 ## Orchestrator loop
 
 Every turn:

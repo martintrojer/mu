@@ -11,7 +11,7 @@
 import type { Db } from "./db.js";
 import { emitEvent } from "./logs.js";
 import type { HasNextSteps, NextStep } from "./output.js";
-import { currentPaneTitle } from "./tmux.js";
+import { currentAgentName } from "./tmux.js";
 import { ensureWorkstream } from "./workstream.js";
 
 // ─── Domain types ──────────────────────────────────────────────────────
@@ -1126,7 +1126,10 @@ export async function claimTask(
   }
 
   // ── Worker claim path (registered agent owns the task) ──
-  const agentName = opts.agentName ?? (await currentPaneTitle());
+  // currentAgentName() parses 'name · status · task' titles back to
+  // just the name token — the registry FK is keyed on agents.name,
+  // so the parser is essential after composeAgentTitle decorates.
+  const agentName = opts.agentName ?? (await currentAgentName());
   if (!agentName) {
     throw new Error(
       "claimTask: no agent name (pass opts.agentName, run inside an mu-spawned pane with $TMUX_PANE set, or pass --self for an anonymous claim)",
@@ -1220,7 +1223,7 @@ async function resolveSelfActor(opts: ClaimTaskOptions): Promise<string> {
 export async function resolveActorIdentity(): Promise<string> {
   const muAgent = process.env.MU_AGENT_NAME;
   if (muAgent !== undefined && muAgent !== "") return muAgent;
-  const paneTitle = await currentPaneTitle();
+  const paneTitle = await currentAgentName();
   if (paneTitle !== undefined && paneTitle !== "") return paneTitle;
   const user = process.env.USER;
   if (user !== undefined && user !== "") return user;

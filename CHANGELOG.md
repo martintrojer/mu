@@ -50,6 +50,83 @@ called out under "Breaking" in each entry.
 
 ### Added
 
+- **Pane border + composed pane title carry mu's interpreted state.**
+  Closes `hud_visual_cue_design` + `hud_visual_cue_impl` in the
+  `roadmap-v0-2` workstream. Two complementary signals shipped
+  together; one is tmux chrome, the other is the pane title.
+
+  **Border (chrome).** `mu workstream init` now sets
+  `pane-border-status=top` and `pane-border-format=' [mu] #{pane_title} '`
+  on every window in the `mu-<ws>` session. `mu agent spawn` and
+  `mu adopt` apply it to their freshly created/adopted windows. The
+  options are window-scoped in tmux (a documented gotcha:
+  set-option on a session target only updates the active window;
+  windows created later inherit from the GLOBAL value, which we
+  must NOT touch). The border is one row of vertical real estate
+  per pane and survives copy-mode + scroll. Opt-out via
+  `MU_BANNER_QUIET=1`.
+
+  Per-session override means dotfile-curated tmux configs are
+  untouched: only `mu-<ws>` sessions get the border; everything
+  else stays at the user's global default. Confirmed against a
+  254-line opinionated tmux.conf with custom `pane-border-style`,
+  `status-right`, `window-status-format`, and TPM plugins.
+
+  **Title (state-carrying).** mu now composes the pane title from
+  current DB state and refreshes after every state-touching verb:
+
+  ```
+  worker-a                            # spawning (initial)
+  worker-a · 💤                         # idle, no claim
+  worker-a · ⚙️                          # busy, no claim
+  worker-a · ⚙️ · build_x                # busy, owns one task
+  worker-a · 💤 · build_x                # needs_input, owns one task
+  worker-a · 🛂 · build_x                # needs_permission
+  worker-a · ✅                          # free, no claim
+  worker-a · ⚙️ · ⊕2 tasks              # multi-claim case
+  ```
+
+  Refresh hooks: `cmdSpawn`, `cmdAdopt`, `cmdFree`, `cmdClaim`,
+  `cmdTaskRelease`, `cmdTaskClose`, `cmdTaskReject`,
+  `cmdTaskDefer`, and `reconcile`. Reconcile **always** refreshes
+  (not just on detected status change) so inner CLIs that
+  self-set their pane title (pi, pi-meta, vim) get overwritten
+  with mu's composed title on the next `mu state`/`mu agent list`.
+
+  Agent name MUST remain the first ` · `-separated token so the
+  pane-title-as-identity claim-protocol fallback keeps working.
+  New `parseAgentNameFromTitle()` helper (and `currentAgentName()`
+  convenience wrapper) handle both shapes (composed: take first
+  token; legacy/adopted: return as-is). `adoptAgent` uses the
+  parser too — re-adopting a pane mu previously owned now works
+  (was failing because `agent-name · ✅` failed `isValidAgentName`).
+
+  Truncation: 64-char cap; agent name preserved at the start.
+
+  Refresh is best-effort — a tmux failure never blocks the
+  calling verb (titles are decorative; the DB is authoritative).
+
+  Tests: 13 new (composeAgentTitle: 6 cases covering every
+  state-shape combination including multi-task compression and
+  truncation; parseAgentNameFromTitle: 3 cases including legacy
+  pane back-compat; enableMuPaneBorders: 1 verifies the `-w` flag
+  is set; existing `MU_SPAWN_LIVENESS_MS=0` test re-scoped from
+  no-display-message to no-capture-pane since
+  `getWindowIdForPane` legitimately uses display-message).
+  633 tests total.
+
+  Live verified end-to-end against 3 real pi-meta workers in
+  workspaces:
+
+  ```
+  $ mu task release demo_build_x -w borderdemo
+     -> worker-a's title drops '· demo_build_x'
+  $ mu task claim demo_build_x --for worker-b -w borderdemo
+     -> worker-b's title gains '· demo_build_x'
+  $ mu task close demo_build_x -w borderdemo
+     -> worker-b's title drops the task suffix
+  ```
+
 - **Status detector recognises Braille spinner glyphs as busy
   (covers pi-meta + every TUI wrapper).** Filed in roadmap-v0-2
   `bug_status_detector_pi_solo_misclassifies` after the

@@ -733,14 +733,17 @@ describe("spawn liveness check", () => {
     expect(caught?.message).toMatch(/MU_<UPPER_CLI>_COMMAND/);
   });
 
-  it("is disabled when MU_SPAWN_LIVENESS_MS=0 (no display-message call)", async () => {
+  it("is disabled when MU_SPAWN_LIVENESS_MS=0 (no capture-pane post-spawn)", async () => {
     const { executor, calls } = mockTmux(state);
     setTmuxExecutor(executor);
     await withMuSpawnLivenessMs("0", async () => {
       const agent = await spawnAgent(db, { name: "alice", workstream: "auth" });
       expect(agent.name).toBe("alice");
-      // No liveness check → no display-message and no capture-pane post-spawn.
-      expect(calls.find((c) => c[0] === "display-message")).toBeUndefined();
+      // Liveness check disabled → no capture-pane post-spawn. (We DO
+      // still call display-message: getWindowIdForPane uses it to
+      // discover the window for window-scoped border options. That's
+      // unrelated to the liveness check.)
+      expect(calls.find((c) => c[0] === "capture-pane")).toBeUndefined();
     });
   });
 

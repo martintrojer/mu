@@ -38,6 +38,7 @@ import {
   getAgentByPane,
   listLiveAgents,
   readAgent,
+  refreshAgentTitle,
   resolveCliCommand,
   sendToAgent,
   spawnAgent,
@@ -108,6 +109,9 @@ import {
   PaneNotFoundError,
   TmuxError,
   capturePane,
+  enableMuPaneBorders,
+  enableMuPaneBordersForSession,
+  getWindowIdForPane,
   listPanesInSession,
   newSession,
   sessionExists,
@@ -405,6 +409,16 @@ async function cmdInit(db: Db, name: string, opts: { json?: boolean } = {}): Pro
   const tmuxAlready = await sessionExists(sessionName);
   if (!tmuxAlready) {
     await newSession(sessionName, { detached: true, windowName: "_mu" });
+  }
+  // Always (re)apply the pane-border-status options so re-init or
+  // upgrade-from-pre-banner-mu sessions both pick up the cue. tmux
+  // set-option is idempotent. Opt-out via MU_BANNER_QUIET=1 (covers
+  // both this and the spawn-time scrollback banner; see spawnAgent).
+  if (process.env.MU_BANNER_QUIET !== "1") {
+    await enableMuPaneBordersForSession(sessionName).catch(() => {
+      // Older tmux without pane-border-status support is benign here:
+      // the cue is a nice-to-have, not load-bearing. Don't fail init.
+    });
   }
   const created = !tmuxAlready || dbCreated;
   const nextSteps: NextStep[] = [
@@ -1067,6 +1081,16 @@ async function cmdAdopt(db: Db, paneOrTitle: string, opts: AdoptCliOpts): Promis
     role: opts.role,
   };
   const result: AdoptAgentResult = await adoptAgent(db, adoptOpts);
+  // Refresh title with composed state. Adopt may have set it to just
+  // the agent name; this re-renders with status emoji etc.
+  await refreshAgentTitle(db, result.agent.name);
+
+  // Window-scoped border for the adopted pane's window. (cmdInit set
+  // it on _mu but adopted panes can be in any window.)
+  if (process.env.MU_BANNER_QUIET !== "1") {
+    const wid = await getWindowIdForPane(paneId).catch(() => undefined);
+    if (wid) await enableMuPaneBorders(wid).catch(() => {});
+  }
 
   const nextSteps: NextStep[] = [
     { intent: "Send work", command: `mu agent send ${result.agent.name} "..." -w ${ws}` },
@@ -1107,6 +1131,7 @@ async function cmdFree(
 ): Promise<void> {
   assertAgentInWorkstream(db, name, opts.workstream);
   const r = freeAgent(db, name);
+  if (r.changed) await refreshAgentTitle(db, name);
   if (opts.json) {
     emitJson({ agent: name, ...r });
     return;
@@ -1555,7 +1580,12 @@ async function cmdTaskClose(
 ): Promise<void> {
   assertTaskInWorkstream(db, localId, opts.workstream);
   const sdkOpts = opts.evidence !== undefined ? { evidence: opts.evidence } : {};
+  // Capture the owner BEFORE closeTask so we can refresh their title
+  // even though closeTask doesn't return owner info. owner won't
+  // change as a result of close (FK SET NULL only fires on delete).
+  const taskRow = getTask(db, localId);
   const r = closeTask(db, localId, sdkOpts);
+  if (r.changed && taskRow?.owner) await refreshAgentTitle(db, taskRow.owner);
   const ws = await resolveWorkstream(opts.workstream);
   const nextSteps: NextStep[] = [
     { intent: "Reopen if needed", command: `mu task open ${localId} -w ${ws}` },
@@ -1636,6 +1666,16 @@ async function cmdTaskRejectOrDefer(
   if (opts.evidence !== undefined) sdkOpts.evidence = opts.evidence;
   if (opts.cascade) sdkOpts.cascade = true;
   const r = verb === "reject" ? rejectTask(db, localId, sdkOpts) : deferTask(db, localId, sdkOpts);
+  // Title push for every affected task's owner (the verb compresses
+  // potentially-multi-task work; refresh each owner once).
+  if (r.changed) {
+    const owners = new Set<string>();
+    for (const id of r.changedIds) {
+      const t = getTask(db, id);
+      if (t?.owner) owners.add(t.owner);
+    }
+    for (const owner of owners) await refreshAgentTitle(db, owner);
+  }
   const ws = await resolveWorkstream(opts.workstream);
   const past = verb === "reject" ? "Rejected" : "Deferred";
   const status = verb === "reject" ? "REJECTED" : "DEFERRED";
@@ -1893,6 +1933,9 @@ async function cmdTaskRelease(
   const sdkOpts: { reopen: boolean; evidence?: string } = { reopen: opts.reopen ?? false };
   if (opts.evidence !== undefined) sdkOpts.evidence = opts.evidence;
   const r = releaseTask(db, localId, sdkOpts);
+  // Title push for the agent that just lost the task. Prev-owner could
+  // be null (anonymous claim release — nothing to refresh).
+  if (r.previousOwner) await refreshAgentTitle(db, r.previousOwner);
   const ws = await resolveWorkstream(opts.workstream);
   const nextSteps: NextStep[] = [
     {
@@ -1947,6 +1990,9 @@ async function cmdClaim(
   if (opts.actor !== undefined) sdkOpts.actor = opts.actor;
   if (opts.evidence !== undefined) sdkOpts.evidence = opts.evidence;
   const result = await claimTask(db, localId, sdkOpts);
+  // Title push for the new owner. Anonymous claims (--self) leave
+  // owner=null — nothing to refresh.
+  if (result.owner) await refreshAgentTitle(db, result.owner);
   const ws = await resolveWorkstream(opts.workstream);
   const nextSteps: NextStep[] = [
     {
