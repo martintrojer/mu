@@ -38,23 +38,22 @@ describe("printNextSteps", () => {
     expect(logs[2]).toContain("mu task close foo");
   });
 
-  it("pads intent labels so colons align across steps", () => {
+  it("pads short labels with spaces to the longest label's width before the colon", () => {
     const steps: NextStep[] = [
       { intent: "Short", command: "a" },
       { intent: "Much longer label", command: "b" },
     ];
     printNextSteps(steps);
-    // The short label's line should contain the full long-label width
-    // worth of leading whitespace before the colon.
-    const shortLine = logs[1] ?? "";
-    const longLine = logs[2] ?? "";
-    // Both lines should contain the colon at roughly the same position
-    // (modulo ANSI). Strip ANSI and verify.
-    // ESC = String.fromCharCode(0x1b); the regex strips ANSI SGR sequences.
     const ESC = String.fromCharCode(0x1b);
     const ansiRe = new RegExp(`${ESC}\\[[0-9;]*m`, "g");
     const stripAnsi = (s: string): string => s.replace(ansiRe, "");
-    expect(stripAnsi(shortLine).indexOf(":")).toBe(stripAnsi(longLine).indexOf(":"));
+    // Assert the literal padding pattern — stronger than the previous
+    // 'colon positions match' check (which would still pass on broken
+    // padding semantics like double-padding or tab-padding). Long label
+    // is 17 chars, short is 5; padding is 12 spaces. Caught by
+    // review_test_output_padding_implementation_test.
+    expect(stripAnsi(logs[1] ?? "")).toBe("  Short             : a");
+    expect(stripAnsi(logs[2] ?? "")).toBe("  Much longer label : b");
   });
 });
 

@@ -106,11 +106,12 @@ describe("mu hud", () => {
     expect(stdout).not.toContain("ready (0");
   });
 
-  it("--mid is the default when no mode flag is passed", async () => {
-    const { stdout: a } = await runCli(["hud", "-w", "ws"], dbPath);
-    const { stdout: b } = await runCli(["hud", "-w", "ws", "--mid"], dbPath);
-    expect(a).toBe(b);
-  });
+  // (Removed: '--mid is the default when no mode flag is passed' was
+  // redundant with the structural assertions in the --mid test above
+  // (presence of 'agents (', absence of 'tracks ('). The string-equality
+  // form was also flake-prone on slow CIs because relTime('+0s' vs
+  // '+1s') could shift between back-to-back invocations. Caught by
+  // review_test_hud_default_mid_tautology.)
 
   // ── --full ──────────────────────────────────────────────────────
 
@@ -129,9 +130,31 @@ describe("mu hud", () => {
     expect(stdout).toContain("task add alpha");
   });
 
-  it("--full -n 1 caps the recent-events tail", async () => {
-    const { stdout } = await runCli(["hud", "-w", "ws", "--full", "-n", "1"], dbPath);
-    expect(stdout).toContain("recent (1)");
+  it("-n caps the recent-events tail at exactly N entries (asserts via --json shape)", async () => {
+    // Seed extra events so there are several to cap. Each task add
+    // emits a kind=event row.
+    for (const id of ["gamma", "delta", "epsilon", "zeta"]) {
+      await runCli(
+        ["task", "add", id, "-w", "ws", "--title", id, "-i", "50", "-e", "1", "--json"],
+        dbPath,
+      );
+    }
+    // Assert against the structured --json output rather than the
+    // 'recent (N)' header (the header could pass even if the rendered
+    // list ignored the slice). Caught by review_test_hud_full_n_loose.
+    const oneJson = JSON.parse(
+      (await runCli(["hud", "-w", "ws", "--json", "-n", "1"], dbPath)).stdout,
+    );
+    expect(oneJson.recent.length).toBe(1);
+    const threeJson = JSON.parse(
+      (await runCli(["hud", "-w", "ws", "--json", "-n", "3"], dbPath)).stdout,
+    );
+    expect(threeJson.recent.length).toBe(3);
+    // And the human --full header matches what JSON would have shown.
+    const oneHuman = await runCli(["hud", "-w", "ws", "--full", "-n", "1"], dbPath);
+    expect(oneHuman.stdout).toContain("recent (1)");
+    const threeHuman = await runCli(["hud", "-w", "ws", "--full", "-n", "3"], dbPath);
+    expect(threeHuman.stdout).toContain("recent (3)");
   });
 
   // ── --json ──────────────────────────────────────────────────────

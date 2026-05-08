@@ -62,6 +62,10 @@ export class PaneNotFoundError extends Error implements HasNextSteps {
   errorNextSteps(): NextStep[] {
     return [
       {
+        intent: `Verify the pane id ${this.paneId} actually exists`,
+        command: `tmux display-message -t ${this.paneId} -p '#{pane_id} #{pane_title}'`,
+      },
+      {
         intent: "List all live panes across all sessions",
         command:
           "tmux list-panes -a -F '#{session_name}:#{window_id}.#{pane_id}\\t#{pane_title}\\t#{pane_current_command}'",

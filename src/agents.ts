@@ -451,6 +451,10 @@ export class AgentDiedOnSpawnError extends Error implements HasNextSteps {
   errorNextSteps(): NextStep[] {
     return [
       {
+        intent: "Inspect the dead pane's scrollback for the underlying error",
+        command: `mu agent read ${this.agentName} -n 100`,
+      },
+      {
         intent: "Override the spawn command to a non-blocking variant",
         command: 'export MU_PI_COMMAND="pi-alt --some-flag"   (or pass --command "..." to spawn)',
       },

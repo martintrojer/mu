@@ -134,10 +134,14 @@ describe("mu task add --blocked-by", () => {
       ],
       dbPath,
     );
-    // commander.exitOverride throws on unknown options; runCli swallows.
-    // Either way: 'build' must NOT have been created.
-    expect(exitCode === null || exitCode !== 0).toBe(true);
-    expect(stderr).toMatch(/unknown option|--blocks/);
+    // commander.exitOverride throws on unknown options. Tighten the
+    // assertion: must be a non-zero exit (was 'null OR != 0' which
+    // also passes when runCli reports success). Stderr must contain
+    // BOTH 'unknown option' AND '--blocks' literally (was a regex
+    // disjunction that matched a help-line mentioning either word).
+    expect(exitCode).not.toBeNull();
+    expect(exitCode).not.toBe(0);
+    expect(stderr).toMatch(/unknown option.*--blocks/);
     const db = openDb({ path: dbPath });
     const row = db.prepare("SELECT 1 FROM tasks WHERE local_id = 'build'").get();
     db.close();
