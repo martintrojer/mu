@@ -206,8 +206,17 @@ export function slugifyTitle(title: string): string {
 export function idFromTitle(db: Db, workstream: string, title: string): string {
   const base = slugifyTitle(title);
   if (getTask(db, base) === undefined) return base;
+  // Truncate the BASE before adding the suffix, not the
+  // suffix-after-concat. Concat-then-slice (the previous shape)
+  // chops off the suffix when base.length is at SLUG_HARD_CAP,
+  // making `_2` through `_999` all collapse back to base and the
+  // loop exhaust 998 iterations before throwing an inscrutable
+  // error. (review_code_slugify_collision_truncates: latent bug,
+  // surfaced theoretically when a base hit the 64-char hard cap.)
   for (let i = 2; i < 1000; i++) {
-    const candidate = `${base}_${i}`.slice(0, SLUG_HARD_CAP);
+    const suffix = `_${i}`;
+    const truncatedBase = base.slice(0, SLUG_HARD_CAP - suffix.length);
+    const candidate = `${truncatedBase}${suffix}`;
     if (getTask(db, candidate) === undefined) return candidate;
   }
   throw new Error(`could not derive a unique id from title in workstream ${workstream}: ${title}`);
