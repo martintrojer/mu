@@ -263,6 +263,14 @@ export function captureSnapshot(
   const dbPath = join(dir, `${id}.db`);
 
   try {
+    // Step 2: patch the row with the now-known db_path BEFORE running
+    // VACUUM INTO. Order matters: VACUUM INTO snapshots the COMMITTED
+    // DB state, so the snapshot file must already contain the correct
+    // db_path on its own row. If we did VACUUM first then UPDATE, the
+    // restored snapshot would yield a DB whose own snapshot row has
+    // db_path='' — caught on the first round-trip smoke test of
+    // snap_undo_verb.
+    db.prepare("UPDATE snapshots SET db_path = ? WHERE id = ?").run(dbPath, id);
     // Pre-unlink any stale file at this path. VACUUM INTO refuses to
     // overwrite ("output file already exists"), so we clear the slot
     // first. The slot is normally vacant — AUTOINCREMENT never reuses
@@ -274,14 +282,12 @@ export function captureSnapshot(
     //      restarts at 1), but the snapshots dir is shared via
     //      MU_STATE_DIR / default. Pre-unlink keeps tests independent.
     if (existsSync(dbPath)) unlinkSync(dbPath);
-    // Step 2: VACUUM INTO is the SQLite-blessed way to produce a clean
+    // Step 3: VACUUM INTO is the SQLite-blessed way to produce a clean
     // standalone .db file. Synchronous; copies pages, drops free-list
     // entries, doesn't block writers beyond ordinary page locking.
     // Path is interpolated as a SQL string literal — safe because dir
     // and id are mu-controlled (state-dir + AUTOINCREMENT integer).
     db.exec(`VACUUM INTO ${quoteSqlString(dbPath)}`);
-    // Step 3: patch the row with the now-known path.
-    db.prepare("UPDATE snapshots SET db_path = ? WHERE id = ?").run(dbPath, id);
   } catch (err) {
     // Roll back the row so we never have a snapshot pointing at a
     // file that doesn't exist. Best-effort unlink in case VACUUM

@@ -142,6 +142,79 @@ called out under "Breaking" in each entry.
   pi-extension HUD widget tasks (`hud_extension_skeleton`,
   `hud_widget_impl`) — they should be repurposed or rejected next.
 
+- **`mu undo` / `mu snapshot list` / `mu snapshot show` — the
+  user-facing recovery verbs.** Closes `snap_undo_verb` in
+  roadmap-v0-2 (designed in `snap_design` note #293; impl by
+  worker-1 on top of the `snap_schema` substrate). Promotes the
+  `mu task delete` next-step from "restore from backup" to
+  "`mu undo --yes`".
+
+  ```
+  $ mu task close design                # auto-snapshots before flip
+  $ mu undo                              # dry-run; shows what would be restored
+  About to restore snapshot #1
+    label        : task close design
+    workstream   : auth
+    taken at     : 2026-05-08T13:21:40Z
+    size         : 144.0 KB
+  This will REPLACE the live mu.db with the snapshot. tmux state
+  will NOT be rolled back: agents in DB whose panes are gone will
+  be pruned by reconcile; tmux panes whose DB rows are gone will
+  surface as orphans on the next `mu agent list`.
+  $ mu undo --yes                        # commit
+  Restored snapshot #1 (task close design, taken 2026-05-08T13:21:40Z)
+  Reconcile (tmux NOT rolled back):
+    agents pruned (DB row → dead pane) : 0
+    orphan panes surfaced              : 0
+  $ mu undo --yes                        # roll forward (undo of undo)
+  Restored snapshot #2 (pre-restore of snapshot 1, taken ...)
+  ```
+
+  Three verbs, one substrate:
+  - **`mu undo [--yes] [--to <id>]`** — default restores the
+    latest snapshot; `--to N` picks one. Confirmation gate
+    mirrors `mu workstream destroy --yes`: dry-run prints the
+    summary + the explicit "tmux NOT rolled back" warning;
+    `--yes` commits. Post-restore, every workstream is
+    reconciled (best-effort per-workstream) and the
+    ghost-pruned / orphans-surfaced counts go in the output so
+    the user knows where DB-vs-tmux drift now lives.
+  - **`mu snapshot list [-n N] [--json]`** — newest-first table
+    with `id | label | workstream | created_at | size`. Defaults
+    to 20 rows; `-n` overrides.
+  - **`mu snapshot show <id> [--json]`** — one snapshot's full
+    metadata (label, workstream, schema_version, db_path, size,
+    created_at).
+
+  No `mu redo`. The design (note #293) rejected it explicitly:
+  mu verbs have side effects (tmux pane kills, `git worktree
+  remove`, etc.) that aren't replayable. Undo-of-undo falls out
+  for free — each restore captures a pre-restore snapshot
+  first, so re-running `mu undo` rolls forward to that
+  snapshot. Verified end-to-end on the smoke run above.
+
+  Typed errors map cleanly through `cli.ts`'s `handle()`:
+  - `SnapshotNotFoundError` → exit 3 (not found)
+  - `SnapshotVersionMismatchError` → exit 4 (conflict)
+  - `SnapshotFileMissingError` → exit 5 (substrate)
+
+  One captureSnapshot fix surfaced live during this work: the
+  row's `db_path` was being UPDATEd AFTER `VACUUM INTO`, which
+  meant the snapshot file captured the row with `db_path=''`.
+  Restoring it lost the path. Reordered to UPDATE then VACUUM;
+  the snapshot now contains the correct path on its own row.
+  Caught by the first round-trip smoke test on snap_undo_verb.
+
+  Tests: 16 new in `test/cli-snapshot.test.ts` (no-snapshots
+  friendly path; bad-id exit 3; dry-run is non-destructive;
+  --yes round-trips a `task close`; second --yes rolls forward;
+  list/show shape across human + JSON; -n cap). 33 existing
+  snapshot tests still green. **Gate green.**
+
+  Closes `snap_undo_verb`. `snap_destroy_safety` (soften the
+  `mu workstream destroy` confirmation text) and `snap_docs`
+  are now unblocked.
+
 - **Snapshots + auto-capture before destructive verbs (schema v4).**
   Closes `snap_schema` in roadmap-v0-2 (designed in `snap_design`
   by worker-1, note #293; impl by worker-1 in their
