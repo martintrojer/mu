@@ -133,15 +133,32 @@ gitDescribe("workspace staleness rendering", () => {
 
   it("workspace list table renders a 'behind' column with a number", async () => {
     await setupWithStaleness(5);
+    // Pin the underlying value structurally via --json so a regression
+    // that drops commitsBehindMain (or always returns 0) fails here
+    // even if the table happens to contain a coincidental "5" digit
+    // (the row's created_at ISO date alone is enough to satisfy a
+    // bare /\b5\b/ search — see
+    // review_test_workspace_staleness_behind_value_unanchored).
+    const j = await runCli(["workspace", "list", "-w", "auth", "--json"], dbPath);
+    expect(j.error).toBeUndefined();
+    const rows = JSON.parse(j.stdout) as { commitsBehindMain: number | null }[];
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.commitsBehindMain).toBe(5);
+    // Also assert the table surface: header word "behind" present,
+    // and the value 5 appears in the behind column specifically (not
+    // just anywhere in the row). cli-table3 separates columns with
+    // " │ "; we anchor on that to avoid matching the parent_ref hash
+    // or the created_at timestamp.
     const r = await runCli(["workspace", "list", "-w", "auth"], dbPath);
     expect(r.error).toBeUndefined();
     expect(r.stdout).toMatch(/behind/);
-    // The behind value (5) should appear in the rendered table. The
-    // count is wrapped in ANSI color codes, so strip ANSI before the
-    // word-boundary check.
     // biome-ignore lint/suspicious/noControlCharactersInRegex: stripping ANSI escapes
     const plain = r.stdout.replace(/\x1b\[[0-9;]*m/g, "");
-    expect(plain).toMatch(/\b5\b/);
+    // Column order: agent | workstream | backend | path | parent_ref | behind | created.
+    // Match " │ 5 │ " for the behind cell — the column separator on
+    // both sides anchors us inside that column, never matching the
+    // 12-hex-char parent_ref or the ISO-date created_at.
+    expect(plain).toMatch(/│ 5 +│ /);
   });
 
   it("mu state does NOT show the warn line when all workspaces are <10 behind", async () => {

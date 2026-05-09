@@ -93,6 +93,25 @@ called out under "Breaking" in each entry.
   that the reserved `mu_` prefix isn't echoed back. Behaviour and
   the typed error contract are unchanged.
 
+- **`workspace list` table test now anchors the behind-column
+  assertion structurally.** Closes
+  `review_test_workspace_staleness_behind_value_unanchored` in
+  `mufeedback`. The "workspace list table renders a 'behind' column
+  with a number" case in `test/workspace-staleness.test.ts` used
+  `expect(plain).toMatch(/\b5\b/)` against the rendered cli-table3
+  output, which matched anywhere in the row — the `created_at` ISO
+  date alone (`2026-05-...`) guarantees a digit-5 hit, so a
+  regression that always returned `0` (or `null`) from
+  `gitBackend.commitsBehind` or that swapped `formatBehind(...)`
+  for `pc.dim("—")` would silently pass. The test now first hits
+  `mu workspace list --json` and asserts
+  `rows[0].commitsBehindMain === 5` (structural pin on the
+  underlying value), then runs the table form and asserts the
+  column-anchored regex `/│ 5 +│ /` against the ANSI-stripped
+  output — cli-table3's `│` separators on both sides confine the
+  match to the behind cell, never the 12-hex parent_ref or the
+  ISO-date created_at column. +18/−5 LOC, no production change.
+
 - **Three workstream-scope assertions collapsed onto one generic
   helper.** Closes `review_code_assert_in_workstream_smell` in
   `mufeedback`. `assertAgentInWorkstream` (`src/cli.ts`),
