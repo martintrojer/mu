@@ -260,18 +260,6 @@ export async function claimTask(
 }
 
 /**
- * Resolve the actor name for an anonymous (--self) claim:
- *   1. opts.actor if explicit.
- *   2. Current pane title (when $TMUX_PANE is set + tmux available).
- *   3. $USER.
- *   4. The literal 'unknown'.
- */
-async function resolveSelfActor(opts: ClaimTaskOptions): Promise<string> {
-  if (opts.actor !== undefined && opts.actor !== "") return opts.actor;
-  return resolveActorIdentity();
-}
-
-/**
  * Resolve the current actor's identity for attribution in task notes,
  * --self claims, and any other write that wants 'who did this?'.
  *
@@ -301,7 +289,8 @@ export async function resolveActorIdentity(): Promise<string> {
 }
 
 async function claimSelf(db: Db, localId: string, opts: ClaimTaskOptions): Promise<ClaimResult> {
-  const actor = await resolveSelfActor(opts);
+  const actor =
+    opts.actor !== undefined && opts.actor !== "" ? opts.actor : await resolveActorIdentity();
   return db.transaction(() => {
     const before = getTask(db, localId);
     if (!before) throw new TaskNotFoundError(localId);

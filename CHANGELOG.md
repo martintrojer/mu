@@ -12,6 +12,14 @@ called out under "Breaking" in each entry.
 
 ### Changed
 
+- **Inlined `resolveSelfActor` in `src/tasks/claim.ts`.** Closes
+  `review_code_resolve_self_actor_redundant` in `mufeedback`. The
+  3-line wrapper had exactly one caller (`claimSelf`) and obscured
+  the canonical `resolveActorIdentity` helper that `addNote` already
+  calls directly. The override-when-explicit logic is now a one-line
+  ternary at the call site; net −8 LOC. No behaviour change; existing
+  `claim --self` tests cover it.
+
 - **`mu`-managed tmux panes now have a visually distinct frame on
   all four sides, not just the labeled top status band.** Closes
   the first half of `tmux_pane_border_top_and_bottom_plus_glyph_audit`
