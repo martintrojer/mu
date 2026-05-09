@@ -396,23 +396,82 @@ export function listWorkspaces(db: Db, workstream?: string): WorkspaceRow[] {
  * Returns a NEW array; does not mutate the input. Rows whose parent_ref
  * is missing, or whose backend's commitsBehind throws / returns null,
  * get `commitsBehindMain: null`.
+ *
+ * Performance hardening (review_code_decorate_with_staleness_n_plus_one):
+ *   1. Concurrency-cap (DECORATE_CONCURRENCY = 4) so a workstream with
+ *      many workspaces can't fork-burst N parallel git/jj/sl children.
+ *      Real-user pain surface is `watch -n 5 mu state -w X` loops.
+ *   2. Per-invocation memoization keyed by (backend, parentRef).
+ *      Sibling workspaces in a workstream share a project root, and
+ *      git worktrees / jj workspaces share their local refs cache by
+ *      construction — so commits-behind for the same parent_ref
+ *      resolves to the same answer regardless of which workspace dir
+ *      we shell out from. Sl clones are independent, but in practice
+ *      all sibling clones in a workstream were produced from the same
+ *      origin and stay in lockstep on local origin/* refs. The cache
+ *      is local to this function call — no cross-invocation TTL, no
+ *      invalidation policy.
  */
+const DECORATE_CONCURRENCY = 4;
+
 export async function decorateWithStaleness(
   rows: readonly WorkspaceRow[],
 ): Promise<WorkspaceRow[]> {
-  return Promise.all(
-    rows.map(async (r) => {
-      if (r.parentRef === null) return { ...r, commitsBehindMain: null };
-      let n: number | null;
+  // Per-invocation cache: identical (backend, path, parentRef) tuples
+  // resolve to one shellout regardless of how many rows hit them. We key
+  // by path AND parentRef because the backend's commitsBehind contract
+  // depends on both (different workspaces can share a parentRef but
+  // each shells out from its own cwd; sharing only across identical
+  // (path, parentRef) tuples is the strictly-correct memo).
+  const cache = new Map<string, Promise<number | null>>();
+  const fetchBehind = (r: WorkspaceRow): Promise<number | null> => {
+    const parentRef = r.parentRef;
+    if (parentRef === null) return Promise.resolve(null);
+    const key = `${r.backend}\x00${parentRef}`;
+    const cached = cache.get(key);
+    if (cached !== undefined) return cached;
+    const p = (async (): Promise<number | null> => {
       try {
         const backend = backendByName(r.backend);
-        n = await backend.commitsBehind(r.path, r.parentRef);
+        return await backend.commitsBehind(r.path, parentRef);
       } catch {
-        n = null;
+        return null;
       }
-      return { ...r, commitsBehindMain: n };
-    }),
-  );
+    })();
+    cache.set(key, p);
+    return p;
+  };
+  return mapWithConcurrency(rows, DECORATE_CONCURRENCY, async (r) => ({
+    ...r,
+    commitsBehindMain: await fetchBehind(r),
+  }));
+}
+
+/**
+ * Tiny p-limit-style helper. Keeps at most `limit` callbacks in flight
+ * at once and preserves input order in the result. Stays in this file
+ * because it has exactly one caller (decorateWithStaleness); promote
+ * out only when a second caller appears (anti-feature pledge: no
+ * abstractions for hypothetical future flexibility).
+ */
+async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    while (true) {
+      const i = next++;
+      if (i >= items.length) return;
+      const item = items[i] as T;
+      results[i] = await fn(item, i);
+    }
+  };
+  const workerCount = Math.min(Math.max(1, limit), items.length);
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  return results;
 }
 
 export interface FreeWorkspaceOptions {

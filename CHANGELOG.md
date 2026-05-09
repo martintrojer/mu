@@ -408,6 +408,51 @@ called out under "Breaking" in each entry.
   changes. Future identity tests get a one-line idiom instead of a
   3-deep nested-`withEnv` ladder that's easy to under-clean.
 
+- **`decorateWithStaleness` no longer fans out N concurrent VCS
+  shellouts in `mu state` / `mu workspace list`.** Closes
+  `review_code_decorate_with_staleness_n_plus_one` in `mufeedback`.
+  The previous implementation bounded the per-row backend calls only
+  by `Promise.all` over the input array, so a workstream with N
+  workspaces fired N parallel `git rev-list` / `jj log` / `sl log`
+  child processes on every invocation. The user-pain surface is the
+  documented `watch -n 5 mu state -w X` operator pattern: 10
+  workspaces × 12 invocations/min = 120 child processes/min for a
+  decorative column, with OS-level fork-rate-limits surfacing as
+  opaque ETXTBSY / EAGAIN under load.
+
+  Fix is two complementary tweaks in `src/workspace.ts`,
+  ~30 LOC total, no new deps:
+  1. **Concurrency cap.** A tiny inline `mapWithConcurrency` helper
+     (one caller; lives next to `decorateWithStaleness` per the
+     anti-feature pledge against premature abstractions) keeps at
+     most 4 backend calls in flight regardless of row count.
+     Preserves input order in the result.
+  2. **Per-invocation memoization.** A `Map<key, Promise<n|null>>`
+     keyed by `(backend, parentRef)` collapses sibling rows that
+     share a `parent_ref` to one shellout. The common case — N
+     agents freshly spawned off the same head — goes from N
+     children to 1. Cache is local to the function call; no
+     cross-invocation TTL, no invalidation policy (the next
+     `mu state` re-reads from scratch, which is the honest answer
+     for a "pure observation" decoration).
+
+  Behaviour-preserving: rows whose `parentRef` is `null`, whose
+  backend's `commitsBehind` throws, or whose backend returns `null`,
+  still get `commitsBehindMain: null` exactly as before. The
+  none-backend short-circuit (parentRef always null) bypasses the
+  cache entirely.
+
+  Tests: three new cases in `test/workspace.test.ts`'s
+  `decorateWithStaleness` describe block. (a) The cache-hit
+  regression: 4 rows sharing a `parentRef` invoke `gitBackend.
+  commitsBehind` exactly **once** (asserted via `vi.spyOn` +
+  `toHaveBeenCalledTimes(1)`). (b) Distinct refs each shell out
+  once (sanity that the cache key is parentRef-scoped, not
+  global-scoped). (c) Concurrency cap: 12 distinct-ref rows with
+  a yielding mock body let us observe peak in-flight count, which
+  is asserted `≤ 4`. None of the existing `decorateWithStaleness`
+  cases changed shape.
+
 - **`colorEnabled()` no longer ANDs with `picocolors.isColorSupported`;
   the NO_COLOR test branch is now a meaningful end-to-end check.**
   Closes `review_test_color_enabled_no_color_module_load_caveat` in

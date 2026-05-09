@@ -8,7 +8,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { insertAgent } from "../src/agents.js";
 import { type Db, openDb } from "../src/db.js";
 import { detectBackend, gitBackend, jjBackend, noneBackend, slBackend } from "../src/vcs.js";
@@ -948,5 +948,141 @@ describe("decorateWithStaleness", () => {
     const decorated = await decorateWithStaleness(listWorkspaces(db, "auth"));
     expect(decorated[0]?.parentRef).toBeNull();
     expect(decorated[0]?.commitsBehindMain).toBeNull();
+  });
+
+  it("memoizes commitsBehind by (backend, parentRef): N rows = 1 shellout", async () => {
+    // Regression for review_code_decorate_with_staleness_n_plus_one:
+    // a `watch -n 5 mu state -w X` loop with N agents sharing a
+    // parent_ref must NOT fan out N parallel git/jj/sl child processes
+    // every 5 seconds. Per-invocation memoization collapses N rows
+    // sharing (backend, parentRef) to ONE backend call.
+    const spy = vi.spyOn(gitBackend, "commitsBehind").mockImplementation(async () => 7);
+    try {
+      const sharedRef = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
+      const rows = [
+        {
+          agent: "a",
+          workstream: "w",
+          backend: "git" as const,
+          path: "/p/a",
+          parentRef: sharedRef,
+          createdAt: "2026-01-01T00:00:00Z",
+        },
+        {
+          agent: "b",
+          workstream: "w",
+          backend: "git" as const,
+          path: "/p/b",
+          parentRef: sharedRef,
+          createdAt: "2026-01-01T00:00:00Z",
+        },
+        {
+          agent: "c",
+          workstream: "w",
+          backend: "git" as const,
+          path: "/p/c",
+          parentRef: sharedRef,
+          createdAt: "2026-01-01T00:00:00Z",
+        },
+        {
+          agent: "d",
+          workstream: "w",
+          backend: "git" as const,
+          path: "/p/d",
+          parentRef: sharedRef,
+          createdAt: "2026-01-01T00:00:00Z",
+        },
+      ];
+      const decorated = await decorateWithStaleness(rows);
+      expect(decorated.map((r) => r.commitsBehindMain)).toEqual([7, 7, 7, 7]);
+      // The cache hit assertion: 4 rows, 1 shellout.
+      expect(spy).toHaveBeenCalledTimes(1);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("memoizes per (backend, parentRef): distinct refs each shell out once", async () => {
+    // Sanity check that the cache key is parentRef-scoped, not
+    // global-scoped — distinct parent_refs must each get their own
+    // shellout, but each one only once regardless of row count.
+    const spy = vi
+      .spyOn(gitBackend, "commitsBehind")
+      .mockImplementation(async (_path, ref) => (ref === "refA" ? 3 : 11));
+    try {
+      const rows = [
+        {
+          agent: "a",
+          workstream: "w",
+          backend: "git" as const,
+          path: "/p/a",
+          parentRef: "refA",
+          createdAt: "2026-01-01T00:00:00Z",
+        },
+        {
+          agent: "b",
+          workstream: "w",
+          backend: "git" as const,
+          path: "/p/b",
+          parentRef: "refA",
+          createdAt: "2026-01-01T00:00:00Z",
+        },
+        {
+          agent: "c",
+          workstream: "w",
+          backend: "git" as const,
+          path: "/p/c",
+          parentRef: "refB",
+          createdAt: "2026-01-01T00:00:00Z",
+        },
+        {
+          agent: "d",
+          workstream: "w",
+          backend: "git" as const,
+          path: "/p/d",
+          parentRef: "refB",
+          createdAt: "2026-01-01T00:00:00Z",
+        },
+      ];
+      const decorated = await decorateWithStaleness(rows);
+      expect(decorated.map((r) => r.commitsBehindMain)).toEqual([3, 3, 11, 11]);
+      expect(spy).toHaveBeenCalledTimes(2);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("caps concurrency: never more than 4 in-flight backend calls", async () => {
+    // Bounding the fan-out is the second half of the fix. Without a
+    // cap, a workstream with 20 unique parent_refs would shell out
+    // 20 git/jj/sl children at once. We assert peak in-flight ≤ 4.
+    let inFlight = 0;
+    let peak = 0;
+    const spy = vi.spyOn(gitBackend, "commitsBehind").mockImplementation(async () => {
+      inFlight++;
+      if (inFlight > peak) peak = inFlight;
+      // Yield twice to give other queued workers a chance to start;
+      // a broken cap would let all 12 enter the body before any exits.
+      await new Promise((r) => setImmediate(r));
+      await new Promise((r) => setImmediate(r));
+      inFlight--;
+      return 0;
+    });
+    try {
+      const rows = Array.from({ length: 12 }, (_, i) => ({
+        agent: `a${i}`,
+        workstream: "w",
+        backend: "git" as const,
+        path: `/p/a${i}`,
+        parentRef: `ref-${i}`, // distinct refs → cache never hits, all 12 must shell out
+        createdAt: "2026-01-01T00:00:00Z",
+      }));
+      await decorateWithStaleness(rows);
+      expect(spy).toHaveBeenCalledTimes(12);
+      expect(peak).toBeLessThanOrEqual(4);
+      expect(peak).toBeGreaterThan(0);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
