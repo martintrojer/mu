@@ -537,13 +537,12 @@ target) inline in the note.
 - Error-map    : 0
 - Output value : 1 (table with status emoji)
 - SCORE: 1/4
-- DISPOSITION: **REMOVE-with-recipe**. The `blocked` view exists
-  precisely so an LLM can compose `mu sql "SELECT * FROM blocked
-  WHERE workstream='X'"`. The dedicated verb adds nothing the view
-  doesn't already give.
+- DISPOSITION: **REMOVE-with-recipe**. **SHIPPED** in
+  `audit_remove_task_blocked` (audit_cleanups_post_schema_v5_wave).
+  The `blocked` view + the SDK helper `listBlocked` survive
+  (`mu state` consumes the latter); only the verb wiring is gone.
 - SQL workaround: `mu sql "SELECT local_id, status, title FROM
-  blocked WHERE workstream='X'"`. Filed as
-  `audit_remove_task_blocked`.
+  blocked WHERE workstream='X'"`.
 
 ### `mu task goals`
 
@@ -553,10 +552,12 @@ target) inline in the note.
 - Error-map    : 0
 - Output value : 1 (table)
 - SCORE: 1/4
-- DISPOSITION: **REMOVE-with-recipe**. Same shape as `task blocked`:
-  the view exists, the verb is just sugar.
+- DISPOSITION: **REMOVE-with-recipe**. **SHIPPED** in
+  `audit_remove_task_goals` (audit_cleanups_post_schema_v5_wave).
+  The `goals` view + the SDK helper `listGoals` survive
+  (`src/tracks.ts` consumes the latter); only the verb wiring is gone.
 - SQL workaround: `mu sql "SELECT local_id, status, title FROM goals
-  WHERE workstream='X'"`. Filed as `audit_remove_task_goals`.
+  WHERE workstream='X'"`.
 
 ### `mu task owned-by <agent>`
 
@@ -604,7 +605,10 @@ target) inline in the note.
           GROUP BY t.local_id"
   ```
 
-  Filed as `audit_remove_task_search`.
+  **SHIPPED** in `audit_remove_task_search`
+  (audit_cleanups_post_schema_v5_wave). The SDK helper `searchTasks`
+  survives as reusable surface (covered by unit tests in
+  `test/tasks.test.ts`); only the verb wiring is gone.
 
 ### `mu task note <id> <text>`
 
@@ -1054,9 +1058,9 @@ in the same commit per the project rule.
 | Task id                              | Disposition | Verb(s)                              |
 |--------------------------------------|-------------|--------------------------------------|
 | `audit_merge_task_ready_into_next`   | MERGE       | `mu task ready` → `mu task next -n 0` |
-| `audit_remove_task_blocked`          | REMOVE      | `mu task blocked` → `mu sql … FROM blocked …` |
-| `audit_remove_task_goals`            | REMOVE      | `mu task goals` → `mu sql … FROM goals …` |
-| `audit_remove_task_search`           | REMOVE      | `mu task search` → `mu sql … LIKE …` |
+| `audit_remove_task_blocked` — SHIPPED | REMOVE      | `mu task blocked` → `mu sql … FROM blocked …` |
+| `audit_remove_task_goals` — SHIPPED   | REMOVE      | `mu task goals` → `mu sql … FROM goals …` |
+| `audit_remove_task_search` — SHIPPED  | REMOVE      | `mu task search` → `mu sql … LIKE …` |
 | `audit_merge_self_verbs_into_mu_me`  | MERGE       | `whoami` / `my-tasks` / `my-next` → `mu me [tasks\|next]` |
 | `bug_adopt_verb_unwired`             | BUG         | `mu adopt` is dead code (cmdAdopt exists, no `wireXxx` registers it) |
 

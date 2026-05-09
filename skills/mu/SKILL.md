@@ -213,17 +213,14 @@ mu agent attach <name>               # print scrollback + tmux attach hint
 # Registration (1) — the inverse of spawn
 mu adopt <pane-id|pane-title>        # register an orphan pane as a managed agent
 
-# Tasks (22)
+# Tasks (19)
 mu task add [id] --title T --impact N --effort-days N [--blocked-by A,B]
 mu task list [--status S] [--sort K]   # every task; --sort id|roi|recency|age
 mu task next [-n K] [--sort K]         # top-K ready (default --sort roi)
 mu task ready [--sort K]               # all ready (default --sort roi)
                                      # --sort recency = updated_at DESC; age = created_at ASC
                                      # both add a relative-time column to the table
-mu task blocked                      # OPEN with non-CLOSED blockers
-mu task goals                        # graph endpoints (no dependents)
 mu task owned-by <agent>             # what is <agent> working on?
-mu task search <pattern> [--all] [--in-notes]
 mu task show <id>                    # row + edges + notes
 mu task tree <id> [--down]           # ASCII blockers (or dependents)
 mu task notes <id>                   # notes only, oldest first

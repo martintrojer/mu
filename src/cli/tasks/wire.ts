@@ -23,15 +23,7 @@ import { cmdClaim, cmdTaskRelease, cmdTaskWait } from "./claim.js";
 import { cmdTaskBlock, cmdTaskDelete, cmdTaskReparent, cmdTaskUnblock } from "./edges.js";
 import { cmdTaskAdd, cmdTaskNote, cmdTaskNotes, cmdTaskShow, cmdTaskUpdate } from "./edit.js";
 import { cmdTaskClose, cmdTaskDefer, cmdTaskOpen, cmdTaskReject } from "./lifecycle.js";
-import {
-  cmdTaskBlocked,
-  cmdTaskGoals,
-  cmdTaskList,
-  cmdTaskNext,
-  cmdTaskOwnedBy,
-  cmdTaskReady,
-  cmdTaskSearch,
-} from "./queries.js";
+import { cmdTaskList, cmdTaskNext, cmdTaskOwnedBy, cmdTaskReady } from "./queries.js";
 import { cmdTaskTree } from "./tree.js";
 
 export function wireTaskCommands(program: Command): void {
@@ -126,26 +118,6 @@ export function wireTaskCommands(program: Command): void {
     });
 
   task
-    .command("blocked")
-    .description("List blocked tasks (OPEN with at least one non-CLOSED blocker)")
-    .option(...WORKSTREAM_OPT)
-    .option(...JSON_OPT)
-    .action(function () {
-      const opts = (this as Command).opts() as { workstream?: string; json?: boolean };
-      return handle((db) => cmdTaskBlocked(db, opts))();
-    });
-
-  task
-    .command("goals")
-    .description("List tasks with no dependents (graph endpoints; excludes CLOSED)")
-    .option(...WORKSTREAM_OPT)
-    .option(...JSON_OPT)
-    .action(function () {
-      const opts = (this as Command).opts() as { workstream?: string; json?: boolean };
-      return handle((db) => cmdTaskGoals(db, opts))();
-    });
-
-  task
     .command("owned-by <agent>")
     .description(
       "List tasks owned by an agent. Defaults to the current workstream (v5: agent names are per-workstream unique). Pass --all to surface every workstream's same-named worker. Excludes CLOSED by default — pass --include-closed for the full historical owner list.",
@@ -168,25 +140,6 @@ export function wireTaskCommands(program: Command): void {
         workstream?: string;
       };
       return handle((db) => cmdTaskOwnedBy(db, agent, opts))();
-    });
-
-  task
-    .command("search <pattern>")
-    .description(
-      "Substring search on task title and id (case-insensitive). Use --in-notes to also search note content; --all to span all workstreams.",
-    )
-    .option("--in-notes", "also search task_notes.content")
-    .option("--all", "search across all workstreams (default: current)")
-    .option(...WORKSTREAM_OPT)
-    .option(...JSON_OPT)
-    .action(function (pattern: string) {
-      const opts = (this as Command).opts() as {
-        workstream?: string;
-        all?: boolean;
-        inNotes?: boolean;
-        json?: boolean;
-      };
-      return handle((db) => cmdTaskSearch(db, pattern, opts))();
     });
 
   task

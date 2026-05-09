@@ -303,6 +303,28 @@ called out under "Breaking" in each entry.
 
 ### Removed
 
+- **Three audit-flagged read-only verbs deleted: `mu task blocked`,
+  `mu task goals`, `mu task search`** — closes
+  `audit_remove_task_blocked` / `audit_remove_task_goals` /
+  `audit_remove_task_search` in `mufeedback` (children of
+  `audit_cleanups_post_schema_v5_wave`). All three scored 1/4 in
+  [docs/VERB_AUDIT.md](docs/VERB_AUDIT.md): the underlying
+  abstractions — the `blocked` / `goals` SQL views and the
+  case-insensitive `LIKE` shape — are one-liners against `mu sql`.
+  The SDK helpers `listBlocked`, `listGoals`, `searchTasks` survive
+  as reusable surface (`mu state` consumes `listBlocked`,
+  `src/tracks.ts` consumes `listGoals`, `searchTasks` keeps its
+  unit-test coverage). Only the verb wirings + the three
+  cmd-functions in `src/cli/tasks/queries.ts` are gone (~60 LOC
+  src+test). The audit's SQL recipes are now the canonical
+  workaround, published in the
+  ["What's NOT in 0.2.0"](docs/USAGE_GUIDE.md) escape-hatch table
+  alongside the existing "prefer the typed verb" cheatsheet (the
+  `Search title / id / notes` row was deleted from that cheatsheet).
+  `TaskNotFoundError.errorNextSteps()` was also rewritten to
+  suggest `mu sql "… LIKE %id% …"` instead of
+  `mu task search <id> --all`.
+
 - **Four schema-v5-defunct workarounds deleted (`schema_v5_cleanups`;
   net ≈ −40 LOC src+test).** Closes `schema_v5_cleanups` in
   `mufeedback` — the final task in the v5 follow-up wave (per

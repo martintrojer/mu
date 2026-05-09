@@ -23,13 +23,12 @@ export class TaskNotFoundError extends Error implements HasNextSteps {
     super(`no such task: ${taskId}`);
   }
   errorNextSteps(): NextStep[] {
+    const idLit = this.taskId.replace(/'/g, "''");
+    const recipe = `mu sql "SELECT workstream, local_id, status, title FROM tasks WHERE LOWER(local_id) LIKE '%${idLit.toLowerCase()}%' OR LOWER(title) LIKE '%${idLit.toLowerCase()}%'"`;
     return [
       { intent: "List tasks in workstream", command: "mu task list -w <workstream>" },
-      {
-        intent: "Search by substring (id + title)",
-        command: `mu task search ${this.taskId} --all`,
-      },
-      { intent: "Find which workstream owns it", command: `mu task search ${this.taskId} --all` },
+      { intent: "Search by substring (id + title)", command: recipe },
+      { intent: "Find which workstream owns it", command: recipe },
     ];
   }
 }

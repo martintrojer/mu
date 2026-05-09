@@ -1,10 +1,17 @@
 // mu — `mu task` query verbs (read-only; no DB writes).
 //
-// list, next, ready, blocked, goals, owned-by, search.
+// list, next, ready, owned-by.
 // Plus the `mu my-tasks` / `mu my-next` agent-self aliases (also
 // read-only; they query against `resolveSelf(db)` instead of -w).
 //
 // Extracted from src/cli/tasks.ts as part of refactor_split_large_src_files.
+//
+// Removed in audit_cleanups_post_schema_v5_wave: `task blocked`,
+// `task goals`, `task search`. The underlying SDK helpers (`listBlocked`,
+// `listGoals`, `searchTasks`) survive — `mu state` / `mu tracks`
+// consume them, and `searchTasks` keeps its unit-test coverage as
+// reusable surface. The audit's SQL recipes for the removed verbs
+// live in docs/USAGE_GUIDE.md "What's NOT in 0.2.0".
 
 import {
   type TaskSortKey,
@@ -22,14 +29,10 @@ import {
 import type { Db } from "../../db.js";
 import { pc } from "../../output.js";
 import {
-  type SearchTasksOptions,
-  listBlocked,
-  listGoals,
   listReady,
   listTasks,
   listTasksByOwner,
   listTasksByOwnerCrossWorkstream,
-  searchTasks,
 } from "../../tasks.js";
 
 export async function cmdMyTasks(
@@ -138,40 +141,6 @@ export async function cmdTaskReady(
   console.log(formatTaskListTable(tasks, tableOpts));
 }
 
-export async function cmdTaskBlocked(
-  db: Db,
-  opts: { workstream?: string; json?: boolean },
-): Promise<void> {
-  const workstream = await resolveWorkstream(opts.workstream);
-  const tasks = listBlocked(db, workstream);
-  if (opts.json) {
-    emitJson(withRoiAll(tasks));
-    return;
-  }
-  if (tasks.length === 0) {
-    console.log(pc.dim("(no blocked tasks)"));
-    return;
-  }
-  console.log(formatTaskListTable(tasks));
-}
-
-export async function cmdTaskGoals(
-  db: Db,
-  opts: { workstream?: string; json?: boolean },
-): Promise<void> {
-  const workstream = await resolveWorkstream(opts.workstream);
-  const tasks = listGoals(db, workstream);
-  if (opts.json) {
-    emitJson(withRoiAll(tasks));
-    return;
-  }
-  if (tasks.length === 0) {
-    console.log(pc.dim("(no goals — every task has a dependent)"));
-    return;
-  }
-  console.log(formatTaskListTable(tasks));
-}
-
 export async function cmdTaskOwnedBy(
   db: Db,
   agent: string,
@@ -196,26 +165,5 @@ export async function cmdTaskOwnedBy(
   // Surface the workstream column when we're showing cross-workstream
   // results (--all); for the scoped (default) case the column would
   // be redundant.
-  console.log(formatTaskListTable(tasks, { withWorkstream: opts.all === true }));
-}
-
-export async function cmdTaskSearch(
-  db: Db,
-  pattern: string,
-  opts: { workstream?: string; all?: boolean; inNotes?: boolean; json?: boolean },
-): Promise<void> {
-  const searchOpts: SearchTasksOptions = {};
-  if (opts.inNotes) searchOpts.includeNotes = true;
-  if (!opts.all) searchOpts.workstream = await resolveWorkstream(opts.workstream);
-
-  const tasks = searchTasks(db, pattern, searchOpts);
-  if (opts.json) {
-    emitJson(tasks);
-    return;
-  }
-  if (tasks.length === 0) {
-    console.log(pc.dim(`(no matches for "${pattern}")`));
-    return;
-  }
   console.log(formatTaskListTable(tasks, { withWorkstream: opts.all === true }));
 }

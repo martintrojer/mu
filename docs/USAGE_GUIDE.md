@@ -637,7 +637,6 @@ mu sql "SELECT name FROM sqlite_master WHERE type IN ('table','view') ORDER BY t
 | Highest-ROI ready task                                | `mu task next [-w] [-n K] [--json]`     |
 | What did I touch most recently / what's stale         | `mu task list --sort recency` / `--sort age` |
 | Visualise what blocks what                            | `mu task tree <id> [--json]`            |
-| Search title / id / notes                             | `mu task search <pat> [--in-notes]`     |
 | Show row + edges + notes                              | `mu task show <id> [--json]`            |
 | Delete + cascade edges/notes                          | `mu task delete <id>`                   |
 | Add / remove a single edge                            | `mu task block` / `mu task unblock`     |
@@ -986,6 +985,9 @@ in real use:
 | Markdown agent-definition discovery           | Spawn accepts `--cli` and `--command` directly; no template registry    | dropped       |
 | `mu run script.ts` (JS DSL)                   | Use `--json` + bash + jq                                                | rejected      |
 | Sync to GitHub Issues / Linear / Asana        | Not in scope; explicitly rejected                                       | —             |
+| ~~`mu task blocked`~~ (removed; the `blocked` SQL view is the abstraction) | `mu sql "SELECT local_id, status, title FROM blocked WHERE workstream='X'"` | removed-with-recipe |
+| ~~`mu task goals`~~ (removed; same shape as `blocked` — view is the abstraction) | `mu sql "SELECT local_id, status, title FROM goals WHERE workstream='X'"` | removed-with-recipe |
+| ~~`mu task search <pat>`~~ (removed; case-insensitive LIKE is one SQL line) | `mu sql "SELECT local_id, status, title FROM tasks WHERE workstream='X' AND LOWER(title) LIKE '%pat%'"` (add `LEFT JOIN task_notes` for the old `--in-notes`; drop the `WHERE workstream=` clause for the old `--all`) | removed-with-recipe |
 
 Anything in this table that bites you in real use is a candidate
 for **promotion**. Criteria: proven friction in ≥2 real workflows +
