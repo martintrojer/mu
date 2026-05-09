@@ -535,34 +535,23 @@ describe("createWorkspace HOME-dir guard (snap_dogfood Finding 4a)", () => {
 
 describe("createWorkspace cleanup on backend throw (snap_dogfood Finding 4b)", () => {
   it("removes the partial on-disk dir when backend.createWorkspace throws after creating it", async () => {
-    // Pre-create the workspace path so the noneBackend's existsSync
-    // check throws AFTER ensureParent (the parent dir gets created
-    // either way). To simulate "backend created a partial dir then
-    // threw", we manually create a marker file inside the would-be
-    // workspace path and then call createWorkspace with a custom
-    // backend wrapper.
+    // Reproduction: invoke the SDK with a fresh fake backend that
+    // throws AFTER putting a partial dir on disk — the snap_dogfood
+    // Finding 4b case (cp -a interrupted by DRM-protected file).
     //
-    // Easiest path: pre-create the dir + DELETE any registry, then
-    // assert that even though we hit the EXISTS path early, no extra
-    // dirs are left around. But that goes through WorkspacePathNotEmptyError
-    // (different path). For the actual try/catch around backend.create,
-    // we need a backend that throws AFTER creating the dir.
-    //
-    // Simplest reproduction: register a different agent's row at the
-    // exact path that worker-2's createWorkspace would land on, so
-    // the path-already-exists check inside noneBackend fires (it
-    // creates the parent dir but not the workspace dir itself) — but
-    // that doesn't exercise the partial-dir cleanup.
-    //
-    // Real reproduction: directly invoke the SDK and force the
-    // backend to throw after it has put a partial dir on disk.
-    const { backendByName } = await import("../src/vcs.js");
-    const real = backendByName("none");
+    // We pass the fake backend via `opts.backend` (which accepts
+    // either a backend name OR a `VcsBackend` object). Building a
+    // standalone fake — instead of monkey-patching the exported
+    // `noneBackend` singleton — means a thrown assertion can never
+    // leak a mutated singleton into the next test that uses
+    // noneBackend.createWorkspace (e.g. the FK CASCADE tests above).
     const wsPath = workspacePath("auth", "worker-1");
     let partialDirSeenByCleanup = false;
-    const flaky = {
-      ...real,
+    const flakyBackend = {
       name: "none" as const,
+      async detect() {
+        return true;
+      },
       async createWorkspace(opts: { projectRoot: string; workspacePath: string }) {
         // Simulate the cp-mid-stream failure: create a partial dir
         // first, then throw.
@@ -571,31 +560,21 @@ describe("createWorkspace cleanup on backend throw (snap_dogfood Finding 4b)", (
         partialDirSeenByCleanup = true;
         throw new Error("simulated cp -a interrupted by DRM-protected file");
       },
+      async freeWorkspace() {
+        return { removed: false };
+      },
+      async commitsBehind() {
+        return null;
+      },
     };
-    // Monkey-patch via vcs module export. cleanest is to swap
-    // backendByName by importing the module object — but vcs.ts
-    // exports backends by name without a setter. Instead, exercise
-    // the cleanup via a backend that throws synchronously by reaching
-    // through createWorkspace's `opts.backend` path with a real backend
-    // we can monkey-patch in place.
-    //
-    // backends are exported as singletons; mutating .createWorkspace
-    // is the simplest way to inject a transient failure.
-    const orig = real.createWorkspace.bind(real);
-    (real as { createWorkspace: typeof flaky.createWorkspace }).createWorkspace =
-      flaky.createWorkspace;
-    try {
-      await expect(
-        createWorkspace(db, {
-          agent: "worker-1",
-          workstream: "auth",
-          projectRoot,
-          backend: "none",
-        }),
-      ).rejects.toThrow(/simulated cp -a interrupted/);
-    } finally {
-      (real as { createWorkspace: typeof orig }).createWorkspace = orig;
-    }
+    await expect(
+      createWorkspace(db, {
+        agent: "worker-1",
+        workstream: "auth",
+        projectRoot,
+        backend: flakyBackend,
+      }),
+    ).rejects.toThrow(/simulated cp -a interrupted/);
     expect(partialDirSeenByCleanup).toBe(true);
     // CRITICAL: the partial dir is gone, not orphaned. Pre-fix this
     // would leave the dir behind and block subsequent

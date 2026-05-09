@@ -23,7 +23,7 @@ import { defaultStateDir } from "./db.js";
 import { emitEvent } from "./logs.js";
 import type { HasNextSteps, NextStep } from "./output.js";
 import { captureSnapshot } from "./snapshots.js";
-import { type VcsBackendName, backendByName, detectBackend } from "./vcs.js";
+import { type VcsBackend, type VcsBackendName, backendByName, detectBackend } from "./vcs.js";
 
 export interface WorkspaceRow {
   agent: string;
@@ -257,8 +257,11 @@ export interface CreateWorkspaceOptions {
    *  directory (the `mu` invocation site, which is normally what the
    *  user wants). */
   projectRoot?: string;
-  /** Override backend detection. Default: walk `detectBackend`. */
-  backend?: VcsBackendName;
+  /** Override backend detection. Default: walk `detectBackend`.
+   *  Accepts either a name ("jj" / "sl" / "git" / "none") OR a
+   *  pre-built `VcsBackend` object — the object form lets tests inject
+   *  a fresh fake backend without mutating the exported singletons. */
+  backend?: VcsBackendName | VcsBackend;
   /** Optional ref to base the workspace on. Backend-specific. */
   parentRef?: string;
 }
@@ -286,7 +289,12 @@ export async function createWorkspace(db: Db, opts: CreateWorkspaceOptions): Pro
     throw new HomeDirAsProjectRootError(opts.agent, opts.workstream, homedir());
   }
 
-  const backend = opts.backend ? backendByName(opts.backend) : await detectBackend(projectRoot);
+  const backend =
+    opts.backend === undefined
+      ? await detectBackend(projectRoot)
+      : typeof opts.backend === "string"
+        ? backendByName(opts.backend)
+        : opts.backend;
   const path = workspacePath(opts.workstream, opts.agent);
 
   // Surface the dir-already-exists case as a typed error WITH actionable

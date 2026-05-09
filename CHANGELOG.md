@@ -76,6 +76,7 @@ called out under "Breaking" in each entry.
 
 ### Changed
 
+<<<<<<< HEAD
 - **`TaskIdInvalidError` test assertions relaxed off the exact
   sanitised-command suffix.** Closes
   `review_test_invalid_id_overspecs_sanitised_command` in
@@ -111,6 +112,29 @@ called out under "Breaking" in each entry.
   output — cli-table3's `│` separators on both sides confine the
   match to the behind cell, never the 12-hex parent_ref or the
   ISO-date created_at column. +18/−5 LOC, no production change.
+
+- **`createWorkspace` `opts.backend` now accepts a `VcsBackend`
+  object as well as the backend name.** Closes
+  `review_test_workspace_cleanup_throws_monkeypatch_smell` in
+  `mufeedback`. Previously the only injection seam for tests was
+  the four singleton backends exported from `src/vcs.ts`, so the
+  cleanup-on-throw test
+  (`test/workspace.test.ts` — "removes the partial on-disk dir
+  when backend.createWorkspace throws after creating it") had to
+  monkey-patch `noneBackend.createWorkspace` and restore it in a
+  `try/finally`. If anything between the patch and the `finally`
+  killed the test (vitest `--bail`, a thrown assertion in a `await
+  expect(...).rejects` mismatch, an `import()` rejection,
+  `process.exit`), the singleton stayed mutated and the next test
+  in the file that touched `noneBackend` (e.g. the FK CASCADE
+  tests) silently got the broken backend. Widening the `backend`
+  parameter to `VcsBackendName | VcsBackend` is the smaller,
+  type-clean fix: callers can hand in either a name (the existing
+  CLI path; resolved via `backendByName`) or a fully-built backend
+  object (the test path; used as-is). The cleanup test now builds
+  a fresh fake backend with the four required methods inline and
+  passes it directly — no `vi.spyOn`, no `try/finally`, no shared
+  mutable state. Production code is unchanged.
 
 - **Three workstream-scope assertions collapsed onto one generic
   helper.** Closes `review_code_assert_in_workstream_smell` in
