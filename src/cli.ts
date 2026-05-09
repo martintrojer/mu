@@ -511,6 +511,73 @@ export function byRoiDesc(a: TaskRow, b: TaskRow): number {
   return roiOf(b) - roiOf(a);
 }
 
+/** Format an elapsed duration (in ms) as a compact relative string:
+ *  '12s', '3m', '1h', '2d', '3w'. Used by the task list table when
+ *  `--sort recency`/`--sort age` is active so the timeframe the user
+ *  is sorting by is visible. Mirrors the helper in src/cli/hud.ts;
+ *  kept in sync (the hud version omits weeks because it shows tighter
+ *  windows, but for task list a 5w-old item is real and worth a tag).
+ */
+export function relTime(ms: number): string {
+  const sec = Math.max(0, Math.floor(ms / 1000));
+  if (sec < 60) return `${sec}s`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h`;
+  const day = Math.floor(hr / 24);
+  if (day < 7) return `${day}d`;
+  return `${Math.floor(day / 7)}w`;
+}
+
+// ─── Task list --sort ──────────────────────────────────────────────
+//
+// Four keys; default is `roi` (preserves prior behaviour). The two
+// time-based keys (`recency` = updated_at DESC, `age` = created_at ASC)
+// are the surface for "what did I touch most recently" and "what's
+// gone stale" — neither was queryable before. `id` is the boring
+// tiebreaker default for `mu task list` (local_id ASC).
+export const TASK_SORT_KEYS = ["roi", "recency", "age", "id"] as const;
+export type TaskSortKey = (typeof TASK_SORT_KEYS)[number];
+
+export function isTaskSortKey(s: string): s is TaskSortKey {
+  return (TASK_SORT_KEYS as readonly string[]).includes(s);
+}
+
+export function parseSortOption(raw: string, flag = "--sort"): TaskSortKey {
+  if (!isTaskSortKey(raw)) {
+    throw new UsageError(
+      `${flag} must be one of ${TASK_SORT_KEYS.join(" | ")} (got ${JSON.stringify(raw)})`,
+    );
+  }
+  return raw;
+}
+
+/** Sort a copy of `tasks` by `key`. Pure (does not mutate input). */
+export function sortTasks(tasks: readonly TaskRow[], key: TaskSortKey): TaskRow[] {
+  const out = tasks.slice();
+  switch (key) {
+    case "roi":
+      return out.sort(byRoiDesc);
+    case "recency":
+      // updated_at DESC: most-recently-touched first.
+      return out.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    case "age":
+      // created_at ASC: oldest first ("what's gone stale").
+      return out.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    case "id":
+      return out.sort((a, b) => a.localId.localeCompare(b.localId));
+  }
+}
+
+/** Which timestamp basis the table's relative-time column should use
+ *  for the active sort, or `null` if no time column should be shown. */
+export function relTimeBasisForSort(key: TaskSortKey): "updatedAt" | "createdAt" | null {
+  if (key === "recency") return "updatedAt";
+  if (key === "age") return "createdAt";
+  return null;
+}
+
 /**
  * Decorate a TaskRow (or array of them) with a computed `roi` field for
  * JSON output. ROI is a CLI-rendering concern (the table view computes
@@ -551,12 +618,35 @@ function terminalWidth(): number {
 
 export function formatTaskListTable(
   tasks: readonly TaskRow[],
-  opts: { withWorkstream?: boolean } = {},
+  opts: { withWorkstream?: boolean; relTimeBasis?: "updatedAt" | "createdAt" } = {},
 ): string {
   if (tasks.length === 0) return pc.dim("  (no tasks)");
-  const head = opts.withWorkstream
+  // The optional relative-time column is appended at the end; header
+  // mirrors the timestamp basis ("updated" / "created") so a glance
+  // says which sort key is live.
+  const timeHeader =
+    opts.relTimeBasis === "updatedAt"
+      ? "updated"
+      : opts.relTimeBasis === "createdAt"
+        ? "created"
+        : null;
+  const baseHead = opts.withWorkstream
     ? ["id", "workstream", "status", "title", "impact", "effort", "ROI", "owner"]
     : ["id", "status", "title", "impact", "effort", "ROI", "owner"];
+  const head = timeHeader === null ? baseHead : [...baseHead, timeHeader];
+
+  // Pre-compute the relative-time strings (relative to NOW) so column
+  // width and row text agree.
+  const now = Date.now();
+  const timeCells: string[] = [];
+  if (opts.relTimeBasis !== undefined) {
+    const basis = opts.relTimeBasis;
+    for (const t of tasks) {
+      const ts = basis === "updatedAt" ? t.updatedAt : t.createdAt;
+      const ms = now - new Date(ts).getTime();
+      timeCells.push(relTime(ms));
+    }
+  }
 
   // Compute a budget for the title column so the table fits the terminal.
   // Other columns are mostly short fixed-shape values; figure out how
@@ -578,10 +668,15 @@ export function formatTaskListTable(
     widths.set("roi", Math.max(widths.get("roi") ?? 0, roi.length));
     widths.set("owner", Math.max(widths.get("owner") ?? 0, (t.owner ?? "—").length));
   }
+  let timeWidth = 0;
+  if (timeHeader !== null) {
+    timeWidth = timeHeader.length;
+    for (const cell of timeCells) timeWidth = Math.max(timeWidth, cell.length);
+  }
   // cli-table3 adds 2 chars of padding per cell + 1 char border per
   // column. Account for that to find the title budget.
   const numCols = head.length;
-  const otherTotal = otherCols.reduce((acc, c) => acc + (widths.get(c) ?? 0), 0);
+  const otherTotal = otherCols.reduce((acc, c) => acc + (widths.get(c) ?? 0), 0) + timeWidth;
   const padding = numCols * 3 + 1;
   const titleBudget = Math.max(20, terminalWidth() - otherTotal - padding);
 
@@ -589,10 +684,12 @@ export function formatTaskListTable(
     head: head.map((h) => pc.bold(h)),
     style: { head: [], border: [] },
   });
-  for (const t of tasks) {
+  for (let i = 0; i < tasks.length; i++) {
+    const t = tasks[i];
+    if (!t) continue; // noUncheckedIndexedAccess
     const roi = t.effortDays > 0 ? (t.impact / t.effortDays).toFixed(1) : "∞";
     const title = truncate(t.title, titleBudget);
-    const row = opts.withWorkstream
+    const baseRow = opts.withWorkstream
       ? [
           t.localId,
           t.workstream,
@@ -612,6 +709,7 @@ export function formatTaskListTable(
           roi,
           t.owner ?? pc.dim("—"),
         ];
+    const row = timeHeader === null ? baseRow : [...baseRow, pc.dim(timeCells[i] ?? "")];
     table.push(row);
   }
   return table.toString();

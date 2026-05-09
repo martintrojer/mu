@@ -33,6 +33,7 @@ defined here, fix the doc. If you need a new term, add it here first.
 | **diamond merge**     | When two tracks share a prerequisite, parallel-track detection collapses them into one track to prevent two agents from colliding on the shared dependency. | "join", "converge"                                 |
 | **ready**             | An OPEN task with no unresolved blockers. Exposed as the `ready` SQL view. | "unblocked", "available"                           |
 | **goals**             | Tasks with no outgoing blocks-edges (graph endpoints). Exposed as the `goals` SQL view. | "leaves", "targets"                               |
+| **sort key**          | Argument to `mu task list / next / ready --sort <key>`. One of `roi` (impact / effort_days, default for `next` / `ready`), `recency` (`updated_at` DESC — "what did I touch most recently"), `age` (`created_at` ASC — "what's gone stale"), `id` (`local_id` ASC, default for `task list`). The two time-based keys also render an `updated`/`created` relative-time column in the table view. | "order by", "sort by"                              |
 | **subtree** / **scope** | The set of tasks reachable from a root via blocks-edges                | "subgraph" (only for technical descriptions)       |
 | **note**              | An append-only piece of context attached to a task                       | "comment" (reserved for VCS), "log" (reserved for `agent_logs`) |
 | **log entry**         | A row in `agent_logs` (broadcast channel)                                | "message" (overloaded), "event" (overloaded)       |

@@ -41,6 +41,7 @@ export {
 } from "./tasks/lifecycle.js";
 import { refreshAgentTitle } from "../agents.js";
 import {
+  TASK_SORT_KEYS,
   UsageError,
   assertTaskInWorkstream,
   byRoiDesc,
@@ -823,6 +824,14 @@ export function wireTaskCommands(program: Command): void {
       return handle((db) => cmdTaskAdd(db, id, opts))();
     });
 
+  // --sort key list shared across list/next/ready. `id` is the
+  // historical default for `mu task list`; `roi` is the default for
+  // `next`/`ready` (the "what should I do" verbs). The two time-based
+  // keys (`recency` = updated_at DESC, `age` = created_at ASC) trigger
+  // an extra `updated`/`created` column with relative timestamps so
+  // the user sees the dimension they sorted by.
+  const SORT_OPT_DESC = `sort key (${TASK_SORT_KEYS.join(" | ")})`;
+
   task
     .command("list")
     .description("List every task in the current workstream (id, status, ROI, owner)")
@@ -831,12 +840,14 @@ export function wireTaskCommands(program: Command): void {
       "--status <status>",
       `filter by lifecycle status (${TASK_STATUS_LIST}; case-insensitive)`,
     )
+    .option("--sort <key>", `${SORT_OPT_DESC} (default id)`)
     .option(...JSON_OPT)
     .action(function () {
       const opts = (this as Command).opts() as {
         workstream?: string;
         json?: boolean;
         status?: string;
+        sort?: string;
       };
       return handle((db) => cmdTaskList(db, opts))();
     });
@@ -848,12 +859,14 @@ export function wireTaskCommands(program: Command): void {
     )
     .option("-n, --lines <k>", "how many top-K tasks to return (default 1)", parseLines)
     .option(...WORKSTREAM_OPT)
+    .option("--sort <key>", `${SORT_OPT_DESC} (default roi)`)
     .option(...JSON_OPT)
     .action(function () {
       const opts = (this as Command).opts() as {
         workstream?: string;
         lines?: number;
         json?: boolean;
+        sort?: string;
       };
       return handle((db) => cmdTaskNext(db, opts))();
     });
@@ -862,9 +875,14 @@ export function wireTaskCommands(program: Command): void {
     .command("ready")
     .description("List ready tasks (OPEN with all blockers CLOSED), sorted by ROI")
     .option(...WORKSTREAM_OPT)
+    .option("--sort <key>", `${SORT_OPT_DESC} (default roi)`)
     .option(...JSON_OPT)
     .action(function () {
-      const opts = (this as Command).opts() as { workstream?: string; json?: boolean };
+      const opts = (this as Command).opts() as {
+        workstream?: string;
+        json?: boolean;
+        sort?: string;
+      };
       return handle((db) => cmdTaskReady(db, opts))();
     });
 

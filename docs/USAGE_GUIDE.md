@@ -634,6 +634,7 @@ mu sql "SELECT name FROM sqlite_master WHERE type IN ('table','view') ORDER BY t
 | ----------------------------------------------------- | --------------------------------------- |
 | Tasks owned by an agent                               | `mu task owned-by <agent> [--json]`     |
 | Highest-ROI ready task                                | `mu task next [-w] [-n K] [--json]`     |
+| What did I touch most recently / what's stale         | `mu task list --sort recency` / `--sort age` |
 | Visualise what blocks what                            | `mu task tree <id> [--json]`            |
 | Search title / id / notes                             | `mu task search <pat> [--in-notes]`     |
 | Show row + edges + notes                              | `mu task show <id> [--json]`            |

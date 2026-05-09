@@ -214,9 +214,11 @@ mu adopt <pane-id|pane-title>        # register an orphan pane as a managed agen
 
 # Tasks (22)
 mu task add [id] --title T --impact N --effort-days N [--blocked-by A,B]
-mu task list [--status S]            # every task; --status filters
-mu task next [-n K]                  # top-K ready tasks by ROI
-mu task ready                        # all ready, sorted by ROI
+mu task list [--status S] [--sort K]   # every task; --sort id|roi|recency|age
+mu task next [-n K] [--sort K]         # top-K ready (default --sort roi)
+mu task ready [--sort K]               # all ready (default --sort roi)
+                                     # --sort recency = updated_at DESC; age = created_at ASC
+                                     # both add a relative-time column to the table
 mu task blocked                      # OPEN with non-CLOSED blockers
 mu task goals                        # graph endpoints (no dependents)
 mu task owned-by <agent>             # what is <agent> working on?

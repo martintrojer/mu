@@ -5,11 +5,14 @@
 // Extracted from src/cli/tasks.ts as part of refactor_split_large_src_files.
 
 import {
-  byRoiDesc,
+  type TaskSortKey,
   emitJson,
   formatTaskListTable,
+  parseSortOption,
   parseStatusOption,
+  relTimeBasisForSort,
   resolveWorkstream,
+  sortTasks,
   withRoiAll,
 } from "../../cli.js";
 import type { Db } from "../../db.js";
@@ -26,31 +29,39 @@ import {
 
 export async function cmdTaskList(
   db: Db,
-  opts: { workstream?: string; json?: boolean; status?: string },
+  opts: { workstream?: string; json?: boolean; status?: string; sort?: string },
 ): Promise<void> {
   const workstream = await resolveWorkstream(opts.workstream);
   const listOpts: Parameters<typeof listTasks>[2] = {};
   if (opts.status !== undefined) {
     listOpts.status = parseStatusOption(opts.status);
   }
-  const tasks = listTasks(db, workstream, listOpts);
+  // Default sort for `mu task list` is `id` (preserves prior
+  // behaviour: SQL ORDER BY local_id). The other read verbs default
+  // to `roi` because their primary use is "what should I do next".
+  const sortKey: TaskSortKey = opts.sort === undefined ? "id" : parseSortOption(opts.sort);
+  const tasks = sortTasks(listTasks(db, workstream, listOpts), sortKey);
   if (opts.json) {
     emitJson(withRoiAll(tasks));
     return;
   }
   console.log(pc.bold(`mu-${workstream}`));
-  console.log(formatTaskListTable(tasks));
+  const tableOpts: Parameters<typeof formatTaskListTable>[1] = {};
+  const basis = relTimeBasisForSort(sortKey);
+  if (basis !== null) tableOpts.relTimeBasis = basis;
+  console.log(formatTaskListTable(tasks, tableOpts));
 }
 
 // ROI = impact / effort_days. Higher first. Tasks with effortDays=0
 // (would divide by zero) sort to the top by treating their ROI as Infinity.
 export async function cmdTaskNext(
   db: Db,
-  opts: { workstream?: string; lines?: number; json?: boolean },
+  opts: { workstream?: string; lines?: number; json?: boolean; sort?: string },
 ): Promise<void> {
   const workstream = await resolveWorkstream(opts.workstream);
   const k = opts.lines ?? 1;
-  const tasks = listReady(db, workstream).sort(byRoiDesc).slice(0, k);
+  const sortKey: TaskSortKey = opts.sort === undefined ? "roi" : parseSortOption(opts.sort);
+  const tasks = sortTasks(listReady(db, workstream), sortKey).slice(0, k);
   if (opts.json) {
     emitJson(withRoiAll(tasks));
     return;
@@ -59,15 +70,19 @@ export async function cmdTaskNext(
     console.log(pc.dim("(no ready tasks)"));
     return;
   }
-  console.log(formatTaskListTable(tasks));
+  const tableOpts: Parameters<typeof formatTaskListTable>[1] = {};
+  const basis = relTimeBasisForSort(sortKey);
+  if (basis !== null) tableOpts.relTimeBasis = basis;
+  console.log(formatTaskListTable(tasks, tableOpts));
 }
 
 export async function cmdTaskReady(
   db: Db,
-  opts: { workstream?: string; json?: boolean },
+  opts: { workstream?: string; json?: boolean; sort?: string },
 ): Promise<void> {
   const workstream = await resolveWorkstream(opts.workstream);
-  const tasks = listReady(db, workstream).sort(byRoiDesc);
+  const sortKey: TaskSortKey = opts.sort === undefined ? "roi" : parseSortOption(opts.sort);
+  const tasks = sortTasks(listReady(db, workstream), sortKey);
   if (opts.json) {
     emitJson(withRoiAll(tasks));
     return;
@@ -76,7 +91,10 @@ export async function cmdTaskReady(
     console.log(pc.dim("(no ready tasks)"));
     return;
   }
-  console.log(formatTaskListTable(tasks));
+  const tableOpts: Parameters<typeof formatTaskListTable>[1] = {};
+  const basis = relTimeBasisForSort(sortKey);
+  if (basis !== null) tableOpts.relTimeBasis = basis;
+  console.log(formatTaskListTable(tasks, tableOpts));
 }
 
 export async function cmdTaskBlocked(

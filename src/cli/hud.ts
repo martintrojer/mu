@@ -25,6 +25,7 @@ import {
   byRoiDesc,
   emitJson,
   rawTaskRowToTask,
+  relTime,
   resolveWorkstream,
   statusIcon,
   truncate,
@@ -41,18 +42,6 @@ interface HudOpts {
   workstream?: string;
   json?: boolean;
   lines?: number; // recent-events tail cap; default 10
-}
-
-/** Format an elapsed duration (in ms) as a compact relative string:
- *  '12s', '3m', '1h', '2d'. Used by HUD to surface 'how stale'. */
-function relTime(ms: number): string {
-  const sec = Math.max(0, Math.floor(ms / 1000));
-  if (sec < 60) return `${sec}s`;
-  const min = Math.floor(sec / 60);
-  if (min < 60) return `${min}m`;
-  const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr}h`;
-  return `${Math.floor(hr / 24)}d`;
 }
 
 /**

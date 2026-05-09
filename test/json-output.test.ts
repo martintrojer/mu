@@ -487,3 +487,116 @@ describe("task list --status", () => {
     expect(stderr).toMatch(/--status must be one of/);
   });
 });
+
+// ─── mu task list / next / ready --sort (CLI integration) ───────
+
+describe("task list/next/ready --sort", () => {
+  let tempDir: string;
+  let dbPath: string;
+  let db: Db;
+
+  beforeEach(() => {
+    tempDir = mkdtempSync(join(tmpdir(), "mu-sort-"));
+    dbPath = join(tempDir, "mu.db");
+    db = openDb({ path: dbPath });
+    ensureWorkstream(db, "auth");
+    // Seed three tasks with distinct impact/effort so ROI ordering
+    // is unambiguous: a (5), b (90), c (20). All ready (no edges).
+    addTask(db, { localId: "a", workstream: "auth", title: "A", impact: 10, effortDays: 2 });
+    addTask(db, { localId: "b", workstream: "auth", title: "B", impact: 90, effortDays: 1 });
+    addTask(db, { localId: "c", workstream: "auth", title: "C", impact: 40, effortDays: 2 });
+    // Pin updated_at so 'recency' sort is deterministic. addTask
+    // stamps NOW for both columns; we rewrite updated_at to a strict
+    // chronological sequence (a oldest, c newest).
+    db.prepare("UPDATE tasks SET updated_at='2026-05-01T00:00:00.000Z' WHERE local_id='a'").run();
+    db.prepare("UPDATE tasks SET updated_at='2026-05-02T00:00:00.000Z' WHERE local_id='b'").run();
+    db.prepare("UPDATE tasks SET updated_at='2026-05-03T00:00:00.000Z' WHERE local_id='c'").run();
+    db.prepare("UPDATE tasks SET created_at='2026-01-01T00:00:00.000Z' WHERE local_id='a'").run();
+    db.prepare("UPDATE tasks SET created_at='2026-02-01T00:00:00.000Z' WHERE local_id='b'").run();
+    db.prepare("UPDATE tasks SET created_at='2026-03-01T00:00:00.000Z' WHERE local_id='c'").run();
+    db.close();
+  });
+
+  afterEach(() => {
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it("--sort recency orders by updated_at DESC (most recent first)", async () => {
+    const { stdout } = await runCli(
+      ["task", "list", "-w", "auth", "--sort", "recency", "--json"],
+      dbPath,
+    );
+    const parsed = JSON.parse(stdout.trim()) as Array<{ localId: string }>;
+    expect(parsed.map((t) => t.localId)).toEqual(["c", "b", "a"]);
+  });
+
+  it("--sort age orders by created_at ASC (oldest first)", async () => {
+    const { stdout } = await runCli(
+      ["task", "list", "-w", "auth", "--sort", "age", "--json"],
+      dbPath,
+    );
+    const parsed = JSON.parse(stdout.trim()) as Array<{ localId: string }>;
+    expect(parsed.map((t) => t.localId)).toEqual(["a", "b", "c"]);
+  });
+
+  it("--sort roi (default for `next`) — highest ROI first", async () => {
+    const { stdout } = await runCli(["task", "next", "-w", "auth", "-n", "5", "--json"], dbPath);
+    const parsed = JSON.parse(stdout.trim()) as Array<{ localId: string }>;
+    // b (90) > c (20) > a (5).
+    expect(parsed.map((t) => t.localId)).toEqual(["b", "c", "a"]);
+  });
+
+  it("`mu task ready --sort recency` re-sorts (overrides ROI default)", async () => {
+    const { stdout } = await runCli(
+      ["task", "ready", "-w", "auth", "--sort", "recency", "--json"],
+      dbPath,
+    );
+    const parsed = JSON.parse(stdout.trim()) as Array<{ localId: string }>;
+    expect(parsed.map((t) => t.localId)).toEqual(["c", "b", "a"]);
+  });
+
+  it("renders an extra `updated` column under --sort recency (table mode)", async () => {
+    const { stdout } = await runCli(["task", "list", "-w", "auth", "--sort", "recency"], dbPath);
+    // Header gains the column; the timestamp basis tag matches the sort.
+    expect(stdout).toContain("updated");
+    expect(stdout).not.toMatch(/\bcreated\b/);
+  });
+
+  it("renders an extra `created` column under --sort age (table mode)", async () => {
+    const { stdout } = await runCli(["task", "list", "-w", "auth", "--sort", "age"], dbPath);
+    expect(stdout).toContain("created");
+  });
+
+  it("does NOT render the time column under default sort (id) or roi", async () => {
+    const { stdout: stdoutDefault } = await runCli(["task", "list", "-w", "auth"], dbPath);
+    expect(stdoutDefault).not.toContain("updated");
+    expect(stdoutDefault).not.toContain("created");
+    const { stdout: stdoutRoi } = await runCli(
+      ["task", "ready", "-w", "auth", "--sort", "roi"],
+      dbPath,
+    );
+    expect(stdoutRoi).not.toContain("updated");
+    expect(stdoutRoi).not.toContain("created");
+  });
+
+  it("rejects an unknown --sort key with exit 2 and a helpful message", async () => {
+    const { stderr } = await runCli(["task", "list", "-w", "auth", "--sort", "priority"], dbPath);
+    expect(stderr).toMatch(/--sort must be one of/);
+  });
+
+  it("JSON shape is unchanged (no extra fields when --sort is active)", async () => {
+    const { stdout } = await runCli(
+      ["task", "list", "-w", "auth", "--sort", "recency", "--json"],
+      dbPath,
+    );
+    const parsed = JSON.parse(stdout.trim()) as Array<Record<string, unknown>>;
+    // Same fields as without --sort: rows already include createdAt /
+    // updatedAt; nothing computed gets added (consumers can sort).
+    for (const row of parsed) {
+      expect(row).toHaveProperty("createdAt");
+      expect(row).toHaveProperty("updatedAt");
+      expect(row).not.toHaveProperty("relTime");
+      expect(row).not.toHaveProperty("ago");
+    }
+  });
+});

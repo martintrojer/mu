@@ -45,6 +45,39 @@ called out under "Breaking" in each entry.
 
 ### Added
 
+- **`--sort` for `mu task list / next / ready` (recency / age / id / roi).**
+  Closes `nit_task_list_sort_by_recency` in `mufeedback`. Two new use
+  cases that were previously stuck behind a `mu sql` workaround now
+  have typed verbs: "what did I touch most recently?" (`--sort
+  recency` — `updated_at` DESC) and "what's gone stale?" (`--sort
+  age` — `created_at` ASC). The four legal keys are `roi` (default
+  for `next` / `ready`), `recency`, `age`, `id` (default for `list`,
+  preserves prior `local_id` ordering); an unknown key fails fast
+  with exit 2 and an error message naming every legal value.
+
+  Under `--sort recency` / `--sort age` the table view gains a
+  trailing `updated` / `created` column rendered as a compact
+  relative-time string (`12s` / `5m` / `3h` / `2d` / `2w`) so the
+  dimension being sorted by is visible at a glance. The sort key
+  alone toggles the column — no separate `--show-time` flag, since
+  the user opted in by choosing a time-based sort. Default sort and
+  `--sort id`/`--sort roi` keep the historical narrow table.
+
+  JSON shape unchanged: `--sort` only reorders rows. `createdAt` and
+  `updatedAt` were already present on every `TaskRow`, so consumers
+  can keep doing `jq 'sort_by(.updatedAt)'` if they want
+  client-side re-sort.
+
+  The relative-time helper (`relTime`) used by the new column is the
+  same one HUD already used; moved from `src/cli/hud.ts` to `src/cli.ts`
+  and exported, with weeks (`Nw`) added on top of the existing
+  s/m/h/d buckets to keep stale-task tags readable. New SDK helpers:
+  `TASK_SORT_KEYS`, `parseSortOption(raw)`, `sortTasks(tasks, key)`,
+  `relTimeBasisForSort(key)`. Tests: SDK-level coverage in
+  `test/tasks.test.ts` (one per sort key + parser + helper); CLI
+  integration in `test/json-output.test.ts` covers each verb × each
+  key, the table-mode column toggle, and the unknown-key error path.
+
 - **Workspace staleness signal in `mu state` and `mu workspace list`.**
   Closes `bug_workspace_stale_parent_silent_drift` in `mufeedback`
   (Option 2 only — warn-only). Surfaced live: `roadmap-v0-2`'s
