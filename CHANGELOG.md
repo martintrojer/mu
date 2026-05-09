@@ -70,6 +70,27 @@ called out under "Breaking" in each entry.
 
 ### Changed
 
+- **CLI output labels audit shipped
+  (`output_id_vs_name_audit`).** New doc
+  [docs/OUTPUT_LABELS_AUDIT.md](docs/OUTPUT_LABELS_AUDIT.md) reviews
+  every verb's column headers, `--json` keys, and entity-arg labels
+  through the post-v5 lens (operator-facing TEXT name vs internal
+  surrogate INTEGER id). Picks one convention — `name` for an
+  entity's own per-scope name, `<entityType>Name` for cross-entity
+  references, surrogate ids never escape — and a per-verb decision
+  matrix for applying it. Identifies three follow-up tasks:
+  `output_labels_human_rename` (cli-table3 column headers, ~30
+  LOC, non-breaking), `output_json_keys_rename_v5` (`--json` shape
+  rewrite per the wholesale rename table, ~150 LOC + many test
+  rewrites, **BREAKING**, jq migration recipes folded into the
+  audit doc), and `verb_arg_qualified_workstream_name` (Phase 3
+  parse-at-entry helper for `<workstream>/<name>` qualified refs,
+  ~50 LOC + tests). No renames land in this audit commit; the
+  three follow-ups ship the actual changes. The two breaking
+  changes (`output_json_keys_rename_v5` and the entity-arg help
+  text touched by Phase 3) get their full Breaking blurbs when
+  those tasks land.
+
 - **`addApproval` requires a non-null workstream.** v5's
   `approvals.workstream_id` is `NOT NULL`; the v4 nullable
   contract (workstream-less / global scope) is gone. Callers that
