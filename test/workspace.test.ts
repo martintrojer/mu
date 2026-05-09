@@ -322,7 +322,7 @@ describe("workspace SDK (with noneBackend)", () => {
     expect(ws.agent).toBe("worker-1");
     expect(ws.backend).toBe("none");
     expect(ws.path).toContain(join("workspaces", "auth", "worker-1"));
-    expect(getWorkspaceForAgent(db, "worker-1")?.path).toBe(ws.path);
+    expect(getWorkspaceForAgent(db, "worker-1", "auth")?.path).toBe(ws.path);
   });
 
   it("createWorkspace throws WorkspaceExistsError on a second call for the same agent", async () => {
@@ -364,7 +364,7 @@ describe("workspace SDK (with noneBackend)", () => {
       `DELETE FROM vcs_workspaces WHERE agent_id = (SELECT id FROM agents WHERE name = 'worker-1')`,
     ).run();
     // Sanity: registry empty, dir present.
-    expect(getWorkspaceForAgent(db, "worker-1")).toBeUndefined();
+    expect(getWorkspaceForAgent(db, "worker-1", "auth")).toBeUndefined();
     expect(() => execFileSync("ls", [ws.path], { stdio: "pipe" })).not.toThrow();
     // Retry: typed error, not bare.
     await expect(
@@ -446,21 +446,21 @@ describe("workspace SDK (with noneBackend)", () => {
       projectRoot,
       backend: "none",
     });
-    const r = await freeWorkspace(db, "worker-1");
+    const r = await freeWorkspace(db, "worker-1", { workstream: "auth" });
     expect(r.removed).toBe(true);
     expect(r.rowDeleted).toBe(true);
-    expect(getWorkspaceForAgent(db, "worker-1")).toBeUndefined();
+    expect(getWorkspaceForAgent(db, "worker-1", "auth")).toBeUndefined();
     // Directory really gone:
     expect(() => execFileSync("ls", [ws.path], { stdio: "pipe" })).toThrow();
   });
 
   it("freeWorkspace is idempotent on a missing workspace", async () => {
-    const r = await freeWorkspace(db, "ghost");
+    const r = await freeWorkspace(db, "ghost", { workstream: "auth" });
     expect(r).toEqual({ removed: false, rowDeleted: false });
   });
 
   it("getWorkspaceForAgent throws WorkspaceNotFoundError shape via the verb wrapper", () => {
-    expect(getWorkspaceForAgent(db, "ghost")).toBeUndefined();
+    expect(getWorkspaceForAgent(db, "ghost", "auth")).toBeUndefined();
   });
 
   it("FK CASCADE: deleting the agent row removes the workspace row", async () => {
@@ -471,7 +471,7 @@ describe("workspace SDK (with noneBackend)", () => {
       backend: "none",
     });
     db.prepare("DELETE FROM agents WHERE name = 'worker-1'").run();
-    expect(getWorkspaceForAgent(db, "worker-1")).toBeUndefined();
+    expect(getWorkspaceForAgent(db, "worker-1", "auth")).toBeUndefined();
   });
 
   it("FK CASCADE: destroying the workstream removes its workspace rows", async () => {
@@ -507,7 +507,7 @@ describe("createWorkspace HOME-dir guard (snap_dogfood Finding 4a)", () => {
       }),
     ).rejects.toBeInstanceOf(HomeDirAsProjectRootError);
     // No DB row, no on-disk dir was even attempted.
-    expect(getWorkspaceForAgent(db, "worker-1")).toBeUndefined();
+    expect(getWorkspaceForAgent(db, "worker-1", "auth")).toBeUndefined();
   });
 
   it("normalises trailing slash + . variants of $HOME", async () => {
@@ -594,7 +594,7 @@ describe("createWorkspace cleanup on backend throw (snap_dogfood Finding 4b)", (
     // `mu workspace create` with WorkspacePathNotEmptyError.
     expect(() => execFileSync("ls", [wsPath], { stdio: "pipe" })).toThrow();
     // And the registry has no row either.
-    expect(getWorkspaceForAgent(db, "worker-1")).toBeUndefined();
+    expect(getWorkspaceForAgent(db, "worker-1", "auth")).toBeUndefined();
     // Recovery path works: a re-attempt with a working backend
     // succeeds without WorkspacePathNotEmptyError.
     const ws = await createWorkspace(db, {
@@ -628,11 +628,13 @@ describe("closeAgent + workspace integration", () => {
     expect(() => execFileSync("ls", [ws.path], { stdio: "pipe" })).not.toThrow();
 
     const { closeAgent, WorkspacePreservedError } = await import("../src/agents.js");
-    await expect(closeAgent(db, "worker-1")).rejects.toBeInstanceOf(WorkspacePreservedError);
+    await expect(closeAgent(db, "worker-1", { workstream: "auth" })).rejects.toBeInstanceOf(
+      WorkspacePreservedError,
+    );
 
     // Refuse path: nothing changed. Agent still in DB, workspace row still
     // there, dir still on disk.
-    expect(getWorkspaceForAgent(db, "worker-1")).toBeDefined();
+    expect(getWorkspaceForAgent(db, "worker-1", "auth")).toBeDefined();
     expect(() => execFileSync("ls", [ws.path], { stdio: "pipe" })).not.toThrow();
     // Cleanup.
     rmSync(ws.path, { recursive: true, force: true });
@@ -650,28 +652,28 @@ describe("closeAgent + workspace integration", () => {
     expect(() => execFileSync("ls", [ws.path], { stdio: "pipe" })).not.toThrow();
 
     const { closeAgent } = await import("../src/agents.js");
-    const r = await closeAgent(db, "worker-1", { discardWorkspace: true });
+    const r = await closeAgent(db, "worker-1", { discardWorkspace: true, workstream: "auth" });
 
     expect(r.killedPane).toBe(true);
     expect(r.deletedRow).toBe(true);
     expect(r.workspaceFreed).toBe(true);
 
     // Workspace gone from DB AND from disk.
-    expect(getWorkspaceForAgent(db, "worker-1")).toBeUndefined();
+    expect(getWorkspaceForAgent(db, "worker-1", "auth")).toBeUndefined();
     expect(() => execFileSync("ls", [ws.path], { stdio: "pipe" })).toThrow();
   });
 
   it("closeAgent succeeds normally when the agent had no workspace", async () => {
     insertAgent(db, { name: "plain-1", workstream: "auth", paneId: "%9", status: "busy" });
     const { closeAgent } = await import("../src/agents.js");
-    const r = await closeAgent(db, "plain-1");
+    const r = await closeAgent(db, "plain-1", { workstream: "auth" });
     expect(r.workspaceFreed).toBe(false);
     expect(r.deletedRow).toBe(true);
   });
 
   it("closeAgent without an agent returns false flags", async () => {
     const { closeAgent } = await import("../src/agents.js");
-    const r = await closeAgent(db, "ghost");
+    const r = await closeAgent(db, "ghost", { workstream: "auth" });
     expect(r).toEqual({
       killedPane: false,
       deletedRow: false,

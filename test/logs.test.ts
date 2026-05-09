@@ -249,7 +249,7 @@ describe("claim event structured prefix", () => {
       impact: 80,
       effortDays: 1,
     });
-    await claimTask(db, "design", { self: true, actor: "orchestrator" });
+    await claimTask(db, "design", { self: true, actor: "orchestrator", workstream: "auth" });
     const events = listLogs(db, { workstream: "auth", kind: "event" });
     const claim = events.find((e) => e.payload.startsWith(CLAIM_EVENT_PREFIX));
     expect(claim).toBeDefined();
@@ -270,7 +270,7 @@ describe("claim event structured prefix", () => {
     // claim event under a flood of unrelated events, then assert
     // lastClaimActor STILL returns the original actor.
     addTask(db, { localId: "foo", workstream: "auth", title: "F", impact: 80, effortDays: 1 });
-    await claimTask(db, "foo", { self: true, actor: "deploy-bot" });
+    await claimTask(db, "foo", { self: true, actor: "deploy-bot", workstream: "auth" });
     // Bury the claim event under a flood of unrelated events.
     for (let i = 0; i < 250; i++) {
       emitEvent(db, "auth", `task note foo by user (note #${i})`);
@@ -278,7 +278,7 @@ describe("claim event structured prefix", () => {
     // Throw in some claim events for OTHER tasks so the LIKE filter
     // has to actually filter, not just return MAX(seq) of all claims.
     addTask(db, { localId: "bar", workstream: "auth", title: "B", impact: 50, effortDays: 1 });
-    await claimTask(db, "bar", { self: true, actor: "some-other-actor" });
+    await claimTask(db, "bar", { self: true, actor: "some-other-actor", workstream: "auth" });
     expect(lastClaimActor(db, "auth", "foo")).toBe("deploy-bot");
     expect(lastClaimActor(db, "auth", "bar")).toBe("some-other-actor");
     expect(lastClaimActor(db, "auth", "never-claimed")).toBeNull();
@@ -286,10 +286,10 @@ describe("claim event structured prefix", () => {
 
   it("lastClaimActor returns the MOST RECENT actor when a task is reclaimed", async () => {
     addTask(db, { localId: "foo", workstream: "auth", title: "F", impact: 80, effortDays: 1 });
-    await claimTask(db, "foo", { self: true, actor: "first" });
+    await claimTask(db, "foo", { self: true, actor: "first", workstream: "auth" });
     // Need to release before re-claim (otherwise TaskAlreadyOwnedError).
     db.prepare("UPDATE tasks SET status='OPEN' WHERE local_id='foo'").run();
-    await claimTask(db, "foo", { self: true, actor: "second" });
+    await claimTask(db, "foo", { self: true, actor: "second", workstream: "auth" });
     expect(lastClaimActor(db, "auth", "foo")).toBe("second");
   });
 

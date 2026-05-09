@@ -194,12 +194,10 @@ export async function cmdTaskShow(
   opts: { json?: boolean; workstream?: string } = {},
 ): Promise<void> {
   assertTaskInWorkstream(db, localId, opts.workstream);
-  // Workstream is optional on `mu task show`: when -w resolves we
-  // scope to it (avoids name-clash misroute,
-  // bug_v5_name_clash_silent_misroute); otherwise getTask falls back
-  // to the v4 first-match-by-id contract so a single-workstream user
-  // can still type `mu task show a` from anywhere.
-  const task = getTask(db, localId, opts.workstream);
+  // v5: tasks.local_id is per-workstream unique. Resolve the
+  // operator's workstream up front so the lookup scopes correctly.
+  const ws = await resolveWorkstream(opts.workstream);
+  const task = getTask(db, localId, ws);
   if (!task) throw new TaskNotFoundError(localId);
   const edges = getTaskEdges(db, localId, task.workstream);
   const notes = listNotes(db, localId, task.workstream);
@@ -265,7 +263,8 @@ export async function cmdTaskNotes(
   opts: { json?: boolean; workstream?: string } = {},
 ): Promise<void> {
   assertTaskInWorkstream(db, localId, opts.workstream);
-  const task = getTask(db, localId, opts.workstream);
+  const ws = await resolveWorkstream(opts.workstream);
+  const task = getTask(db, localId, ws);
   if (!task) throw new TaskNotFoundError(localId);
   const notes = listNotes(db, localId, task.workstream);
   if (opts.json) {

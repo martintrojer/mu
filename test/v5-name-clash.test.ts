@@ -138,14 +138,14 @@ describe("v5 name-clash regression: getTask / getAgent / getApproval honour work
     expect(b?.reason).toBe("wsb reason");
   });
 
-  it("listTasksByOwner(db, name, { workstream }) returns only that workstream's tasks", () => {
+  it("listTasksByOwner(db, ws, name) returns only that workstream's tasks", () => {
     // Claim each workstream's task by its local worker-1.
     return Promise.all([
       claimTask(db, "design", { agentName: "worker-1", workstream: "wsa" }),
       claimTask(db, "design", { agentName: "worker-1", workstream: "wsb" }),
     ]).then(() => {
-      const ownedA = listTasksByOwner(db, "worker-1", { workstream: "wsa" });
-      const ownedB = listTasksByOwner(db, "worker-1", { workstream: "wsb" });
+      const ownedA = listTasksByOwner(db, "wsa", "worker-1");
+      const ownedB = listTasksByOwner(db, "wsb", "worker-1");
       expect(ownedA).toHaveLength(1);
       expect(ownedA[0]?.workstream).toBe("wsa");
       expect(ownedB).toHaveLength(1);

@@ -114,7 +114,7 @@ function seedAuth(): void {
     effortDays: 5,
     blockedBy: ["design"],
   });
-  addNote(db, "design", "DECISION: JWT");
+  addNote(db, "design", "DECISION: JWT", { workstream: "auth" });
 }
 
 // ─── (5) Whole-DB integrity ────────────────────────────────────────
@@ -397,30 +397,30 @@ describe("destructive verbs: snapshot is captured before mutation", () => {
   it("closeTask snapshots before the status flip", () => {
     seedAuth();
     expect(listSnapshots(db).length).toBe(0);
-    closeTask(db, "design");
+    closeTask(db, "design", { workstream: "auth" });
     const labels = listSnapshots(db).map((r) => r.label);
     expect(labels).toContain("task close design");
   });
 
   it("closeTask is a snapshot-no-op when the task is already CLOSED", () => {
     seedAuth();
-    closeTask(db, "design");
+    closeTask(db, "design", { workstream: "auth" });
     const beforeRetry = listSnapshots(db).length;
-    closeTask(db, "design");
+    closeTask(db, "design", { workstream: "auth" });
     expect(listSnapshots(db).length).toBe(beforeRetry);
   });
 
   it("rejectTask snapshots once even with --cascade across N children", () => {
     seedAuth();
     // design -> build (one dependent). cascade should snapshot once.
-    rejectTask(db, "design", { cascade: true });
+    rejectTask(db, "design", { cascade: true, workstream: "auth" });
     const rejectSnaps = listSnapshots(db).filter((r) => r.label === "task reject design");
     expect(rejectSnaps.length).toBe(1);
   });
 
   it("deferTask snapshots before the status flip", () => {
     seedAuth();
-    deferTask(db, "design", { cascade: true });
+    deferTask(db, "design", { cascade: true, workstream: "auth" });
     expect(listSnapshots(db).map((r) => r.label)).toContain("task defer design");
   });
 
@@ -430,25 +430,25 @@ describe("destructive verbs: snapshot is captured before mutation", () => {
       `UPDATE tasks SET owner_id = (SELECT id FROM agents WHERE name = 'worker-1')
         WHERE local_id = 'design'`,
     ).run();
-    releaseTask(db, "design");
+    releaseTask(db, "design", { workstream: "auth" });
     expect(listSnapshots(db).map((r) => r.label)).toContain("task release design");
   });
 
   it("releaseTask is a snapshot-no-op when nothing changes", () => {
     seedAuth();
     // No owner, no --reopen → idempotent.
-    releaseTask(db, "design");
+    releaseTask(db, "design", { workstream: "auth" });
     expect(listSnapshots(db).length).toBe(0);
   });
 
   it("deleteTask snapshots before the cascade", () => {
     seedAuth();
-    deleteTask(db, "design");
+    deleteTask(db, "design", "auth");
     expect(listSnapshots(db).map((r) => r.label)).toContain("task delete design");
   });
 
   it("deleteTask is a snapshot-no-op for a missing task (idempotent)", () => {
-    deleteTask(db, "nonexistent");
+    deleteTask(db, "nonexistent", "auth");
     expect(listSnapshots(db).length).toBe(0);
   });
 
@@ -460,7 +460,7 @@ describe("destructive verbs: snapshot is captured before mutation", () => {
       requestedBy: "worker-1",
       workstream: "auth",
     });
-    grantApproval(db, "deploy", { decidedBy: "user" });
+    grantApproval(db, "deploy", { decidedBy: "user", workstream: "auth" });
     expect(listSnapshots(db).map((r) => r.label)).toContain("approval granted deploy");
   });
 
@@ -472,7 +472,7 @@ describe("destructive verbs: snapshot is captured before mutation", () => {
       requestedBy: "worker-1",
       workstream: "auth",
     });
-    denyApproval(db, "deploy2", { decidedBy: "user" });
+    denyApproval(db, "deploy2", { decidedBy: "user", workstream: "auth" });
     expect(listSnapshots(db).map((r) => r.label)).toContain("approval denied deploy2");
   });
 
@@ -506,7 +506,7 @@ describe("destructive verbs: snapshot is captured before mutation", () => {
   it("closeAgent snapshots before the row delete + workspace ripple", async () => {
     mockTmuxAlive();
     seedAuth();
-    await closeAgent(db, "worker-1");
+    await closeAgent(db, "worker-1", { workstream: "auth" });
     expect(listSnapshots(db).map((r) => r.label)).toContain("agent close worker-1");
   });
 });
@@ -569,7 +569,7 @@ describe("snap_undo_reconcile_destroys_recovered_agents (regression)", () => {
     // Simulate destroy + cascade: drop the agent (which CASCADEs
     // the vcs_workspaces row away).
     db.prepare("DELETE FROM agents WHERE name = 'dog-1'").run();
-    expect(getAgent(db, "dog-1")).toBeUndefined();
+    expect(getAgent(db, "dog-1", "auth")).toBeUndefined();
     expect(countWorkspacesForAgent(db, "dog-1")).toBe(0);
 
     // Restore. restoreSnapshot CLOSES the live db handle, so we re-open.
@@ -577,7 +577,7 @@ describe("snap_undo_reconcile_destroys_recovered_agents (regression)", () => {
     db = openDb({ path: dbPath });
 
     // Sanity: the rows came back from the snapshot file.
-    expect(getAgent(db, "dog-1")).toBeDefined();
+    expect(getAgent(db, "dog-1", "auth")).toBeDefined();
     expect(countWorkspacesForAgent(db, "dog-1")).toBe(1);
 
     // Now run the post-restore reconcile pass that `mu undo` runs.
@@ -592,8 +592,8 @@ describe("snap_undo_reconcile_destroys_recovered_agents (regression)", () => {
     // inserted dog-1 (pane %2919). Both are reported as would-be-pruned
     // but neither is actually deleted.
     expect(report.prunedGhosts).toBe(2);
-    expect(getAgent(db, "dog-1")).toBeDefined();
-    expect(getAgent(db, "worker-1")).toBeDefined();
+    expect(getAgent(db, "dog-1", "auth")).toBeDefined();
+    expect(getAgent(db, "worker-1", "auth")).toBeDefined();
     expect(countWorkspacesForAgent(db, "dog-1")).toBe(1);
   });
 
@@ -611,7 +611,7 @@ describe("snap_undo_reconcile_destroys_recovered_agents (regression)", () => {
 
     restoreSnapshot(db, snap.id);
     db = openDb({ path: dbPath });
-    expect(getAgent(db, "dog-1")).toBeDefined(); // restored
+    expect(getAgent(db, "dog-1", "auth")).toBeDefined(); // restored
 
     // mode:"full" is the OLD (mutating) behaviour. Documents what
     // the bug looked like before the report-only mode existed.
@@ -619,7 +619,7 @@ describe("snap_undo_reconcile_destroys_recovered_agents (regression)", () => {
     await reconcile(db, { workstream: "auth", mode: "full" });
 
     // The recovered agent row is GONE again — the bug.
-    expect(getAgent(db, "dog-1")).toBeUndefined();
+    expect(getAgent(db, "dog-1", "auth")).toBeUndefined();
     // And FK CASCADE took the workspace too.
     expect(countWorkspacesForAgent(db, "dog-1")).toBe(0);
   });

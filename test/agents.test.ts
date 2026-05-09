@@ -90,7 +90,7 @@ describe("agents CRUD", () => {
   // ─── getAgent ───────────────────────────────────────────────────────
 
   it("getAgent returns undefined for unknown name", () => {
-    expect(getAgent(db, "ghost")).toBeUndefined();
+    expect(getAgent(db, "ghost", "b")).toBeUndefined();
   });
 
   it("getAgent round-trips inserted data", () => {
@@ -101,7 +101,7 @@ describe("agents CRUD", () => {
       status: "needs_input",
       tab: "Backend",
     });
-    expect(getAgent(db, "alice")).toMatchObject({
+    expect(getAgent(db, "alice", "auth")).toMatchObject({
       name: "alice",
       workstream: "auth",
       paneId: "%15",
@@ -136,12 +136,12 @@ describe("agents CRUD", () => {
 
   it("updateAgentStatus changes status and bumps updated_at", async () => {
     insertAgent(db, { name: "alice", workstream: "auth", paneId: "%1", status: "spawning" });
-    const before = getAgent(db, "alice");
+    const before = getAgent(db, "alice", "auth");
     if (!before) throw new Error("setup failed");
     // Sleep 5ms so updated_at can differ.
     await new Promise((resolve) => setTimeout(resolve, 5));
-    expect(updateAgentStatus(db, "alice", "busy")).toBe(true);
-    const after = getAgent(db, "alice");
+    expect(updateAgentStatus(db, "alice", "busy", "auth")).toBe(true);
+    const after = getAgent(db, "alice", "auth");
     expect(after?.status).toBe("busy");
     expect(after?.updatedAt).not.toBe(before.updatedAt);
     // created_at must NOT change.
@@ -149,17 +149,17 @@ describe("agents CRUD", () => {
   });
 
   it("updateAgentStatus returns false when no row matches", () => {
-    expect(updateAgentStatus(db, "ghost", "busy")).toBe(false);
+    expect(updateAgentStatus(db, "ghost", "busy", "auth")).toBe(false);
   });
 
   it("updateAgentStatus rejects an unknown status via the schema CHECK", () => {
     insertAgent(db, { name: "alice", workstream: "auth", paneId: "%1", status: "busy" });
     // The schema CHECK enforces the AgentStatus enum at the SQLite layer.
     // Catches `mu sql` typos that bypass the TS type system.
-    expect(() => updateAgentStatus(db, "alice", "bogus" as never)).toThrow(
+    expect(() => updateAgentStatus(db, "alice", "bogus" as never, "auth")).toThrow(
       /CHECK constraint failed/,
     );
-    expect(getAgent(db, "alice")?.status).toBe("busy");
+    expect(getAgent(db, "alice", "auth")?.status).toBe("busy");
   });
 
   it("insertAgent rejects an unknown status via the schema CHECK", () => {
@@ -189,18 +189,18 @@ describe("agents CRUD", () => {
 
   it("deleteAgent removes the row and returns true", () => {
     insertAgent(db, { name: "alice", workstream: "auth", paneId: "%1", status: "busy" });
-    expect(deleteAgent(db, "alice")).toBe(true);
-    expect(getAgent(db, "alice")).toBeUndefined();
+    expect(deleteAgent(db, "alice", "auth")).toBe(true);
+    expect(getAgent(db, "alice", "auth")).toBeUndefined();
   });
 
   it("deleteAgent on missing row returns false (idempotent)", () => {
-    expect(deleteAgent(db, "ghost")).toBe(false);
+    expect(deleteAgent(db, "ghost", "auth")).toBe(false);
   });
 
   it("deleteAgent does not affect other workstreams", () => {
     insertAgent(db, { name: "alice", workstream: "auth", paneId: "%1", status: "busy" });
     insertAgent(db, { name: "carol", workstream: "billing", paneId: "%2", status: "busy" });
-    deleteAgent(db, "alice");
+    deleteAgent(db, "alice", "auth");
     expect(listAgents(db).map((r) => r.name)).toEqual(["carol"]);
   });
 
@@ -225,7 +225,7 @@ describe("agents CRUD", () => {
       role: "read-only",
       tab: "Review",
     });
-    expect(getAgentByPane(db, "%7")).toEqual(getAgent(db, "alice"));
+    expect(getAgentByPane(db, "%7")).toEqual(getAgent(db, "alice", "auth"));
   });
 
   // ─── deleteAgent reaper ──────────────────────────────────────
@@ -239,13 +239,13 @@ describe("agents CRUD", () => {
       impact: 80,
       effortDays: 2,
     });
-    await claimTask(db, "design", { agentName: "worker-1" });
-    expect(getTask(db, "design")?.status).toBe("IN_PROGRESS");
-    expect(getTask(db, "design")?.owner).toBe("worker-1");
+    await claimTask(db, "design", { agentName: "worker-1", workstream: "auth" });
+    expect(getTask(db, "design", "auth")?.status).toBe("IN_PROGRESS");
+    expect(getTask(db, "design", "auth")?.owner).toBe("worker-1");
 
-    deleteAgent(db, "worker-1");
+    deleteAgent(db, "worker-1", "auth");
 
-    const after = getTask(db, "design");
+    const after = getTask(db, "design", "auth");
     expect(after?.status).toBe("OPEN");
     expect(after?.owner).toBeNull();
   });
@@ -259,10 +259,10 @@ describe("agents CRUD", () => {
       impact: 50,
       effortDays: 1,
     });
-    await claimTask(db, "design", { agentName: "worker-1" });
-    deleteAgent(db, "worker-1");
+    await claimTask(db, "design", { agentName: "worker-1", workstream: "auth" });
+    deleteAgent(db, "worker-1", "auth");
 
-    const notes = listNotes(db, "design");
+    const notes = listNotes(db, "design", "auth");
     const reaperNote = notes.find((n) => n.author === "reaper");
     expect(reaperNote).toBeDefined();
     expect(reaperNote?.content).toContain("previous owner worker-1");
@@ -278,8 +278,8 @@ describe("agents CRUD", () => {
       impact: 50,
       effortDays: 1,
     });
-    await claimTask(db, "design", { agentName: "worker-1" });
-    deleteAgent(db, "worker-1");
+    await claimTask(db, "design", { agentName: "worker-1", workstream: "auth" });
+    deleteAgent(db, "worker-1", "auth");
 
     const reapEvents = listLogs(db, { kind: "event" }).filter((r) =>
       r.payload.startsWith("task reap design"),
@@ -305,14 +305,14 @@ describe("agents CRUD", () => {
       impact: 50,
       effortDays: 1,
     });
-    await claimTask(db, "a", { agentName: "worker-1" });
-    await claimTask(db, "b", { agentName: "worker-2" });
+    await claimTask(db, "a", { agentName: "worker-1", workstream: "auth" });
+    await claimTask(db, "b", { agentName: "worker-2", workstream: "auth" });
 
-    deleteAgent(db, "worker-1");
+    deleteAgent(db, "worker-1", "auth");
 
-    expect(getTask(db, "a")?.status).toBe("OPEN");
-    expect(getTask(db, "b")?.status).toBe("IN_PROGRESS");
-    expect(getTask(db, "b")?.owner).toBe("worker-2");
+    expect(getTask(db, "a", "auth")?.status).toBe("OPEN");
+    expect(getTask(db, "b", "auth")?.status).toBe("IN_PROGRESS");
+    expect(getTask(db, "b", "auth")?.owner).toBe("worker-2");
   });
 
   it("deleteAgent does NOT reap CLOSED tasks (only IN_PROGRESS)", async () => {
@@ -324,14 +324,14 @@ describe("agents CRUD", () => {
       impact: 50,
       effortDays: 1,
     });
-    await claimTask(db, "done", { agentName: "worker-1" });
+    await claimTask(db, "done", { agentName: "worker-1", workstream: "auth" });
     db.prepare("UPDATE tasks SET status = 'CLOSED' WHERE local_id = 'done'").run();
 
-    deleteAgent(db, "worker-1");
+    deleteAgent(db, "worker-1", "auth");
 
     // Task stays CLOSED; only owner (which gets cleared via FK SET NULL).
-    expect(getTask(db, "done")?.status).toBe("CLOSED");
-    expect(getTask(db, "done")?.owner).toBeNull();
+    expect(getTask(db, "done", "auth")?.status).toBe("CLOSED");
+    expect(getTask(db, "done", "auth")?.owner).toBeNull();
   });
 });
 
@@ -353,24 +353,24 @@ describe("composeAgentTitle", () => {
 
   it("renders just the agent name when status is 'spawning' (initial state)", () => {
     insertAgent(db, { name: "worker-a", workstream: "ws", paneId: "%1", status: "spawning" });
-    const a = getAgent(db, "worker-a");
+    const a = getAgent(db, "worker-a", "ws");
     if (!a) throw new Error("agent missing");
     expect(composeAgentTitle(db, a)).toBe("worker-a");
   });
 
   it("renders 'name · emoji' when status is busy / needs_input / etc and no claim", () => {
     insertAgent(db, { name: "worker-a", workstream: "ws", paneId: "%1", status: "busy" });
-    let a = getAgent(db, "worker-a");
+    let a = getAgent(db, "worker-a", "ws");
     if (!a) throw new Error();
     expect(composeAgentTitle(db, a)).toBe(`worker-a · ${STATUS_EMOJI.busy}`);
 
-    updateAgentStatus(db, "worker-a", "needs_input");
-    a = getAgent(db, "worker-a");
+    updateAgentStatus(db, "worker-a", "needs_input", "ws");
+    a = getAgent(db, "worker-a", "ws");
     if (!a) throw new Error();
     expect(composeAgentTitle(db, a)).toBe(`worker-a · ${STATUS_EMOJI.needs_input}`);
 
-    updateAgentStatus(db, "worker-a", "free");
-    a = getAgent(db, "worker-a");
+    updateAgentStatus(db, "worker-a", "free", "ws");
+    a = getAgent(db, "worker-a", "ws");
     if (!a) throw new Error();
     expect(composeAgentTitle(db, a)).toBe(`worker-a · ${STATUS_EMOJI.free}`);
   });
@@ -387,7 +387,7 @@ describe("composeAgentTitle", () => {
         paneId: `%${status}`,
         status,
       });
-      const a = getAgent(db, `w_${status}`);
+      const a = getAgent(db, `w_${status}`, "ws");
       if (!a) throw new Error();
       const expected =
         status === "spawning" ? `w_${status}` : `w_${status} · ${STATUS_EMOJI[status]}`;
@@ -402,7 +402,7 @@ describe("composeAgentTitle", () => {
       `UPDATE tasks SET owner_id = (SELECT id FROM agents WHERE name = 'worker-a')
         WHERE local_id = 'build_x'`,
     ).run();
-    const a = getAgent(db, "worker-a");
+    const a = getAgent(db, "worker-a", "ws");
     if (!a) throw new Error();
     expect(composeAgentTitle(db, a)).toBe(`worker-a · ${STATUS_EMOJI.busy} · build_x`);
   });
@@ -416,7 +416,7 @@ describe("composeAgentTitle", () => {
           WHERE local_id = ?`,
       ).run(id);
     }
-    const a = getAgent(db, "worker-a");
+    const a = getAgent(db, "worker-a", "ws");
     if (!a) throw new Error();
     expect(composeAgentTitle(db, a)).toBe(`worker-a · ${STATUS_EMOJI.busy} · ⊕3 tasks`);
   });
@@ -432,7 +432,7 @@ describe("composeAgentTitle", () => {
     }
     db.prepare("UPDATE tasks SET status='CLOSED' WHERE local_id='shipped'").run();
     db.prepare("UPDATE tasks SET status='REJECTED' WHERE local_id='wontdo'").run();
-    const a = getAgent(db, "worker-a");
+    const a = getAgent(db, "worker-a", "ws");
     if (!a) throw new Error();
     // Only 'live' is OPEN+owned → single-task form, not ⊕N.
     expect(composeAgentTitle(db, a)).toBe(`worker-a · ${STATUS_EMOJI.busy} · live`);
@@ -452,7 +452,7 @@ describe("composeAgentTitle", () => {
       `UPDATE tasks SET owner_id = (SELECT id FROM agents WHERE name = ?)
         WHERE local_id = 'task_with_an_unusually_long_id_too'`,
     ).run(longName);
-    const a = getAgent(db, longName);
+    const a = getAgent(db, longName, "ws");
     if (!a) throw new Error();
     const title = composeAgentTitle(db, a);
     expect(title.length).toBeLessThanOrEqual(64);

@@ -176,23 +176,30 @@ function noteFromDb(row: RawTaskNoteRow): TaskNoteRow {
   };
 }
 
-/** Resolve a (workstream?, localId) pair to the surrogate task id.
- *  When workstream is undefined, falls back to a unique-match across
- *  all workstreams (the v4 SDK contract: local_id was globally unique;
- *  v5 keeps backward-compat for single-workstream test fixtures by
- *  returning the unique row, throwing TaskNotFoundError on miss). */
-function taskIdFor(db: Db, localId: string, workstream?: string): number | null {
-  if (workstream !== undefined) {
-    const wsId = tryResolveWorkstreamId(db, workstream);
-    if (wsId === null) return null;
-    const row = db
-      .prepare("SELECT id FROM tasks WHERE workstream_id = ? AND local_id = ?")
-      .get(wsId, localId) as { id: number } | undefined;
-    return row ? row.id : null;
-  }
-  const row = db.prepare("SELECT id FROM tasks WHERE local_id = ? LIMIT 1").get(localId) as
-    | { id: number }
-    | undefined;
+/** Look up a task by local_id across every workstream. Returns the
+ *  first match (sorted by workstream name for determinism). Used by
+ *  edge verbs (addBlockEdge / reparentTask) to resolve a blocker so a
+ *  cross-workstream blocker can surface `CrossWorkstreamEdgeError`
+ *  rather than the less-actionable `TaskNotFoundError`. NOT for
+ *  operator-facing reads — use `getTask(db, localId, workstream)`
+ *  for those. */
+function lookupTaskAnyWorkstream(db: Db, localId: string): TaskRow | undefined {
+  const row = db
+    .prepare(
+      `SELECT ${SELECT_TASK_COLS} ${TASK_FROM_JOIN} WHERE t.local_id = ? ORDER BY ws.name LIMIT 1`,
+    )
+    .get(localId) as RawTaskRow | undefined;
+  return row ? rowFromDb(row) : undefined;
+}
+
+/** Resolve a (workstream, localId) pair to the surrogate task id.
+ *  Returns null on miss. */
+function taskIdFor(db: Db, localId: string, workstream: string): number | null {
+  const wsId = tryResolveWorkstreamId(db, workstream);
+  if (wsId === null) return null;
+  const row = db
+    .prepare("SELECT id FROM tasks WHERE workstream_id = ? AND local_id = ?")
+    .get(wsId, localId) as { id: number } | undefined;
   return row ? row.id : null;
 }
 
@@ -321,22 +328,14 @@ export function sanitiseTaskId(input: string): string {
 
 // ─── Read primitives ───────────────────────────────────────────────────
 
-export function getTask(db: Db, localId: string, workstream?: string): TaskRow | undefined {
-  if (workstream !== undefined) {
-    const wsId = tryResolveWorkstreamId(db, workstream);
-    if (wsId === null) return undefined;
-    const row = db
-      .prepare(
-        `SELECT ${SELECT_TASK_COLS} ${TASK_FROM_JOIN} WHERE t.workstream_id = ? AND t.local_id = ?`,
-      )
-      .get(wsId, localId) as RawTaskRow | undefined;
-    return row ? rowFromDb(row) : undefined;
-  }
+export function getTask(db: Db, localId: string, workstream: string): TaskRow | undefined {
+  const wsId = tryResolveWorkstreamId(db, workstream);
+  if (wsId === null) return undefined;
   const row = db
     .prepare(
-      `SELECT ${SELECT_TASK_COLS} ${TASK_FROM_JOIN} WHERE t.local_id = ? ORDER BY ws.name LIMIT 1`,
+      `SELECT ${SELECT_TASK_COLS} ${TASK_FROM_JOIN} WHERE t.workstream_id = ? AND t.local_id = ?`,
     )
-    .get(localId) as RawTaskRow | undefined;
+    .get(wsId, localId) as RawTaskRow | undefined;
   return row ? rowFromDb(row) : undefined;
 }
 
@@ -381,7 +380,7 @@ export function listTasks(db: Db, workstream?: string, opts: ListTasksOptions = 
 // The three views (ready, blocked, goals) project tasks.* directly,
 // so they expose v5 columns (id, workstream_id, owner_id). We wrap
 // them with the same JOINs as TASK_FROM_JOIN to translate back to the
-// operator-facing v4 row shape.
+// operator-facing TaskRow shape (workstream + owner as TEXT names).
 const VIEW_FROM_JOIN = (view: string) => `
   FROM ${view} v
   JOIN workstreams ws ON ws.id = v.workstream_id
@@ -466,7 +465,7 @@ export function listRecentClosed(db: Db, workstream: string, limit = 5): TaskRow
 
 /** List notes for a task. Operator-facing local_id; resolves to the
  *  surrogate task id via taskIdFor (with optional workstream scope). */
-export function listNotes(db: Db, taskLocalId: string, workstream?: string): TaskNoteRow[] {
+export function listNotes(db: Db, taskLocalId: string, workstream: string): TaskNoteRow[] {
   const taskId = taskIdFor(db, taskLocalId, workstream);
   if (taskId === null) return [];
   const rows = db
@@ -487,22 +486,12 @@ export function listNotes(db: Db, taskLocalId: string, workstream?: string): Tas
  * worked on. closeTask intentionally preserves `owner` as a
  * historical record (so audit/notes can attribute decisions); pass
  * `{ includeClosed: true }` to surface that history.
- *
- * Workstream scoping (load-bearing post-v5):
- *   - Pass `opts.workstream` to scope to a single workstream. This is
- *     what every `mu task owned-by <agent>` / `mu my-tasks` /
- *     `composeAgentTitle` consumer wants — they have an in-context
- *     workstream and would silently misroute on a name clash without
- *     it (bug_v5_name_clash_silent_misroute).
- *   - Omit `workstream` only when you genuinely want every workstream's
- *     tasks owned by an agent of this name (rare; the CLI does NOT
- *     surface this). Use `listTasksByOwnerCrossWorkstream` for that
- *     intent so the call site reads honestly.
  */
 export function listTasksByOwner(
   db: Db,
+  workstream: string,
   owner: string,
-  opts: { includeClosed?: boolean; workstream?: string } = {},
+  opts: { includeClosed?: boolean } = {},
 ): TaskRow[] {
   // 'Live work' = not in any terminal-or-parked state. CLOSED is the
   // obvious one; REJECTED and DEFERRED are also off the agent's plate
@@ -511,37 +500,32 @@ export function listTasksByOwner(
   // Filter on the joined ag.name so the operator-facing owner string
   // still drives the lookup; FK is now via owner_id.
   const filter = opts.includeClosed ? "" : "AND t.status NOT IN ('CLOSED', 'REJECTED', 'DEFERRED')";
-  if (opts.workstream !== undefined) {
-    const wsId = tryResolveWorkstreamId(db, opts.workstream);
-    if (wsId === null) return [];
-    const sql = `SELECT ${SELECT_TASK_COLS} ${TASK_FROM_JOIN}
-                 WHERE ag.name = ? AND t.workstream_id = ? ${filter}
-                 ORDER BY t.local_id`;
-    return (db.prepare(sql).all(owner, wsId) as RawTaskRow[]).map(rowFromDb);
-  }
+  const wsId = tryResolveWorkstreamId(db, workstream);
+  if (wsId === null) return [];
   const sql = `SELECT ${SELECT_TASK_COLS} ${TASK_FROM_JOIN}
-               WHERE ag.name = ? ${filter}
-               ORDER BY ws.name, t.local_id`;
-  const rows = db.prepare(sql).all(owner) as RawTaskRow[];
-  return rows.map(rowFromDb);
+               WHERE ag.name = ? AND t.workstream_id = ? ${filter}
+               ORDER BY t.local_id`;
+  return (db.prepare(sql).all(owner, wsId) as RawTaskRow[]).map(rowFromDb);
 }
 
 /**
  * Cross-workstream variant of `listTasksByOwner`. Returns tasks owned
- * by ANY agent of the given name across every workstream — the
- * historical v4 contract. Use sparingly: agent names are no longer
- * globally unique in v5, so this is for genuine cross-workstream
- * surfaces (e.g. an audit dashboard), not for "what's worker-1 doing
- * in this workstream". The bare name is the join key, so two distinct
- * worker-1 agents in different workstreams contribute their tasks to
- * the same result list.
+ * by ANY agent of the given name across every workstream. Used by
+ * `mu task owned-by --all` for the genuine cross-workstream view
+ * (audit / dashboards). The bare name is the join key, so two
+ * distinct same-named agents in different workstreams contribute
+ * their tasks to the same result list.
  */
 export function listTasksByOwnerCrossWorkstream(
   db: Db,
   owner: string,
   opts: { includeClosed?: boolean } = {},
 ): TaskRow[] {
-  return listTasksByOwner(db, owner, opts);
+  const filter = opts.includeClosed ? "" : "AND t.status NOT IN ('CLOSED', 'REJECTED', 'DEFERRED')";
+  const sql = `SELECT ${SELECT_TASK_COLS} ${TASK_FROM_JOIN}
+               WHERE ag.name = ? ${filter}
+               ORDER BY ws.name, t.local_id`;
+  return (db.prepare(sql).all(owner) as RawTaskRow[]).map(rowFromDb);
 }
 
 export interface SearchTasksOptions {
@@ -594,7 +578,7 @@ export interface TaskEdges {
  * `getPrerequisites()`; this helper is the immediate-neighbour view used
  * by `mu task show`.
  */
-export function getTaskEdges(db: Db, taskLocalId: string, workstream?: string): TaskEdges {
+export function getTaskEdges(db: Db, taskLocalId: string, workstream: string): TaskEdges {
   const taskId = taskIdFor(db, taskLocalId, workstream);
   if (taskId === null) return { blockers: [], dependents: [] };
   const blockers = (
@@ -623,13 +607,13 @@ export function getTaskEdges(db: Db, taskLocalId: string, workstream?: string): 
  * traversal (i.e. the set of tasks that block this one), including the
  * task itself.
  */
-export function getPrerequisites(db: Db, taskLocalId: string, workstream?: string): Set<string> {
+export function getPrerequisites(db: Db, taskLocalId: string, workstream: string): Set<string> {
   const taskId = taskIdFor(db, taskLocalId, workstream);
   if (taskId === null) return new Set([taskLocalId]);
   // Walk reverse edges in surrogate-id space, then translate back to
-  // local_id strings. The seed must be the surrogate id; we union the
-  // local_id of the seed itself for backward-compat with the v4 contract
-  // (getPrerequisites returns an inclusive set).
+  // local_id strings. The seed must be the surrogate id; the result
+  // includes the seed task itself (callers like the tracks union-find
+  // rely on the inclusive set).
   const rows = db
     .prepare(
       `WITH RECURSIVE reach(node) AS (
@@ -789,17 +773,16 @@ export function addTask(db: Db, opts: AddTaskOptions): TaskRow {
 export interface AddNoteOptions {
   /** Free-form author label. Convention: agent name, "user", or "orchestrator". */
   author?: string;
-  /** Workstream context (operator-facing name). When omitted, the SDK
-   *  resolves the task by local_id alone (single-workstream fixtures);
-   *  pass when local_ids may collide across workstreams. */
-  workstream?: string;
+  /** Workstream context (operator-facing name). v5: tasks.local_id is
+   *  per-workstream unique, so this is required to disambiguate. */
+  workstream: string;
 }
 
 export function addNote(
   db: Db,
   taskLocalId: string,
   content: string,
-  opts: AddNoteOptions = {},
+  opts: AddNoteOptions,
 ): TaskNoteRow {
   const task = getTask(db, taskLocalId, opts.workstream);
   if (!task) {
@@ -843,15 +826,23 @@ export interface BlockEdgeResult {
  *   - no cycle (the new edge wouldn't form a path blocked → ... → blocker)
  *   - blocker ≠ blocked (no self-reference)
  */
-export function addBlockEdge(db: Db, blocked: string, blocker: string): BlockEdgeResult {
+export function addBlockEdge(
+  db: Db,
+  workstream: string,
+  blocked: string,
+  blocker: string,
+): BlockEdgeResult {
   if (blocked === blocker) {
     // Surface as a typed CycleError so the CLI maps it to exit 4 (conflict)
     // rather than letting the schema CHECK fire as a generic SQL error.
     throw new CycleError(blocker, blocked);
   }
-  const blockedRow = getTask(db, blocked);
+  const blockedRow = getTask(db, blocked, workstream);
   if (!blockedRow) throw new TaskNotFoundError(blocked);
-  const blockerRow = getTask(db, blocker);
+  // Resolve the blocker globally so a cross-workstream blocker surfaces
+  // CrossWorkstreamEdgeError (clearer than TaskNotFoundError). Cycle
+  // check + same-workstream guard run after.
+  const blockerRow = lookupTaskAnyWorkstream(db, blocker);
   if (!blockerRow) throw new TaskNotFoundError(blocker);
   if (blockedRow.workstream !== blockerRow.workstream) {
     throw new CrossWorkstreamEdgeError(
@@ -888,10 +879,15 @@ export interface RemoveBlockEdgeResult {
  * edge is gone there's nothing to do, regardless of whether the
  * tasks are gone too.
  */
-export function removeBlockEdge(db: Db, blocked: string, blocker: string): RemoveBlockEdgeResult {
-  const blockedRow = getTask(db, blocked);
+export function removeBlockEdge(
+  db: Db,
+  workstream: string,
+  blocked: string,
+  blocker: string,
+): RemoveBlockEdgeResult {
+  const blockedRow = getTask(db, blocked, workstream);
   if (!blockedRow) return { removed: false };
-  const blockerRow = getTask(db, blocker);
+  const blockerRow = getTask(db, blocker, workstream);
   if (!blockerRow) return { removed: false };
   const blockedId = taskIdFor(db, blocked, blockedRow.workstream);
   const blockerId = taskIdFor(db, blocker, blockerRow.workstream);
@@ -925,7 +921,7 @@ export interface DeleteTaskResult {
  * Pre-counts the cascade victims for reporting because SQLite's
  * `changes()` only reports rows directly affected by the DELETE.
  */
-export function deleteTask(db: Db, localId: string, workstream?: string): DeleteTaskResult {
+export function deleteTask(db: Db, localId: string, workstream: string): DeleteTaskResult {
   const before = getTask(db, localId, workstream);
   // Pre-mutation snapshot. delete cascades into task_edges and
   // task_notes; no per-row history can reconstruct it. Skip when the
@@ -990,14 +986,14 @@ export interface UpdateTaskResult {
  * workstream (cross-workstream moves are deferred).
  */
 export interface UpdateTaskScopeOption {
-  workstream?: string;
+  workstream: string;
 }
 
 export function updateTask(
   db: Db,
   localId: string,
   opts: UpdateTaskOptions,
-  scope: UpdateTaskScopeOption = {},
+  scope: UpdateTaskScopeOption,
 ): UpdateTaskResult {
   const before = getTask(db, localId, scope.workstream);
   if (!before) throw new TaskNotFoundError(localId);
@@ -1064,7 +1060,7 @@ export function reparentTask(
   db: Db,
   taskLocalId: string,
   blockers: readonly string[],
-  scope: { workstream?: string } = {},
+  scope: { workstream: string },
 ): ReparentTaskResult {
   const task = getTask(db, taskLocalId, scope.workstream);
   if (!task) throw new TaskNotFoundError(taskLocalId);
@@ -1073,15 +1069,15 @@ export function reparentTask(
 
   // Resolve every blocker up-front to its surrogate id; do all
   // existence + same-workstream + cycle checks before any DELETE.
-  // Look up blockers globally (no scope) so a blocker that exists in
-  // a DIFFERENT workstream surfaces CrossWorkstreamEdgeError, not
-  // TaskNotFoundError. This matches the pre-v5 contract.
+  // Look up blockers across all workstreams so a blocker that exists in
+  // a DIFFERENT workstream surfaces CrossWorkstreamEdgeError (clearer
+  // than TaskNotFoundError).
   const blockerIds: number[] = [];
   for (const blockerLocalId of blockers) {
     if (blockerLocalId === taskLocalId) {
       throw new CycleError(blockerLocalId, taskLocalId);
     }
-    const blocker = getTask(db, blockerLocalId);
+    const blocker = lookupTaskAnyWorkstream(db, blockerLocalId);
     if (!blocker) throw new TaskNotFoundError(blockerLocalId);
     if (blocker.workstream !== task.workstream) {
       throw new CrossWorkstreamEdgeError(

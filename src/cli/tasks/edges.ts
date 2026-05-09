@@ -18,8 +18,8 @@ export async function cmdTaskBlock(
   opts: { by: string; workstream?: string; json?: boolean },
 ): Promise<void> {
   assertTaskInWorkstream(db, blocked, opts.workstream);
-  const r = addBlockEdge(db, blocked, opts.by);
   const ws = await resolveWorkstream(opts.workstream);
+  const r = addBlockEdge(db, ws, blocked, opts.by);
   const nextSteps: NextStep[] = [
     { intent: "Show the dependency tree", command: `mu task tree ${blocked} -w ${ws}` },
     { intent: "Remove this edge", command: `mu task unblock ${blocked} --by ${opts.by} -w ${ws}` },
@@ -43,8 +43,8 @@ export async function cmdTaskUnblock(
   opts: { by: string; workstream?: string; json?: boolean },
 ): Promise<void> {
   assertTaskInWorkstream(db, blocked, opts.workstream);
-  const r = removeBlockEdge(db, blocked, opts.by);
   const ws = await resolveWorkstream(opts.workstream);
+  const r = removeBlockEdge(db, ws, blocked, opts.by);
   const nextSteps: NextStep[] = [
     { intent: "Show what now blocks this task", command: `mu task tree ${blocked} -w ${ws}` },
     { intent: "Re-add the edge", command: `mu task block ${blocked} --by ${opts.by} -w ${ws}` },
@@ -68,12 +68,12 @@ export async function cmdTaskReparent(
   opts: { blockedBy: string; workstream?: string; json?: boolean },
 ): Promise<void> {
   assertTaskInWorkstream(db, localId, opts.workstream);
+  const ws = await resolveWorkstream(opts.workstream);
   const blockers = opts.blockedBy
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
-  const r = reparentTask(db, localId, blockers);
-  const ws = await resolveWorkstream(opts.workstream);
+  const r = reparentTask(db, localId, blockers, { workstream: ws });
   const nextSteps: NextStep[] = [
     { intent: "Show the new dependency tree", command: `mu task tree ${localId} -w ${ws}` },
     { intent: "Show the task", command: `mu task show ${localId} -w ${ws}` },
@@ -94,7 +94,8 @@ export async function cmdTaskDelete(
   opts: { workstream?: string; json?: boolean } = {},
 ): Promise<void> {
   assertTaskInWorkstream(db, localId, opts.workstream);
-  const r = deleteTask(db, localId);
+  const ws = await resolveWorkstream(opts.workstream);
+  const r = deleteTask(db, localId, ws);
   const nextSteps: NextStep[] = [
     {
       // A snapshot was taken by deleteTask itself before the cascade
@@ -104,7 +105,7 @@ export async function cmdTaskDelete(
     },
     {
       intent: "List remaining tasks",
-      command: `mu task list -w ${await resolveWorkstream(opts.workstream)}`,
+      command: `mu task list -w ${ws}`,
     },
   ];
   if (opts.json) {

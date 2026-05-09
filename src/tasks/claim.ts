@@ -13,7 +13,6 @@
 //
 // Extracted from src/tasks.ts as part of refactor_split_large_src_files.
 
-import { AgentNotInWorkstreamError } from "../agents/errors.js";
 import type { Db } from "../db.js";
 import { emitEvent, formatClaimEvent } from "../logs.js";
 import { captureSnapshot } from "../snapshots.js";
@@ -35,10 +34,9 @@ export interface ReleaseResult {
 }
 
 export interface ReleaseTaskOptions extends EvidenceOption {
-  /** Workstream context for the task. When set, the lookup scopes
-   *  to this workstream so a same-named task elsewhere isn't released
-   *  by accident (bug_v5_name_clash_silent_misroute). */
-  workstream?: string;
+  /** Workstream context for the task (v5: tasks.local_id is
+   *  per-workstream unique). */
+  workstream: string;
   /** If true, also flip status back to OPEN (so the task is ready for
    *  another claim). Default false: status preserved. */
   reopen?: boolean;
@@ -52,7 +50,7 @@ export interface ReleaseTaskOptions extends EvidenceOption {
  * Idempotent: releasing an already-unowned task with no `--reopen` is a
  * no-op (returns `changed: false`). Throws TaskNotFoundError on missing.
  */
-export function releaseTask(db: Db, localId: string, opts: ReleaseTaskOptions = {}): ReleaseResult {
+export function releaseTask(db: Db, localId: string, opts: ReleaseTaskOptions): ReleaseResult {
   const before = getTask(db, localId, opts.workstream);
   if (!before) throw new TaskNotFoundError(localId);
 
@@ -96,11 +94,12 @@ export function releaseTask(db: Db, localId: string, opts: ReleaseTaskOptions = 
 
 export interface ClaimTaskOptions extends EvidenceOption {
   /** Workstream context for both the task and the claiming agent.
-   *  When set, the task lookup AND the agent FK lookup scope to this
+   *  v5: agents.name and tasks.local_id are per-workstream unique;
+   *  the task lookup AND the agent FK lookup scope to this
    *  workstream so a same-named task or worker elsewhere can't be
-   *  silently picked (bug_v5_name_clash_silent_misroute). The CLI
-   *  always passes this from the resolved -w / $MU_SESSION. */
-  workstream?: string;
+   *  silently picked. The CLI always passes this from the resolved
+   *  -w / $MU_SESSION. */
+  workstream: string;
   /**
    * Override the agent name. If omitted, derived from the current pane's
    * title via `tmux display-message -t $TMUX_PANE -p '#{pane_title}'`.
@@ -180,7 +179,7 @@ export interface ClaimResult {
 export async function claimTask(
   db: Db,
   localId: string,
-  opts: ClaimTaskOptions = {},
+  opts: ClaimTaskOptions,
 ): Promise<ClaimResult> {
   if (opts.self === true && opts.agentName !== undefined) {
     throw new Error("claimTask: --self and --for are mutually exclusive");
@@ -201,71 +200,31 @@ export async function claimTask(
     );
   }
 
-  // Pre-check (a): resolve the claiming agent to its surrogate id +
-  // workstream name. Fail loud + actionable on missing agent so the
+  // Pre-check: resolve the claiming agent to its surrogate id within
+  // opts.workstream. Fail loud + actionable on missing agent so the
   // FK insert below doesn't surface as bare 'FOREIGN KEY constraint
-  // failed'.
+  // failed'. Scoping by (workstream, name) is the v5 invariant.
   //
-  // Workstream-scoped resolution (load-bearing post-v5): when the
-  // caller passes opts.workstream we scope by (workstream, name) so
-  // two operators with worker-1 in wsA + wsB don't silently
-  // misroute (bug_v5_name_clash_silent_misroute). Without a
-  // workstream context we fall back to the v4 "first match by name"
-  // contract — the cross-workstream guard below still raises a
-  // typed error in that case.
-  const claimerRow = (
-    opts.workstream !== undefined
-      ? db
-          .prepare(
-            `SELECT a.id AS id, ws.name AS workstream
-               FROM agents a JOIN workstreams ws ON ws.id = a.workstream_id
-              WHERE a.name = ? AND ws.name = ?`,
-          )
-          .get(agentName, opts.workstream)
-      : db
-          .prepare(
-            `SELECT a.id AS id, ws.name AS workstream
-               FROM agents a JOIN workstreams ws ON ws.id = a.workstream_id
-              WHERE a.name = ? LIMIT 1`,
-          )
-          .get(agentName)
-  ) as { id: number; workstream: string } | undefined;
+  // The cross-workstream-guard pre-check is gone in v5 — both the
+  // task and the claimer are resolved in opts.workstream, so a
+  // mismatch is structurally impossible. A task that lives in a
+  // different workstream surfaces as TaskNotFoundError below, the
+  // same shape every other verb raises.
+  const claimerRow = db
+    .prepare(
+      `SELECT a.id AS id, ws.name AS workstream
+         FROM agents a JOIN workstreams ws ON ws.id = a.workstream_id
+        WHERE a.name = ? AND ws.name = ?`,
+    )
+    .get(agentName, opts.workstream) as { id: number; workstream: string } | undefined;
   if (!claimerRow) {
     const paneIdFromEnv = opts.agentName === undefined ? (process.env.TMUX_PANE ?? null) : null;
     throw new ClaimerNotRegisteredError(agentName, paneIdFromEnv);
   }
 
-  // Pre-check (b): cross-workstream guard. v5 makes this a per-pair
-  // FK, so the FK *itself* would catch a same-name worker in another
-  // workstream attempting to claim a task here — but we surface the
-  // typed error first for a clean message. Same workstream-scoped
-  // resolution discipline as the claimer lookup.
-  const taskWsRow = (
-    opts.workstream !== undefined
-      ? db
-          .prepare(
-            `SELECT t.id AS id, ws.name AS workstream
-               FROM tasks t JOIN workstreams ws ON ws.id = t.workstream_id
-              WHERE t.local_id = ? AND ws.name = ?`,
-          )
-          .get(localId, opts.workstream)
-      : db
-          .prepare(
-            `SELECT t.id AS id, ws.name AS workstream
-               FROM tasks t JOIN workstreams ws ON ws.id = t.workstream_id
-              WHERE t.local_id = ? LIMIT 1`,
-          )
-          .get(localId)
-  ) as { id: number; workstream: string } | undefined;
-  if (taskWsRow && taskWsRow.workstream !== claimerRow.workstream) {
-    throw new AgentNotInWorkstreamError(agentName, taskWsRow.workstream, claimerRow.workstream);
-  }
-
   return db.transaction(() => {
-    // Resolve the task within the claimer's workstream (which is the
-    // operator's workstream after pre-check (b) above). This locks the
-    // (workstream, local_id) pair for the rest of the transaction so a
-    // same-name task elsewhere can't sneak in (bug_v5_name_clash_silent_misroute).
+    // Resolve the task within the claimer's workstream. This locks the
+    // (workstream, local_id) pair for the rest of the transaction.
     const before = getTask(db, localId, claimerRow.workstream);
     if (!before) throw new TaskNotFoundError(localId);
 
@@ -318,7 +277,7 @@ export async function claimTask(
  *   1. $MU_AGENT_NAME env var (set by mu spawnAgent on every managed
  *      pane; surfaced from the f3d4bdd commit). Authoritative when
  *      present — you're inside a mu-spawned worker, no ambiguity.
- *   2. tmux pane title (the legacy claim-protocol identity step). Works
+ *   2. tmux pane title (the pane-title identity step). Works
  *      when running inside any pane mu manages OR adopted.
  *   3. $USER (when running outside tmux entirely).
  *   4. The literal 'orchestrator' as a last-resort default.
@@ -326,7 +285,7 @@ export async function claimTask(
  * Why prefer env over pane title: pane titles are a tmux-server-wide
  * resource that anything can rewrite. The env var is set per-pane at
  * spawn time and is unforgeable from outside without explicit
- * `--actor` override. Pane title is still the legacy identity for
+ * `--actor` override. Pane title is the only identity available for
  * adopted panes that didn't go through mu's spawn path.
  */
 export async function resolveActorIdentity(): Promise<string> {
@@ -343,9 +302,8 @@ async function claimSelf(db: Db, localId: string, opts: ClaimTaskOptions): Promi
   const actor =
     opts.actor !== undefined && opts.actor !== "" ? opts.actor : await resolveActorIdentity();
   return db.transaction(() => {
-    // Scope by the operator's workstream (when known) so a same-named
-    // task elsewhere can't be self-claimed by accident
-    // (bug_v5_name_clash_silent_misroute).
+    // Scope by the operator's workstream so a same-named task
+    // elsewhere can't be self-claimed by accident.
     const before = getTask(db, localId, opts.workstream);
     if (!before) throw new TaskNotFoundError(localId);
 

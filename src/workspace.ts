@@ -53,7 +53,7 @@ interface RawWorkspaceRow {
 
 // SELECT clause that joins vcs_workspaces back to operator-facing
 // agent + workstream names (v5 stores surrogate ids; the JS row shape
-// preserves the v4 contract).
+// is operator-facing TEXT names).
 const SELECT_WS_COLS = `
   ag.name AS agent,
   ws.name AS workstream,
@@ -291,7 +291,7 @@ export interface CreateWorkspaceOptions {
  * possibly-stale on-disk state. Callers should `freeWorkspace` first.
  */
 export async function createWorkspace(db: Db, opts: CreateWorkspaceOptions): Promise<WorkspaceRow> {
-  if (getWorkspaceForAgent(db, opts.agent) !== undefined) {
+  if (getWorkspaceForAgent(db, opts.agent, opts.workstream) !== undefined) {
     throw new WorkspaceExistsError(opts.agent);
   }
 
@@ -377,8 +377,8 @@ export async function createWorkspace(db: Db, opts: CreateWorkspaceOptions): Pro
     // asserts on /UNIQUE/) by issuing the INSERT even when agent_id
     // resolves to NULL — SQLite raises FK / UNIQUE in the same INSERT,
     // and the caller's catch covers both. We bias toward letting
-    // SQLite's constraint engine speak so the v4 error contract is
-    // preserved.
+    // SQLite's constraint engine speak so the typed error path stays
+    // honest about which constraint actually fired.
     const agentIdOrNull = agentRow ? agentRow.id : null;
     db.prepare(
       `INSERT INTO vcs_workspaces (agent_id, workstream_id, backend, path, parent_ref, created_at)
@@ -413,22 +413,16 @@ export async function createWorkspace(db: Db, opts: CreateWorkspaceOptions): Pro
 export function getWorkspaceForAgent(
   db: Db,
   agent: string,
-  workstream?: string,
+  workstream: string,
 ): WorkspaceRow | undefined {
-  // Pass `workstream` from any caller that has it in context to avoid
-  // a silent cross-workstream resolution when the same agent name
-  // exists in multiple workstreams (bug_v5_name_clash_silent_misroute).
-  if (workstream !== undefined) {
-    const wsId = tryResolveWorkstreamId(db, workstream);
-    if (wsId === null) return undefined;
-    const row = db
-      .prepare(`SELECT ${SELECT_WS_COLS} ${WS_FROM_JOIN} WHERE ag.name = ? AND v.workstream_id = ?`)
-      .get(agent, wsId) as RawWorkspaceRow | undefined;
-    return row ? rowFromDb(row) : undefined;
-  }
+  // v5: agents.name is per-workstream unique — the lookup must scope
+  // by (workstream, agent) so a same-named worker elsewhere can't be
+  // resolved instead.
+  const wsId = tryResolveWorkstreamId(db, workstream);
+  if (wsId === null) return undefined;
   const row = db
-    .prepare(`SELECT ${SELECT_WS_COLS} ${WS_FROM_JOIN} WHERE ag.name = ? LIMIT 1`)
-    .get(agent) as RawWorkspaceRow | undefined;
+    .prepare(`SELECT ${SELECT_WS_COLS} ${WS_FROM_JOIN} WHERE ag.name = ? AND v.workstream_id = ?`)
+    .get(agent, wsId) as RawWorkspaceRow | undefined;
   return row ? rowFromDb(row) : undefined;
 }
 
@@ -562,7 +556,7 @@ export interface FreeWorkspaceResult {
 export async function freeWorkspace(
   db: Db,
   agent: string,
-  opts: FreeWorkspaceOptions & { workstream?: string } = {},
+  opts: FreeWorkspaceOptions & { workstream: string },
 ): Promise<FreeWorkspaceResult> {
   const row = getWorkspaceForAgent(db, agent, opts.workstream);
   if (!row) return { removed: false, rowDeleted: false };
@@ -578,9 +572,7 @@ export async function freeWorkspace(
     commit: opts.commit ?? false,
   });
 
-  // Resolve to surrogate ids scoped by the row's workstream so a
-  // same-named worker elsewhere can't be torn down by accident
-  // (bug_v5_name_clash_silent_misroute).
+  // Resolve to surrogate ids scoped by the row's workstream.
   const wsIdForDel = tryResolveWorkstreamId(db, row.workstream);
   const del =
     wsIdForDel === null

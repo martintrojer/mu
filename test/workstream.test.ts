@@ -136,8 +136,8 @@ function seedAuth(): void {
     effortDays: 1,
     blockedBy: ["build"],
   });
-  addNote(db, "design", "DECISION: JWT");
-  addNote(db, "design", "FILES: src/auth.rs");
+  addNote(db, "design", "DECISION: JWT", { workstream: "auth" });
+  addNote(db, "design", "FILES: src/auth.rs", { workstream: "auth" });
 }
 
 // ─── summarizeWorkstream ───────────────────────────────────────────────
@@ -380,7 +380,7 @@ describe("destroyWorkstream", () => {
       impact: 50,
       effortDays: 1,
     });
-    addNote(db, "invoice", "FILES: src/billing.rs");
+    addNote(db, "invoice", "FILES: src/billing.rs", { workstream: "billing" });
 
     await destroyWorkstream(db, { workstream: "auth" });
 
@@ -835,7 +835,7 @@ describe("exportWorkstream", () => {
     seedAuth();
     const outDir = join(tmpDir, "exp");
     exportWorkstream(db, { workstream: "auth", outDir });
-    addNote(db, "build", "FOLLOWUP: handle edge case");
+    addNote(db, "build", "FOLLOWUP: handle edge case", { workstream: "auth" });
 
     const second = exportWorkstream(db, { workstream: "auth", outDir });
     expect(second.written).toBe(1);
@@ -854,7 +854,7 @@ describe("exportWorkstream", () => {
     seedAuth();
     const outDir = join(tmpDir, "exp");
     exportWorkstream(db, { workstream: "auth", outDir });
-    closeTask(db, "design", { evidence: "shipped" });
+    closeTask(db, "design", { evidence: "shipped", workstream: "auth" });
 
     const second = exportWorkstream(db, { workstream: "auth", outDir });
     expect(second.written).toBe(1);
@@ -892,7 +892,7 @@ describe("exportWorkstream", () => {
     exportWorkstream(db, { workstream: "auth", outDir });
 
     // Tear down `ship` (deleteTask cascades; design+build untouched).
-    deleteTask(db, "ship");
+    deleteTask(db, "ship", "auth");
 
     const second = exportWorkstream(db, { workstream: "auth", outDir });
     expect(second.preserved).toBe(1);
@@ -917,7 +917,7 @@ describe("exportWorkstream", () => {
       impact: 50,
       effortDays: 1,
     });
-    addNote(db, "fence", "```ts\nconst x = 1;\n```");
+    addNote(db, "fence", "```ts\nconst x = 1;\n```", { workstream: "auth" });
     const outDir = join(tmpDir, "exp");
     exportWorkstream(db, { workstream: "auth", outDir });
     const fs = await import("node:fs");

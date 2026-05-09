@@ -94,11 +94,9 @@ export interface TaskWaitOptions {
   /** Polling interval. Default 1000ms; overridable for tests. */
   pollMs?: number;
   /** Workstream context for the listed tasks AND the stuck-detector's
-   *  agent lookup. When set, every internal `getTask` / agent SELECT
-   *  scopes by workstream so a same-named task or worker elsewhere
-   *  can't pollute the wait result (bug_v5_name_clash_silent_misroute).
-   *  The CLI's `mu task wait` always passes this. */
-  workstream?: string;
+   *  agent lookup. Every internal `getTask` / agent SELECT scopes by
+   *  workstream (v5 per-workstream-unique TEXT names). */
+  workstream: string;
   /** Emit a yellow STUCK warning to stderr (once per task per wait call)
    *  when an IN_PROGRESS task's owner has been in `needs_input` for at
    *  least this many milliseconds since the agent row's last update.
@@ -156,7 +154,7 @@ export interface TaskWaitResult {
 export async function waitForTasks(
   db: Db,
   localIds: readonly string[],
-  opts: TaskWaitOptions = {},
+  opts: TaskWaitOptions,
 ): Promise<TaskWaitResult> {
   if (localIds.length === 0) {
     throw new Error("waitForTasks: localIds must be non-empty");
@@ -170,7 +168,7 @@ export async function waitForTasks(
   const deadline = timeoutMs > 0 ? Date.now() + timeoutMs : Number.POSITIVE_INFINITY;
   const startedAt = Date.now();
 
-  // Pre-flight: every id must exist (in the optional workstream scope).
+  // Pre-flight: every id must exist in the workstream scope.
   for (const id of localIds) {
     if (getTask(db, id, workstream) === undefined) throw new TaskNotFoundError(id);
   }
@@ -192,21 +190,17 @@ export async function waitForTasks(
     if (stuckAfterMs <= 0) return false;
     if (status !== "IN_PROGRESS" || !owner) return false;
     // owner is the operator-facing agent name; agents.name is
-    // per-workstream unique in v5. When we know the workstream, scope
-    // the lookup so a same-named worker elsewhere doesn't spuriously
-    // mark this task stuck (bug_v5_name_clash_silent_misroute).
-    const row = (
-      workstream !== undefined
-        ? db
-            .prepare(
-              `SELECT a.status AS status, a.updated_at AS updated_at
-                 FROM agents a
-                 JOIN workstreams ws ON ws.id = a.workstream_id
-                WHERE a.name = ? AND ws.name = ?`,
-            )
-            .get(owner, workstream)
-        : db.prepare("SELECT status, updated_at FROM agents WHERE name = ? LIMIT 1").get(owner)
-    ) as { status: string; updated_at: string } | undefined;
+    // per-workstream unique in v5. Scope the lookup by workstream so
+    // a same-named worker elsewhere doesn't spuriously mark this task
+    // stuck.
+    const row = db
+      .prepare(
+        `SELECT a.status AS status, a.updated_at AS updated_at
+           FROM agents a
+           JOIN workstreams ws ON ws.id = a.workstream_id
+          WHERE a.name = ? AND ws.name = ?`,
+      )
+      .get(owner, workstream) as { status: string; updated_at: string } | undefined;
     if (!row || row.status !== "needs_input") return false;
     const ageMs = Date.now() - new Date(row.updated_at).getTime();
     return ageMs >= stuckAfterMs;

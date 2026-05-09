@@ -121,9 +121,8 @@ function formatHudAgentsTable(
   for (const a of shown) {
     nameW = Math.max(nameW, `agent ${a.name}`.length);
     // Scope by the agent's own workstream so a same-named worker
-    // elsewhere can't pollute this row's task count
-    // (bug_v5_name_clash_silent_misroute).
-    const owned = listTasksByOwner(db, a.name, { workstream: a.workstream });
+    // elsewhere can't pollute this row's task count.
+    const owned = listTasksByOwner(db, a.workstream, a.name);
     const taskBit =
       owned.length === 0
         ? "—"

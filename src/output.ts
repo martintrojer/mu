@@ -172,8 +172,9 @@ export interface ErrorJson {
 /**
  * Marker interface for typed errors that carry actionable resolutions.
  * The handler checks this with a duck-typed `typeof err.errorNextSteps
- * === "function"` rather than instanceof so both legacy and new errors
- * coexist during the rollout.
+ * === "function"` rather than instanceof so cross-realm errors (e.g.
+ * thrown from a different module instance after a hot-reload) still
+ * surface their nextSteps.
  */
 export interface HasNextSteps {
   errorNextSteps(): NextStep[];

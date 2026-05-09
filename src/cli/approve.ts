@@ -34,6 +34,7 @@ import {
   emitJson,
   resolveOptionalWorkstream,
   resolveSelfOptional,
+  resolveWorkstream,
 } from "../cli.js";
 import type { Db } from "../db.js";
 import { type NextStep, muTable, pc, printNextSteps } from "../output.js";
@@ -48,7 +49,7 @@ export async function cmdApprovalAdd(
     json?: boolean;
   },
 ): Promise<void> {
-  const ws = opts.workstream ?? (await resolveOptionalWorkstream());
+  const ws = await resolveWorkstream(opts.workstream);
   const requestedBy = opts.requestedBy ?? resolveSelfNameOrUser(db);
   const addOpts: AddApprovalOptions = {
     workstream: ws,
@@ -112,14 +113,9 @@ export async function cmdApprovalGrant(
   opts: { by?: string; workstream?: string; json?: boolean },
 ): Promise<void> {
   assertApprovalInWorkstream(db, slug, opts.workstream);
+  const ws = await resolveWorkstream(opts.workstream);
   const decidedBy = opts.by ?? resolveSelfNameOrUser(db);
-  // Pass workstream when known so a same-slug approval in another
-  // workstream isn't granted by accident
-  // (bug_v5_name_clash_silent_misroute).
-  const row = grantApproval(db, slug, {
-    decidedBy,
-    ...(opts.workstream !== undefined ? { workstream: opts.workstream } : {}),
-  });
+  const row = grantApproval(db, slug, { decidedBy, workstream: ws });
   if (opts.json) {
     emitJson(row);
     return;
@@ -133,11 +129,9 @@ export async function cmdApprovalDeny(
   opts: { by?: string; workstream?: string; json?: boolean },
 ): Promise<void> {
   assertApprovalInWorkstream(db, slug, opts.workstream);
+  const ws = await resolveWorkstream(opts.workstream);
   const decidedBy = opts.by ?? resolveSelfNameOrUser(db);
-  const row = denyApproval(db, slug, {
-    decidedBy,
-    ...(opts.workstream !== undefined ? { workstream: opts.workstream } : {}),
-  });
+  const row = denyApproval(db, slug, { decidedBy, workstream: ws });
   if (opts.json) {
     emitJson(row);
     return;
@@ -151,12 +145,10 @@ export async function cmdApprovalWait(
   opts: { timeout?: number; json?: boolean; workstream?: string },
 ): Promise<void> {
   assertApprovalInWorkstream(db, slug, opts.workstream);
+  const ws = await resolveWorkstream(opts.workstream);
   // --timeout in seconds for shell ergonomics; SDK takes ms.
   const timeoutMs = opts.timeout !== undefined ? opts.timeout * 1000 : 600_000;
-  const row = await waitApproval(db, slug, {
-    timeoutMs,
-    ...(opts.workstream !== undefined ? { workstream: opts.workstream } : {}),
-  });
+  const row = await waitApproval(db, slug, { timeoutMs, workstream: ws });
   if (opts.json) {
     emitJson(row);
   } else {

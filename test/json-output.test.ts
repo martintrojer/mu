@@ -47,7 +47,7 @@ describe("--json output on read verbs", () => {
       effortDays: 1,
       blockedBy: ["b"],
     });
-    addNote(db, "a", "FILES: src/auth.ts");
+    addNote(db, "a", "FILES: src/auth.ts", { workstream: "auth" });
     db.close();
   });
 
@@ -118,7 +118,7 @@ describe("--json output on read verbs", () => {
   });
 
   it("task show --json decorates the inner task with roi", async () => {
-    const { stdout } = await runCli(["task", "show", "a", "--json"], dbPath);
+    const { stdout } = await runCli(["task", "show", "a", "-w", "auth", "--json"], dbPath);
     const parsed = JSON.parse(stdout.trim()) as { task: { roi?: number } };
     expect(parsed.task.roi).toBe(40);
   });
@@ -134,7 +134,7 @@ describe("--json output on read verbs", () => {
   });
 
   it("task show --json emits a composite { task, blockers, dependents, notes }", async () => {
-    const { stdout } = await runCli(["task", "show", "a", "--json"], dbPath);
+    const { stdout } = await runCli(["task", "show", "a", "-w", "auth", "--json"], dbPath);
     const parsed = JSON.parse(stdout.trim()) as {
       task: { localId: string };
       blockers: string[];
@@ -148,7 +148,7 @@ describe("--json output on read verbs", () => {
   });
 
   it("task tree --json emits a recursive { direction, root: { task, children } } shape", async () => {
-    const { stdout } = await runCli(["task", "tree", "c", "--json"], dbPath);
+    const { stdout } = await runCli(["task", "tree", "c", "-w", "auth", "--json"], dbPath);
     const parsed = JSON.parse(stdout.trim()) as {
       direction: string;
       root: {
@@ -197,7 +197,7 @@ describe("--json output on read verbs", () => {
       blockedBy: ["d", "e"],
     });
     db3.close();
-    const { stdout } = await runCli(["task", "tree", "f", "--json"], dbPath);
+    const { stdout } = await runCli(["task", "tree", "f", "-w", "auth", "--json"], dbPath);
     const parsed = JSON.parse(stdout.trim()) as {
       root: {
         children: Array<{
@@ -349,7 +349,7 @@ describe("--json output on read verbs", () => {
     // whoami doesn't reconcile — it just looks the agent up by pane id
     // — so the seeded fake pane id is fine.
     const db2 = openDb({ path: dbPath });
-    await claimTask(db2, "a", { agentName: "worker-1" });
+    await claimTask(db2, "a", { agentName: "worker-1", workstream: "auth" });
     db2.close();
     const originalPane = process.env.TMUX_PANE;
     process.env.TMUX_PANE = "%42";

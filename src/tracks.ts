@@ -57,7 +57,7 @@ export function getParallelTracks(db: Db, workstream: string): Track[] {
   // 2. Compute prerequisite subgraph for each goal.
   const subgraphs = new Map<string, Set<string>>();
   for (const goal of goals) {
-    subgraphs.set(goal.localId, getPrerequisites(db, goal.localId));
+    subgraphs.set(goal.localId, getPrerequisites(db, goal.localId, workstream));
   }
 
   // 3. Union-find: merge goals whose subgraphs overlap.

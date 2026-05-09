@@ -129,7 +129,7 @@ describe("reconcile — pruning ghost rows", () => {
     setTmuxExecutor(executor);
     const report = await reconcile(db, { workstream: "auth" });
     expect(report.prunedGhosts).toBe(1);
-    expect(getAgent(db, "alice")).toBeUndefined();
+    expect(getAgent(db, "alice", "auth")).toBeUndefined();
   });
 
   it("DB row with matching pane → NOT pruned", async () => {
@@ -140,7 +140,7 @@ describe("reconcile — pruning ghost rows", () => {
     setTmuxExecutor(executor);
     const report = await reconcile(db, { workstream: "auth" });
     expect(report.prunedGhosts).toBe(0);
-    expect(getAgent(db, "alice")).toBeDefined();
+    expect(getAgent(db, "alice", "auth")).toBeDefined();
   });
 
   it("multiple ghosts pruned at once; survivors kept", async () => {
@@ -170,7 +170,7 @@ describe("reconcile — pruning ghost rows", () => {
     const report = await reconcile(db, { workstream: "auth" });
     expect(report.prunedGhosts).toBe(1);
     // billing-carol untouched.
-    expect(getAgent(db, "billing-carol")).toBeDefined();
+    expect(getAgent(db, "billing-carol", "billing")).toBeDefined();
   });
 });
 
@@ -185,7 +185,7 @@ describe("reconcile — status detection", () => {
     setTmuxExecutor(executor);
     const report = await reconcile(db, { workstream: "auth" });
     expect(report.statusChanges).toBe(1);
-    expect(getAgent(db, "alice")?.status).toBe("busy");
+    expect(getAgent(db, "alice", "auth")?.status).toBe("busy");
   });
 
   it("spawning → needs_input when prompt visible", async () => {
@@ -196,7 +196,7 @@ describe("reconcile — status detection", () => {
     setTmuxExecutor(executor);
     const report = await reconcile(db, { workstream: "auth" });
     expect(report.statusChanges).toBe(1);
-    expect(getAgent(db, "alice")?.status).toBe("needs_input");
+    expect(getAgent(db, "alice", "auth")?.status).toBe("needs_input");
   });
 
   it("busy → needs_permission when permission prompt appears", async () => {
@@ -213,7 +213,7 @@ describe("reconcile — status detection", () => {
     setTmuxExecutor(executor);
     const report = await reconcile(db, { workstream: "auth" });
     expect(report.statusChanges).toBe(1);
-    expect(getAgent(db, "alice")?.status).toBe("needs_permission");
+    expect(getAgent(db, "alice", "auth")?.status).toBe("needs_permission");
   });
 
   it("status unchanged when detected matches current → 0 statusChanges", async () => {
@@ -224,7 +224,7 @@ describe("reconcile — status detection", () => {
     setTmuxExecutor(executor);
     const report = await reconcile(db, { workstream: "auth" });
     expect(report.statusChanges).toBe(0);
-    expect(getAgent(db, "alice")?.status).toBe("busy");
+    expect(getAgent(db, "alice", "auth")?.status).toBe("busy");
   });
 
   it("free + idle scrollback → free stays (sticky)", async () => {
@@ -235,7 +235,7 @@ describe("reconcile — status detection", () => {
     setTmuxExecutor(executor);
     const report = await reconcile(db, { workstream: "auth" });
     expect(report.statusChanges).toBe(0);
-    expect(getAgent(db, "alice")?.status).toBe("free");
+    expect(getAgent(db, "alice", "auth")?.status).toBe("free");
   });
 
   it("free + busy scrollback → flips to busy (real activity wins)", async () => {
@@ -246,7 +246,7 @@ describe("reconcile — status detection", () => {
     setTmuxExecutor(executor);
     const report = await reconcile(db, { workstream: "auth" });
     expect(report.statusChanges).toBe(1);
-    expect(getAgent(db, "alice")?.status).toBe("busy");
+    expect(getAgent(db, "alice", "auth")?.status).toBe("busy");
   });
 
   it("free + permission prompt → flips to needs_permission", async () => {
@@ -263,7 +263,7 @@ describe("reconcile — status detection", () => {
     setTmuxExecutor(executor);
     const report = await reconcile(db, { workstream: "auth" });
     expect(report.statusChanges).toBe(1);
-    expect(getAgent(db, "alice")?.status).toBe("needs_permission");
+    expect(getAgent(db, "alice", "auth")?.status).toBe("needs_permission");
   });
 
   it("ghost row is pruned BEFORE its status would be detected (no error)", async () => {
@@ -380,9 +380,9 @@ describe("reconcile — combined scenarios", () => {
     expect(report.orphans.map((o) => o.paneId)).toEqual(["%50"]);
 
     // DB state matches the report.
-    expect(getAgent(db, "alice")?.status).toBe("busy");
-    expect(getAgent(db, "bob")?.status).toBe("needs_input");
-    expect(getAgent(db, "carol")).toBeUndefined();
+    expect(getAgent(db, "alice", "auth")?.status).toBe("busy");
+    expect(getAgent(db, "bob", "auth")?.status).toBe("needs_input");
+    expect(getAgent(db, "carol", "auth")).toBeUndefined();
   });
 
   it("repeated reconcile is idempotent when nothing has changed", async () => {
@@ -402,14 +402,14 @@ describe("reconcile — combined scenarios", () => {
 
   it("status update bumps updated_at", async () => {
     insertAgent(db, { name: "alice", workstream: "auth", paneId: "%15", status: "spawning" });
-    const before = getAgent(db, "alice")?.updatedAt;
+    const before = getAgent(db, "alice", "auth")?.updatedAt;
     await new Promise((resolve) => setTimeout(resolve, 5));
     const { executor } = mockTmux([
       { windowId: "@1", paneId: "%15", title: "alice", command: "pi", scrollback: BUSY_SCROLLBACK },
     ]);
     setTmuxExecutor(executor);
     await reconcile(db, { workstream: "auth" });
-    const after = getAgent(db, "alice")?.updatedAt;
+    const after = getAgent(db, "alice", "auth")?.updatedAt;
     expect(after).not.toBe(before);
   });
 
@@ -443,9 +443,9 @@ describe("reconcile — combined scenarios", () => {
 
     await reconcile(db, { workstream: "auth" });
 
-    expect(getAgent(db, "auth-alice")?.status).toBe("busy");
+    expect(getAgent(db, "auth-alice", "auth")?.status).toBe("busy");
     // billing-bob was NOT touched.
-    expect(getAgent(db, "billing-bob")?.status).toBe("spawning");
+    expect(getAgent(db, "billing-bob", "billing")?.status).toBe("spawning");
   });
 });
 
@@ -463,7 +463,7 @@ describe("reconcile — mode: 'report-only' does not mutate (snap_undo_reconcile
     expect(report.mode).toBe("report-only");
     expect(report.prunedGhosts).toBe(1);
     // The row is still in the DB — the report-only contract.
-    expect(getAgent(db, "alice")).toBeDefined();
+    expect(getAgent(db, "alice", "auth")).toBeDefined();
   });
 
   it("a follow-up mode:'full' pass still prunes (mode is opt-in per call)", async () => {
@@ -473,13 +473,13 @@ describe("reconcile — mode: 'report-only' does not mutate (snap_undo_reconcile
 
     const dry = await reconcile(db, { workstream: "auth", mode: "report-only" });
     expect(dry.prunedGhosts).toBe(1);
-    expect(getAgent(db, "alice")).toBeDefined();
+    expect(getAgent(db, "alice", "auth")).toBeDefined();
 
     // Same setup, mode:"full": deletes for real.
     const wet = await reconcile(db, { workstream: "auth" });
     expect(wet.prunedGhosts).toBe(1);
     expect(wet.mode).toBe("full");
-    expect(getAgent(db, "alice")).toBeUndefined();
+    expect(getAgent(db, "alice", "auth")).toBeUndefined();
   });
 
   it("skips status detection entirely (statusChanges is always 0)", async () => {
@@ -495,7 +495,7 @@ describe("reconcile — mode: 'report-only' does not mutate (snap_undo_reconcile
     expect(report.mode).toBe("report-only");
     expect(report.statusChanges).toBe(0);
     // Status unchanged (no write).
-    expect(getAgent(db, "alice")?.status).toBe("spawning");
+    expect(getAgent(db, "alice", "auth")?.status).toBe("spawning");
   });
 
   it("orphan-surface still runs in report-only mode", async () => {
@@ -530,7 +530,7 @@ describe("reconcile — mode: 'report-only' does not mutate (snap_undo_reconcile
     expect(report.prunedGhosts).toBe(1);
     expect(report.mode).toBe("report-only");
     // The contract: the recovered row IS still here.
-    const dog = getAgent(db, "dog-1");
+    const dog = getAgent(db, "dog-1", "auth");
     expect(dog).toBeDefined();
     expect(dog?.workstream).toBe("auth");
     expect(dog?.paneId).toBe("%2919");
@@ -548,7 +548,7 @@ describe("reconcile — mode: 'status-only' refreshes status without pruning (bu
     const report = await reconcile(db, { workstream: "auth", mode: "status-only" });
     expect(report.mode).toBe("status-only");
     expect(report.statusChanges).toBe(1);
-    expect(getAgent(db, "alice")?.status).toBe("busy");
+    expect(getAgent(db, "alice", "auth")?.status).toBe("busy");
   });
 
   it("DOES NOT prune ghost rows (the whole point of NOT being mode:'full')", async () => {
@@ -559,7 +559,7 @@ describe("reconcile — mode: 'status-only' refreshes status without pruning (bu
     const report = await reconcile(db, { workstream: "auth", mode: "status-only" });
     expect(report.mode).toBe("status-only");
     expect(report.prunedGhosts).toBe(1); // counted…
-    expect(getAgent(db, "ghost")).toBeDefined(); // …but row survives
+    expect(getAgent(db, "ghost", "auth")).toBeDefined(); // …but row survives
   });
 
   it("SKIPS status detection on placeholder agents whose pane id starts with %pending- (mid-spawn safety)", async () => {
@@ -579,7 +579,7 @@ describe("reconcile — mode: 'status-only' refreshes status without pruning (bu
     const report = await reconcile(db, { workstream: "auth", mode: "status-only" });
     expect(report.mode).toBe("status-only");
     // Status unchanged (no scrollback capture, no detector run).
-    expect(getAgent(db, "alice")?.status).toBe("spawning");
+    expect(getAgent(db, "alice", "auth")?.status).toBe("spawning");
     expect(report.statusChanges).toBe(0);
     // No capturePane against the fake pane id (would have errored).
     const sawCapture = calls.some((c) => c[0] === "capture-pane" && c.includes("%pending-alice"));
@@ -587,7 +587,7 @@ describe("reconcile — mode: 'status-only' refreshes status without pruning (bu
     // Placeholder is NOT in tmux but status-only doesn't prune
     // (load-bearing for bug_agent_spawn_workspace_fk_failure):
     // the row survives so createWorkspace's FK insert succeeds.
-    expect(getAgent(db, "alice")).toBeDefined();
+    expect(getAgent(db, "alice", "auth")).toBeDefined();
   });
 });
 
@@ -599,7 +599,7 @@ describe("reconcile — status sanity", () => {
     ]);
     setTmuxExecutor(executor);
     await reconcile(db, { workstream: "auth" });
-    const status = getAgent(db, "alice")?.status;
+    const status = getAgent(db, "alice", "auth")?.status;
     const valid: AgentStatus[] = [
       "spawning",
       "busy",

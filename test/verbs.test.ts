@@ -326,7 +326,7 @@ describe("spawnAgent", () => {
     setTmuxExecutor(executor);
     const agent = await spawnAgent(db, { name: "alice", workstream: "auth" });
     expect(agent.paneId).toMatch(/^%\d+$/);
-    const fromDb = getAgent(db, "alice");
+    const fromDb = getAgent(db, "alice", "auth");
     expect(fromDb?.paneId).toBe(agent.paneId);
     expect(fromDb?.status).toBe("spawning");
   });
@@ -565,7 +565,7 @@ describe("sendToAgent", () => {
     setTmuxExecutor(executor);
     const agent = await spawnAgent(db, { name: "alice", workstream: "auth" });
     calls.length = 0; // ignore spawn calls
-    await sendToAgent(db, "alice", "hello");
+    await sendToAgent(db, "alice", "hello", { workstream: "auth" });
     // Should have emitted the 4-step send protocol.
     const verbs = calls.map((c) => c[0]);
     expect(verbs).toEqual(["copy-mode", "set-buffer", "paste-buffer", "send-keys"]);
@@ -577,7 +577,9 @@ describe("sendToAgent", () => {
   it("throws AgentNotFoundError for unknown agent (no tmux calls)", async () => {
     const { executor, calls } = mockTmux(state);
     setTmuxExecutor(executor);
-    await expect(sendToAgent(db, "ghost", "hi")).rejects.toBeInstanceOf(AgentNotFoundError);
+    await expect(sendToAgent(db, "ghost", "hi", { workstream: "auth" })).rejects.toBeInstanceOf(
+      AgentNotFoundError,
+    );
     expect(calls).toEqual([]);
   });
 });
@@ -592,7 +594,7 @@ describe("readAgent", () => {
     const pane = state.panes.get(agent.paneId);
     if (!pane) throw new Error("setup: pane missing after spawn");
     pane.scrollback = "line one\nline two\n";
-    const out = await readAgent(db, "alice");
+    const out = await readAgent(db, "alice", { workstream: "auth" });
     expect(out).toBe("line one\nline two\n");
   });
 
@@ -601,7 +603,7 @@ describe("readAgent", () => {
     setTmuxExecutor(executor);
     await spawnAgent(db, { name: "alice", workstream: "auth" });
     calls.length = 0;
-    await readAgent(db, "alice", { lines: 50 });
+    await readAgent(db, "alice", { lines: 50, workstream: "auth" });
     const captureCall = calls.find((c) => c[0] === "capture-pane");
     expect(captureCall).toContain("-S");
     expect(captureCall).toContain("-50");
@@ -610,7 +612,9 @@ describe("readAgent", () => {
   it("throws AgentNotFoundError for unknown agent", async () => {
     const { executor } = mockTmux(state);
     setTmuxExecutor(executor);
-    await expect(readAgent(db, "ghost")).rejects.toBeInstanceOf(AgentNotFoundError);
+    await expect(readAgent(db, "ghost", { workstream: "auth" })).rejects.toBeInstanceOf(
+      AgentNotFoundError,
+    );
   });
 });
 
@@ -623,16 +627,16 @@ describe("closeAgent", () => {
     const agent = await spawnAgent(db, { name: "alice", workstream: "auth" });
     expect(state.panes.has(agent.paneId)).toBe(true);
 
-    const result = await closeAgent(db, "alice");
+    const result = await closeAgent(db, "alice", { workstream: "auth" });
     expect(result).toMatchObject({ killedPane: true, deletedRow: true });
     expect(state.panes.has(agent.paneId)).toBe(false);
-    expect(getAgent(db, "alice")).toBeUndefined();
+    expect(getAgent(db, "alice", "auth")).toBeUndefined();
   });
 
   it("is idempotent on unknown agent (no tmux calls)", async () => {
     const { executor, calls } = mockTmux(state);
     setTmuxExecutor(executor);
-    const result = await closeAgent(db, "ghost");
+    const result = await closeAgent(db, "ghost", { workstream: "auth" });
     expect(result).toMatchObject({
       killedPane: false,
       deletedRow: false,
@@ -647,9 +651,9 @@ describe("closeAgent", () => {
     // Manually delete the pane out from under us.
     state.panes.delete(agent.paneId);
 
-    const result = await closeAgent(db, "alice");
+    const result = await closeAgent(db, "alice", { workstream: "auth" });
     expect(result.deletedRow).toBe(true);
-    expect(getAgent(db, "alice")).toBeUndefined();
+    expect(getAgent(db, "alice", "auth")).toBeUndefined();
   });
 });
 
@@ -696,7 +700,7 @@ describe("spawn liveness check", () => {
       AgentDiedOnSpawnError,
     );
     // DB row was rolled back — no ghost.
-    expect(getAgent(db, "alice")).toBeUndefined();
+    expect(getAgent(db, "alice", "auth")).toBeUndefined();
   });
 
   it("AgentDiedOnSpawnError carries the captured scrollback in its message", async () => {
@@ -751,26 +755,26 @@ describe("spawn liveness check", () => {
     setTmuxExecutor(executor);
     const agent = await spawnAgent(db, { name: "alice", workstream: "auth" });
     expect(agent.status).toBe("spawning");
-    expect(getAgent(db, "alice")).toBeDefined();
+    expect(getAgent(db, "alice", "auth")).toBeDefined();
   });
 });
 
 describe("freeAgent", () => {
   it("flips status to 'free' and reports the change", () => {
     insertAgent(db, { name: "alice", workstream: "auth", paneId: "%1", status: "busy" });
-    const r = freeAgent(db, "alice");
+    const r = freeAgent(db, "alice", "auth");
     expect(r).toEqual({ previousStatus: "busy", status: "free", changed: true });
-    expect(getAgent(db, "alice")?.status).toBe("free");
+    expect(getAgent(db, "alice", "auth")?.status).toBe("free");
   });
 
   it("is idempotent on an already-free agent", () => {
     insertAgent(db, { name: "alice", workstream: "auth", paneId: "%1", status: "free" });
-    const r = freeAgent(db, "alice");
+    const r = freeAgent(db, "alice", "auth");
     expect(r).toEqual({ previousStatus: "free", status: "free", changed: false });
   });
 
   it("throws AgentNotFoundError on missing agent", () => {
-    expect(() => freeAgent(db, "ghost")).toThrow(AgentNotFoundError);
+    expect(() => freeAgent(db, "ghost", "auth")).toThrow(AgentNotFoundError);
   });
 
   it("works from any persisted status (spawning, needs_input, needs_permission)", () => {
@@ -792,11 +796,11 @@ describe("freeAgent", () => {
       paneId: "%3",
       status: "needs_permission",
     });
-    expect(freeAgent(db, "a1").changed).toBe(true);
-    expect(freeAgent(db, "a2").changed).toBe(true);
-    expect(freeAgent(db, "a3").changed).toBe(true);
+    expect(freeAgent(db, "a1", "auth").changed).toBe(true);
+    expect(freeAgent(db, "a2", "auth").changed).toBe(true);
+    expect(freeAgent(db, "a3", "auth").changed).toBe(true);
     for (const name of ["a1", "a2", "a3"] as const) {
-      expect(getAgent(db, name)?.status).toBe("free");
+      expect(getAgent(db, name, "auth")?.status).toBe("free");
     }
   });
 });
@@ -859,7 +863,7 @@ describe("listLiveAgents", () => {
     const view = await listLiveAgents(db, { workstream: "auth" });
     expect(view.report.prunedGhosts).toBe(1);
     expect(view.agents).toEqual([]);
-    expect(getAgent(db, "ghost")).toBeUndefined();
+    expect(getAgent(db, "ghost", "auth")).toBeUndefined();
   });
 
   // mode propagation — status pollers (mu hud / mu state / mu attach
@@ -882,7 +886,7 @@ describe("listLiveAgents", () => {
       expect(view.report.prunedGhosts).toBe(1);
       expect(view.report.mode).toBe("status-only");
       expect(view.agents.map((a) => a.name)).toEqual(["ghost"]);
-      expect(getAgent(db, "ghost")?.name).toBe("ghost");
+      expect(getAgent(db, "ghost", "auth")?.name).toBe("ghost");
     });
 
     it("mode: 'report-only' does NOT prune ghost rows either", async () => {
@@ -893,7 +897,7 @@ describe("listLiveAgents", () => {
       const view = await listLiveAgents(db, { workstream: "auth", mode: "report-only" });
       expect(view.report.prunedGhosts).toBe(1);
       expect(view.report.mode).toBe("report-only");
-      expect(getAgent(db, "ghost")?.name).toBe("ghost");
+      expect(getAgent(db, "ghost", "auth")?.name).toBe("ghost");
     });
 
     it("mode: 'full' (default) keeps the documented mutating behaviour for `mu agent list`", async () => {
@@ -904,7 +908,7 @@ describe("listLiveAgents", () => {
       const view = await listLiveAgents(db, { workstream: "auth" });
       expect(view.report.mode).toBe("full");
       expect(view.report.prunedGhosts).toBe(1);
-      expect(getAgent(db, "ghost")).toBeUndefined();
+      expect(getAgent(db, "ghost", "auth")).toBeUndefined();
     });
 
     it("mode: 'status-only' STILL surfaces orphans (orphan-detection is pure read)", async () => {
@@ -944,12 +948,12 @@ describe("verbs — end-to-end", () => {
     const view1 = await listLiveAgents(db, { workstream: "demo" });
     expect(view1.agents.map((a) => a.name).sort()).toEqual(["alice", "bob", "carol"]);
 
-    await sendToAgent(db, "alice", "hello alice");
-    await sendToAgent(db, "bob", "hello bob");
+    await sendToAgent(db, "alice", "hello alice", { workstream: "demo" });
+    await sendToAgent(db, "bob", "hello bob", { workstream: "demo" });
 
-    await closeAgent(db, "alice");
-    await closeAgent(db, "bob");
-    await closeAgent(db, "carol");
+    await closeAgent(db, "alice", { workstream: "demo" });
+    await closeAgent(db, "bob", { workstream: "demo" });
+    await closeAgent(db, "carol", { workstream: "demo" });
 
     const view2 = await listLiveAgents(db, { workstream: "demo" });
     expect(view2.agents).toEqual([]);
@@ -976,7 +980,7 @@ describe("cmdAgentShow fresh-status reconciliation", () => {
     // Force the persisted status to a stale value (not what the
     // scrollback says).
     db.prepare("UPDATE agents SET status = 'free' WHERE name = ?").run("worker-1");
-    expect(getAgent(db, "worker-1")?.status).toBe("free");
+    expect(getAgent(db, "worker-1", "auth")?.status).toBe("free");
 
     // Now plant a busy-shaped scrollback. detectPiStatus recognises
     // "esc to interrupt" as the active-work marker.
@@ -997,7 +1001,7 @@ describe("cmdAgentShow fresh-status reconciliation", () => {
     try {
       const program = buildProgram();
       program.exitOverride();
-      await program.parseAsync(["node", "mu", "agent", "show", "worker-1", "--json"]);
+      await program.parseAsync(["node", "mu", "agent", "show", "worker-1", "-w", "auth", "--json"]);
     } finally {
       console.log = originalLog;
       if (originalDb === undefined) {
@@ -1009,7 +1013,7 @@ describe("cmdAgentShow fresh-status reconciliation", () => {
     }
 
     // The persisted row should now be 'busy' (status was reconciled).
-    expect(getAgent(db, "worker-1")?.status).toBe("busy");
+    expect(getAgent(db, "worker-1", "auth")?.status).toBe("busy");
 
     // The JSON payload should also reflect 'busy' (the displayed-row
     // refresh path).
@@ -1040,7 +1044,7 @@ describe("cmdAgentShow fresh-status reconciliation", () => {
     try {
       const program = buildProgram();
       program.exitOverride();
-      await program.parseAsync(["node", "mu", "agent", "show", "worker-2", "--json"]);
+      await program.parseAsync(["node", "mu", "agent", "show", "worker-2", "-w", "auth", "--json"]);
     } finally {
       console.log = originalLog;
       if (originalDb === undefined) {
@@ -1052,7 +1056,7 @@ describe("cmdAgentShow fresh-status reconciliation", () => {
     }
 
     // Status should still be 'free' — shouldOverwrite kept it sticky.
-    expect(getAgent(db, "worker-2")?.status).toBe("free");
+    expect(getAgent(db, "worker-2", "auth")?.status).toBe("free");
   });
 });
 
@@ -1095,7 +1099,7 @@ describe("adoptAgent (register an existing tmux pane as a managed agent)", () =>
     expect(result.agent.paneId).toBe(paneId);
     expect(result.agent.workstream).toBe("auth");
     expect(result.agent.status).toBe("free");
-    expect(getAgent(db, "worker-2")).toMatchObject({ name: "worker-2", paneId });
+    expect(getAgent(db, "worker-2", "auth")).toMatchObject({ name: "worker-2", paneId });
     // No select-pane -T call (no retitle).
     expect(calls.find((c) => c[0] === "select-pane")).toBeUndefined();
   });
@@ -1285,7 +1289,7 @@ describe("adoptAgent (register an existing tmux pane as a managed agent)", () =>
     expect(result.stderr).not.toMatch(/unknown command/);
     // And the agent should now be adopted (the seed put it in mu-auth,
     // matching the -w auth target).
-    expect(getAgent(db, "worker-9")?.paneId).toBe(paneId);
+    expect(getAgent(db, "worker-9", "auth")?.paneId).toBe(paneId);
   });
 
   it("`mu adopt --help` produces the verb's own help screen, not the program-level one", async () => {

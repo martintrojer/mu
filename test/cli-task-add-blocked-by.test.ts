@@ -60,7 +60,7 @@ describe("mu task add --blocked-by", () => {
       dbPath,
     );
     const db = openDb({ path: dbPath });
-    const edges = getTaskEdges(db, "build");
+    const edges = getTaskEdges(db, "build", "test");
     db.close();
     expect(edges.blockers).toEqual(["design"]);
   });
@@ -75,7 +75,7 @@ describe("mu task add --blocked-by", () => {
       dbPath,
     );
     const db = openDb({ path: dbPath });
-    const edges = getTaskEdges(db, "build");
+    const edges = getTaskEdges(db, "build", "test");
     db.close();
     expect(edges.blockers).toEqual(["design"]);
   });
@@ -106,7 +106,7 @@ describe("mu task add --blocked-by", () => {
       dbPath,
     );
     const db = openDb({ path: dbPath });
-    const edges = getTaskEdges(db, "build");
+    const edges = getTaskEdges(db, "build", "test");
     db.close();
     expect(edges.blockers.sort()).toEqual(["a", "b", "c"]);
   });

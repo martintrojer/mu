@@ -247,6 +247,81 @@ called out under "Breaking" in each entry.
 
 ### Removed
 
+- **Every "preserves the v4 contract" fall-back branch in `src/`
+  deleted (≈ −160 LOC).** Closes `v5_prune_v4_fallback_branches` in
+  `mufeedback`. Pre-v5 the SDK kept dual-shape signatures on every
+  function that took a TEXT name (`getTask(db, id, workstream?)`,
+  `getAgent(db, name, workstream?)`, ...): the workstream branch was
+  the v5 path and the no-workstream branch was the v4 fall-back. The
+  v5 grep guard (`bug_v5_name_clash_silent_misroute`) made the
+  fall-back unreachable from operator-facing CLI verbs, but the
+  branches themselves stayed in the SDK as documented dead code.
+  Pre-1.0 has no third-party SDK consumers, so the dual signature
+  was zero-value.
+
+  Tightened signatures (workstream is now required, not optional):
+  `getTask`, `getAgent`, `getApproval`, `getWorkspaceForAgent`,
+  `agentIdByName`, `taskIdFor`, `updateAgentStatus`, `deleteAgent`,
+  `closeAgent`, `freeAgent`, `freeWorkspace`, `refreshAgentTitle`,
+  `sendToAgent`, `readAgent`, `setTaskStatus`, `closeTask`, `openTask`,
+  `rejectTask`, `deferTask`, `releaseTask`, `claimTask` (and the
+  cross-workstream-guard pre-check in `claimTask` was removed: the
+  task and the claimer both resolve in `opts.workstream`, so the
+  mismatch case is now structurally impossible —
+  `AgentNotInWorkstreamError` is no longer thrown by `claimTask`,
+  `TaskNotFoundError` covers the rare case where the operator
+  targeted a task that doesn't exist in their workstream),
+  `findOpenDependents`, `waitForTasks`, `addNote`, `updateTask`,
+  `deleteTask`, `getTaskEdges`, `getPrerequisites`, `listNotes`,
+  `listTasksByOwner` (now `(db, workstream, owner, opts?)` —
+  workstream-positional), `addBlockEdge` / `removeBlockEdge`
+  (now `(db, workstream, blocked, blocker)`), `reparentTask` (scope
+  required), `grantApproval`, `denyApproval`, `timeoutApproval`,
+  `waitApproval`, `addApproval` (workstream is no longer nullable;
+  the `workstream: null` rejection runtime check is gone — the type
+  system catches it).
+
+  Renamed the misleading `legacy` comments to describe current
+  behaviour: pane-title parsing is now "the pane-title identity
+  step" (was "the legacy claim-protocol identity step"); adopted
+  panes are now "adopted panes" (was "adopted / legacy panes").
+  Approvals' `interface RawApprovalRow.workstream: string | null`
+  comment no longer cites "historical edge cases"; approvals are
+  NOT NULL post-v5 schema.
+
+  CI guard: `scripts/grep-v4-references.sh` (wired into
+  `npm run lint`) fails the build if any `\bv4\b` /
+  `backward[- ]compat` mention appears in `src/`. The only allowed
+  references are the `scripts/migrate-v4-to-v5.ts` callouts in
+  `src/db.ts`'s `SchemaTooOldError` instructions and the file
+  header (allowed via
+  `scripts/grep-v4-references.allowlist`).
+
+  Helper extracted: `lookupTaskAnyWorkstream(db, localId)` in
+  `src/tasks.ts` is the single legitimate cross-workstream task
+  lookup, used by `addTask`'s blocker resolver and `reparentTask`'s
+  blocker resolver so a same-name blocker in a different workstream
+  surfaces `CrossWorkstreamEdgeError` (clearer than
+  `TaskNotFoundError`). Comment-marked as NOT for operator-facing
+  reads.
+
+  Tests: ~166 mechanical updates to thread `workstream` into
+  every test SDK callsite that relied on the dropped fall-back.
+  The acceptance test, integration tests, and v5-name-clash
+  regression tests all updated. Three obsolete tests deleted /
+  rewritten:
+  (1) `claimTask > throws AgentNotInWorkstreamError when --for names
+  an agent in a different workstream` — deleted (the cross-ws
+  guard is gone; `ClaimerNotRegisteredError` covers the unit-test
+  case, `TaskNotFoundError` covers the integration-test case),
+  (2) `claimTask > AgentNotInWorkstreamError from cross-workstream
+  claim carries actionable next-steps` — deleted (same reason),
+  (3) `addApproval rejects a null workstream (v5 schema requires
+  NOT NULL)` — deleted (now caught at the type system).
+  The pane-title-as-identity integration test was rewritten to
+  assert `TaskNotFoundError` instead of `AgentNotInWorkstreamError`.
+  Net test delta: 862 → 860 (−2 obsolete cases).
+
 - **`src/migrations.ts` deleted (≈ −450 LOC src+test).** Closes
   `schema_v5_drop_migrations_ts` in `mufeedback`. The v1→v2 / v2→v3
   / v3→v4 in-process forward migrators were dead code: the v5

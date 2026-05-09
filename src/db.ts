@@ -298,7 +298,7 @@ export const CURRENT_SCHEMA_VERSION = 5;
 /** Tables a healthy DB must contain. Single source of truth so
  *  `mu doctor` and any other consumer don't drift. Adding a new table
  *  = one new entry here AND a CREATE TABLE in CURRENT_SCHEMA. (Schema
- *  changes that aren't backward-compatible bump CURRENT_SCHEMA_VERSION
+ *  changes that aren't compatible with prior schemas bump CURRENT_SCHEMA_VERSION
  *  and ship with a one-shot script under scripts/, mirroring
  *  scripts/migrate-v4-to-v5.ts.) */
 export const EXPECTED_TABLES: readonly string[] = [
@@ -497,10 +497,10 @@ CREATE INDEX IF NOT EXISTS idx_agent_logs_ws_seq ON agent_logs (workstream_id, s
 CREATE INDEX IF NOT EXISTS idx_agent_logs_source ON agent_logs (source);
 
 -- vcs_workspaces: one isolated working copy per agent.
--- UNIQUE (agent_id) keeps the v4 1:1 invariant; workstream_id is
--- denormalised for query convenience (matches v4 shape). path is
--- UNIQUE because two agents pointing at the same on-disk workspace
--- would defeat the purpose.
+-- UNIQUE (agent_id) enforces the 1:1 invariant; workstream_id is
+-- denormalised for query convenience. path is UNIQUE because two
+-- agents pointing at the same on-disk workspace would defeat the
+-- purpose.
 CREATE TABLE IF NOT EXISTS vcs_workspaces (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
   agent_id      INTEGER NOT NULL UNIQUE REFERENCES agents (id) ON DELETE CASCADE,
@@ -514,8 +514,8 @@ CREATE TABLE IF NOT EXISTS vcs_workspaces (
 CREATE INDEX IF NOT EXISTS idx_vcs_workspaces_workstream ON vcs_workspaces (workstream_id);
 
 -- approvals: human-in-the-loop gate. slug is per-workstream unique.
--- workstream_id is NOT NULL in v5 (matches actual usage; v4 was
--- nominally nullable but every emitter set it).
+-- workstream_id is NOT NULL (every emitter sets it; the schema
+-- enforces the invariant).
 CREATE TABLE IF NOT EXISTS approvals (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
   workstream_id INTEGER NOT NULL REFERENCES workstreams (id) ON DELETE CASCADE,

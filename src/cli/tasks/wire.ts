@@ -156,7 +156,7 @@ export function wireTaskCommands(program: Command): void {
     )
     .option(
       "--all",
-      "surface every workstream's same-named agent (cross-workstream; v4 default behaviour)",
+      "surface every workstream's same-named agent (cross-workstream view; default scopes to current workstream)",
     )
     .option(...WORKSTREAM_OPT)
     .option(...JSON_OPT)

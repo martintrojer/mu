@@ -685,8 +685,8 @@ export function exportWorkstream(db: Db, opts: ExportWorkstreamOptions): ExportR
   const manifestEntries: ExportTaskEntry[] = [];
 
   for (const task of liveTasks) {
-    const edges = getTaskEdges(db, task.localId);
-    const notes = listNotes(db, task.localId);
+    const edges = getTaskEdges(db, task.localId, task.workstream);
+    const notes = listNotes(db, task.localId, task.workstream);
     const md = renderTaskMarkdown(task, edges, notes);
     const sha = sha256Hex(md);
     const relPath = join("tasks", `${task.localId}.md`);

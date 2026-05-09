@@ -693,8 +693,8 @@ export async function currentPaneSize(): Promise<{ width: number; height: number
  * mu's composeAgentTitle renders titles as `name · <glyph> · task_id`,
  * where <glyph> is a Nerd Font codepoint from STATUS_EMOJI (see
  * src/agents.ts). The agent name is always the first ' · '-separated
- * token. Adopted / legacy panes that haven't been re-titled by mu have
- * just the name (one token) — still parses.
+ * token. Adopted panes that haven't been re-titled by mu have just the
+ * name (one token) — still parses.
  *
  * Returns trimmed name, or the input unchanged if no separator.
  */

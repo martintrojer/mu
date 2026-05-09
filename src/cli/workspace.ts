@@ -89,13 +89,8 @@ export async function cmdWorkspaceFree(
   opts: { commit?: boolean; workstream?: string; json?: boolean },
 ): Promise<void> {
   assertAgentInWorkstream(db, agent, opts.workstream);
-  // Pass workstream when known so a same-named worker in another
-  // workstream isn't torn down by accident
-  // (bug_v5_name_clash_silent_misroute).
-  const r = await freeWorkspace(db, agent, {
-    commit: opts.commit ?? false,
-    ...(opts.workstream !== undefined ? { workstream: opts.workstream } : {}),
-  });
+  const ws = await resolveWorkstream(opts.workstream);
+  const r = await freeWorkspace(db, agent, { commit: opts.commit ?? false, workstream: ws });
   if (opts.json) {
     emitJson({ agent, ...r });
     return;
@@ -116,7 +111,8 @@ export async function cmdWorkspacePath(
   opts: { workstream?: string; json?: boolean } = {},
 ): Promise<void> {
   assertAgentInWorkstream(db, agent, opts.workstream);
-  const ws = getWorkspaceForAgent(db, agent, opts.workstream);
+  const wsName = await resolveWorkstream(opts.workstream);
+  const ws = getWorkspaceForAgent(db, agent, wsName);
   if (!ws) throw new WorkspaceNotFoundError(agent);
   if (opts.json) {
     emitJson({ agent, path: ws.path, backend: ws.backend });

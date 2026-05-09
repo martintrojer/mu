@@ -52,16 +52,12 @@ export function evidenceSuffix(opts: EvidenceOption | undefined): string {
  * Flip a task's status to any of OPEN / IN_PROGRESS / CLOSED.
  * Idempotent: setting a task to its current status is a no-op (returns
  * `changed: false`) rather than throwing. Owner is unchanged.
- *
- * Pass `opts.workstream` from any caller that has it in context to
- * avoid resolving the wrong row on a name clash
- * (bug_v5_name_clash_silent_misroute).
  */
 export function setTaskStatus(
   db: Db,
   localId: string,
   status: TaskStatus,
-  opts: EvidenceOption & { workstream?: string } = {},
+  opts: EvidenceOption & { workstream: string },
 ): SetStatusResult {
   const before = getTask(db, localId, opts.workstream);
   if (!before) throw new TaskNotFoundError(localId);
@@ -91,7 +87,7 @@ export function setTaskStatus(
 export function closeTask(
   db: Db,
   localId: string,
-  opts: EvidenceOption & { workstream?: string } = {},
+  opts: EvidenceOption & { workstream: string },
 ): SetStatusResult {
   const before = getTask(db, localId, opts.workstream);
   if (before && before.status !== "CLOSED") {
@@ -105,7 +101,7 @@ export function closeTask(
 export function openTask(
   db: Db,
   localId: string,
-  opts: EvidenceOption & { workstream?: string } = {},
+  opts: EvidenceOption & { workstream: string },
 ): SetStatusResult {
   return setTaskStatus(db, localId, "OPEN", opts);
 }
@@ -121,11 +117,9 @@ export function openTask(
 // dependent.
 
 export interface RejectDeferOptions extends EvidenceOption {
-  /** Workstream context for the root task. When set, all internal
-   *  task lookups (including the dependent walk) scope to this
-   *  workstream so a same-named task elsewhere can't be touched
-   *  (bug_v5_name_clash_silent_misroute). */
-  workstream?: string;
+  /** Workstream context for the root task. All internal task lookups
+   *  (including the dependent walk) scope to this workstream. */
+  workstream: string;
   /** If true, walk the transitive dependent closure and (with `yes`)
    *  apply the same status to every dependent, atomically. Without
    *  `yes`, runs as a dry-run: returns the list of tasks that WOULD
@@ -163,11 +157,7 @@ export interface RejectDeferResult {
  *  Refuses if dependents are open unless `--cascade`.
  *  Pre-snapshots once at the verb level so a cascade onto N children
  *  produces a single snapshot, not N. Skipped for the idempotent no-op. */
-export function rejectTask(
-  db: Db,
-  localId: string,
-  opts: RejectDeferOptions = {},
-): RejectDeferResult {
+export function rejectTask(db: Db, localId: string, opts: RejectDeferOptions): RejectDeferResult {
   const before = getTask(db, localId, opts.workstream);
   if (before && before.status !== "REJECTED") {
     captureSnapshot(db, `task reject ${localId}`, before.workstream);
@@ -178,11 +168,7 @@ export function rejectTask(
 /** Defer a task: parked, may revisit. Same dependent-stranding semantics
  *  as reject (DEFERRED also doesn't satisfy a `--blocked-by` edge).
  *  Pre-snapshots once at the verb level. Skipped for the idempotent no-op. */
-export function deferTask(
-  db: Db,
-  localId: string,
-  opts: RejectDeferOptions = {},
-): RejectDeferResult {
+export function deferTask(db: Db, localId: string, opts: RejectDeferOptions): RejectDeferResult {
   const before = getTask(db, localId, opts.workstream);
   if (before && before.status !== "DEFERRED") {
     captureSnapshot(db, `task defer ${localId}`, before.workstream);
@@ -200,9 +186,8 @@ function setTerminalOrParked(
   if (!before) throw new TaskNotFoundError(localId);
 
   // Find all open (OPEN or IN_PROGRESS) tasks that transitively depend
-  // on this one. Forward-edge recursive CTE from localId. Scope by the
-  // root task's workstream so a same-named task elsewhere can't seed
-  // the walk (bug_v5_name_clash_silent_misroute).
+  // on this one. Forward-edge recursive CTE from localId, scoped by
+  // the root task's workstream.
   const openDependents = findOpenDependents(db, localId, before.workstream);
 
   if (openDependents.length > 0 && !opts.cascade) {
@@ -231,10 +216,8 @@ function setTerminalOrParked(
 
   // Apply to root first, then dependents in BFS order. setTaskStatus
   // emits one event per task and is idempotent (no-op if already in
-  // target status). Scope every UPDATE by the root's workstream
-  // (dependents must share it — cross-ws edges are forbidden) so a
-  // same-named task elsewhere can't be flipped
-  // (bug_v5_name_clash_silent_misroute).
+  // target status). Every UPDATE scopes to the root's workstream
+  // (dependents must share it — cross-ws edges are forbidden).
   const childOpts: EvidenceOption & { workstream: string } = {
     workstream: before.workstream,
     ...(opts.evidence !== undefined ? { evidence: opts.evidence } : {}),

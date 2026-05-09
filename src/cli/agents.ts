@@ -221,12 +221,10 @@ export async function cmdAgentShow(
   opts: { lines?: number; json?: boolean; workstream?: string },
 ): Promise<void> {
   assertAgentInWorkstream(db, name, opts.workstream);
-  // Workstream is optional on `mu agent show`: when -w resolves,
-  // scope the lookup to it (avoids name-clash misroute,
-  // bug_v5_name_clash_silent_misroute); otherwise getAgent falls back
-  // to the v4 first-match-by-name contract so a single-workstream user
-  // can still type `mu agent show worker-1` from anywhere.
-  const agent = getAgent(db, name, opts.workstream);
+  // v5: agents.name is per-workstream unique. Resolve the operator's
+  // workstream up front so the lookup scopes correctly.
+  const ws = await resolveWorkstream(opts.workstream);
+  const agent = getAgent(db, name, ws);
   if (!agent) throw new AgentNotFoundError(name);
   const lines = opts.lines ?? 20;
   let scrollback: string;
@@ -285,9 +283,8 @@ export async function cmdWhoami(
   opts: { json?: boolean; includeClosed?: boolean } = {},
 ): Promise<void> {
   const self = resolveSelf(db);
-  const owned = listTasksByOwner(db, self.name, {
+  const owned = listTasksByOwner(db, self.workstream, self.name, {
     includeClosed: opts.includeClosed ?? false,
-    workstream: self.workstream,
   });
 
   if (opts.json) {

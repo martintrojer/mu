@@ -1,0 +1,31 @@
+# Allow-list for scripts/grep-v4-references.sh
+#
+# Each entry is a `path:lineno` for a legitimate reference to v4 in
+# src/. The only legitimate reference is the migration script
+# `scripts/migrate-v4-to-v5.ts`, which is the operator's escape hatch
+# from a pre-v5 DB. The loud-fail hook in `openDb` cites it as the
+# fix for `SchemaTooOldError`, so the docstring + the error message
+# both have to mention the script by name. Everything else should be
+# rewritten to drop the v4 framing.
+#
+# DO NOT add entries to bypass real fallback-branch comments. The
+# whole point of v5_prune_v4_fallback_branches is that no v4 branch
+# survives in src/.
+
+# openDb file header: docstring explains the migration entry point.
+src/db.ts:19
+src/db.ts:20
+
+# SchemaTooOldError instructions (operator-facing).
+src/db.ts:98
+
+# Schema-stability docstring above CURRENT_SCHEMA_VERSION.
+src/db.ts:117
+
+# SchemaTooOldError message + nextSteps.
+src/db.ts:217
+src/db.ts:224
+
+# CURRENT_SCHEMA docstring describing migration provenance.
+src/db.ts:295
+src/db.ts:303

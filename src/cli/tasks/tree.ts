@@ -10,7 +10,7 @@
 // Extracted from src/cli/tasks.ts as part of the wire-out follow-up
 // to refactor_split_large_src_files.
 
-import { assertTaskInWorkstream, colorStatus, emitJson } from "../../cli.js";
+import { assertTaskInWorkstream, colorStatus, emitJson, resolveWorkstream } from "../../cli.js";
 import type { Db } from "../../db.js";
 import { pc } from "../../output.js";
 import { TaskNotFoundError, type TaskRow, getTask, getTaskEdges } from "../../tasks.js";
@@ -34,13 +34,14 @@ interface TreeJsonNode {
 
 export async function cmdTaskTree(db: Db, rootId: string, opts: TreeOpts): Promise<void> {
   assertTaskInWorkstream(db, rootId, opts.workstream);
-  const root = getTask(db, rootId);
+  const ws = await resolveWorkstream(opts.workstream);
+  const root = getTask(db, rootId, ws);
   if (!root) throw new TaskNotFoundError(rootId);
   const down = opts.down ?? false;
   const seen = new Set<string>([rootId]);
 
   if (opts.json) {
-    const node: TreeJsonNode = { task: root, children: buildJsonTree(db, rootId, down, seen) };
+    const node: TreeJsonNode = { task: root, children: buildJsonTree(db, ws, rootId, down, seen) };
     emitJson({ direction: down ? "dependents" : "blockers", root: node });
     return;
   }
@@ -54,34 +55,41 @@ export async function cmdTaskTree(db: Db, rootId: string, opts: TreeOpts): Promi
   // recurrence marker and don't recurse. Schema forbids cycles, so this
   // only fires on diamonds in practice; double-edged as defence against
   // future bugs.
-  renderTree(db, rootId, "", down, seen);
+  renderTree(db, ws, rootId, "", down, seen);
 }
 
-function buildJsonTree(db: Db, taskId: string, down: boolean, seen: Set<string>): TreeJsonNode[] {
-  const edges = getTaskEdges(db, taskId);
+function buildJsonTree(
+  db: Db,
+  workstream: string,
+  taskId: string,
+  down: boolean,
+  seen: Set<string>,
+): TreeJsonNode[] {
+  const edges = getTaskEdges(db, taskId, workstream);
   const childIds = down ? edges.dependents : edges.blockers;
   const out: TreeJsonNode[] = [];
   for (const childId of childIds) {
-    const child = getTask(db, childId);
+    const child = getTask(db, childId, workstream);
     if (!child) continue;
     if (seen.has(childId)) {
       out.push({ task: child, recurrence: true, children: [] });
       continue;
     }
     seen.add(childId);
-    out.push({ task: child, children: buildJsonTree(db, childId, down, seen) });
+    out.push({ task: child, children: buildJsonTree(db, workstream, childId, down, seen) });
   }
   return out;
 }
 
 function renderTree(
   db: Db,
+  workstream: string,
   taskId: string,
   prefix: string,
   down: boolean,
   seen: Set<string>,
 ): void {
-  const edges = getTaskEdges(db, taskId);
+  const edges = getTaskEdges(db, taskId, workstream);
   const children = down ? edges.dependents : edges.blockers;
   if (children.length === 0) return;
 
@@ -92,7 +100,7 @@ function renderTree(
     const branch = isLast ? "└── " : "├── ";
     const childPrefix = prefix + (isLast ? "    " : "│   ");
 
-    const child = getTask(db, childId);
+    const child = getTask(db, childId, workstream);
     if (!child) {
       // Defensive: schema FKs prevent this, but the cascade-on-delete
       // could in theory race a sibling read. Render a clear marker.
@@ -109,7 +117,7 @@ function renderTree(
 
     console.log(`${prefix}${branch}${formatTreeNodeLabel(child)}`);
     seen.add(childId);
-    renderTree(db, childId, childPrefix, down, seen);
+    renderTree(db, workstream, childId, childPrefix, down, seen);
   }
 }
 

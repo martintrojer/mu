@@ -174,12 +174,15 @@ describeIfTmux("MVP acceptance — full demo end-to-end", () => {
     ).toEqual(["alice", "bob", "revv"]);
 
     // ── Workflow: alice claims specs, drops a note, closes specs ──────
-    const claimResult = await claimTask(db, "specs", { agentName: "alice" });
+    const claimResult = await claimTask(db, "specs", { agentName: "alice", workstream });
     expect(claimResult.owner).toBe("alice");
     expect(claimResult.previousStatus).toBe("OPEN");
     expect(claimResult.status).toBe("IN_PROGRESS");
 
-    addNote(db, "specs", "DECISION: API will be REST + JSON, no GraphQL", { author: "alice" });
+    addNote(db, "specs", "DECISION: API will be REST + JSON, no GraphQL", {
+      author: "alice",
+      workstream,
+    });
 
     // Close specs by direct SQL (the escape hatch underneath the typed verbs).
     db.prepare("UPDATE tasks SET status='CLOSED' WHERE local_id='specs'").run();
@@ -191,10 +194,10 @@ describeIfTmux("MVP acceptance — full demo end-to-end", () => {
     expect(readyAfterSpecs).toEqual(["api", "ui"]);
 
     // bob and revv each take one of the now-ready tasks.
-    await claimTask(db, "api", { agentName: "bob" });
-    await claimTask(db, "ui", { agentName: "revv" });
-    expect(getTask(db, "api")?.owner).toBe("bob");
-    expect(getTask(db, "ui")?.owner).toBe("revv");
+    await claimTask(db, "api", { agentName: "bob", workstream });
+    await claimTask(db, "ui", { agentName: "revv", workstream });
+    expect(getTask(db, "api", workstream)?.owner).toBe("bob");
+    expect(getTask(db, "ui", workstream)?.owner).toBe("revv");
 
     // ── Reconciliation: agent state visible in mission control ───────
     await new Promise((resolve) => setTimeout(resolve, 200));
@@ -220,14 +223,14 @@ describeIfTmux("MVP acceptance — full demo end-to-end", () => {
       // alice and revv still alive (their tmux panes survived).
       expect(view3.agents.map((a) => a.name).sort()).toEqual(["alice", "revv"]);
       // Tasks survived too.
-      const closedSpecs = getTask(db2, "specs");
+      const closedSpecs = getTask(db2, "specs", workstream);
       expect(closedSpecs?.status).toBe("CLOSED");
       // api.owner was 'bob', but bob's pane died externally and reconcile
       // pruned bob's agent row. With tasks.owner now a real FK to
       // agents(name) ON DELETE SET NULL, api.owner clears automatically
       // — the canonical "owner = current ownership, not history" model.
       // Historical attribution lives in task notes.
-      expect(getTask(db2, "api")?.owner).toBeNull();
+      expect(getTask(db2, "api", workstream)?.owner).toBeNull();
     } finally {
       db2.close();
       db = openDb({ path: join(tempDir, "mu.db") });
@@ -246,8 +249,8 @@ describeIfTmux("MVP acceptance — full demo end-to-end", () => {
     expect(view4.agents.find((a) => a.name === "ghost")).toBeUndefined();
 
     // ── Cleanup: close the surviving agents ──────────────────────────
-    const r1 = await closeAgent(db, "alice");
-    const r2 = await closeAgent(db, "revv");
+    const r1 = await closeAgent(db, "alice", { workstream });
+    const r2 = await closeAgent(db, "revv", { workstream });
     expect(r1.killedPane && r1.deletedRow).toBe(true);
     expect(r2.killedPane && r2.deletedRow).toBe(true);
 

@@ -28,6 +28,7 @@ import {
   listReady,
   listTasks,
   listTasksByOwner,
+  listTasksByOwnerCrossWorkstream,
   searchTasks,
 } from "../../tasks.js";
 
@@ -37,10 +38,9 @@ export async function cmdMyTasks(
 ): Promise<void> {
   const self = resolveSelf(db);
   // Scope by self.workstream so a same-named worker in another
-  // workstream can't pollute this list (bug_v5_name_clash_silent_misroute).
-  const tasks = listTasksByOwner(db, self.name, {
+  // workstream can't pollute this list.
+  const tasks = listTasksByOwner(db, self.workstream, self.name, {
     includeClosed: opts.includeClosed ?? false,
-    workstream: self.workstream,
   });
   if (opts.json) {
     emitJson(withRoiAll(tasks));
@@ -179,15 +179,12 @@ export async function cmdTaskOwnedBy(
 ): Promise<void> {
   // Default behaviour: scope to the resolved workstream (so the common
   // case 'mu task owned-by worker-1' returns only this workstream's
-  // worker-1, not every workstream's). --all explicitly opts back into
-  // the cross-workstream view (bug_v5_name_clash_silent_misroute).
-  const sdkOpts: { includeClosed?: boolean; workstream?: string } = {
-    includeClosed: opts.includeClosed ?? false,
-  };
-  if (!opts.all) {
-    sdkOpts.workstream = await resolveWorkstream(opts.workstream);
-  }
-  const tasks = listTasksByOwner(db, agent, sdkOpts);
+  // worker-1, not every workstream's). --all explicitly opts into the
+  // cross-workstream view via listTasksByOwnerCrossWorkstream.
+  const includeClosed = opts.includeClosed ?? false;
+  const tasks = opts.all
+    ? listTasksByOwnerCrossWorkstream(db, agent, { includeClosed })
+    : listTasksByOwner(db, await resolveWorkstream(opts.workstream), agent, { includeClosed });
   if (opts.json) {
     emitJson(withRoiAll(tasks));
     return;

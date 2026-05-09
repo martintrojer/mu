@@ -109,8 +109,8 @@ describe("mu undo", () => {
   it("without --yes is a dry-run; no rows change", async () => {
     // Seed: take a real snapshot via closeTask.
     db = openDb({ path: dbPath });
-    closeTask(db, "design");
-    const beforeStatus = getTask(db, "design")?.status;
+    closeTask(db, "design", { workstream: "auth" });
+    const beforeStatus = getTask(db, "design", "auth")?.status;
     db.close();
     expect(beforeStatus).toBe("CLOSED");
 
@@ -122,13 +122,13 @@ describe("mu undo", () => {
 
     // Status unchanged.
     db = openDb({ path: dbPath });
-    expect(getTask(db, "design")?.status).toBe("CLOSED");
+    expect(getTask(db, "design", "auth")?.status).toBe("CLOSED");
     db.close();
   });
 
   it("--yes round-trips a task close (CLOSED → OPEN)", async () => {
     db = openDb({ path: dbPath });
-    closeTask(db, "design");
+    closeTask(db, "design", { workstream: "auth" });
     db.close();
 
     const { stdout, exitCode, error } = await runCli(["undo", "--yes"], dbPath);
@@ -140,7 +140,7 @@ describe("mu undo", () => {
     expect(stdout).toContain("Reconcile (tmux NOT rolled back; rows NOT pruned)");
 
     db = openDb({ path: dbPath });
-    expect(getTask(db, "design")?.status).toBe("OPEN");
+    expect(getTask(db, "design", "auth")?.status).toBe("OPEN");
     // Pre-restore snapshot is in the table so a second `mu undo` rolls
     // forward (snap_design §EDGE CASES > snapshot-of-snapshot).
     const snaps = listSnapshots(db);
@@ -150,13 +150,13 @@ describe("mu undo", () => {
 
   it("--yes a second time rolls forward (undo of undo)", async () => {
     db = openDb({ path: dbPath });
-    closeTask(db, "design");
+    closeTask(db, "design", { workstream: "auth" });
     db.close();
 
     // First undo: CLOSED → OPEN.
     await runCli(["undo", "--yes"], dbPath);
     db = openDb({ path: dbPath });
-    expect(getTask(db, "design")?.status).toBe("OPEN");
+    expect(getTask(db, "design", "auth")?.status).toBe("OPEN");
     db.close();
 
     // Second undo restores the pre-restore snapshot, which is the
@@ -164,13 +164,13 @@ describe("mu undo", () => {
     const { error } = await runCli(["undo", "--yes"], dbPath);
     expect(error).toBeUndefined();
     db = openDb({ path: dbPath });
-    expect(getTask(db, "design")?.status).toBe("CLOSED");
+    expect(getTask(db, "design", "auth")?.status).toBe("CLOSED");
     db.close();
   });
 
   it("--yes --json emits the restored shape with reconcile counts", async () => {
     db = openDb({ path: dbPath });
-    closeTask(db, "design");
+    closeTask(db, "design", { workstream: "auth" });
     db.close();
 
     const { stdout, exitCode, error } = await runCli(["undo", "--yes", "--json"], dbPath);

@@ -77,10 +77,10 @@ describeIfTmux("verbs integration (real tmux + real DB)", () => {
     const view = await listLiveAgents(db, { workstream });
     expect(view.agents.map((x) => x.name)).toEqual(["alice"]);
 
-    await closeAgent(db, "alice");
+    await closeAgent(db, "alice", { workstream });
     const view2 = await listLiveAgents(db, { workstream });
     expect(view2.agents).toEqual([]);
-    expect(getAgent(db, "alice")).toBeUndefined();
+    expect(getAgent(db, "alice", workstream)).toBeUndefined();
   });
 
   it("creates the mu-<workstream> tmux session on first spawn", async () => {
@@ -154,7 +154,7 @@ describeIfTmux("verbs integration (real tmux + real DB)", () => {
     });
     // Wait briefly for the echo to land.
     await new Promise((resolve) => setTimeout(resolve, 250));
-    const out = await readAgent(db, "alice");
+    const out = await readAgent(db, "alice", { workstream });
     expect(out).toContain(marker);
   });
 
@@ -200,9 +200,9 @@ describeIfTmux("verbs integration (real tmux + real DB)", () => {
     expect([alice, bob, carol].every((a) => a.paneId.match(/^%\d+$/))).toBe(true);
 
     // 2. Read each.
-    expect(await readAgent(db, "alice", { lines: 5 })).toBeDefined();
-    expect(await readAgent(db, "bob", { lines: 5 })).toBeDefined();
-    expect(await readAgent(db, "carol", { lines: 5 })).toBeDefined();
+    expect(await readAgent(db, "alice", { lines: 5, workstream })).toBeDefined();
+    expect(await readAgent(db, "bob", { lines: 5, workstream })).toBeDefined();
+    expect(await readAgent(db, "carol", { lines: 5, workstream })).toBeDefined();
 
     // 3. List shows correct status.
     await new Promise((resolve) => setTimeout(resolve, 200));
@@ -228,9 +228,9 @@ describeIfTmux("verbs integration (real tmux + real DB)", () => {
     }
 
     // 5. Close all three.
-    const r1 = await closeAgent(db, "alice");
-    const r2 = await closeAgent(db, "bob");
-    const r3 = await closeAgent(db, "carol");
+    const r1 = await closeAgent(db, "alice", { workstream });
+    const r2 = await closeAgent(db, "bob", { workstream });
+    const r3 = await closeAgent(db, "carol", { workstream });
     expect(r1).toMatchObject({ killedPane: true, deletedRow: true });
     expect(r2).toMatchObject({ killedPane: true, deletedRow: true });
     expect(r3).toMatchObject({ killedPane: true, deletedRow: true });
@@ -259,7 +259,7 @@ describeIfTmux("verbs integration (real tmux + real DB)", () => {
     // Sanity: pane exists in session, no agents row for 'worker-2' yet.
     const before = await listPanesInSession(session);
     expect(before.find((p) => p.paneId === orphanPaneId)?.title).toBe("worker-2");
-    expect(getAgent(db, "worker-2")).toBeUndefined();
+    expect(getAgent(db, "worker-2", workstream)).toBeUndefined();
 
     const result = await adoptAgent(db, { paneId: orphanPaneId, workstream });
     expect(result.alreadyAdopted).toBe(false);

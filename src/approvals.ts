@@ -34,9 +34,9 @@ export interface ApprovalRow {
 
 interface RawApprovalRow {
   slug: string;
-  /** Joined from workstreams.name (NULL only if workstream_id is
-   *  somehow NULL — v5 schema has the column NOT NULL but historical
-   *  rows from migration may be edge cases). */
+  /** Joined from workstreams.name. v5 schema makes workstream_id
+   *  NOT NULL; the LEFT JOIN keeps the column nullable in the row
+   *  shape only for defence against a corrupt DB. */
   workstream: string | null;
   reason: string;
   requested_by: string;
@@ -57,9 +57,8 @@ const SELECT_APPROVAL_COLS = `
   ap.created_at AS created_at
 `;
 
-// LEFT JOIN: defensive for migrated DBs where workstream_id might in
-// theory be NULL (the v5 schema has it NOT NULL, but historical edge
-// cases shouldn't crash a read path).
+// LEFT JOIN: defensive against a corrupt DB where workstream_id is
+// somehow NULL (schema enforces NOT NULL; this is belt-and-braces).
 const APPROVAL_FROM_JOIN = "FROM approvals ap LEFT JOIN workstreams ws ON ws.id = ap.workstream_id";
 
 function rowFromDb(row: RawApprovalRow): ApprovalRow {
@@ -164,8 +163,9 @@ export function generateApprovalSlug(): string {
 export interface AddApprovalOptions {
   /** Override the slug; auto-generated when omitted. */
   slug?: string;
-  /** Workstream this approval is scoped to; can be null. */
-  workstream: string | null;
+  /** Workstream this approval is scoped to. v5: approvals.workstream_id
+   *  is NOT NULL. */
+  workstream: string;
   /** Free-form description of what the approver is being asked to OK. */
   reason: string;
   /** Who requested it (agent name, 'user', etc.). */
@@ -175,14 +175,6 @@ export interface AddApprovalOptions {
 export function addApproval(db: Db, opts: AddApprovalOptions): ApprovalRow {
   const slug = opts.slug ?? generateApprovalSlug();
   const createdAt = new Date().toISOString();
-  // v5: approvals.workstream_id is NOT NULL. The v4 contract permitted
-  // null (workstream-less / global scope); preserve that callable
-  // surface by promoting null to a synthetic '__global__' workstream
-  // — actually, the simpler fix is to require a workstream here. The
-  // CLI always passes one, and tests in single-ws fixtures pass theirs.
-  if (opts.workstream === null) {
-    throw new Error("addApproval: workstream is required (v5 schema)");
-  }
   ensureWorkstream(db, opts.workstream);
   const wsId = resolveWorkstreamId(db, opts.workstream);
   db.prepare(
@@ -207,27 +199,17 @@ export function addApproval(db: Db, opts: AddApprovalOptions): ApprovalRow {
   };
 }
 
-export function getApproval(db: Db, slug: string, workstream?: string): ApprovalRow | undefined {
-  // v5: slug is per-workstream unique. Pass `workstream` from any
-  // caller that has it in context to avoid resolving the wrong row
-  // on a slug clash (bug_v5_name_clash_silent_misroute). Without a
-  // workstream context, falls back to the v4 "first match by slug"
-  // contract — acceptable for `mu approve grant <slug> --all`-style
-  // surfaces and for tests that use single-workstream fixtures.
-  if (workstream !== undefined) {
-    const wsId = tryResolveWorkstreamId(db, workstream);
-    if (wsId === null) return undefined;
-    const row = db
-      .prepare(
-        `SELECT ${SELECT_APPROVAL_COLS} ${APPROVAL_FROM_JOIN}
-          WHERE ap.slug = ? AND ap.workstream_id = ?`,
-      )
-      .get(slug, wsId) as RawApprovalRow | undefined;
-    return row ? rowFromDb(row) : undefined;
-  }
+export function getApproval(db: Db, slug: string, workstream: string): ApprovalRow | undefined {
+  // v5: slug is per-workstream unique. Workstream is required so the
+  // same slug in two workstreams resolves unambiguously.
+  const wsId = tryResolveWorkstreamId(db, workstream);
+  if (wsId === null) return undefined;
   const row = db
-    .prepare(`SELECT ${SELECT_APPROVAL_COLS} ${APPROVAL_FROM_JOIN} WHERE ap.slug = ? LIMIT 1`)
-    .get(slug) as RawApprovalRow | undefined;
+    .prepare(
+      `SELECT ${SELECT_APPROVAL_COLS} ${APPROVAL_FROM_JOIN}
+        WHERE ap.slug = ? AND ap.workstream_id = ?`,
+    )
+    .get(slug, wsId) as RawApprovalRow | undefined;
   return row ? rowFromDb(row) : undefined;
 }
 
@@ -271,7 +253,7 @@ function decide(
   db: Db,
   slug: string,
   newStatus: Exclude<ApprovalStatus, "pending">,
-  opts: DecideApprovalOptions & { workstream?: string },
+  opts: DecideApprovalOptions & { workstream: string },
 ): ApprovalRow {
   const before = getApproval(db, slug, opts.workstream);
   if (!before) throw new ApprovalNotFoundError(slug);
@@ -285,25 +267,19 @@ function decide(
   const decidedAt = new Date().toISOString();
   // Scope the UPDATE to the slug's workstream so v5's per-workstream
   // uniqueness can't be sidestepped by a same-slug row in another
-  // workstream.
-  if (before.workstream === null) {
-    db.prepare(
-      "UPDATE approvals SET status = ?, decided_by = ?, decided_at = ? WHERE slug = ? AND workstream_id IS NULL",
-    ).run(newStatus, opts.decidedBy, decidedAt, slug);
-  } else {
-    db.prepare(
-      `UPDATE approvals SET status = ?, decided_by = ?, decided_at = ?
-        WHERE slug = ?
-          AND workstream_id = (SELECT id FROM workstreams WHERE name = ?)`,
-    ).run(newStatus, opts.decidedBy, decidedAt, slug, before.workstream);
-  }
+  // workstream. before.workstream is non-null in v5 (schema NOT NULL).
+  db.prepare(
+    `UPDATE approvals SET status = ?, decided_by = ?, decided_at = ?
+      WHERE slug = ?
+        AND workstream_id = (SELECT id FROM workstreams WHERE name = ?)`,
+  ).run(newStatus, opts.decidedBy, decidedAt, slug, before.workstream);
   emitEvent(
     db,
     before.workstream,
     `approval ${newStatus} ${slug} (by ${opts.decidedBy})`,
     opts.decidedBy,
   );
-  const after = getApproval(db, slug, before.workstream ?? undefined);
+  const after = getApproval(db, slug, opts.workstream);
   if (!after) throw new Error(`approval vanished after update: ${slug}`);
   return after;
 }
@@ -311,7 +287,7 @@ function decide(
 export function grantApproval(
   db: Db,
   slug: string,
-  opts: DecideApprovalOptions & { workstream?: string },
+  opts: DecideApprovalOptions & { workstream: string },
 ): ApprovalRow {
   return decide(db, slug, "granted", opts);
 }
@@ -319,7 +295,7 @@ export function grantApproval(
 export function denyApproval(
   db: Db,
   slug: string,
-  opts: DecideApprovalOptions & { workstream?: string },
+  opts: DecideApprovalOptions & { workstream: string },
 ): ApprovalRow {
   return decide(db, slug, "denied", opts);
 }
@@ -332,7 +308,7 @@ export function denyApproval(
 export function timeoutApproval(
   db: Db,
   slug: string,
-  opts: DecideApprovalOptions & { workstream?: string },
+  opts: DecideApprovalOptions & { workstream: string },
 ): ApprovalRow {
   return decide(db, slug, "timeout", opts);
 }
@@ -358,7 +334,7 @@ export interface WaitApprovalOptions {
 export async function waitApproval(
   db: Db,
   slug: string,
-  opts: WaitApprovalOptions & { workstream?: string } = {},
+  opts: WaitApprovalOptions & { workstream: string },
 ): Promise<ApprovalRow> {
   const timeoutMs = opts.timeoutMs ?? 600_000;
   const pollMs = opts.pollMs ?? 1000;
@@ -373,10 +349,7 @@ export async function waitApproval(
       // read and now. timeoutApproval will throw AlreadyDecided in that
       // case; treat that as success and re-read.
       try {
-        return timeoutApproval(db, slug, {
-          decidedBy: "system",
-          ...(opts.workstream !== undefined ? { workstream: opts.workstream } : {}),
-        });
+        return timeoutApproval(db, slug, { decidedBy: "system", workstream: opts.workstream });
       } catch (err) {
         if (err instanceof ApprovalAlreadyDecidedError) {
           const after = getApproval(db, slug, opts.workstream);

@@ -9,9 +9,9 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { AgentNotInWorkstreamError, spawnAgent } from "../src/agents.js";
+import { spawnAgent } from "../src/agents.js";
 import { type Db, openDb } from "../src/db.js";
-import { addTask, claimTask, getTask } from "../src/tasks.js";
+import { TaskNotFoundError, addTask, claimTask, getTask } from "../src/tasks.js";
 import { killSession, resetTmuxExecutor } from "../src/tmux.js";
 
 const TMUX_AVAILABLE = process.env.TMUX !== undefined && process.env.TMUX !== "";
@@ -77,7 +77,8 @@ describeIfTmux("claim integration (real tmux + real DB)", () => {
 
     // 2. Create a task to claim. Same workstream as the spawned agent;
     //    claiming a task whose workstream != the agent's now (post
-    //    cross_workstream_claim_for) raises AgentNotInWorkstreamError.
+    //    cross_workstream_claim_for) raises ClaimerNotRegisteredError /
+    //    TaskNotFoundError depending on which scope misses.
     addTask(db, {
       localId: "design",
       workstream,
@@ -89,14 +90,14 @@ describeIfTmux("claim integration (real tmux + real DB)", () => {
     // 3. Simulate "running mu claim from inside alice's pane" by setting
     //    $TMUX_PANE to alice's pane id and calling claimTask with no
     //    explicit agentName.
-    const result = await withPane(agent.paneId, () => claimTask(db, "design"));
+    const result = await withPane(agent.paneId, () => claimTask(db, "design", { workstream }));
 
     // 4. The claim should have derived owner = "alice" from the pane title.
     expect(result.owner).toBe("alice");
     expect(result.previousOwner).toBeNull();
     expect(result.previousStatus).toBe("OPEN");
     expect(result.status).toBe("IN_PROGRESS");
-    expect(getTask(db, "design")?.owner).toBe("alice");
+    expect(getTask(db, "design", workstream)?.owner).toBe("alice");
   });
 
   it("two agents cannot claim the same task (atomic CAS via real tmux identities)", async () => {
@@ -121,34 +122,34 @@ describeIfTmux("claim integration (real tmux + real DB)", () => {
     });
 
     // Alice claims first.
-    const aliceResult = await withPane(alice.paneId, () => claimTask(db, "task1"));
+    const aliceResult = await withPane(alice.paneId, () => claimTask(db, "task1", { workstream }));
     expect(aliceResult.owner).toBe("alice");
 
     // Bob's claim attempt fails — task is already owned.
-    await expect(withPane(bob.paneId, () => claimTask(db, "task1"))).rejects.toThrow(
-      /already owned by alice/,
-    );
+    await expect(
+      withPane(bob.paneId, () => claimTask(db, "task1", { workstream })),
+    ).rejects.toThrow(/already owned by alice/);
 
     // Final state: alice still owns it.
-    expect(getTask(db, "task1")?.owner).toBe("alice");
+    expect(getTask(db, "task1", workstream)?.owner).toBe("alice");
   });
 
-  it("claim from a pane in workstream A targeting a task in workstream B rejects (real-tmux pane-title → agents-row → cross-workstream guard)", async () => {
-    // Pins the end-to-end chain that the unit test in test/tasks.test.ts
-    // can't exercise: real tmux pane title → currentAgentName() →
-    // agents-row workstream lookup → AgentNotInWorkstreamError. The unit
-    // test inserts the agents row directly with insertAgent() and a
-    // mocked tmux executor, so a refactor that breaks the
-    // pane-title-parse path or the agents.workstream SELECT would slip
-    // through it. See review_test_claim_integration_xws_rewrite.
+  it("claim targeting a task that doesn't exist in the operator's workstream raises TaskNotFoundError", async () => {
+    // v5 + per-workstream-unique IDs make the cross-workstream-guard
+    // pre-check redundant: claimTask scopes the task lookup by
+    // opts.workstream, so a same-named task elsewhere is invisible
+    // and surfaces as TaskNotFoundError (the same shape every other
+    // verb raises). The pane-title → agent-name parse is still
+    // exercised by the surrounding withPane / no-explicit-agentName
+    // path.
     const alice = await spawnAgent(db, {
       name: "alice",
       workstream,
       cli: "sh",
       command: "sh -c 'while true; do sleep 60; done'",
     });
-    // Task lives in a DIFFERENT workstream — no agents in it, no tmux
-    // session needed (addTask auto-ensures the workstream row).
+    // Task lives in a DIFFERENT workstream — invisible to a claim
+    // scoped to alice's workstream.
     const otherWorkstream = `${workstream}-other`;
     addTask(db, {
       localId: "design",
@@ -158,11 +159,11 @@ describeIfTmux("claim integration (real tmux + real DB)", () => {
       effortDays: 2,
     });
 
-    await expect(withPane(alice.paneId, () => claimTask(db, "design"))).rejects.toBeInstanceOf(
-      AgentNotInWorkstreamError,
-    );
-    // Task stayed unowned.
-    expect(getTask(db, "design")?.owner).toBeNull();
+    await expect(
+      withPane(alice.paneId, () => claimTask(db, "design", { workstream })),
+    ).rejects.toBeInstanceOf(TaskNotFoundError);
+    // Task stayed unowned (in its own workstream).
+    expect(getTask(db, "design", otherWorkstream)?.owner).toBeNull();
   });
 
   it("re-claim by the same agent is a no-op (idempotent)", async () => {
@@ -180,9 +181,9 @@ describeIfTmux("claim integration (real tmux + real DB)", () => {
       effortDays: 1,
     });
 
-    await withPane(alice.paneId, () => claimTask(db, "task1"));
+    await withPane(alice.paneId, () => claimTask(db, "task1", { workstream }));
     // Second claim by alice succeeds (no error).
-    const second = await withPane(alice.paneId, () => claimTask(db, "task1"));
+    const second = await withPane(alice.paneId, () => claimTask(db, "task1", { workstream }));
     expect(second.owner).toBe("alice");
     expect(second.previousStatus).toBe("IN_PROGRESS"); // already in progress
   });

@@ -90,16 +90,15 @@ describe("approvals SDK", () => {
     expect(events[0]?.payload).toContain("do thing");
   });
 
-  it("addApproval rejects a null workstream (v5 schema requires NOT NULL)", () => {
-    expect(() => addApproval(db, { workstream: null, reason: "x", requestedBy: "user" })).toThrow(
-      /workstream is required/i,
-    );
-  });
+  // v5: addApproval requires a non-null workstream at the type level
+  // (workstream: string in AddApprovalOptions). The v4 nullable
+  // contract is gone; the null-rejection runtime test is no longer
+  // needed because the type system catches it at the call site.
 
   // ─── getApproval / listApprovals ──────────────────────────────────
 
   it("getApproval returns undefined for unknown slug", () => {
-    expect(getApproval(db, "ghost")).toBeUndefined();
+    expect(getApproval(db, "ghost", "auth")).toBeUndefined();
   });
 
   it("listApprovals returns newest-first; filters by workstream + status", () => {
@@ -107,7 +106,7 @@ describe("approvals SDK", () => {
     addApproval(db, { workstream: "auth", reason: "a", requestedBy: "u" });
     addApproval(db, { workstream: "billing", reason: "b", requestedBy: "u" });
     const granted = addApproval(db, { workstream: "auth", reason: "c", requestedBy: "u" });
-    grantApproval(db, granted.slug, { decidedBy: "user" });
+    grantApproval(db, granted.slug, { decidedBy: "user", workstream: "auth" });
 
     expect(
       listApprovals(db, { workstream: "auth" })
@@ -123,7 +122,7 @@ describe("approvals SDK", () => {
 
   it("grantApproval flips status, records decider + timestamp, emits event", () => {
     const a = addApproval(db, { workstream: "auth", reason: "x", requestedBy: "worker-1" });
-    const r = grantApproval(db, a.slug, { decidedBy: "user" });
+    const r = grantApproval(db, a.slug, { decidedBy: "user", workstream: "auth" });
     expect(r.status).toBe("granted");
     expect(r.decidedBy).toBe("user");
     expect(r.decidedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
@@ -135,30 +134,34 @@ describe("approvals SDK", () => {
 
   it("denyApproval flips status to 'denied'", () => {
     const a = addApproval(db, { workstream: "auth", reason: "x", requestedBy: "worker-1" });
-    const r = denyApproval(db, a.slug, { decidedBy: "reviewer-1" });
+    const r = denyApproval(db, a.slug, { decidedBy: "reviewer-1", workstream: "auth" });
     expect(r.status).toBe("denied");
     expect(r.decidedBy).toBe("reviewer-1");
   });
 
   it("grant/deny on missing slug throws ApprovalNotFoundError", () => {
-    expect(() => grantApproval(db, "ghost", { decidedBy: "u" })).toThrow(ApprovalNotFoundError);
-    expect(() => denyApproval(db, "ghost", { decidedBy: "u" })).toThrow(ApprovalNotFoundError);
+    expect(() => grantApproval(db, "ghost", { decidedBy: "u", workstream: "auth" })).toThrow(
+      ApprovalNotFoundError,
+    );
+    expect(() => denyApproval(db, "ghost", { decidedBy: "u", workstream: "auth" })).toThrow(
+      ApprovalNotFoundError,
+    );
   });
 
   it("grant/deny on already-decided approval throws ApprovalAlreadyDecidedError", () => {
     const a = addApproval(db, { workstream: "auth", reason: "x", requestedBy: "u" });
-    grantApproval(db, a.slug, { decidedBy: "user" });
-    expect(() => grantApproval(db, a.slug, { decidedBy: "user" })).toThrow(
+    grantApproval(db, a.slug, { decidedBy: "user", workstream: "auth" });
+    expect(() => grantApproval(db, a.slug, { decidedBy: "user", workstream: "auth" })).toThrow(
       ApprovalAlreadyDecidedError,
     );
-    expect(() => denyApproval(db, a.slug, { decidedBy: "user" })).toThrow(
+    expect(() => denyApproval(db, a.slug, { decidedBy: "user", workstream: "auth" })).toThrow(
       ApprovalAlreadyDecidedError,
     );
   });
 
   it("timeoutApproval flips status to 'timeout'", () => {
     const a = addApproval(db, { workstream: "auth", reason: "x", requestedBy: "u" });
-    const r = timeoutApproval(db, a.slug, { decidedBy: "system" });
+    const r = timeoutApproval(db, a.slug, { decidedBy: "system", workstream: "auth" });
     expect(r.status).toBe("timeout");
   });
 
@@ -167,8 +170,8 @@ describe("approvals SDK", () => {
   it("waitApproval returns immediately when already decided", async () => {
     setSleepForTests(async () => {});
     const a = addApproval(db, { workstream: "auth", reason: "x", requestedBy: "u" });
-    grantApproval(db, a.slug, { decidedBy: "user" });
-    const r = await waitApproval(db, a.slug, { timeoutMs: 1000, pollMs: 10 });
+    grantApproval(db, a.slug, { decidedBy: "user", workstream: "auth" });
+    const r = await waitApproval(db, a.slug, { timeoutMs: 1000, pollMs: 10, workstream: "auth" });
     expect(r.status).toBe("granted");
   });
 
@@ -181,10 +184,10 @@ describe("approvals SDK", () => {
       pollCount++;
       if (pollCount === otherWriterFires) {
         // Simulate another shell granting the approval mid-wait.
-        grantApproval(db, a.slug, { decidedBy: "user" });
+        grantApproval(db, a.slug, { decidedBy: "user", workstream: "auth" });
       }
     });
-    const r = await waitApproval(db, a.slug, { timeoutMs: 1000, pollMs: 1 });
+    const r = await waitApproval(db, a.slug, { timeoutMs: 1000, pollMs: 1, workstream: "auth" });
     expect(r.status).toBe("granted");
     expect(pollCount).toBeGreaterThanOrEqual(otherWriterFires);
   });
@@ -192,7 +195,11 @@ describe("approvals SDK", () => {
   it("waitApproval transitions to 'timeout' when deadline elapses", async () => {
     setSleepForTests(async () => {});
     const a = addApproval(db, { workstream: "auth", reason: "x", requestedBy: "u" });
-    const r = await waitApproval(db, a.slug, { timeoutMs: 0.001, pollMs: 0.001 });
+    const r = await waitApproval(db, a.slug, {
+      timeoutMs: 0.001,
+      pollMs: 0.001,
+      workstream: "auth",
+    });
     // 0.001ms timeout effectively means "next tick"; should time out.
     expect(r.status).toBe("timeout");
     expect(r.decidedBy).toBe("system");
@@ -200,9 +207,9 @@ describe("approvals SDK", () => {
 
   it("waitApproval throws ApprovalNotFoundError on missing slug", async () => {
     setSleepForTests(async () => {});
-    await expect(waitApproval(db, "ghost", { timeoutMs: 1000, pollMs: 10 })).rejects.toThrow(
-      ApprovalNotFoundError,
-    );
+    await expect(
+      waitApproval(db, "ghost", { timeoutMs: 1000, pollMs: 10, workstream: "auth" }),
+    ).rejects.toThrow(ApprovalNotFoundError);
   });
 
   // ─── FK CASCADE on workstream destroy ───────────────────────────────

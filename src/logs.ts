@@ -44,7 +44,7 @@ interface RawLogRow {
 
 /** SELECT clause for joining workstream_id back to the operator-facing
  *  workstream name. Used by every read path so the JS-side row shape
- *  preserves the v4 contract. */
+ *  is operator-facing TEXT names (not surrogate ids). */
 const SELECT_LOG_COLS = `
   l.seq AS seq,
   ws.name AS workstream,
