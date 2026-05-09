@@ -59,13 +59,17 @@ async function resolveLogContext(
   opts: { as?: string; workstream?: string },
 ): Promise<{ source: string; workstream: string | null }> {
   if (opts.as) {
-    const workstream = opts.workstream ? opts.workstream : await resolveOptionalWorkstream();
+    const workstream = opts.workstream ?? (await resolveOptionalWorkstream());
     return { source: opts.as, workstream };
   }
   const paneId = process.env.TMUX_PANE;
   if (paneId) {
     const agent = getAgentByPane(db, paneId);
     if (agent) {
+      // Pane branch is intentionally asymmetric: when no -w is given, the
+      // agent's own workstream wins over $MU_SESSION / tmux session, since
+      // the agent row is the more authoritative binding. Don't "fix" this
+      // to call resolveOptionalWorkstream() like the other branches.
       return {
         source: agent.name,
         workstream: opts.workstream ?? agent.workstream,

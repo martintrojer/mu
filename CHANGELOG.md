@@ -59,6 +59,17 @@ called out under "Breaking" in each entry.
 
 ### Changed
 
+- **`mu log`'s `resolveLogContext` now uses `??` consistently
+  and documents the pane-branch asymmetry.** Closes
+  `review_code_resolve_log_workstream_branch_dup` in `mufeedback`.
+  The `--as` and fallback branches both used `??` to fall back to
+  `resolveOptionalWorkstream()` when no `-w` was given; the original
+  `--as` branch used the older `?:` shape. Style nit only. Pane
+  branch is now annotated with a one-line comment explaining the
+  intentional asymmetry (agent's own `agents.workstream` wins over
+  `$MU_SESSION` / tmux session) so the next reader doesn't "fix" it.
+  Behaviour unchanged.
+
 - **`skills/mu/SKILL.md` Working loop now flags the
   skipped-`mu task close` failure mode.** Phase 2 of
   `agent_close_discipline_gap`. One bullet directly under the
