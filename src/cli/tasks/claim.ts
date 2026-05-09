@@ -12,9 +12,11 @@
 import { refreshAgentTitle } from "../../agents.js";
 import {
   UsageError,
+  applyQualifiedRef,
   assertTaskInWorkstream,
   emitJson,
   parseStatusOption,
+  resolveEntityRef,
   resolveWorkstream,
 } from "../../cli.js";
 import type { Db } from "../../db.js";
@@ -23,9 +25,10 @@ import { type TaskWaitResult, claimTask, releaseTask, waitForTasks } from "../..
 
 export async function cmdTaskRelease(
   db: Db,
-  localId: string,
+  rawId: string,
   opts: { reopen?: boolean; evidence?: string; workstream?: string; json?: boolean },
 ): Promise<void> {
+  const { name: localId } = await resolveEntityRef(db, rawId, opts, "task");
   assertTaskInWorkstream(db, localId, opts.workstream);
   const ws = await resolveWorkstream(opts.workstream);
   const sdkOpts: { reopen: boolean; evidence?: string; workstream: string } = {
@@ -62,7 +65,7 @@ export async function cmdTaskRelease(
 
 export async function cmdClaim(
   db: Db,
-  localId: string,
+  rawId: string,
   opts: {
     for?: string;
     self?: boolean;
@@ -72,6 +75,7 @@ export async function cmdClaim(
     json?: boolean;
   },
 ): Promise<void> {
+  const { name: localId } = await resolveEntityRef(db, rawId, opts, "task");
   assertTaskInWorkstream(db, localId, opts.workstream);
   const ws = await resolveWorkstream(opts.workstream);
   if (opts.self === true && opts.for !== undefined) {
@@ -144,9 +148,19 @@ export async function cmdTaskWait(
   }
   // Validate status (default CLOSED). Same parser as mu task list --status.
   const statusOpt = opts.status !== undefined ? parseStatusOption(opts.status) : undefined;
+  // Each id may carry a `<workstream>/` qualifier; applyQualifiedRef
+  // pushes the workstream onto opts (so the standard chain picks it
+  // up below) and throws UsageError if two ids disagree.
+  // verb_arg_qualified_workstream_name.
+  const bareIds = ids.map((id) => applyQualifiedRef(id, opts));
   // Scope: every id must be in the workstream we resolved (-w error
-  // semantics matching every other task verb).
-  for (const id of ids) {
+  // semantics matching every other task verb). resolveEntityRef on
+  // the first id covers the bare-name+ambiguity-disambiguation path;
+  // subsequent ids only need scope assertion.
+  if (bareIds.length > 0 && bareIds[0] !== undefined) {
+    await resolveEntityRef(db, bareIds[0], opts, "task");
+  }
+  for (const id of bareIds) {
     assertTaskInWorkstream(db, id, opts.workstream);
   }
   const ws = await resolveWorkstream(opts.workstream);
@@ -167,12 +181,13 @@ export async function cmdTaskWait(
   if (statusOpt !== undefined) sdkOpts.status = statusOpt;
   if (opts.any) sdkOpts.any = true;
 
-  const result = await waitForTasks(db, ids, sdkOpts);
+  const result = await waitForTasks(db, bareIds, sdkOpts);
 
   // Build nextSteps: for each task that DIDN'T reach the target, suggest
   // mu task show so the operator can investigate. Always include
   // 'pick the next ready task' for the unblocked-orchestrator pattern.
   const stuck = result.tasks.filter((t) => !t.reachedTarget);
+
   const nextSteps: NextStep[] = [];
   for (const t of stuck) {
     nextSteps.push({
@@ -195,7 +210,7 @@ export async function cmdTaskWait(
   const summary = result.timedOut
     ? pc.yellow(`Timed out after ${result.elapsedMs}ms`)
     : pc.green(
-        `${opts.any ? "any-of" : "all-of"} ${ids.length} reached ${targetStatus} in ${result.elapsedMs}ms`,
+        `${opts.any ? "any-of" : "all-of"} ${bareIds.length} reached ${targetStatus} in ${result.elapsedMs}ms`,
       );
   console.log(summary);
   for (const t of result.tasks) {

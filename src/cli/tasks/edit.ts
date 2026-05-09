@@ -18,6 +18,7 @@ import {
   UsageError,
   assertTaskInWorkstream,
   emitJson,
+  resolveEntityRef,
   resolveWorkstream,
   withRoiAll,
 } from "../../cli.js";
@@ -162,10 +163,11 @@ export async function cmdTaskAdd(
 
 export async function cmdTaskNote(
   db: Db,
-  localId: string,
+  rawId: string,
   content: string,
   opts: { workstream?: string; json?: boolean; author?: string } = {},
 ): Promise<void> {
+  const { name: localId } = await resolveEntityRef(db, rawId, opts, "task");
   assertTaskInWorkstream(db, localId, opts.workstream);
   const ws = await resolveWorkstream(opts.workstream);
   // Author resolution: explicit --author wins; otherwise consult
@@ -190,9 +192,10 @@ export async function cmdTaskNote(
 
 export async function cmdTaskShow(
   db: Db,
-  localId: string,
+  rawId: string,
   opts: { json?: boolean; workstream?: string } = {},
 ): Promise<void> {
+  const { name: localId } = await resolveEntityRef(db, rawId, opts, "task");
   assertTaskInWorkstream(db, localId, opts.workstream);
   // v5: tasks.local_id is per-workstream unique. Resolve the
   // operator's workstream up front so the lookup scopes correctly.
@@ -259,9 +262,10 @@ export async function cmdTaskShow(
 
 export async function cmdTaskNotes(
   db: Db,
-  localId: string,
+  rawId: string,
   opts: { json?: boolean; workstream?: string } = {},
 ): Promise<void> {
+  const { name: localId } = await resolveEntityRef(db, rawId, opts, "task");
   assertTaskInWorkstream(db, localId, opts.workstream);
   const ws = await resolveWorkstream(opts.workstream);
   const task = getTask(db, localId, ws);
@@ -280,7 +284,7 @@ export async function cmdTaskNotes(
 
 export async function cmdTaskUpdate(
   db: Db,
-  localId: string,
+  rawId: string,
   opts: {
     title?: string;
     impact?: number;
@@ -289,6 +293,7 @@ export async function cmdTaskUpdate(
     json?: boolean;
   },
 ): Promise<void> {
+  const { name: localId } = await resolveEntityRef(db, rawId, opts, "task");
   assertTaskInWorkstream(db, localId, opts.workstream);
   const ws = await resolveWorkstream(opts.workstream);
   const updateOpts: UpdateTaskOptions = {};

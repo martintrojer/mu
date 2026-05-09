@@ -32,6 +32,7 @@ import {
   UsageError,
   assertEntityInWorkstream,
   emitJson,
+  resolveEntityRef,
   resolveOptionalWorkstream,
   resolveSelfOptional,
   resolveWorkstream,
@@ -109,9 +110,10 @@ export async function cmdApprovalList(
 
 export async function cmdApprovalGrant(
   db: Db,
-  slug: string,
+  rawSlug: string,
   opts: { by?: string; workstream?: string; json?: boolean },
 ): Promise<void> {
+  const { name: slug } = await resolveEntityRef(db, rawSlug, opts, "approval");
   assertApprovalInWorkstream(db, slug, opts.workstream);
   const ws = await resolveWorkstream(opts.workstream);
   const decidedBy = opts.by ?? resolveSelfNameOrUser(db);
@@ -125,9 +127,10 @@ export async function cmdApprovalGrant(
 
 export async function cmdApprovalDeny(
   db: Db,
-  slug: string,
+  rawSlug: string,
   opts: { by?: string; workstream?: string; json?: boolean },
 ): Promise<void> {
+  const { name: slug } = await resolveEntityRef(db, rawSlug, opts, "approval");
   assertApprovalInWorkstream(db, slug, opts.workstream);
   const ws = await resolveWorkstream(opts.workstream);
   const decidedBy = opts.by ?? resolveSelfNameOrUser(db);
@@ -141,9 +144,10 @@ export async function cmdApprovalDeny(
 
 export async function cmdApprovalWait(
   db: Db,
-  slug: string,
+  rawSlug: string,
   opts: { timeout?: number; json?: boolean; workstream?: string },
 ): Promise<void> {
+  const { name: slug } = await resolveEntityRef(db, rawSlug, opts, "approval");
   assertApprovalInWorkstream(db, slug, opts.workstream);
   const ws = await resolveWorkstream(opts.workstream);
   // --timeout in seconds for shell ergonomics; SDK takes ms.

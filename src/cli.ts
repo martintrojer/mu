@@ -131,6 +131,152 @@ export class UsageError extends Error {
   override readonly name = "UsageError";
 }
 
+/**
+ * Raised when a bare entity name is used at the CLI but the resolution
+ * context (--workstream / $MU_SESSION / current tmux session) is empty
+ * AND the same name lives in two or more workstreams. Exit 4 (conflict)
+ * via classifyError. The errorNextSteps lists every candidate as a
+ * runnable qualified-form invocation — a one-paste fix.
+ *
+ * See verb_arg_qualified_workstream_name for the design.
+ */
+export class NameAmbiguousError extends Error {
+  override readonly name = "NameAmbiguousError";
+  constructor(
+    public readonly entityName: string,
+    public readonly candidates: readonly string[],
+    public readonly kind: "task" | "agent" | "approval" | "workspace",
+  ) {
+    super(
+      `${kind} name "${entityName}" exists in ${candidates.length} workstreams (${candidates.join(", ")}); pass -w <workstream> or use the qualified form <workstream>/${entityName}`,
+    );
+  }
+  errorNextSteps(): NextStep[] {
+    return this.candidates.map((ws) => ({
+      intent: `Target the ${ws} ${this.kind}`,
+      command: `${ws}/${this.entityName}`,
+    }));
+  }
+}
+
+// ─── Qualified entity refs (cross-workstream verb args) ────────────────
+//
+// Every verb that takes an entity name (mu task show <id>, mu agent
+// send <name>, mu approve grant <slug>, mu workspace path <agent>)
+// accepts EITHER:
+//   - bare `<name>`           → resolves via current workstream context
+//   - qualified `<ws>/<name>` → resolves directly, no -w needed
+// Implemented as a parse-at-CLI-entry helper so the SDK signatures
+// stay workstream-explicit (no entity ref shape leaks below cli.ts).
+// See verb_arg_qualified_workstream_name and the OUTPUT_LABELS_AUDIT.
+
+export interface ParsedRef {
+  /** Workstream prefix when the input was `<ws>/<name>`; undefined for
+   *  bare names. */
+  workstream?: string;
+  /** The bare name (everything after the first '/' if qualified, else
+   *  the whole input). */
+  name: string;
+}
+
+/** Split `<ws>/<name>` on the FIRST '/'. Bare input → workstream=undefined.
+ *  Names today are restricted to [a-z0-9_-] (slugify / agent name validator)
+ *  so '/' is unambiguous: no entity name can contain it. */
+export function parseQualifiedRef(raw: string): ParsedRef {
+  const slash = raw.indexOf("/");
+  if (slash === -1) return { name: raw };
+  return { workstream: raw.slice(0, slash), name: raw.slice(slash + 1) };
+}
+
+/** Sync glue: parse a qualified ref and (if qualified) push the
+ *  workstream onto opts.workstream. Throws UsageError when the caller
+ *  passed BOTH `--workstream A` AND `B/<name>` and they disagree.
+ *  Returns the bare name for downstream use. Mutates opts. */
+export function applyQualifiedRef(raw: string, opts: { workstream?: string }): string {
+  const parsed = parseQualifiedRef(raw);
+  if (parsed.workstream === undefined) return raw;
+  if (opts.workstream !== undefined && opts.workstream !== parsed.workstream) {
+    throw new UsageError(
+      `qualified ref ${JSON.stringify(raw)} (workstream=${parsed.workstream}) conflicts with --workstream ${opts.workstream}`,
+    );
+  }
+  opts.workstream = parsed.workstream;
+  return parsed.name;
+}
+
+/** Per-entity table+key+error mapping for findEntityWorkstreams /
+ *  resolveEntityRef. Centralised so adding a new entity is one row. */
+const ENTITY_TABLES = {
+  task: { table: "tasks", keyCol: "local_id" },
+  agent: { table: "agents", keyCol: "name" },
+  approval: { table: "approvals", keyCol: "slug" },
+  // workspace: lookup is by agent name (vcs_workspaces has agent_id
+  // FK; the operator-facing key is the agent name in `agents`).
+  workspace: { table: "agents", keyCol: "name" },
+} as const;
+
+export type EntityKind = keyof typeof ENTITY_TABLES;
+
+/** List the workstream names where `entity` exists. Used for ambiguity
+ *  detection when the bare-name caller has no resolved -w context. */
+export function findEntityWorkstreams(db: Db, kind: EntityKind, name: string): string[] {
+  const { table, keyCol } = ENTITY_TABLES[kind];
+  const rows = db
+    .prepare(
+      `SELECT ws.name AS workstream FROM ${table} t
+         JOIN workstreams ws ON ws.id = t.workstream_id
+        WHERE t.${keyCol} = ?
+        ORDER BY ws.name`,
+    )
+    .all(name) as { workstream: string }[];
+  return rows.map((r) => r.workstream);
+}
+
+/**
+ * One-stop ref resolver for verbs taking an entity name + optional -w.
+ *
+ * Pipeline:
+ *   1. Parse `<ws>/<name>` (qualified form) — sets opts.workstream
+ *      from the prefix and returns the bare name.
+ *   2. Resolve workstream from --workstream / $MU_SESSION / tmux
+ *      session (the standard chain in resolveWorkstream).
+ *   3. When no workstream resolves AND the bare name lives in ≥2
+ *      workstreams: throw NameAmbiguousError listing the candidates.
+ *      When it lives in exactly 1: use that workstream (still bare).
+ *      When it lives in 0: rethrow the original UsageError so the
+ *      operator sees the canonical 'workstream required' message.
+ *
+ * Returns `{ name, workstream }`. The verb then uses `name` for the
+ * entity lookup and `workstream` for downstream SDK calls; opts.workstream
+ * is mutated to match (so existing helpers like assertTaskInWorkstream
+ * still work as the second-line check).
+ */
+export async function resolveEntityRef(
+  db: Db,
+  raw: string,
+  opts: { workstream?: string },
+  kind: EntityKind,
+): Promise<{ name: string; workstream: string }> {
+  const name = applyQualifiedRef(raw, opts);
+  try {
+    const workstream = await resolveWorkstream(opts.workstream);
+    return { name, workstream };
+  } catch (err) {
+    // Bare-name + no resolved context: try ambiguity disambiguation.
+    if (!(err instanceof UsageError)) throw err;
+    const matches = findEntityWorkstreams(db, kind, name);
+    if (matches.length >= 2) throw new NameAmbiguousError(name, matches, kind);
+    if (matches.length === 1) {
+      const only = matches[0];
+      if (only !== undefined) {
+        opts.workstream = only;
+        return { name, workstream: only };
+      }
+    }
+    throw err;
+  }
+}
+
 /** Standard --status validation: case-insensitive, returns the
  *  canonical TaskStatus or throws UsageError naming every legal
  *  value. Centralised so adding a status updates every CLI surface
@@ -175,6 +321,7 @@ export function classifyError(err: unknown): { label: string; exitCode: number }
     return { label: "not found", exitCode: 3 };
   }
   if (
+    err instanceof NameAmbiguousError ||
     err instanceof AgentExistsError ||
     err instanceof TaskExistsError ||
     err instanceof TaskAlreadyOwnedError ||

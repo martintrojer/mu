@@ -10,7 +10,7 @@
 // Extracted from src/cli/tasks.ts as part of the wire-out follow-up
 // to refactor_split_large_src_files.
 
-import { assertTaskInWorkstream, colorStatus, emitJson, resolveWorkstream } from "../../cli.js";
+import { assertTaskInWorkstream, colorStatus, emitJson, resolveEntityRef } from "../../cli.js";
 import type { Db } from "../../db.js";
 import { pc } from "../../output.js";
 import { TaskNotFoundError, type TaskRow, getTask, getTaskEdges } from "../../tasks.js";
@@ -32,16 +32,23 @@ interface TreeJsonNode {
   children: TreeJsonNode[];
 }
 
-export async function cmdTaskTree(db: Db, rootId: string, opts: TreeOpts): Promise<void> {
-  assertTaskInWorkstream(db, rootId, opts.workstream);
-  const ws = await resolveWorkstream(opts.workstream);
+export async function cmdTaskTree(db: Db, rawId: string, opts: TreeOpts): Promise<void> {
+  // resolveEntityRef parses `<workstream>/<name>` if present, else uses
+  // opts.workstream. Returns the resolved (name, workstream) pair so we
+  // never re-resolve downstream — the workstream is mandatory post the
+  // v4-fallback prune (commit 6621d8b).
+  const { name: rootId, workstream: ws } = await resolveEntityRef(db, rawId, opts, "task");
+  assertTaskInWorkstream(db, rootId, ws);
   const root = getTask(db, rootId, ws);
   if (!root) throw new TaskNotFoundError(rootId);
   const down = opts.down ?? false;
   const seen = new Set<string>([rootId]);
 
   if (opts.json) {
-    const node: TreeJsonNode = { task: root, children: buildJsonTree(db, ws, rootId, down, seen) };
+    const node: TreeJsonNode = {
+      task: root,
+      children: buildJsonTree(db, ws, rootId, down, seen),
+    };
     emitJson({ direction: down ? "dependents" : "blockers", root: node });
     return;
   }

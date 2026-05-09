@@ -7,16 +7,22 @@
 // Extracted from src/cli/tasks.ts as part of the wire-out follow-up
 // to refactor_split_large_src_files.
 
-import { assertTaskInWorkstream, emitJson, resolveWorkstream } from "../../cli.js";
+import {
+  assertTaskInWorkstream,
+  emitJson,
+  resolveEntityRef,
+  resolveWorkstream,
+} from "../../cli.js";
 import type { Db } from "../../db.js";
 import { type NextStep, pc, printNextSteps } from "../../output.js";
 import { addBlockEdge, deleteTask, removeBlockEdge, reparentTask } from "../../tasks.js";
 
 export async function cmdTaskBlock(
   db: Db,
-  blocked: string,
+  rawBlocked: string,
   opts: { by: string; workstream?: string; json?: boolean },
 ): Promise<void> {
+  const { name: blocked } = await resolveEntityRef(db, rawBlocked, opts, "task");
   assertTaskInWorkstream(db, blocked, opts.workstream);
   const ws = await resolveWorkstream(opts.workstream);
   const r = addBlockEdge(db, ws, blocked, opts.by);
@@ -39,9 +45,10 @@ export async function cmdTaskBlock(
 
 export async function cmdTaskUnblock(
   db: Db,
-  blocked: string,
+  rawBlocked: string,
   opts: { by: string; workstream?: string; json?: boolean },
 ): Promise<void> {
+  const { name: blocked } = await resolveEntityRef(db, rawBlocked, opts, "task");
   assertTaskInWorkstream(db, blocked, opts.workstream);
   const ws = await resolveWorkstream(opts.workstream);
   const r = removeBlockEdge(db, ws, blocked, opts.by);
@@ -64,9 +71,10 @@ export async function cmdTaskUnblock(
 
 export async function cmdTaskReparent(
   db: Db,
-  localId: string,
+  rawId: string,
   opts: { blockedBy: string; workstream?: string; json?: boolean },
 ): Promise<void> {
+  const { name: localId } = await resolveEntityRef(db, rawId, opts, "task");
   assertTaskInWorkstream(db, localId, opts.workstream);
   const ws = await resolveWorkstream(opts.workstream);
   const blockers = opts.blockedBy
@@ -90,9 +98,10 @@ export async function cmdTaskReparent(
 
 export async function cmdTaskDelete(
   db: Db,
-  localId: string,
+  rawId: string,
   opts: { workstream?: string; json?: boolean } = {},
 ): Promise<void> {
+  const { name: localId } = await resolveEntityRef(db, rawId, opts, "task");
   assertTaskInWorkstream(db, localId, opts.workstream);
   const ws = await resolveWorkstream(opts.workstream);
   const r = deleteTask(db, localId, ws);

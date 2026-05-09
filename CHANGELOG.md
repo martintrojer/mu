@@ -161,6 +161,42 @@ called out under "Breaking" in each entry.
 
 ### Added
 
+- **Cross-workstream verb args via the `<workstream>/<name>`
+  qualified form** (`verb_arg_qualified_workstream_name`,
+  Phase 3 of `output_id_vs_name_audit`). Every verb that takes a
+  task / agent / approval / workspace name argument now accepts
+  EITHER:
+
+  - bare `<name>` — resolves via the current workstream context
+    (`-w` / `$MU_SESSION` / current tmux session). Existing behaviour.
+  - qualified `<workstream>/<name>` — resolves directly, no `-w`
+    needed. Mixing with `-w <other>` is rejected with `UsageError`
+    (exit 2).
+
+  Affected verbs: `mu task` show / claim / release / close / open /
+  reject / defer / note / notes / tree / block / unblock / reparent /
+  update / delete / wait, `mu agent` show / send / read / close /
+  free / attach, `mu approve` grant / deny / wait, `mu workspace`
+  create / free / path. Implemented as a parse-at-CLI-entry helper
+  in `src/cli.ts` (`parseQualifiedRef` + `applyQualifiedRef` +
+  `resolveEntityRef`); SDK signatures are unchanged (the qualifier
+  lives entirely above the cli.ts boundary). Workspace `path` /
+  `agent send` / `task close` etc. are now scriptable from any
+  shell without a `-w` round-trip:
+
+      cd $(mu workspace path roadmap-v0-2/worker-1)
+      mu task close mufeedback/snap_dogfood --evidence "..."
+
+  Plus a new `NameAmbiguousError` (exit 4): when a bare name is
+  used AND no `-w` resolves AND ≥2 workstreams contain that name,
+  the error lists every candidate as a runnable qualified-form
+  invocation — a one-paste fix for operators standing outside any
+  tmux session. When exactly one workstream contains the bare name,
+  it is silently used (the convenience case).
+
+  Anti-feature pledges held: no surrogate INTEGER ids on the CLI,
+  no fuzzy matching, no JSON shape change.
+
 - **`mu workstream export -w <ws> [--out <dir>]` writes the
   workstream's task graph + notes as a directory of plain markdown.**
   Closes `export_tasks_to_md_folder` in `mufeedback`. One `.md` per

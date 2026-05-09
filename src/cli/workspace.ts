@@ -8,6 +8,7 @@ import {
   assertAgentInWorkstream,
   emitJson,
   formatWorkspacesTable,
+  resolveEntityRef,
   resolveWorkstream,
 } from "../cli.js";
 import type { Db } from "../db.js";
@@ -25,7 +26,7 @@ import {
 
 export async function cmdWorkspaceCreate(
   db: Db,
-  agent: string,
+  rawAgent: string,
   opts: {
     workstream?: string;
     backend?: VcsBackendName;
@@ -34,6 +35,7 @@ export async function cmdWorkspaceCreate(
     json?: boolean;
   },
 ): Promise<void> {
+  const { name: agent } = await resolveEntityRef(db, rawAgent, opts, "workspace");
   const workstream = await resolveWorkstream(opts.workstream);
   const createOpts: Parameters<typeof createWorkspace>[1] = { agent, workstream };
   if (opts.backend !== undefined) createOpts.backend = opts.backend;
@@ -85,9 +87,10 @@ export async function cmdWorkspaceList(
 
 export async function cmdWorkspaceFree(
   db: Db,
-  agent: string,
+  rawAgent: string,
   opts: { commit?: boolean; workstream?: string; json?: boolean },
 ): Promise<void> {
+  const { name: agent } = await resolveEntityRef(db, rawAgent, opts, "workspace");
   assertAgentInWorkstream(db, agent, opts.workstream);
   const ws = await resolveWorkstream(opts.workstream);
   const r = await freeWorkspace(db, agent, { commit: opts.commit ?? false, workstream: ws });
@@ -107,9 +110,10 @@ export async function cmdWorkspaceFree(
 
 export async function cmdWorkspacePath(
   db: Db,
-  agent: string,
+  rawAgent: string,
   opts: { workstream?: string; json?: boolean } = {},
 ): Promise<void> {
+  const { name: agent } = await resolveEntityRef(db, rawAgent, opts, "workspace");
   assertAgentInWorkstream(db, agent, opts.workstream);
   const wsName = await resolveWorkstream(opts.workstream);
   const ws = getWorkspaceForAgent(db, agent, wsName);

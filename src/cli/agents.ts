@@ -26,6 +26,7 @@ import {
   emitJson,
   formatAgentsTable,
   formatTaskListTable,
+  resolveEntityRef,
   resolveSelf,
   resolveWorkstream,
   statusIcon,
@@ -143,10 +144,11 @@ export async function cmdSpawn(db: Db, name: string, opts: SpawnOpts): Promise<v
 
 export async function cmdSend(
   db: Db,
-  name: string,
+  rawName: string,
   text: string,
   opts: { workstream?: string; json?: boolean } = {},
 ): Promise<void> {
+  const { name } = await resolveEntityRef(db, rawName, opts, "agent");
   assertAgentInWorkstream(db, name, opts.workstream);
   const ws = await resolveWorkstream(opts.workstream);
   await sendToAgent(db, name, text, { workstream: ws });
@@ -164,9 +166,10 @@ export async function cmdSend(
 
 export async function cmdRead(
   db: Db,
-  name: string,
+  rawName: string,
   opts: { lines?: number; workstream?: string; json?: boolean },
 ): Promise<void> {
+  const { name } = await resolveEntityRef(db, rawName, opts, "agent");
   assertAgentInWorkstream(db, name, opts.workstream);
   const ws = await resolveWorkstream(opts.workstream);
   const text = await readAgent(db, name, {
@@ -217,9 +220,10 @@ export async function cmdList(
 
 export async function cmdAgentShow(
   db: Db,
-  name: string,
+  rawName: string,
   opts: { lines?: number; json?: boolean; workstream?: string },
 ): Promise<void> {
+  const { name } = await resolveEntityRef(db, rawName, opts, "agent");
   assertAgentInWorkstream(db, name, opts.workstream);
   // v5: agents.name is per-workstream unique. Resolve the operator's
   // workstream up front so the lookup scopes correctly.
@@ -308,9 +312,10 @@ export async function cmdWhoami(
 
 export async function cmdClose(
   db: Db,
-  name: string,
+  rawName: string,
   opts: { workstream?: string; json?: boolean; discardWorkspace?: boolean } = {},
 ): Promise<void> {
+  const { name } = await resolveEntityRef(db, rawName, opts, "agent");
   assertAgentInWorkstream(db, name, opts.workstream);
   const ws = await resolveWorkstream(opts.workstream);
   const result = await closeAgent(db, name, {
@@ -423,9 +428,10 @@ export async function cmdAdopt(db: Db, paneOrTitle: string, opts: AdoptCliOpts):
 
 export async function cmdFree(
   db: Db,
-  name: string,
+  rawName: string,
   opts: { workstream?: string; json?: boolean } = {},
 ): Promise<void> {
+  const { name } = await resolveEntityRef(db, rawName, opts, "agent");
   assertAgentInWorkstream(db, name, opts.workstream);
   const ws = await resolveWorkstream(opts.workstream);
   const r = freeAgent(db, name, ws);
@@ -450,9 +456,10 @@ export async function cmdFree(
 
 export async function cmdAttach(
   db: Db,
-  name: string,
+  rawName: string,
   opts: { workstream?: string },
 ): Promise<void> {
+  const { name } = await resolveEntityRef(db, rawName, opts, "agent");
   const workstream = await resolveWorkstream(opts.workstream);
   const sessionName = `mu-${workstream}`;
   if (!(await sessionExists(sessionName))) {

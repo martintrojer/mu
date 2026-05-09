@@ -288,6 +288,15 @@ Universal flags worth knowing without `--help`:
   entity by id, `-w` is a SCOPE check (errors with
   `*NotInWorkstreamError`); on verbs that pick which entity
   (`mu task next`, `mu agent list`), it picks WHICH.
+- **Qualified entity refs** — every verb that takes a task /
+  agent / approval / workspace name accepts `<workstream>/<name>`
+  in addition to bare `<name>`. The qualified form skips `-w`
+  resolution: `mu task show roadmap-v0-2/snap_dogfood` works from
+  any shell. Mixing qualified ref with a non-matching `-w` errors
+  out (exit 2). When a bare name appears AND no `-w` resolves AND
+  ≥2 workstreams contain that name, mu raises `NameAmbiguousError`
+  (exit 4) and lists every candidate as a one-paste qualified-form
+  fix.
 - **`--evidence "<text>"`** — on `task close / open / claim /
   release`. Recorded verbatim in the auto-emitted event payload.
   Not validated; just preserved. Use for grounding ("tests pass:

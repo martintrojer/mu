@@ -9,16 +9,23 @@
 // Extracted from src/cli/tasks.ts as part of refactor_split_large_src_files.
 
 import { refreshAgentTitle } from "../../agents.js";
-import { UsageError, assertTaskInWorkstream, emitJson, resolveWorkstream } from "../../cli.js";
+import {
+  UsageError,
+  assertTaskInWorkstream,
+  emitJson,
+  resolveEntityRef,
+  resolveWorkstream,
+} from "../../cli.js";
 import type { Db } from "../../db.js";
 import { type NextStep, pc, printNextSteps } from "../../output.js";
 import { closeTask, deferTask, getTask, openTask, rejectTask } from "../../tasks.js";
 
 export async function cmdTaskClose(
   db: Db,
-  localId: string,
+  rawId: string,
   opts: { evidence?: string; workstream?: string; json?: boolean } = {},
 ): Promise<void> {
+  const { name: localId } = await resolveEntityRef(db, rawId, opts, "task");
   assertTaskInWorkstream(db, localId, opts.workstream);
   const ws = await resolveWorkstream(opts.workstream);
   const sdkOpts: { evidence?: string; workstream: string } = { workstream: ws };
@@ -51,9 +58,10 @@ export async function cmdTaskClose(
 
 export async function cmdTaskOpen(
   db: Db,
-  localId: string,
+  rawId: string,
   opts: { evidence?: string; workstream?: string; json?: boolean } = {},
 ): Promise<void> {
+  const { name: localId } = await resolveEntityRef(db, rawId, opts, "task");
   assertTaskInWorkstream(db, localId, opts.workstream);
   const ws = await resolveWorkstream(opts.workstream);
   const sdkOpts: { evidence?: string; workstream: string } = { workstream: ws };
@@ -109,10 +117,11 @@ export async function cmdTaskDefer(
 
 export async function cmdTaskRejectOrDefer(
   db: Db,
-  localId: string,
+  rawId: string,
   verb: "reject" | "defer",
   opts: RejectDeferOpts,
 ): Promise<void> {
+  const { name: localId } = await resolveEntityRef(db, rawId, opts, "task");
   assertTaskInWorkstream(db, localId, opts.workstream);
   const ws = await resolveWorkstream(opts.workstream);
   if (opts.yes && !opts.cascade) {
