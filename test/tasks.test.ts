@@ -55,6 +55,7 @@ import {
   waitForTasks,
 } from "../src/tasks.js";
 import { type TmuxExecutor, resetTmuxExecutor, setTmuxExecutor } from "../src/tmux.js";
+import { withCleanIdentityEnv, withEnv } from "./_env.js";
 
 // ─── Setup / teardown ──────────────────────────────────────────────────
 
@@ -72,30 +73,6 @@ afterEach(() => {
   rmSync(tempDir, { recursive: true, force: true });
   resetTmuxExecutor();
 });
-
-// Helper: env var deletion needs computed-key form so Biome's noDelete
-// rule doesn't trip on the literal-property version.
-async function withEnv(
-  key: string,
-  value: string | undefined,
-  fn: () => Promise<void>,
-): Promise<void> {
-  const original = process.env[key];
-  if (value === undefined) {
-    delete process.env[key];
-  } else {
-    process.env[key] = value;
-  }
-  try {
-    await fn();
-  } finally {
-    if (original === undefined) {
-      delete process.env[key];
-    } else {
-      process.env[key] = original;
-    }
-  }
-}
 
 // ─── isValidTaskId ─────────────────────────────────────────────────────
 
@@ -768,14 +745,20 @@ describe("claimTask", () => {
       return { stdout: "", stderr: "unmocked", exitCode: 1 };
     };
     setTmuxExecutor(executor);
-    await withEnv("TMUX_PANE", "%42", async () => {
-      const result = await claimTask(db, "auth", { self: true });
-      expect(result.actor).toBe("orchestrator-pane");
+    // withCleanIdentityEnv strips MU_AGENT_NAME/TMUX_PANE/USER from
+    // process.env before the inner withEnv reinstates TMUX_PANE.
+    // Without it, MU_AGENT_NAME leaking from a mu-spawned host pane
+    // wins the resolveActorIdentity fallback chain.
+    await withCleanIdentityEnv(async () => {
+      await withEnv("TMUX_PANE", "%42", async () => {
+        const result = await claimTask(db, "auth", { self: true });
+        expect(result.actor).toBe("orchestrator-pane");
+      });
     });
   });
 
   it("--self resolves actor from $USER when no $TMUX_PANE", async () => {
-    await withEnv("TMUX_PANE", undefined, async () => {
+    await withCleanIdentityEnv(async () => {
       await withEnv("USER", "martin", async () => {
         const result = await claimTask(db, "auth", { self: true });
         expect(result.actor).toBe("martin");

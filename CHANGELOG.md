@@ -363,6 +363,33 @@ called out under "Breaking" in each entry.
 
 ### Fixed
 
+- **Two `tasks.test.ts` `--self` identity tests no longer fail when
+  run from inside a mu-spawned pane.** Closes
+  `review_test_tasks_mu_agent_name_env_pollution` in `mufeedback`.
+  The tests at `test/tasks.test.ts` lines 763 (`--self resolves
+  actor from $TMUX_PANE when not explicit`) and 777 (`--self
+  resolves actor from $USER when no $TMUX_PANE`) only stripped
+  `TMUX_PANE` (and `USER` for the second) from `process.env` via the
+  local `withEnv` helper. They forgot `MU_AGENT_NAME`, which is the
+  highest-priority branch in `resolveActorIdentity`'s fallback chain
+  (`MU_AGENT_NAME` > pane title > `USER` > `"orchestrator"`). Result:
+  `npm run test` from a non-mu shell passed (var never set), but
+  every dev who invoked the suite from inside a mu-spawned pane saw
+  these two tests fail because vitest inherits the pane's
+  `MU_AGENT_NAME=worker-foo` env, and the test's expected fallback
+  branch never ran. The failure was documented as "out of scope"
+  across six commits — this is that backlog item.
+
+  Fix: extract the existing `withEnv` helper into a new shared
+  `test/_env.ts` and add `withCleanIdentityEnv(fn)` that strips all
+  three identity-resolution env vars (`MU_AGENT_NAME`, `TMUX_PANE`,
+  `USER`) for the duration of `fn`. `tasks.test.ts` imports the
+  helpers and wraps the two affected tests in
+  `withCleanIdentityEnv`; the inner `withEnv` calls reinstate the
+  specific var the test wants to assert on. No production code
+  changes. Future identity tests get a one-line idiom instead of a
+  3-deep nested-`withEnv` ladder that's easy to under-clean.
+
 - **`colorEnabled()` no longer ANDs with `picocolors.isColorSupported`;
   the NO_COLOR test branch is now a meaningful end-to-end check.**
   Closes `review_test_color_enabled_no_color_module_load_caveat` in
