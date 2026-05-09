@@ -76,6 +76,23 @@ called out under "Breaking" in each entry.
 
 ### Changed
 
+- **`TaskIdInvalidError` test assertions relaxed off the exact
+  sanitised-command suffix.** Closes
+  `review_test_invalid_id_overspecs_sanitised_command` in
+  `mufeedback`. `test/tasks.test.ts` (the `Bad ID` syntax case and
+  the reserved `mu_` prefix case) and
+  `test/cli-task-add-invalid-id.test.ts` previously pinned the
+  candidate command's exact spacing — `expect(cmd).toMatch(/mu task
+  add bad_id /)` with a trailing space, plus `/ t_mu_/` with a
+  leading space — which would drift on any cosmetic copy edit to
+  the suggestion string in `src/tasks/errors.ts` (e.g. swapping
+  `--title` for `-t`, adding an `(auto-derived)` annotation). Now
+  each test asserts only the load-bearing parts: the verb (`mu task
+  add`), the sanitised id token (`bad_id` / `t_mu_internal`), and
+  the presence of a `--title` flag — plus the negative assertion
+  that the reserved `mu_` prefix isn't echoed back. Behaviour and
+  the typed error contract are unchanged.
+
 - **Three workstream-scope assertions collapsed onto one generic
   helper.** Closes `review_code_assert_in_workstream_smell` in
   `mufeedback`. `assertAgentInWorkstream` (`src/cli.ts`),

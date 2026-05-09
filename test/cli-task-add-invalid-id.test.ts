@@ -80,8 +80,13 @@ describe("mu task add — invalid id ergonomics", () => {
     // First step is the auto-derived path: `mu task add --title "..."`
     // (no positional id). The second is the sanitised candidate.
     expect(envelope.nextSteps[0]?.command).toMatch(/--title/);
+    // Assert only the load-bearing parts (verb, sanitised id, --title flag)
+    // so cosmetic copy edits to the suggestion suffix don't drift the test.
     const sanitised = envelope.nextSteps.find((s) => s.intent.toLowerCase().includes("sanitise"));
-    expect(sanitised?.command).toMatch(/mu task add bad_id /);
+    const sanitisedCmd = sanitised?.command ?? "";
+    expect(sanitisedCmd).toContain("mu task add");
+    expect(sanitisedCmd).toContain("bad_id");
+    expect(sanitisedCmd).toMatch(/--title/);
   });
 
   it("DB has no row after a rejected add (validation runs before INSERT)", async () => {

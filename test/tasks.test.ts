@@ -157,9 +157,14 @@ describe("addTask", () => {
     // First step: drop --id and pass --title (auto-derive path).
     expect(steps[0]?.command).toMatch(/--title/);
     // Sanitised candidate must be a runnable id (lowercase + alnum/_/-).
+    // Assert only the load-bearing parts (verb, sanitised id, --title flag)
+    // so cosmetic copy edits to the suggestion suffix don't drift the test.
     const sanitisedStep = steps.find((s) => s.intent.toLowerCase().includes("sanitise"));
     expect(sanitisedStep).toBeDefined();
-    expect(sanitisedStep?.command).toMatch(/mu task add bad_id /);
+    const sanitisedCmd = sanitisedStep?.command ?? "";
+    expect(sanitisedCmd).toContain("mu task add");
+    expect(sanitisedCmd).toContain("bad_id");
+    expect(sanitisedCmd).toMatch(/--title/);
     expect(listTasks(db)).toEqual([]);
   });
 
@@ -181,9 +186,15 @@ describe("addTask", () => {
     // Sanitised candidate must rewrite the leading 'mu_' so the
     // suggested command would actually pass isValidTaskId.
     const steps = (caught as TaskIdInvalidError).errorNextSteps();
+    // Assert only the load-bearing parts: verb, sanitised id (with the
+    // 'mu_' prefix rewritten to 't_mu_'), and --title flag. The exact
+    // suffix shape is cosmetic and shouldn't pin the test.
     const sanitisedStep = steps.find((s) => s.intent.toLowerCase().includes("sanitise"));
-    expect(sanitisedStep?.command).not.toMatch(/ mu_/);
-    expect(sanitisedStep?.command).toMatch(/ t_mu_/);
+    const sanitisedCmd = sanitisedStep?.command ?? "";
+    expect(sanitisedCmd).toContain("mu task add");
+    expect(sanitisedCmd).toContain("t_mu_internal");
+    expect(sanitisedCmd).not.toMatch(/ mu_/);
+    expect(sanitisedCmd).toMatch(/--title/);
   });
 
   it("rejects duplicate id with TaskExistsError", () => {
