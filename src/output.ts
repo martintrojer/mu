@@ -15,40 +15,43 @@ import picocolors from "picocolors";
 /**
  * Should we emit ANSI color escapes from this process?
  *
- * picocolors auto-detects color support from `process.stdout.isTTY &&
- * env.TERM !== 'dumb'`. That works for plain shells but loses colors
- * whenever stdout is a pipe — most painfully under `watch --color mu
- * hud` and `tmux display-popup -E mu hud | cat`, where the surrounding
- * pane is a real terminal but our own stdout is a pipe.
+ * picocolors ships an `isColorSupported` flag, but it bakes its env
+ * inspection (NO_COLOR / FORCE_COLOR / isTTY) ONCE at module-load
+ * time. That makes the function untestable without dynamic re-imports
+ * — and worse, it loses colors whenever stdout is a pipe, most
+ * painfully under `watch --color mu hud` and `tmux display-popup -E
+ * mu hud | cat`, where the surrounding pane is a real terminal but
+ * our own stdout is a pipe.
  *
- * We force colors on when ANY of:
- *   - picocolors' own auto-detect says yes (`isColorSupported` — TTY +
- *     non-dumb TERM, the normal happy path);
- *   - `MU_FORCE_COLOR` is set (mu-specific override; doesn't require
- *     users to know the picocolors / chalk convention);
- *   - `FORCE_COLOR` is set (the standard env var picocolors itself
- *     consults inside `isColorSupported`, but we re-check it for clarity
- *     and to keep the helper self-contained / testable);
- *   - `TMUX` is set (the load-bearing fix for `watch` inside tmux: the
- *     surrounding pane is a real terminal even though our stdout is a
- *     pipe).
+ * We therefore re-implement the decision from scratch at call time,
+ * reading every signal directly from `process.env` / `process.stdout`
+ * so tests can flip env vars and observe the result without the
+ * vi.resetModules + vi.doMock dance (per task
+ * review_test_color_enabled_no_color_module_load_caveat).
  *
- * `NO_COLOR` (the cross-tool opt-out convention, https://no-color.org/)
- * trumps every other signal — including TMUX/MU_FORCE_COLOR/FORCE_COLOR.
- * We respect it explicitly because the TMUX clause would otherwise
- * override picocolors' own NO_COLOR check, surprising users who set
- * NO_COLOR globally and then run mu inside tmux.
+ * Order of precedence (first match wins):
+ *   - `NO_COLOR` set (cross-tool opt-out, https://no-color.org/) →
+ *     OFF, even when TMUX/MU_FORCE_COLOR/FORCE_COLOR are set. We
+ *     treat any defined value (including "") as set, matching the
+ *     no-color.org convention and picocolors' own behavior.
+ *   - `MU_FORCE_COLOR` set → ON (mu-specific override).
+ *   - `FORCE_COLOR` set → ON (the standard env var picocolors / chalk
+ *     consult).
+ *   - `TMUX` set → ON (the load-bearing fix for `watch` inside tmux:
+ *     the surrounding pane is a real terminal even though our stdout
+ *     is a pipe).
+ *   - Fall back to the standard TTY heuristic: stdout is a TTY AND
+ *     TERM !== "dumb". This mirrors what picocolors itself does in
+ *     `isColorSupported` for the happy-path case.
  *
  * See task hud_colors_stripped_under_watch_and for the full repro.
  */
 export function colorEnabled(): boolean {
   if (process.env.NO_COLOR !== undefined) return false;
-  return (
-    picocolors.isColorSupported ||
-    process.env.MU_FORCE_COLOR !== undefined ||
-    process.env.FORCE_COLOR !== undefined ||
-    process.env.TMUX !== undefined
-  );
+  if (process.env.MU_FORCE_COLOR !== undefined) return true;
+  if (process.env.FORCE_COLOR !== undefined) return true;
+  if (process.env.TMUX !== undefined) return true;
+  return Boolean(process.stdout.isTTY) && process.env.TERM !== "dumb";
 }
 
 /**
@@ -58,6 +61,8 @@ export function colorEnabled(): boolean {
  * isTTY heuristics. Any other module that needs `pc` should import
  * this one rather than reaching for `picocolors` directly.
  */
+// picocolors is still used as the renderer (createColors honors the
+// flag we pass), but the *decision* of whether to render is ours.
 export const pc = picocolors.createColors(colorEnabled());
 
 /**

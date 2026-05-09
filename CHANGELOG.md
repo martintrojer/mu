@@ -363,6 +363,41 @@ called out under "Breaking" in each entry.
 
 ### Fixed
 
+- **`colorEnabled()` no longer ANDs with `picocolors.isColorSupported`;
+  the NO_COLOR test branch is now a meaningful end-to-end check.**
+  Closes `review_test_color_enabled_no_color_module_load_caveat` in
+  `mufeedback`. picocolors bakes its env inspection (NO_COLOR /
+  FORCE_COLOR / isTTY) once at module-load time, so the previous
+  `picocolors.isColorSupported || ...` form made `colorEnabled()`
+  untestable without a `vi.resetModules + vi.doMock` re-import dance,
+  and the `loadColorEnabledWith` helper in `test/output.test.ts` ended
+  up substituting the picocolors default export with `{ ...real,
+  isColorSupported: opts.isColorSupported }` — which controls the
+  override but spreads picocolors' own already-baked surface, leaving
+  the NO_COLOR-trumps-everything test asserting against a static shape
+  rather than exercising real behaviour. The picocolors caveat was
+  invisible because the test still passed (the `process.env.NO_COLOR
+  !== undefined` early-return in `colorEnabled` is the part that
+  actually fires; the picocolors branch never mattered for that case).
+
+  Fix: re-implement `colorEnabled()` from scratch reading every signal
+  (`NO_COLOR`, `MU_FORCE_COLOR`, `FORCE_COLOR`, `TMUX`,
+  `process.stdout.isTTY`, `process.env.TERM !== "dumb"`) directly at
+  call time. Picocolors is still the renderer behind `pc =
+  picocolors.createColors(colorEnabled())`, but the *decision* of
+  whether to render is ours, which makes the helper synchronously
+  testable. `test/output.test.ts` drops the dynamic-import + doMock
+  helper for a `withEnv()` snapshot/mutate/restore wrapper that flips
+  `process.env` and `process.stdout.isTTY` per case, and gains two new
+  cases the previous shape couldn't reach: (a) `TERM=dumb` with
+  `isTTY=true` returns false (dumb-terminal heuristic pinned); (b)
+  `NO_COLOR=""` is treated as set (matches https://no-color.org and
+  picocolors; pins `!== undefined` so a future tighten to `&& !== ""`
+  can't slip in unnoticed). Behaviour unchanged for every existing
+  call site — the three real-world signals (`MU_FORCE_COLOR`,
+  `FORCE_COLOR`, `TMUX`, plus the TTY fallback) all map to the same
+  decision; only the implementation shape changed.
+
 - **`mu hud` recent-events tail now colours every emitter verb
   (was silently mis-colouring `task block` / `approval granted` /
   `task reparent`).** Closes `review_code_hud_event_color_regex_drift`

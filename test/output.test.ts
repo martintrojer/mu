@@ -3,105 +3,114 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   type NextStep,
+  colorEnabled,
   hasNextSteps,
   isJsonMode,
   printNextSteps,
   printNextStepsTo,
 } from "../src/output.js";
 
-// `colorEnabled()` reads `isColorSupported` from picocolors (module-level
-// constant baked at picocolors-import time) plus three env vars at call
-// time. To test the matrix deterministically without depending on the
-// vitest runner's TTY/CI state, we re-import `src/output.ts` per case
-// after `vi.doMock`-ing picocolors with the desired `isColorSupported`
-// and clearing env vars via the computed-key delete form (per AGENTS.md).
-async function loadColorEnabledWith(opts: {
-  isColorSupported: boolean;
-  env: { TMUX?: string; FORCE_COLOR?: string; MU_FORCE_COLOR?: string };
-}): Promise<() => boolean> {
-  // Wipe the three env vars unconditionally; only reapply the ones the
-  // caller asked for. AGENTS.md mandates the computed-key form because
-  // biome's --unsafe rewrite has historically turned `delete
-  // process.env.X` into `process.env.X = undefined` (which silently
-  // produces the literal string "undefined").
-  for (const k of ["TMUX", "FORCE_COLOR", "MU_FORCE_COLOR", "NO_COLOR"] as const) {
+// `colorEnabled()` reads every signal it cares about straight from
+// `process.env` / `process.stdout` at call time (per task
+// review_test_color_enabled_no_color_module_load_caveat — it used to
+// AND with picocolors.isColorSupported, which bakes its env inspection
+// at picocolors-load time and made the NO_COLOR test branch effectively
+// constant). Now we can flip env vars in-process and observe the result
+// directly — no vi.resetModules + vi.doMock dance required.
+//
+// Helper: snapshot, mutate, run, restore. The four env vars colorEnabled
+// inspects are wiped unconditionally; only the ones the caller passes
+// are reapplied. AGENTS.md mandates the computed-key delete form
+// because biome's --unsafe rewrite has historically turned `delete
+// process.env.X` into `process.env.X = undefined` (which silently
+// produces the literal string "undefined").
+function withEnv(
+  env: { TMUX?: string; FORCE_COLOR?: string; MU_FORCE_COLOR?: string; NO_COLOR?: string },
+  isTTY: boolean,
+  body: () => void,
+): void {
+  const keys = ["TMUX", "FORCE_COLOR", "MU_FORCE_COLOR", "NO_COLOR", "TERM"] as const;
+  const saved: Record<string, string | undefined> = {};
+  for (const k of keys) {
     const key = k;
+    saved[key] = process.env[key];
     delete process.env[key];
   }
-  for (const [k, v] of Object.entries(opts.env)) {
+  // TERM defaults to a non-dumb value so the TTY-fallback branch is
+  // sensitive to isTTY alone unless a test sets TERM=dumb itself.
+  process.env.TERM = "xterm-256color";
+  for (const [k, v] of Object.entries(env)) {
     if (v !== undefined) process.env[k] = v;
   }
-  vi.resetModules();
-  vi.doMock("picocolors", async () => {
-    // picocolors is CJS (`export = picocolors`); src/output.ts uses
-    // `import picocolors from "picocolors"` so the *default export*
-    // must carry isColorSupported. We rebuild the default to spread
-    // the real module's surface plus our overridden flag.
-    const actual = await vi.importActual<{ default: typeof import("picocolors") }>("picocolors");
-    const real = actual.default;
-    return { default: { ...real, isColorSupported: opts.isColorSupported } };
+  const savedIsTTY = process.stdout.isTTY;
+  Object.defineProperty(process.stdout, "isTTY", {
+    value: isTTY,
+    configurable: true,
+    writable: true,
   });
-  const mod = await import("../src/output.js");
-  return mod.colorEnabled;
-}
-
-describe("colorEnabled (env-var matrix + isTTY delegation)", () => {
-  const originalEnv = { ...process.env };
-
-  afterEach(() => {
-    vi.doUnmock("picocolors");
-    vi.resetModules();
-    // Restore any env vars the test mutated.
-    for (const k of ["TMUX", "FORCE_COLOR", "MU_FORCE_COLOR", "NO_COLOR"] as const) {
+  try {
+    body();
+  } finally {
+    Object.defineProperty(process.stdout, "isTTY", {
+      value: savedIsTTY,
+      configurable: true,
+      writable: true,
+    });
+    for (const k of keys) {
       const key = k;
       delete process.env[key];
-      if (originalEnv[key] !== undefined) process.env[key] = originalEnv[key];
+      if (saved[key] !== undefined) process.env[key] = saved[key];
     }
+  }
+}
+
+describe("colorEnabled (env-var matrix + isTTY fallback)", () => {
+  it("returns false when no env vars are set and isTTY is false", () => {
+    withEnv({}, false, () => expect(colorEnabled()).toBe(false));
   });
 
-  it("returns false when no env vars are set and isTTY is false", async () => {
-    const colorEnabled = await loadColorEnabledWith({ isColorSupported: false, env: {} });
-    expect(colorEnabled()).toBe(false);
+  it("returns true when TMUX is set (the load-bearing fix for `watch` inside tmux)", () => {
+    withEnv({ TMUX: "/tmp/tmux-1000/default,12345,0" }, false, () =>
+      expect(colorEnabled()).toBe(true),
+    );
   });
 
-  it("returns true when TMUX is set (the load-bearing fix for `watch` inside tmux)", async () => {
-    const colorEnabled = await loadColorEnabledWith({
-      isColorSupported: false,
-      env: { TMUX: "/tmp/tmux-1000/default,12345,0" },
+  it("returns true when MU_FORCE_COLOR=1", () => {
+    withEnv({ MU_FORCE_COLOR: "1" }, false, () => expect(colorEnabled()).toBe(true));
+  });
+
+  it("returns true when FORCE_COLOR=1", () => {
+    withEnv({ FORCE_COLOR: "1" }, false, () => expect(colorEnabled()).toBe(true));
+  });
+
+  it("returns true when no env vars are set but stdout.isTTY is true (TTY fallback)", () => {
+    withEnv({}, true, () => expect(colorEnabled()).toBe(true));
+  });
+
+  it("returns false when isTTY is true but TERM=dumb (dumb terminal heuristic)", () => {
+    withEnv({}, true, () => {
+      process.env.TERM = "dumb";
+      expect(colorEnabled()).toBe(false);
     });
-    expect(colorEnabled()).toBe(true);
   });
 
-  it("returns true when MU_FORCE_COLOR=1", async () => {
-    const colorEnabled = await loadColorEnabledWith({
-      isColorSupported: false,
-      env: { MU_FORCE_COLOR: "1" },
-    });
-    expect(colorEnabled()).toBe(true);
-  });
-
-  it("returns true when FORCE_COLOR=1", async () => {
-    const colorEnabled = await loadColorEnabledWith({
-      isColorSupported: false,
-      env: { FORCE_COLOR: "1" },
-    });
-    expect(colorEnabled()).toBe(true);
-  });
-
-  it("returns true when no env vars are set but picocolors' isColorSupported is true (TTY path)", async () => {
-    const colorEnabled = await loadColorEnabledWith({ isColorSupported: true, env: {} });
-    expect(colorEnabled()).toBe(true);
-  });
-
-  it("returns false when NO_COLOR is set even with TMUX + FORCE_COLOR + isTTY=true (NO_COLOR trumps)", async () => {
+  it("returns false when NO_COLOR is set even with TMUX + FORCE_COLOR + isTTY=true (NO_COLOR trumps)", () => {
     // The standard cross-tool opt-out (https://no-color.org/) wins over
-    // every positive signal. Without this guard the TMUX clause would
-    // override picocolors' own NO_COLOR check and surprise users.
-    const colorEnabled = await loadColorEnabledWith({
-      isColorSupported: true,
-      env: { NO_COLOR: "1", TMUX: "/tmp/tmux/0", FORCE_COLOR: "1", MU_FORCE_COLOR: "1" },
-    });
-    expect(colorEnabled()).toBe(false);
+    // every positive signal. We honor NO_COLOR explicitly so the TMUX
+    // / FORCE_COLOR / isTTY clauses cannot override the user's opt-out.
+    withEnv(
+      { NO_COLOR: "1", TMUX: "/tmp/tmux/0", FORCE_COLOR: "1", MU_FORCE_COLOR: "1" },
+      true,
+      () => expect(colorEnabled()).toBe(false),
+    );
+  });
+
+  it('treats NO_COLOR="" as set (matches https://no-color.org and picocolors)', () => {
+    // Empty-string NO_COLOR still trips the opt-out. This pins the
+    // `!== undefined` semantics so a future tightening to
+    // `!== undefined && !== ""` (chalk's older behavior) can't slip
+    // in unnoticed.
+    withEnv({ NO_COLOR: "", FORCE_COLOR: "1" }, true, () => expect(colorEnabled()).toBe(false));
   });
 });
 
