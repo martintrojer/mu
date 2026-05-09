@@ -262,6 +262,39 @@ export const STATUS_EMOJI: Record<AgentStatus, string> = {
  *  ourselves so the suffix is predictable. */
 const MAX_TITLE_LEN = 64;
 
+/**
+ * Placeholder pane-id prefix used during the `--workspace` pre-stage in
+ * spawnAgent (src/agents/spawn.ts).
+ *
+ * The placeholder unblocks the FK-ordering cycle:
+ *   - vcs_workspaces.agent FK requires an agents row
+ *   - agents.pane_id is NOT NULL
+ *   - pane creation needs the workspace path as cwd
+ * So we insert the agent with a placeholder pane_id, then create the
+ * workspace, then the real pane, then patch pane_id.
+ *
+ * Because no real tmux pane has this prefix, ANY mutating reconcile
+ * pass would treat the placeholder row as a ghost and prune it
+ * (→ FK-failure on the workspace insert mid-spawn). Callers MUST:
+ *   - either guard against it explicitly (refreshAgentTitle), OR
+ *   - run reconcile in dryRun mode (read-only verbs; see
+ *     `listLiveAgents.dryRun` rationale below).
+ *
+ * Bug surfaced as bug_agent_spawn_workspace_fk_failure.
+ */
+export const PENDING_PANE_PREFIX = "%pending-";
+
+/** Build the placeholder pane id for an agent during workspace pre-stage. */
+export function pendingPaneIdFor(agentName: string): string {
+  return `${PENDING_PANE_PREFIX}${agentName}`;
+}
+
+/** True iff `paneId` is a `--workspace` pre-stage placeholder (not yet patched
+ *  to the real tmux pane id). */
+export function isPendingPaneId(paneId: string): boolean {
+  return paneId.startsWith(PENDING_PANE_PREFIX);
+}
+
 /** Build the pane title for `agent` based on current DB state.
  *  Pure (no tmux side effect; no DB write). Read-only on the DB. */
 export function composeAgentTitle(db: Db, agent: AgentRow): string {
@@ -291,7 +324,7 @@ export function composeAgentTitle(db: Db, agent: AgentRow): string {
 export async function refreshAgentTitle(db: Db, agentName: string): Promise<void> {
   const agent = getAgent(db, agentName);
   if (!agent) return;
-  if (agent.paneId.startsWith("%pending-")) return; // workspace pre-stage placeholder
+  if (isPendingPaneId(agent.paneId)) return; // workspace pre-stage placeholder; see PENDING_PANE_PREFIX
   const title = composeAgentTitle(db, agent);
   await setPaneTitle(agent.paneId, title).catch(() => {});
 }
@@ -506,7 +539,7 @@ export interface ListLiveAgentsOptions {
    * this so the periodic `watch -n 5 mu hud -w X` invocation doesn't
    * race a long-running spawn (`git worktree add` of a 13k-file repo
    * takes seconds; the placeholder agent row's `pane_id` =
-   * `%pending-<name>` looks like a ghost to reconcile, which then
+   * `pendingPaneIdFor(name)` looks like a ghost to reconcile, which then
    * deletes the row mid-spawn — the FK on `vcs_workspaces.agent` then
    * fires when `createWorkspace` tries to insert the row, surfacing
    * as a confusing FOREIGN KEY constraint failure). Surfaced live by

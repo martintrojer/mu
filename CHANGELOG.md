@@ -76,7 +76,6 @@ called out under "Breaking" in each entry.
 
 ### Changed
 
-<<<<<<< HEAD
 - **`TaskIdInvalidError` test assertions relaxed off the exact
   sanitised-command suffix.** Closes
   `review_test_invalid_id_overspecs_sanitised_command` in
@@ -135,6 +134,41 @@ called out under "Breaking" in each entry.
   a fresh fake backend with the four required methods inline and
   passes it directly — no `vi.spyOn`, no `try/finally`, no shared
   mutable state. Production code is unchanged.
+
+- **`spawnAgent` workspace pre-stage extracted into named helpers;
+  apologetic narration deleted.** Closes
+  `review_code_spawn_workspace_dance_too_clever` in `mufeedback`.
+  `src/agents/spawn.ts` previously had an 18-line block comment
+  narrating the four rejected designs that led to the placeholder
+  pane-id (`%pending-<name>`) trick, plus two near-identical
+  rollback blocks (post-finalize, post-liveness) inlined into
+  `spawnAgent`. Extracted three named helpers:
+  `prestageWorkspace(db, opts, cli)` (insert placeholder agent row
+  + create workspace), `finalizeAgentRow(db, args)` (patch
+  placeholder pane_id to real, or insert fresh agent row
+  no-workspace path), and `rollbackSpawn(db, name, paneId,
+  hasWorkspace)` (collapses both cleanup blocks). The placeholder
+  convention itself is now the named constant
+  `PENDING_PANE_PREFIX` + helpers `pendingPaneIdFor` /
+  `isPendingPaneId` (exported from `src/agents.ts`), so
+  `refreshAgentTitle`'s `"%pending-"` startsWith check and the
+  `listLiveAgents.dryRun` rationale block reference one source.
+
+  Pure code motion: zero observable behaviour change. The 18-line
+  rejected-designs narration is gone (each helper's docstring
+  explains its single responsibility), and the spawn flow's main
+  body is ~50 lines shorter. Investigated alternatives in the
+  task notes:
+    - **Option 2 (eliminate the placeholder by reordering ws-dir
+      → pane → atomic dual insert):** the real architectural win,
+      but ~120-180 LOC across `spawn.ts` + `workspace.ts` + tests;
+      filed as a separate refactor.
+    - **Option 3 (DEFERRABLE FK):** correct shape but requires
+      schema migration layer that doesn't exist yet.
+    - **Option 5 (flip `dryRun` default to true):** good idea but
+      ~10 test callsites + cross-module impact; filed separately.
+  Tests: existing 789 unchanged + green; no new tests because
+  there's no new behaviour to cover.
 
 - **Three workstream-scope assertions collapsed onto one generic
   helper.** Closes `review_code_assert_in_workstream_smell` in

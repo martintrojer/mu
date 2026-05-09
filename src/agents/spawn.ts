@@ -1,19 +1,10 @@
 // mu — spawnAgent + supporting helpers (resolveCliCommand,
-// awaitSpawnLiveness, createOrReusePane, defaultSpawnLivenessMs).
+// awaitSpawnLiveness, createOrReusePane, defaultSpawnLivenessMs,
+// prestageWorkspace, finalizeAgentRow, rollbackSpawn).
 //
-// spawnAgent is the from-control / attach-runtime split:
-//
-//   1. Validate the name and that it's not already taken.
-//   2. Ensure the workstream's tmux session exists (creating it WITH
-//      the agent's first window in one shot if not, so a failed spawn
-//      never leaves an empty mu-<workstream> session behind).
-//   3. Decide whether the agent's window should be a fresh window or a
-//      split of an existing one (multiple agents sharing a `tab`).
-//   4. Set the pane title to the agent name (the claim protocol identity).
-//   5. Insert the DB row with status="spawning".
-//
-// On any failure between (3) and (5), kill the freshly created pane to
-// avoid leaking. The caller-visible error is preserved.
+// spawnAgent's flow is documented inline. The interesting bit is the
+// `--workspace` cycle (workspace row FKs agent.name; agent row needs
+// pane_id which needs workspace path as cwd) — see prestageWorkspace.
 //
 // Extracted from src/agents.ts as part of refactor_split_large_src_files.
 
@@ -23,6 +14,7 @@ import {
   getAgent,
   insertAgent,
   isValidAgentName,
+  pendingPaneIdFor,
   refreshAgentTitle,
 } from "../agents.js";
 import type { Db } from "../db.js";
@@ -100,19 +92,18 @@ export interface SpawnAgentOptions {
 /**
  * Spawn a new agent in its tmux pane and register it in the DB.
  *
- * Order of operations (the "from_control / attach_runtime" split):
+ * Phases:
+ *   1. Validate name + uniqueness.
+ *   2. If --workspace: prestageWorkspace() (placeholder agent row +
+ *      workspace dir + workspace row).
+ *   3. createOrReusePane() in the workspace path (or opts.cwd).
+ *   4. setPaneTitle + enableMuPaneBordersForPane.
+ *   5. finalizeAgentRow() — patch placeholder pane_id to real (workspace
+ *      path), or insert a fresh agent row (no-workspace path).
+ *   6. awaitSpawnLiveness().
  *
- *   1. Validate the name and that it's not already taken.
- *   2. Ensure the workstream's tmux session exists (creating it WITH the
- *      agent's first window in one shot if not, so a failed spawn never
- *      leaves an empty mu-<workstream> session behind).
- *   3. Decide whether the agent's window should be a fresh window or a
- *      split of an existing one (multiple agents sharing a `tab`).
- *   4. Set the pane title to the agent name (the claim protocol identity).
- *   5. Insert the DB row with status="spawning".
- *
- *   On any failure between (3) and (5), kill the freshly created pane to
- *   avoid leaking. The caller-visible error is preserved.
+ * Failure between any of (3)–(6) calls rollbackSpawn() to undo the
+ * pane + row + workspace. The caller-visible error is preserved.
  */
 export async function spawnAgent(db: Db, opts: SpawnAgentOptions): Promise<AgentRow> {
   if (!isValidAgentName(opts.name)) {
@@ -129,52 +120,10 @@ export async function spawnAgent(db: Db, opts: SpawnAgentOptions): Promise<Agent
   const cli = opts.cli ?? "pi";
   const command = opts.command ?? resolveCliCommand(cli);
 
-  // Workspace integration: when --workspace is set, allocate the
-  // VCS workspace BEFORE the pane so we can use the workspace path
-  // as cwd. The workspace row is keyed on agent name, so we need
-  // to insert the agent FIRST — but we don't have a pane yet, and
-  // FK ON DELETE CASCADE makes the row depend on agent existence.
-  // Solution: stage the workspace creation in two phases:
-  //   1. Insert agent (after pane exists, as today)
-  //   2. Create workspace BEFORE that, with a deferred row insert
-  // Actually simpler: just create the workspace dir first, then
-  // insert the workspace row AFTER the agent row exists. Splitting
-  // dir vs row creation isn't worth the complexity though, so we
-  // create the agent first WITHOUT a pane, then the workspace row,
-  // then create the pane with workspace path as cwd, then update
-  // the agent's pane_id. Too many moving parts; instead simplify:
-  // create the agent with a placeholder pane id ("%pending"), make
-  // the workspace, create the real pane in the workspace dir, then
-  // update the agent row to point at the real pane id.
-  let workspacePathStr: string | undefined;
-  if (opts.workspace) {
-    // Insert agent with placeholder pane id so the workspace FK is
-    // satisfied. We'll patch pane_id after the real pane exists.
-    insertAgent(db, {
-      name: opts.name,
-      workstream: opts.workstream,
-      cli,
-      paneId: `%pending-${opts.name}`,
-      status: "spawning",
-      role: opts.role,
-      tab: opts.tab ?? null,
-    });
-    try {
-      const wsOpts: Parameters<typeof createWorkspace>[1] = {
-        agent: opts.name,
-        workstream: opts.workstream,
-      };
-      if (opts.workspaceBackend !== undefined) wsOpts.backend = opts.workspaceBackend;
-      if (opts.workspaceFrom !== undefined) wsOpts.parentRef = opts.workspaceFrom;
-      if (opts.workspaceProjectRoot !== undefined) wsOpts.projectRoot = opts.workspaceProjectRoot;
-      const ws = await createWorkspace(db, wsOpts);
-      workspacePathStr = ws.path;
-    } catch (err) {
-      // Roll back the agent row we just inserted.
-      deleteAgent(db, opts.name);
-      throw err;
-    }
-  }
+  // Workspace pre-stage. See `prestageWorkspace` for the FK-ordering
+  // rationale. Returns the workspace path (used as the pane's cwd) or
+  // undefined when --workspace wasn't requested.
+  const workspacePathStr = opts.workspace ? await prestageWorkspace(db, opts, cli) : undefined;
 
   // Inject identity env vars into the pane so anything running inside
   // (pi extensions, claim-protocol scripts, status segments) can branch
@@ -199,6 +148,8 @@ export async function spawnAgent(db: Db, opts: SpawnAgentOptions): Promise<Agent
     env: paneEnv,
   });
 
+  const hasWorkspace = workspacePathStr !== undefined;
+
   let agent: AgentRow;
   try {
     await setPaneTitle(paneId, opts.name);
@@ -207,36 +158,9 @@ export async function spawnAgent(db: Db, opts: SpawnAgentOptions): Promise<Agent
     // window (and not just per session). Self-checks MU_BANNER_QUIET
     // and is best-effort — the border is decorative.
     await enableMuPaneBordersForPane(paneId);
-    if (workspacePathStr !== undefined) {
-      // Agent row already exists from the workspace pre-stage; just
-      // patch the pane id (and bump updated_at to reflect the change).
-      db.prepare("UPDATE agents SET pane_id = ?, updated_at = ? WHERE name = ?").run(
-        paneId,
-        new Date().toISOString(),
-        opts.name,
-      );
-      const row = getAgent(db, opts.name);
-      if (!row) throw new Error(`spawnAgent: agent vanished after workspace stage: ${opts.name}`);
-      agent = row;
-    } else {
-      agent = insertAgent(db, {
-        name: opts.name,
-        workstream: opts.workstream,
-        cli,
-        paneId,
-        status: "spawning",
-        role: opts.role,
-        tab: opts.tab ?? null,
-      });
-    }
+    agent = finalizeAgentRow(db, { opts, cli, paneId, hasWorkspace });
   } catch (err) {
-    // Rollback: kill the pane, drop the agent row, and free the
-    // workspace if we made one.
-    await killPane(paneId).catch(() => {});
-    if (workspacePathStr !== undefined) {
-      await freeWorkspace(db, opts.name).catch(() => {});
-    }
-    deleteAgent(db, opts.name);
+    await rollbackSpawn(db, opts.name, paneId, hasWorkspace);
     throw err;
   }
 
@@ -248,11 +172,7 @@ export async function spawnAgent(db: Db, opts: SpawnAgentOptions): Promise<Agent
   try {
     await awaitSpawnLiveness(paneId, opts.name);
   } catch (err) {
-    if (workspacePathStr !== undefined) {
-      await freeWorkspace(db, opts.name).catch(() => {});
-    }
-    deleteAgent(db, opts.name);
-    await killPane(paneId).catch(() => {});
+    await rollbackSpawn(db, opts.name, paneId, hasWorkspace);
     throw err;
   }
   emitEvent(
@@ -266,6 +186,103 @@ export async function spawnAgent(db: Db, opts: SpawnAgentOptions): Promise<Agent
   // the operator runs any status-reading verb.
   await refreshAgentTitle(db, opts.name);
   return agent;
+}
+
+/**
+ * Stage 1 of `--workspace` spawn: insert the agent row with a placeholder
+ * pane id, then create the VCS workspace (whose row FKs the agent name).
+ *
+ * Why placeholder-first? `vcs_workspaces.agent` FK + ON DELETE CASCADE
+ * means the workspace row needs an agents row to exist before we insert
+ * it; but we can't insert agents without a pane_id (NOT NULL), and we
+ * can't create the pane until we know the workspace's on-disk path
+ * (used as cwd). The placeholder unblocks the cycle.
+ *
+ * The placeholder is a publicly-visible quirk — see `PENDING_PANE_PREFIX`
+ * and the consumers it documents (refreshAgentTitle, the dryRun
+ * rationale in `listLiveAgents`). The deeper fix (eliminate the placeholder
+ * by reordering ws-dir → pane → atomic dual-insert) is filed as a
+ * separate refactor; this shape is the established equilibrium.
+ *
+ * Throws after best-effort rollback (deleteAgent) if workspace creation
+ * fails. Returns the workspace's on-disk path.
+ */
+async function prestageWorkspace(db: Db, opts: SpawnAgentOptions, cli: string): Promise<string> {
+  insertAgent(db, {
+    name: opts.name,
+    workstream: opts.workstream,
+    cli,
+    paneId: pendingPaneIdFor(opts.name),
+    status: "spawning",
+    role: opts.role,
+    tab: opts.tab ?? null,
+  });
+  try {
+    const wsOpts: Parameters<typeof createWorkspace>[1] = {
+      agent: opts.name,
+      workstream: opts.workstream,
+    };
+    if (opts.workspaceBackend !== undefined) wsOpts.backend = opts.workspaceBackend;
+    if (opts.workspaceFrom !== undefined) wsOpts.parentRef = opts.workspaceFrom;
+    if (opts.workspaceProjectRoot !== undefined) wsOpts.projectRoot = opts.workspaceProjectRoot;
+    const ws = await createWorkspace(db, wsOpts);
+    return ws.path;
+  } catch (err) {
+    deleteAgent(db, opts.name);
+    throw err;
+  }
+}
+
+/**
+ * Stage 2 of spawn (after the real pane exists): either patch the
+ * placeholder row to the real pane id (workspace path), or insert a
+ * fresh agent row (no-workspace path). Throws if the patch UPDATE
+ * silently affects no row (the placeholder row vanished mid-spawn —
+ * historically the bug_agent_spawn_workspace_fk_failure class, now
+ * patched via dryRun: true on read verbs).
+ */
+function finalizeAgentRow(
+  db: Db,
+  args: { opts: SpawnAgentOptions; cli: string; paneId: string; hasWorkspace: boolean },
+): AgentRow {
+  const { opts, cli, paneId, hasWorkspace } = args;
+  if (!hasWorkspace) {
+    return insertAgent(db, {
+      name: opts.name,
+      workstream: opts.workstream,
+      cli,
+      paneId,
+      status: "spawning",
+      role: opts.role,
+      tab: opts.tab ?? null,
+    });
+  }
+  db.prepare("UPDATE agents SET pane_id = ?, updated_at = ? WHERE name = ?").run(
+    paneId,
+    new Date().toISOString(),
+    opts.name,
+  );
+  const row = getAgent(db, opts.name);
+  if (!row) throw new Error(`spawnAgent: agent vanished after workspace stage: ${opts.name}`);
+  return row;
+}
+
+/**
+ * Roll back a failed spawn. Idempotent and best-effort: every step
+ * swallows its own errors so a partial-cleanup substrate (already-killed
+ * pane, no agent row) never masks the original failure.
+ */
+async function rollbackSpawn(
+  db: Db,
+  name: string,
+  paneId: string,
+  hasWorkspace: boolean,
+): Promise<void> {
+  await killPane(paneId).catch(() => {});
+  if (hasWorkspace) {
+    await freeWorkspace(db, name).catch(() => {});
+  }
+  deleteAgent(db, name);
 }
 
 /**
