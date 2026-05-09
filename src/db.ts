@@ -10,17 +10,19 @@
 //   - 3 views:  ready, blocked, goals
 //
 // v5 (this version) is the surrogate-INTEGER-PK shape per
-// docs/SCHEMA_v5_DESIGN.md. Every entity table has an INTEGER PK; FKs
-// reference INTEGER ids; the operator-facing TEXT name is per-scope
-// unique via UNIQUE (<scope_id>, <name>).
+// docs/ARCHITECTURE.md § Surrogate-PK + SDK-boundary discipline.
+// Every entity table has an INTEGER PK; FKs reference INTEGER ids;
+// the operator-facing TEXT name is per-scope unique via
+// UNIQUE (<scope_id>, <name>).
 //
 // IMPORTANT: src/db.ts knows ONLY the v5 shape. Pre-v5 DBs are
-// rejected at openDb time with SchemaTooOldError; the operator runs
-// scripts/migrate-v4-to-v5.ts once to bring a v4 DB forward. The old
-// in-process forward-only migration ladder (v1→v2, v2→v3, v3→v4) was
-// removed in schema_v5_drop_migrations_ts: with the loud-fail hook
-// below catching every pre-v5 DB before openDb returns, none of those
-// migration paths could ever run.
+// rejected at openDb time with SchemaTooOldError; the operator
+// recovers the one-shot v4→v5 migration script from git history
+// (`git log --all --diff-filter=D -- scripts/migrate-v4-to-v5.ts`).
+// The old in-process forward-only migration ladder (v1→v2, v2→v3,
+// v3→v4) was removed in schema_v5_drop_migrations_ts: with the
+// loud-fail hook below catching every pre-v5 DB before openDb
+// returns, none of those migration paths could ever run.
 
 import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
@@ -94,8 +96,11 @@ export function openDb(options: OpenDbOptions = {}): Db {
     // silently stamped as v5 by the CREATE-IF-NOT-EXISTS in applySchema.
     const detectedVersion = detectExistingSchemaVersion(db);
     if (detectedVersion !== null && detectedVersion < CURRENT_SCHEMA_VERSION) {
-      // Loud-fail: refuse to touch a pre-v5 DB. The operator runs
-      // scripts/migrate-v4-to-v5.ts once and retries.
+      // Loud-fail: refuse to touch a pre-v5 DB. The operator
+      // restores the one-shot migrator from git history and retries.
+      // (See docs/ARCHITECTURE.md § Surrogate-PK + SDK-boundary
+      // discipline for the v5 substrate; the migrator was deleted
+      // in the post-landing cleanup per the temp-impl-artifact rule.)
       try {
         db.close();
       } catch {
@@ -113,14 +118,15 @@ export function openDb(options: OpenDbOptions = {}): Db {
 
 /**
  * Thrown by openDb when the on-disk DB is at a schema version older
- * than v5. v5 dropped the in-process forward migrator; pre-v5 DBs are
- * brought forward exactly once via scripts/migrate-v4-to-v5.ts.
+ * than v5. v5 dropped the in-process forward migrator; the one-shot
+ * v4→v5 migration script lives in git history (recover via
+ * `git log --all --diff-filter=D -- scripts/migrate-v4-to-v5.ts`).
  *
  * Maps to exit code 4 (conflict) in cli.ts handle().
  */
 // ─── Resolve helpers (operator-facing name -> surrogate id) ───────────
 //
-// docs/SCHEMA_v5_DESIGN.md §"Boundary discipline for the SDK surface":
+// docs/ARCHITECTURE.md § Surrogate-PK + SDK-boundary discipline:
 //
 //   PUBLIC SDK functions take operator-facing names (workstream + local
 //   id + agent name). Internal helpers take surrogate ids. Resolution
@@ -214,14 +220,19 @@ export class SchemaTooOldError extends Error implements HasNextSteps {
     public readonly requiredVersion: number,
   ) {
     super(
-      `Detected v${detectedVersion} schema; v${requiredVersion} is required. Run: npx tsx scripts/migrate-v4-to-v5.ts then retry your command.`,
+      `Detected v${detectedVersion} schema; v${requiredVersion} is required. The one-shot v4→v5 migration script (scripts/migrate-v4-to-v5.ts) was deleted post-landing; recover it from git history and run it once, then retry your command.`,
     );
   }
   errorNextSteps(): NextStep[] {
     return [
       {
-        intent: "Migrate the DB once",
-        command: "npx tsx scripts/migrate-v4-to-v5.ts",
+        intent: "Recover the one-shot v4→v5 migration script from git history",
+        command: "git log --all --diff-filter=D -- scripts/migrate-v4-to-v5.ts | head",
+      },
+      {
+        intent: "Then run it once against the DB",
+        command:
+          "git show <commit>:scripts/migrate-v4-to-v5.ts > /tmp/migrate.ts && npx tsx /tmp/migrate.ts",
       },
       {
         intent: "Then retry the original command",
@@ -291,16 +302,19 @@ function applySchema(db: Db): void {
 }
 
 /** The schema version a fresh DB starts at. v5 is the surrogate-PK
- *  shape (docs/SCHEMA_v5_DESIGN.md). Pre-v5 DBs are rejected at
- *  openDb time and must be migrated via scripts/migrate-v4-to-v5.ts. */
+ *  shape (docs/ARCHITECTURE.md § Surrogate-PK + SDK-boundary
+ *  discipline). Pre-v5 DBs are rejected at openDb time; the
+ *  one-shot v4→v5 migrator was deleted post-landing per the
+ *  temp-impl-artifact rule (recover from git history if needed). */
 export const CURRENT_SCHEMA_VERSION = 5;
 
 /** Tables a healthy DB must contain. Single source of truth so
  *  `mu doctor` and any other consumer don't drift. Adding a new table
  *  = one new entry here AND a CREATE TABLE in CURRENT_SCHEMA. (Schema
- *  changes that aren't compatible with prior schemas bump CURRENT_SCHEMA_VERSION
- *  and ship with a one-shot script under scripts/, mirroring
- *  scripts/migrate-v4-to-v5.ts.) */
+ *  changes that aren't compatible with prior schemas bump
+ *  CURRENT_SCHEMA_VERSION and ship with a one-shot script under
+ *  scripts/ (the v4→v5 transition was the canonical example
+ *  before the script was deleted post-landing). */
 export const EXPECTED_TABLES: readonly string[] = [
   "agent_logs",
   "agents",
@@ -375,7 +389,8 @@ CREATE VIEW goals AS
 
 // ─── v5 SCHEMA ────────────────────────────────────────────────────────
 //
-// Per docs/SCHEMA_v5_DESIGN.md. Every entity table has:
+// Per docs/ARCHITECTURE.md § Surrogate-PK + SDK-boundary discipline.
+// Every entity table has:
 //   - INTEGER PRIMARY KEY AUTOINCREMENT (surrogate identity)
 //   - <scope>_id INTEGER NOT NULL REFERENCES <parent>(id) ON DELETE CASCADE
 //   - <name>     TEXT  NOT NULL  (operator-facing, mutable)
