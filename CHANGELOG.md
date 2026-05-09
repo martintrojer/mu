@@ -12,14 +12,6 @@ called out under "Breaking" in each entry.
 
 ### Changed
 
-- **Inlined `resolveSelfActor` in `src/tasks/claim.ts`.** Closes
-  `review_code_resolve_self_actor_redundant` in `mufeedback`. The
-  3-line wrapper had exactly one caller (`claimSelf`) and obscured
-  the canonical `resolveActorIdentity` helper that `addNote` already
-  calls directly. The override-when-explicit logic is now a one-line
-  ternary at the call site; net −8 LOC. No behaviour change; existing
-  `claim --self` tests cover it.
-
 - **`mu`-managed tmux panes now have a visually distinct frame on
   all four sides, not just the labeled top status band.** Closes
   the first half of `tmux_pane_border_top_and_bottom_plus_glyph_audit`
@@ -130,6 +122,33 @@ called out under "Breaking" in each entry.
   the `mu state` warn line at the threshold boundary.
 
 ### Fixed
+
+- **`waitForTasks` now returns within `timeoutMs` even when `pollMs >
+  timeoutMs`.** Closes `review_test_waitfortasks_polling_unverified`
+  in `mufeedback`. The poll loop in `src/tasks/wait.ts` awaited a
+  full `pollMs` before re-checking the deadline, so a caller asking
+  for a 50ms timeout with a 1000ms poll interval blocked ~1s instead
+  of returning promptly. The CLI maps timeouts to exit code 5; any
+  script picking unbalanced poll/timeout silently observed wrong
+  latency.
+
+  The sleep is now clamped to `min(pollMs, deadline - now)`, so the
+  function returns within `timeoutMs + small slack` regardless of
+  `pollMs`. `timeoutMs=0` ("wait forever") still uses the full
+  `pollMs` cadence; when the clamp goes <= 0 the sleep is skipped
+  and the loop re-snapshots before bailing on the timeout (last
+  chance for a winning state at the deadline boundary, and avoids
+  passing 0 / negatives to `setTimeout`).
+
+  Alongside the fix: `setWaitSleepForTests` + `getWaitPollCount` /
+  `resetWaitPollCount` test seams (mirrors `setSleepForTests` in
+  `src/tmux.ts`) so the regression has a poll-count assertion in
+  addition to the elapsed-time bound. Three new tests in
+  `test/tasks.test.ts`: clamped-sleep regression bound (elapsed <
+  200ms with `pollMs=1000, timeoutMs=50`), poll-cadence assertion
+  (5–15 polls with `pollMs=10, timeoutMs=100`), and a
+  sibling-progress check that deletion of one task mid-wait does
+  not block detection of another sibling reaching CLOSED.
 
 - **`mu task add` with an invalid id now throws a typed
   `TaskIdInvalidError` instead of a bare `TypeError`.** Closes

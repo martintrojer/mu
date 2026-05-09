@@ -32,6 +32,36 @@ import { getTask } from "../tasks.js";
 import { TaskNotFoundError } from "./errors.js";
 import type { TaskStatus } from "./status.js";
 
+// ─── Test seam: poll-sleep + poll counter ──────────────────────────────
+//
+// Mirror src/tmux.ts's setSleepForTests pattern. Default sleep is a real
+// setTimeout; tests can swap in an instant + counted version to assert
+// poll cadence (the bug fixed alongside this hook silently sleeps a full
+// pollMs past the deadline when pollMs > timeoutMs — see test/tasks.test.ts
+// 'waitForTasks' regression cases).
+
+let currentWaitSleep: (ms: number) => Promise<void> = (ms) =>
+  new Promise((resolve) => setTimeout(resolve, ms));
+let pollCount = 0;
+
+export function setWaitSleepForTests(
+  impl: ((ms: number) => Promise<void>) | undefined,
+): (ms: number) => Promise<void> {
+  const previous = currentWaitSleep;
+  currentWaitSleep = impl ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+  return previous;
+}
+
+/** Total number of polls performed across all `waitForTasks` calls in this
+ *  process. Tests typically reset before exercising and read after. */
+export function getWaitPollCount(): number {
+  return pollCount;
+}
+
+export function resetWaitPollCount(): void {
+  pollCount = 0;
+}
+
 export interface TaskWaitOptions {
   /** Target status. Default 'CLOSED'. */
   status?: TaskStatus;
@@ -128,11 +158,26 @@ export async function waitForTasks(
   if (isDone(snap)) return snap;
 
   // Poll loop.
+  //
+  // Sleep is clamped to `min(pollMs, deadline - now)` so the function
+  // returns within `timeoutMs + small slack`, never `pollMs` later.
+  // Without the clamp, `pollMs=10000, timeoutMs=100` sleeps a full 10s
+  // before noticing the deadline expired. When the clamp goes <= 0 we
+  // skip the sleep entirely and re-snapshot before bailing on the
+  // timeout — gives the wait one last chance at a winning state right
+  // at the deadline boundary, and avoids passing 0 / negatives to
+  // setTimeout (which has implementation-defined behaviour).
   for (;;) {
-    if (Date.now() >= deadline) {
+    const now = Date.now();
+    if (now >= deadline) {
       return { ...snap, timedOut: true };
     }
-    await new Promise((resolve) => setTimeout(resolve, pollMs));
+    const sleepMs =
+      deadline === Number.POSITIVE_INFINITY ? pollMs : Math.min(pollMs, deadline - now);
+    if (sleepMs > 0) {
+      await currentWaitSleep(sleepMs);
+    }
+    pollCount += 1;
     snap = snapshot();
     if (isDone(snap)) return snap;
   }

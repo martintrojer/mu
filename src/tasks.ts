@@ -43,6 +43,9 @@ export {
   TaskNotInWorkstreamError,
 } from "./tasks/errors.js";
 export {
+  getWaitPollCount,
+  resetWaitPollCount,
+  setWaitSleepForTests,
   type TaskWaitOptions,
   type TaskWaitResult,
   type TaskWaitTaskState,

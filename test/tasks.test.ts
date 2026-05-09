@@ -29,6 +29,7 @@ import {
   getPrerequisites,
   getTask,
   getTaskEdges,
+  getWaitPollCount,
   idFromTitle,
   isTaskStatus,
   isValidTaskId,
@@ -43,9 +44,11 @@ import {
   releaseTask,
   removeBlockEdge,
   reparentTask,
+  resetWaitPollCount,
   resolveActorIdentity,
   searchTasks,
   setTaskStatus,
+  setWaitSleepForTests,
   slugifyTitle,
   updateTask,
   waitForTasks,
@@ -1808,6 +1811,70 @@ describe("waitForTasks", () => {
     // 'b' was deleted; defensive snapshot defaults to 'OPEN' / not reached.
     const bState = r.tasks.find((t) => t.localId === "b");
     expect(bState?.reachedTarget).toBe(false);
+  });
+
+  // Regression for the pre-clamp bug: with `pollMs > timeoutMs` the loop
+  // used to await a full pollMs before re-checking the deadline, so a
+  // caller asking for a 50ms timeout with a 1000ms poll would block ~1s.
+  // Post-fix the sleep is clamped to `min(pollMs, deadline - now)`; the
+  // function returns inside `timeoutMs + small slack`.
+  it("returns within timeoutMs even when pollMs > timeoutMs (clamped sleep)", async () => {
+    const startedAt = Date.now();
+    const r = await waitForTasks(db, ["a"], { pollMs: 1000, timeoutMs: 50 });
+    const elapsed = Date.now() - startedAt;
+    expect(r.timedOut).toBe(true);
+    expect(r.allReached).toBe(false);
+    // Pre-fix this would have been ~1000ms. 200ms is generous slack for
+    // CI noise; the bug regression bound is ~1000.
+    expect(elapsed).toBeLessThan(200);
+    expect(r.elapsedMs).toBeLessThan(200);
+  });
+
+  // Sibling-progress when one task in the wait set is deleted mid-wait:
+  // the original gap from the deferred test review. Deletion of 'b'
+  // should not affect the wait correctly observing 'a' reach CLOSED.
+  it("deletion of one task mid-wait does not block sibling progress detection", async () => {
+    setTimeout(() => {
+      deleteTask(db, "b");
+      setTaskStatus(db, "a", "CLOSED");
+    }, 30);
+    const r = await waitForTasks(db, ["a", "b"], {
+      any: true,
+      pollMs: 20,
+      timeoutMs: 1000,
+    });
+    expect(r.timedOut).toBe(false);
+    expect(r.anyReached).toBe(true);
+    const aState = r.tasks.find((t) => t.localId === "a");
+    const bState = r.tasks.find((t) => t.localId === "b");
+    expect(aState?.reachedTarget).toBe(true);
+    expect(bState?.reachedTarget).toBe(false);
+  });
+
+  // Poll-count assertion via the test side-channel. With pollMs=10 and
+  // timeoutMs=100 we expect ~10 polls; allow a tight 5-15 range to
+  // tolerate scheduler jitter without losing the regression signal.
+  it("polls roughly timeoutMs/pollMs times (asserts cadence via test seam)", async () => {
+    resetWaitPollCount();
+    let sleeps = 0;
+    const restore = setWaitSleepForTests(async (ms) => {
+      sleeps += 1;
+      // Honour the requested duration so the deadline math still drives
+      // termination; without this the loop would terminate after a
+      // single iteration regardless of pollMs.
+      await new Promise((resolve) => setTimeout(resolve, ms));
+    });
+    try {
+      const r = await waitForTasks(db, ["a"], { pollMs: 10, timeoutMs: 100 });
+      expect(r.timedOut).toBe(true);
+      const polls = getWaitPollCount();
+      expect(polls).toBeGreaterThanOrEqual(5);
+      expect(polls).toBeLessThanOrEqual(15);
+      expect(sleeps).toBe(polls);
+    } finally {
+      setWaitSleepForTests(restore);
+      resetWaitPollCount();
+    }
   });
 });
 
