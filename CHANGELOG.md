@@ -59,6 +59,22 @@ called out under "Breaking" in each entry.
 
 ### Changed
 
+- **`MU_BANNER_QUIET` opt-out moved into the tmux border helpers;
+  callers no longer wrap them in env guards.** Closes
+  `review_code_banner_quiet_env_repeated` in `mufeedback`. Three
+  call sites (`spawnAgent`, `cmdAdopt`, `cmdInit`) had near-
+  identical `if (process.env.MU_BANNER_QUIET !== "1") { … }`
+  blocks around `enableMuPaneBorders` / `enableMuPaneBordersForSession`
+  — a change to the env-var name or to the silence policy needed all
+  three found and updated, and a future caller could easily forget
+  the guard and set the border even when the operator wanted quiet.
+  `enableMuPaneBorders` and `enableMuPaneBordersForSession` now
+  self-check `MU_BANNER_QUIET=1` (no-op when set), and a new
+  `enableMuPaneBordersForPane(paneId)` collapses the
+  `getWindowIdForPane` → `enableMuPaneBorders` two-step that the
+  spawn / adopt sites repeat. The three callers are now one-liners.
+  Behaviour unchanged.
+
 - **`mu log`'s `resolveLogContext` now uses `??` consistently
   and documents the pane-branch asymmetry.** Closes
   `review_code_resolve_log_workstream_branch_dup` in `mufeedback`.

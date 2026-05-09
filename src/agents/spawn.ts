@@ -29,8 +29,7 @@ import type { Db } from "../db.js";
 import { emitEvent } from "../logs.js";
 import {
   capturePane,
-  enableMuPaneBorders,
-  getWindowIdForPane,
+  enableMuPaneBordersForPane,
   killPane,
   listWindows,
   newSessionWithPane,
@@ -205,12 +204,9 @@ export async function spawnAgent(db: Db, opts: SpawnAgentOptions): Promise<Agent
     await setPaneTitle(paneId, opts.name);
     // Apply the mu pane border to the new window. Window-scoped option;
     // see enableMuPaneBorders docstring for why this is required per
-    // window (and not just per session). Best-effort — older tmux or
-    // tmux server hiccups are non-fatal; the border is decorative.
-    if (process.env.MU_BANNER_QUIET !== "1") {
-      const wid = await getWindowIdForPane(paneId).catch(() => undefined);
-      if (wid) await enableMuPaneBorders(wid).catch(() => {});
-    }
+    // window (and not just per session). Self-checks MU_BANNER_QUIET
+    // and is best-effort — the border is decorative.
+    await enableMuPaneBordersForPane(paneId);
     if (workspacePathStr !== undefined) {
       // Agent row already exists from the workspace pre-stage; just
       // patch the pane id (and bump updated_at to reflect the change).

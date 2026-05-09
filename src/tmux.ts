@@ -544,6 +544,18 @@ export async function getWindowIdForPane(paneId: string): Promise<string | undef
 }
 
 /**
+ * Single source of truth for the operator opt-out from the mu pane
+ * banner / border decorations. Set `MU_BANNER_QUIET=1` to disable.
+ * All `enableMuPaneBorders*` helpers self-check this so callers
+ * don't have to wrap them in env guards (a footgun: forget the
+ * guard and you set the border even when the operator wanted
+ * quiet).
+ */
+function muBannersDisabled(): boolean {
+  return process.env.MU_BANNER_QUIET === "1";
+}
+
+/**
  * Apply the mu pane border (status=top, format='[mu] #{pane_title}')
  * to EVERY window currently in `session`. Idempotent. Best-effort:
  * windows that have vanished mid-iteration are silently skipped. Used
@@ -552,9 +564,12 @@ export async function getWindowIdForPane(paneId: string): Promise<string | undef
  * mu-pre-border session) and by `mu agent spawn` (covers the
  * just-created window so the border shows immediately on attach).
  *
+ * No-op (returns 0) when `MU_BANNER_QUIET=1`.
+ *
  * Returns the number of windows that received the option.
  */
 export async function enableMuPaneBordersForSession(session: string): Promise<number> {
+  if (muBannersDisabled()) return 0;
   const windows = await listWindows(session).catch(() => []);
   let n = 0;
   for (const w of windows) {
@@ -566,6 +581,21 @@ export async function enableMuPaneBordersForSession(session: string): Promise<nu
     }
   }
   return n;
+}
+
+/**
+ * Apply the mu pane border to the window containing `paneId`. This is
+ * the spawn/adopt shape: callers have a pane id (from `new-window` or
+ * from an adopt target), and need to resolve the enclosing window
+ * before calling `enableMuPaneBorders` (a window-scoped option).
+ *
+ * Self-checks `MU_BANNER_QUIET` and swallows tmux errors — the border
+ * is decorative; failing to set it is never load-bearing.
+ */
+export async function enableMuPaneBordersForPane(paneId: string): Promise<void> {
+  if (muBannersDisabled()) return;
+  const wid = await getWindowIdForPane(paneId).catch(() => undefined);
+  if (wid) await enableMuPaneBorders(wid).catch(() => {});
 }
 
 /**
@@ -594,6 +624,7 @@ export async function enableMuPaneBordersForSession(session: string): Promise<nu
  * in hud_visual_cue_impl.
  */
 export async function enableMuPaneBorders(target: string): Promise<void> {
+  if (muBannersDisabled()) return;
   await tmux(["set-option", "-w", "-t", target, "pane-border-status", "top"]);
   await tmux(["set-option", "-w", "-t", target, "pane-border-format", " [mu] #{pane_title} "]);
   // Bottom + sides: heavy box-drawing lines so a mu-managed pane is

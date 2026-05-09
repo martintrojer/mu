@@ -54,14 +54,11 @@ export async function cmdInit(db: Db, name: string, opts: { json?: boolean } = {
   }
   // Always (re)apply the pane-border-status options so re-init or
   // upgrade-from-pre-banner-mu sessions both pick up the cue. tmux
-  // set-option is idempotent. Opt-out via MU_BANNER_QUIET=1 (covers
-  // both this and the spawn-time scrollback banner; see spawnAgent).
-  if (process.env.MU_BANNER_QUIET !== "1") {
-    await enableMuPaneBordersForSession(sessionName).catch(() => {
-      // Older tmux without pane-border-status support is benign here:
-      // the cue is a nice-to-have, not load-bearing. Don't fail init.
-    });
-  }
+  // set-option is idempotent. enableMuPaneBordersForSession self-checks
+  // MU_BANNER_QUIET=1 (covers this and the spawn-time decoration; see
+  // spawnAgent). Older tmux without pane-border-status support is benign
+  // here: the cue is a nice-to-have, not load-bearing. Don't fail init.
+  await enableMuPaneBordersForSession(sessionName).catch(() => {});
   const created = !tmuxAlready || dbCreated;
   const nextSteps: NextStep[] = [
     { intent: "Attach the tmux session", command: `tmux a -t ${sessionName}` },

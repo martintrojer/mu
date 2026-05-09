@@ -14,6 +14,8 @@ import {
   capturePane,
   defaultSendDelayMs,
   enableMuPaneBorders,
+  enableMuPaneBordersForPane,
+  enableMuPaneBordersForSession,
   isValidPaneId,
   killPane,
   killSession,
@@ -654,6 +656,35 @@ describe("setPaneTitle", () => {
 });
 
 describe("enableMuPaneBorders", () => {
+  it("is a no-op when MU_BANNER_QUIET=1 (operator opt-out)", async () => {
+    const key = "MU_BANNER_QUIET";
+    const prev = process.env[key];
+    process.env[key] = "1";
+    try {
+      const { executor, calls } = harness(() => ok());
+      setTmuxExecutor(executor);
+      await enableMuPaneBorders("@42");
+      await enableMuPaneBordersForPane("%15");
+      expect(await enableMuPaneBordersForSession("some-session")).toBe(0);
+      expect(calls.length).toBe(0);
+    } finally {
+      if (prev === undefined) delete process.env[key];
+      else process.env[key] = prev;
+    }
+  });
+
+  it("enableMuPaneBordersForPane resolves window then sets borders", async () => {
+    const { executor, calls } = harness((args) => {
+      if (args[0] === "display-message") return ok("@99\n");
+      return ok();
+    });
+    setTmuxExecutor(executor);
+    await enableMuPaneBordersForPane("%15");
+    expect(calls[0]?.args).toEqual(["display-message", "-t", "%15", "-p", "#{window_id}"]);
+    expect(calls[1]?.args).toEqual(["set-option", "-w", "-t", "@99", "pane-border-status", "top"]);
+    expect(calls.length).toBe(6);
+  });
+
   it("sets pane-border-status=top + format + heavy lines + active/inactive border styles as window options", async () => {
     const { executor, calls } = harness(() => ok());
     setTmuxExecutor(executor);

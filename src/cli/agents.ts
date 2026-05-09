@@ -36,8 +36,7 @@ import { type NextStep, pc, printNextSteps } from "../output.js";
 import { listTasksByOwner } from "../tasks.js";
 import {
   capturePane,
-  enableMuPaneBorders,
-  getWindowIdForPane,
+  enableMuPaneBordersForPane,
   listPanesInSession,
   sessionExists,
 } from "../tmux.js";
@@ -379,11 +378,9 @@ export async function cmdAdopt(db: Db, paneOrTitle: string, opts: AdoptCliOpts):
   await refreshAgentTitle(db, result.agent.name);
 
   // Window-scoped border for the adopted pane's window. (cmdInit set
-  // it on _mu but adopted panes can be in any window.)
-  if (process.env.MU_BANNER_QUIET !== "1") {
-    const wid = await getWindowIdForPane(paneId).catch(() => undefined);
-    if (wid) await enableMuPaneBorders(wid).catch(() => {});
-  }
+  // it on _mu but adopted panes can be in any window.) Self-checks
+  // MU_BANNER_QUIET; best-effort.
+  await enableMuPaneBordersForPane(paneId);
 
   const nextSteps: NextStep[] = [
     { intent: "Send work", command: `mu agent send ${result.agent.name} "..." -w ${ws}` },
