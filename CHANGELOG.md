@@ -91,6 +91,26 @@ called out under "Breaking" in each entry.
   text touched by Phase 3) get their full Breaking blurbs when
   those tasks land.
 
+- **CLI table column headers renamed
+  (`output_labels_human_rename`).** Phase 2 of
+  [docs/OUTPUT_LABELS_AUDIT.md](docs/OUTPUT_LABELS_AUDIT.md), the
+  non-breaking subset. `mu task list / next / ready / blocked /
+  goals / owned-by / search / my-tasks / my-next` (and every
+  composite verb that embeds them: `mu state`, `mu hud`,
+  `mu agent whoami`, ...) now render the first column as `name`
+  instead of `id`. `mu approve list` renders the first column as
+  `name` instead of `slug`. Cosmetic alignment with the v5 mental
+  model (operators talk in names, mu resolves to surrogate ids
+  internally). `--json` shape is intentionally unchanged in this
+  commit — the wholesale JSON rename ships in the separate
+  `output_json_keys_rename_v5` task and is breaking. Help text in
+  `--help` output still uses `<id>` / `<slug>` until the
+  qualified-ref work in `verb_arg_qualified_workstream_name`
+  normalises every entity-arg to `<name>` simultaneously. Snapshot
+  `id` and log `seq` columns are NOT renamed (they ARE
+  operator-facing surrogate keys by design — `mu undo --to <id>`,
+  `mu log --since SEQ`).
+
 - **`addApproval` requires a non-null workstream.** v5's
   `approvals.workstream_id` is `NOT NULL`; the v4 nullable
   contract (workstream-less / global scope) is gone. Callers that

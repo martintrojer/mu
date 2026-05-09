@@ -35,8 +35,8 @@ interface TreeJsonNode {
 export async function cmdTaskTree(db: Db, rawId: string, opts: TreeOpts): Promise<void> {
   // resolveEntityRef parses `<workstream>/<name>` if present, else uses
   // opts.workstream. Returns the resolved (name, workstream) pair so we
-  // never re-resolve downstream — the workstream is mandatory post the
-  // v4-fallback prune (commit 6621d8b).
+  // never re-resolve downstream — the workstream is mandatory on every
+  // SDK call that resolves an entity by name.
   const { name: rootId, workstream: ws } = await resolveEntityRef(db, rawId, opts, "task");
   assertTaskInWorkstream(db, rootId, ws);
   const root = getTask(db, rootId, ws);

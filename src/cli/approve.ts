@@ -192,7 +192,7 @@ function formatApprovalsTable(rows: readonly ApprovalRow[]): string {
   // by their schemas (slugs, statuses, agent names).
   const REASON_BUDGET = 60;
   const table = muTable({
-    head: ["slug", "workstream", "status", "requested_by", "decided_by", "reason", "created"].map(
+    head: ["name", "workstream", "status", "requested_by", "decided_by", "reason", "created"].map(
       (h) => pc.bold(h),
     ),
     colWidths: [null, null, null, null, null, REASON_BUDGET, null],

@@ -473,7 +473,7 @@ export function formatReadyTable(tasks: readonly TaskRow[]): string {
   const sorted = [...tasks].sort((a, b) => b.impact / b.effortDays - a.impact / a.effortDays);
   // Same title-truncation treatment as formatTaskListTable so the
   // mission-control table doesn't blow out terminal width.
-  let idW = "id".length;
+  let idW = "name".length;
   let impactW = "impact".length;
   let effortW = "effort".length;
   let roiW = "ROI".length;
@@ -496,7 +496,7 @@ export function formatReadyTable(tasks: readonly TaskRow[]): string {
   // as a safety belt for any other cell we don't pre-trim.
   const table = muTable({
     head: [
-      pc.bold("id"),
+      pc.bold("name"),
       pc.bold("title"),
       pc.bold("impact"),
       pc.bold("effort"),
@@ -807,8 +807,8 @@ export function formatTaskListTable(
         ? "created"
         : null;
   const baseHead = opts.withWorkstream
-    ? ["id", "workstream", "status", "title", "impact", "effort", "ROI", "owner"]
-    : ["id", "status", "title", "impact", "effort", "ROI", "owner"];
+    ? ["name", "workstream", "status", "title", "impact", "effort", "ROI", "owner"]
+    : ["name", "status", "title", "impact", "effort", "ROI", "owner"];
   const head = timeHeader === null ? baseHead : [...baseHead, timeHeader];
 
   // Pre-compute the relative-time strings (relative to NOW) so column
