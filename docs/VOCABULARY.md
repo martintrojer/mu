@@ -280,7 +280,7 @@ XDG-Base-Directory-Spec compliant. The state directory resolves as:
   surfaced by `mu workspace orphans -w <workstream>` and
   `mu state -w <workstream>`.
 - `<state-dir>/snapshots/<id>.db` — whole-DB snapshots auto-captured
-  before destructive verbs (schema v4). Indexed by the `snapshots`
+  before destructive verbs (schema v5). Indexed by the `snapshots`
   table; restore via `mu undo` (inspect via `mu snapshot list` /
   `mu snapshot show <id>`). Default colocation: snapshots live
   next to the live DB, so per-test isolation works without env

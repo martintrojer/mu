@@ -1,23 +1,24 @@
 # mu — Usage Guide
 
-A practical, copy-pasteable tour of mu 0.1.0. Everything below works
-against the released CLI. Terms are canonical — see
-[VOCABULARY.md](VOCABULARY.md) for definitions; the complete current
-verb list is in `## CLI — complete verb list` of
+A practical, copy-pasteable tour of mu (current main; v0.2-track).
+Everything below works against the built CLI. Terms are canonical
+— see [VOCABULARY.md](VOCABULARY.md) for definitions; the complete
+current verb list is in `## CLI — complete verb list` of
 [skills/mu/SKILL.md](../skills/mu/SKILL.md).
 
-> **Status:** 0.1.0 — initial public release. ~50 typed verbs, all
-> read verbs accept `--json`, per-agent VCS workspaces
+> **Status:** v0.2 wave (pre-1.0). ~60 typed verbs across 7
+> namespaces, every verb accepts `--json` (one allow-listed
+> exception, `mu agent attach`), per-agent VCS workspaces
 > (jj/sl/git/none), activity log with `--tail` subscription,
-> canonical state card (`mu state`), human-in-the-loop approvals
-> (`mu approve`), evidence on lifecycle verbs. See
-> [CHANGELOG.md](../CHANGELOG.md) for the release entry.
->
-> A few items remain on the roadmap; see
+> canonical state card (`mu state`), `mu hud` (dynamic table
+> layout), human-in-the-loop approvals (`mu approve`), whole-DB
+> snapshots auto-captured before destructive verbs +
+> `mu undo` / `mu snapshot {list,show}`, evidence on lifecycle
+> verbs, schema v5 (surrogate INTEGER PKs; per-workstream UNIQUE
+> on operator-facing names). See [CHANGELOG.md](../CHANGELOG.md)
+> for the release entry, and
 > [§ Not in 0.2.0](#whats-not-in-020-and-how-to-work-around-it)
-> at the bottom for what to use instead. Snapshots + `mu undo` /
-> `mu snapshot {list,show}` shipped in v0.2 — see
-> [§ 14. Recovery scenarios](#14-recovery-scenarios).
+> at the bottom for the gaps that still need workarounds.
 
 *If anything below disagrees with `mu --help`, trust `mu --help`.*
 
@@ -54,7 +55,7 @@ the repo:
 
 ```bash
 npm install -g .         # `prepare` script auto-builds; `mu` lands on $PATH
-mu --version             # → 0.1.0
+mu --version             # → the current version (see package.json)
 ```
 
 To update later: pull from upstream, then `npm install -g .` from
@@ -333,7 +334,7 @@ The `Review` window holds whichever agents share `--tab Review`.
 | `--cli <name>`               | Logical CLI family (effectively always `pi`; the flag exists as a key for `MU_<UPPER_CLI>_COMMAND` resolution) |
 | `--command <cmd>`            | Executable launched in the pane. Defaults to `$MU_<UPPER_CLI>_COMMAND` (e.g. `MU_PI_COMMAND=pi-alt`) and finally to the `--cli` value |
 | `--tab <name>`               | Group with other agents under this window name          |
-| `--role <full-access\|read-only>` | Capability flag; stored but not yet enforced in 0.1.0 |
+| `--role <full-access\|read-only>` | Capability flag; stored but not yet enforced |
 | `--cwd <path>`               | Initial working directory for the pane                  |
 | `-w, --workstream <name>`    | Required if not auto-detectable                         |
 

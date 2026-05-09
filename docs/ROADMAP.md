@@ -178,7 +178,7 @@ verbose for a second consumer.
 
 Theme: every destructive action becomes recoverable.
 
-### `snapshots` table + auto-snapshot before mutation — SHIPPED in v0.2 (schema v4)
+### `snapshots` table + auto-snapshot before mutation — SHIPPED in v0.2 (schema v4; tables carried into v5)
 
 `captureSnapshot()` runs at the top of every destructive verb
 (workstream destroy, agent close, task close/reject/defer/release/
@@ -265,12 +265,13 @@ task show` and a future `tasks_v` enriched view.
 | `init_tracing(config)` + RAII guard — NDJSON to `<state-dir>/logs/`, MINUTELY rotation, last 100 files | prior-art pattern (tracing) |
 | Subscription-based wakeups — `mu log --tail` and `mu approve wait` poll SQLite once per second; SQLite update hooks (via better-sqlite3) or fs.watch on the WAL would drop latency. | internal critique gap |
 
-### Schema normalization (deferred from the initial audit)
+### Schema normalization — SHIPPED in v0.2 (schema v5)
 
-| Item | Why not now |
-| --- | --- |
-| `tasks.id INTEGER PK + (workstream, local_id) UNIQUE` — split user-facing identity from row identity so two workstreams can both have a `design` task | The friction (cross-workstream task-id collisions) hasn't been reported. Touches every query. |
-| Composite `(workstream, local_id) PK` without the synthetic id — simpler middle option | Same as above. |
+`tasks.id INTEGER PK + (workstream_id, local_id) UNIQUE` shipped
+as the universal substrate-wide pattern, not just on tasks. See
+[docs/ARCHITECTURE.md § Surrogate-PK + SDK-boundary discipline](ARCHITECTURE.md#surrogate-pk--sdk-boundary-discipline-load-bearing).
+Two operators both running `mu task add design` in different
+workstreams just works; same for agents and approvals.
 
 ---
 
@@ -510,8 +511,10 @@ Meta-docs the project will need eventually:
 - **CONTRIBUTING.md** — once external PRs land. Contains the LOC
   caps, the lint rules, the "no traits with zero implementors"
   rule, the test-first conventions.
-- **MIGRATIONS.md** — when the schema gains a `schema_version`
-  table and the first non-additive migration ships.
+- **MIGRATIONS.md** — the v3→v4 in-process migration framework + the
+  one-shot v4→v5 script have shipped and (`src/migrations.ts`)
+  retired. Capturing the operator-facing contract for future schema
+  bumps in one place is still useful; leave as a follow-up.
 
 ---
 

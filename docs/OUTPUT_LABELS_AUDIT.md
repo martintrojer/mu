@@ -257,9 +257,8 @@ serves as the migration plan.
 > to align with the v5 schema's name-vs-surrogate-id split. No
 > compat layer; no `--json-shape v4` flag. mu is pre-1.0 with no
 > external `jq`-script consumer base, and v5 is the right moment to
-> burn the v4 nostalgia. Per `output_id_vs_name_audit` /
-> [docs/OUTPUT_LABELS_AUDIT.md](docs/OUTPUT_LABELS_AUDIT.md). Rename
-> table:
+> burn the v4 nostalgia. Per `output_id_vs_name_audit` (this
+> document). Rename table:
 >
 > - **TaskRow:** `localId` → `name`; `workstream` → `workstreamName`;
 >   `owner` → `ownerName`.

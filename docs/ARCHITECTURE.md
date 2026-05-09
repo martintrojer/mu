@@ -273,7 +273,7 @@ anticipatory layering. Each module is concrete and consumed today.
 
 | Module                | Responsibility                                                                            |
 | --------------------- | ----------------------------------------------------------------------------------------- |
-| `src/db.ts`           | SQLite (better-sqlite3) connection, WAL mode, schema (10 tables + 3 views, schema v4), default paths |
+| `src/db.ts`           | SQLite (better-sqlite3) connection, WAL mode, schema (10 tables + 3 views, **schema v5** — surrogate INTEGER PKs everywhere), default paths, `resolveWorkstreamId` (the SDK boundary's first leg) |
 | `src/tmux.ts`         | Single tmux executor wrapper, send protocol (bracketed-paste), pane validation            |
 | `src/detect.ts`       | Pi-only status detector (`busy` / `needs_input` / `idle` / `done`)                        |
 | `src/reconcile.ts`    | Ghost prune + status detect + orphan surface; "reality wins"                              |
@@ -324,8 +324,77 @@ each are deliberately small.
 | `VcsBackend`        | Implementing `detect / createWorkspace / freeWorkspace / commitsBehind` (~80–150 LOC; jj/sl/git/none are working examples)        |
 | Per-CLI `Detector`  | Adding patterns to `detectPiStatus` (vanilla pi `to interrupt)`; pi-meta + every TUI wrapper covered by Braille spinner glyph fallback `[\u2800-\u28FF]`)                  |
 | New typed verb      | Add an SDK function in the relevant `src/*.ts`; add a `cmd<Verb>` to the matching `src/cli/<namespace>.ts` (or create a new namespace if the verb doesn't fit existing ones); wire one commander block in `src/cli.ts`'s `buildProgram()` (use `handle()` for the exit-code map; route through `printNextSteps` for self-documenting output) |
-| New schema migration| Bump `CURRENT_SCHEMA_VERSION` in `src/db.ts`; mirror the new shape in `CURRENT_SCHEMA`; ship a one-shot script under `scripts/` (mirroring `scripts/migrate-v4-to-v5.ts`) that the operator runs once. The loud-fail hook in `openDb` rejects pre-current DBs with `SchemaTooOldError` (exit code 4) |
+| New schema migration| Bump `CURRENT_SCHEMA_VERSION` in `src/db.ts`; mirror the new shape in `CURRENT_SCHEMA`; ship a one-shot script under `scripts/` (the v4→v5 transition was the canonical example; restore from git history if you need to see the shape). The loud-fail hook in `openDb` rejects pre-current DBs with `SchemaTooOldError` (exit code 4) and a `npx tsx scripts/migrate-vN-to-vM.ts` instruction |
 | Snapshot hook       | Add `await captureSnapshot(db, 'verb-name', workstream)` at the top of any new destructive verb (one-liner; GC + restore behaviour automatic) |
+
+## Surrogate-PK + SDK-boundary discipline (load-bearing)
+
+This is the load-bearing pattern v5 turned into a substrate-wide
+invariant; every entity table follows it.
+
+**Schema shape — every entity table:**
+
+```
+(
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,   -- surrogate; internal
+  <scope_id>    INTEGER NOT NULL REFERENCES <parent>(id) ON DELETE CASCADE,
+  <name>        TEXT NOT NULL,                        -- operator-facing; mutable
+  -- ... domain attributes
+  UNIQUE (<scope_id>, <name>)                         -- per-scope unique
+)
+```
+
+FKs reference `<child>.<parent>_id` (INTEGER), never the TEXT name.
+The TEXT name is JUST an operator-facing attribute — searchable,
+displayable, renamable cheaply. The surrogate id is the identity.
+
+**TEXT-by-design exceptions** (each one a justified skip): the
+workstream's own `name` (it IS a tmux session name; globally
+unique), `task_notes.author` / `agent_logs.source` (free-text actor
+labels — `"orchestrator"`, `"user"`, `"system"`), `agent_logs.kind`
+(open enum — future kinds need no migration), `agents.cli`
+(adding a new CLI must not require a schema change), and the
+`snapshots.workstream` text column (intentionally NOT an FK so
+the snapshot outlives its workstream).
+
+**SDK boundary discipline** — same shape as REST: external API
+uses business identifiers, internal layer uses primary keys.
+
+> **Public SDK functions take operator-facing names.**
+> **Internal helpers take surrogate ids.**
+> **Resolution happens at the public-function entry, exactly once.**
+
+```ts
+// PUBLIC: takes operator-facing names
+export function claimTask(
+  db: Db,
+  workstream: string,
+  localId: string,
+  opts?: ClaimOptions,
+): ClaimResult {
+  const wsId = resolveWorkstreamId(db, workstream);
+  const taskId = resolveTaskId(db, wsId, localId);
+  const agentId = resolveCurrentAgentId(db, wsId);
+  return claimTaskById(db, taskId, agentId, opts);
+}
+
+// INTERNAL: takes surrogate ids; never re-resolves
+function claimTaskById(db, taskId, agentId, opts): ClaimResult { ... }
+```
+
+Why exactly once at the boundary: no double-resolution; no
+mid-function ambiguity (once surrogate ids exist, internal helpers
+don't need to thread workstream context — the FKs make scope
+implicit); one place to do error mapping
+(`WorkstreamNotFoundError` / `TaskNotFoundError` /
+`AgentNotFoundError` all originate at resolve-time, with the
+operator's input string in the error payload).
+
+**`--json` output preserves operator-facing names.** Surrogate ids
+stay strictly internal — they never leak into `--json`, error
+payloads, log lines, or markdown exports. Promoting them to the
+public shape would re-introduce a global namespace through the
+back door (anti-feature pledge).
 
 ## State of truth
 

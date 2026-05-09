@@ -152,10 +152,11 @@ earns its keep on four specific axes — not just inertia:
   `db.transaction()` wrapper is exactly the right shape.
   Equivalent in Rust (rusqlite) or Go (mattn/go-sqlite3) is more
   verbose to use.
-- **Iteration speed.** ~50 typed verbs / 8 tables / 449 tests in
-  ~6,000 LOC src+tests, with multiple substantive changes per
-  day during active work. That cadence in a Rust codebase of
-  equivalent surface area would be 2–3× slower at minimum.
+- **Iteration speed.** ~60 typed verbs / 10 tables (schema v5) /
+  ~880 tests in ~30k LOC src+tests, with multiple substantive
+  changes per day during active work. That cadence in a Rust
+  codebase of equivalent surface area would be 2–3× slower at
+  minimum.
 
 **Where it's weak: cold start.** Node's V8 init is ~30–50ms even
 after tsup bundles. Rust would be ~5ms; Go ~10–15ms. This would

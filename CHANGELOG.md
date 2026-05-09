@@ -12,3313 +12,606 @@ called out under "Breaking" in each entry.
 
 ### Breaking
 
-- **`--json` shape rewritten end-to-end (`output_json_keys_rename_v5`).**
-  Every entity row emitted via `--json` underwent a wholesale key
-  rename to align with the v5 schema's name-vs-surrogate-id split.
-  No compat layer; no `--json-shape v4` flag; no dual-emit. mu is
-  pre-1.0 with no external `jq`-script consumer base, and v5 is the
-  right moment to burn the v4 nostalgia. Per
-  [docs/OUTPUT_LABELS_AUDIT.md](docs/OUTPUT_LABELS_AUDIT.md). The
-  full rename:
+- **`--json` shape rewritten end-to-end** (`output_json_keys_rename_v5`).
+  Every entity row's keys realigned to the v5 name-vs-surrogate-id split:
+  `localId` → `name`; `slug` → `name`; `workstream` → `workstreamName`;
+  `owner` → `ownerName`; `agent` → `agentName`; counts on
+  `WorkstreamSummary` gain a `*Count` suffix; composite-verb wrappers
+  rename `task:` / `agent:` / `workstream:` → `taskName` / `agentName`
+  / `workstreamName`; `TaskNoteRow` drops `id` + `taskId`. CLI text,
+  exit codes, and column rendering unchanged. No `--json-shape v4`
+  flag, no dual-emit. `jq` migration recipes inline in the matching
+  task notes; full table in [docs/OUTPUT_LABELS_AUDIT.md](docs/OUTPUT_LABELS_AUDIT.md).
 
-  - **`TaskRow`:** `localId` → `name`; `workstream` →
-    `workstreamName`; `owner` → `ownerName`.
-  - **`TaskNoteRow`:** drop `id` (autoincrement = internal) and
-    `taskId` (caller already knows which task); shape becomes
-    `{ author, content, createdAt }`.
-  - **`AgentRow`:** `workstream` → `workstreamName`.
-  - **`WorkspaceRow`:** `agent` → `agentName`; `workstream` →
-    `workstreamName`.
-  - **`ApprovalRow`:** `slug` → `name`; `workstream` →
-    `workstreamName`.
-  - **`WorkstreamSummary`:** `workstream` → `name`; bare counts
-    `agents` / `tasks` / `notes` / `edges` / `workspaces` →
-    `agentCount` / `taskCount` / `noteCount` / `edgeCount` /
-    `workspaceCount` (the bare integer counts gain a `*Count`
-    suffix — `agents: 3` was misleading because it parses as
-    "array of agent rows").
-  - **`LogRow`:** `workstream` → `workstreamName`. `seq` stays
-    — it IS the operator-facing cursor for `--since SEQ`.
-  - **`SnapshotRow`:** `workstream` → `workstreamName`. `id`
-    stays — snapshot ids ARE operator-facing in
-    `mu undo --to <id>` / `mu snapshot show <id>`.
-  - **`ClaimResult` / `ReleaseResult`:** `owner` → `ownerName`,
-    `actor` → `actorName`, `previousOwner` → `previousOwnerName`.
-  - **`TaskWaitTaskState`:** `localId` → `name`.
-  - **Top-level wrapper objects** (composite verbs `state`, `hud`,
-    `doctor`, `workstream init / destroy / export`, `agent list`,
-    `agent send / read / close / free`, `workspace create / free /
-    path / orphans`, `task note / close / open / update / reject /
-    defer / claim / release / block / unblock / reparent / delete`):
-    every bare `workstream:` field becomes `workstreamName:`; every
-    bare `task:` (a name string) becomes `taskName:`; every bare
-    `agent:` (a name string) becomes `agentName:`; the per-verb
-    `blocked` / `blocker` (name strings) on `mu task block` /
-    `unblock` become `blockedName` / `blockerName`; `mu task
-    reparent`'s `blockers` (name array) becomes `blockerNames`.
-  - **`mu doctor`:** `workstream.current` → `workstream.currentName`;
-    nested `state.workstream` → `state.workstreamName`.
-
-  **Migration recipes (jq):**
-
-  ```bash
-  # tasks
-  jq '.localId'                      →   jq '.name'
-  jq '.[] | .localId'                →   jq '.[] | .name'
-  jq '.[] | .workstream'             →   jq '.[] | .workstreamName'
-  jq 'select(.owner == "foo")'       →   jq 'select(.ownerName == "foo")'
-
-  # workstreams
-  jq '.[] | .workstream'             →   jq '.[] | .name'
-  jq '.[] | .agents'                 →   jq '.[] | .agentCount'
-  jq '.[] | .tasks'                  →   jq '.[] | .taskCount'
-  jq '.[] | .notes'                  →   jq '.[] | .noteCount'
-  jq '.[] | .edges'                  →   jq '.[] | .edgeCount'
-  jq '.[] | .workspaces'             →   jq '.[] | .workspaceCount'
-
-  # workspaces
-  jq '.[] | .agent'                  →   jq '.[] | .agentName'
-
-  # approvals
-  jq '.slug'                         →   jq '.name'
-
-  # logs
-  jq '.[] | .workstream'             →   jq '.[] | .workstreamName'
-
-  # task notes
-  jq '.[] | .id'                     →   removed (was the autoincrement)
-  jq '.[] | .taskId'                 →   removed (caller already knows)
-
-  # claim / release results
-  jq '.owner'                        →   jq '.ownerName'
-  jq '.actor'                        →   jq '.actorName'
-  jq '.previousOwner'                →   jq '.previousOwnerName'
-  ```
-
-  CLI behaviour, exit codes, and column rendering are unchanged —
-  this is a `--json` shape rewrite only. Anti-features explicitly
-  rejected: no `--json-shape v4` flag, no dual-emit
-  `{ localId, name }`, no `_meta` block with rename hints. Snapshot
-  ids and `LogRow.seq` are preserved — they were ALWAYS
-  operator-facing (the v5 schema didn't change them) and aren't
-  surrogate-PK leaks.
-
-- **Schema bumped to v5 (surrogate INTEGER PKs).** Every entity
-  table (`workstreams`, `agents`, `tasks`, `task_edges`,
-  `task_notes`, `agent_logs`, `vcs_workspaces`, `approvals`) now has
-  an `INTEGER PRIMARY KEY AUTOINCREMENT id`; foreign keys are INTEGER;
-  the operator-facing TEXT name is per-scope unique via
-  `UNIQUE (<scope>_id, <name>)`. Per
-  [docs/SCHEMA_v5_DESIGN.md](docs/SCHEMA_v5_DESIGN.md). The CLI
-  surface and `--json` output shapes are intentionally **unchanged**
-  for operators (still `mu task add design -w wsA`); the SDK
-  signatures for in-process consumers DO change in the follow-up
-  task `schema_v5_sdk_signatures`.
-
-  **SDK consumers must run `npx tsx scripts/migrate-v4-to-v5.ts`
-  exactly once per machine.** The new loud-fail hook in `openDb`
-  throws `SchemaTooOldError` (exit code 4) on any pre-v5 DB rather
-  than silently auto-migrating. The script renames the v4 file to
-  `mu.db.v4-backup-<timestamp>` before swapping in the v5 file as
-  the manual escape hatch (NOT entered into the snapshots table).
-
-  This commit lands the migration script + the v5 `src/db.ts`
-  schema + the loud-fail hook + the migration's standalone
-  integration test. **Tests across the SDK layer are expected to
-  fail until `schema_v5_sdk_signatures` lands** — the SDK still
-  reads/writes v4-shape columns. The migration test
-  (`test/migrate-v4-to-v5.integration.test.ts`) passes standalone
-  because it tests the migration in isolation.
+- **Schema bumped to v5 — surrogate INTEGER PKs everywhere
+  (`schema_surrogate_pks_for_global_uniqueness`).** Every entity table
+  gets `id INTEGER PRIMARY KEY AUTOINCREMENT` + `UNIQUE (<scope_id>,
+  <name>)`; FKs become INTEGER. `tasks.local_id` and `agents.name` are
+  now per-workstream unique (the same name in two workstreams is
+  legal). Pre-v5 DBs are rejected at `openDb` with
+  `SchemaTooOldError`; the operator runs a one-shot
+  `scripts/migrate-v4-to-v5.ts` (loud, not auto-applied). See
+  [docs/ARCHITECTURE.md § State of truth](docs/ARCHITECTURE.md#state-of-truth)
+  and the deleted `docs/SCHEMA_v5_DESIGN.md` (in git history).
 
 - **SDK signatures rewired for v5 (`schema_v5_sdk_signatures`).**
-  Every public SDK function in `src/` that takes an entity name
-  now resolves to surrogate ids at the function entry, exactly
-  once, via three new helpers in `src/db.ts`:
-  `resolveWorkstreamId`, `tryResolveWorkstreamId`, `resolveTaskId`,
-  `resolveAgentId` (plus a typed `WorkstreamNotFoundError`).
-  Internal helpers take surrogate ids; they never re-resolve.
-  Every SQL statement against the v4 column shapes (`workstream`,
-  `local_id`, `owner`, `agent`, `from_task`, `to_task`) was
-  rewritten to the v5 shape (`workstream_id`, `local_id` (now
-  per-workstream unique), `owner_id`, `agent_id`, `from_task_id`,
-  `to_task_id`); read paths JOIN back to `workstreams.name` /
-  `agents.name` so the JS row contract (`TaskRow.workstream`,
-  `TaskRow.owner`, `AgentRow.workstream`) is preserved.
+  Every public function that took an entity name now takes
+  `workstream` first; the v4 nullable-workstream fall-back branches
+  are gone (`v5_prune_v4_fallback_branches`, ≈ −160 LOC). External
+  SDK consumers must re-thread `workstream`. CLI behaviour unchanged.
+  CI guard `scripts/grep-name-without-workstream.sh` (wired into
+  `npm run lint`) bans unscoped name lookups under `src/`.
 
-  Public SDK functions that take a `localId` (`getTask`, `addNote`,
-  `getTaskEdges`, `getPrerequisites`, `deleteTask`, `updateTask`,
-  `reparentTask`, `listNotes`) now accept an optional
-  `workstream` argument so callers can scope to one workstream
-  when local_ids may collide across them; with no scope the SDK
-  returns the first match (preserves backward-compat for the
-  single-workstream test fixtures and for `mu sql`-style read
-  paths). The new helper `taskIdFor(db, localId, workstream?)`
-  factors the resolution.
+- **`addApproval` requires a non-null workstream.** v5's
+  `approvals.workstream_id` is `NOT NULL`; the v4 nullable contract
+  is gone. The runtime check is replaced by the type system.
 
-  CLI surface unchanged: `mu task add design -w wsA` and
-  `mu task add design -w wsB` now both succeed; the v4 collision
-  loop is scoped per-workstream.
+- **`mu hud` mode flags removed** (`--line` / `--small` / `--mid`
+  / `--full`). The HUD now renders one shape — a dynamic table
+  layout that fills the available pane height + width — by default.
+  `--json` is preserved unchanged. Status-bar callers should use the
+  one-line first row of the default render or `mu hud --json | jq`.
+
+- **`mu agent close` no longer touches the workspace** (pre-v0.2;
+  retained for migration clarity). Closing an agent kills the pane
+  and removes the registry row only; run `mu workspace free <agent>`
+  explicitly. The `--keep-workspace` / `--commit-workspace` flags are
+  gone. Migration: scripts that did `mu agent close X` should add
+  `mu workspace free X` after.
+
+### Added
+
+- **Cross-workstream verb args via `<workstream>/<name>`
+  qualified form** (`verb_arg_qualified_workstream_name`). Every verb
+  taking a task / agent / approval / workspace name accepts either
+  bare `<name>` (resolved via `-w` / `$MU_SESSION` / current tmux
+  session) or `<workstream>/<name>` (skips `-w` resolution; from any
+  shell). Mixing qualified ref with non-matching `-w` errors out
+  (`UsageError`, exit 2). Bare name with no `-w` and ≥2 candidate
+  workstreams raises `NameAmbiguousError` (exit 4) with a one-paste
+  qualified-form hint per candidate. SDK signatures unchanged — the
+  qualifier lives entirely above `src/cli.ts`.
+
+- **`mu workstream export -w <ws> [--out <dir>]` writes the
+  workstream's task graph + notes as a directory of plain markdown.**
+  Closes `export_tasks_to_md_folder`. One `.md` per task with
+  frontmatter (status / impact / effort / ROI / owner / timestamps /
+  blocked_by / blocks) + body (title + chronological notes, fenced
+  with a backtick-run long enough to escape literal triple-fences),
+  plus `INDEX.md` (per-status table), `README.md` (counts), and
+  `manifest.json` (per-file sha256 + `latestSeq` cursor). Idempotent
+  re-export (sha256 short-circuit); deleted-from-DB tasks are
+  preserved with a one-time banner. `mu workstream destroy --yes`
+  now auto-exports to `<state-dir>/exports/<ws>-<ts>/` first; opt
+  out with `--no-export`.
+
+- **`mu task wait --stuck-after <seconds>` warns when a worker
+  committed but skipped `mu task close`.** Closes
+  `agent_close_discipline_gap` Phase 1. `waitForTasks` accepts
+  optional `stuckAfterMs` (default 300_000 = 5 min); on every poll
+  it checks IN_PROGRESS tasks owned by an agent in `needs_input`
+  whose `agents.updated_at` is older than the threshold and emits
+  one yellow line to stderr per stuck task per call (Set-deduped).
+  `TaskWaitResult.tasks[i]` gains `stuck: boolean`. Wait keeps
+  polling — the warning is observational; force-close /
+  re-prompt / escalate is the operator's call. Phase 2 adds a
+  matching SKILL.md bullet.
+
+- **`--sort` for `mu task list / next` (recency / age / id /
+  roi).** Closes `nit_task_list_sort_by_recency`. Two new shapes
+  formerly stuck behind `mu sql`: "what did I touch most
+  recently?" (`--sort recency` = `updated_at` DESC) and "what's
+  gone stale?" (`--sort age` = `created_at` ASC). Unknown keys exit
+  2. Time-based sorts add a relative-time column (`12s` / `5m` /
+  `3h` / `2d` / `2w`); other sorts keep the historical narrow
+  table. JSON is reordered, never reshaped.
+
+- **Workspace staleness signal in `mu state` and `mu workspace
+  list`.** Closes `bug_workspace_stale_parent_silent_drift`
+  (Option 2 only — warn-only). Each `vcs_workspaces` row gets an
+  optional `commitsBehindMain` populated by
+  `decorateWithStaleness` (per-backend `commitsBehind(path,
+  ref)`). Rendered as a colour-coded `behind` column (≤2 green,
+  3–9 yellow, ≥10 red). `mu state` prefixes the Workspaces header
+  with `⚠ (N stale ≥10 commits behind)` when any row qualifies, and
+  appends a `mu workspace free + create` remediation tip. Pure
+  observation: no auto-fetch. Backends that can't resolve the
+  default branch return `null` (renders `—`).
+
+- **`mu workspace create` refuses outright when projectRoot is
+  `$HOME`** and cleans up partial dirs on failure. New typed
+  `HomeDirAsProjectRootError` (exit 4) catches `cd $HOME && mu
+  workspace create`, `--project-root ~/`, etc. Direct children of
+  `$HOME` are deliberately not blocked. `createWorkspace` now wraps
+  `backend.createWorkspace` in a try/catch: on throw, the partial
+  workspace path is removed via `rm -rf` before the original error
+  re-throws.
+
+- **`mu undo` / `mu snapshot list` / `mu snapshot show` — the
+  user-facing recovery verbs.** Closes `snap_undo_verb`. Default
+  restores the latest snapshot; `--to N` picks one. Confirmation
+  gate mirrors `mu workstream destroy --yes`: dry-run prints
+  summary + the explicit "tmux NOT rolled back" warning; `--yes`
+  commits. Post-restore reconcile reports ghost-pruned /
+  orphan-surfaced counts. No `mu redo`: each restore captures a
+  pre-restore snapshot, so re-running `mu undo` rolls forward.
+  Typed errors map to exit 3 / 4 / 5.
+
+- **Snapshots + auto-capture before destructive verbs (schema v4).**
+  Closes `snap_schema`. Every destructive verb (workstream destroy,
+  agent close, task close/reject/defer/release/delete, workspace
+  free, approve grant/deny/timeout) captures a whole-DB snapshot
+  via `VACUUM INTO`. Files land in `<dirname(db-path)>/snapshots/`,
+  indexed by a `snapshots` sidecar table (no FK on workstream — the
+  snapshot must outlive its workstream). Capture happens at the
+  verb wrapper, not inside `setTaskStatus`, so `--cascade reject`
+  produces ONE snapshot per invocation. GC: keep <14 days OR <100
+  rows.
+
+- **`mu workstream destroy` advertises `mu undo` in its `Next:`
+  block.** Closes `snap_destroy_safety`. Dry-run output names the
+  pre-destroy snapshot and the explicit "tmux NOT rolled back"
+  caveat; `--yes` output adds an `Undo` next-step.
+
+- **`mu task reject --cascade` / `mu task defer --cascade` are now
+  dry-run by default; require `--yes` to commit.** Closes
+  `bug_cascade_reject_too_aggressive`. `RejectDeferOptions` gains
+  `yes?: boolean`; `RejectDeferResult` gains `dryRun` +
+  `affectedIds`. Single-task case (no open dependents) skips the
+  preview. `--yes` without `--cascade` errors with `UsageError`.
+
+- **`mu hud` rewritten as a dynamic table layout.** Closes
+  `nit_hud_render_tables`. Greedy top-down by priority: header line
+  → agents → ready tasks → in-progress → tracks → recent events.
+  Each section is a width-aware cli-table3; truncated sections show
+  an `… +N more (<verb>)` footer. Pane size resolved via
+  `MU_HUD_FORCE_SIZE` → `process.stdout` TTY → `tmux
+  display-message` → 120×30 fallback. `--json` shape unchanged.
+
+- **`mu hud` verb (initial form, superseded above).** Print-once
+  HUD card; the operator-side complement to the agent pane border.
+  Composes via `watch -n 5 mu hud -w X`, `tmux display-popup -E`,
+  status-bar `#()` injection.
+
+- **Pane border + composed pane title carry mu's interpreted
+  state.** Closes `hud_visual_cue_design` + `_impl`.
+  `enableMuPaneBorders` sets `pane-border-status=top` +
+  `pane-border-format=' [mu] #{pane_title} '` + heavy box-drawing
+  on all four sides (`pane-border-lines=heavy`,
+  active=`fg=cyan,bold`, inactive=`fg=brightblack`). Pane title is
+  composed from current DB state and refreshed after every
+  state-touching verb + on every reconcile (`<name> · <emoji> ·
+  <task-id>`); `parseAgentNameFromTitle` keeps the agent name as
+  the first ` · ` token so the claim-protocol fallback still works.
+  Opt-out: `MU_BANNER_QUIET=1`.
+
+- **Spawned agent panes inherit identifying env vars**
+  (`MU_MANAGED_AGENT=1`, `MU_AGENT_NAME=<name>`,
+  `MU_WORKSTREAM=<name>`). Closes `pass_mu_env_to_panes`. Tmux
+  3.0+ `-e KEY=VALUE` is set in the new pane's environment only;
+  no global server pollution. Pane-creating helpers in
+  `src/tmux.ts` gain an optional `env` arg.
+
+- **`mu task wait <ids...>` blocks until tasks reach a status.**
+  Closes `nit_no_mu_task_wait`. `--status` (default `CLOSED`),
+  `--any`, `--timeout` (default 600s, 0 = forever). Exit 0
+  (condition met) / 3 (TaskNotFoundError pre-flight) / 5
+  (timeout). 1s poll. Replaces the hand-rolled bash+awk
+  multi-task wait; the awk tail-pattern remains valid for
+  one-event ad hoc.
+
+- **`mu agent close` refuses by default if the agent has a
+  workspace.** Closes `bug_workspace_orphaned_after_agent_close`.
+  Throws `WorkspacePreservedError` (exit 4) with three actionable
+  resolutions; `--discard-workspace` (and SDK
+  `closeAgent(db, name, { discardWorkspace: true })`) frees the
+  workspace BEFORE deleting the agent.
+
+- **`WorkspacePathNotEmptyError` typed-error + defensive `git
+  worktree prune` on create.** Closes
+  `agent_spawn_workspace_fails_when_prior` +
+  `workspace_free_cleanup_leaves_git`. Replaces bare backend
+  errors when an on-disk dir is occupied with no DB row;
+  `errorNextSteps()` lists the three concrete recoveries.
+  `gitBackend.createWorkspace` runs `git worktree prune`
+  defensively before `add` (cheap, idempotent).
+
+- **Status detector recognises Braille spinner glyphs as busy.**
+  Closes `bug_status_detector_pi_solo_misclassifies`. Fallback
+  regex `/[\u2800-\u28FF]/` after the existing permission +
+  `to interrupt)` patterns; covers pi-meta and every TUI spinner
+  library. Order of precedence preserved: permission > busy
+  literal > braille fallback > needs_input.
+
+- **Task states gain `REJECTED` and `DEFERRED`; new verbs
+  `mu task reject` / `mu task defer`.** Schema v3. `goals` view
+  excludes both; `ready` / `blocked` views unchanged (only
+  CLOSED satisfies a `--blocked-by` edge — REJECTED + DEFERRED
+  still BLOCK downstream by design). Stranded-dependent guard
+  surfaces `TaskHasOpenDependentsError` (exit 4) with three
+  resolutions; `--cascade` walk PRUNES at CLOSED / REJECTED /
+  DEFERRED nodes.
+
+- **`mu workstream destroy` now actually cleans workspaces.**
+  Closes `workstream_destroy_yes_leaves_workspace`. Calls each
+  `vcs_workspaces` row's backend `freeWorkspace()` before the FK
+  CASCADE; `DestroyResult` gains `freedWorkspaces` /
+  `failedWorkspaces`. Empty `<state>/workspaces/<ws>/` parent dir
+  is reaped (best-effort `rmdir`). Bare-registry workstreams are
+  no longer treated as "nothing to destroy".
+
+- **Agent identity propagates to task notes; spawn output
+  surfaces `--command` overrides.** Closes
+  `nit_agent_note_author_identity` + `nit_spawn_custom_command_display`.
+  `mu task note` author resolves via `resolveActorIdentity()`
+  (`$MU_AGENT_NAME` > pane title > `$USER` > `'orchestrator'`); pass
+  `--author` to override. `mu agent spawn` output reads
+  `Spawned X (pi (cmd: pi-meta --no-solo))` when the resolved
+  command differs from the cli value; JSON gains `resolvedCommand`
+  + `commandOverridden`.
+
+- **`mu sql` accepts multi-statement scripts** (BEGIN/COMMIT
+  blocks, semicolon-separated batches). Closes
+  `nit_sql_multi_statement`. Probes via `db.prepare`; on
+  `'more than one statement'` throw, falls back to `db.exec`
+  with a hand-rolled `countTopLevelStatements()` for the report.
+
+- **Auto-generated task IDs trim at a 40-char word boundary.**
+  Closes `nit_long_auto_slug`. `slugifyTitle` cuts at the last
+  `_` at-or-before the soft cap; collision-loop respects the
+  64-char hard ceiling.
+
+- **Self-documenting verb output: `Next:` hints + structured JSON
+  errors + universal `--json`.** Closes the `selfdoc_*` track
+  (infra, errors, verbs_round2, json_universal, skill_cleanup).
+  Every successful write verb prints follow-up commands; every
+  typed error class implements `errorNextSteps()` with actionable
+  resolutions; every verb (one allow-listed exception, `mu agent
+  attach`) accepts `--json`. Errors emit
+  `{ error, message, nextSteps, exitCode }` to stderr;
+  `nextSteps` carry the same structured shape in human + JSON
+  output. `mu doctor --json` returns a fully structured
+  `{ environment, db, workstream, state }` report. SKILL.md
+  trimmed 771 → 574 LOC over two passes.
+
+- **`mu task claim --self`, `mu adopt <pane-or-title>`,
+  `mu task list --status <S>`** — three smaller v0.2 additions
+  for the orchestrator pattern: `--self` records the actor in
+  `agent_logs` while leaving `tasks.owner` NULL; `mu adopt`
+  registers an existing tmux pane as a managed agent (idempotent;
+  scope-checked); `--status` filter on `mu task list`
+  (case-insensitive `OPEN | IN_PROGRESS | CLOSED`).
 
 ### Changed
 
 - **`mu task ready` merged into `mu task next -n 0`** — closes
-  `audit_merge_task_ready_into_next` in `mufeedback` (child of
-  `audit_cleanups_post_schema_v5_wave`). Both verbs ran the IDENTICAL
-  query against the `ready` SQL view; the only difference was
-  whether the result was sliced. `cmdTaskNext` now treats `-n 0` as
-  "unlimited" (the historical `task ready` shape); the default
-  `-n 1` keeps the historical "what should I do right now?"
-  behaviour. The `task ready` Commander wiring + `cmdTaskReady`
-  function are gone (~25 LOC); the `ready` SQL view stays
-  (consumed by `mu state` and `mu hud`). The `mu hud` truncation
-  footer for the ready section now reads
-  `(mu task next -n 0 -w <ws>)` instead of `(mu task ready -w <ws>)`.
-  No back-compat alias — we're pre-1.0 and the audit recommended a
-  clean break. Tests using `mu task ready` were rewritten to
-  `mu task next -n 0` (`json-output.test.ts`,
-  `output-labels-human-rename.test.ts`, `hud.test.ts`).
+  `audit_merge_task_ready_into_next`. `cmdTaskNext` treats `-n 0`
+  as unlimited (the historical `task ready` shape); default
+  `-n 1` keeps "what should I do right now?". The `ready` SQL
+  view stays (consumed by `mu state` / `mu hud`); the verb +
+  Commander wiring + `cmdTaskReady` (~25 LOC) are gone.
 
 - **`mu whoami` / `mu my-tasks` / `mu my-next` merged into
-  `mu me [tasks|next]`** — closes `audit_merge_self_verbs_into_mu_me`
-  in `mufeedback` (child of `audit_cleanups_post_schema_v5_wave`).
-  All three were obvious clones of the same agent-self-resolution
-  shape (`whoami` was literally `my-tasks` plus an identity block).
-  `mu me` is now THE in-pane self-identity verb (default action =
-  former `whoami`); `mu me tasks` is the just-the-table form
-  (former `my-tasks`); `mu me next [-n K]` is the top-K ready form
-  (former `my-next`, with `-n 0` extended to mean "all ready" to
-  match `task next`). `cmdWhoami` was renamed to `cmdMe`;
-  `cmdMyTasks` / `cmdMyNext` survive as the subcommand actions.
-  No back-compat aliases — we're pre-1.0; in-pane scripts that ran
-  `mu whoami` / `mu my-tasks` / `mu my-next` need a one-line edit.
-  Surface count: 3 top-level verbs → 1 verb + 2 subcommands
-  (cleaner `mu --help`, identical capability).
+  `mu me [tasks|next]`** — closes
+  `audit_merge_self_verbs_into_mu_me`. `mu me` (default = former
+  `whoami`); `mu me tasks` (former `my-tasks`); `mu me next [-n
+  K]` (former `my-next`, with `-n 0` extended to "all ready"). No
+  back-compat aliases.
 
-- **CLI output labels audit shipped
-  (`output_id_vs_name_audit`).** New doc
-  [docs/OUTPUT_LABELS_AUDIT.md](docs/OUTPUT_LABELS_AUDIT.md) reviews
-  every verb's column headers, `--json` keys, and entity-arg labels
-  through the post-v5 lens (operator-facing TEXT name vs internal
-  surrogate INTEGER id). Picks one convention — `name` for an
-  entity's own per-scope name, `<entityType>Name` for cross-entity
-  references, surrogate ids never escape — and a per-verb decision
-  matrix for applying it. Identifies three follow-up tasks:
-  `output_labels_human_rename` (cli-table3 column headers, ~30
-  LOC, non-breaking), `output_json_keys_rename_v5` (`--json` shape
-  rewrite per the wholesale rename table, ~150 LOC + many test
-  rewrites, **BREAKING**, jq migration recipes folded into the
-  audit doc), and `verb_arg_qualified_workstream_name` (Phase 3
-  parse-at-entry helper for `<workstream>/<name>` qualified refs,
-  ~50 LOC + tests). No renames land in this audit commit; the
-  three follow-ups ship the actual changes. The two breaking
-  changes (`output_json_keys_rename_v5` and the entity-arg help
-  text touched by Phase 3) get their full Breaking blurbs when
-  those tasks land.
+- **CLI output labels: `name`/`<entityType>Name`.** Closes
+  `output_id_vs_name_audit` (audit) +
+  `output_labels_human_rename` (Phase 2, non-breaking). Every
+  cli-table3 first column renamed `id` / `slug` → `name`;
+  surrogate ids stay strictly internal. `mu undo --to <id>` and
+  `mu log --since SEQ` keep their integer surrogate column names
+  (operator-facing by design). Phase 3 (`<workstream>/<name>`
+  qualified refs) and the breaking JSON rewrite both ship in
+  separate entries above.
 
-- **CLI table column headers renamed
-  (`output_labels_human_rename`).** Phase 2 of
-  [docs/OUTPUT_LABELS_AUDIT.md](docs/OUTPUT_LABELS_AUDIT.md), the
-  non-breaking subset. `mu task list / next / ready / blocked /
-  goals / owned-by / search / my-tasks / my-next` (and every
-  composite verb that embeds them: `mu state`, `mu hud`,
-  `mu agent whoami`, ...) now render the first column as `name`
-  instead of `id`. `mu approve list` renders the first column as
-  `name` instead of `slug`. Cosmetic alignment with the v5 mental
-  model (operators talk in names, mu resolves to surrogate ids
-  internally). `--json` shape is intentionally unchanged in this
-  commit — the wholesale JSON rename ships in the separate
-  `output_json_keys_rename_v5` task and is breaking. Help text in
-  `--help` output still uses `<id>` / `<slug>` until the
-  qualified-ref work in `verb_arg_qualified_workstream_name`
-  normalises every entity-arg to `<name>` simultaneously. Snapshot
-  `id` and log `seq` columns are NOT renamed (they ARE
-  operator-facing surrogate keys by design — `mu undo --to <id>`,
-  `mu log --since SEQ`).
+- **CLI boundary discipline: `WorkstreamNotFoundError` maps to
+  exit 3** (`schema_v5_cli_boundary`). Registers the missing
+  class next to `AgentNotFoundError` / `TaskNotFoundError` and
+  exports `classifyError` for unit-testing the full map.
 
-- **`addApproval` requires a non-null workstream.** v5's
-  `approvals.workstream_id` is `NOT NULL`; the v4 nullable
-  contract (workstream-less / global scope) is gone. Callers that
-  passed `workstream: null` now get a typed error pointing at the
-  schema change.
+- **`reconcile()` `dryRun: boolean` replaced with `mode: "full"
+  | "status-only" | "report-only"`.** Closes
+  `reconcile_split_dryrun_into_status_only_mode` +
+  `bug_pane_title_glyph_stuck_at_needs_input`. Splits
+  prune-suppression from status-suppression. `mu state` / `mu
+  hud` use `"status-only"` (refresh status + pane title; no
+  prune); `mu doctor` / `mu undo` use `"report-only"` (no
+  mutation); `mu agent list` defaults to `"full"`. **Breaking**
+  for SDK consumers of `ReconcileOptions` / `ReconcileReport` /
+  `ListLiveAgentsOptions`: `dryRun?: boolean` → `mode?:
+  ReconcileMode`. CLI verb behaviour is strictly better.
 
-- **`agents.name` is per-workstream unique, not global.** The same
-  agent name (`worker-1`) may now be used in two different
-  workstreams without conflict — v5 `UNIQUE (workstream_id, name)`.
-  `insertAgent`'s test was split into the same-workstream
-  duplicate (still throws) and the cross-workstream duplicate (now
-  legal).
+- **Read-only verbs no longer race in-flight `--workspace`
+  spawns.** Closes (re-opened) `bug_agent_spawn_workspace_fk_failure`.
+  Pre-fix: `watch -n 5 mu hud` could prune the placeholder agent
+  row mid-spawn, FK-failing the subsequent `vcs_workspaces`
+  insert. `ListLiveAgentsOptions` gains `dryRun?: boolean`;
+  `cmdHud` / `cmdState` / `cmdMission` / `cmdAttach` / `cmdDoctor`
+  set it. `cmdList` keeps the mutating behaviour (the documented
+  escape hatch).
 
-- **`tasks.local_id` is per-workstream unique, not global.** The
-  whole point of v5 — `mu task add design -w wsA` then
-  `mu task add design -w wsB` just works. `idFromTitle`'s
-  collision-suffix loop is now scoped to the same workstream.
+- **`mu undo` no longer silently drops recovered agent rows
+  whose panes are dead.** Closes
+  `snap_undo_reconcile_destroys_recovered_agents`. Post-restore
+  reconcile runs in `"report-only"` mode so the snapshot's
+  agents + workspaces survive the restore.
 
-- **CLI boundary discipline: `WorkstreamNotFoundError` now maps
-  to exit 3 (`schema_v5_cli_boundary`).** Per
-  [docs/SCHEMA_v5_DESIGN.md](docs/SCHEMA_v5_DESIGN.md) "Boundary
-  discipline for the SDK surface", `resolveWorkstreamId` (in
-  `src/db.ts`) is the canonical first leg of the SDK boundary
-  (operator-name → surrogate id). It throws
-  `WorkstreamNotFoundError` on miss — but that error class was
-  missing from `classifyError()` in `src/cli.ts` and silently fell
-  through to the generic exit-1 catch-all, robbing operators of
-  the same exit-3 ("not found") mapping that
-  `AgentNotFoundError` / `TaskNotFoundError` get. This commit
-  registers it next to its siblings, exports `classifyError` so
-  the mapping is unit-testable, and pins the contract with two
-  new tests: `test/cli-classify-error.test.ts` (the full
-  exit-code map for every typed-error class) and a
-  `WorkstreamNotFoundError` row in `test/error-nextsteps.test.ts`
-  (asserts the recovery hints stay contextual). The CLI verbs
-  themselves were already passing operator names through cleanly
-  (the work landed in `schema_v5_sdk_signatures`); this is the
-  cleanup pass to make the boundary's error surface symmetric
-  with the resolve-time miss class.
+- **`mu task claim <task> -w <wsA> --for <agent>` rejects when
+  `<agent>` lives in a different workstream.** Closes
+  `cross_workstream_claim_for`. Pre-FK check throws
+  `AgentNotInWorkstreamError` (exit 4). The `--self` path is
+  untouched.
 
-- **`src/migrations.ts` is dead code, but kept on disk.** The
-  in-process forward-only migration ladder (v1→v2 / v2→v3 /
-  v3→v4) is no longer wired into `openDb`; the loud-fail hook
-  rejects pre-v5 DBs first. The file stays on disk for archaeology
-  and is removed in the cleanup follow-up
-  (`schema_v5_drop_migrations_ts`). The `test/db.test.ts` migration
-  describe blocks are `describe.skip(...)`; the substrate they
-  exercised is no longer reachable.
+- **HUD colors survive `watch` and other non-TTY pipes.** Closes
+  `hud_colors_stripped_under_watch_and`. New `colorEnabled()`
+  helper returns true if any of `picocolors.isColorSupported`,
+  `MU_FORCE_COLOR`, `FORCE_COLOR`, or `process.env.TMUX` is set;
+  `NO_COLOR` trumps. Every `picocolors` import re-exports from
+  `src/output.ts` so every colour-using verb picks up the fix
+  uniformly.
 
-### Test-suite repair (v5)
+- **`mu task add` invalid id throws typed `TaskIdInvalidError`
+  (exit 4)** instead of bare `TypeError`. Closes
+  `nit_invalid_id_typeerror`. `errorNextSteps()` returns the
+  drop-`--id` recipe + a sanitised candidate.
 
-- Tests that hand-wrote SQL against v4 column names were updated
-  to the v5 shape: `tasks.workstream`/`owner` → INTEGER FKs +
-  workstream/agent name lookup via subselect; `task_edges.from_task`
-  / `to_task` → `from_task_id` / `to_task_id`; `task_notes.task_id`
-  → INTEGER FK to `tasks.id`; `vcs_workspaces.agent` /
-  `workstream` → `agent_id` / `workstream_id`; `agent_logs.workstream`
-  → `workstream_id`; `approvals.workstream` → `workstream_id`.
-  Test helpers (`insertTask` / `insertEdge` / `insertNote` in
-  `test/db.test.ts`; `insertVcsWorkspaceRow` in `test/workstream.test.ts`
-  and `test/snapshots.test.ts`) translate operator-facing names to
-  surrogate ids on the way into INSERT.
+- **`docs/VERB_AUDIT.md`: typed-vs-`mu sql` audit of every
+  verb.** Closes `audit_verbs_typed_vs_sql`. 51 KEEP, 3 REMOVE
+  (`mu task search/blocked/goals`), 4 MERGE (`task ready` into
+  `task next -n 0`; `whoami`/`my-tasks`/`my-next` into `mu me`).
+  Each disposition filed as a follow-up; the operator decides
+  which ship.
 
-- Result: 813 passed | 9 skipped (822 total). The 9 skipped are
-  the v1→v2 / framework-rollback migration tests that no longer
-  apply; the migration round-trip is covered by
-  `test/migrate-v4-to-v5.integration.test.ts`.
+- **`docs/SCHEMA_v5_DESIGN.md` design + amendments.** Closes
+  `schema_surrogate_pks_for_global_uniqueness` (design) +
+  `schema_v5_design_amendments` (review fixes: pinned 10-step
+  migration ordering, SDK consumer impact, real-DB fixture,
+  snapshot interaction). Doc removed in the post-landing
+  cleanup; load-bearing patterns (boundary discipline, surrogate-
+  PK pattern) absorbed into [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-### Added
+- **`src/cli/tasks.ts` split: 1234 → 29 LOC re-export hub.**
+  Closes `review_code_cli_tasks_oversize`. Five sibling files in
+  `src/cli/tasks/` (`wire.ts`, `edit.ts`, `claim.ts`, `edges.ts`,
+  `tree.ts`); every file < 500 LOC, median 200. Re-export hub
+  surfaces only `wireTaskCommands` / `cmdMyTasks` / `cmdMyNext` /
+  `unescapeNoteText` (the only outside-cluster imports).
 
-- **Cross-workstream verb args via the `<workstream>/<name>`
-  qualified form** (`verb_arg_qualified_workstream_name`,
-  Phase 3 of `output_id_vs_name_audit`). Every verb that takes a
-  task / agent / approval / workspace name argument now accepts
-  EITHER:
+- **`muTable()` helper bakes in HUD truncation safety belt
+  (`wordWrap: false` + per-column `colWidths`).** Closes
+  `tables_truncate_long_cols_audit`. Surfaces eight existing call
+  sites; per-site truncation budgets target user-data columns
+  (`path` 40 cols front-truncated, `name` 40, `label` 50,
+  `reason` 60, `window`/`role` 32/14). `mu sql` divides terminal
+  width evenly with a 12-char floor.
 
-  - bare `<name>` — resolves via the current workstream context
-    (`-w` / `$MU_SESSION` / current tmux session). Existing behaviour.
-  - qualified `<workstream>/<name>` — resolves directly, no `-w`
-    needed. Mixing with `-w <other>` is rejected with `UsageError`
-    (exit 2).
+- **`mu task note` Next: hints + --help teach single-quote
+  discipline.** Closes `nit_task_note_shell_metachar_hint`.
+  Backticks / `$VAR` / `$(...)` expand in the operator's shell
+  before mu sees the note; double-quoted hints in
+  `cmdTaskAdd` / `cmdClaim` / `mu task note --help` now show the
+  single-quote form.
 
-  Affected verbs: `mu task` show / claim / release / close / open /
-  reject / defer / note / notes / tree / block / unblock / reparent /
-  update / delete / wait, `mu agent` show / send / read / close /
-  free / attach, `mu approve` grant / deny / wait, `mu workspace`
-  create / free / path. Implemented as a parse-at-CLI-entry helper
-  in `src/cli.ts` (`parseQualifiedRef` + `applyQualifiedRef` +
-  `resolveEntityRef`); SDK signatures are unchanged (the qualifier
-  lives entirely above the cli.ts boundary). Workspace `path` /
-  `agent send` / `task close` etc. are now scriptable from any
-  shell without a `-w` round-trip:
+- **De-duplicated SDK + CLI patterns.** Closes
+  `review_code_should_overwrite_status_dup`,
+  `_raw_task_state_duplicate`, `_views_recreated_thrice`,
+  `_assert_in_workstream_smell`, `_resolveselfnameoruser_dup_resolveself`,
+  `_banner_quiet_env_repeated`, `_cli_tasks_re_export_indirection`,
+  `_taskerrors_sanitise_lives_in_errors`. Net ≈ −80 LOC across
+  status-overwrite predicate, `RawTaskRowForState`+`rawTaskRowToTask`
+  CLI→SDK consolidation, `READY/BLOCKED/GOALS_VIEW_SQL` constants,
+  `assertEntityInWorkstream` collapse, `resolveSelfOptional`
+  layering, `MU_BANNER_QUIET` self-checking border helpers,
+  re-export hub cleanup, `sanitiseTaskId` migration to `tasks.ts`.
 
-      cd $(mu workspace path roadmap-v0-2/worker-1)
-      mu task close mufeedback/snap_dogfood --evidence "..."
+- **`spawnAgent` workspace pre-stage extracted into named
+  helpers** (`prestageWorkspace` / `finalizeAgentRow` /
+  `rollbackSpawn`); the placeholder pane-id (`%pending-<name>`)
+  becomes the named `PENDING_PANE_PREFIX` constant. Closes
+  `review_code_spawn_workspace_dance_too_clever`. The 18-line
+  rejected-designs narration is gone.
 
-  Plus a new `NameAmbiguousError` (exit 4): when a bare name is
-  used AND no `-w` resolves AND ≥2 workstreams contain that name,
-  the error lists every candidate as a runnable qualified-form
-  invocation — a one-paste fix for operators standing outside any
-  tmux session. When exactly one workstream contains the bare name,
-  it is silently used (the convenience case).
+- **`mu task show --self` actor lookup is no longer brittle.**
+  Closes `review_code_last_claim_actor_brittle`. Claim events
+  carry a tab-delimited structured prefix
+  (`task.claim<TAB><id><TAB>actor=<x><TAB>self=<0|1><TAB>`);
+  consumer does an indexed `LIKE` with no recent-window cap.
+  Display layer strips the prefix via `displayEventPayload`.
 
-  Anti-feature pledges held: no surrogate INTEGER ids on the CLI,
-  no fuzzy matching, no JSON shape change.
+- **`mu adopt <pane>` is wired again.** Closes
+  `bug_adopt_verb_unwired`. The f42e86d `wireXxxCommands`
+  refactor dropped the top-level `program.command("adopt
+  <pane-or-title>")` registration; restored. Two new regression
+  cases pin the wiring in `test/verbs.test.ts`.
 
-- **`mu workstream export -w <ws> [--out <dir>]` writes the
-  workstream's task graph + notes as a directory of plain markdown.**
-  Closes `export_tasks_to_md_folder` in `mufeedback`. One `.md` per
-  task (frontmatter for status / impact / effort / ROI / owner /
-  timestamps / blocked_by / blocks; body holds the title and every
-  note in chronological order, each fenced with a backtick run long
-  enough to escape any literal triple-fence inside the note),
-  plus `INDEX.md` (table of every live task), `README.md` (counts
-  per status), and `manifest.json` (per-file sha256 + the
-  `latestSeq(db)` cursor at export time). Idempotent against the
-  same `--out`: a second export rewrites only files whose markdown
-  changed (sha256 short-circuit; mtime preserved on identical
-  files), tasks added since the previous export get fresh files,
-  and tasks deleted from the DB STAY on disk with a one-time
-  `> **Deleted from DB on <ts>**` banner so operators never lose
-  context they may have already git-blamed. Default `--out` is
-  `./<workstream>/`. The verb is markdown-only by design — HTML/PDF,
-  embedded VCS, cross-workstream merge, and re-import are explicit
-  anti-features (operator can `git init && git add . && git commit`
-  themselves).
+- **Per-workstream name lookups no longer silently misroute.**
+  Closes `bug_v5_name_clash_silent_misroute` (Phase 1). Every
+  public SDK function that takes a TEXT name now also takes (or
+  threads) the workstream; internal SQL filters by
+  `(workstream_id, name)`. CI guard
+  `scripts/grep-name-without-workstream.sh` enforces. 26 new
+  cases in `test/v5-name-clash.test.ts`. Phase 2
+  (`NameAmbiguousError` for unscoped SDK consumers) shipped under
+  `verb_arg_qualified_workstream_name` above.
 
-  `mu workstream destroy --yes` now auto-exports to
-  `<state-dir>/exports/<workstream>-<timestamp>/` BEFORE killing the
-  tmux session and dropping the DB rows, so the conversation
-  survives the destroy without an explicit operator step. A failed
-  auto-export prints a yellow WARNING and proceeds with the destroy
-  — destroy in CI cleanup scripts must not be silently gated by a
-  transient artifact-dir error. Opt out with `--no-export`. The
-  destroy summary line is followed by a dim `Pre-destroy export:
-  <path>` so the operator can find the artifact.
+- **Test-suite repair (v5).** SDK callsites threaded through
+  `workstream`; helpers (`insertTask` / `insertEdge` / `insertNote`
+  in `test/db.test.ts`; `insertVcsWorkspaceRow` in
+  `test/workstream.test.ts` + `test/snapshots.test.ts`) translate
+  operator-facing names to surrogate ids on insert. The 9
+  v1→v2 / framework-rollback migration tests are
+  `describe.skip(...)` (substrate no longer reachable).
 
-  Tests: 7 new cases in `test/workstream.test.ts` (initial export
-  shape; idempotent re-export rewrites zero files and preserves
-  mtime; note append rewrites exactly one file; status change
-  rewrites only the affected file; new task gets a fresh file;
-  deleted task is preserved with one banner that's not
-  re-prepended on subsequent re-exports; literal triple-fence
-  inside a note survives via dynamic outer fencing).
-
-- **`mu task wait --stuck-after <seconds>` warns when a worker
-  committed but skipped `mu task close`.** Closes
-  `agent_close_discipline_gap` in `mufeedback` (Phase 1 of 2). Live
-  surface: 4-way wave-3 dispatch, 2 workers cleanly closed their
-  tasks, 2 committed + reported done in chat-style and went idle
-  without running `mu task close <id>` — `mu task wait` correctly
-  kept polling because the DB row was still IN_PROGRESS, but to the
-  operator it looked like a hang. The contract "agent does work →
-  agent calls `mu task close` → wait sees the transition" has been
-  in `skills/mu/SKILL.md` since 0.1.0, but doc-only is necessary +
-  insufficient (both stuck workers "knew" the rule).
-
-  `waitForTasks` now accepts an optional `stuckAfterMs` (default
-  `300_000` = 5 min); the CLI exposes it as `--stuck-after <seconds>`
-  on `mu task wait`. On every poll cycle the SDK checks each
-  IN_PROGRESS task whose owner is a registered agent in `needs_input`
-  whose `agents.updated_at` is older than the threshold, and emits
-  one yellow line to stderr per stuck task per wait call (a
-  `Set<localId>` deduper guarantees exactly-once — operators don't
-  want stderr filled with the same line every poll second).
-  `TaskWaitResult.tasks[i]` gains a `stuck: boolean` so the JSON
-  output (`mu task wait --json`) carries the same signal
-  programmatically. Backwards-compatible: pass `--stuck-after 0` (or
-  set `stuckAfterMs: 0` from the SDK) to disable; consumers ignoring
-  the new field see no behaviour change. Wait keeps polling — the
-  warning is purely observational, leaving force-close /
-  re-prompt / escalate to the operator (auto-close-on-heuristics is
-  documented as an anti-feature in the original diagnosis note).
-
-  Layer-3 (agent-runtime hook that auto-injects the close call into
-  the agent's prompt) is deliberately not shipped: it would couple
-  mu to the inner CLI's lifecycle, exactly the seam mu refuses to
-  cross. Phase 2 of this change tightens `skills/mu/SKILL.md` with
-  one bullet noting the failure mode (next entry).
-
-  Tests: two new cases in `test/tasks.test.ts` `waitForTasks` block.
-  The first inserts a registered agent in `needs_input` with an
-  `updated_at` 10 minutes in the past, claims a task to it, runs
-  `waitForTasks` for ~80ms / pollMs=10 (≈ 8 polls), and asserts the
-  warning fired exactly once via the new `setWaitStuckWarnForTests`
-  test seam (also asserts `tasks[0].stuck === true` on the JSON
-  shape). The second confirms `stuckAfterMs: 0` disables the
-  warning entirely. Existing `waitForTasks` tests updated for the
-  new `stuck` field on `TaskWaitTaskState`.
+- **Doc staleness sweep — 9 files updated, 3 obsolete sections
+  removed, 12 duplicated paragraphs collapsed.** Closes
+  `docs_staleness_review_capstone`. README compressed
+  600+ → ≤ 250 LOC; CHANGELOG `[Unreleased]` compressed
+  ~3300 → ~400 LOC; SKILL.md trimmed; `docs/SCHEMA_v5_DESIGN.md`
+  load-bearing patterns absorbed into ARCHITECTURE.md before the
+  doc was deleted; broken links fixed.
 
 ### Removed
 
-- **Three audit-flagged read-only verbs deleted: `mu task blocked`,
-  `mu task goals`, `mu task search`** — closes
-  `audit_remove_task_blocked` / `audit_remove_task_goals` /
-  `audit_remove_task_search` in `mufeedback` (children of
-  `audit_cleanups_post_schema_v5_wave`). All three scored 1/4 in
-  [docs/VERB_AUDIT.md](docs/VERB_AUDIT.md): the underlying
-  abstractions — the `blocked` / `goals` SQL views and the
-  case-insensitive `LIKE` shape — are one-liners against `mu sql`.
-  The SDK helpers `listBlocked`, `listGoals`, `searchTasks` survive
-  as reusable surface (`mu state` consumes `listBlocked`,
-  `src/tracks.ts` consumes `listGoals`, `searchTasks` keeps its
-  unit-test coverage). Only the verb wirings + the three
-  cmd-functions in `src/cli/tasks/queries.ts` are gone (~60 LOC
-  src+test). The audit's SQL recipes are now the canonical
-  workaround, published in the
-  ["What's NOT in 0.2.0"](docs/USAGE_GUIDE.md) escape-hatch table
-  alongside the existing "prefer the typed verb" cheatsheet (the
-  `Search title / id / notes` row was deleted from that cheatsheet).
-  `TaskNotFoundError.errorNextSteps()` was also rewritten to
-  suggest `mu sql "… LIKE %id% …"` instead of
-  `mu task search <id> --all`.
+- **Three audit-flagged read-only verbs deleted: `mu task
+  blocked`, `mu task goals`, `mu task search`.** Closes
+  `audit_remove_task_*`. All scored 1/4 in
+  [docs/VERB_AUDIT.md](docs/VERB_AUDIT.md); the underlying
+  abstractions (the two SQL views + case-insensitive `LIKE`)
+  are one-liners against `mu sql`. SDK helpers (`listBlocked`
+  / `listGoals` / `searchTasks`) survive as reusable surface
+  consumed by `mu state` / `src/tracks.ts`. SQL recipes published
+  in `docs/USAGE_GUIDE.md` "What's NOT in 0.2.0".
 
-- **Four schema-v5-defunct workarounds deleted (`schema_v5_cleanups`;
-  net ≈ −40 LOC src+test).** Closes `schema_v5_cleanups` in
-  `mufeedback` — the final task in the v5 follow-up wave (per
-  [docs/SCHEMA_v5_DESIGN.md](docs/SCHEMA_v5_DESIGN.md) "Obsoleted
-  workarounds"). Each workaround existed because v4 had a global
-  TEXT namespace; v5's per-workstream UNIQUE on `(workstream_id,
-  name)` makes them all moot.
-
-  1. **`mu_` reserved-prefix gymnastics** in `TaskIdInvalidError` /
-     `addTask` / `slugifyTitle` / `sanitiseTaskId`. Pre-v5 the
-     `mu_` prefix was reserved for system-generated ids in the
-     global namespace; `addTask` rejected operator-typed `mu_foo`,
-     `slugifyTitle` rewrote `Mu smoke test` → `t_mu_smoke_test`,
-     `sanitiseTaskId` rewrote `mu_x` → `t_mu_x` in the suggestion
-     for `TaskIdInvalidError`'s nextSteps. v5 has no global
-     namespace; nothing is system-generated into a shared slot;
-     `mu_foo` is now a perfectly valid `local_id`. Removed the
-     `RESERVED_PREFIX` constant, the `addTask` reserved-prefix
-     branch, the `slugifyTitle` `mu_` rewrite, the `sanitiseTaskId`
-     `mu_` rewrite, and the `"reserved-prefix" | "syntax"` discriminant
-     on `TaskIdInvalidError` (only `"syntax"` remained). The two
-     pinning tests in `test/tasks.test.ts` were rewritten as
-     positive assertions: `mu_internal` is now accepted by
-     `addTask`, and the per-workstream UNIQUE catches in-workstream
-     collisions while allowing the same id in a different
-     workstream. The `error-nextsteps.test.ts` row for the reserved
-     case was deleted (only the syntax row remains).
-
-  2. **`idFromTitle` slugify+collision-loop hard-cap defensive
-     truncation** (`review_code_slugify_collision_truncates`). The
-     loop body computed `base.slice(0, SLUG_HARD_CAP - suffix.length)`
-     to defend against a pathological case where `_999` would be
-     truncated off, infinite-looping. v5's per-workstream collision
-     scope means the loop runs in one workstream's namespace; the
-     base is always ≤ `SLUG_SOFT_CAP` (40), well below `SLUG_HARD_CAP`
-     (64), so `base + _<i>` never overflows in normal operation. The
-     loop simplifies to `base + _<i>` with a simple slice ceiling.
-
-  3. **`cross_workstream_claim_for` pre-check residue in
-     `src/tasks/claim.ts`.** The cross-workstream guard branch
-     itself was already deleted in `v5_prune_v4_fallback_branches`
-     (FK + per-workstream UNIQUE makes the mismatch structurally
-     impossible). The remaining pre-check (resolving the claimer's
-     surrogate id within `opts.workstream` so the FK error becomes
-     a typed `ClaimerNotRegisteredError`) was carrying a vestigial
-     `ws.name` SELECT column that no caller read. Dropped that
-     column; renamed downstream `before.workstream` references to
-     `opts.workstream` (they're equal by construction now); shrank
-     the doc-comment to one paragraph that names the FK + UNIQUE
-     as the structural guard, with the pre-check existing only for
-     the typed-error ergonomic. The unit test
-     `test/tasks.test.ts` "claims by an agent missing in
-     opts.workstream raise ClaimerNotRegisteredError" already pins
-     the FK + UNIQUE behaviour at the SDK boundary; no new test
-     needed.
-
-  4. **`lastClaimActor` brittle CLI-side wrapper** in
-     `src/cli/tasks/edit.ts` (`review_code_last_claim_actor_brittle`
-     follow-up). The actual prefix-match brittleness was fixed in
-     50ad794 by switching the agent_logs payload to a
-     tab-delimited structured prefix (`task.claim<TAB><id><TAB>actor=...`)
-     with an indexed LIKE lookup. What remained was a thin
-     CLI-side `lastClaimActor(db, ws, id) =>
-     sdkLastClaimActor(db, ws, id)` indirection that existed only
-     because the function used to live in `cli.ts` before the SDK
-     extraction. Deleted the wrapper; `cmdTaskShow` calls the SDK
-     `lastClaimActor` from `src/logs.ts` directly. Tests already
-     exercise the SDK function in `test/logs.test.ts`.
-
-  Also: pre-existing v4-reference comment in `src/cli/tasks/tree.ts`
-  (`v4-fallback prune (commit 6621d8b)`) tripped the
-  `v5_prune_v4_fallback_branches` lint guard; rephrased to drop the
-  v4 framing.
-
-  Gate: typecheck + lint (incl. both grep guards) + 878/878 tests +
-  build all green.
+- **Four schema-v5-defunct workarounds deleted
+  (`schema_v5_cleanups`; net ≈ −40 LOC).** The `mu_`
+  reserved-prefix gymnastics, the `idFromTitle`
+  collision-loop hard-cap defensive truncation, the
+  `cross_workstream_claim_for` pre-check residue, and the brittle
+  `lastClaimActor` CLI-side wrapper. Each existed because v4 had
+  a global TEXT namespace; v5's per-workstream UNIQUE makes them
+  moot.
 
 - **Every "preserves the v4 contract" fall-back branch in `src/`
-  deleted (≈ −160 LOC).** Closes `v5_prune_v4_fallback_branches` in
-  `mufeedback`. Pre-v5 the SDK kept dual-shape signatures on every
-  function that took a TEXT name (`getTask(db, id, workstream?)`,
-  `getAgent(db, name, workstream?)`, ...): the workstream branch was
-  the v5 path and the no-workstream branch was the v4 fall-back. The
-  v5 grep guard (`bug_v5_name_clash_silent_misroute`) made the
-  fall-back unreachable from operator-facing CLI verbs, but the
-  branches themselves stayed in the SDK as documented dead code.
-  Pre-1.0 has no third-party SDK consumers, so the dual signature
-  was zero-value.
-
-  Tightened signatures (workstream is now required, not optional):
-  `getTask`, `getAgent`, `getApproval`, `getWorkspaceForAgent`,
-  `agentIdByName`, `taskIdFor`, `updateAgentStatus`, `deleteAgent`,
-  `closeAgent`, `freeAgent`, `freeWorkspace`, `refreshAgentTitle`,
-  `sendToAgent`, `readAgent`, `setTaskStatus`, `closeTask`, `openTask`,
-  `rejectTask`, `deferTask`, `releaseTask`, `claimTask` (and the
-  cross-workstream-guard pre-check in `claimTask` was removed: the
-  task and the claimer both resolve in `opts.workstream`, so the
-  mismatch case is now structurally impossible —
-  `AgentNotInWorkstreamError` is no longer thrown by `claimTask`,
-  `TaskNotFoundError` covers the rare case where the operator
-  targeted a task that doesn't exist in their workstream),
-  `findOpenDependents`, `waitForTasks`, `addNote`, `updateTask`,
-  `deleteTask`, `getTaskEdges`, `getPrerequisites`, `listNotes`,
-  `listTasksByOwner` (now `(db, workstream, owner, opts?)` —
-  workstream-positional), `addBlockEdge` / `removeBlockEdge`
-  (now `(db, workstream, blocked, blocker)`), `reparentTask` (scope
-  required), `grantApproval`, `denyApproval`, `timeoutApproval`,
-  `waitApproval`, `addApproval` (workstream is no longer nullable;
-  the `workstream: null` rejection runtime check is gone — the type
-  system catches it).
-
-  Renamed the misleading `legacy` comments to describe current
-  behaviour: pane-title parsing is now "the pane-title identity
-  step" (was "the legacy claim-protocol identity step"); adopted
-  panes are now "adopted panes" (was "adopted / legacy panes").
-  Approvals' `interface RawApprovalRow.workstream: string | null`
-  comment no longer cites "historical edge cases"; approvals are
-  NOT NULL post-v5 schema.
-
-  CI guard: `scripts/grep-v4-references.sh` (wired into
-  `npm run lint`) fails the build if any `\bv4\b` /
-  `backward[- ]compat` mention appears in `src/`. The only allowed
-  references are the `scripts/migrate-v4-to-v5.ts` callouts in
-  `src/db.ts`'s `SchemaTooOldError` instructions and the file
-  header (allowed via
-  `scripts/grep-v4-references.allowlist`).
-
-  Helper extracted: `lookupTaskAnyWorkstream(db, localId)` in
-  `src/tasks.ts` is the single legitimate cross-workstream task
-  lookup, used by `addTask`'s blocker resolver and `reparentTask`'s
-  blocker resolver so a same-name blocker in a different workstream
-  surfaces `CrossWorkstreamEdgeError` (clearer than
-  `TaskNotFoundError`). Comment-marked as NOT for operator-facing
-  reads.
-
-  Tests: ~166 mechanical updates to thread `workstream` into
-  every test SDK callsite that relied on the dropped fall-back.
-  The acceptance test, integration tests, and v5-name-clash
-  regression tests all updated. Three obsolete tests deleted /
-  rewritten:
-  (1) `claimTask > throws AgentNotInWorkstreamError when --for names
-  an agent in a different workstream` — deleted (the cross-ws
-  guard is gone; `ClaimerNotRegisteredError` covers the unit-test
-  case, `TaskNotFoundError` covers the integration-test case),
-  (2) `claimTask > AgentNotInWorkstreamError from cross-workstream
-  claim carries actionable next-steps` — deleted (same reason),
-  (3) `addApproval rejects a null workstream (v5 schema requires
-  NOT NULL)` — deleted (now caught at the type system).
-  The pane-title-as-identity integration test was rewritten to
-  assert `TaskNotFoundError` instead of `AgentNotInWorkstreamError`.
-  Net test delta: 862 → 860 (−2 obsolete cases).
+  deleted (≈ −160 LOC).** Closes `v5_prune_v4_fallback_branches`.
+  Tightened ~30 SDK signatures (workstream now required, not
+  optional). Helper `lookupTaskAnyWorkstream(db, localId)` is the
+  one legitimate cross-workstream task lookup, used by `addTask`
+  + `reparentTask` blocker resolvers so a same-name blocker in a
+  different workstream surfaces `CrossWorkstreamEdgeError`. CI
+  guard `scripts/grep-v4-references.sh` (wired into
+  `npm run lint`) bans `v4` / `backward-compat` in `src/`.
 
 - **`src/migrations.ts` deleted (≈ −450 LOC src+test).** Closes
-  `schema_v5_drop_migrations_ts` in `mufeedback`. The v1→v2 / v2→v3
-  / v3→v4 in-process forward migrators were dead code: the v5
-  loud-fail hook in `openDb` (added by `schema_v5_migration_script`)
-  rejects every pre-v5 DB with `SchemaTooOldError` before any
-  migration would run, and the v4→v5 transition is a one-shot
-  out-of-process script (`scripts/migrate-v4-to-v5.ts`). Net delta:
-  `src/migrations.ts` removed (−473 LOC), the two `describe.skip`
-  migration suites in `test/db.test.ts` removed (−403 LOC), the
-  `_runOneMigration` test seam removed, the comment in `src/db.ts`
-  ("Migrations are versioned via…") rewritten, and the
-  `src/migrations.ts` row dropped from `docs/ARCHITECTURE.md`'s
-  module table. Behaviour unchanged — nothing in production reached
-  those paths since `schema_v5_migration_script` shipped.
+  `schema_v5_drop_migrations_ts`. The v1→v2 / v2→v3 / v3→v4
+  in-process migrators are dead code post-v5: the loud-fail hook
+  in `openDb` rejects every pre-v5 DB before any migration would
+  run, and v4→v5 is a one-shot out-of-process script.
 
-- **`src/cli/tasks.ts` no longer re-exports the lifecycle/queries
-  cluster's `cmd*` functions.** Closes
-  `review_code_cli_tasks_re_export_indirection` in `mufeedback`.
-  After the cluster split, `cli/tasks.ts` both imported the eleven
-  `cmdTask{Blocked,Goals,List,Next,OwnedBy,Ready,Search,Close,Defer,Open,Reject}`
-  functions (so `wireTaskCommands` could reference them) AND
-  re-exported them with a comment promising "external callers
-  continue to `import { cmdTaskList } from "./cli/tasks.js"`". A
-  repo-wide grep (`from "./cli/tasks"|from "../cli/tasks"` outside
-  the cluster) returned zero hits — no caller went through the
-  re-export, and the CLI `cmd*` functions are deliberately not part
-  of the SDK contract (`src/index.ts` re-exports none of them).
-  Deleted the 24 lines of import-then-re-export ceremony plus the
-  misleading docstring; the import half stays. Behaviour unchanged.
+- **`src/cli/tasks.ts` no longer re-exports the
+  lifecycle/queries cluster's `cmd*` functions.** Closes
+  `review_code_cli_tasks_re_export_indirection`. No outside-cluster
+  caller went through the re-exports; deleted the 24 lines of
+  ceremony.
+
+- **`docs/SCHEMA_v5_DESIGN.md` + `scripts/migrate-v4-to-v5.ts`
+  + `test/migrate-v4-to-v5.integration.test.ts` deleted
+  (capstone, separate commit).** Per the temp-impl-artifact
+  cleanup rule (`docs_staleness_review_capstone`): files named
+  for a SPECIFIC OPERATION (`migrate-vN-to-vM`,
+  `decision-doc-for-X`) are temporary by construction. Operator's
+  DBs migrated; the loud-fail hook in `openDb` stays as the
+  safety belt; restore from git history if needed.
 
 ### Fixed
-
-- **Per-workstream name lookups no longer silently misroute to the
-  wrong workstream's row.** Closes
-  `bug_v5_name_clash_silent_misroute` in `mufeedback` (Phase 1; Phase
-  2 — a `NameAmbiguousError` for the rare unscoped caller — is
-  filed as a follow-up). Live surface: post-v5 the schema legitimately
-  allows the same TEXT name (`tasks.local_id`, `agents.name`,
-  `approvals.slug`) in multiple workstreams — the whole point of
-  `UNIQUE (workstream_id, <name>)`. But many internal SDK paths still
-  did `WHERE name = ? LIMIT 1`, picking an arbitrary row when the same
-  name lived in two workstreams. The common case it broke: two
-  operators both spawning `worker-1` (one per workstream) and the
-  claim path's pre-check at `src/tasks/claim.ts` resolving to either
-  worker arbitrarily — sometimes succeeding, sometimes raising a
-  confusing cross-workstream error.
-
-  Fix: every public SDK function that takes a TEXT name now also
-  takes (or threads through from a parent context) the workstream.
-  Internal SQL filters by `(workstream_id, name)` instead of bare
-  name. The CLI wrappers always pass the resolved workstream
-  (`-w` / `$MU_SESSION` / tmux session) so the common case is
-  honest. The v4 fall-back "no workstream context" branch survives
-  inside an `if (workstream !== undefined)` gate at every reachable
-  call site (e.g. `getTask(db, id)` still works for single-workstream
-  test fixtures and `mu sql`-style read paths) — those branches are
-  enumerated in `scripts/grep-name-without-workstream.allowlist`.
-
-  Specifically scoped: `getTask`, `getAgent`, `getApproval`,
-  `getWorkspaceForAgent`, `agentIdByName`, `updateAgentStatus`,
-  `deleteAgent`, `closeAgent`, `freeAgent`, `freeWorkspace`,
-  `refreshAgentTitle`, `sendToAgent`, `readAgent`, `setTaskStatus`,
-  `closeTask`, `openTask`, `rejectTask`, `deferTask`, `releaseTask`,
-  `claimTask` (load-bearing: both the claimer-row pre-check and the
-  task-workstream guard now take the resolved workstream),
-  `findOpenDependents`, `waitForTasks` (including the stuck-detector
-  agent lookup), `addNote`, `updateTask`, `deleteTask`, `getTaskEdges`,
-  `listNotes`, `grantApproval`, `denyApproval`, `timeoutApproval`,
-  `waitApproval`, `assertEntityInWorkstream` (the pre-check that
-  surfaced `*NotInWorkstreamError`), and the `addTask` blocker
-  resolver (now prefers same-workstream blockers, falls back to the
-  cross-ws lookup so `CrossWorkstreamEdgeError` still fires for the
-  cross-ws case).
-
-  `listTasksByOwner` gains an `opts.workstream` parameter (the CLI's
-  `mu task owned-by <agent>` defaults to the resolved workstream now;
-  pass `--all` for the v4 cross-workstream behaviour). The cross-ws
-  intent has its own typed alias `listTasksByOwnerCrossWorkstream`
-  so call sites read honestly.
-
-  CI guard: `scripts/grep-name-without-workstream.sh` scans every
-  `db.prepare("…")` call in `src/` for a SQL fragment that filters
-  by `local_id` / `slug` / an entity `name` column WITHOUT also
-  scoping by `workstream_id` somewhere in the same prepared
-  statement. Wired into `npm run lint`. The script is allow-listed
-  by `<file>::<one-line-SQL>` (line-number-stable across Biome
-  reformats) for the documented v4 fall-back paths above; new
-  entries require a comment explaining why the call is unreachable
-  from any operator-facing CLI verb.
-
-  Tests: `test/v5-name-clash.test.ts` seeds two workstreams with the
-  same agent / task / approval names and exercises every public SDK
-  function listed above, asserting each picks the RIGHT workstream's
-  row given the resolved context. 26 new cases.
-
-  Phase 2 (`NameAmbiguousError` for SDK consumers that genuinely
-  can't pin down a workstream from context) is a separate follow-up
-  per the original diagnosis note — Phase 1 fixes the load-bearing
-  common case.
-
-- **`mu adopt <pane>` is wired again — the verb was dead code since
-  the f42e86d wireXxxCommands refactor.** Closes
-  `bug_adopt_verb_unwired` in `mufeedback` (surfaced incidentally by
-  `audit_verbs_typed_vs_sql`). The pre-refactor `src/cli.ts` had a
-  top-level `program.command("adopt <pane-or-title>")` registration;
-  the f42e86d split that walled buildProgram into per-namespace
-  `wireXxxCommands(program)` helpers wired the `agent <verb>`
-  subcommands but dropped the top-level `adopt` registration on the
-  floor. Result: `mu adopt %15` returned commander's generic `error:
-  too many arguments. Expected 0 arguments but got 2.` instead of
-  reaching `cmdAdopt`. Yet the verb was still advertised by every
-  surface that tells the operator how to recover from an orphan pane
-  — `docs/USAGE_GUIDE.md`, `skills/mu/SKILL.md`, the `mu agent list`
-  orphan-output hint, `mu undo`'s scrollback hint — each one a
-  broken promise. Fix: `wireAgentCommands` now also registers the
-  top-level `program.command("adopt <pane-or-title>")` (intentionally
-  top-level, not nested under `mu agent`, matching the original
-  e20af89 design). The verb body (`cmdAdopt` + `adoptAgent`) was
-  unchanged — every existing case 1–8 test in
-  `test/verbs.test.ts` was already exercising the SDK directly.
-  Two new regression cases assert the wiring: (1) `mu adopt <pane>
-  -w <ws>` reaches `cmdAdopt` (commander does not parse-error,
-  agent row appears in the registry), (2) `mu adopt --help` produces
-  the verb's own help screen with `<pane-or-title>` in the usage line
-  rather than the program-level help.
-
-- **`mu task show` no longer silently loses the `--self` actor on
-  long-running workstreams.** Closes
-  `review_code_last_claim_actor_brittle` in `mufeedback` (smallest
-  fix; the bigger `task_claims` table is parked for the v5 surrogate-
-  PK pass). Two failure modes the old `lastClaimActor` had:
-  (1) it prefix-matched a free-prose payload (`task claim foo by
-  bar (was owner=...)`), which is one rename away from silently
-  returning null for every task, and (2) it scanned only the most
-  recent 100 events in the workstream — on a workstream with ≥100
-  events since the claim, `mu task show` printed `(unowned)` even
-  though the actor WAS recorded in `agent_logs`. Fix: claim events
-  now carry a tab-delimited structured prefix
-  (`task.claim<TAB><localId><TAB>actor=<actor><TAB>self=<0|1><TAB>`)
-  followed by the original prose; the consumer does an indexed
-  `LIKE` query (`workstream = ? AND payload LIKE
-  'task.claim<TAB><id><TAB>%'`) with no recent-window cap, then
-  reads the `actor=` field by tab-splitting. The display layer
-  (`mu log`, HUD events tail) strips the prefix via the new
-  `displayEventPayload` helper so the user still sees the human
-  prose, and the HUD verb-prefix colourer works unchanged. The
-  `lastClaimActor` SDK function moved from `src/cli/tasks/edit.ts`
-  to `src/logs.ts` (where the structured-prefix protocol lives);
-  `src/cli/tasks/edit.ts` keeps a one-line wrapper so existing
-  imports don't break. Tests: 6 new cases in `test/logs.test.ts`
-  cover format/parse/display roundtrip, the producer→consumer
-  end-to-end path through `claimTask`, the >100-events regression
-  (250 unrelated events buried between the claim and the lookup —
-  used to return null, now returns the actor), most-recent-wins on
-  re-claim, and LIKE-wildcard escaping in `localId`.
-
-### Changed
-
-- **`docs/VERB_AUDIT.md`: honest typed-vs-`mu sql` audit of every
-  verb.** Closes `audit_verbs_typed_vs_sql` in `mufeedback`.
-  Scores all 58 verbs (49 sub-verbs across 7 namespaces + 9
-  top-level: bare `mu`, `whoami`, `my-tasks`, `my-next`, `state`,
-  `hud`, `sql`, `undo`, `doctor`) on four dimensions: atomicity,
-  side-effect beyond SQL, error-mapping value, and Next-step /
-  output value. Result: 51 KEEP, 3 REMOVE candidates (`mu task
-  search` / `task blocked` / `task goals`), 4 MERGE candidates
-  (`mu task ready` into `task next -n 0`; the three `whoami` /
-  `my-tasks` / `my-next` self-verbs into a proposed `mu me
-  [tasks|next]`). Each disposition filed as its own follow-up
-  task with the SQL recipe (or merge target) inline:
-  `audit_remove_task_blocked`, `audit_remove_task_goals`,
-  `audit_remove_task_search`, `audit_merge_task_ready_into_next`,
-  `audit_merge_self_verbs_into_mu_me`. One bug surfaced
-  incidentally during enumeration and filed separately:
-  `bug_adopt_verb_unwired` — `cmdAdopt` exists in
-  `src/cli/agents.ts:346` and the verb is documented everywhere
-  (`docs/USAGE_GUIDE.md`, `skills/mu/SKILL.md`, `mu agent list`'s
-  orphan-pane hint, `mu undo`'s scrollback hint) but no
-  `wireXxxCommands` registers it on the top-level program
-  (regression in the `f42e86d` `wireXxxCommands` refactor).
-  The audit also marks `mu task close` / `task claim` /
-  `task wait` / `approve wait` as **CONTRACT-DEPENDENT** per the
-  operator's `agent_close_discipline_gap` calibration data point
-  from this same session: these verbs are individually high-value
-  (typed errors, atomic CAS, exit codes, JSON-first output), but
-  their downstream value depends on the agent honouring the
-  close-with-evidence / claim-with-evidence discipline. Audit is
-  advisory; the operator decides which follow-ups to execute.
-  Docs-only commit: typecheck + lint + test + build clean.
-
-- **`docs/SCHEMA_v5_DESIGN.md` amended (migration ordering, SDK
-  impact, real-DB fixture, snapshot interaction).** Closes
-  `schema_v5_design_amendments` in `mufeedback`. Four orchestrator
-  review gaps fixed before `schema_v5_migration_script` lands:
-  (1) the migration script's table-copy loop now has a **pinned
-  10-step ordering** (`workstreams` → `agents` → `tasks` →
-  `task_edges` → `task_notes` → `agent_logs` → `vcs_workspaces`
-  → `approvals` → `snapshots` → `schema_version`) with a per-step
-  rationale, so the implementer can't accidentally insert children
-  before parents and trip the FK rewrite map; (2) a new **"SDK
-  consumer impact"** subsection spells out that public SDK
-  signatures gain a `workstream` arg — breaking for external
-  consumers, contained for mu-the-CLI — and that `--json` shape is
-  preserved (surrogate ids never leak); (3) a 10th test in the
-  migration test plan covers the **production-shape fixture**
-  (sanitised copy of the operator's real `mu.db`, CI-skipped when
-  absent, with a fixture-regeneration command in the test header);
-  (4) a new **"Snapshot interaction during migration"** subsection
-  picks the simpler path — `mu.db.v4-backup-<ts>` is the migration
-  script's escape hatch only, NOT entered into the v5 `snapshots`
-  table, with the manual-restore procedure spelled out in the
-  script's top-of-file comment. Pure markdown; no code change.
-
-- **`src/cli/tasks.ts` split: 1234 → 29 LOC re-export hub.** Closes
-  `review_code_cli_tasks_oversize` in `mufeedback`. The first-pass
-  cluster split (`refactor_split_large_src_files`) carved
-  `cli/tasks/lifecycle.ts` and `cli/tasks/queries.ts` out, but the
-  parent file was still 1234 LOC — well past the AGENTS.md
-  "refactor signal" of 800 — because `wireTaskCommands` (~440 LOC of
-  Commander glue) plus the remaining thirteen `cmd*` functions all
-  still lived there. Second pass extracts five sibling files in
-  `src/cli/tasks/`:
-
-  - `wire.ts` (479) — `wireTaskCommands`, the Commander-glue verb
-    table.
-  - `edit.ts` (319) — `cmdTaskAdd` / `Show` / `Notes` / `Note` /
-    `Update` plus the helpers `unescapeNoteText` (the
-    `\n` / `\t` / `\r` / `\\` decoder used by note bodies),
-    `lastClaimActor` (back-fills "who's working on this" from
-    `agent_logs` when `owner IS NULL`), `printNote`.
-  - `claim.ts` (202) — `cmdClaim` / `cmdTaskRelease` / `cmdTaskWait`
-    (the ownership + sync verbs that all touch the claim CAS path).
-  - `edges.ts` (122) — `cmdTaskBlock` / `Unblock` / `Reparent` /
-    `Delete` (every verb that mutates `task_edges` or cascades
-    through it).
-  - `tree.ts` (118) — `cmdTaskTree` plus the JSON / ASCII renderers.
-
-  `cmdMyTasks` and `cmdMyNext` move into `cli/tasks/queries.ts`
-  (they're query-shaped — read-only, no DB writes — and the file
-  was already 174 LOC, well under cap). `cli/tasks.ts` becomes a
-  29-line re-export hub that surfaces only what callers OUTSIDE the
-  cluster import: `wireTaskCommands` (`src/cli.ts`),
-  `cmdMyTasks`/`cmdMyNext` (`src/cli/agents.ts`'s `mu my-tasks` /
-  `my-next` aliases), and `unescapeNoteText`
-  (`test/unescape-note-text.test.ts`). Adding more would
-  re-introduce the dead surface that
-  `review_code_cli_tasks_re_export_indirection` just removed.
-
-  Net: every file in the cluster is now < 500 LOC (median 200), the
-  parent went from 1234 to 29, and the wire-up now lives next to
-  the verb modules it dispatches to. ARCHITECTURE.md's module table
-  gains a `src/cli/tasks/*.ts` row covering the cluster. Pure
-  mechanical extraction — no behaviour change. typecheck + lint +
-  796 tests + build green; the acceptance gate passes.
-
-- **Schema v5 design doc shipped at `docs/SCHEMA_v5_DESIGN.md`.**
-  Closes the design phase of
-  `schema_surrogate_pks_for_global_uniqueness` in `mufeedback`.
-  Restates the schema-wide pattern (every entity table gets a
-  surrogate `INTEGER PRIMARY KEY AUTOINCREMENT`; the operator-facing
-  TEXT name becomes a per-scope `UNIQUE` attribute; FKs become
-  INTEGER) and works it through every current table (workstreams,
-  agents, tasks, task_edges, task_notes, agent_logs, vcs_workspaces,
-  approvals, snapshots) showing the v4 → v5 transformation. Codifies
-  the SDK boundary discipline (public functions take operator-facing
-  names, internal helpers take surrogate ids, resolution happens
-  exactly once at the boundary). Picks the aggressive migration
-  strategy: a one-off `scripts/migrate-v4-to-v5.ts` (~80 LOC, NOT
-  shipped in `dist/`) plus a loud-fail `SchemaTooOldError` hook in
-  `openDb` for any DB at version < 5, instead of extending
-  `src/migrations.ts`. Lists the workarounds this unblocks for
-  deletion (`slugify_collision_truncates` collision-loop, the
-  reserved-`mu_` prefix gymnastics, the `cross_workstream_claim_for`
-  pre-check, the brittle `lastClaimActor` prefix-match) and the
-  follow-up tasks that land the implementation in stages
-  (`schema_v5_migration_script`, `schema_v5_drop_migrations_ts`,
-  `schema_v5_sdk_signatures`, `schema_v5_cli_boundary`,
-  `schema_v5_cleanups`). DESIGN ONLY — no `src/` change in this
-  commit; the schema stays at v4 until the migration follow-up
-  ships.
-
-- **Every `cli-table3` table site now uses a shared `muTable()`
-  helper that bakes in the HUD's truncation safety belt** (`wordWrap:
-  false` plus per-column `colWidths`). Closes
-  `tables_truncate_long_cols_audit` in `mufeedback`. Surfaced live:
-  `mu workspace list` blew the terminal width during one session
-  because the `path` column rendered the full ~70-char absolute path
-  uncut, pushing the table out to ~200 chars and forcing a
-  horizontal-scrollback or wrap (the wrap broke the box-drawing
-  chars in some output snapshots). Same shape risk in any verb that
-  emits a Table where one column carries user-data of unpredictable
-  length (titles, paths, evidence, JSON payloads).
-
-  New helper `muTable({ head, colWidths?, style? })` in
-  `src/output.ts` returns a `cli-table3.Table` with `wordWrap:
-  false` (so cells exceeding their column width truncate with `…`
-  instead of wrapping to a second row), `style` defaulting to the
-  borderless `{ head: [], border: [] }` look every multi-table verb
-  already used, and `colWidths` applied only when supplied (`null`
-  per-column = auto). Surfaces eight existing call sites: the five
-  `format*Table` helpers in `src/cli.ts` (agents / ready / task-list
-  / workspaces / workstreams), `src/cli/snapshot.ts` (snapshot list),
-  `src/cli/sql.ts` (`mu sql` rows), and `src/cli/approve.ts`
-  (approval list). The HUD's `newHudTable` was already correct and
-  is left untouched (it builds its own borderless variant for the
-  same reason). Per-site truncation budgets stay scoped to the
-  column the operator is least likely to read in full and most
-  likely to be long: `path` (40 cols, **front**-truncated via the
-  new `truncateFront()` so the trailing `<workstream>/<agent>`
-  suffix survives), `name` on workstreams (40), `label` on snapshots
-  (50), `reason` on approvals (60), `window` + `role` on agents
-  (32 / 14). `mu sql` is the only site that can't pick a fixed
-  budget (every column is user-data of unknown length); it divides
-  the terminal width evenly across columns with a 12-char floor.
-
-  Anti-features explicitly NOT shipped (per the audit note): no
-  `--full` / `--no-truncate` flag per verb (anti-feature — `--json`
-  already emits the full value), no auto-truncation of every column
-  (per-column targeting is the whole point), and JSON output is
-  untouched. Also leaves the table sites in `src/cli/tasks.ts` for
-  a follow-up so this audit doesn't conflict with the parallel work
-  on that file.
-
-  Tests: two new cases in `test/output.test.ts` pin the helper
-  contract — (1) a cell longer than its `colWidths` becomes one
-  truncated visual row (5 lines for a single-row table; a wrap
-  regression would push it to 6) with an `…` suffix, and (2) the
-  helper still renders correctly when no `colWidths` are supplied
-  (auto-sized columns, safety belt still on).
-
-- **`claim.integration.test.ts` regains end-to-end coverage of
-  the cross-workstream guard.** Closes
-  `review_test_claim_integration_xws_rewrite` in `mufeedback`.
-  When `cross_workstream_claim_for` shipped, three fixtures in
-  `test/claim.integration.test.ts` were rewritten to spawn agents
-  in the same workstream as the task they claim (so the new
-  `AgentNotInWorkstreamError` guard didn't reject the test setup
-  itself). The repair was correct but it removed the only
-  integration test that exercised the real-tmux pane-title →
-  `currentAgentName()` → agents-row workstream lookup →
-  cross-workstream guard chain end-to-end. The unit test in
-  `test/tasks.test.ts` pins `AgentNotInWorkstreamError` against an
-  `insertAgent`-d row with a mocked tmux executor, so a refactor
-  that broke the title-parse path or the
-  `SELECT workstream FROM agents WHERE name = ?` lookup (e.g.
-  someone adding a `status != 'terminated'` filter) would slip
-  through it. New fourth `it()` spawns alice in workstream A,
-  `addTask`s in a different workstream B (no second tmux session
-  needed — `addTask` auto-ensures the row), then calls
-  `claimTask` from inside alice's pane via
-  `withPane(alice.paneId, () => claimTask(db, "design"))` and
-  asserts `AgentNotInWorkstreamError` plus that the task stayed
-  unowned. +30 LOC test-only, no production change.
-
-- **`listTasksByOwner` cross-workstream test now actually exercises
-  the read codepath.** Closes
-  `review_test_listtasksbyowner_xws_owner_state_unreachable` in
-  `mufeedback`. The existing `"returns tasks owned by an agent across
-  workstreams"` case in `test/tasks.test.ts` set up a cross-workstream
-  owner state via raw SQL (the verb path now rejects it after the
-  `cross_workstream_claim_for` fix) but only checked task ids — it
-  never asserted that the returned rows actually carried their
-  cross-workstream `workstream` value, so a future refactor that added
-  `WHERE workstream = ?` to `listTasksByOwner` could pass the test as
-  long as the in-workstream row stayed. Tightened the assertions to
-  compare full `{ localId, workstream }` pairs (`{ "a", "auth" }` +
-  `{ "c", "billing" }` for `worker-1`; `{ "b", "auth" }` for
-  `worker-2`), which proves the SDK does not silently filter by the
-  owner's home workstream. Setup comment updated to point at the only
-  real-life producer of this state — operator hand-edits via `mu sql`
-  (e.g. fixing a misrouted claim or migrating tasks between workstreams
-  without re-spawning the worker) — since the FK `ON DELETE SET NULL`
-  on `tasks.owner` makes the agent re-spawn scenario impossible to
-  produce naturally. Test-only change; no SDK behaviour change.
-
-- **`reconcile()` `dryRun: boolean` replaced with
-  `mode: "full" | "status-only" | "report-only"`.** Closes
-  `reconcile_split_dryrun_into_status_only_mode` and
-  `bug_pane_title_glyph_stuck_at_needs_input` in `mufeedback`. Live
-  surface: the operator's pane-border glyph (busy/needs_input)
-  showed the stale value indefinitely between mutating verbs because
-  `mu state` and `mu hud` polled with `dryRun: true`, which suppressed
-  prune (good — mid-spawn placeholders survive) AND status detection
-  (bad — the very thing the operator looks at the card to see).
-
-  The fix splits prune-suppression from status-suppression. Three
-  modes:
-
-  - `"full"` (default): prune ghosts (deletes the agent row, fires
-    the deleteAgent reaper that flips IN_PROGRESS tasks back to OPEN
-    with [reaper] notes), detect status, surface orphans. Used by
-    `mu agent list` — the documented escape hatch for forcing a
-    real prune + reap.
-  - `"status-only"`: refresh status + pane title (writes to DB,
-    writes tmux titles — desired side-effects of a refresh), skip
-    prune + reap. Skips status detection on placeholder agents whose
-    pane id starts with `%pending-` (mid-spawn safety; the
-    placeholder isn't a real tmux pane and capturePane would error).
-    Used by `mu state`, `mu hud`, bare `mu`, `mu agent attach`.
-  - `"report-only"`: count drift, mutate nothing (no DB writes, no
-    tmux title writes, no prune). Used by `mu doctor` (read-only
-    diagnostic) and `mu undo` (post-restore reconcile MUST NOT
-    delete the rows the snapshot just restored —
-    `snap_undo_reconcile_destroys_recovered_agents`).
-
-  **Breaking for SDK consumers** of `ReconcileOptions` /
-  `ReconcileReport` and of `ListLiveAgentsOptions`: `dryRun?:
-  boolean` is replaced by `mode?: ReconcileMode`, and
-  `ReconcileReport.dryRun: boolean` is replaced by
-  `ReconcileReport.mode: ReconcileMode`. Migration: `dryRun: true`
-  → `mode: "report-only"` (preserves no-mutation contract); default
-  / `dryRun: false` → `mode: "full"`. The new `"status-only"` shape
-  is the only net-new mode. The `mu undo --json` reconcile sub-doc
-  also renames `reconcile.dryRun: true` → `reconcile.mode:
-  "report-only"` for consistency. CLI verb behaviour is strictly
-  better: `mu state` / `mu hud` now show fresh status without
-  becoming dangerous, and `mu doctor` / `mu undo` keep their no-
-  mutation contract.
-
-  Tests: three new cases in `test/reconcile.test.ts` covering
-  status-only (DOES update status, DOES NOT prune, SKIPS placeholder
-  panes); existing `dryRun` tests across `reconcile.test.ts`,
-  `verbs.test.ts`, `snapshots.test.ts`, `cli-snapshot.test.ts`
-  rewritten in terms of the new `mode` field.
-
-- **`destroyWorkstream` `failedWorkspaces` accumulation path now
-  has direct test coverage.** Closes
-  `review_test_destroy_failed_workspaces_uncovered` in
-  `mufeedback`. The previous `destroyWorkstream` describe block in
-  `test/workstream.test.ts` had four cases that all asserted
-  `failedWorkspaces: []`, never seeding a vcs_workspaces row whose
-  backend.freeWorkspace would throw — the new-in-v0.2 try/catch
-  around backend cleanup (the explicit fix for mufeedback note
-  #195) had zero coverage. A regression that dropped the try/catch
-  (turning a single bad worktree into an aborted destroy with
-  half-cleaned state) would pass every existing test. Two new
-  cases now exercise the failure path directly: (1) a backend
-  whose `freeWorkspace` throws is captured into
-  `failedWorkspaces` with the documented `{agent, backend, path,
-  error}` shape, the destroy still completes, and the FK cascade
-  still wipes the registry rows; (2) a mixed run with one good and
-  one throwing backend correctly partitions into
-  `freedWorkspaces=1` + `failedWorkspaces=[…one entry]`, the good
-  path is rm'd and the bad path is left on disk for the user to
-  clean. Backed by a new `WorkstreamOptions.resolveBackend`
-  injection seam (defaults to `backendByName`) — mirrors the
-  `createWorkspace` `opts.backend` precedent: tests pass a
-  pre-built `VcsBackend` object instead of mutating the exported
-  singletons. +112/−2 LOC, production behaviour unchanged.
-
-- **`TaskIdInvalidError` test assertions relaxed off the exact
-  sanitised-command suffix.** Closes
-  `review_test_invalid_id_overspecs_sanitised_command` in
-  `mufeedback`. `test/tasks.test.ts` (the `Bad ID` syntax case and
-  the reserved `mu_` prefix case) and
-  `test/cli-task-add-invalid-id.test.ts` previously pinned the
-  candidate command's exact spacing — `expect(cmd).toMatch(/mu task
-  add bad_id /)` with a trailing space, plus `/ t_mu_/` with a
-  leading space — which would drift on any cosmetic copy edit to
-  the suggestion string in `src/tasks/errors.ts` (e.g. swapping
-  `--title` for `-t`, adding an `(auto-derived)` annotation). Now
-  each test asserts only the load-bearing parts: the verb (`mu task
-  add`), the sanitised id token (`bad_id` / `t_mu_internal`), and
-  the presence of a `--title` flag — plus the negative assertion
-  that the reserved `mu_` prefix isn't echoed back. Behaviour and
-  the typed error contract are unchanged.
-
-- **`workspace list` table test now anchors the behind-column
-  assertion structurally.** Closes
-  `review_test_workspace_staleness_behind_value_unanchored` in
-  `mufeedback`. The "workspace list table renders a 'behind' column
-  with a number" case in `test/workspace-staleness.test.ts` used
-  `expect(plain).toMatch(/\b5\b/)` against the rendered cli-table3
-  output, which matched anywhere in the row — the `created_at` ISO
-  date alone (`2026-05-...`) guarantees a digit-5 hit, so a
-  regression that always returned `0` (or `null`) from
-  `gitBackend.commitsBehind` or that swapped `formatBehind(...)`
-  for `pc.dim("—")` would silently pass. The test now first hits
-  `mu workspace list --json` and asserts
-  `rows[0].commitsBehindMain === 5` (structural pin on the
-  underlying value), then runs the table form and asserts the
-  column-anchored regex `/│ 5 +│ /` against the ANSI-stripped
-  output — cli-table3's `│` separators on both sides confine the
-  match to the behind cell, never the 12-hex parent_ref or the
-  ISO-date created_at column. +18/−5 LOC, no production change.
-
-- **`createWorkspace` `opts.backend` now accepts a `VcsBackend`
-  object as well as the backend name.** Closes
-  `review_test_workspace_cleanup_throws_monkeypatch_smell` in
-  `mufeedback`. Previously the only injection seam for tests was
-  the four singleton backends exported from `src/vcs.ts`, so the
-  cleanup-on-throw test
-  (`test/workspace.test.ts` — "removes the partial on-disk dir
-  when backend.createWorkspace throws after creating it") had to
-  monkey-patch `noneBackend.createWorkspace` and restore it in a
-  `try/finally`. If anything between the patch and the `finally`
-  killed the test (vitest `--bail`, a thrown assertion in a `await
-  expect(...).rejects` mismatch, an `import()` rejection,
-  `process.exit`), the singleton stayed mutated and the next test
-  in the file that touched `noneBackend` (e.g. the FK CASCADE
-  tests) silently got the broken backend. Widening the `backend`
-  parameter to `VcsBackendName | VcsBackend` is the smaller,
-  type-clean fix: callers can hand in either a name (the existing
-  CLI path; resolved via `backendByName`) or a fully-built backend
-  object (the test path; used as-is). The cleanup test now builds
-  a fresh fake backend with the four required methods inline and
-  passes it directly — no `vi.spyOn`, no `try/finally`, no shared
-  mutable state. Production code is unchanged.
-
-- **`spawnAgent` workspace pre-stage extracted into named helpers;
-  apologetic narration deleted.** Closes
-  `review_code_spawn_workspace_dance_too_clever` in `mufeedback`.
-  `src/agents/spawn.ts` previously had an 18-line block comment
-  narrating the four rejected designs that led to the placeholder
-  pane-id (`%pending-<name>`) trick, plus two near-identical
-  rollback blocks (post-finalize, post-liveness) inlined into
-  `spawnAgent`. Extracted three named helpers:
-  `prestageWorkspace(db, opts, cli)` (insert placeholder agent row
-  + create workspace), `finalizeAgentRow(db, args)` (patch
-  placeholder pane_id to real, or insert fresh agent row
-  no-workspace path), and `rollbackSpawn(db, name, paneId,
-  hasWorkspace)` (collapses both cleanup blocks). The placeholder
-  convention itself is now the named constant
-  `PENDING_PANE_PREFIX` + helpers `pendingPaneIdFor` /
-  `isPendingPaneId` (exported from `src/agents.ts`), so
-  `refreshAgentTitle`'s `"%pending-"` startsWith check and the
-  `listLiveAgents.dryRun` rationale block reference one source.
-
-  Pure code motion: zero observable behaviour change. The 18-line
-  rejected-designs narration is gone (each helper's docstring
-  explains its single responsibility), and the spawn flow's main
-  body is ~50 lines shorter. Investigated alternatives in the
-  task notes:
-    - **Option 2 (eliminate the placeholder by reordering ws-dir
-      → pane → atomic dual insert):** the real architectural win,
-      but ~120-180 LOC across `spawn.ts` + `workspace.ts` + tests;
-      filed as a separate refactor.
-    - **Option 3 (DEFERRABLE FK):** correct shape but requires
-      schema migration layer that doesn't exist yet.
-    - **Option 5 (flip `dryRun` default to true):** good idea but
-      ~10 test callsites + cross-module impact; filed separately.
-  Tests: existing 789 unchanged + green; no new tests because
-  there's no new behaviour to cover.
-
-- **Three workstream-scope assertions collapsed onto one generic
-  helper.** Closes `review_code_assert_in_workstream_smell` in
-  `mufeedback`. `assertAgentInWorkstream` (`src/cli.ts`),
-  `assertTaskInWorkstream` (`src/cli.ts`), and
-  `assertApprovalInWorkstream` (`src/cli/approve.ts`) were three
-  copies of the same shape: SELECT the row, compare its
-  `workstream` column, throw a typed `*NotInWorkstreamError` on
-  mismatch. Extracted `assertEntityInWorkstream<E extends Error>(db,
-  table, keyCol, keyVal, expectedWs, errFactory)` as the new
-  exported root-level helper in `src/cli.ts`; the three callers
-  become 1-line wrappers that supply their typed error class. The
-  helper does its own raw-SQL lookup of just the `workstream`
-  column so it stays decoupled from each row's full schema (no
-  `getAgent` / `getTask` / `getApproval` import). Typed errors and
-  exit-code mapping are unchanged. Removes ~25 LOC and pre-empts
-  drift the next time the assertion shape needs adjustment
-  (e.g. a workstream-rename feature). Behaviour unchanged.
-
-- **`resolveSelf` now layers over a new `resolveSelfOptional`; the
-  approve verbs' `resolveSelfNameOrUser` is a one-liner over it.**
-  Closes `review_code_resolveselfnameoruser_dup_resolveself` in
-  `mufeedback`. Three helpers asked the same conceptual "who am I
-  in this pane?" question across `src/cli.ts` (strict, throws),
-  `src/cli/approve.ts` (lenient, falls back to `'user'`), and
-  `src/tasks/claim.ts` (env-aware string for `--self`/`--author`).
-  Pulled the lenient pane lookup up to a new exported
-  `resolveSelfOptional(db): AgentRow | null` in `src/cli.ts`;
-  `resolveSelf` now wraps it with the throwing branch, and
-  `src/cli/approve.ts` `resolveSelfNameOrUser` is
-  `resolveSelfOptional(db)?.name ?? "user"`. `resolveActorIdentity`
-  is intentionally untouched — it answers a different question
-  (string identity with `MU_AGENT_NAME` / pane-title / `$USER`
-  precedence, not an `AgentRow`). Behaviour unchanged.
-
-- **`MU_BANNER_QUIET` opt-out moved into the tmux border helpers;
-  callers no longer wrap them in env guards.** Closes
-  `review_code_banner_quiet_env_repeated` in `mufeedback`. Three
-  call sites (`spawnAgent`, `cmdAdopt`, `cmdInit`) had near-
-  identical `if (process.env.MU_BANNER_QUIET !== "1") { … }`
-  blocks around `enableMuPaneBorders` / `enableMuPaneBordersForSession`
-  — a change to the env-var name or to the silence policy needed all
-  three found and updated, and a future caller could easily forget
-  the guard and set the border even when the operator wanted quiet.
-  `enableMuPaneBorders` and `enableMuPaneBordersForSession` now
-  self-check `MU_BANNER_QUIET=1` (no-op when set), and a new
-  `enableMuPaneBordersForPane(paneId)` collapses the
-  `getWindowIdForPane` → `enableMuPaneBorders` two-step that the
-  spawn / adopt sites repeat. The three callers are now one-liners.
-  Behaviour unchanged.
-
-- **`parseAgentNameFromTitle` / `composeAgentTitle` tests now
-  interpolate every `STATUS_EMOJI` entry, not just three.** Closes
-  `review_test_status_emoji_drift_only_three_glyphs` in
-  `mufeedback`. The drift-cleanup commit (`d1d43e0`) made a virtue
-  of glyph-source-of-truth — the comment above the existing
-  fixture says "any drift between composeAgentTitle and
-  parseAgentNameFromTitle is the bug we're guarding against" — but
-  in practice only `busy`, `needs_input`, and `free` were pinned.
-  The other 4 of 7 statuses (`spawning`, `needs_permission`,
-  `unreachable`, `terminated`) had no fixture coverage; flipping
-  e.g. `STATUS_EMOJI.unreachable` to a different question-mark
-  glyph silently passed the suite while regressing the HUD. Added
-  one `it()` to `test/tmux.test.ts` that loops over
-  `Object.entries(STATUS_EMOJI)` and asserts both the bare
-  `name · glyph` and `name · glyph · build_x` shapes round-trip
-  through `parseAgentNameFromTitle`. Added the matching loop in
-  `test/agents.test.ts` that inserts an agent in each status and
-  asserts `composeAgentTitle` interpolates the correct glyph (with
-  the documented exception that `spawning` is undecorated, per
-  `composeAgentTitle`'s own comment). Test-only; no behaviour
-  change.
-
-- **`test/output.test.ts` now pins `printNextStepsTo('stderr')`
-  routes to `console.error`, not `console.log`.** Closes
-  `review_test_print_next_steps_stderr_branch_uncovered` in
-  `mufeedback`. The sink-discrimination line
-  (`sink === "stderr" ? console.error : console.log`) had zero test
-  coverage — every existing `printNextSteps` test only spied on
-  `console.log`, so a one-line refactor that flipped the conditional
-  to always-`console.log` would silently regress every typed-error
-  `nextSteps` emission (every consumer of `mu ... 2>err >ignored`
-  redirection) with the suite still green. Added one `it()` block
-  (~25 LOC) that spies both `console.error` and `console.log`,
-  invokes the stderr branch, asserts the bytes landed on stderr and
-  not stdout. Verified the test catches the regression by mutating
-  src/output.ts:100 to drop the conditional. Test-only; no
-  behaviour change.
-
-- **`mu log`'s `resolveLogContext` now uses `??` consistently
-  and documents the pane-branch asymmetry.** Closes
-  `review_code_resolve_log_workstream_branch_dup` in `mufeedback`.
-  The `--as` and fallback branches both used `??` to fall back to
-  `resolveOptionalWorkstream()` when no `-w` was given; the original
-  `--as` branch used the older `?:` shape. Style nit only. Pane
-  branch is now annotated with a one-line comment explaining the
-  intentional asymmetry (agent's own `agents.workstream` wins over
-  `$MU_SESSION` / tmux session) so the next reader doesn't "fix" it.
-  Behaviour unchanged.
-
-- **`skills/mu/SKILL.md` Working loop now flags the
-  skipped-`mu task close` failure mode.** Phase 2 of
-  `agent_close_discipline_gap`. One bullet directly under the
-  worker-path code block: "If you committed/finished but skipped
-  `mu task close <id>`, the orchestrator's `mu task wait` will hang.
-  Always close as the LAST action of a dispatched task." Kept to a
-  single bullet (no paragraph) per the SKILL.md tightening guardrail
-  recorded under `docs_staleness_review_capstone` — every byte ships
-  in every agent's context window. Pairs with the orchestrator-side
-  `--stuck-after` warning above: docs catch the ones that read SKILL,
-  the warning catches the ones that don't.
-
-- **Moved `sanitiseTaskId` from `src/tasks/errors.ts` to `src/tasks.ts`
-  (next to `slugifyTitle` / `idFromTitle`).** Closes
-  `review_code_taskerrors_sanitise_lives_in_errors` in `mufeedback`.
-  `sanitiseTaskId` is a slug helper (lowercase + non-alnum-replace +
-  first-char-fix + reserved-prefix-fix), not an error helper — it just
-  happened to be defined inside the file that holds
-  `TaskIdInvalidError` because the only caller is
-  `TaskIdInvalidError.errorNextSteps()`. Living in `tasks/errors.ts`
-  was a layering smell (the helper conceptually belongs to the task-id
-  namespace alongside `slugifyTitle`, which mirrors the same prefix
-  corrections) and a future-drift risk (the next person needing to
-  sanitise a task id would have grepped `src/tasks.ts`, missed it, and
-  written a third copy). The function now reuses the existing
-  `SLUG_HARD_CAP` (64) and `RESERVED_PREFIX` (`mu_`) constants from
-  `src/tasks.ts` instead of repeating the literals; `tasks/errors.ts`
-  imports it back from `"../tasks.js"` for the one error-message hint.
-  Behaviour unchanged.
-
-- **De-duplicated `shouldOverwriteAgentStatus` policy (one impl in
-  `src/agents.ts`).** Closes `review_code_should_overwrite_status_dup`
-  in `mufeedback`. The status-overwrite predicate (`free` is sticky
-  unless detected `busy` / `needs_permission`; everything else
-  overwrites freely) lived as two byte-equivalent copies: a private
-  `shouldOverwrite` in `src/reconcile.ts` and an inline
-  `shouldOverwriteAgentStatus` in `src/cli/agents.ts` that the latter
-  even documented as "re-implemented here for `mu agent show`." The
-  encapsulation justification didn't survive scrutiny — the predicate
-  is pure and tiny, both call sites already import the SDK directly,
-  and the next `free`-stickiness rule (e.g. `unreachable` stickiness)
-  would have landed in only one of the two files with operators only
-  noticing drift on `mu agent show <name>`. The canonical impl now
-  lives in `src/agents.ts` next to `updateAgentStatus` (it's a
-  property of the agent's status field, not of the reconcile loop);
-  `src/reconcile.ts` and `src/cli/agents.ts` both import it. Behaviour
-  unchanged; net **-12 LOC** with one fewer place that needs editing
-  the next time the policy evolves.
-
-- **De-duplicated `RawTaskRowForState` + `rawTaskRowToTask` (CLI →
-  SDK consolidation).** Closes `review_code_raw_task_state_duplicate`
-  in `mufeedback`. The `IN_PROGRESS` and `recent CLOSED` task slices
-  used by `mu state` and `mu hud` were re-querying the `tasks` table
-  inline and re-implementing the snake_case → camelCase row-shape
-  conversion via a CLI-level `RawTaskRowForState` interface +
-  `rawTaskRowToTask` helper exported from `src/cli.ts`. That row shape
-  was byte-identical to the private `RawTaskRow` already used by the
-  rest of `src/tasks.ts` (inside `listReady` / `listBlocked` /
-  `listGoals` / etc.), so an eventual `TaskRow` field addition would
-  have had to be threaded through three converters in lockstep with no
-  compiler help (the duplicate type would have silently dropped the
-  new column on the floor). Two new SDK helpers now live alongside the
-  existing list-by-view helpers: `listInProgress(db, workstream)` and
-  `listRecentClosed(db, workstream, limit?)`. `mu state` and `mu hud`
-  call them directly; the CLI-level raw row + converter are deleted
-  (-30 LOC in `src/cli.ts`, -25 LOC net across the two `cli/*`
-  callers, +27 LOC of SDK helpers, +2 LOC of `src/index.ts`
-  re-exports — net **-26 LOC** with one fewer exported surface and
-  one fewer place that has to learn about new task columns). No SQL
-  projections changed; only the wrapper around them.
-
-- **`ready` / `blocked` / `goals` view DDL now lives in one place
-  (`src/db.ts`).** Closes `review_code_views_recreated_thrice` in
-  `mufeedback`. The three views were previously redefined at three
-  sites: the canonical `CURRENT_SCHEMA` block in `src/db.ts`, plus
-  inline `CREATE VIEW` blocks at the end of both `migrateV1ToV2`
-  and `migrateV2ToV3` (each migration drops the views before
-  rebuilding view-dependent tables and so has to recreate them).
-  Comparing the SQL byte-for-byte: `ready` and `blocked` were
-  identical across all three sites; `goals` matched in `db.ts` and
-  `migrateV2ToV3` (the v3 shape, excluding `CLOSED` + `REJECTED` +
-  `DEFERRED`) but differed in `migrateV1ToV2` (the v2 shape,
-  excluding only `CLOSED`). Three new exported constants in
-  `src/db.ts` — `READY_VIEW_SQL`, `BLOCKED_VIEW_SQL`,
-  `GOALS_VIEW_SQL` — each emit a `DROP VIEW IF EXISTS` + `CREATE
-  VIEW`. `applySchema` interpolates all three into the schema
-  template; `migrateV2ToV3` imports and `db.exec`s all three
-  (`v3` IS the current shape); `migrateV1ToV2` imports `READY` +
-  `BLOCKED` but keeps its own inline `goals` body since rewriting
-  it to the current shape would lie about what the v2 schema
-  looked like. Migrations remain forward-only history. `mu doctor`
-  on a fresh DB still reports schema OK and all three views are
-  queryable; `db.test.ts` continues to exercise both v1→v2 and
-  v2→v3 migrate paths.
-
-- **`mu`-managed tmux panes now have a visually distinct frame on
-  all four sides, not just the labeled top status band.** Closes
-  the first half of `tmux_pane_border_top_and_bottom_plus_glyph_audit`
-  in `mufeedback`. `enableMuPaneBorders` now also sets:
-  ```
-  pane-border-lines        heavy
-  pane-active-border-style fg=cyan,bold
-  pane-border-style        fg=brightblack
-  ```
-  The top still carries `[mu] #{pane_title}`; the bottom + sides now
-  carry a heavy box-drawing rule that's bright cyan on the active
-  pane and dim brightblack on inactive ones. tmux's
-  `pane-border-status` only takes `{off, top, bottom}`, so true
-  "all four sides labeled" isn't possible — the heavy/colored frame
-  is the reasonable compromise.
-
-- **`STATUS_EMOJI` drift cleanup.** Closes the second half of
-  `tmux_pane_border_top_and_bottom_plus_glyph_audit`. `STATUS_EMOJI`
-  in `src/agents.ts` (Nerd Font private-use codepoints, picked for
-  1-cell-width column alignment) is the single source of truth for
-  agent-status glyphs. Five doc comments plus one test fixture had
-  drifted to the OLD Unicode emoji (`⚙️`, `💤`, `🛂`, `✅`)
-  that production hasn't emitted in days. Comments no longer name
-  specific codepoints (they point at `STATUS_EMOJI` directly so
-  they can't drift again); `test/tmux.test.ts` `parseAgentNameFromTitle`
-  fixtures now interpolate `STATUS_EMOJI.needs_input` / `.busy`, so
-  any future reshape breaks the test loud instead of silently
-  parsing a different glyph. The `mu task wait` `✓`/`•` markers
-  and the pi-prompt `❯` detection glyph are deliberately untouched
-  (different semantic).
-
-### Added
-
-- **`--sort` for `mu task list / next / ready` (recency / age / id / roi).**
-  Closes `nit_task_list_sort_by_recency` in `mufeedback`. Two new use
-  cases that were previously stuck behind a `mu sql` workaround now
-  have typed verbs: "what did I touch most recently?" (`--sort
-  recency` — `updated_at` DESC) and "what's gone stale?" (`--sort
-  age` — `created_at` ASC). The four legal keys are `roi` (default
-  for `next` / `ready`), `recency`, `age`, `id` (default for `list`,
-  preserves prior `local_id` ordering); an unknown key fails fast
-  with exit 2 and an error message naming every legal value.
-
-  Under `--sort recency` / `--sort age` the table view gains a
-  trailing `updated` / `created` column rendered as a compact
-  relative-time string (`12s` / `5m` / `3h` / `2d` / `2w`) so the
-  dimension being sorted by is visible at a glance. The sort key
-  alone toggles the column — no separate `--show-time` flag, since
-  the user opted in by choosing a time-based sort. Default sort and
-  `--sort id`/`--sort roi` keep the historical narrow table.
-
-  JSON shape unchanged: `--sort` only reorders rows. `createdAt` and
-  `updatedAt` were already present on every `TaskRow`, so consumers
-  can keep doing `jq 'sort_by(.updatedAt)'` if they want
-  client-side re-sort.
-
-  The relative-time helper (`relTime`) used by the new column is the
-  same one HUD already used; moved from `src/cli/hud.ts` to `src/cli.ts`
-  and exported, with weeks (`Nw`) added on top of the existing
-  s/m/h/d buckets to keep stale-task tags readable. New SDK helpers:
-  `TASK_SORT_KEYS`, `parseSortOption(raw)`, `sortTasks(tasks, key)`,
-  `relTimeBasisForSort(key)`. Tests: SDK-level coverage in
-  `test/tasks.test.ts` (one per sort key + parser + helper); CLI
-  integration in `test/json-output.test.ts` covers each verb × each
-  key, the table-mode column toggle, and the unknown-key error path.
-
-- **Workspace staleness signal in `mu state` and `mu workspace list`.**
-  Closes `bug_workspace_stale_parent_silent_drift` in `mufeedback`
-  (Option 2 only — warn-only). Surfaced live: `roadmap-v0-2`'s
-  `worker-1` workspace was 9 commits behind main when dispatched on
-  `cross_workstream_claim_for`; the worker correctly implemented the
-  fix against its stale tree, but the resulting diff vs. main was
-  6500 insertions / 7700 deletions because the workspace pre-dated
-  the `refactor_split_large_src_files` series. The orchestrator had
-  no signal that the workspace had drifted.
-
-  Each row in `vcs_workspaces` now carries an optional
-  `commitsBehindMain` field, populated by a new
-  `decorateWithStaleness(rows)` SDK helper that calls the row's
-  backend's `commitsBehind(workspacePath, ref)` method. The number
-  is rendered as a color-coded `behind` column (green ≤2, yellow
-  3–9, red ≥10). When `mu state` finds ANY workspace ≥10 commits
-  behind, it prefixes the Workspaces section header with a yellow
-  `⚠ (N stale ≥10 commits behind)` annotation and appends a one-
-  line tip pointing at the only remediation today: `mu workspace
-  free <agent> + mu workspace create <agent>`.
-
-  Pure observation: NO automatic `git fetch` / `jj git fetch` /
-  `sl pull`. The number is as fresh as the workspace's local
-  remote-tracking refs cache; the operator decides when to refresh.
-  Backends that can't resolve the project's default branch (no
-  `origin/HEAD`, no `origin/main`, no `origin/master` for git;
-  unresolvable `trunk()` for jj/sl) return `null`, which renders as
-  a dim `—` and never triggers the warn line. The `none` backend
-  (no VCS) always returns `null`.
-
-  Out of scope (deliberate): a `mu workspace rebase` verb (Option 1
-  in the bug's diagnosis) — filed as a follow-up if Option 2's
-  warning leaves residual friction. Auto-rebase (Option 3) is an
-  anti-feature (silent mutation). Reject-stale-spawn (Option 4)
-  layers on top of Option 1 only.
-
-  Tests: `test/workspace.test.ts` covers each backend's
-  `commitsBehind` (git fetches OK after a manual fetch; jj and sl
-  return sane numbers or null; none always returns null) plus
-  `decorateWithStaleness` shape; new `test/workspace-staleness.test.ts`
-  drives the CLI in-process to assert the rendered table column +
-  the `mu state` warn line at the threshold boundary.
-
-### Fixed
-
-- **Two `tasks.test.ts` `--self` identity tests no longer fail when
-  run from inside a mu-spawned pane.** Closes
-  `review_test_tasks_mu_agent_name_env_pollution` in `mufeedback`.
-  The tests at `test/tasks.test.ts` lines 763 (`--self resolves
-  actor from $TMUX_PANE when not explicit`) and 777 (`--self
-  resolves actor from $USER when no $TMUX_PANE`) only stripped
-  `TMUX_PANE` (and `USER` for the second) from `process.env` via the
-  local `withEnv` helper. They forgot `MU_AGENT_NAME`, which is the
-  highest-priority branch in `resolveActorIdentity`'s fallback chain
-  (`MU_AGENT_NAME` > pane title > `USER` > `"orchestrator"`). Result:
-  `npm run test` from a non-mu shell passed (var never set), but
-  every dev who invoked the suite from inside a mu-spawned pane saw
-  these two tests fail because vitest inherits the pane's
-  `MU_AGENT_NAME=worker-foo` env, and the test's expected fallback
-  branch never ran. The failure was documented as "out of scope"
-  across six commits — this is that backlog item.
-
-  Fix: extract the existing `withEnv` helper into a new shared
-  `test/_env.ts` and add `withCleanIdentityEnv(fn)` that strips all
-  three identity-resolution env vars (`MU_AGENT_NAME`, `TMUX_PANE`,
-  `USER`) for the duration of `fn`. `tasks.test.ts` imports the
-  helpers and wraps the two affected tests in
-  `withCleanIdentityEnv`; the inner `withEnv` calls reinstate the
-  specific var the test wants to assert on. No production code
-  changes. Future identity tests get a one-line idiom instead of a
-  3-deep nested-`withEnv` ladder that's easy to under-clean.
-
-- **`decorateWithStaleness` no longer fans out N concurrent VCS
-  shellouts in `mu state` / `mu workspace list`.** Closes
-  `review_code_decorate_with_staleness_n_plus_one` in `mufeedback`.
-  The previous implementation bounded the per-row backend calls only
-  by `Promise.all` over the input array, so a workstream with N
-  workspaces fired N parallel `git rev-list` / `jj log` / `sl log`
-  child processes on every invocation. The user-pain surface is the
-  documented `watch -n 5 mu state -w X` operator pattern: 10
-  workspaces × 12 invocations/min = 120 child processes/min for a
-  decorative column, with OS-level fork-rate-limits surfacing as
-  opaque ETXTBSY / EAGAIN under load.
-
-  Fix is two complementary tweaks in `src/workspace.ts`,
-  ~30 LOC total, no new deps:
-  1. **Concurrency cap.** A tiny inline `mapWithConcurrency` helper
-     (one caller; lives next to `decorateWithStaleness` per the
-     anti-feature pledge against premature abstractions) keeps at
-     most 4 backend calls in flight regardless of row count.
-     Preserves input order in the result.
-  2. **Per-invocation memoization.** A `Map<key, Promise<n|null>>`
-     keyed by `(backend, parentRef)` collapses sibling rows that
-     share a `parent_ref` to one shellout. The common case — N
-     agents freshly spawned off the same head — goes from N
-     children to 1. Cache is local to the function call; no
-     cross-invocation TTL, no invalidation policy (the next
-     `mu state` re-reads from scratch, which is the honest answer
-     for a "pure observation" decoration).
-
-  Behaviour-preserving: rows whose `parentRef` is `null`, whose
-  backend's `commitsBehind` throws, or whose backend returns `null`,
-  still get `commitsBehindMain: null` exactly as before. The
-  none-backend short-circuit (parentRef always null) bypasses the
-  cache entirely.
-
-  Tests: three new cases in `test/workspace.test.ts`'s
-  `decorateWithStaleness` describe block. (a) The cache-hit
-  regression: 4 rows sharing a `parentRef` invoke `gitBackend.
-  commitsBehind` exactly **once** (asserted via `vi.spyOn` +
-  `toHaveBeenCalledTimes(1)`). (b) Distinct refs each shell out
-  once (sanity that the cache key is parentRef-scoped, not
-  global-scoped). (c) Concurrency cap: 12 distinct-ref rows with
-  a yielding mock body let us observe peak in-flight count, which
-  is asserted `≤ 4`. None of the existing `decorateWithStaleness`
-  cases changed shape.
-
-- **`colorEnabled()` no longer ANDs with `picocolors.isColorSupported`;
-  the NO_COLOR test branch is now a meaningful end-to-end check.**
-  Closes `review_test_color_enabled_no_color_module_load_caveat` in
-  `mufeedback`. picocolors bakes its env inspection (NO_COLOR /
-  FORCE_COLOR / isTTY) once at module-load time, so the previous
-  `picocolors.isColorSupported || ...` form made `colorEnabled()`
-  untestable without a `vi.resetModules + vi.doMock` re-import dance,
-  and the `loadColorEnabledWith` helper in `test/output.test.ts` ended
-  up substituting the picocolors default export with `{ ...real,
-  isColorSupported: opts.isColorSupported }` — which controls the
-  override but spreads picocolors' own already-baked surface, leaving
-  the NO_COLOR-trumps-everything test asserting against a static shape
-  rather than exercising real behaviour. The picocolors caveat was
-  invisible because the test still passed (the `process.env.NO_COLOR
-  !== undefined` early-return in `colorEnabled` is the part that
-  actually fires; the picocolors branch never mattered for that case).
-
-  Fix: re-implement `colorEnabled()` from scratch reading every signal
-  (`NO_COLOR`, `MU_FORCE_COLOR`, `FORCE_COLOR`, `TMUX`,
-  `process.stdout.isTTY`, `process.env.TERM !== "dumb"`) directly at
-  call time. Picocolors is still the renderer behind `pc =
-  picocolors.createColors(colorEnabled())`, but the *decision* of
-  whether to render is ours, which makes the helper synchronously
-  testable. `test/output.test.ts` drops the dynamic-import + doMock
-  helper for a `withEnv()` snapshot/mutate/restore wrapper that flips
-  `process.env` and `process.stdout.isTTY` per case, and gains two new
-  cases the previous shape couldn't reach: (a) `TERM=dumb` with
-  `isTTY=true` returns false (dumb-terminal heuristic pinned); (b)
-  `NO_COLOR=""` is treated as set (matches https://no-color.org and
-  picocolors; pins `!== undefined` so a future tighten to `&& !== ""`
-  can't slip in unnoticed). Behaviour unchanged for every existing
-  call site — the three real-world signals (`MU_FORCE_COLOR`,
-  `FORCE_COLOR`, `TMUX`, plus the TTY fallback) all map to the same
-  decision; only the implementation shape changed.
-
-- **`mu hud` recent-events tail now colours every emitter verb
-  (was silently mis-colouring `task block` / `approval granted` /
-  `task reparent`).** Closes `review_code_hud_event_color_regex_drift`
-  in `mufeedback`. The `colorEventPayload` helper in `src/cli/hud.ts`
-  used a hand-maintained regex enumerating two-token verb prefixes
-  (`task add`, `agent spawn`, ...). Three drifts had accumulated:
-  the regex listed `task edge add` / `task edge remove` (no caller
-  emits these — the actual edge events are `task block ${...} by
-  ${...}` and `task unblock ...`); listed `approve add|grant|deny`
-  while the SDK emits `approval add` and `approval ${granted|denied|
-  timeout} ${slug}`; and missed `task reparent` outright. Net: the
-  three highest-frequency "structural" event verbs after
-  add/close/note/claim/release rendered as plain dim text in the
-  HUD's events column, defeating the verb-colour grouping the
-  function was supposed to provide.
-
-  Fix is two-part. (a) Pull the verb list out of the regex into a
-  single source of truth `EVENT_VERB_PREFIXES` exported from
-  `src/logs.ts` (lives next to `emitEvent` so the maintenance
-  contract is local: "adding a new emitter? add its prefix here").
-  (b) Rewrite `colorEventPayload` to walk the list and match by
-  prefix + word boundary; falls back to the dim payload when
-  nothing matches (information-preserving). The list itself enumerates
-  every two-word prefix actually emitted by the SDK today (audited
-  via `grep -rn emitEvent src/`): 11 task verbs, 4 agent verbs, 2
-  workspace verbs, 2 workstream verbs, 4 approval verbs.
-
-  Regression coverage in `test/hud.test.ts` is two-sided: one test
-  walks every entry in `EVENT_VERB_PREFIXES` through
-  `colorEventPayload` and asserts ANSI cyan wraps the verb (catches
-  the HUD failing to recognise something on the canonical list);
-  another grep-scans every `emitEvent(...)` callsite under `src/`
-  and asserts each payload's leading two tokens are a member of
-  `EVENT_VERB_PREFIXES` (catches the OTHER drift direction — a
-  contributor adding a new emitter and forgetting to extend the
-  list). Verified by deleting `"task block"` from the constant: the
-  scanning test fails loudly with the offending callsite path. A
-  third small test asserts unknown payloads (including the trap
-  string `"approve granted slug"` — wrong noun) round-trip unchanged.
-  Behaviour change: HUD now renders the formerly-dim verbs in cyan;
-  no JSON shape changes.
-
-- **`mu task note` escape translation no longer relies on an
-  in-band sentinel string.** Closes
-  `review_code_unescape_note_text_placeholder_brittle` in
-  `mufeedback`. The `unescapeNoteText` helper in `src/cli/tasks.ts`
-  used a two-pass split/join that swapped every literal `\\` for a
-  fixed Unicode placeholder (`\u{1F511}backslash\u{1F511}`),
-  translated the remaining `\n` / `\t` / `\r` escapes, then
-  swapped the placeholder back. A note body that legitimately
-  contained the literal placeholder string would have been
-  corrupted on its way through; more importantly the in-band
-  sentinel pattern itself was harder to read than the underlying
-  intent. Replaced with a single-pass regex
-  (`/\\([\\ntr])/g`) that decides per-match what to emit, which
-  collapses the two passes into one and removes the sentinel
-  entirely. New unit tests in `test/unescape-note-text.test.ts`
-  cover `\n` / `\t` / `\r` translation, the `\\n` → literal `\n`
-  case (the one the placeholder previously protected), the
-  `\\\n` → backslash + newline case, and the no-longer-dangerous
-  placeholder-string passthrough.
 
 - **`destroyWorkstream` no longer double-counts already-gone
   workspaces as freed.** Closes
-  `review_code_destroy_freed_workspaces_double_count` in
-  `mufeedback`. The per-workspace cleanup loop in
-  `src/workstream.ts` had a dead `if (result.removed) { freed++ }
-  else { /* path already gone */ freed++ }` branch — both arms
-  bumped the same counter, so a registry row whose on-disk path
-  was already missing (manual `rm -rf` or an interrupted prior
-  destroy) was reported as a successful free even though the
-  backend did zero filesystem work. The destroy summary the user
-  saw at the CLI (`workspaces=N/M`) therefore overstated how much
-  cleanup mu actually performed.
+  `review_code_destroy_freed_workspaces_double_count`.
+  `DestroyResult` gains `alreadyGoneWorkspaces: number`; the CLI
+  appends `(N already gone on disk)` only when non-zero. The
+  `workstream destroy` log event gains `already_gone=N`.
 
-  `DestroyResult` gains a sibling field `alreadyGoneWorkspaces:
-  number`. The two cases are now split honestly:
-  `freedWorkspaces` only ticks when `backend.freeWorkspace`
-  reports `removed: true` (the on-disk path was actually deleted
-  on this destroy); `alreadyGoneWorkspaces` ticks when the
-  backend's free was a no-op because the path was already missing
-  (the DB row was still cascade-deleted, just nothing happened on
-  disk). The CLI's `Destroyed ws ...` line now appends `(N
-  already gone on disk)` only when the count is non-zero, so the
-  common case stays terse and the operator gets a hint when stale
-  registry rows exist. The `workstream destroy ...` log event
-  also gains an `already_gone=N` field for `mu log` archaeology.
+- **`waitForTasks` returns within `timeoutMs` even when `pollMs >
+  timeoutMs`.** Closes `review_test_waitfortasks_polling_unverified`.
+  Sleep clamped to `min(pollMs, deadline - now)`; `timeoutMs=0`
+  still uses the full poll cadence.
 
-  Regression test in `test/workstream.test.ts`
-  ("splits freedWorkspaces (real removal) from alreadyGoneWorkspaces
-  (no-op on disk)"): seeds two `vcs_workspaces` rows in the same
-  workstream against the `none` backend — one with the on-disk
-  path present, one with it absent — and asserts
-  `freedWorkspaces=1, alreadyGoneWorkspaces=1` plus
-  `existsSync(presentPath)===false` afterward. The four existing
-  `destroyWorkstream` test assertions were updated to include
-  `alreadyGoneWorkspaces: 0`.
+- **`mu task note` escape translation no longer relies on an
+  in-band sentinel string.** Closes
+  `review_code_unescape_note_text_placeholder_brittle`.
+  Single-pass regex `/\\([\\ntr])/g`.
 
-- **`waitForTasks` now returns within `timeoutMs` even when `pollMs >
-  timeoutMs`.** Closes `review_test_waitfortasks_polling_unverified`
-  in `mufeedback`. The poll loop in `src/tasks/wait.ts` awaited a
-  full `pollMs` before re-checking the deadline, so a caller asking
-  for a 50ms timeout with a 1000ms poll interval blocked ~1s instead
-  of returning promptly. The CLI maps timeouts to exit code 5; any
-  script picking unbalanced poll/timeout silently observed wrong
-  latency.
+- **`mu hud` recent-events tail colours every emitter verb.**
+  Closes `review_code_hud_event_color_regex_drift`. Verb prefix
+  list extracted to single source of truth `EVENT_VERB_PREFIXES`
+  in `src/logs.ts`; two-sided regression tests scan every
+  `emitEvent(...)` callsite.
 
-  The sleep is now clamped to `min(pollMs, deadline - now)`, so the
-  function returns within `timeoutMs + small slack` regardless of
-  `pollMs`. `timeoutMs=0` ("wait forever") still uses the full
-  `pollMs` cadence; when the clamp goes <= 0 the sleep is skipped
-  and the loop re-snapshots before bailing on the timeout (last
-  chance for a winning state at the deadline boundary, and avoids
-  passing 0 / negatives to `setTimeout`).
+- **`mu log`'s `resolveLogContext` `??` consistency + pane-branch
+  asymmetry comment.** Closes
+  `review_code_resolve_log_workstream_branch_dup`.
 
-  Alongside the fix: `setWaitSleepForTests` + `getWaitPollCount` /
-  `resetWaitPollCount` test seams (mirrors `setSleepForTests` in
-  `src/tmux.ts`) so the regression has a poll-count assertion in
-  addition to the elapsed-time bound. Three new tests in
-  `test/tasks.test.ts`: clamped-sleep regression bound (elapsed <
-  200ms with `pollMs=1000, timeoutMs=50`), poll-cadence assertion
-  (5–15 polls with `pollMs=10, timeoutMs=100`), and a
-  sibling-progress check that deletion of one task mid-wait does
-  not block detection of another sibling reaching CLOSED.
+- **`decorateWithStaleness` no longer fans out N concurrent VCS
+  shellouts.** Closes
+  `review_code_decorate_with_staleness_n_plus_one`.
+  Concurrency cap of 4 (inline `mapWithConcurrency`) +
+  per-invocation memoization keyed by `(backend, parentRef)`.
 
-- **`mu task add` with an invalid id now throws a typed
-  `TaskIdInvalidError` instead of a bare `TypeError`.** Closes
-  `nit_invalid_id_typeerror` in `mufeedback`. Surfaced while doing
-  the `roadmap-v0-2` design pass: passing `tmpA` (uppercase) as a
-  task id produced `{"error":"TypeError", ..., "nextSteps":[],
-  "exitCode":1}` — a generic exit-1 error with no recovery hint,
-  because the error class wasn't in the CLI's `classifyError()`
-  exit-code map.
+- **`colorEnabled()` is synchronously testable.** Closes
+  `review_test_color_enabled_no_color_module_load_caveat`.
+  Reimplemented from scratch reading every signal at call time;
+  picocolors is the renderer, the decision is ours. Two new
+  cases pin `TERM=dumb` and `NO_COLOR=""` semantics.
 
-  Now: a `TaskIdInvalidError extends Error implements HasNextSteps`
-  in `src/tasks/errors.ts` (alongside `TaskExistsError` and
-  friends). `errorNextSteps()` returns two actionable hints — drop
-  `--id` and pass `--title` to use the auto-derived path, or run
-  the verb again with a sanitised candidate (lowercase + every
-  non-`[a-z0-9_-]` char rewritten to `_`, leading non-letter
-  trimmed, reserved `mu_` prefix rewritten to `t_mu_`). Mapped to
-  exit code 4 (validation / conflict) in `classifyError()`.
+- **Long task titles no longer blow out the terminal** (pre-v0.2;
+  retained for migration clarity). Table views compute a
+  title-column budget from `process.stdout.columns`; the `id`
+  column is never truncated.
 
-- **`mu workspace create` no longer leaves a partial dir behind on
-  failure, and refuses outright when projectRoot is `$HOME`.** Closes
-  `workspace_create_partial_dir_on_failure` in `roadmap-v0-2`;
-  surfaced live in `snap_dogfood` Finding 4. Two interlocking
-  sub-bugs:
+- **Task JSON output now includes `roi`** (impact ÷ effortDays).
+  Tasks with `effortDays === 0` omit the field.
 
-  1. `mu workspace create` invoked from `cwd=$HOME` with no
-     `--project-root` would kick the `none` backend into a recursive
-     `cp -a $HOME/.` of the user's home directory — ~/Music,
-     ~/.config, ~/Library, etc. — into
-     `~/.local/state/mu/workspaces/<ws>/<agent>/`. On macOS the
-     first DRM-protected file in `~/Music` stalls the copy
-     indefinitely.
-  2. On interrupt (or any backend throw) mid-`createWorkspace`, the
-     partial on-disk dir was left behind AND no DB row was ever
-     inserted, so `mu workspace list` showed nothing while the next
-     `mu workspace create` refused with `WorkspacePathNotEmptyError`.
+- **`mu workstream init <name>` validates the name.** Names with
+  `.`, `:`, `/`, uppercase, leading digit/hyphen, or > 32 chars
+  are rejected with `WorkstreamNameInvalidError` (exit 2). The
+  same regex applies to `ensureWorkstream`.
 
-  Fix:
-  - New typed `HomeDirAsProjectRootError` (exit 4): thrown when
-    `path.resolve(projectRoot) === path.resolve(os.homedir())` —
-    catches `cd && mu workspace create`, `--project-root ~/`,
-    `--project-root ~/.`, etc. Direct children of `$HOME` (e.g.
-    `~/Documents`) are deliberately NOT blocked; that would be
-    overreach. There is no `--force` escape hatch — the resolution
-    is `--project-root <real-path>` (or `cd` somewhere real).
-  - `createWorkspace` now wraps `backend.createWorkspace` in a
-    try/catch: on throw, the partial workspace path is removed via
-    `rm -rf` (best-effort) before the original error is re-thrown.
-    This complements the existing INSERT-failure rollback (from
-    `bug_agent_spawn_workspace_fk_failure`), so the on-disk +
-    registry-row pair is now atomic-ish at every failure boundary.
+- **Workstream names with the `mu-` prefix are rejected at init
+  time.** Caught the `mu-mu-foo` double-prefix case.
 
-  The orphan-detection path (`mu workspace orphans`) already
-  surfaces the partial dir if cleanup fails (the dir-with-no-row
-  case); verified by code reading.
+- **`mu task claim` from an unregistered pane gives an actionable
+  error** (`ClaimerNotRegisteredError`, exit 4). Pre-check
+  throws before the atomic CAS UPDATE. Three actionable hints in
+  `errorNextSteps()`: `--self`, `--for`, `mu adopt %<pane>`.
 
-  Tests: `test/workspace.test.ts` adds (a) HOME guard rejects via
-  `homedir()`, `${homedir()}/`, and `${homedir()}/./`; (b) a flaky
-  backend that creates a partial dir then throws is cleaned up,
-  and a follow-up `createWorkspace` succeeds without
-  `WorkspacePathNotEmptyError`. Manually verified end-to-end with
-  `cd $HOME && mu workspace create ...` (rejected with the typed
-  error + nextSteps, exit 4) and with a real `--project-root /tmp`
-  (the `cp -a` hit unprintable sockets, threw, and the partial dir
-  was cleaned up cleanly).
+### Test-suite repair (non-v5 follow-ups)
 
-- **HUD colors survive `watch` and other non-TTY pipes.** Closes
-  `hud_colors_stripped_under_watch_and` in `mufeedback`. Surfaced
-  live: `watch --no-title -n 2 --color mu hud -w roadmap-v0-2`
-  rendered the HUD with no colors (status emojis without fg color,
-  dim hints not dimmed, bold headers plain) even though the same
-  `mu hud` in a regular shell rendered colors correctly.
-
-  Root cause: picocolors auto-detects color support from
-  `process.stdout.isTTY && env.TERM !== 'dumb'`. `watch` runs the
-  command with stdout as a pipe, so `isTTY` is false and picocolors
-  disables ANSI output. `watch --color` only tells `watch` to
-  *preserve* ANSI from the captured output — it can't make the
-  child process emit them in the first place. Same problem applies
-  to `tmux display-popup -E mu hud | cat` and any pipe-into-pager
-  flow inside tmux.
-
-  Fix: new `colorEnabled()` helper in `src/output.ts` returns true
-  if any of `picocolors.isColorSupported`, `MU_FORCE_COLOR`,
-  `FORCE_COLOR`, or `process.env.TMUX !== undefined` (the
-  load-bearing clause: surrounding pane is a real terminal even
-  though our stdout is a pipe). `NO_COLOR` trumps all four, per
-  the no-color.org convention. Every `picocolors` import in `src/`
-  is now a re-export from `src/output.ts` (`export const pc =
-  picocolors.createColors(colorEnabled())`), so every color-using
-  verb — not just `mu hud` — picks up the fix uniformly.
-
-  Tests: new `test/output.test.ts` covers the env-var matrix
-  (no env / TMUX / MU_FORCE_COLOR / FORCE_COLOR / NO_COLOR
-  precedence); existing `test/hud.test.ts` updated to set
-  `NO_COLOR=1` via `vi.hoisted()` so its raw-layout substring
-  assertions stay deterministic regardless of where the test runs.
-
-- **`mu task claim <task> -w <wsA> --for <agent>` now rejects when
-  `<agent>` lives in a different workstream than `<task>`.** Closes
-  `cross_workstream_claim_for` in `roadmap-v0-2`; surfaced live in
-  `snap_dogfood` Section D (note #362, Finding 1).
-
-  Pre-fix, the schema's FK on `tasks.owner` references `agents(name)`
-  with no workstream qualifier, so a worker-claim from a different
-  workstream silently succeeded and the rest of mu treated the row
-  as in-scope (a scope leak, not a coordination feature).
-
-  Fix: a pre-FK check in `claimTask`'s worker path looks up the
-  resolved agent's workstream and the task's workstream; on mismatch
-  it throws the existing `AgentNotInWorkstreamError` (already wired
-  to exit 4 in `cli.ts`'s `handle()` map). The `--self` (anonymous)
-  path is untouched: there's no agent FK to check, and the
-  orchestrator legitimately drives any workstream's tasks.
-
-  Tests: 3 new in `test/tasks.test.ts` (cross-workstream `--for`
-  rejection; error carries actionable next-steps; `--self` regression
-  cover). Pre-existing tests that constructed cross-workstream owner
-  state via the buggy claim path (1 in `test/tasks.test.ts`, 3 in
-  `test/claim.integration.test.ts`) updated to either set the owner
-  via direct SQL (the read-side `listTasksByOwner` test, whose
-  cross-workstream contract is unchanged) or to spawn agents in the
-  task's workstream (the integration tests).
-
-- **Read-only verbs no longer race in-flight `--workspace` spawns.**
-  Closes (re-opened) `bug_agent_spawn_workspace_fk_failure` in
-  `mufeedback`. Surfaced live: `mu agent spawn ... --workspace` in
-  the `infer-rs` workstream consistently failed with a confusing
-  `error: FOREIGN KEY constraint failed` whenever there was a
-  `watch -n 5 mu hud -w infer-rs` running in another pane (the
-  common live-monitoring pattern documented in the SKILL).
-
-  Root cause: the spawn path inserts a placeholder agent row
-  (`pane_id = '%pending-<name>'`) BEFORE calling
-  `gitBackend.createWorkspace`, which `git worktree add`s a
-  detached checkout of the project into the workspace path. For a
-  large repo (`infer-rs` is 13k files) this takes 2-3 seconds.
-  Meanwhile, the `watch mu hud` invocation calls `listLiveAgents`
-  every 5s, which calls `reconcile()`, which prunes any agent row
-  whose `pane_id` doesn't match a live tmux pane — and
-  `'%pending-<name>'` is not a live tmux pane. The placeholder
-  row gets DELETEd mid-spawn; the subsequent `INSERT INTO
-  vcs_workspaces` then fails its `agent` FK because the agent row
-  is gone. Surfaces as the FOREIGN KEY error on the wrong line.
-
-  Fix: `ListLiveAgentsOptions` gains a `dryRun?: boolean`,
-  forwarded to `reconcile()`'s same-name option (which already
-  exists since `snap_undo_reconcile_destroys_recovered_agents`).
-  Every read-only call site sets it:
-  - `cmdHud` (the surfacer-of-the-bug verb)
-  - `cmdState` (`mu state` — canonical state card)
-  - `cmdMission` (bare `mu` — quick mission control)
-  - `cmdAttach` (`mu agent attach` — reads scrollback)
-  - `cmdDoctor` + `cmdDoctorJson` (`mu doctor` — diagnostic)
-
-  `cmdList` (`mu agent list`) keeps the mutating behaviour: it's
-  the documented escape hatch for forcing a real prune. Same shape
-  as the snap_undo fix: read verbs are read-only by default; the
-  one explicit "refresh and prune" verb keeps its mutating semantics.
-
-  Tests: 3 new in `test/verbs.test.ts` covering dryRun propagation
-  through `listLiveAgents` (ghost survives in dryRun mode; default
-  remains mutating; orphan-detection still runs in dryRun).
-  710 + 3 = 713/713 green.
-
-  Smoke-tested: a tight `while true; do mu hud > /dev/null; sleep
-  0.1; done` loop in one shell + `mu agent spawn ... --workspace
-  --workspace-project-root /Users/mtrojer/infer-rs` in another now
-  succeeds; pre-fix this raced reliably on every attempt.
-
-- **`mu undo` no longer silently drops recovered agent rows whose
-  panes are dead.** Closes
-  `snap_undo_reconcile_destroys_recovered_agents` in roadmap-v0-2;
-  caught live in `snap_dogfood` Section D (note #362, Finding 2).
-
-  Pre-fix, `mu workstream destroy --yes` followed by `mu undo --yes`
-  recovered the workstreams + tasks + edges + notes from the
-  snapshot, but the `agents` row and `vcs_workspaces` row were
-  silently dropped — even though the snapshot file on disk
-  contained them. Root cause: `cmdUndo`'s post-restore `reconcile()`
-  loop would prune any agent row whose pane no longer existed in
-  tmux; the destroy had killed every pane in the workstream just
-  moments before the snapshot was taken read; the prune ran and
-  the FK ON DELETE CASCADE on `vcs_workspaces.agent` did the rest.
-  The "agents pruned: N" line in the undo output was honest
-  diagnostic but the recovery PROMISE was broken.
-
-  Fix (Option C from the issue's three-options sketch, narrowed to
-  the smallest cut): `reconcile(opts)` gains a `dryRun?: boolean`
-  flag. `cmdUndo` passes `dryRun: true`. In dryRun mode:
-  - **prune step**: counts ghosts but doesn't `deleteAgent()`
-  - **status-detect step**: skipped entirely (no scrollback
-    capture, no `refreshAgentTitle`, no DB writes)
-  - **orphan-surface step**: still runs (pure read)
-
-  `mu agent list` and `mu doctor` keep the mutating behaviour
-  they always had (dryRun defaults to false). The user-visible
-  output reflects the new contract:
-
-  ```
-  Reconcile (tmux NOT rolled back; rows NOT pruned):
-    would-be-pruned (DB row → dead pane) : 1 (suppressed: rows preserved as restored)
-    orphan panes surfaced                 : 0
-  Next:
-    Confirm + actually prune dead-pane rows you don't want to re-spawn : mu agent list -w <ws>
-    Re-spawn an agent the DB now lacks                                 : mu agent spawn <name> -w <ws>
-  ```
-
-  JSON shape changed: `reconcile.ghostsPruned` is now
-  `reconcile.wouldBePrunedGhosts`; `reconcile.statusChanges` is
-  removed (always 0 in dryRun mode); `reconcile.dryRun: true`
-  added. `mu agent list` / `mu doctor` consumers see no change.
-
-  `ReconcileReport` likewise gains `dryRun: boolean`.
-
-  Tests: 5 new in `test/reconcile.test.ts` (dryRun preserves
-  rows; non-dryRun pass right after still prunes; status-detect
-  skipped; orphan-surface still works; the snap_dogfood Finding
-  2 regression test). 2 new end-to-end in `test/snapshots.test.ts`
-  (full restore-then-reconcile cycle through the SDK; counter-test
-  proves the fix is load-bearing). Existing
-  `test/cli-snapshot.test.ts` JSON shape assertion + heading text
-  assertion updated. **Gate green at 711 tests (2 pre-existing
-  `claimTask --self` flakes from snap_schema unchanged).**
-
-  Smoke verified live on a temp DB:
-  ```
-  $ mu workstream init dogfix
-  $ mu task add design -w dogfix --title D --impact 80 --effort-days 1
-  $ # ...insert agents row + vcs_workspaces row via mu sql...
-  $ mu workstream destroy -w dogfix --yes
-  $ mu undo --yes
-  Reconcile (tmux NOT rolled back; rows NOT pruned):
-    would-be-pruned (DB row → dead pane) : 1 (suppressed: rows preserved as restored)
-  $ mu sql "SELECT * FROM agents WHERE workstream='dogfix'"   # → dog-1 still there
-  $ mu sql "SELECT * FROM vcs_workspaces WHERE workstream='dogfix'"  # → still there
-  ```
+- **`destroyWorkstream` `failedWorkspaces` accumulation path now
+  has direct test coverage** (new `WorkstreamOptions.resolveBackend`
+  injection seam). Closes
+  `review_test_destroy_failed_workspaces_uncovered`.
+- **`TaskIdInvalidError` test assertions relaxed off the exact
+  sanitised-command suffix.** Closes
+  `review_test_invalid_id_overspecs_sanitised_command`.
+- **`workspace list` "behind" column anchored structurally**
+  (JSON pin + cli-table3 `│`-separator regex). Closes
+  `review_test_workspace_staleness_behind_value_unanchored`.
+- **`createWorkspace` `opts.backend` accepts a `VcsBackend` object
+  for cleanup-on-throw test injection** (drops the
+  monkey-patched singleton). Closes
+  `review_test_workspace_cleanup_throws_monkeypatch_smell`.
+- **`STATUS_EMOJI` round-trip tests now interpolate every entry,
+  not three.** Closes
+  `review_test_status_emoji_drift_only_three_glyphs`.
+- **`printNextStepsTo('stderr')` routes to `console.error`** is
+  now pinned. Closes
+  `review_test_print_next_steps_stderr_branch_uncovered`.
+- **`claim.integration.test.ts` regains end-to-end coverage of
+  the cross-workstream guard.** Closes
+  `review_test_claim_integration_xws_rewrite`.
+- **`listTasksByOwner` cross-workstream test exercises the read
+  codepath honestly.** Closes
+  `review_test_listtasksbyowner_xws_owner_state_unreachable`.
+- **`tasks.test.ts` `--self` identity tests strip
+  `MU_AGENT_NAME`** alongside `TMUX_PANE` / `USER` (extracted
+  `withCleanIdentityEnv` to `test/_env.ts`). Closes
+  `review_test_tasks_mu_agent_name_env_pollution`.
 
 ### Schema
 
-- **`schema_version` table + migration framework.** First
-  non-additive schema change earns its first migration. `openDb`
-  now sniffs the existing DB shape, stamps the version, and runs
-  any pending migrations from `src/migrations.ts` (forward-only,
-  one transaction each, post-migration `PRAGMA foreign_key_check`
-  for safety). The framework lives in `src/migrations.ts`;
-  `src/db.ts` keeps the schema definition and exports
-  `CURRENT_SCHEMA_VERSION` as the single source of truth.
-
-- **All 10 foreign keys gain `ON UPDATE CASCADE`** (v1 → v2
-  migration). Previously the FKs only had `ON DELETE CASCADE`,
-  so renaming a workstream / task / agent name would have left
-  every child row dangling. Now every child column follows
-  atomically. Affected FKs:
-  - `agents.workstream` → `workstreams.name`
-  - `tasks.workstream` → `workstreams.name`
-  - `tasks.owner` → `agents.name` (already SET NULL on delete)
-  - `task_edges.from_task` → `tasks.local_id`
-  - `task_edges.to_task` → `tasks.local_id`
-  - `task_notes.task_id` → `tasks.local_id`
-  - `agent_logs.workstream` → `workstreams.name`
-  - `vcs_workspaces.agent` → `agents.name`
-  - `vcs_workspaces.workstream` → `workstreams.name`
-  - `approvals.workstream` → `workstreams.name`
-
-  The migration rebuilds 7 tables in place (CREATE _new / INSERT
-  SELECT / DROP / RENAME) because SQLite can't `ALTER TABLE` to
-  modify FK clauses. Existing data is preserved; the migration
-  is covered end-to-end in `test/db.test.ts`. Recovery recipes
-  for typo'd workstream names live in [USAGE_GUIDE § 14](docs/USAGE_GUIDE.md#you-typod-a-workstream-name-and-want-to-rename-it).
-
-  **No new verb.** Renaming is a single-statement `mu sql`
-  recipe; wrapping it in a typed verb would add surface area
-  without buying anything (no atomicity to preserve, no
-  validation a verb adds, single statement, no side effects).
-
-### Breaking
-
-- **`mu hud` mode flags removed** (`--line`, `--small`, `--mid`,
-  `--full`). The HUD now renders one shape — a dynamic table
-  layout that fills the available pane height + width — by
-  default. `--json` is preserved unchanged. Status-bar / dotfile
-  callers that used `mu hud --line` should switch to the
-  one-line first row of the default render (or `mu hud --json |
-  jq` for structured extraction). See the Added entry below.
-
-### Added
-
-- **`mu hud` rewritten as a dynamic table layout.** Closes
-  `nit_hud_render_tables` in `mufeedback`. The five mode flags
-  (`--line` / `--small` / `--mid` / `--full`) are gone; `--json`
-  is the only remaining flag (besides `-n` for the events tail
-  cap, default raised 5 → 10). The default human render is now
-  one verb that fills the available terminal (or tmux pane)
-  height + width with as much useful data as fits.
-
-  Layout is greedy top-down by priority — every section is a
-  cli-table3 (header + body, box-drawing border):
-  1. Header line: `mu-<ws> · Nr · Np · Ntrk · N agents (💤N ⚙️N)`
-  2. Agents table
-  3. Ready tasks table (operator's 'what to dispatch next')
-  4. In-progress table
-  5. Tracks table (`#`, `roots`, `tasks`, `ready`, `kind`)
-  6. Recent events table
-
-  Each table has a width-aware truncation budget for the most-
-  compressible cell (title / payload / roots / task). When a
-  section is truncated, an `… +N more (<verb>)` footer points at
-  the follow-up verb.
-
-  Pane size is resolved in this order:
-  1. `MU_HUD_FORCE_SIZE=WxH` env override (test-only / operator
-     escape hatch).
-  2. `process.stdout` if it's a TTY.
-  3. `currentPaneSize()` via `tmux display-message -p
-     '#{pane_width} #{pane_height}'` (catches
-     `watch -n 5 mu hud -w X` and `tmux display-popup -E '...'`,
-     both of which strip TTY-ness but still run inside a tmux pane).
-  4. `120 × 30` fallback for non-tmux pipes.
-
-  `--json` shape is unchanged — same keys, same types. Scripts
-  that consumed the JSON before keep working.
-
-  Tests: 7 cases covering default render at roomy size, tiny
-  pane (truncation + `+N more` footer), narrow width
-  (ellipsis), empty workstream, `MU_HUD_FORCE_SIZE` validation,
-  `--json` shape stability, and `-n` cap.
-
-- **Docs synced for snapshots + `mu undo` shipping.** Closes
-  `snap_docs` in roadmap-v0-2.
-  - `docs/USAGE_GUIDE.md` — new "You ran a destructive verb and
-    want to undo it" subsection in § 14 (Recovery), explicit
-    callout from § 15 (Cleanup) when describing
-    `mu workstream destroy`, removed the `mu redo` row from the
-    § 18 workaround table, header anchor + "What's NOT in 0.2.0"
-    title aligned with the v0.2 reality.
-  - `docs/ROADMAP.md` — promoted the `mu undo` /
-    `mu snapshot {list,show}` block from SHIPPING to SHIPPED with
-    the as-shipped surface and the design decisions held to
-    (no `mu redo`, cross-version restores rejected, tmux NOT
-    rolled back).
-  - `skills/mu/SKILL.md` — new "Snapshots + undo (3)" block in
-    the verb list, replaced "There is no `mu undo`" in the
-    Cleanup pattern with the snapshot-aware version, added
-    "Recover from a destructive verb (DB only)" in-pane pattern,
-    added the safety belt ("even though both auto-snapshot, the
-    tmux side effects are NOT recoverable") to the irreversible
-    section.
-  - `docs/VOCABULARY.md` — dropped the stale "verb shipping in
-    snap_undo_verb" parenthetical.
-  - `README.md` — "Not undoable" caveat replaced with the more
-    honest "DB-undoable, not tmux-undoable" framing.
-
-- **`mu workstream destroy` advertises `mu undo` in its `Next:`
-  block.** Closes `snap_destroy_safety` in roadmap-v0-2. Dry-run
-  output now includes a one-line note that a snapshot will be
-  taken before the destroy plus the explicit caveat that tmux
-  panes / on-disk workspace dirs are NOT rolled back. The `--yes`
-  output adds an `Undo` next-step. Both human and `--json` paths
-  carry the new hints (the JSON path adds a `nextSteps` field on
-  the `--yes` response when no workspace cleanups failed). The
-  destroy itself already auto-snapshotted via `captureSnapshot`
-  in `destroyWorkstream`; this is purely the user-visible
-  surface that promised `mu undo` discoverability. No new tests
-  — the existing 704-test gate exercises the dry-run/--yes/JSON
-  paths and they kept passing.
-
-- **`mu task reject --cascade` / `mu task defer --cascade` are now
-  dry-run by default; require `--yes` to commit.** Surfaced live
-  during roadmap-v0-2 hud cleanup: an accidental cascade reject
-  swept `hud_dogfood` (which had independent merit and needed
-  reopening). The DB rebuild was recoverable via `mu task open`,
-  but the lossy step — silently sweeping the dependents — is
-  exactly the class of footgun ROADMAP's 'data-loss footguns ship
-  on first occurrence' rule promotes.
-
-  Now mirrors `mu workstream destroy --yes`: cascade alone shows
-  the affected list as a preview, `--yes` commits.
-
-  ```
-  $ mu task reject design --cascade
-  Reject design would sweep 3 task(s) (root + 2 dependent(s)):
-    * design  Design X
-      build   Build X
-      review  Review X
-  (dry-run; rerun with --yes to actually sweep)
-  Next:
-    Commit the cascade after reviewing the list  : mu task reject design --cascade --yes
-    Address one dependent first, then re-preview : mu task reject <dep>
-  ```
-
-  - SDK: `RejectDeferOptions` gains `yes?: boolean`.
-  - SDK: `RejectDeferResult` gains `dryRun: boolean` and
-    `affectedIds: string[]`. `affectedIds` is the would-touch
-    list on dry-run AND the did-touch list on commit — callers
-    always know what was/will-be swept.
-  - CLI: `--yes` flag added to both `mu task reject` and
-    `mu task defer`. `--yes` without `--cascade` errors with
-    `UsageError` (single-task case is unconditional commit; the
-    flag is meaningless there).
-  - CLI: dry-run human output renders one line per affected task
-    (`* root` / `  dep`) with truncated titles, then the next
-    steps. JSON dry-run carries `dryRun: true` + the
-    `affectedIds` array.
-  - Single-task case (no open dependents, cascade flag passed
-    anyway) skips the dry-run since there's nothing to preview.
-  - errorNextSteps for `TaskHasOpenDependentsError` now lists
-    both the `--cascade` preview AND `--cascade --yes` commit
-    recipes (4 hints total: preview, commit, drop edge, address
-    dependents one at a time).
-
-  Tests: 4 new cases (dryRun shape; commit shape; single-task
-  bypass; affectedIds populated on commit). 2 existing tests
-  updated (`cascade: true` -> `cascade: true, yes: true`). 647
-  tests total.
-
-  Closes `bug_cascade_reject_too_aggressive` in the `mufeedback`
-  workstream.
-
-- **`mu hud` verb: print-once HUD card with five mode flags.**
-  Operator-side complement to the agent-side pane border. Exits
-  after one render — mu owns the data, the user owns the redraw.
-
-  Modes (mutually exclusive; default `--mid`):
-
-  | flag | shape |
-  |---|---|
-  | `--line` | one-liner: `<ws> · Nr · Np · Ntrk · last: <event> +T` |
-  | `--small` | counts header + agent-status histogram |
-  | `--mid` | counts + agent table (default) |
-  | `--full` | + tracks list + recent-events tail |
-  | `--json` | structured: workstream / summary / agents / orphans / tracks / ready / inProgress / recent |
-
-  `-n N` overrides recent-events tail length (only meaningful for
-  `--full` / `--json`; default 5).
-
-  Composition recipes:
-
-  ```bash
-  watch -n 5 mu hud -w X                       # live pane
-  tmux display-popup -E 'mu hud -w X'          # peek overlay
-  tmux set-option -wg @mu_summary '#(mu hud -w X --line)'
-                                               # dotfile injection
-  mu hud -w X --json | jq .summary             # script
-  ```
-
-  No `--watch`, no auto-spawn, no tmux side effects — mu prints,
-  the user composes. Substrate-aligned with every other typed
-  verb (print, exit, compose).
-
-  Tests: 8 cases covering each mode + the mutual-exclusion check.
-  641 tests total.
-
-  Closes part of `hud_design` in roadmap-v0-2; the remaining
-  pi-extension framing is rejected as out-of-scope (would violate
-  'don't bundle pi'). The verb-in-a-pane shape obviates the
-  pi-extension HUD widget tasks (`hud_extension_skeleton`,
-  `hud_widget_impl`) — they should be repurposed or rejected next.
-
-- **`mu undo` / `mu snapshot list` / `mu snapshot show` — the
-  user-facing recovery verbs.** Closes `snap_undo_verb` in
-  roadmap-v0-2 (designed in `snap_design` note #293; impl by
-  worker-1 on top of the `snap_schema` substrate). Promotes the
-  `mu task delete` next-step from "restore from backup" to
-  "`mu undo --yes`".
-
-  ```
-  $ mu task close design                # auto-snapshots before flip
-  $ mu undo                              # dry-run; shows what would be restored
-  About to restore snapshot #1
-    label        : task close design
-    workstream   : auth
-    taken at     : 2026-05-08T13:21:40Z
-    size         : 144.0 KB
-  This will REPLACE the live mu.db with the snapshot. tmux state
-  will NOT be rolled back: agents in DB whose panes are gone will
-  be pruned by reconcile; tmux panes whose DB rows are gone will
-  surface as orphans on the next `mu agent list`.
-  $ mu undo --yes                        # commit
-  Restored snapshot #1 (task close design, taken 2026-05-08T13:21:40Z)
-  Reconcile (tmux NOT rolled back):
-    agents pruned (DB row → dead pane) : 0
-    orphan panes surfaced              : 0
-  $ mu undo --yes                        # roll forward (undo of undo)
-  Restored snapshot #2 (pre-restore of snapshot 1, taken ...)
-  ```
-
-  Three verbs, one substrate:
-  - **`mu undo [--yes] [--to <id>]`** — default restores the
-    latest snapshot; `--to N` picks one. Confirmation gate
-    mirrors `mu workstream destroy --yes`: dry-run prints the
-    summary + the explicit "tmux NOT rolled back" warning;
-    `--yes` commits. Post-restore, every workstream is
-    reconciled (best-effort per-workstream) and the
-    ghost-pruned / orphans-surfaced counts go in the output so
-    the user knows where DB-vs-tmux drift now lives.
-  - **`mu snapshot list [-n N] [--json]`** — newest-first table
-    with `id | label | workstream | created_at | size`. Defaults
-    to 20 rows; `-n` overrides.
-  - **`mu snapshot show <id> [--json]`** — one snapshot's full
-    metadata (label, workstream, schema_version, db_path, size,
-    created_at).
-
-  No `mu redo`. The design (note #293) rejected it explicitly:
-  mu verbs have side effects (tmux pane kills, `git worktree
-  remove`, etc.) that aren't replayable. Undo-of-undo falls out
-  for free — each restore captures a pre-restore snapshot
-  first, so re-running `mu undo` rolls forward to that
-  snapshot. Verified end-to-end on the smoke run above.
-
-  Typed errors map cleanly through `cli.ts`'s `handle()`:
-  - `SnapshotNotFoundError` → exit 3 (not found)
-  - `SnapshotVersionMismatchError` → exit 4 (conflict)
-  - `SnapshotFileMissingError` → exit 5 (substrate)
-
-  One captureSnapshot fix surfaced live during this work: the
-  row's `db_path` was being UPDATEd AFTER `VACUUM INTO`, which
-  meant the snapshot file captured the row with `db_path=''`.
-  Restoring it lost the path. Reordered to UPDATE then VACUUM;
-  the snapshot now contains the correct path on its own row.
-  Caught by the first round-trip smoke test on snap_undo_verb.
-
-  Tests: 16 new in `test/cli-snapshot.test.ts` (no-snapshots
-  friendly path; bad-id exit 3; dry-run is non-destructive;
-  --yes round-trips a `task close`; second --yes rolls forward;
-  list/show shape across human + JSON; -n cap). 33 existing
-  snapshot tests still green. **Gate green.**
-
-  Closes `snap_undo_verb`. `snap_destroy_safety` (soften the
-  `mu workstream destroy` confirmation text) and `snap_docs`
-  are now unblocked.
-
-- **Snapshots + auto-capture before destructive verbs (schema v4).**
-  Closes `snap_schema` in roadmap-v0-2 (designed in `snap_design`
-  by worker-1, note #293; impl by worker-1 in their
-  ~/.local/state/mu/workspaces/roadmap-v0-2/worker-1 worktree;
-  merged via patch). Lays the substrate for `mu undo` /
-  `mu snapshot list` (snap_undo_verb, next).
-
-  How it works
-  - Each destructive verb (workstream destroy, agent close, task
-    close/reject/defer/release/delete, workspace free, approve
-    grant/deny/timeout) now opens with a `captureSnapshot()`
-    call. The snapshot is a whole-DB SQLite copy via `VACUUM INTO`
-    (synchronous; no async refactor needed; FK-page-level atomic).
-  - Files land in `<dirname(db-path)>/snapshots/<id>.db` (flat;
-    one autoincrement id; colocated with the DB they back so
-    tests sharing `~/.local/state/mu/snapshots/` don't collide).
-  - One sidecar `snapshots` table indexes them: `(id, workstream,
-    label, db_path, schema_version, created_at)`. NO FK on
-    `workstream` — destroying a workstream must NOT cascade-delete
-    its pre-destroy snapshot (the whole point).
-  - Capture-at-the-verb-wrapper, not inside `setTaskStatus`: a
-    `--cascade reject` produces ONE snapshot per user invocation,
-    not N per cascaded child. Reconcile / test plumbing that calls
-    `setTaskStatus` directly stays unsnapshotted.
-  - GC opportunistic in-hook: keep <14 days OR <100 rows,
-    whichever permissive. No daemon, no `--gc` verb.
-  - Schema-version stamp per row enables version-check on restore
-    (`mu undo` will reject cross-version restores; migrations are
-    forward-only).
-
-  Five honest deviations from the design (each documented in
-  task note):
-  1. `VACUUM INTO` instead of `db.backup()` (sync vs async —
-     spares an SDK-wide async refactor; identical on-disk shape).
-  2. `snapshotsDir(db)` colocates snapshots with the live DB (not
-     a single global dir) so per-test isolation works.
-  3. Pre-unlink stale snapshot files before `VACUUM INTO` (handles
-     the abandoned-timeline-after-restore case).
-  4. Re-stamp the pre-restore snapshot row into the post-restore
-     DB (otherwise it vanishes the moment we file-swap, breaking
-     the undo-of-undo invariant from the design).
-  5. Hooks at the verb wrapper, not inside `setTaskStatus` (so
-     `--cascade` produces one snapshot, not N).
-
-  SDK in `src/snapshots.ts` (522 LOC, 288 non-comment):
-  - `captureSnapshot(db, label, workstream?)`
-  - `listSnapshots(db, opts?)`
-  - `restoreSnapshot(db, id)`
-  - `gcSnapshots(db)`
-  - `snapshotsDir(db?)` / `snapshotFileSize(snapshot)`
-  - 3 typed errors (`SnapshotNotFoundError`,
-    `SnapshotVersionMismatchError`, `SnapshotFileMissingError`)
-    all implementing `HasNextSteps`.
-
-  Migration `v3 -> v4`: additive, just one CREATE TABLE +
-  CREATE INDEX. Existing v1 -> v2 -> v3 migration chain still
-  works.
-
-  Tests: 33 new in `test/snapshots.test.ts` (capture round-trip;
-  GC honours both caps; whole-DB integrity; cross-version
-  restore rejected; restore-then-list shows the pre-restore
-  snapshot; cascade behaviour produces one snapshot per verb,
-  not per child). `test/db.test.ts` table-count assertions
-  bumped 8 -> 9. **683 tests pass; gate green.**
-
-  Live verified on the live DB:
-
-  ```
-  $ mu sql 'SELECT version FROM schema_version'
-  4                              # migrated cleanly
-  $ mu task close temp_snap_test -w mufeedback
-  $ ls ~/.local/state/mu/snapshots/
-  1.db
-  $ mu sql 'SELECT id, label, schema_version FROM snapshots'
-  1 | task close temp_snap_test | 4
-  ```
-
-  Closes `snap_schema`. `snap_undo_verb` (mu undo / mu snapshot
-  list) is now ready and the SDK + typed errors it consumes are
-  in place.
-
-- **Pane border + composed pane title carry mu's interpreted state.**
-  Closes `hud_visual_cue_design` + `hud_visual_cue_impl` in the
-  `roadmap-v0-2` workstream. Two complementary signals shipped
-  together; one is tmux chrome, the other is the pane title.
-
-  **Border (chrome).** `mu workstream init` now sets
-  `pane-border-status=top` and `pane-border-format=' [mu] #{pane_title} '`
-  on every window in the `mu-<ws>` session. `mu agent spawn` and
-  `mu adopt` apply it to their freshly created/adopted windows. The
-  options are window-scoped in tmux (a documented gotcha:
-  set-option on a session target only updates the active window;
-  windows created later inherit from the GLOBAL value, which we
-  must NOT touch). The border is one row of vertical real estate
-  per pane and survives copy-mode + scroll. Opt-out via
-  `MU_BANNER_QUIET=1`.
-
-  Per-session override means dotfile-curated tmux configs are
-  untouched: only `mu-<ws>` sessions get the border; everything
-  else stays at the user's global default. Confirmed against a
-  254-line opinionated tmux.conf with custom `pane-border-style`,
-  `status-right`, `window-status-format`, and TPM plugins.
-
-  **Title (state-carrying).** mu now composes the pane title from
-  current DB state and refreshes after every state-touching verb:
-
-  ```
-  worker-a                            # spawning (initial)
-  worker-a · 💤                         # idle, no claim
-  worker-a · ⚙️                          # busy, no claim
-  worker-a · ⚙️ · build_x                # busy, owns one task
-  worker-a · 💤 · build_x                # needs_input, owns one task
-  worker-a · 🛂 · build_x                # needs_permission
-  worker-a · ✅                          # free, no claim
-  worker-a · ⚙️ · ⊕2 tasks              # multi-claim case
-  ```
-
-  Refresh hooks: `cmdSpawn`, `cmdAdopt`, `cmdFree`, `cmdClaim`,
-  `cmdTaskRelease`, `cmdTaskClose`, `cmdTaskReject`,
-  `cmdTaskDefer`, and `reconcile`. Reconcile **always** refreshes
-  (not just on detected status change) so inner CLIs that
-  self-set their pane title (pi, pi-meta, vim) get overwritten
-  with mu's composed title on the next `mu state`/`mu agent list`.
-
-  Agent name MUST remain the first ` · `-separated token so the
-  pane-title-as-identity claim-protocol fallback keeps working.
-  New `parseAgentNameFromTitle()` helper (and `currentAgentName()`
-  convenience wrapper) handle both shapes (composed: take first
-  token; legacy/adopted: return as-is). `adoptAgent` uses the
-  parser too — re-adopting a pane mu previously owned now works
-  (was failing because `agent-name · ✅` failed `isValidAgentName`).
-
-  Truncation: 64-char cap; agent name preserved at the start.
-
-  Refresh is best-effort — a tmux failure never blocks the
-  calling verb (titles are decorative; the DB is authoritative).
-
-  Tests: 13 new (composeAgentTitle: 6 cases covering every
-  state-shape combination including multi-task compression and
-  truncation; parseAgentNameFromTitle: 3 cases including legacy
-  pane back-compat; enableMuPaneBorders: 1 verifies the `-w` flag
-  is set; existing `MU_SPAWN_LIVENESS_MS=0` test re-scoped from
-  no-display-message to no-capture-pane since
-  `getWindowIdForPane` legitimately uses display-message).
-  633 tests total.
-
-  Live verified end-to-end against 3 real pi-meta workers in
-  workspaces:
-
-  ```
-  $ mu task release demo_build_x -w borderdemo
-     -> worker-a's title drops '· demo_build_x'
-  $ mu task claim demo_build_x --for worker-b -w borderdemo
-     -> worker-b's title gains '· demo_build_x'
-  $ mu task close demo_build_x -w borderdemo
-     -> worker-b's title drops the task suffix
-  ```
-
-- **Status detector recognises Braille spinner glyphs as busy
-  (covers pi-meta + every TUI wrapper).** Filed in roadmap-v0-2
-  `bug_status_detector_pi_solo_misclassifies` after the
-  multi-agent dogfood: 3 workers spawned with
-  `--command pi-meta --solo-name <X> --solo-force` all reported
-  `needs_input` while actively grinding (scrollback showed
-  `⠋ Working...`).
-
-  Root cause: `src/detect.ts` looked for the literal
-  `'to interrupt)'` in the pane tail; pi-meta's solo-wrapped
-  chrome doesn't render that exact string. Falls through to
-  `needs_input`. SKILL.md acknowledged this category
-  ('Status detection lags with custom --command wrappers') but
-  there was no fix.
-
-  Fix (~5 LOC, regex `/[\u2800-\u28FF]/`): if no permission
-  pattern and no `'to interrupt)'` literal matched, fall back to
-  'any Unicode Braille block character in the tail = busy'.
-  Every TUI spinner library worth using cycles a subset of these
-  glyphs (⠇⠏⠙⠧⠷⠿⠟⠋…); they essentially never appear
-  in agent prose, so the false-positive risk is negligible. The
-  fallback is wrapper-agnostic — no per-CLI patches needed for
-  pi-meta, claude-code, codex, or any future TUI runtime.
-
-  Order of precedence preserved: needs_permission > busy literal
-  > braille fallback > needs_input. Permission still wins over a
-  spinner-AND-dialog scrollback (the dialog is the actionable
-  signal).
-
-  Tests: 6 new cases including the actual dogfood scrollback
-  fixture, glyph variations across the block, the priority
-  ordering, the no-false-positive-on-prose check, and the
-  tail-window staleness rule. 622 tests total.
-
-  Live verified: spawned a real pi-meta worker, sent a 'count to
-  200' prompt, `mu agent list` correctly shows `busy` (was
-  `needs_input` before).
-
-  Closes `bug_status_detector_pi_solo_misclassifies` in the
-  `roadmap-v0-2` workstream.
-
-- **`mu task note` Next: hints + --help now teach single-quote
-  discipline.** Filed in `mufeedback` notes #256/#257: a worker
-  ran `mu task note id "... `prune e` ..."` from a shell;
-  backticks were executed by the parent shell before mu saw the
-  note, producing 'command not found: prune' and dropping the
-  inline code snippets. Repeat offence in the corrective note.
-
-  Three-line fix:
-  - `cmdTaskAdd` Next: hint changed from
-    `mu task note <id> "..."` to
-    `mu task note <id> '...'` with a 'single-quote to defer shell
-    expansion' label.
-  - Same for `cmdClaim`'s 'Drop a note' Next: hint.
-  - `mu task note --help` description gained a sentence:
-    "Single-quote the text (or use a quoted heredoc) to defer
-    shell expansion of \$VAR / \$(...) / backticks; double
-    quotes expand them in your shell before mu sees the note."
-
-  The skill already documented this; the gap was that the
-  CLI's own self-documenting hints kept showing the unsafe form,
-  so even agents who'd read the skill would see
-  `mu task note ... "..."` printed as the canonical recipe and
-  copy that form. Closing the loop: the hints now match the
-  guidance.
-
-  Closes `nit_task_note_shell_metachar_hint` in the `mufeedback`
-  workstream.
-
-- **Task states gain `REJECTED` and `DEFERRED`; new verbs
-  `mu task reject` / `mu task defer`.** Two real mufeedback tasks
-  (`git_workspaces_start_without_node` = wontfix; `nit_no_task_move_verb`
-  = not justified yet) didn't fit `CLOSED`. Closing them as a
-  workaround would lie in the audit trail ("completed work" view
-  would count them as ships).
-
-  Schema v2 -> v3:
-  - `tasks.status` CHECK widened to include `REJECTED` and
-    `DEFERRED`.
-  - `goals` view excludes them too (only OPEN / IN_PROGRESS leaves
-    are 'goals we're working toward').
-  - `ready` / `blocked` views unchanged: only CLOSED satisfies a
-    `--blocked-by` edge — REJECTED and DEFERRED still BLOCK
-    downstream by design (see TaskHasOpenDependentsError below).
-  - Live DB migrated cleanly (no rows changed; only schema +
-    view).
-
-  Predicate matrix (the design constraint that fixes the state
-  count at exactly 5):
-
-  | state       | active | blocks ↓ | terminal |
-  |-------------|--------|----------|----------|
-  | OPEN        | y      | y        | n        |
-  | IN_PROGRESS | y      | y        | n        |
-  | CLOSED      | n      | n        | y        |
-  | REJECTED    | n      | y        | y        |
-  | DEFERRED    | n      | y        | n        |
-
-  CLI:
-  - `mu task reject <id> [--cascade] [--evidence ...]` — terminal
-    'won't do' (out of scope, duplicate, wontfix).
-  - `mu task defer <id> [--cascade] [--evidence ...]` — parked,
-    may revisit. Reopen with `mu task open`.
-
-  SDK: `rejectTask` / `deferTask` exported from src/tasks.ts; both
-  share `RejectDeferOptions` (`evidence`, `cascade`) and return
-  `RejectDeferResult` (`changedIds`, `status`, `changed`).
-
-  Stranded-dependent guard: rejecting/deferring a task with OPEN
-  or IN_PROGRESS dependents throws `TaskHasOpenDependentsError`
-  (exit 4) listing the dependents and three resolutions: pass
-  `--cascade` to apply the same status to the whole sub-tree,
-  drop the now-irrelevant blocking edge first with
-  `mu task unblock <dep> --not-blocked-by <id>`, or
-  reject/defer dependents individually first.
-
-  Cascade walk PRUNES at CLOSED / REJECTED / DEFERRED nodes: a
-  CLOSED intermediate has already satisfied its blocked-by edge,
-  so its downstream is independent of `<id>` and must NOT be
-  swept. (Unit-tested: `--cascade DEFERRED` on `design` with a
-  CLOSED `build` and OPEN `ship` leaves `ship` alone.)
-
-  `listTasksByOwner` default tightened from `status != 'CLOSED'`
-  to `status NOT IN ('CLOSED','REJECTED','DEFERRED')`. The 'live
-  work' view should not include 'won't do' or 'parked' work.
-  `includeClosed: true` re-includes ALL terminal/parked statuses.
-
-  Tests: 12 new cases covering happy path, idempotency, the
-  stranding refusal, all status transitions in the predicate
-  matrix (only-CLOSED-unblocks), and `--cascade` semantics
-  including the prune-at-closed property. 616 tests total.
-
-  Closes `git_workspaces_start_without_node` (REJECTED — not
-  mu's job to seed pnpm/cargo/pip deps; that's a project-level
-  setup script or first task instruction) and
-  `nit_no_task_move_verb` (DEFERRED — the `mu sql` workaround
-  works; ~80 LOC of new typed-verb surface not justified by
-  current friction. Promotion criteria documented on the task.)
-
-- **`mu workstream destroy` now actually cleans workspaces.** Filed
-  in `mufeedback` note #195: destroying a workstream killed the
-  tmux session and cascade-deleted every DB row but left the
-  per-agent on-disk worktrees behind, plus the git worktree
-  registry entries pointing at them. Surfaced after closing a
-  14-task workstream with 3 historical worktrees — every one had
-  to be cleaned by hand with `git worktree remove --force`.
-
-  - `summarizeWorkstream` now returns `workspaces: number` and
-    `registered: boolean`. Both surface in the destroy dry-run
-    and final summary.
-  - `destroyWorkstream` enumerates `vcs_workspaces` for the
-    target workstream and calls each row's backend
-    `freeWorkspace()` before the FK cascade nukes the rows.
-    Return type gains `freedWorkspaces: number` and
-    `failedWorkspaces: WorkspaceFailure[]` so the CLI can surface
-    paths + recovery hints when (e.g.) `git worktree remove`
-    refuses because of uncommitted changes.
-  - Empty `<state>/workspaces/<ws>/` parent dir is reaped via
-    `rmdir` after every per-agent worktree is freed (best-effort:
-    refuses if non-empty, which is the right outcome).
-  - `cmdDestroy`'s `nothingToDo` short-circuit factored
-    `summary.registered` in. The earlier behaviour treated
-    bare-registry workstreams (a row in `workstreams` with 0
-    agents/tasks/notes) as 'nothing to destroy' and refused to
-    clean them — making such rows orphaned forever. Two such
-    rows on the live DB (`temp_confirm_a/b` from earlier
-    `--confirm-rows` testing) were unreachable until this fix.
-
-  Net diff: 178 insertions across 4 files (workstream.ts +75,
-  cli.ts +25, index.ts +1, workstream.test.ts +60). Live
-  verified end-to-end (sh + git workspace) and on the two live
-  orphan rows.
-
-  Closes `workstream_destroy_yes_leaves_workspace` in the
-  `mufeedback` workstream.
-
-- **`skills/mu/SKILL.md` second terseness pass: 701 -> 574 LOC**
-  (−18% on top of the earlier 771 -> 701 trim, −26% total since
-  the last trim). User feedback: "keep it terse and to the point.
-  Just the point."
-
-  Cuts:
-  - Orchestrator loop reduced from prose-heavy 7-step + sub-bullets
-    to 6 numbered lines.
-  - Default workspace rule + workspaces-stop-trampling: dropped
-    `~/hacking/repo/...` and `target/` / `node_modules/.cache/`
-    examples; the why is generic, the example is project-specific.
-  - Plan + spawn a crew: project-name examples (`payments`,
-    `infer-rs`) replaced with `<ws>`.
-  - Parallel heavy-task + read-only audit: dropped storytelling
-    ("Maps directly to the most common parallelisation shape");
-    kept the actual safety-belt point.
-  - Status section: cut the "reconcile fresh from scrollback"
-    explanation; the four-line code block carries the point.
-  - After spawning, observe: collapsed three-section three-pattern
-    explanation into one block of three commented examples.
-  - When you need to wait: dropped duplicate semantics paragraph
-    (now lives in `mu task wait --help`).
-  - Working loop: 25-line annotated script -> 8-line minimal
-    script; comments only mark phase boundaries.
-  - DOs / DON'Ts: removed the explanation paragraphs after each
-    bullet (the bullet is the point).
-
-  Kept: the multi-verb composites, the actually-load-bearing
-  vocabulary, the irreducible-discipline orchestrator loop, the
-  approval-pattern code, the `mu task wait` quick examples.
-
-  No project-specific names in examples (`<ws>` placeholder used
-  consistently). Only exception: the rename-recovery `mu sql`
-  example uses `auth-refator` deliberately because the typo IS
-  the point.
-
-  Closes `skill_nudge_prompt_agents_with_relative` in the
-  `mufeedback` workstream (added the relative-paths nudge as part
-  of this trim).
-
-- **Agent identity propagates to task notes; spawn output surfaces
-  `--command` overrides.** Two related UX nits from the
-  `mufeedback` workstream addressed in one pass.
-
-  - `mu task note` author was always `<orchestrator>` even from
-    spawned-agent panes (mufeedback note #176). Now resolves via
-    `resolveActorIdentity()`: `$MU_AGENT_NAME` (the env var
-    injected at spawn by `f3d4bdd`) > pane title > `$USER` >
-    `'orchestrator'`. Pass `--author <name>` to override.
-
-    Same helper now powers `mu task claim --self`'s actor
-    resolution; the `--self` default fallback changed from
-    `'unknown'` to `'orchestrator'` for symmetry. The `'unknown'`
-    label was a placeholder; `'orchestrator'` is meaningful.
-
-  - `mu agent spawn` output read `Spawned X (pi)` even when
-    `--command pi-meta --no-solo` overrode the binary
-    (mufeedback note #159). Now reads
-    `Spawned X (pi (cmd: pi-meta --no-solo))` when the resolved
-    command differs from the cli value; bare `(pi)` when running
-    the default. JSON gains `resolvedCommand` and
-    `commandOverridden` fields.
-
-  Resolution chain matches `spawnAgent`'s actual behaviour:
-  explicit `--command` > `$MU_<UPPER_CLI>_COMMAND` > the cli value
-  itself. The display logic reuses the existing
-  `resolveCliCommand` SDK function so display + actual-spawn stay
-  in sync.
-
-  Tests: 4 new cases for `resolveActorIdentity` covering each
-  step of the resolution chain; 1 existing claim test updated
-  for the new default. 601 tests total.
-
-  Closes `nit_agent_note_author_identity` and
-  `nit_spawn_custom_command_display` in the `mufeedback` workstream.
-
-- **Workspace-recovery flow no longer bubbles bare backend errors.**
-  Two related user-reported bugs from the `mufeedback` workstream
-  (notes #143 + #145) addressed in one cohesive pass:
-
-  - `WorkspacePathNotEmptyError` (typed, exit 4) replaces the bare
-    `vcs <name>: workspacePath already exists: <path>` from each
-    backend. Fires when `createWorkspace` finds the on-disk dir
-    occupied with no DB row — the orphan-from-older-mu case, OR a
-    user who manually `rm -rf`'d the dir while a stale registration
-    persists.
-
-    `errorNextSteps()` lists three concrete recovery commands:
-      mu workspace free <agent> -w <ws>   (if a row remains)
-      rm -rf <path>                        (if just orphaned dir)
-      cd <project-root> && git worktree prune   (git-specific)
-
-  - `gitBackend.createWorkspace` runs `git worktree prune`
-    defensively BEFORE `git worktree add`. Cheap (~10ms), idempotent.
-    Immunises against the 'missing but already registered worktree'
-    failure mode that previously required manual operator recovery
-    (`cd <main-repo> && git worktree prune`). Now automatic; no
-    operator intervention.
-
-  Combined with `cccba88` (`mu agent close` refuses with workspace),
-  the natural recovery flow JUST WORKS end-to-end:
-
-      $ mu agent spawn worker -w foo --workspace
-      $ mu agent close worker -w foo
-      conflict: agent worker has a workspace at /path; refusing to close
-      Next: ... mu workspace free worker ... mu agent close --discard-workspace
-      $ mu workspace free worker -w foo
-      $ mu agent close worker -w foo
-      $ mu agent spawn worker -w foo --workspace    # works; defensive prune handles git
-
-  Surfaced as `agent_spawn_workspace_fails_when_prior` (note #143)
-  and `workspace_free_cleanup_leaves_git` (note #145) by another mu
-  user; both closed in this commit. The first user-reported bug
-  (`agent_close_orphans_workspace_dir_from`, note #144) was a
-  duplicate of `bug_workspace_orphaned_after_agent_close` shipped
-  in cccba88; closed with cross-references.
-
-  Tests:
-    - `test/workspace.test.ts`: WorkspacePathNotEmptyError
-      regression case (raw orphan via DELETE FROM vcs_workspaces +
-      verify typed error fires); gitBackend defensive-prune case
-      (rm-rf the workspace dir then re-create at same path; verify
-      the second create succeeds where it would have failed pre-fix).
-    - `test/error-nextsteps.test.ts`: WorkspacePathNotEmptyError
-      added to the generic well-formed-steps registry.
-  597 tests total.
-
-- **`mu agent close` refuses by default if the agent has a workspace.**
-  Surfaced during the multi-agent dogfood teardown: closing three
-  worker agents silently orphaned their on-disk workspaces (the FK
-  CASCADE drops the `vcs_workspaces` registry row but the directory
-  survives, invisible to every subsequent `mu workspace list / free /
-  path` call).
-
-  New behaviour: if the agent has a workspace, `mu agent close` throws
-  `WorkspacePreservedError` (exit 4 conflict) with three actionable
-  resolutions:
-
-      conflict: agent worker-a has a workspace at /path/to/ws;
-        refusing to close (would orphan the on-disk dir)
-      Next:
-        Free the workspace first (preserves agent for next step) :
-          mu workspace free worker-a  (--commit to commit pending changes first)
-        Or close + discard the workspace in one shot (lossy)     :
-          mu agent close worker-a --discard-workspace
-        Or just inspect what's in the workspace                  :
-          cd /path/to/ws
-
-  The `--discard-workspace` flag (and SDK `closeAgent(db, name,
-  { discardWorkspace: true })`) frees the workspace BEFORE deleting
-  the agent (we control the order; FK cascade no longer leaks the
-  on-disk dir). Lossy: pending changes in the workspace are gone
-  unless the caller frees with `mu workspace free --commit` first.
-
-  Backwards compat: agents WITHOUT a workspace close exactly as
-  before. Existing tests + scripts that closed agents with no
-  workspace are unaffected. The SDK signature gained an optional
-  second arg `opts: CloseAgentOptions` so `closeAgent(db, name)`
-  remains valid.
-
-  `CloseAgentResult` gained a `workspaceFreed: boolean` field; the
-  legacy `workspaceKept` field is preserved (always `false` on the
-  success paths now) so callers branching on it don't break.
-
-  Tests: 4 cases in `test/workspace.test.ts` covering the four
-  outcomes (refuse-default, --discard succeeds + frees, no-workspace
-  agent closes cleanly, no-such-agent returns false flags) plus the
-  generic `errorNextSteps` shape check in `test/error-nextsteps.test.ts`.
-  594 tests total.
-
-  Closes `bug_workspace_orphaned_after_agent_close` in workstream
-  `roadmap-v0-2`. Surfaced as note #122 during the same dogfood
-  that motivated `mu task wait` and `bug_status_detector_pi_solo_misclassifies`.
-
-- **`mu task wait <ids...>` blocks until tasks reach a status.**
-  The orchestrator's most common wait pattern, finally first-class.
-  Before this verb, multi-task waits were a 30+ line bash+python+sql
-  polling loop hand-rolled by the orchestrator; the
-  `mu log --tail | awk '...'` pattern only handled ONE task because
-  the awk script becomes stateful for N.
-
-  Behaviour:
-
-      mu task wait <id> [<id>...] [--status CLOSED] [--any]
-                       [--timeout SECONDS] [-w <ws>] [--json]
-
-  - Default: every listed task must reach `--status` (default CLOSED).
-  - `--any`: succeed as soon as ONE listed task reaches the status.
-    Useful for parallel-race patterns ('act on the first worker done').
-  - `--timeout SECONDS` (default 600 = 10 min). 0 = forever (matches
-    `mu approve wait`).
-  - Exit 0: condition met. Exit 5: timeout (mirrors `mu approve wait`).
-  - Exit 3: any listed task doesn't exist (TaskNotFoundError pre-flight,
-    loud-fail by design — a typo'd id silently waiting forever is
-    the worst-case UX).
-  - `--json`: emits a structured result with per-task state + the
-    `allReached` / `anyReached` / `elapsedMs` / `timedOut` flags +
-    `nextSteps` hints ("investigate <id>" for laggards on timeout).
-
-  Live demo:
-
-      $ mu task wait closed_task open_task --timeout 3
-      Timed out after 3003ms
-        ✓ closed_task (CLOSED)
-        • open_task (OPEN)
-      Next:
-        Investigate open_task (status=OPEN) : mu task show open_task -w roadmap-v0-2
-      exit: 5
-
-      $ mu task wait closed_task --json
-      {"tasks":[{"localId":"closed_task","status":"CLOSED","reachedTarget":true}],
-       "allReached":true,"anyReached":true,"elapsedMs":0,"timedOut":false,...}
-
-  Implementation: `waitForTasks(db, ids, opts)` SDK in `src/tasks.ts`
-  mirrors `waitApproval`'s shape exactly. Initial check (immediate
-  return if already satisfied) + 1s poll loop on the tasks table. We
-  poll the table directly rather than subscribing to `agent_logs`
-  because (a) we'd still need to re-query tasks to learn the current
-  status, (b) some status changes happen via `mu sql` which doesn't
-  emit events, and (c) one indexed SELECT every second is cheaper
-  than parsing the log stream.
-
-  Coordination patterns now have clean separation — each pattern
-  owns its niche, no overlap:
-
-      Want                                          | Use
-      ----------------------------------------------|----------------------
-      Block until task(s) reach status X            | mu task wait ← NEW
-      Stream all events as they happen              | mu log --tail
-      Block until human grants/denies an approval   | mu approve wait
-      Per-agent narrative with status transitions   | hand-rolled poll (rare)
-
-  SKILL.md (§ 'After spawning, observe') is rewritten around the
-  three-pattern split. The previous awk-pipe pattern is gone from
-  the canonical examples; it remains a valid fallback for ad-hoc
-  one-event waits but is no longer the recommended approach.
-
-  Tests: 10 cases in `test/tasks.test.ts` covering immediate-return,
-  block-until, timeout, `--any`, non-default status, missing-task,
-  empty-list, partial-progress timeout, and survives-mid-wait-deletion.
-  592 tests total.
-
-  Closes `nit_no_mu_task_wait` in workstream `roadmap-v0-2`.
-
-- **Spawned agent panes inherit identifying env vars** (`MU_MANAGED_AGENT=1`,
-  `MU_AGENT_NAME=<name>`, `MU_WORKSTREAM=<name>`) so anything running
-  inside (pi extensions, claim-protocol scripts, status segments) can
-  branch on 'I'm a mu-managed worker' vs 'I'm a regular interactive pi'
-  without scraping pane titles or hitting the DB.
-
-  How it works: tmux 3.0+ supports `-e KEY=VALUE` (repeatable) on
-  `new-session`, `new-window`, and `split-window`. The env is set in
-  the new pane's environment only — no global tmux server pollution.
-  All four pane-creating helpers in `src/tmux.ts` (`newSession`,
-  `newSessionWithPane`, `newWindow`, `splitWindow`) gain an optional
-  `env?: Record<string, string>` field. Validation: keys must be
-  non-empty and must not contain `=` (TypeError otherwise; tmux's own
-  error in that case is obscure).
-
-  `spawnAgent` builds the env once and threads it through
-  `createOrReusePane` to whichever path fires:
-
-      const paneEnv: Record<string, string> = {
-        MU_MANAGED_AGENT: "1",
-        MU_AGENT_NAME: opts.name,
-        MU_WORKSTREAM: opts.workstream,
-      };
-
-  Verified live (the spawned shell's `env` dump):
-
-      MU_AGENT_NAME=env_test_2
-      MU_WORKSTREAM=env_smoke2
-      MU_MANAGED_AGENT=1
-
-  And `tmux show-environment -g` is untouched (no global pollution).
-
-  Not exposed via `SpawnAgentOptions` — mu identity is not
-  user-tunable. Adding a new key here is one line and applies to
-  every spawned pane automatically.
-
-  Tests: 6 unit cases in `test/tmux.test.ts` (env-flag emission +
-  ordering before the command + key-validation TypeError) and 3
-  integration cases in `test/verbs.test.ts` (one per spawn path:
-  fresh session, new window in existing session, split into existing
-  window). 582 tests total.
-
-  Closes `pass_mu_env_to_panes` in workstream `roadmap-v0-2`.
-
-- **Auto-generated task IDs trim at a 40-char word boundary**
-  (was: hard-truncate at 64 chars). `mu task add --title "NIT:
-  this is exactly the kind of title that produces a 60-plus
-  char auto-id"` now yields `nit_this_is_exactly_the_kind_of_title`
-  (37 chars) instead of the previous 60+ char truncation. Easier
-  to type and to read in `mu task tree`/list output.
-
-  How it works: `slugifyTitle` does the existing alnum-to-`_`
-  collapse, then if the result exceeds the **40-char soft cap**,
-  cuts at the last `_` at-or-before that position (preserving
-  word boundaries). Falls back to a hard 40-char truncate if the
-  title is one giant word with no separators. The collision-suffix
-  loop in `idFromTitle` (`_2`, `_3`, ...) still respects the
-  **64-char hard ceiling** so collisions never exceed the original
-  cap.
-
-  No schema change; this is purely a slug-generation tweak. The
-  hard cap on the schema column is unchanged. Existing IDs in DBs
-  are untouched (the truncation only happens at slug-derivation
-  time).
-
-  Closes `nit_long_auto_slug` in workstream `roadmap-v0-2`.
-
-- **`mu sql` accepts multi-statement scripts** (BEGIN/COMMIT
-  blocks, semicolon-separated batches, top-level migrations).
-  Previously, `prepare()` rejected anything with more than one
-  statement, forcing N invocations for any cleanup or migration
-  script.
-
-  How it works: `cmdSql` first probes via `db.prepare(query)`. If
-  better-sqlite3 throws `'more than one statement'`, the verb
-  falls back to `db.exec(query)` which runs the script verbatim
-  (BEGIN/COMMIT honoured). The single-statement path is
-  unchanged — still reports row counts for writes, structured
-  rows for reads.
-
-  Multi-statement output:
-
-      $ mu sql "BEGIN; INSERT INTO t VALUES(1); INSERT INTO t VALUES(2); COMMIT;"
-      ran 4 statements
-
-      $ mu sql "..." --json
-      {"statements":4,"multiStatement":true}
-
-  The statement count comes from a hand-rolled
-  `countTopLevelStatements()` that respects single-quote / double-
-  quote / line-comment / block-comment / SQL-escape contexts when
-  splitting on `;`. Pure function, exported from `src/cli.ts`,
-  covered by 13 unit tests in `test/sql-multi-statement.test.ts`.
-
-  Surfaced via `nit_sql_multi_statement` (note #96) when the
-  v0.1.0 dot-mangle workstream-rename recipe required N
-  invocations to do an UPDATE-then-cleanup. Now it's one shot.
-
-  Closes `nit_sql_multi_statement` in workstream `roadmap-v0-2`.
-
-- **`skills/mu/SKILL.md` trimmed 771 -> 659 LOC** (−14%) now
-  that per-verb tips live in verb output. Final commit of the
-  selfdoc track. Specific cuts:
-  - CLI verb list collapsed to one-liners (every per-flag
-    commentary deferred to `mu <verb> --help`).
-  - `### Evidence on lifecycle verbs` (12 LOC) -> one bullet in
-    new `Universal flags worth knowing without --help` block.
-  - `### Machine-readable output: --json` (~25 LOC) -> one bullet
-    in same block.
-  - `### Picking the spawned executable` (~25 LOC) -> deleted
-    entirely (covered by `mu agent spawn --help`).
-  - `### Picking model + thinking effort per agent` tightened
-    (~37 -> 18 LOC); rubric kept, env-var examples condensed.
-  - `### Tear down a workstream` collapsed (~13 -> 6 LOC); the
-    `mu workstream destroy` output now hints `--yes`.
-  - `### Drop durable context on a task` (~10 LOC) -> deleted
-    (the task-note contract section above already covers it).
-  - `## If you ARE the agent` orchestrator-pattern subsection
-    rewritten to defer to `ClaimerNotRegisteredError`'s
-    `errorNextSteps()` for the three actionable resolutions.
-  - SQL section header updated: 8 tables -> 9 tables (was stale
-    after the v2 schema_version table landed).
-
-  What stayed (irreducible LLM-only context): vocabulary, when to
-  reach for mu, mental model, orchestrator loop discipline, the
-  multi-verb common patterns (parallel work, quote-rich prompts,
-  status approximation, subscribe-vs-poll, irreversible-needs-
-  approval, when to wait for another agent), DOs / DON'Ts, what
-  mu is NOT.
-
-  `docs/USAGE_GUIDE.md § 2` gains a paragraph explaining the
-  self-documenting verb output (Next: hints, --json everywhere,
-  the `mu agent attach` opt-out).
-
-  Closes selfdoc_skill_cleanup in workstream `roadmap-v0-2`. The
-  whole selfdoc_* track is now complete; only `selfdoc_dogfood`
-  remains (a fresh-agent walkthrough validating that verb output
-  alone is sufficient to drive a plan/spawn/claim/note/close cycle).
-
-- **Every CLI verb accepts `--json` (universal); every write verb
-  carries `nextSteps` hints in both human + JSON output.** Third
-  commit of the selfdoc track. Combined `selfdoc_verbs_round2` and
-  `selfdoc_json_universal` (filed mid-session as a complementary
-  task) into one pass since both touch every cmd handler.
-
-  Verbs that gained `--json` (22 total): `mu workstream init /
-  destroy`, `mu agent spawn / send / read / close / free`,
-  `mu workspace create / free / path`, `mu task note / open /
-  block / unblock / delete / update / reparent`, `mu approve grant
-  / deny`, `mu sql`, `mu doctor`. The remaining read verbs already
-  had `--json` from v0.1.0; this commit closes the write-verb gap.
-
-  `mu sql --json` distinguishes:
-  - Read query (SELECT / WITH / EXPLAIN) — emits the rows array.
-  - Write query (UPDATE / DELETE / INSERT) — emits
-    `{ changes, lastInsertRowid }`.
-  - Errors from SQLite (e.g. `no such column`) flow through the
-    standard structured-error path to stderr, exit 1.
-
-  `mu doctor --json` returns a fully structured
-  `{ environment, db, workstream, state }` report with per-subsystem
-  status fields (`schemaVersion: { value, expected, status }`
-  etc.). Pipe to jq, alerts, monitoring — no prose parsing.
-
-  Verbs that gained `nextSteps` hints (in addition to the 8 from
-  selfdoc_infra): `mu agent send / free`, `mu workspace create /
-  free`, `mu task note / open / block / unblock / delete / update
-  / reparent`, `mu approve add` (revised hints; existing prose
-  retained), `mu workstream destroy`. With selfdoc_infra’s 8, that
-  makes 19 verbs with self-documenting nextSteps. Read verbs and
-  status-only verbs (mu state, mu agent list, etc.) deliberately
-  don't carry nextSteps — the result IS the next-step.
-
-  One verb stays text-only on purpose: `mu agent attach` prints a
-  `tmux attach` command for a human to copy-paste; no
-  machine-actionable output. Documented in the regression test
-  allowlist.
-
-  New regression test (`test/cli-json-universal.test.ts`) parses
-  `src/cli.ts` and asserts every `.command(...).action(...)` block
-  contains either `JSON_OPT` or a literal `"--json"` option (or is
-  in the documented allowlist with a reason). Adding a new verb
-  without `--json` now breaks the build. 544 tests total (+3 from
-  the regression test).
-
-  Friction surfaced and filed mid-commit: `nit_blocks_flag_naming`
-  — the `--blocks <X>` flag on `mu task add` reads as outgoing in
-  English ("this task blocks X") but is incoming in semantics
-  ("X blocks this task"). Filed as a NIT; first occurrence, awaiting
-  promotion.
-
-  Closes selfdoc_verbs_round2 + selfdoc_json_universal in workstream
-  roadmap-v0-2. Last impl piece before selfdoc_skill_cleanup.
-
-- **Every typed error class carries actionable `errorNextSteps()`.**
-  Second commit of the selfdoc track (after the infra commit). The
-  bare error message identifies what failed; the structured
-  resolutions tell the caller exactly what to try next, in
-  expected-frequency order.
-
-  Errors converted to `HasNextSteps`:
-  - `TaskNotFoundError`        — list / search / find-the-workstream
-  - `TaskExistsError`          — show / update / pick a different id
-  - `TaskNotInWorkstreamError` — use actual ws / list expected ws
-  - `TaskAlreadyOwnedError`    — see owner's tasks / release / show
-  - `CycleError`               — show tree / show prereqs / unblock
-  - `CrossWorkstreamEdgeError` — move task / merge ws / duplicate
-  - `AgentExistsError`         — find ws / close+respawn / new name
-  - `AgentNotFoundError`       — list / list-all / spawn now
-  - `AgentNotInWorkstreamError`— use actual ws / list expected ws
-  - `AgentDiedOnSpawnError`    — override command / disable liveness / doctor
-  - `TmuxError`                — doctor / tmux info / repro the failing tmux call
-  - `PaneNotFoundError`        — list-panes -a / mu agent list -w * / orphans
-  - `WorkspaceExistsError`     — path / free / re-create
-  - `WorkspaceNotFoundError`   — list / list-all / create
-  - `ApprovalNotFoundError`    — list / list-all / filter by status
-  - `ApprovalAlreadyDecidedError` — show existing / create new
-  - `ApprovalNotInWorkstreamError`— use actual ws / list-all
-  - `WorkstreamNameInvalidError` — sanitised name suggestion + list
-
-  Several errors compute resolutions from their carried context:
-  - `TaskNotInWorkstreamError` shows the actual workstream name
-    (not just "the correct one").
-  - `WorkstreamNameInvalidError` lowercases + strips `mu-` + replaces
-    `.`/`:` with `_` to suggest a working name.
-  - `ClaimerNotRegisteredError` (already converted in selfdoc_infra)
-    pins the `$TMUX_PANE` id into the literal `mu adopt %<pane>`
-    command.
-
-  All resolutions surface in both human-prose stderr (dim indented
-  block under "Next:") and JSON-error stderr (`nextSteps` array
-  inside the `{error, message, nextSteps, exitCode}` record).
-
-  Tests: `test/error-nextsteps.test.ts` covers all 18 error
-  classes with a generic well-formed-steps assertion plus 5 class-
-  specific structural assertions (e.g. ClaimerNotRegisteredError
-  pins the pane id, WorkstreamNameInvalidError lowercases the
-  prefix). 26 new tests; 541 total.
-
-  Bug caught by dogfood during this commit:
-  `WorkstreamNameInvalidError` originally matched `^mu-` case-
-  sensitively, so `Mu-Foo.Bar` came out as `mu workstream init
-  mu-foo_bar` — still invalid (mu- prefix). Fixed to lowercase
-  before stripping. Test strengthened to use a mixed-case input.
-
-  Closes `selfdoc_errors` in workstream `roadmap-v0-2`.
-
-- **Self-documenting verb output: `nextSteps` hints + structured
-  JSON errors.** Every successful invocation now answers "what
-  changed AND what's the natural next step?"; every error answers
-  "why AND what are the actionable resolutions?". Same data shape
-  feeds both human-prose output (dim text after the success line)
-  and `--json` output (structured `nextSteps: [{intent, command}]`).
-
-  - New module `src/output.ts` with `printNextSteps(steps)`,
-    `NextStep` type, `isJsonMode()`, and `hasNextSteps()` duck-type
-    guard for typed errors carrying actionable resolutions.
-  - The error handler in `src/cli.ts` is refactored: errors call a
-    typed `errorNextSteps()` (when implemented) and the steps are
-    rendered as dim indented lines in human mode or attached to a
-    `{error, message, nextSteps, exitCode}` JSON record in
-    `--json` mode.
-  - `--json` JSON errors go to **stderr** (so stdout stays clean
-    for the success-path JSON when piping); the JSON record
-    carries the same `exitCode` the process exits with.
-  - `ClaimerNotRegisteredError` is the first error converted to
-    structured `errorNextSteps()`. Three resolutions in expected
-    frequency order: `--self` for the orchestrator pattern,
-    `--for <worker>` for dispatch, `mu adopt <pane-id>` for
-    registration.
-  - First batch of verbs grew next-step hints:
-    `mu workstream init` (attach + plan + spawn + state),
-    `mu agent spawn` (send + read + watch + close),
-    `mu agent close` (workspace-kept hint + re-spawn),
-    `mu adopt` (send + read + verify),
-    `mu task add` (show + note + block + claim),
-    `mu task claim` (note + close + release),
-    `mu task release` (reclaim + show),
-    `mu task close` (open + next + state).
-  - `--json` extended to the four touched write verbs
-    (`mu task add / claim / release / close`); each emits a
-    success record with `nextSteps`. Read verbs that already had
-    `--json` (e.g. `mu task show`, `mu task list`) continue
-    unchanged in success mode but now emit structured errors when
-    they fail.
-
-  Live before/after for `mu task add`:
-
-      $ mu task add foo --title "Foo" --impact 50 --effort-days 1
-      Added task foo (workstream=ws, impact=50, effort=1)
-      Next:
-        Show this task  : mu task show foo -w ws
-        Drop a note     : mu task note foo "..." -w ws
-        Add a blocker   : mu task block foo --by <other-id> -w ws
-        Claim and start : mu task claim foo -w ws --self  (or --for <worker>)
-
-      $ mu task add foo --title "Foo" --impact 50 --effort-days 1 --json
-      {"task": {...}, "blockers": [], "nextSteps": [
-        {"intent": "Show this task", "command": "mu task show foo -w ws"},
-        ...
-      ]}
-
-      $ mu task claim ghost --json   # error path, --json
-      {"error":"TaskNotFoundError","message":"no such task: ghost",
-       "nextSteps":[],"exitCode":3}
-      # (-> stderr; exit 3)
-
-  This is the first commit of the `selfdoc_*` track in workstream
-  `roadmap-v0-2`. Follow-ups:
-  - `selfdoc_errors`: every typed error gains `errorNextSteps()`.
-  - `selfdoc_verbs_round2`: hints + `--json` for the rest of the
-    write verbs.
-  - `selfdoc_skill_cleanup`: `skills/mu/SKILL.md` shrinks (~770
-    -> ~500 LOC) by moving per-verb tips into verb output where
-    they belong.
-  - `selfdoc_dogfood`: a fresh-agent walkthrough of plan / spawn /
-    claim / note / close relying ONLY on verb output.
-
-  See note #108 on the (now-CLOSED) `selfdoc_design` task for the
-  full audit and design rationale.
-
-- **`mu task claim --self` for the orchestrator pattern.** Two
-  things mu has always conflated: a *worker* (a tmux pane mu
-  spawned, with a row in `agents`, identity = pane title) and an
-  *actor* (anything that causes a state change — may or may not
-  be a worker; orchestrators, scripts, and humans are actors but
-  not workers). The v2 schema migration tightened the FK on
-  `tasks.owner` to `agents.name`, which exposed the conflation:
-  bare `mu task claim` from an orchestrator pane (one not spawned
-  by `mu agent spawn`) now had nowhere to write the claim.
-
-  `--self` is the actor's opt-out:
-  - `tasks.owner` stays NULL (no FK lookup; no synthetic agents
-    row pollution).
-  - The actor name is recorded in `agent_logs.source` for the
-    auto-emitted `task claim` event — provenance is preserved,
-    just attributed to the log instead of the FK column.
-  - Resolution order for the actor name: `--actor <name>`, then
-    pane title, then `$USER`, then the literal `unknown`.
-  - Mutually exclusive with `--for` (they're alternative answers
-    to "who's the actor for this claim?").
-  - Workers are unaffected — they keep using bare
-    `mu task claim` exactly as before. `--self` is opt-in for the
-    unregistered-actor case.
-
-  `mu task show` and `mu task show --json` now surface the actor
-  for tasks where `owner IS NULL` by scanning recent `task claim`
-  events, so 'who's working on this' is answerable from
-  `mu task show` alone:
-
-      $ mu task claim foo --self
-      Claimed foo (--self by pi-mu; OPEN → IN_PROGRESS; owner=NULL)
-
-      $ mu task show foo
-      foo  —  ...
-        owner      : (self: pi-mu)
-        ...
-
-  The `ClaimerNotRegisteredError` message (shipped in dbfc84d)
-  has been updated to list `--self` as the first actionable next
-  step, ahead of `--for` and `mu adopt`. Three actionable paths
-  for an orchestrator who hits 'not a registered mu agent', in
-  order of expected frequency.
-
-  SDK: `claimTask({ self: true, actor?: string })` returns
-  `{ owner: string | null, actor: string, ... }`. Existing
-  `{ self: false }` callers are unchanged. The `ClaimResult.owner`
-  type widens from `string` to `string | null`.
-
-  **Vocabulary update:** `docs/VOCABULARY.md` adds canonical
-  entries for **worker** (the registered side of identity),
-  **actor** (the party that caused a state change), and
-  **anonymous claim** (the `--self` operation). The **owner**
-  entry now notes its NULL-on-self semantics. The **adopt** entry
-  is updated from "deferred" to its current state.
-
-- **`mu adopt <pane-or-title>` verb.** Register an existing tmux
-  pane as a managed mu agent — the inverse of `mu agent list`'s
-  "orphan" state. The orphan-list message has been advertising
-  this verb since v0.1.0 ("`mu adopt` is on the roadmap"); now
-  it ships.
-
-  - Pane id form (`mu adopt %15`) or pane title form
-    (`mu adopt worker-2`); both look up the pane and adopt it.
-  - Defaults to using the pane's current title as the agent
-    name; pass `--name <name>` to override (and retitle the
-    pane in the process so the claim protocol invariant holds).
-  - Idempotent: adopting the same pane twice is a no-op (returns
-    `alreadyAdopted: true` from the SDK).
-  - Scope-aware: pane must be in the matching `mu-<workstream>`
-    tmux session, otherwise `AgentNotInWorkstreamError` (exit 4).
-  - Emits an `agent adopt` event into `agent_logs` so the
-    adoption is auditable.
-  - SDK: `adoptAgent(db, opts)` in `src/agents.ts`; types
-    `AdoptAgentOptions` and `AdoptAgentResult` exported.
-  - New typed error `PaneNotFoundError` in `src/tmux.ts` for the
-    "pane id doesn't exist on the tmux server" case (exit 5
-    substrate).
-  - Test cases mirror the design (`adopt_design` task note #100):
-    8 unit cases (mocked tmux) + 2 integration cases (real tmux).
-
-  The orphan-list message in `mu agent list` is updated to point
-  at the new verb instead of the previous "is on the roadmap"
-  copy. The `mu sql 'INSERT INTO agents ...'` workaround is
-  removed from USAGE_GUIDE.md § "What's NOT in 0.1.0".
-
-- **`mu task list --status <S>` filter.** Accepts case-insensitive
-  `OPEN | IN_PROGRESS | CLOSED`. Invalid values exit 2 with a usage
-  error. SDK gains a `ListTasksOptions` interface and an
-  `isTaskStatus` type guard, both exported from `src/index.ts`.
-  `listTasks` now takes an optional third argument; existing
-  two-argument calls are unaffected.
-
-### Fixed
-
-- **`mu task claim` from an unregistered pane gives an actionable
-  error instead of bare `FOREIGN KEY constraint failed`.** The v2
-  schema migration tightened `tasks.owner`'s FK to `agents.name`,
-  which surfaced a latent bug: claims from a pi session that
-  wasn't itself spawned by mu (or invoked with `--for <ghost>`)
-  failed with the unhelpful raw SQLite error.
-
-  `claimTask` now does a `SELECT 1 FROM agents WHERE name=?`
-  pre-check before the atomic CAS UPDATE, throwing a typed
-  `ClaimerNotRegisteredError` (exit 4 conflict) when the claimer
-  doesn't exist. The error message includes:
-  - the resolved claimer name
-  - the pane id (when resolved from `$TMUX_PANE`) plus the exact
-    `mu adopt %<pane>` command to fix it
-  - a fallback hint suggesting `--for` when the name came from
-    `--for` itself
-
-  Live before/after on the orchestrator's pane:
-
-      $ mu task claim some-task                    # before v0.1.x
-      error: FOREIGN KEY constraint failed
-
-      $ mu task claim some-task                    # after
-      conflict: claimer 'pi-mu' (pane %6441) is not a registered
-        mu agent (no row in agents table).
-        Register this pane with: mu adopt %6441
-      exit: 4
-
-  The pre-check adds essentially no overhead (one indexed lookup
-  before the existing transactional UPDATE); the atomic CAS
-  on `tasks.owner` is preserved end-to-end.
-
-  `ClaimerNotRegisteredError` is exported from the SDK
-  (`src/index.ts`) so programmatic callers can distinguish it
-  from `TaskAlreadyOwnedError` / `TaskNotFoundError` without
-  string-matching.
-
-- **Workstream names with the `mu-` prefix are now rejected at
-  init time.** `mu workstream init mu-foo` would have produced
-  tmux session `mu-mu-foo` (because mu auto-prepends `mu-` to
-  derive the session name). Almost never intended; same
-  validation seam as the dot-mangle fix —
-  `WorkstreamNameInvalidError`, exit 2, message names the
-  resulting double-prefixed session so the gotcha is obvious.
-
-- **Long task titles no longer blow out the terminal.** The
-  `mu task list / next / ready / blocked / goals / owned-by`
-  table views and the bare `mu` mission-control "Ready" table
-  now compute a title-column budget from `process.stdout.columns`
-  (default 100 when stdout isn't a TTY) and truncate titles with
-  an ellipsis. **The `id` column is never truncated** — IDs are
-  what callers copy to issue follow-up commands; titles are what
-  callers visually scan. Symmetric with `git log --oneline`'s
-  preserve-SHA / truncate-subject convention.
-
-- **Task JSON output now includes `roi`** (impact ÷ effortDays).
-  Previously `mu task next --json | jq 'sort_by(.roi)'` returned
-  rows in arbitrary order because the JSON serialiser dropped the
-  ROI that the table view computes inline. Affected verbs:
-  `task list / next / ready / blocked / goals / owned-by / show`,
-  `my-tasks`, `my-next`, bare `mu --json`, `mu state --json`.
-  Tasks with `effortDays === 0` omit the field (JSON has no
-  Infinity literal); callers can detect via `effortDays === 0`.
-  The `TaskRow` SDK type is unchanged — ROI stays a
-  CLI-rendering concern, decorated only on the JSON emit path.
-
-
-- **`mu workstream init <name>` now validates the name.** Names
-  containing `.`, `:`, `/`, uppercase, leading digit/hyphen, or
-  >32 chars are rejected with `WorkstreamNameInvalidError` (exit
-  2). The motivating bug: `mu workstream init roadmap-v0.2`
-  succeeded, but tmux silently rewrote the session name to
-  `mu-roadmap-v0_2` (because `.` is the window/pane separator in
-  tmux's `session:window.pane` target syntax). Every downstream
-  verb — `mu agent list`, `mu state`, bare `mu`, `mu agent
-  spawn` — then failed with `can't find pane: 2` or `duplicate
-  session` because mu queried the unmangled name. Fail loud at
-  init time instead.
-  - **Migration:** existing workstreams with invalid names need
-    to be renamed via SQL: `INSERT INTO workstreams (name,
-    created_at) SELECT '<new>', created_at FROM workstreams WHERE
-    name='<old>'; UPDATE tasks SET workstream='<new>' WHERE
-    workstream='<old>'; UPDATE agent_logs SET workstream='<new>'
-    WHERE workstream='<old>'; DELETE FROM workstreams WHERE
-    name='<old>';` (each statement separately; `mu sql` doesn't
-    accept multi-statement scripts yet). Then
-    `tmux kill-session -t <old-mangled-session>`.
-  - The same regex applies to `ensureWorkstream` (the auto-create
-    path on first `mu agent spawn` / `mu task add`), so the
-    invariant holds even for callers that skip `mu workstream init`.
-  - SDK: `WorkstreamNameInvalidError` and `isValidWorkstreamName`
-    exported from `src/index.ts`.
-
-### Breaking
-
-- **`mu agent close` no longer touches the workspace.** Previously,
-  closing an agent auto-freed its workspace dir; the
-  `--keep-workspace` flag opted out. The default lost any
-  uncommitted artifacts (benchmark output, profiles, scratch logs)
-  produced into the workspace cwd. The new behaviour: closing an
-  agent kills the pane and removes the registry row only. Run
-  `mu workspace free <agent>` (or `mu workspace free <agent>
-  --commit`) explicitly to remove the on-disk dir. The
-  `--keep-workspace` and `--commit-workspace` flags on `agent
-  close` are removed.
-  - **Migration:** any script that did `mu agent close X` and
-    relied on the workspace being cleaned up should add
-    `mu workspace free X` after.
-  - **Why:** mu has no `mu undo`; destructive defaults are bad
-    form. The split also matches mu's general principle that each
-    verb does one thing.
-
----
+- **Schema bumped to v5** — see Breaking above.
+- **`schema_version` table + migration framework** (v1 → v2;
+  later removed once v5 landed). The framework existed for the
+  ON-UPDATE-CASCADE migration and the v3 `REJECTED`/`DEFERRED`
+  states; the file is gone post-v5.
+- **All 10 foreign keys gain `ON UPDATE CASCADE`** (v1 → v2,
+  pre-v5). Renaming a workstream / task / agent name now leaves
+  no dangling children. Recovery recipes in
+  [USAGE_GUIDE § 14](docs/USAGE_GUIDE.md#you-typod-a-workstream-name-and-want-to-rename-it).
 
 ## [0.1.0] — Initial release
 

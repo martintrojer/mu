@@ -216,10 +216,8 @@ mu adopt <pane-id|pane-title>        # register an orphan pane as a managed agen
 # Tasks (18)
 mu task add [id] --title T --impact N --effort-days N [--blocked-by A,B]
 mu task list [--status S] [--sort K]   # every task; --sort id|roi|recency|age
-mu task next [-n K] [--sort K]         # top-K ready (default K=1, --sort roi)
-                                     # -n 0 = all ready (replaces removed `task ready`)
-                                     # --sort recency = updated_at DESC; age = created_at ASC
-                                     # both add a relative-time column to the table
+mu task next [-n K] [--sort K]         # top-K ready (default K=1, --sort roi); -n 0 = all
+                                     # --sort: id|roi|recency|age (time-based adds rel-time col)
 mu task owned-by <agent>             # what is <agent> working on?
 mu task show <id>                    # row + edges + notes
 mu task tree <id> [--down]           # ASCII blockers (or dependents)
@@ -350,10 +348,12 @@ You don't have to manually `task release --reopen` after a crash.
 
 ## SQL escape hatch
 
-`mu sql "<query>"` for anything not yet typed. Schema: 9 tables
-(`workstreams`, `agents`, `tasks`, `task_edges`, `task_notes`,
-`agent_logs`, `vcs_workspaces`, `approvals`, `schema_version`) +
-3 views (`ready`, `blocked`, `goals`). Inspect with
+`mu sql "<query>"` for anything not yet typed. Schema (v5): 10
+tables (`workstreams`, `agents`, `tasks`, `task_edges`,
+`task_notes`, `agent_logs`, `vcs_workspaces`, `approvals`,
+`snapshots`, `schema_version`) + 3 views (`ready`, `blocked`,
+`goals`). Every entity table has an INTEGER `id` PK; the
+operator-facing TEXT name is per-workstream `UNIQUE`. Inspect with
 `mu sql "SELECT name FROM sqlite_master WHERE type IN ('table','view')"`
 or `mu doctor --json | jq .db.schema`.
 
@@ -541,9 +541,8 @@ mu task close <id> --evidence "tests pass: ..."        # close
 # repeat
 ```
 
-- If you committed/finished but skipped `mu task close <id>`, the
-  orchestrator's `mu task wait` will hang. Always close as the LAST
-  action of a dispatched task.
+- **Close as the LAST action.** Skipping `mu task close` makes the
+  orchestrator's `mu task wait` hang.
 
 ### When you need to do something irreversible
 
