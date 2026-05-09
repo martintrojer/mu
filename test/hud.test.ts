@@ -252,3 +252,146 @@ describe("mu hud", () => {
     expect(threeJson.recent.length).toBe(3);
   });
 });
+
+// ── colorEventPayload regression: every emitter verb is recognised ──
+//
+// The HUD's recent-events tail colours the leading verb token of each
+// event-log payload so the eye can group events at a glance. Before
+// review_code_hud_event_color_regex_drift the colourer used a hand-
+// maintained regex that drifted: `task block`, `task reparent`, and
+// `approval granted` were emitted by the SDK but missed by the regex,
+// rendering as plain dim text. The fix moved the verb list to a
+// single source of truth (EVENT_VERB_PREFIXES in src/logs.ts) and the
+// HUD reads from it.
+//
+// This block enforces the contract two ways:
+//   1. Every entry in EVENT_VERB_PREFIXES round-trips through
+//      colorEventPayload as a recognised, coloured verb.
+//   2. Every `emitEvent(...)` call under src/ produces a payload
+//      whose first two tokens match an entry in EVENT_VERB_PREFIXES.
+//      So a contributor adding a new emitter without updating the
+//      list breaks this test, not the user's HUD silently.
+//
+// We need real ANSI colour for assertion (1), but the rest of this
+// file forces NO_COLOR. Re-enable colour, reset module cache, then
+// dynamic-import the freshly-built `pc` instance and the colourer.
+describe("colorEventPayload", () => {
+  let savedNoColor: string | undefined;
+  let savedForceColor: string | undefined;
+  beforeEach(() => {
+    savedNoColor = process.env.NO_COLOR;
+    savedForceColor = process.env.MU_FORCE_COLOR;
+    const noColorKey = "NO_COLOR";
+    delete process.env[noColorKey];
+    process.env.MU_FORCE_COLOR = "1";
+    vi.resetModules();
+  });
+  afterEach(() => {
+    if (savedNoColor === undefined) {
+      const noColorKey = "NO_COLOR";
+      delete process.env[noColorKey];
+    } else {
+      process.env.NO_COLOR = savedNoColor;
+    }
+    if (savedForceColor === undefined) {
+      const forceColorKey = "MU_FORCE_COLOR";
+      delete process.env[forceColorKey];
+    } else {
+      process.env.MU_FORCE_COLOR = savedForceColor;
+    }
+    vi.resetModules();
+  });
+
+  it("colours every verb in EVENT_VERB_PREFIXES", async () => {
+    const { EVENT_VERB_PREFIXES } = await import("../src/logs.js");
+    const { colorEventPayload } = await import("../src/cli/hud.js");
+    expect(EVENT_VERB_PREFIXES.length).toBeGreaterThan(0);
+    for (const verb of EVENT_VERB_PREFIXES) {
+      const payload = `${verb} alpha (extra info)`;
+      const out = colorEventPayload(payload);
+      // Output must wrap `verb` in ANSI escapes (cyan) and leave the
+      // tail intact. Two checks: (a) the verb is no longer present
+      // verbatim at position 0 (escapes pushed it right) and (b) the
+      // tail substring is still in the output.
+      expect(out, `verb '${verb}' should be coloured`).not.toBe(payload);
+      expect(out, `verb '${verb}' tail should survive`).toContain(" alpha (extra info)");
+      // ANSI cyan SGR opener (\x1b[36m) must be present.
+      expect(out, `verb '${verb}' should emit ANSI cyan`).toContain("\x1b[36m");
+    }
+  });
+
+  it("leaves unknown payloads untouched (no false-positive matches)", async () => {
+    const { colorEventPayload } = await import("../src/cli/hud.js");
+    for (const payload of [
+      "random freeform message",
+      "approve granted slug", // wrong noun (`approve` vs `approval`) — must NOT match
+      "snapshot capture foo", // not in the canonical list (snapshots.ts emits no events)
+      "taskaddendum sneaky", // word-boundary check
+    ]) {
+      expect(colorEventPayload(payload)).toBe(payload);
+    }
+  });
+
+  it("every emitEvent callsite under src/ uses a payload prefix in EVENT_VERB_PREFIXES", async () => {
+    // Static-grep enforcement: scan src/**/*.ts for `emitEvent(`,
+    // extract the first 1–2 leading tokens of the payload literal,
+    // assert each is recognised. This is what catches drift in the
+    // OTHER direction — a contributor adds a new emitter call but
+    // forgets to extend EVENT_VERB_PREFIXES.
+    const { EVENT_VERB_PREFIXES } = await import("../src/logs.js");
+    const { readFileSync, readdirSync, statSync } = await import("node:fs");
+    const { join: pj } = await import("node:path");
+    function walk(dir: string, out: string[] = []): string[] {
+      for (const entry of readdirSync(dir)) {
+        const full = pj(dir, entry);
+        const st = statSync(full);
+        if (st.isDirectory()) walk(full, out);
+        else if (entry.endsWith(".ts") && !entry.endsWith(".test.ts")) out.push(full);
+      }
+      return out;
+    }
+    const files = walk("src");
+    // Capture the third arg to emitEvent across multi-line calls.
+    // emitEvent(db, ws, `payload ...`, source?) — we want the third arg
+    // (the payload), which is always a template literal or string
+    // literal whose leading prefix we can sniff. Be lenient: just find
+    // every backtick-or-quote literal that follows a `,` line under an
+    // `emitEvent(` call.
+    const callsites: { file: string; payloadPrefix: string }[] = [];
+    for (const file of files) {
+      const src = readFileSync(file, "utf8");
+      // Match emitEvent(...) and pluck the first string/template literal
+      // appearing as the third argument. emitEvent always takes
+      // (db, workstream, payload, source?). Robust regex: look for
+      // `emitEvent(` then skip up to two arg-separating commas, then
+      // grab a backtick/single/double-quoted literal opener and read
+      // until its closing delimiter.
+      const re = /emitEvent\s*\(\s*[^,]+,\s*[^,]+,\s*([`'"])((?:\\.|(?!\1)[\s\S])*?)\1/g;
+      let m: RegExpExecArray | null;
+      // biome-ignore lint/suspicious/noAssignInExpressions: classic regex loop
+      while ((m = re.exec(src)) !== null) {
+        const literal = m[2] ?? "";
+        // Take the leading tokens up to the first ${ (template hole)
+        // or whitespace-separated entity id. We need the first two
+        // bare-word tokens (the verb prefix).
+        const head = literal.split("${")[0] ?? "";
+        const words = head.trim().split(/\s+/).slice(0, 2);
+        if (words.length === 2) {
+          callsites.push({ file, payloadPrefix: words.join(" ") });
+        }
+      }
+    }
+    expect(callsites.length).toBeGreaterThan(0);
+    const knownPrefixes = new Set(EVENT_VERB_PREFIXES);
+    // Special case: src/approvals.ts emits `approval ${newStatus} slug`
+    // where newStatus is one of granted|denied|timeout. The regex
+    // above will see the word `approval` followed by `${` and slice
+    // off only one token — skip those (we have explicit list entries
+    // approval granted/denied/timeout to cover them).
+    const unknown = callsites.filter((c) => !knownPrefixes.has(c.payloadPrefix));
+    expect(
+      unknown,
+      `emitEvent callsites with payload prefixes not in EVENT_VERB_PREFIXES: ${JSON.stringify(unknown, null, 2)}`,
+    ).toEqual([]);
+  });
+});

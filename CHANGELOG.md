@@ -276,6 +276,48 @@ called out under "Breaking" in each entry.
 
 ### Fixed
 
+- **`mu hud` recent-events tail now colours every emitter verb
+  (was silently mis-colouring `task block` / `approval granted` /
+  `task reparent`).** Closes `review_code_hud_event_color_regex_drift`
+  in `mufeedback`. The `colorEventPayload` helper in `src/cli/hud.ts`
+  used a hand-maintained regex enumerating two-token verb prefixes
+  (`task add`, `agent spawn`, ...). Three drifts had accumulated:
+  the regex listed `task edge add` / `task edge remove` (no caller
+  emits these — the actual edge events are `task block ${...} by
+  ${...}` and `task unblock ...`); listed `approve add|grant|deny`
+  while the SDK emits `approval add` and `approval ${granted|denied|
+  timeout} ${slug}`; and missed `task reparent` outright. Net: the
+  three highest-frequency "structural" event verbs after
+  add/close/note/claim/release rendered as plain dim text in the
+  HUD's events column, defeating the verb-colour grouping the
+  function was supposed to provide.
+
+  Fix is two-part. (a) Pull the verb list out of the regex into a
+  single source of truth `EVENT_VERB_PREFIXES` exported from
+  `src/logs.ts` (lives next to `emitEvent` so the maintenance
+  contract is local: "adding a new emitter? add its prefix here").
+  (b) Rewrite `colorEventPayload` to walk the list and match by
+  prefix + word boundary; falls back to the dim payload when
+  nothing matches (information-preserving). The list itself enumerates
+  every two-word prefix actually emitted by the SDK today (audited
+  via `grep -rn emitEvent src/`): 11 task verbs, 4 agent verbs, 2
+  workspace verbs, 2 workstream verbs, 4 approval verbs.
+
+  Regression coverage in `test/hud.test.ts` is two-sided: one test
+  walks every entry in `EVENT_VERB_PREFIXES` through
+  `colorEventPayload` and asserts ANSI cyan wraps the verb (catches
+  the HUD failing to recognise something on the canonical list);
+  another grep-scans every `emitEvent(...)` callsite under `src/`
+  and asserts each payload's leading two tokens are a member of
+  `EVENT_VERB_PREFIXES` (catches the OTHER drift direction — a
+  contributor adding a new emitter and forgetting to extend the
+  list). Verified by deleting `"task block"` from the constant: the
+  scanning test fails loudly with the offending callsite path. A
+  third small test asserts unknown payloads (including the trap
+  string `"approve granted slug"` — wrong noun) round-trip unchanged.
+  Behaviour change: HUD now renders the formerly-dim verbs in cyan;
+  no JSON shape changes.
+
 - **`mu task note` escape translation no longer relies on an
   in-band sentinel string.** Closes
   `review_code_unescape_note_text_placeholder_brittle` in

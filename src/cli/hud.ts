@@ -30,7 +30,7 @@ import {
   withRoiAll,
 } from "../cli.js";
 import type { Db } from "../db.js";
-import { type LogRow, listLogs } from "../logs.js";
+import { EVENT_VERB_PREFIXES, type LogRow, listLogs } from "../logs.js";
 import { pc } from "../output.js";
 import { type TaskRow, listInProgress, listReady, listTasksByOwner } from "../tasks.js";
 import { currentPaneSize } from "../tmux.js";
@@ -246,18 +246,28 @@ function formatHudRecentTable(
 }
 
 /** Recolour an event-log payload so the verb token (e.g. 'task close',
- *  'agent spawn', 'workspace create') stands out. Conservative: matches
- *  the verbs emitted by mu/src/agents.ts + tasks.ts + workstream.ts +
- *  workspace.ts; falls back to the original string when nothing matches
- *  so we never lose information just because we couldn't classify. */
-function colorEventPayload(payload: string): string {
-  const m = payload.match(
-    /^(task (?:add|note|status|claim|release|close|update|delete|reject|defer|reap|edge add|edge remove)|agent (?:spawn|close|free|adopt)|workspace (?:create|free)|workstream (?:init|destroy)|approve (?:add|grant|deny)|snapshot (?:capture|restore|prune))\b/,
-  );
-  if (!m) return payload;
-  const verb = m[1] ?? "";
-  const rest = payload.slice(verb.length);
-  return `${pc.cyan(verb)}${rest}`;
+ *  'agent spawn', 'workspace create') stands out. Drives off
+ *  EVENT_VERB_PREFIXES in src/logs.ts — the same list the SDK uses to
+ *  document its emitter contract — so the HUD can't silently drift
+ *  away from the verbs callers actually emit (the original ad-hoc
+ *  regex did, missing `task block` / `approval granted` / `task
+ *  reparent`; see review_code_hud_event_color_regex_drift). Falls back
+ *  to the original string when nothing matches so we never lose
+ *  information just because we couldn't classify. Exported for tests.
+ */
+export function colorEventPayload(payload: string): string {
+  for (const verb of EVENT_VERB_PREFIXES) {
+    // Match the prefix only at a word boundary: the next char must be
+    // end-of-string or whitespace. Prevents `approval addendum` (if
+    // such a payload ever appears) from being mis-coloured as
+    // `approval add`.
+    if (!payload.startsWith(verb)) continue;
+    const next = payload.charCodeAt(verb.length);
+    if (!Number.isNaN(next) && next !== 0x20 && next !== 0x09) continue;
+    const rest = payload.slice(verb.length);
+    return `${pc.cyan(verb)}${rest}`;
+  }
+  return payload;
 }
 
 /**

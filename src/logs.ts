@@ -178,3 +178,52 @@ export function emitEvent(
 ): void {
   appendLog(db, { workstream, source, kind: "event", payload });
 }
+
+/**
+ * Canonical list of two-token verb prefixes that `emitEvent` callers
+ * use as the leading words of a payload. Single source of truth: the
+ * HUD's event-tail colourer (src/cli/hud.ts colorEventPayload) reads
+ * this so it can never drift away from the actual emitter sites.
+ *
+ * Maintenance contract: when you add an `emitEvent(...)` call whose
+ * payload starts with a new two-word verb, add the verb here. A
+ * regression test in test/hud.test.ts walks every entry and asserts
+ * the HUD recognises it; the test fails if you add an emitter without
+ * adding its verb here.
+ *
+ * Audit (2026-05): every `emitEvent` callsite under src/ produces a
+ * payload that starts with one of these. Verified by
+ * `grep -rn emitEvent src/ | grep -v import`.
+ */
+export const EVENT_VERB_PREFIXES: readonly string[] = [
+  // src/tasks.ts + src/tasks/*.ts
+  "task add",
+  "task note",
+  "task status",
+  "task claim",
+  "task release",
+  "task update",
+  "task delete",
+  "task reap",
+  "task block",
+  "task unblock",
+  "task reparent",
+  // src/agents.ts + src/agents/*.ts
+  "agent spawn",
+  "agent close",
+  "agent free",
+  "agent adopt",
+  // src/workspace.ts
+  "workspace create",
+  "workspace free",
+  // src/workstream.ts
+  "workstream init",
+  "workstream destroy",
+  // src/approvals.ts — note `approval`, not `approve`. The CLI verb
+  // is `mu approve`, but the event payload uses the noun `approval`
+  // (followed by a status word, e.g. `approval granted slug ...`).
+  "approval add",
+  "approval granted",
+  "approval denied",
+  "approval timeout",
+];
