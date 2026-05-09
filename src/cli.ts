@@ -445,11 +445,25 @@ export function formatWorkstreamsTable(rows: WorkstreamSummary[]): string {
 
 /**
  * Resolve "the agent running this process" by reading `$TMUX_PANE` and
- * looking up the matching agent row. Throws UsageError with a helpful
- * message if either step fails. Used by `mu whoami` / `my-tasks` /
- * `my-next` to give an LLM-in-a-pane zero-config self-identification.
- * Lives in cli.ts so cli/agents.ts and cli/tasks.ts can both import
- * it without a lateral cli/* dependency.
+ * looking up the matching agent row. Returns null when `$TMUX_PANE` is
+ * unset or the pane isn't a managed agent — the lenient variant used
+ * by verbs that have a sensible fallback (e.g. `mu approve add` falls
+ * back to 'user'). `resolveSelf` wraps this with the strict throwing
+ * variant for verbs that genuinely require a managed-pane caller.
+ */
+export function resolveSelfOptional(db: Db): AgentRow | null {
+  const paneId = process.env.TMUX_PANE;
+  if (!paneId) return null;
+  return getAgentByPane(db, paneId) ?? null;
+}
+
+/**
+ * Strict variant of `resolveSelfOptional`: throws UsageError with a
+ * helpful message if `$TMUX_PANE` is unset or the pane isn't a
+ * managed agent. Used by `mu whoami` / `my-tasks` / `my-next` to give
+ * an LLM-in-a-pane zero-config self-identification. Lives in cli.ts
+ * so cli/agents.ts and cli/tasks.ts can both import it without a
+ * lateral cli/* dependency.
  */
 export function resolveSelf(db: Db): AgentRow {
   const paneId = process.env.TMUX_PANE;
@@ -458,7 +472,7 @@ export function resolveSelf(db: Db): AgentRow {
       "$TMUX_PANE is not set; this verb only works inside an mu-spawned tmux pane (or any tmux pane, but the pane has to be a managed agent)",
     );
   }
-  const agent = getAgentByPane(db, paneId);
+  const agent = resolveSelfOptional(db);
   if (!agent) {
     throw new UsageError(
       `pane ${paneId} is not a managed agent. Use \`mu agent list\` to see managed panes, or \`mu agent spawn\` to register a new one.`,

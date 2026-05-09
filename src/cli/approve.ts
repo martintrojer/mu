@@ -19,7 +19,6 @@
 
 import Table from "cli-table3";
 
-import { getAgentByPane } from "../agents.js";
 import {
   type AddApprovalOptions,
   ApprovalNotInWorkstreamError,
@@ -32,7 +31,7 @@ import {
   listApprovals,
   waitApproval,
 } from "../approvals.js";
-import { UsageError, emitJson, resolveOptionalWorkstream } from "../cli.js";
+import { UsageError, emitJson, resolveOptionalWorkstream, resolveSelfOptional } from "../cli.js";
 import type { Db } from "../db.js";
 import { type NextStep, pc, printNextSteps } from "../output.js";
 
@@ -47,7 +46,7 @@ export async function cmdApprovalAdd(
   },
 ): Promise<void> {
   const ws = opts.workstream ?? (await resolveOptionalWorkstream());
-  const requestedBy = opts.requestedBy ?? (await resolveSelfNameOrUser(db));
+  const requestedBy = opts.requestedBy ?? resolveSelfNameOrUser(db);
   const addOpts: AddApprovalOptions = {
     workstream: ws,
     reason: opts.reason,
@@ -110,7 +109,7 @@ export async function cmdApprovalGrant(
   opts: { by?: string; workstream?: string; json?: boolean },
 ): Promise<void> {
   assertApprovalInWorkstream(db, slug, opts.workstream);
-  const decidedBy = opts.by ?? (await resolveSelfNameOrUser(db));
+  const decidedBy = opts.by ?? resolveSelfNameOrUser(db);
   const row = grantApproval(db, slug, { decidedBy });
   if (opts.json) {
     emitJson(row);
@@ -125,7 +124,7 @@ export async function cmdApprovalDeny(
   opts: { by?: string; workstream?: string; json?: boolean },
 ): Promise<void> {
   assertApprovalInWorkstream(db, slug, opts.workstream);
-  const decidedBy = opts.by ?? (await resolveSelfNameOrUser(db));
+  const decidedBy = opts.by ?? resolveSelfNameOrUser(db);
   const row = denyApproval(db, slug, { decidedBy });
   if (opts.json) {
     emitJson(row);
@@ -212,12 +211,11 @@ function assertApprovalInWorkstream(db: Db, slug: string, workstream: string | u
 
 /** Like resolveSelf but falls back to 'user' (no throw) when not in
  *  a managed pane. Used by approve add / grant / deny so an external
- *  shell caller doesn't have to pass --by/--requested-by every time. */
-async function resolveSelfNameOrUser(db: Db): Promise<string> {
-  const paneId = process.env.TMUX_PANE;
-  if (!paneId) return "user";
-  const agent = getAgentByPane(db, paneId);
-  return agent ? agent.name : "user";
+ *  shell caller doesn't have to pass --by/--requested-by every time.
+ *  Thin wrapper over resolveSelfOptional — kept here only so the
+ *  approve verbs read as "resolveSelfNameOrUser" at the call site. */
+function resolveSelfNameOrUser(db: Db): string {
+  return resolveSelfOptional(db)?.name ?? "user";
 }
 
 // ─── commander wiring ────────────────────────────────────────────────

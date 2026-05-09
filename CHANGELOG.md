@@ -59,6 +59,22 @@ called out under "Breaking" in each entry.
 
 ### Changed
 
+- **`resolveSelf` now layers over a new `resolveSelfOptional`; the
+  approve verbs' `resolveSelfNameOrUser` is a one-liner over it.**
+  Closes `review_code_resolveselfnameoruser_dup_resolveself` in
+  `mufeedback`. Three helpers asked the same conceptual "who am I
+  in this pane?" question across `src/cli.ts` (strict, throws),
+  `src/cli/approve.ts` (lenient, falls back to `'user'`), and
+  `src/tasks/claim.ts` (env-aware string for `--self`/`--author`).
+  Pulled the lenient pane lookup up to a new exported
+  `resolveSelfOptional(db): AgentRow | null` in `src/cli.ts`;
+  `resolveSelf` now wraps it with the throwing branch, and
+  `src/cli/approve.ts` `resolveSelfNameOrUser` is
+  `resolveSelfOptional(db)?.name ?? "user"`. `resolveActorIdentity`
+  is intentionally untouched — it answers a different question
+  (string identity with `MU_AGENT_NAME` / pane-title / `$USER`
+  precedence, not an `AgentRow`). Behaviour unchanged.
+
 - **`MU_BANNER_QUIET` opt-out moved into the tmux border helpers;
   callers no longer wrap them in env guards.** Closes
   `review_code_banner_quiet_env_repeated` in `mufeedback`. Three
