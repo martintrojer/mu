@@ -26,12 +26,17 @@ import {
   type ApprovalStatus,
   addApproval,
   denyApproval,
-  getApproval,
   grantApproval,
   listApprovals,
   waitApproval,
 } from "../approvals.js";
-import { UsageError, emitJson, resolveOptionalWorkstream, resolveSelfOptional } from "../cli.js";
+import {
+  UsageError,
+  assertEntityInWorkstream,
+  emitJson,
+  resolveOptionalWorkstream,
+  resolveSelfOptional,
+} from "../cli.js";
 import type { Db } from "../db.js";
 import { type NextStep, pc, printNextSteps } from "../output.js";
 
@@ -202,11 +207,17 @@ function formatApprovalsTable(rows: readonly ApprovalRow[]): string {
  * `ApprovalNotInWorkstreamError` (exit 4).
  */
 function assertApprovalInWorkstream(db: Db, slug: string, workstream: string | undefined): void {
-  if (!workstream) return;
-  const approval = getApproval(db, slug);
-  if (approval && approval.workstream !== workstream) {
-    throw new ApprovalNotInWorkstreamError(slug, workstream, approval.workstream);
-  }
+  // Unlike agents/tasks, approvals.workstream is nullable (global-scope
+  // approvals); the typed error already accepts `actualWorkstream:
+  // string | null` so the factory passes `actual` through unchanged.
+  assertEntityInWorkstream(
+    db,
+    "approvals",
+    "slug",
+    slug,
+    workstream,
+    (s, exp, actual) => new ApprovalNotInWorkstreamError(s, exp, actual),
+  );
 }
 
 /** Like resolveSelf but falls back to 'user' (no throw) when not in

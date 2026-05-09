@@ -30,7 +30,6 @@ import {
   type AgentStatus,
   STATUS_EMOJI,
   WorkspacePreservedError,
-  getAgent,
   getAgentByPane,
 } from "./agents.js";
 import {
@@ -70,7 +69,6 @@ import {
   TaskNotInWorkstreamError,
   type TaskRow,
   type TaskStatus,
-  getTask,
   isTaskStatus,
 } from "./tasks.js";
 import { PaneNotFoundError, TmuxError, tmux } from "./tmux.js";
@@ -715,6 +713,39 @@ export function colorStatus(status: TaskRow["status"]): string {
 }
 
 /**
+ * Generic workstream-scope assertion. The three typed wrappers
+ * (`assertAgentInWorkstream`, `assertTaskInWorkstream`,
+ * `assertApprovalInWorkstream`) all share this shape: SELECT the
+ * `workstream` column from `<table>` WHERE `<keyCol>` = key, and if
+ * the row exists with a non-matching workstream throw a typed
+ * `*NotInWorkstreamError`. No-op when `expectedWs` is undefined or
+ * the row doesn't exist (downstream handlers raise the matching
+ * `*NotFoundError`).
+ *
+ * Doing the lookup directly via raw SQL (rather than through the
+ * typed `getAgent` / `getTask` / `getApproval`) keeps the helper
+ * decoupled from each row's full schema — it only ever needs the
+ * one column. The typed errors are constructed by `errFactory` so
+ * each caller keeps its specific error class and exit-code mapping.
+ */
+export function assertEntityInWorkstream<E extends Error>(
+  db: Db,
+  table: string,
+  keyCol: string,
+  keyVal: string,
+  expectedWs: string | undefined,
+  errFactory: (keyVal: string, expectedWs: string, actualWs: string | null) => E,
+): void {
+  if (!expectedWs) return;
+  const row = db.prepare(`SELECT workstream FROM ${table} WHERE ${keyCol} = ?`).get(keyVal) as
+    | { workstream: string | null }
+    | undefined;
+  if (row && row.workstream !== expectedWs) {
+    throw errFactory(keyVal, expectedWs, row.workstream);
+  }
+}
+
+/**
  * Sister of `assertTaskInWorkstream` for verbs that target an agent
  * by name. Agent names are globally unique today (PK on agents.name),
  * so the `-w` flag is purely a scope check: operators think workstream-
@@ -728,11 +759,17 @@ export function assertAgentInWorkstream(
   agentName: string,
   workstream: string | undefined,
 ): void {
-  if (!workstream) return;
-  const agent = getAgent(db, agentName);
-  if (agent && agent.workstream !== workstream) {
-    throw new AgentNotInWorkstreamError(agentName, workstream, agent.workstream);
-  }
+  // agents.workstream is NOT NULL in the schema, so `actual` is
+  // never null in practice; the `?? "—"` is defence-in-depth for the
+  // typed-error contract (which expects a non-null actual).
+  assertEntityInWorkstream(
+    db,
+    "agents",
+    "name",
+    agentName,
+    workstream,
+    (n, exp, actual) => new AgentNotInWorkstreamError(n, exp, actual ?? "—"),
+  );
 }
 
 /**
@@ -749,11 +786,15 @@ export function assertTaskInWorkstream(
   taskId: string,
   workstream: string | undefined,
 ): void {
-  if (!workstream) return;
-  const task = getTask(db, taskId);
-  if (task && task.workstream !== workstream) {
-    throw new TaskNotInWorkstreamError(taskId, workstream, task.workstream);
-  }
+  // tasks.workstream is NOT NULL in the schema; see assertAgentInWorkstream.
+  assertEntityInWorkstream(
+    db,
+    "tasks",
+    "local_id",
+    taskId,
+    workstream,
+    (id, exp, actual) => new TaskNotInWorkstreamError(id, exp, actual ?? "—"),
+  );
 }
 
 /**

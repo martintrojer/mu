@@ -76,6 +76,24 @@ called out under "Breaking" in each entry.
 
 ### Changed
 
+- **Three workstream-scope assertions collapsed onto one generic
+  helper.** Closes `review_code_assert_in_workstream_smell` in
+  `mufeedback`. `assertAgentInWorkstream` (`src/cli.ts`),
+  `assertTaskInWorkstream` (`src/cli.ts`), and
+  `assertApprovalInWorkstream` (`src/cli/approve.ts`) were three
+  copies of the same shape: SELECT the row, compare its
+  `workstream` column, throw a typed `*NotInWorkstreamError` on
+  mismatch. Extracted `assertEntityInWorkstream<E extends Error>(db,
+  table, keyCol, keyVal, expectedWs, errFactory)` as the new
+  exported root-level helper in `src/cli.ts`; the three callers
+  become 1-line wrappers that supply their typed error class. The
+  helper does its own raw-SQL lookup of just the `workstream`
+  column so it stays decoupled from each row's full schema (no
+  `getAgent` / `getTask` / `getApproval` import). Typed errors and
+  exit-code mapping are unchanged. Removes ~25 LOC and pre-empts
+  drift the next time the assertion shape needs adjustment
+  (e.g. a workstream-rename feature). Behaviour unchanged.
+
 - **`resolveSelf` now layers over a new `resolveSelfOptional`; the
   approve verbs' `resolveSelfNameOrUser` is a one-liner over it.**
   Closes `review_code_resolveselfnameoruser_dup_resolveself` in
