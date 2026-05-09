@@ -5,7 +5,8 @@
 //   not found  → 3   (TaskNotFoundError)
 //   conflict   → 4   (TaskExistsError, TaskNotInWorkstreamError,
 //                     TaskAlreadyOwnedError, TaskHasOpenDependentsError,
-//                     ClaimerNotRegisteredError, CrossWorkstreamEdgeError)
+//                     ClaimerNotRegisteredError, CrossWorkstreamEdgeError,
+//                     TaskIdInvalidError)
 //   cycle      → 4   (CycleError — also a conflict)
 //
 // Each error implements HasNextSteps so the CLI can render a per-error
@@ -28,6 +29,62 @@ export class TaskNotFoundError extends Error implements HasNextSteps {
         command: `mu task search ${this.taskId} --all`,
       },
       { intent: "Find which workstream owns it", command: `mu task search ${this.taskId} --all` },
+    ];
+  }
+}
+
+/**
+ * Sanitise a free-form string into a candidate task id.
+ *
+ * Lowercases, replaces every non-`[a-z0-9_-]` char with `_`, trims any
+ * leading non-letter (the schema requires the first char to be a
+ * letter), truncates to 64 chars, and rewrites a leading `mu_` (the
+ * reserved system-id prefix) into `t_mu_`. Returns `"task"` when the
+ * input has no usable letters at all so the suggestion in
+ * `TaskIdInvalidError.errorNextSteps()` is always a runnable command.
+ *
+ * Mirrors `slugifyTitle`'s prefix corrections so suggested ids will
+ * pass `isValidTaskId` if the user runs them verbatim.
+ */
+export function sanitiseTaskId(input: string): string {
+  let s = input.toLowerCase().replace(/[^a-z0-9_-]/g, "_");
+  s = s.replace(/^[^a-z]+/, "");
+  s = s.slice(0, 64);
+  if (s.startsWith("mu_")) s = `t_${s}`.slice(0, 64);
+  return s.length === 0 ? "task" : s;
+}
+
+/**
+ * Thrown by `addTask` when `localId` violates the id rules — either
+ * the reserved `mu_` prefix or the schema regex
+ * `/^[a-z][a-z0-9_-]{0,63}$/`. Replaces a bare `TypeError` so the
+ * CLI's `handle()` wrapper can map it to exit code 4 (validation /
+ * conflict) and surface a `--json` `nextSteps` block pointing at
+ * the auto-derived-id workflow and a sanitised candidate.
+ */
+export class TaskIdInvalidError extends Error implements HasNextSteps {
+  override readonly name = "TaskIdInvalidError";
+  constructor(
+    public readonly attempted: string,
+    public readonly reason: "reserved-prefix" | "syntax",
+  ) {
+    const detail =
+      reason === "reserved-prefix"
+        ? 'the "mu_" prefix is reserved for system-generated IDs'
+        : "expected /^[a-z][a-z0-9_-]{0,63}$/";
+    super(`invalid task id: ${JSON.stringify(attempted)} (${detail})`);
+  }
+  errorNextSteps(): NextStep[] {
+    const sanitised = sanitiseTaskId(this.attempted);
+    return [
+      {
+        intent: "Use the auto-derived id (drop --id and pass --title)",
+        command: 'mu task add --title "..." --impact <n> --effort-days <n>',
+      },
+      {
+        intent: "Sanitise to a valid id",
+        command: `mu task add ${sanitised} --title "..." --impact <n> --effort-days <n>`,
+      },
     ];
   }
 }

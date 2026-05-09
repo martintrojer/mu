@@ -90,6 +90,24 @@ called out under "Breaking" in each entry.
 
 ### Fixed
 
+- **`mu task add` with an invalid id now throws a typed
+  `TaskIdInvalidError` instead of a bare `TypeError`.** Closes
+  `nit_invalid_id_typeerror` in `mufeedback`. Surfaced while doing
+  the `roadmap-v0-2` design pass: passing `tmpA` (uppercase) as a
+  task id produced `{"error":"TypeError", ..., "nextSteps":[],
+  "exitCode":1}` — a generic exit-1 error with no recovery hint,
+  because the error class wasn't in the CLI's `classifyError()`
+  exit-code map.
+
+  Now: a `TaskIdInvalidError extends Error implements HasNextSteps`
+  in `src/tasks/errors.ts` (alongside `TaskExistsError` and
+  friends). `errorNextSteps()` returns two actionable hints — drop
+  `--id` and pass `--title` to use the auto-derived path, or run
+  the verb again with a sanitised candidate (lowercase + every
+  non-`[a-z0-9_-]` char rewritten to `_`, leading non-letter
+  trimmed, reserved `mu_` prefix rewritten to `t_mu_`). Mapped to
+  exit code 4 (validation / conflict) in `classifyError()`.
+
 - **`mu workspace create` no longer leaves a partial dir behind on
   failure, and refuses outright when projectRoot is `$HOME`.** Closes
   `workspace_create_partial_dir_on_failure` in `roadmap-v0-2`;

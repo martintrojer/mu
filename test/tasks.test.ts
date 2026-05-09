@@ -16,6 +16,7 @@ import {
   TaskAlreadyOwnedError,
   TaskExistsError,
   TaskHasOpenDependentsError,
+  TaskIdInvalidError,
   TaskNotFoundError,
   addBlockEdge,
   addNote,
@@ -145,6 +146,62 @@ describe("addTask", () => {
       addTask(db, { localId: "Bad ID", workstream: "test", title: "x", impact: 50, effortDays: 1 }),
     ).toThrow(/invalid task id/);
     expect(listTasks(db)).toEqual([]);
+  });
+
+  it("throws typed TaskIdInvalidError (not bare TypeError) with non-empty errorNextSteps", () => {
+    // Syntax violation: uppercase + space.
+    let caught: unknown;
+    try {
+      addTask(db, {
+        localId: "Bad ID",
+        workstream: "test",
+        title: "x",
+        impact: 50,
+        effortDays: 1,
+      });
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(TaskIdInvalidError);
+    // Critically: NOT a bare TypeError. The whole point of this fix is
+    // that the CLI's handle() wrapper can map us to exit 4 instead of
+    // falling through to the generic exit 1.
+    expect(caught).not.toBeInstanceOf(TypeError);
+    const err = caught as TaskIdInvalidError;
+    expect(err.attempted).toBe("Bad ID");
+    expect(err.reason).toBe("syntax");
+    const steps = err.errorNextSteps();
+    expect(steps.length).toBeGreaterThan(0);
+    // First step: drop --id and pass --title (auto-derive path).
+    expect(steps[0]?.command).toMatch(/--title/);
+    // Sanitised candidate must be a runnable id (lowercase + alnum/_/-).
+    const sanitisedStep = steps.find((s) => s.intent.toLowerCase().includes("sanitise"));
+    expect(sanitisedStep).toBeDefined();
+    expect(sanitisedStep?.command).toMatch(/mu task add bad_id /);
+    expect(listTasks(db)).toEqual([]);
+  });
+
+  it("reserved 'mu_' prefix throws TaskIdInvalidError with reason='reserved-prefix'", () => {
+    let caught: unknown;
+    try {
+      addTask(db, {
+        localId: "mu_internal",
+        workstream: "test",
+        title: "x",
+        impact: 50,
+        effortDays: 1,
+      });
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(TaskIdInvalidError);
+    expect((caught as TaskIdInvalidError).reason).toBe("reserved-prefix");
+    // Sanitised candidate must rewrite the leading 'mu_' so the
+    // suggested command would actually pass isValidTaskId.
+    const steps = (caught as TaskIdInvalidError).errorNextSteps();
+    const sanitisedStep = steps.find((s) => s.intent.toLowerCase().includes("sanitise"));
+    expect(sanitisedStep?.command).not.toMatch(/ mu_/);
+    expect(sanitisedStep?.command).toMatch(/ t_mu_/);
   });
 
   it("rejects duplicate id with TaskExistsError", () => {

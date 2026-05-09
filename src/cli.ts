@@ -65,6 +65,7 @@ import {
   TaskAlreadyOwnedError,
   TaskExistsError,
   TaskHasOpenDependentsError,
+  TaskIdInvalidError,
   TaskNotFoundError,
   TaskNotInWorkstreamError,
   type TaskRow,
@@ -178,7 +179,8 @@ function classifyError(err: unknown): { label: string; exitCode: number } {
     err instanceof HomeDirAsProjectRootError ||
     err instanceof ApprovalAlreadyDecidedError ||
     err instanceof ClaimerNotRegisteredError ||
-    err instanceof SnapshotVersionMismatchError
+    err instanceof SnapshotVersionMismatchError ||
+    err instanceof TaskIdInvalidError
   ) {
     return { label: "conflict", exitCode: 4 };
   }

@@ -25,6 +25,7 @@ import {
   CycleError,
   TaskAlreadyOwnedError,
   TaskExistsError,
+  TaskIdInvalidError,
   TaskNotFoundError,
   TaskNotInWorkstreamError,
 } from "../src/tasks.js";
@@ -47,6 +48,16 @@ describe("typed errors all carry actionable errorNextSteps()", () => {
   const cases: Array<[Error, string, string[]]> = [
     [new TaskNotFoundError("foo"), "TaskNotFoundError", ["foo"]],
     [new TaskExistsError("foo"), "TaskExistsError", ["foo"]],
+    // TaskIdInvalidError: the user typed something invalid; the
+    // recovery is to use the auto-derived path (--title) or the
+    // sanitised candidate. The sanitised id appears in the second
+    // step's command.
+    [new TaskIdInvalidError("Bad ID", "syntax"), "TaskIdInvalidError (syntax)", ["bad_id"]],
+    [
+      new TaskIdInvalidError("mu_x", "reserved-prefix"),
+      "TaskIdInvalidError (reserved)",
+      ["t_mu_x"],
+    ],
     [
       new TaskNotInWorkstreamError("foo", "expected", "actual"),
       "TaskNotInWorkstreamError",

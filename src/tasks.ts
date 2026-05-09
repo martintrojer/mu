@@ -15,6 +15,7 @@ import {
   CrossWorkstreamEdgeError,
   CycleError,
   TaskExistsError,
+  TaskIdInvalidError,
   TaskNotFoundError,
 } from "./tasks/errors.js";
 import type { TaskStatus } from "./tasks/status.js";
@@ -37,6 +38,7 @@ export {
   TaskAlreadyOwnedError,
   TaskExistsError,
   TaskHasOpenDependentsError,
+  TaskIdInvalidError,
   TaskNotFoundError,
   TaskNotInWorkstreamError,
 } from "./tasks/errors.js";
@@ -477,14 +479,10 @@ export interface AddTaskOptions {
  */
 export function addTask(db: Db, opts: AddTaskOptions): TaskRow {
   if (opts.localId.startsWith("mu_")) {
-    throw new TypeError(
-      `invalid task id: ${JSON.stringify(opts.localId)} (the "mu_" prefix is reserved for system-generated IDs)`,
-    );
+    throw new TaskIdInvalidError(opts.localId, "reserved-prefix");
   }
   if (!isValidTaskId(opts.localId)) {
-    throw new TypeError(
-      `invalid task id: ${JSON.stringify(opts.localId)} (expected /^[a-z][a-z0-9_-]{0,63}$/)`,
-    );
+    throw new TaskIdInvalidError(opts.localId, "syntax");
   }
   if (getTask(db, opts.localId) !== undefined) {
     throw new TaskExistsError(opts.localId);
