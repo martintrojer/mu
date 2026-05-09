@@ -18,6 +18,7 @@ import {
   ApprovalNotFoundError,
   ApprovalNotInWorkstreamError,
 } from "../src/approvals.js";
+import { WorkstreamNotFoundError } from "../src/db.js";
 import { hasNextSteps } from "../src/output.js";
 import {
   ClaimerNotRegisteredError,
@@ -120,6 +121,10 @@ describe("typed errors all carry actionable errorNextSteps()", () => {
       ["abc12345"],
     ],
     [new WorkstreamNameInvalidError("mu-foo"), "WorkstreamNameInvalidError", ["foo"]],
+    // WorkstreamNotFoundError is the resolve-time miss raised by
+    // src/db.ts:resolveWorkstreamId — the first leg of the SDK
+    // boundary (operator-name → surrogate id). schema_v5_cli_boundary.
+    [new WorkstreamNotFoundError("ghost"), "WorkstreamNotFoundError", ["ghost"]],
   ];
 
   for (const [err, label, expectedTokens] of cases) {

@@ -47,7 +47,7 @@ import { cmdMission, wireStateCommands } from "./cli/state.js";
 import { wireTaskCommands } from "./cli/tasks.js";
 import { wireWorkspaceCommands } from "./cli/workspace.js";
 import { wireWorkstreamCommands } from "./cli/workstream.js";
-import { type Db, SchemaTooOldError, openDb } from "./db.js";
+import { type Db, SchemaTooOldError, WorkstreamNotFoundError, openDb } from "./db.js";
 import { type LogRow, displayEventPayload } from "./logs.js";
 import {
   type NextStep,
@@ -154,17 +154,24 @@ export function parseStatusOption(raw: string, flag = "--status"): TaskStatus {
  * Order matters: more-specific classes first. The fallthrough at the
  * end is the generic exit-1 catch-all.
  */
-function classifyError(err: unknown): { label: string; exitCode: number } {
+export function classifyError(err: unknown): { label: string; exitCode: number } {
   if (err instanceof UsageError || err instanceof WorkstreamNameInvalidError) {
     return { label: "error", exitCode: 2 };
   }
   if (
     err instanceof AgentNotFoundError ||
     err instanceof TaskNotFoundError ||
+    err instanceof WorkstreamNotFoundError ||
     err instanceof WorkspaceNotFoundError ||
     err instanceof ApprovalNotFoundError ||
     err instanceof SnapshotNotFoundError
   ) {
+    // WorkstreamNotFoundError originates inside resolveWorkstreamId
+    // (src/db.ts) — it's the canonical resolve-time miss for the
+    // first leg of the SDK boundary (operator-name → surrogate id).
+    // Without this entry it fell through to generic exit 1, robbing
+    // operators of the same -> exit-3 mapping that AgentNotFoundError /
+    // TaskNotFoundError get. (schema_v5_cli_boundary)
     return { label: "not found", exitCode: 3 };
   }
   if (

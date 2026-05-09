@@ -88,6 +88,28 @@ called out under "Breaking" in each entry.
   `mu task add design -w wsB` just works. `idFromTitle`'s
   collision-suffix loop is now scoped to the same workstream.
 
+- **CLI boundary discipline: `WorkstreamNotFoundError` now maps
+  to exit 3 (`schema_v5_cli_boundary`).** Per
+  [docs/SCHEMA_v5_DESIGN.md](docs/SCHEMA_v5_DESIGN.md) "Boundary
+  discipline for the SDK surface", `resolveWorkstreamId` (in
+  `src/db.ts`) is the canonical first leg of the SDK boundary
+  (operator-name → surrogate id). It throws
+  `WorkstreamNotFoundError` on miss — but that error class was
+  missing from `classifyError()` in `src/cli.ts` and silently fell
+  through to the generic exit-1 catch-all, robbing operators of
+  the same exit-3 ("not found") mapping that
+  `AgentNotFoundError` / `TaskNotFoundError` get. This commit
+  registers it next to its siblings, exports `classifyError` so
+  the mapping is unit-testable, and pins the contract with two
+  new tests: `test/cli-classify-error.test.ts` (the full
+  exit-code map for every typed-error class) and a
+  `WorkstreamNotFoundError` row in `test/error-nextsteps.test.ts`
+  (asserts the recovery hints stay contextual). The CLI verbs
+  themselves were already passing operator names through cleanly
+  (the work landed in `schema_v5_sdk_signatures`); this is the
+  cleanup pass to make the boundary's error surface symmetric
+  with the resolve-time miss class.
+
 - **`src/migrations.ts` is dead code, but kept on disk.** The
   in-process forward-only migration ladder (v1→v2 / v2→v3 /
   v3→v4) is no longer wired into `openDb`; the loud-fail hook
