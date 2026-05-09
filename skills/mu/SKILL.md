@@ -117,10 +117,14 @@ Every turn:
 1. `mu state -w <ws>` — read the card. Check agents, IN_PROGRESS
    tasks, ready tasks, parallel tracks.
 2. **Don't spawn more agents than independent ready tracks.**
-3. Claim before sending: `mu task claim <id> -w <ws> --for <agent>
-   --evidence "..."`.
+3. **Claim before sending — even for one-shot reviewers / scouts.**
+   `mu task claim <id> -w <ws> --for <agent> --evidence "..."`.
+   No task = nothing to `mu task wait` on; agent status alone is
+   too noisy (idles flip back to `needs_input`). If the dispatch
+   has no task, `mu task add` one first.
 4. Send task-specific instructions: task ID, files/notes to read,
-   scope guards, the task note contract.
+   scope guards, the task note contract. Tell the agent to
+   `mu task close <id> --evidence "..."` on done.
 5. Monitor via `mu state` / `mu agent show` / task notes — don't
    walk away (see "After spawning, observe" below).
 6. On close, repeat from 1.
@@ -472,6 +476,23 @@ pattern doesn't compose past one task; use `mu task wait`. Don't
 fire-and-forget; the worker stalls in `needs_input` and you
 find out hours later.
 
+### Sending follow-on work to an existing agent
+
+A new prompt is appended to whatever context the agent had from
+the previous task. For **related** work (design → impl) that's a
+feature. For **unrelated** work, send `/new` first (pi /
+claude-code; codex uses `/clear`) to wipe the LLM's working set
+— pane scrollback is preserved:
+
+```bash
+mu agent send worker-1 '/new'
+sleep 1                              # let the CLI swallow the slash command
+mu agent send worker-1 "$(cat <<'EOF_PROMPT'
+Claim and work on $TASK. Read the task notes before starting...
+EOF_PROMPT
+)"
+```
+
 ### Tear down a workstream
 
 `mu workstream destroy` is two-phase: dry-run by default, `--yes`
@@ -565,6 +586,8 @@ missing task id. See `mu task wait --help`.
   FINDINGS / DECISION / NEXT / VERIFIED / ODDITIES).
 - **Set `impact` and `effort_days` honestly.** They drive ROI.
 - **Don't spawn more agents than independent ready tracks.**
+- **Send `/new` before unrelated follow-on work** to a still-spawned
+  agent. See "Sending follow-on work" above.
 - **`--workspace` whenever the agent might edit/build/test.**
   Default-on.
 - **Single-quote prompts with `$VAR`, `$(...)`, backticks.**
