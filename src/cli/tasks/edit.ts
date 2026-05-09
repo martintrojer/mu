@@ -22,7 +22,7 @@ import {
   withRoiAll,
 } from "../../cli.js";
 import type { Db } from "../../db.js";
-import { listLogs } from "../../logs.js";
+import { lastClaimActor as sdkLastClaimActor } from "../../logs.js";
 import { type NextStep, pc, printNextSteps } from "../../output.js";
 import {
   TaskNotFoundError,
@@ -74,25 +74,18 @@ export function unescapeNoteText(s: string): string {
 /**
  * Find the actor of the most recent `task claim <id>` event for a task.
  * Used to surface 'who's working on this' when `tasks.owner IS NULL`
- * (the --self / anonymous-claim case). Returns null when there's been
- * no claim event for this task.
+ * (the --self / anonymous-claim case). Returns null when no claim
+ * event exists for this task.
  *
- * Implementation: scan the latest few claim events for this workstream
- * (small bounded N), pattern-match for `task claim <id>` in the payload.
- * Cheap; called only when owner is NULL.
+ * Thin wrapper around the SDK's lastClaimActor (src/logs.ts). The
+ * SDK does an indexed structured-prefix lookup against the
+ * `task.claim<TAB>...` payload format that claimTask emits — so this
+ * is correct for arbitrarily-old claims (no recent-window cap) and
+ * robust against payload-prose churn. See
+ * review_code_last_claim_actor_brittle.
  */
 export function lastClaimActor(db: Db, workstream: string, localId: string): string | null {
-  const recent = listLogs(db, {
-    workstream,
-    kind: "event",
-    limit: 100,
-  });
-  for (let i = recent.length - 1; i >= 0; i--) {
-    const ev = recent[i];
-    if (!ev) continue;
-    if (ev.payload.startsWith(`task claim ${localId} `)) return ev.source;
-  }
-  return null;
+  return sdkLastClaimActor(db, workstream, localId);
 }
 
 export function printNote(n: TaskNoteRow): void {

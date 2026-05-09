@@ -15,7 +15,7 @@
 
 import { AgentNotInWorkstreamError } from "../agents/errors.js";
 import type { Db } from "../db.js";
-import { emitEvent } from "../logs.js";
+import { emitEvent, formatClaimEvent } from "../logs.js";
 import { captureSnapshot } from "../snapshots.js";
 import { getTask } from "../tasks.js";
 import { currentAgentName } from "../tmux.js";
@@ -246,7 +246,12 @@ export async function claimTask(
     emitEvent(
       db,
       before.workstream,
-      `task claim ${localId} by ${agentName} (was owner=${before.owner ?? "none"}${statusBit})${evidenceSuffix(opts)}`,
+      formatClaimEvent({
+        localId,
+        actor: agentName,
+        anonymous: false,
+        prose: `task claim ${localId} by ${agentName} (was owner=${before.owner ?? "none"}${statusBit})${evidenceSuffix(opts)}`,
+      }),
       agentName,
     );
     return {
@@ -321,7 +326,12 @@ async function claimSelf(db: Db, localId: string, opts: ClaimTaskOptions): Promi
     emitEvent(
       db,
       before.workstream,
-      `task claim ${localId} by ${actor} --self (anonymous, owner stays NULL${statusBit})${evidenceSuffix(opts)}`,
+      formatClaimEvent({
+        localId,
+        actor,
+        anonymous: true,
+        prose: `task claim ${localId} by ${actor} --self (anonymous, owner stays NULL${statusBit})${evidenceSuffix(opts)}`,
+      }),
       actor,
     );
     return {

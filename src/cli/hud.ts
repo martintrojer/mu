@@ -30,7 +30,7 @@ import {
   withRoiAll,
 } from "../cli.js";
 import type { Db } from "../db.js";
-import { EVENT_VERB_PREFIXES, type LogRow, listLogs } from "../logs.js";
+import { EVENT_VERB_PREFIXES, type LogRow, displayEventPayload, listLogs } from "../logs.js";
 import { pc } from "../output.js";
 import { type TaskRow, listInProgress, listReady, listTasksByOwner } from "../tasks.js";
 import { currentPaneSize } from "../tmux.js";
@@ -240,7 +240,12 @@ function formatHudRecentTable(
     // (but not including) the entity id (which itself is bolded
     // when easy to identify). Falls back to the full dim payload
     // for events that don't fit the verb-shape.
-    table.push([pc.dim(ago), colorEventPayload(truncate(e.payload, payloadBudget))]);
+    // Strip the `task.claim<TAB>...` structured prefix from claim
+    // events before colouring/truncating; the prose tail still
+    // starts with `task claim` so the verb-prefix colourer matches
+    // unchanged. See review_code_last_claim_actor_brittle.
+    const display = displayEventPayload(e.payload);
+    table.push([pc.dim(ago), colorEventPayload(truncate(display, payloadBudget))]);
   }
   return { rendered: table.toString(), rowsShown: shown.length, rowsTotal: total };
 }

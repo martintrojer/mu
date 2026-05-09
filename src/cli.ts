@@ -48,7 +48,7 @@ import { wireTaskCommands } from "./cli/tasks.js";
 import { wireWorkspaceCommands } from "./cli/workspace.js";
 import { wireWorkstreamCommands } from "./cli/workstream.js";
 import { type Db, openDb } from "./db.js";
-import type { LogRow } from "./logs.js";
+import { type LogRow, displayEventPayload } from "./logs.js";
 import {
   type NextStep,
   hasNextSteps,
@@ -431,8 +431,13 @@ export function printLogRow(row: LogRow): void {
   const time = row.createdAt.replace("T", " ").replace(/\.\d+Z$/, "Z");
   const kindColor =
     row.kind === "event" ? pc.cyan : row.kind === "broadcast" ? pc.yellow : (s: string) => s;
+  // For `kind='event'`, strip the `task.claim<TAB>...` structured
+  // prefix used by claim events; the human-readable prose tail is
+  // what the user wants to see. Other event kinds pass through
+  // unchanged. See review_code_last_claim_actor_brittle.
+  const payload = row.kind === "event" ? displayEventPayload(row.payload) : row.payload;
   console.log(
-    `${pc.dim(`#${row.seq}`)} ${pc.dim(time)}  ${pc.bold(row.source)}  ${kindColor(row.kind)}  [${ws}]  ${row.payload}`,
+    `${pc.dim(`#${row.seq}`)} ${pc.dim(time)}  ${pc.bold(row.source)}  ${kindColor(row.kind)}  [${ws}]  ${payload}`,
   );
 }
 

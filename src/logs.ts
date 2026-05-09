@@ -179,6 +179,96 @@ export function emitEvent(
   appendLog(db, { workstream, source, kind: "event", payload });
 }
 
+// ─── claim-event structured prefix ─────────────────────────────────
+//
+// `task claim` events are the one place where a state-changing verb
+// emits TWO actors per row: the agent recorded as `source`, and the
+// `actor=` field that may differ on the --self anonymous-claim path
+// (where source == actor but tasks.owner stays NULL). The original
+// payload was free prose (`task claim foo by bar (was owner=...)`)
+// and the consumer (lastClaimActor below) prefix-matched the prose
+// — brittle: any rename silently nulled out the attribution.
+//
+// The fix keeps the prose suffix for human readability but prepends
+// a tab-delimited structured prefix that lastClaimActor parses
+// robustly. Format:
+//
+//   task.claim<TAB><localId><TAB>actor=<actor><TAB>self=<0|1><TAB><prose>
+//
+// The trailing prose still starts with `task claim <localId> ...` so
+// the HUD's verb colourer (which strips the structured prefix via
+// displayEventPayload before colouring) keeps working unchanged.
+//
+// See: review_code_last_claim_actor_brittle.
+
+/** Structured-prefix sentinel used by claim event payloads. The dot
+ *  distinguishes it from the prose `task claim ...` tail. */
+export const CLAIM_EVENT_PREFIX = "task.claim";
+
+/** Build the structured payload for a `task claim` event. */
+export function formatClaimEvent(opts: {
+  localId: string;
+  actor: string;
+  anonymous: boolean;
+  prose: string;
+}): string {
+  const self = opts.anonymous ? "1" : "0";
+  return `${CLAIM_EVENT_PREFIX}\t${opts.localId}\tactor=${opts.actor}\tself=${self}\t${opts.prose}`;
+}
+
+/** Strip the structured `task.claim` prefix and return the human-prose
+ *  tail. For non-claim payloads, returns the input unchanged. Used by
+ *  `mu log` and HUD render so the user sees the prose, not the
+ *  delimiter-noise. */
+export function displayEventPayload(payload: string): string {
+  if (!payload.startsWith(`${CLAIM_EVENT_PREFIX}\t`)) return payload;
+  // task.claim<TAB><id><TAB>actor=...<TAB>self=...<TAB><prose>
+  // Split into 5 fields; the prose may itself contain tabs (it doesn't
+  // today, but be defensive: rejoin with TAB so we never lose data).
+  const parts = payload.split("\t");
+  if (parts.length < 5) return payload;
+  return parts.slice(4).join("\t");
+}
+
+/** Parse the actor= field out of a structured claim payload. Returns
+ *  null when the payload isn't a claim event or is malformed. */
+export function parseClaimEventActor(payload: string): string | null {
+  if (!payload.startsWith(`${CLAIM_EVENT_PREFIX}\t`)) return null;
+  for (const field of payload.split("\t")) {
+    if (field.startsWith("actor=")) return field.slice("actor=".length);
+  }
+  return null;
+}
+
+/**
+ * Find the actor of the most recent `task claim <id>` event for a
+ * given task. Used to surface 'who's working on this' when
+ * `tasks.owner IS NULL` (the --self anonymous-claim path). Returns
+ * null when no claim event exists for this task.
+ *
+ * Implementation: indexed lookup on (workstream, seq) with a LIKE
+ * against the structured prefix. Unbounded — the previous limit=100
+ * ceiling silently dropped attribution on long-lived workstreams.
+ * The structured prefix (CLAIM_EVENT_PREFIX) makes the match
+ * robust against payload-prose churn.
+ */
+export function lastClaimActor(db: Db, workstream: string, localId: string): string | null {
+  // localId is validated by isValidTaskId — alnum + `_` + `-`. The
+  // `_` is a LIKE wildcard, so escape it (and `%` and `\` for
+  // completeness, even though they can't appear in a valid id).
+  const escaped = localId.replace(/[\\%_]/g, (c) => `\\${c}`);
+  const pattern = `${CLAIM_EVENT_PREFIX}\t${escaped}\t%`;
+  const row = db
+    .prepare(
+      `SELECT payload FROM agent_logs
+        WHERE workstream = ? AND kind = 'event' AND payload LIKE ? ESCAPE '\\'
+        ORDER BY seq DESC LIMIT 1`,
+    )
+    .get(workstream, pattern) as { payload: string } | undefined;
+  if (!row) return null;
+  return parseClaimEventActor(row.payload);
+}
+
 /**
  * Canonical list of two-token verb prefixes that `emitEvent` callers
  * use as the leading words of a payload. Single source of truth: the
@@ -200,6 +290,10 @@ export const EVENT_VERB_PREFIXES: readonly string[] = [
   "task add",
   "task note",
   "task status",
+  // `task claim` is the prose-tail of a `task.claim\t...` structured
+  // payload (see CLAIM_EVENT_PREFIX above); displayEventPayload
+  // strips the structured prefix before the HUD colourer runs, so
+  // the prose tail starting with `task claim` still matches.
   "task claim",
   "task release",
   "task update",

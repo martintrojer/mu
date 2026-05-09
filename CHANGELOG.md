@@ -113,6 +113,38 @@ called out under "Breaking" in each entry.
   Deleted the 24 lines of import-then-re-export ceremony plus the
   misleading docstring; the import half stays. Behaviour unchanged.
 
+### Fixed
+
+- **`mu task show` no longer silently loses the `--self` actor on
+  long-running workstreams.** Closes
+  `review_code_last_claim_actor_brittle` in `mufeedback` (smallest
+  fix; the bigger `task_claims` table is parked for the v5 surrogate-
+  PK pass). Two failure modes the old `lastClaimActor` had:
+  (1) it prefix-matched a free-prose payload (`task claim foo by
+  bar (was owner=...)`), which is one rename away from silently
+  returning null for every task, and (2) it scanned only the most
+  recent 100 events in the workstream — on a workstream with ≥100
+  events since the claim, `mu task show` printed `(unowned)` even
+  though the actor WAS recorded in `agent_logs`. Fix: claim events
+  now carry a tab-delimited structured prefix
+  (`task.claim<TAB><localId><TAB>actor=<actor><TAB>self=<0|1><TAB>`)
+  followed by the original prose; the consumer does an indexed
+  `LIKE` query (`workstream = ? AND payload LIKE
+  'task.claim<TAB><id><TAB>%'`) with no recent-window cap, then
+  reads the `actor=` field by tab-splitting. The display layer
+  (`mu log`, HUD events tail) strips the prefix via the new
+  `displayEventPayload` helper so the user still sees the human
+  prose, and the HUD verb-prefix colourer works unchanged. The
+  `lastClaimActor` SDK function moved from `src/cli/tasks/edit.ts`
+  to `src/logs.ts` (where the structured-prefix protocol lives);
+  `src/cli/tasks/edit.ts` keeps a one-line wrapper so existing
+  imports don't break. Tests: 6 new cases in `test/logs.test.ts`
+  cover format/parse/display roundtrip, the producer→consumer
+  end-to-end path through `claimTask`, the >100-events regression
+  (250 unrelated events buried between the claim and the lookup —
+  used to return null, now returns the actor), most-recent-wins on
+  re-claim, and LIKE-wildcard escaping in `localId`.
+
 ### Changed
 
 - **`docs/VERB_AUDIT.md`: honest typed-vs-`mu sql` audit of every
