@@ -4,6 +4,7 @@
 // test/tmux.integration.test.ts.
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { STATUS_EMOJI } from "../src/agents.js";
 import {
   PANE_ID_RE,
   TmuxError,
@@ -653,11 +654,11 @@ describe("setPaneTitle", () => {
 });
 
 describe("enableMuPaneBorders", () => {
-  it("sets pane-border-status=top and pane-border-format='[mu] #{pane_title}' as window options", async () => {
+  it("sets pane-border-status=top + format + heavy lines + active/inactive border styles as window options", async () => {
     const { executor, calls } = harness(() => ok());
     setTmuxExecutor(executor);
     await enableMuPaneBorders("@42");
-    expect(calls.length).toBe(2);
+    expect(calls.length).toBe(5);
     // -w is critical: pane-border-status is a WINDOW option in tmux,
     // not a session option. Without -w, set-option on a session
     // target only updates the currently-active window; windows
@@ -670,6 +671,25 @@ describe("enableMuPaneBorders", () => {
       "@42",
       "pane-border-format",
       " [mu] #{pane_title} ",
+    ]);
+    // Heavy box-drawing on bottom + sides so a mu pane is visually
+    // distinct from a non-mu tmux window even when not focused.
+    expect(calls[2]?.args).toEqual(["set-option", "-w", "-t", "@42", "pane-border-lines", "heavy"]);
+    expect(calls[3]?.args).toEqual([
+      "set-option",
+      "-w",
+      "-t",
+      "@42",
+      "pane-active-border-style",
+      "fg=cyan,bold",
+    ]);
+    expect(calls[4]?.args).toEqual([
+      "set-option",
+      "-w",
+      "-t",
+      "@42",
+      "pane-border-style",
+      "fg=brightblack",
     ]);
   });
 });
@@ -828,13 +848,17 @@ describe("parseAgentNameFromTitle", () => {
   });
 
   it("returns the first ' · '-separated token (composed titles)", () => {
-    expect(parseAgentNameFromTitle("worker-a · 💤")).toBe("worker-a");
-    expect(parseAgentNameFromTitle("worker-a · ⚙️ · build_x")).toBe("worker-a");
-    expect(parseAgentNameFromTitle("worker-a · ⚙️ · ⊕3 tasks")).toBe("worker-a");
+    // Use the actual STATUS_EMOJI codepoints production emits, so this
+    // test breaks loud if STATUS_EMOJI changes shape (any drift between
+    // composeAgentTitle and parseAgentNameFromTitle is the bug we're
+    // guarding against).
+    expect(parseAgentNameFromTitle(`worker-a · ${STATUS_EMOJI.needs_input}`)).toBe("worker-a");
+    expect(parseAgentNameFromTitle(`worker-a · ${STATUS_EMOJI.busy} · build_x`)).toBe("worker-a");
+    expect(parseAgentNameFromTitle(`worker-a · ${STATUS_EMOJI.busy} · ⊕3 tasks`)).toBe("worker-a");
   });
 
   it("trims whitespace around the name token", () => {
     expect(parseAgentNameFromTitle("  worker-a  ")).toBe("worker-a");
-    expect(parseAgentNameFromTitle("  worker-a · 💤  ")).toBe("worker-a");
+    expect(parseAgentNameFromTitle(`  worker-a · ${STATUS_EMOJI.needs_input}  `)).toBe("worker-a");
   });
 });

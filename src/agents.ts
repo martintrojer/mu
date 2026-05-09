@@ -185,16 +185,19 @@ export function updateAgentStatus(db: Db, name: string, status: AgentStatus): bo
 //
 // The pane border (set by enableMuPaneBorders) renders
 // `[mu] #{pane_title}` as tmux chrome. mu owns the pane title and uses
-// it to carry interpreted state at a glance:
+// it to carry interpreted state at a glance. The status glyph in each
+// example below is whatever STATUS_EMOJI resolves to today (see the
+// table 30 lines down) — do NOT duplicate the codepoints in this
+// comment, they have drifted from production once already.
 //
-//   worker-a                            (no claim, status not
-//                                        worth surfacing yet)
-//   worker-a · ⚙️                         (busy, no claim)
-//   worker-a · ⚙️ · build_x               (busy, owns one task)
-//   worker-a · 💤 · build_x               (needs_input, owns one task)
-//   worker-a · 🛂 · build_x               (needs_permission)
-//   worker-a · ✅                         (free, no claim)
-//   worker-a · ⚙️ · ⊕2 tasks             (multi-claim case)
+//   worker-a                                    (no claim, status not
+//                                                 worth surfacing yet)
+//   worker-a · <STATUS_EMOJI.busy>              (busy, no claim)
+//   worker-a · <STATUS_EMOJI.busy> · build_x     (busy, owns one task)
+//   worker-a · <STATUS_EMOJI.needs_input> · build_x
+//   worker-a · <STATUS_EMOJI.needs_permission> · build_x
+//   worker-a · <STATUS_EMOJI.free>              (free, no claim)
+//   worker-a · <STATUS_EMOJI.busy> · ⊕2 tasks    (multi-claim case)
 //
 // The agent name MUST remain the first ' · '-separated token so the
 // claim protocol's pane-title-as-identity fallback (currentPaneTitle
@@ -208,12 +211,11 @@ export function updateAgentStatus(db: Db, name: string, status: AgentStatus): bo
  *  transient state. */
 // Single-codepoint, single-cell-width Nerd Font glyphs (nf-fa family).
 // Picked over Unicode emoji so cli-table3's column widths line up:
-// emoji like '⚙️' (gear + variation selector) are TWO codepoints,
-// which cli-table3 counts as length-2 and uses to size columns; but
-// terminals render them as ONE cell wide, so adjacent rows that mix
-// 1-codepoint emoji ('✅') and 2-codepoint emoji ('⚙️') misalign.
-// Nerd Font glyphs are private-use codepoints, all length-1 and all
-// 1-cell-wide.
+// (legacy) Unicode emoji like a gear-with-variation-selector are TWO
+// codepoints, which cli-table3 counts as length-2 and uses to size
+// columns; but terminals render them as ONE cell wide, so adjacent
+// rows that mix 1-codepoint and 2-codepoint emoji misalign. Nerd Font
+// glyphs are private-use codepoints, all length-1 and all 1-cell-wide.
 //
 // Requires a Nerd Font on the operator's terminal (mu's substrate is
 // pi, which assumes Nerd Fonts; the rest of mu's TUI uses Nerd Font

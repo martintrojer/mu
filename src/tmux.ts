@@ -596,6 +596,15 @@ export async function enableMuPaneBordersForSession(session: string): Promise<nu
 export async function enableMuPaneBorders(target: string): Promise<void> {
   await tmux(["set-option", "-w", "-t", target, "pane-border-status", "top"]);
   await tmux(["set-option", "-w", "-t", target, "pane-border-format", " [mu] #{pane_title} "]);
+  // Bottom + sides: heavy box-drawing lines so a mu-managed pane is
+  // visually distinct even when not the active pane (top carries the
+  // labeled status text; the rest of the frame carries the visual
+  // "this is mu" cue). Cyan-bold for the active pane, dim brightblack
+  // for inactive ones, so the operator's eye lands on the pane that
+  // currently has focus.
+  await tmux(["set-option", "-w", "-t", target, "pane-border-lines", "heavy"]);
+  await tmux(["set-option", "-w", "-t", target, "pane-active-border-style", "fg=cyan,bold"]);
+  await tmux(["set-option", "-w", "-t", target, "pane-border-style", "fg=brightblack"]);
 }
 
 export async function getPaneTitle(paneId: string): Promise<string | undefined> {
@@ -650,10 +659,11 @@ export async function currentPaneSize(): Promise<{ width: number; height: number
 
 /**
  * Extract the agent-name token from a (possibly composed) pane title.
- * mu's composeAgentTitle renders titles as `name · 💤 · task_id`; the
- * agent name is always the first ' · '-separated token. Adopted /
- * legacy panes that haven't been re-titled by mu have just the name
- * (one token) — still parses.
+ * mu's composeAgentTitle renders titles as `name · <glyph> · task_id`,
+ * where <glyph> is a Nerd Font codepoint from STATUS_EMOJI (see
+ * src/agents.ts). The agent name is always the first ' · '-separated
+ * token. Adopted / legacy panes that haven't been re-titled by mu have
+ * just the name (one token) — still parses.
  *
  * Returns trimmed name, or the input unchanged if no separator.
  */

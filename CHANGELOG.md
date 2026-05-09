@@ -10,6 +10,39 @@ called out under "Breaking" in each entry.
 
 ## [Unreleased]
 
+### Changed
+
+- **`mu`-managed tmux panes now have a visually distinct frame on
+  all four sides, not just the labeled top status band.** Closes
+  the first half of `tmux_pane_border_top_and_bottom_plus_glyph_audit`
+  in `mufeedback`. `enableMuPaneBorders` now also sets:
+  ```
+  pane-border-lines        heavy
+  pane-active-border-style fg=cyan,bold
+  pane-border-style        fg=brightblack
+  ```
+  The top still carries `[mu] #{pane_title}`; the bottom + sides now
+  carry a heavy box-drawing rule that's bright cyan on the active
+  pane and dim brightblack on inactive ones. tmux's
+  `pane-border-status` only takes `{off, top, bottom}`, so true
+  "all four sides labeled" isn't possible — the heavy/colored frame
+  is the reasonable compromise.
+
+- **`STATUS_EMOJI` drift cleanup.** Closes the second half of
+  `tmux_pane_border_top_and_bottom_plus_glyph_audit`. `STATUS_EMOJI`
+  in `src/agents.ts` (Nerd Font private-use codepoints, picked for
+  1-cell-width column alignment) is the single source of truth for
+  agent-status glyphs. Five doc comments plus one test fixture had
+  drifted to the OLD Unicode emoji (`⚙️`, `💤`, `🛂`, `✅`)
+  that production hasn't emitted in days. Comments no longer name
+  specific codepoints (they point at `STATUS_EMOJI` directly so
+  they can't drift again); `test/tmux.test.ts` `parseAgentNameFromTitle`
+  fixtures now interpolate `STATUS_EMOJI.needs_input` / `.busy`, so
+  any future reshape breaks the test loud instead of silently
+  parsing a different glyph. The `mu task wait` `✓`/`•` markers
+  and the pi-prompt `❯` detection glyph are deliberately untouched
+  (different semantic).
+
 ### Added
 
 - **Workspace staleness signal in `mu state` and `mu workspace list`.**
