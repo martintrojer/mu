@@ -32,23 +32,43 @@ import { getTask } from "../tasks.js";
 import { TaskNotFoundError } from "./errors.js";
 import type { TaskStatus } from "./status.js";
 
-// ─── Test seam: poll-sleep + poll counter ──────────────────────────────
+// ─── Test seams: poll-sleep + poll counter + stuck-warn writer ─────────
 //
 // Mirror src/tmux.ts's setSleepForTests pattern. Default sleep is a real
 // setTimeout; tests can swap in an instant + counted version to assert
 // poll cadence (the bug fixed alongside this hook silently sleeps a full
 // pollMs past the deadline when pollMs > timeoutMs — see test/tasks.test.ts
 // 'waitForTasks' regression cases).
+//
+// The stuck-warn writer is the second seam: agent_close_discipline_gap
+// added a per-poll "this task is IN_PROGRESS but owner is needs_input
+// for too long" warning emitted to stderr; tests intercept it via
+// setWaitStuckWarnForTests so they can assert exactly-once dedupe
+// without scraping process.stderr.
 
 let currentWaitSleep: (ms: number) => Promise<void> = (ms) =>
   new Promise((resolve) => setTimeout(resolve, ms));
 let pollCount = 0;
+const defaultStuckWarn: (msg: string) => void = (msg) => {
+  process.stderr.write(msg);
+};
+let currentStuckWarn: (msg: string) => void = defaultStuckWarn;
 
 export function setWaitSleepForTests(
   impl: ((ms: number) => Promise<void>) | undefined,
 ): (ms: number) => Promise<void> {
   const previous = currentWaitSleep;
   currentWaitSleep = impl ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+  return previous;
+}
+
+/** Test seam: swap the stderr writer used by the stuck-task warning so
+ *  unit tests can capture warnings without spying on process.stderr. */
+export function setWaitStuckWarnForTests(
+  impl: ((msg: string) => void) | undefined,
+): (msg: string) => void {
+  const previous = currentStuckWarn;
+  currentStuckWarn = impl ?? defaultStuckWarn;
   return previous;
 }
 
@@ -73,6 +93,18 @@ export interface TaskWaitOptions {
   timeoutMs?: number;
   /** Polling interval. Default 1000ms; overridable for tests. */
   pollMs?: number;
+  /** Emit a yellow STUCK warning to stderr (once per task per wait call)
+   *  when an IN_PROGRESS task's owner has been in `needs_input` for at
+   *  least this many milliseconds since the agent row's last update.
+   *  Default 300_000 (5 min). Pass 0 to disable.
+   *
+   *  Surfaced by agent_close_discipline_gap in mufeedback: workers
+   *  occasionally finish + commit + go idle without running
+   *  `mu task close <id>`, leaving wait blocked indefinitely. The
+   *  warning is observation-only — wait keeps polling so the operator
+   *  (or a wrapping policy) decides whether to force-close, re-prompt,
+   *  or escalate. */
+  stuckAfterMs?: number;
 }
 
 export interface TaskWaitTaskState {
@@ -82,6 +114,12 @@ export interface TaskWaitTaskState {
   status: TaskStatus;
   /** True when this task's status equals the target. */
   reachedTarget: boolean;
+  /** True when the task is IN_PROGRESS, owned by a registered agent
+   *  whose detected status is `needs_input` for >= `stuckAfterMs`.
+   *  Surfaces the agent_close_discipline_gap pattern: worker finished +
+   *  committed but skipped `mu task close <id>`. Backwards-compatible
+   *  signal — callers ignoring it see no behaviour change. */
+  stuck: boolean;
 }
 
 export interface TaskWaitResult {
@@ -121,6 +159,7 @@ export async function waitForTasks(
   const wantAny = opts.any === true;
   const timeoutMs = opts.timeoutMs ?? 600_000;
   const pollMs = opts.pollMs ?? 1000;
+  const stuckAfterMs = opts.stuckAfterMs ?? 300_000;
   const deadline = timeoutMs > 0 ? Date.now() + timeoutMs : Number.POSITIVE_INFINITY;
   const startedAt = Date.now();
 
@@ -128,6 +167,30 @@ export async function waitForTasks(
   for (const id of localIds) {
     if (getTask(db, id) === undefined) throw new TaskNotFoundError(id);
   }
+
+  // Per-task dedupe: emit the STUCK warning at most ONCE per wait call,
+  // not once per poll cycle. Operators don't want their stderr filled
+  // with the same yellow line every second; one nudge is enough.
+  const stuckWarned = new Set<string>();
+
+  /**
+   * Detect the agent_close_discipline_gap pattern for one task:
+   * IN_PROGRESS in the DB, owned by a registered agent whose status
+   * is `needs_input` and whose `updated_at` is older than
+   * `stuckAfterMs`. We query agents directly (not via getAgent) to
+   * avoid an import cycle (src/agents.ts already imports from
+   * src/tasks.ts).
+   */
+  const isStuck = (status: TaskStatus, owner: string | null): boolean => {
+    if (stuckAfterMs <= 0) return false;
+    if (status !== "IN_PROGRESS" || !owner) return false;
+    const row = db
+      .prepare("SELECT status, updated_at FROM agents WHERE name = ? LIMIT 1")
+      .get(owner) as { status: string; updated_at: string } | undefined;
+    if (!row || row.status !== "needs_input") return false;
+    const ageMs = Date.now() - new Date(row.updated_at).getTime();
+    return ageMs >= stuckAfterMs;
+  };
 
   /** Read current state of all tasks; returns the result shape. */
   const snapshot = (): TaskWaitResult => {
@@ -138,7 +201,21 @@ export async function waitForTasks(
       // deletion mid-wait shouldn't crash the wait; it's a legitimate
       // state change.)
       const status = (row?.status ?? "OPEN") as TaskStatus;
-      return { localId: id, status, reachedTarget: status === target };
+      const owner = row?.owner ?? null;
+      const stuck = isStuck(status, owner);
+      if (stuck && !stuckWarned.has(id)) {
+        stuckWarned.add(id);
+        // Yellow ANSI escape inline (no picocolors import — keeps the
+        // SDK module dep-free; the CLI layer already pulls picocolors).
+        // The message is one line, prefixed with `mu task wait:` so
+        // log greppers can target it.
+        currentStuckWarn(
+          `\x1b[33mmu task wait: ${id} stuck — owner=${owner ?? "<none>"} in needs_input ` +
+            `(>= ${stuckAfterMs}ms since last status change). ` +
+            `Worker likely committed but skipped \`mu task close ${id}\`.\x1b[0m\n`,
+        );
+      }
+      return { localId: id, status, reachedTarget: status === target, stuck };
     });
     const reachedCount = tasks.filter((t) => t.reachedTarget).length;
     return {

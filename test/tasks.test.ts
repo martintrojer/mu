@@ -49,6 +49,7 @@ import {
   searchTasks,
   setTaskStatus,
   setWaitSleepForTests,
+  setWaitStuckWarnForTests,
   slugifyTitle,
   updateTask,
   waitForTasks,
@@ -1735,9 +1736,9 @@ describe("waitForTasks", () => {
     expect(r.timedOut).toBe(false);
     expect(r.elapsedMs).toBeLessThan(100); // didn't sleep through any poll cycle
     expect(r.tasks).toEqual([
-      { localId: "a", status: "CLOSED", reachedTarget: true },
-      { localId: "b", status: "CLOSED", reachedTarget: true },
-      { localId: "c", status: "CLOSED", reachedTarget: true },
+      { localId: "a", status: "CLOSED", reachedTarget: true, stuck: false },
+      { localId: "b", status: "CLOSED", reachedTarget: true, stuck: false },
+      { localId: "c", status: "CLOSED", reachedTarget: true, stuck: false },
     ]);
   });
 
@@ -1874,6 +1875,102 @@ describe("waitForTasks", () => {
     } finally {
       setWaitSleepForTests(restore);
       resetWaitPollCount();
+    }
+  });
+
+  // Regression for agent_close_discipline_gap: a worker that
+  // committed + reported done in chat-style but skipped
+  // `mu task close <id>` leaves the task IN_PROGRESS while the agent
+  // sits in `needs_input`. mu task wait should keep polling but emit
+  // exactly ONE yellow STUCK warning per stuck task per wait call —
+  // not one per poll cycle (operators don't want stderr spam).
+  it("emits exactly one STUCK warning per stuck task per wait call (agent_close_discipline_gap)", async () => {
+    // Set up: a registered worker owns task 'a' which is IN_PROGRESS,
+    // and the worker's status is `needs_input` with an `updated_at`
+    // timestamp deep in the past so the staleness check fires on the
+    // very first poll. We mutate updated_at directly via SQL because
+    // updateAgentStatus auto-bumps it to now().
+    insertAgent(db, {
+      name: "worker-stuck",
+      workstream: "test",
+      paneId: "%99",
+      status: "needs_input",
+    });
+    db.prepare(
+      "UPDATE tasks SET status = 'IN_PROGRESS', owner = ?, updated_at = ? WHERE local_id = ?",
+    ).run("worker-stuck", new Date().toISOString(), "a");
+    db.prepare("UPDATE agents SET status = 'needs_input', updated_at = ? WHERE name = ?").run(
+      new Date(Date.now() - 10 * 60_000).toISOString(),
+      "worker-stuck",
+    );
+
+    const warnings: string[] = [];
+    const restoreWarn = setWaitStuckWarnForTests((msg) => {
+      warnings.push(msg);
+    });
+    // Use the sleep seam to actually sleep so the deadline math
+    // terminates after several polls (mirrors the cadence test).
+    const restoreSleep = setWaitSleepForTests(async (ms) => {
+      await new Promise((resolve) => setTimeout(resolve, ms));
+    });
+    try {
+      const r = await waitForTasks(db, ["a", "b"], {
+        pollMs: 10,
+        timeoutMs: 80,
+        stuckAfterMs: 1000, // 1s; agent is 10min stale so always stuck
+      });
+      expect(r.timedOut).toBe(true);
+      // 'a' is stuck; 'b' is just OPEN with no owner (not stuck).
+      const aState = r.tasks.find((t) => t.localId === "a");
+      const bState = r.tasks.find((t) => t.localId === "b");
+      expect(aState?.stuck).toBe(true);
+      expect(bState?.stuck).toBe(false);
+      // Multiple poll cycles ran (the timeout/poll math gives ~8) but
+      // only ONE warning was emitted — dedupe is the point.
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0]).toContain("a stuck");
+      expect(warnings[0]).toContain("worker-stuck");
+      expect(warnings[0]).toContain("mu task close a");
+    } finally {
+      setWaitStuckWarnForTests(restoreWarn);
+      setWaitSleepForTests(restoreSleep);
+    }
+  });
+
+  it("stuckAfterMs=0 disables the stuck warning entirely", async () => {
+    insertAgent(db, {
+      name: "worker-stuck2",
+      workstream: "test",
+      paneId: "%100",
+      status: "needs_input",
+    });
+    db.prepare(
+      "UPDATE tasks SET status = 'IN_PROGRESS', owner = ?, updated_at = ? WHERE local_id = ?",
+    ).run("worker-stuck2", new Date().toISOString(), "a");
+    db.prepare("UPDATE agents SET status = 'needs_input', updated_at = ? WHERE name = ?").run(
+      new Date(Date.now() - 10 * 60_000).toISOString(),
+      "worker-stuck2",
+    );
+
+    const warnings: string[] = [];
+    const restoreWarn = setWaitStuckWarnForTests((msg) => {
+      warnings.push(msg);
+    });
+    const restoreSleep = setWaitSleepForTests(async (ms) => {
+      await new Promise((resolve) => setTimeout(resolve, ms));
+    });
+    try {
+      const r = await waitForTasks(db, ["a"], {
+        pollMs: 10,
+        timeoutMs: 50,
+        stuckAfterMs: 0,
+      });
+      expect(r.timedOut).toBe(true);
+      expect(r.tasks[0]?.stuck).toBe(false);
+      expect(warnings).toHaveLength(0);
+    } finally {
+      setWaitStuckWarnForTests(restoreWarn);
+      setWaitSleepForTests(restoreSleep);
     }
   });
 });

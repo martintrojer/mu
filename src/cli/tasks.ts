@@ -713,6 +713,7 @@ export async function cmdTaskWait(
     status?: string;
     any?: boolean;
     timeout?: number;
+    stuckAfter?: number;
     workstream?: string;
     json?: boolean;
   },
@@ -732,12 +733,15 @@ export async function cmdTaskWait(
   // --timeout in seconds for shell ergonomics; SDK takes ms.
   // 0 in the SDK = wait forever; same convention here.
   const timeoutMs = opts.timeout !== undefined ? opts.timeout * 1000 : 600_000;
+  // --stuck-after also in seconds; 0 disables. Default mirrors the SDK.
+  const stuckAfterMs = opts.stuckAfter !== undefined ? opts.stuckAfter * 1000 : 300_000;
 
   const sdkOpts: {
     status?: TaskWaitResult["tasks"][number]["status"];
     any?: boolean;
     timeoutMs: number;
-  } = { timeoutMs };
+    stuckAfterMs: number;
+  } = { timeoutMs, stuckAfterMs };
   if (statusOpt !== undefined) sdkOpts.status = statusOpt;
   if (opts.any) sdkOpts.any = true;
 
@@ -1219,6 +1223,11 @@ export function wireTaskCommands(program: Command): void {
     )
     .option("--any", "succeed as soon as ONE listed task reaches the target (default: all must)")
     .option("--timeout <seconds>", "max seconds to wait (0 = forever, default 600)", parseLines)
+    .option(
+      "--stuck-after <seconds>",
+      "emit a yellow STUCK warning to stderr when an IN_PROGRESS task's owner has been in needs_input for >= N seconds since their last status change (0 = disable, default 300). Surfaces the agent_close_discipline_gap pattern: worker finished + committed but skipped `mu task close <id>`. Wait keeps polling — the warning is observation-only.",
+      parseLines,
+    )
     .option(...WORKSTREAM_OPT)
     .option(...JSON_OPT)
     .action(function (ids: string[]) {
@@ -1226,6 +1235,7 @@ export function wireTaskCommands(program: Command): void {
         status?: string;
         any?: boolean;
         timeout?: number;
+        stuckAfter?: number;
         workstream?: string;
         json?: boolean;
       };

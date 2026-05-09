@@ -534,6 +534,10 @@ mu task close <id> --evidence "tests pass: ..."        # close
 # repeat
 ```
 
+- If you committed/finished but skipped `mu task close <id>`, the
+  orchestrator's `mu task wait` will hang. Always close as the LAST
+  action of a dispatched task.
+
 ### When you need to do something irreversible
 
 Gate on a human approval. Don't `mu workstream destroy` or

@@ -46,6 +46,7 @@ export {
   getWaitPollCount,
   resetWaitPollCount,
   setWaitSleepForTests,
+  setWaitStuckWarnForTests,
   type TaskWaitOptions,
   type TaskWaitResult,
   type TaskWaitTaskState,

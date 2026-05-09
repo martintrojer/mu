@@ -10,7 +10,67 @@ called out under "Breaking" in each entry.
 
 ## [Unreleased]
 
+### Added
+
+- **`mu task wait --stuck-after <seconds>` warns when a worker
+  committed but skipped `mu task close`.** Closes
+  `agent_close_discipline_gap` in `mufeedback` (Phase 1 of 2). Live
+  surface: 4-way wave-3 dispatch, 2 workers cleanly closed their
+  tasks, 2 committed + reported done in chat-style and went idle
+  without running `mu task close <id>` — `mu task wait` correctly
+  kept polling because the DB row was still IN_PROGRESS, but to the
+  operator it looked like a hang. The contract "agent does work →
+  agent calls `mu task close` → wait sees the transition" has been
+  in `skills/mu/SKILL.md` since 0.1.0, but doc-only is necessary +
+  insufficient (both stuck workers "knew" the rule).
+
+  `waitForTasks` now accepts an optional `stuckAfterMs` (default
+  `300_000` = 5 min); the CLI exposes it as `--stuck-after <seconds>`
+  on `mu task wait`. On every poll cycle the SDK checks each
+  IN_PROGRESS task whose owner is a registered agent in `needs_input`
+  whose `agents.updated_at` is older than the threshold, and emits
+  one yellow line to stderr per stuck task per wait call (a
+  `Set<localId>` deduper guarantees exactly-once — operators don't
+  want stderr filled with the same line every poll second).
+  `TaskWaitResult.tasks[i]` gains a `stuck: boolean` so the JSON
+  output (`mu task wait --json`) carries the same signal
+  programmatically. Backwards-compatible: pass `--stuck-after 0` (or
+  set `stuckAfterMs: 0` from the SDK) to disable; consumers ignoring
+  the new field see no behaviour change. Wait keeps polling — the
+  warning is purely observational, leaving force-close /
+  re-prompt / escalate to the operator (auto-close-on-heuristics is
+  documented as an anti-feature in the original diagnosis note).
+
+  Layer-3 (agent-runtime hook that auto-injects the close call into
+  the agent's prompt) is deliberately not shipped: it would couple
+  mu to the inner CLI's lifecycle, exactly the seam mu refuses to
+  cross. Phase 2 of this change tightens `skills/mu/SKILL.md` with
+  one bullet noting the failure mode (next entry).
+
+  Tests: two new cases in `test/tasks.test.ts` `waitForTasks` block.
+  The first inserts a registered agent in `needs_input` with an
+  `updated_at` 10 minutes in the past, claims a task to it, runs
+  `waitForTasks` for ~80ms / pollMs=10 (≈ 8 polls), and asserts the
+  warning fired exactly once via the new `setWaitStuckWarnForTests`
+  test seam (also asserts `tasks[0].stuck === true` on the JSON
+  shape). The second confirms `stuckAfterMs: 0` disables the
+  warning entirely. Existing `waitForTasks` tests updated for the
+  new `stuck` field on `TaskWaitTaskState`.
+
 ### Changed
+
+- **`skills/mu/SKILL.md` Working loop now flags the
+  skipped-`mu task close` failure mode.** Phase 2 of
+  `agent_close_discipline_gap`. One bullet directly under the
+  worker-path code block: "If you committed/finished but skipped
+  `mu task close <id>`, the orchestrator's `mu task wait` will hang.
+  Always close as the LAST action of a dispatched task." Kept to a
+  single bullet (no paragraph) per the SKILL.md tightening guardrail
+  recorded under `docs_staleness_review_capstone` — every byte ships
+  in every agent's context window. Pairs with the orchestrator-side
+  `--stuck-after` warning above: docs catch the ones that read SKILL,
+  the warning catches the ones that don't.
+
 
 - **De-duplicated `shouldOverwriteAgentStatus` policy (one impl in
   `src/agents.ts`).** Closes `review_code_should_overwrite_status_dup`
