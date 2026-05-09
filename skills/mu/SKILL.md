@@ -129,6 +129,20 @@ Every turn:
    walk away (see "After spawning, observe" below).
 6. On close, repeat from 1.
 
+### Hard-earned dispatch lessons
+
+- **Refresh workspaces between waves.** `/new` → `mu workspace free`
+  → `mu workspace create`. Without it the worker ships clean code
+  against a stale parent; you find out at cherry-pick time. The
+  `behind` column in `mu state` shows the cost.
+- **Cherry-pick worker commits onto main, don't merge.** Stale-parent
+  worker branches drag in re-reverts of everything they missed.
+- **End every dispatch prompt with a loud `⚠️ FINAL ACTION: git commit
+  -am '...' THEN mu task close <id> --evidence '...'`.** Without the
+  literal reminder, agents commit + report success in chat without
+  running the typed close, and `mu task wait` hangs until
+  `--stuck-after` fires.
+
 ### Parallelisation decision table
 
 | Situation | Action |
