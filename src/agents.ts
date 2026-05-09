@@ -181,6 +181,31 @@ export function updateAgentStatus(db: Db, name: string, status: AgentStatus): bo
   return result.changes > 0;
 }
 
+/**
+ * Decide whether a scrollback-detected status should overwrite the
+ * persisted one.
+ *
+ * `free` is sticky until the agent shows real activity:
+ *   - free + needs_input  → stay free   (user explicitly marked it free;
+ *                                        idle prompt isn't activity)
+ *   - free + busy         → flip to busy
+ *   - free + needs_permission → flip   (a permission prompt IS activity)
+ *
+ * Every other persisted status is auto-derived; overwrite freely. This
+ * lets `spawning → busy/needs_input/needs_permission` happen on the
+ * first reconcile after spawn.
+ *
+ * Lives on the agent (not on reconcile) because it's a property of the
+ * agent's status field — both the periodic-reconcile loop and the
+ * inline single-agent reconcile in `mu agent show` share this policy.
+ */
+export function shouldOverwriteAgentStatus(current: AgentStatus, detected: AgentStatus): boolean {
+  if (current === "free") {
+    return detected === "busy" || detected === "needs_permission";
+  }
+  return true;
+}
+
 // ─── Pane title composition (mu's interpreted state on the border) ───
 //
 // The pane border (set by enableMuPaneBorders) renders

@@ -13,11 +13,11 @@
 
 import {
   type AgentRow,
-  type AgentStatus,
   deleteAgent,
   listAgents,
   refreshAgentTitle,
   resolveCliCommand,
+  shouldOverwriteAgentStatus,
   updateAgentStatus,
 } from "./agents.js";
 import type { Db } from "./db.js";
@@ -128,7 +128,7 @@ export async function reconcile(db: Db, opts: ReconcileOptions): Promise<Reconci
     for (const agent of survivors) {
       const scrollback = await capturePane(agent.paneId, { lines: 100 });
       const detected = detectPiStatus(scrollback);
-      if (shouldOverwrite(agent.status, detected) && detected !== agent.status) {
+      if (shouldOverwriteAgentStatus(agent.status, detected) && detected !== agent.status) {
         updateAgentStatus(db, agent.name, detected);
         statusChanges++;
       }
@@ -156,27 +156,6 @@ export async function reconcile(db: Db, opts: ReconcileOptions): Promise<Reconci
   }
 
   return { prunedGhosts, statusChanges, orphans, dryRun };
-}
-
-/**
- * Decide whether a scrollback-detected status should overwrite the
- * persisted one.
- *
- * `free` is sticky until the agent shows real activity:
- *   - free + needs_input  → stay free   (user explicitly marked it free;
- *                                        idle prompt isn't activity)
- *   - free + busy         → flip to busy
- *   - free + needs_permission → flip   (a permission prompt IS activity)
- *
- * Every other persisted status is auto-derived; overwrite freely. This
- * lets `spawning → busy/needs_input/needs_permission` happen on the
- * first reconcile after spawn.
- */
-function shouldOverwrite(current: AgentStatus, detected: AgentStatus): boolean {
-  if (current === "free") {
-    return detected === "busy" || detected === "needs_permission";
-  }
-  return true;
 }
 
 function looksLikeAgentPane(pane: TmuxPane): boolean {

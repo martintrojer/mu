@@ -7,7 +7,6 @@ import {
   type AdoptAgentOptions,
   type AdoptAgentResult,
   AgentNotFoundError,
-  type AgentRow,
   adoptAgent,
   closeAgent,
   freeAgent,
@@ -17,6 +16,7 @@ import {
   refreshAgentTitle,
   resolveCliCommand,
   sendToAgent,
+  shouldOverwriteAgentStatus,
   spawnAgent,
   updateAgentStatus,
 } from "../agents.js";
@@ -210,21 +210,6 @@ export async function cmdList(
       );
     }
   }
-}
-
-/**
- * Same shouldOverwrite policy as `reconcile.ts` (kept private there to
- * encapsulate the periodic-reconcile path). Re-implemented here for
- * `mu agent show` which reconciles a single agent inline using the
- * scrollback it just captured. `free` is sticky until real activity;
- * everything else is auto-derived.
- */
-function shouldOverwriteAgentStatus(
-  current: AgentRow["status"],
-  detected: AgentRow["status"],
-): boolean {
-  if (current === "free") return detected === "busy" || detected === "needs_permission";
-  return true;
 }
 
 export async function cmdAgentShow(

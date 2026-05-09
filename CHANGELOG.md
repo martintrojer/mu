@@ -12,6 +12,25 @@ called out under "Breaking" in each entry.
 
 ### Changed
 
+- **De-duplicated `shouldOverwriteAgentStatus` policy (one impl in
+  `src/agents.ts`).** Closes `review_code_should_overwrite_status_dup`
+  in `mufeedback`. The status-overwrite predicate (`free` is sticky
+  unless detected `busy` / `needs_permission`; everything else
+  overwrites freely) lived as two byte-equivalent copies: a private
+  `shouldOverwrite` in `src/reconcile.ts` and an inline
+  `shouldOverwriteAgentStatus` in `src/cli/agents.ts` that the latter
+  even documented as "re-implemented here for `mu agent show`." The
+  encapsulation justification didn't survive scrutiny — the predicate
+  is pure and tiny, both call sites already import the SDK directly,
+  and the next `free`-stickiness rule (e.g. `unreachable` stickiness)
+  would have landed in only one of the two files with operators only
+  noticing drift on `mu agent show <name>`. The canonical impl now
+  lives in `src/agents.ts` next to `updateAgentStatus` (it's a
+  property of the agent's status field, not of the reconcile loop);
+  `src/reconcile.ts` and `src/cli/agents.ts` both import it. Behaviour
+  unchanged; net **-12 LOC** with one fewer place that needs editing
+  the next time the policy evolves.
+
 - **De-duplicated `RawTaskRowForState` + `rawTaskRowToTask` (CLI →
   SDK consolidation).** Closes `review_code_raw_task_state_duplicate`
   in `mufeedback`. The `IN_PROGRESS` and `recent CLOSED` task slices
