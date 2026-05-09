@@ -11,34 +11,6 @@
 //
 // Extracted from src/cli.ts as part of refactor_split_large_src_files.
 
-import { cmdTaskClose, cmdTaskDefer, cmdTaskOpen, cmdTaskReject } from "./tasks/lifecycle.js";
-// Import the cluster's verb modules locally (so wireTaskCommands can
-// reference them) AND re-export so external callers continue to
-// `import { cmdTaskList } from "./cli/tasks.js"`.
-import {
-  cmdTaskBlocked,
-  cmdTaskGoals,
-  cmdTaskList,
-  cmdTaskNext,
-  cmdTaskOwnedBy,
-  cmdTaskReady,
-  cmdTaskSearch,
-} from "./tasks/queries.js";
-export {
-  cmdTaskBlocked,
-  cmdTaskGoals,
-  cmdTaskList,
-  cmdTaskNext,
-  cmdTaskOwnedBy,
-  cmdTaskReady,
-  cmdTaskSearch,
-} from "./tasks/queries.js";
-export {
-  cmdTaskClose,
-  cmdTaskDefer,
-  cmdTaskOpen,
-  cmdTaskReject,
-} from "./tasks/lifecycle.js";
 import { refreshAgentTitle } from "../agents.js";
 import {
   TASK_SORT_KEYS,
@@ -81,6 +53,19 @@ import {
   updateTask,
   waitForTasks,
 } from "../tasks.js";
+// Import the cluster's verb modules locally so wireTaskCommands can
+// reference them. These are CLI-internal — not part of the SDK
+// (src/index.ts) — so no re-export.
+import { cmdTaskClose, cmdTaskDefer, cmdTaskOpen, cmdTaskReject } from "./tasks/lifecycle.js";
+import {
+  cmdTaskBlocked,
+  cmdTaskGoals,
+  cmdTaskList,
+  cmdTaskNext,
+  cmdTaskOwnedBy,
+  cmdTaskReady,
+  cmdTaskSearch,
+} from "./tasks/queries.js";
 
 /**
  * Translate the small set of shell-style escapes (\n, \t, \r, \\)

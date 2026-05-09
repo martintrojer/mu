@@ -57,6 +57,23 @@ called out under "Breaking" in each entry.
   warning entirely. Existing `waitForTasks` tests updated for the
   new `stuck` field on `TaskWaitTaskState`.
 
+### Removed
+
+- **`src/cli/tasks.ts` no longer re-exports the lifecycle/queries
+  cluster's `cmd*` functions.** Closes
+  `review_code_cli_tasks_re_export_indirection` in `mufeedback`.
+  After the cluster split, `cli/tasks.ts` both imported the eleven
+  `cmdTask{Blocked,Goals,List,Next,OwnedBy,Ready,Search,Close,Defer,Open,Reject}`
+  functions (so `wireTaskCommands` could reference them) AND
+  re-exported them with a comment promising "external callers
+  continue to `import { cmdTaskList } from "./cli/tasks.js"`". A
+  repo-wide grep (`from "./cli/tasks"|from "../cli/tasks"` outside
+  the cluster) returned zero hits — no caller went through the
+  re-export, and the CLI `cmd*` functions are deliberately not part
+  of the SDK contract (`src/index.ts` re-exports none of them).
+  Deleted the 24 lines of import-then-re-export ceremony plus the
+  misleading docstring; the import half stays. Behaviour unchanged.
+
 ### Changed
 
 - **`resolveSelf` now layers over a new `resolveSelfOptional`; the
