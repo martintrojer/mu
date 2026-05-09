@@ -199,8 +199,9 @@ export async function spawnAgent(db: Db, opts: SpawnAgentOptions): Promise<Agent
  * (used as cwd). The placeholder unblocks the cycle.
  *
  * The placeholder is a publicly-visible quirk — see `PENDING_PANE_PREFIX`
- * and the consumers it documents (refreshAgentTitle, the dryRun
- * rationale in `listLiveAgents`). The deeper fix (eliminate the placeholder
+ * and the consumers it documents (refreshAgentTitle, the
+ * mode: "status-only"/"report-only" rationale in `listLiveAgents`).
+ * The deeper fix (eliminate the placeholder
  * by reordering ws-dir → pane → atomic dual-insert) is filed as a
  * separate refactor; this shape is the established equilibrium.
  *
@@ -239,7 +240,7 @@ async function prestageWorkspace(db: Db, opts: SpawnAgentOptions, cli: string): 
  * fresh agent row (no-workspace path). Throws if the patch UPDATE
  * silently affects no row (the placeholder row vanished mid-spawn —
  * historically the bug_agent_spawn_workspace_fk_failure class, now
- * patched via dryRun: true on read verbs).
+ * patched via mode: "status-only"/"report-only" on read verbs).
  */
 function finalizeAgentRow(
   db: Db,

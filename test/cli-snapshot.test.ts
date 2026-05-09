@@ -184,7 +184,7 @@ describe("mu undo", () => {
       reconcile: {
         wouldBePrunedGhosts: number;
         orphansSurfaced: number;
-        dryRun: boolean;
+        mode: string;
       };
     };
     expect(parsed.restored).toBe(true);
@@ -196,7 +196,7 @@ describe("mu undo", () => {
     // "restore brings back snapshot rows verbatim" contract —
     // snap_undo_reconcile_destroys_recovered_agents).
     expect(parsed.reconcile.wouldBePrunedGhosts).toBeGreaterThanOrEqual(0);
-    expect(parsed.reconcile.dryRun).toBe(true);
+    expect(parsed.reconcile.mode).toBe("report-only");
   });
 });
 

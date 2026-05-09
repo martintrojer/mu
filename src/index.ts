@@ -56,7 +56,12 @@ export {
   type AgentStatus,
   type DetectedStatus,
 } from "./detect.js";
-export { reconcile, type ReconcileOptions, type ReconcileReport } from "./reconcile.js";
+export {
+  reconcile,
+  type ReconcileMode,
+  type ReconcileOptions,
+  type ReconcileReport,
+} from "./reconcile.js";
 export {
   addBlockEdge,
   addNote,

@@ -164,7 +164,7 @@ export async function cmdUndo(
       try {
         const report = await reconcile(fresh, {
           workstream: ws.workstream,
-          dryRun: true,
+          mode: "report-only",
         });
         totalGhostsWouldBePruned += report.prunedGhosts;
         totalOrphans += report.orphans.length;
@@ -198,7 +198,11 @@ export async function cmdUndo(
         // (which still mutates) after deciding which rows to keep.
         wouldBePrunedGhosts: totalGhostsWouldBePruned,
         orphansSurfaced: totalOrphans,
-        dryRun: true,
+        // Reconcile mode: "report-only" preserves the snapshot's
+        // restored rows verbatim. (Was `dryRun: true` before the
+        // status-only/report-only split — BREAKING for SDK consumers
+        // reading this field; see CHANGELOG.)
+        mode: "report-only",
         perWorkstream: reconcilePerWorkstream,
       },
       nextSteps: [

@@ -332,13 +332,14 @@ function agentStatusHistogram(agents: readonly AgentRow[]): string {
 export async function cmdHud(db: Db, opts: HudOpts): Promise<void> {
   const workstream = await resolveWorkstream(opts.workstream);
   // mu hud is print-once-and-compose by design (`watch -n 5 mu hud`,
-  // `tmux display-popup -E 'mu hud ...'`). dryRun so the periodic
-  // poll doesn't race a long-running `git worktree add` mid-spawn,
-  // which would otherwise prune the spawn's placeholder agent row
-  // and surface as a confusing FOREIGN KEY constraint failure on the
-  // subsequent `INSERT INTO vcs_workspaces`. (Surfaced live by
-  // bug_agent_spawn_workspace_fk_failure.)
-  const view = await listLiveAgents(db, { workstream, dryRun: true });
+  // `tmux display-popup -E 'mu hud ...'`). status-only so the periodic
+  // poll doesn't race a long-running `git worktree add` mid-spawn
+  // (would otherwise prune the placeholder row and FK-fail the
+  // subsequent INSERT INTO vcs_workspaces — see
+  // bug_agent_spawn_workspace_fk_failure) AND so the busy/needs_input
+  // glyph in the table refreshes between mutating verbs (see
+  // bug_pane_title_glyph_stuck_at_needs_input).
+  const view = await listLiveAgents(db, { workstream, mode: "status-only" });
   const tracks = getParallelTracks(db, workstream);
   const ready = listReady(db, workstream).sort(byRoiDesc);
   const inProgress = listInProgress(db, workstream);

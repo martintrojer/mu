@@ -16,7 +16,7 @@
 import type { Db } from "./db.js";
 import type { AgentStatus } from "./detect.js";
 import { emitEvent } from "./logs.js";
-import { type ReconcileReport, reconcile } from "./reconcile.js";
+import { type ReconcileMode, type ReconcileReport, reconcile } from "./reconcile.js";
 import { captureSnapshot } from "./snapshots.js";
 import { addNote, listTasksByOwner } from "./tasks.js";
 // Re-export the cluster modules so external callers continue to
@@ -277,8 +277,11 @@ const MAX_TITLE_LEN = 64;
  * pass would treat the placeholder row as a ghost and prune it
  * (→ FK-failure on the workspace insert mid-spawn). Callers MUST:
  *   - either guard against it explicitly (refreshAgentTitle), OR
- *   - run reconcile in dryRun mode (read-only verbs; see
- *     `listLiveAgents.dryRun` rationale below).
+ *   - run reconcile in mode: "status-only" or "report-only"
+ *     (status pollers and read-only diagnostic verbs; see
+ *     `listLiveAgents.mode` rationale below). status-only also
+ *     skips status detection on placeholder rows directly
+ *     (reconcile() uses isPendingPaneId for that).
  *
  * Bug surfaced as bug_agent_spawn_workspace_fk_failure.
  */
@@ -533,22 +536,31 @@ export interface ListLiveAgentsOptions {
   workstream: string;
   tmuxSession?: string;
   /**
-   * Read-only: report drift WITHOUT mutating any row. Forwarded to
-   * `reconcile()`'s same-name option. Read-only callers (`mu hud`,
-   * `mu state`, bare `mu`, `mu agent attach`, `mu doctor`) MUST set
-   * this so the periodic `watch -n 5 mu hud -w X` invocation doesn't
-   * race a long-running spawn (`git worktree add` of a 13k-file repo
-   * takes seconds; the placeholder agent row's `pane_id` =
-   * `pendingPaneIdFor(name)` looks like a ghost to reconcile, which then
-   * deletes the row mid-spawn — the FK on `vcs_workspaces.agent` then
-   * fires when `createWorkspace` tries to insert the row, surfacing
-   * as a confusing FOREIGN KEY constraint failure). Surfaced live by
-   * bug_agent_spawn_workspace_fk_failure.
+   * Which kind of reconciliation pass to run. Forwarded to
+   * `reconcile()`'s same-name option. Default `"full"` (the
+   * documented mutating behaviour `mu agent list` has always had).
    *
-   * Default: false. Only `mu agent list` keeps the mutating behaviour
-   * (it's the documented escape hatch for forcing a real prune).
+   * Read-only callers split two ways:
+   *   - `mu hud`, `mu state`, bare `mu`, `mu agent attach` →
+   *     `"status-only"`: refresh status + title (writes to DB),
+   *     skip prune + reap. The operator's primary signal
+   *     (busy/needs_input) stays fresh without a periodic poll
+   *     racing in-flight spawns.
+   *   - `mu doctor`, `mu undo` → `"report-only"`: count drift,
+   *     mutate nothing. `mu undo` MUST use this so a post-restore
+   *     reconcile doesn't delete the rows the snapshot just
+   *     restored (snap_undo_reconcile_destroys_recovered_agents).
+   *
+   * Skipping prune is what protects mid-spawn placeholders (pane
+   * id `%pending-<name>`) from being treated as ghosts and pruned
+   * out from under `createWorkspace`'s FK insert
+   * (bug_agent_spawn_workspace_fk_failure).
+   *
+   * BREAKING: this replaces the previous `dryRun?: boolean`
+   * option. Migration: `dryRun: true` → `mode: "report-only"`;
+   * default (`dryRun: false` / unset) → `mode: "full"`.
    */
-  dryRun?: boolean;
+  mode?: ReconcileMode;
 }
 
 export interface LiveAgentsView {
@@ -562,16 +574,17 @@ export interface LiveAgentsView {
 
 /**
  * Return the live, reality-reconciled view of agents in a workstream.
- * `mu agent list` calls this with `dryRun: false` (mutating); every
- * read-only verb (`mu hud`, `mu state`, bare `mu`, `mu agent attach`,
- * `mu doctor`) calls it with `dryRun: true` to avoid racing in-flight
- * spawns / status changes.
+ * `mu agent list` calls this with `mode: "full"` (mutating); status
+ * pollers (`mu hud`, `mu state`, bare `mu`, `mu agent attach`) call
+ * it with `mode: "status-only"` to refresh status without pruning;
+ * read-only diagnostic / restore paths (`mu doctor`, `mu undo`)
+ * call it with `mode: "report-only"` to mutate nothing at all.
  */
 export async function listLiveAgents(db: Db, opts: ListLiveAgentsOptions): Promise<LiveAgentsView> {
   const report = await reconcile(db, {
     workstream: opts.workstream,
     ...(opts.tmuxSession !== undefined ? { tmuxSession: opts.tmuxSession } : {}),
-    ...(opts.dryRun !== undefined ? { dryRun: opts.dryRun } : {}),
+    ...(opts.mode !== undefined ? { mode: opts.mode } : {}),
   });
   const agents = listAgents(db, { workstream: opts.workstream });
   return { agents, orphans: report.orphans, report };

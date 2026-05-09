@@ -101,7 +101,7 @@ describe("reconcile — empty cases", () => {
       prunedGhosts: 0,
       statusChanges: 0,
       orphans: [],
-      dryRun: false,
+      mode: "full",
     });
   });
 
@@ -396,8 +396,8 @@ describe("reconcile — combined scenarios", () => {
     const second = await reconcile(db, { workstream: "auth" });
 
     // First pass detects nothing (status already busy, matches BUSY_SCROLLBACK).
-    expect(first).toEqual({ prunedGhosts: 0, statusChanges: 0, orphans: [], dryRun: false });
-    expect(second).toEqual({ prunedGhosts: 0, statusChanges: 0, orphans: [], dryRun: false });
+    expect(first).toEqual({ prunedGhosts: 0, statusChanges: 0, orphans: [], mode: "full" });
+    expect(second).toEqual({ prunedGhosts: 0, statusChanges: 0, orphans: [], mode: "full" });
   });
 
   it("status update bumps updated_at", async () => {
@@ -451,62 +451,62 @@ describe("reconcile — combined scenarios", () => {
 
 // ─── Manual status validation ──────────────────────────────────────────
 
-describe("reconcile — dryRun does not mutate (snap_undo_reconcile_destroys_recovered_agents)", () => {
+describe("reconcile — mode: 'report-only' does not mutate (snap_undo_reconcile_destroys_recovered_agents)", () => {
   it("counts ghosts but does NOT delete the agent row", async () => {
     insertAgent(db, { name: "alice", workstream: "auth", paneId: "%99", status: "busy" });
     // Empty tmux: alice's pane %99 is gone.
     const { executor } = mockTmux([]);
     setTmuxExecutor(executor);
 
-    const report = await reconcile(db, { workstream: "auth", dryRun: true });
+    const report = await reconcile(db, { workstream: "auth", mode: "report-only" });
 
-    expect(report.dryRun).toBe(true);
+    expect(report.mode).toBe("report-only");
     expect(report.prunedGhosts).toBe(1);
-    // The row is still in the DB — the dryRun contract.
+    // The row is still in the DB — the report-only contract.
     expect(getAgent(db, "alice")).toBeDefined();
   });
 
-  it("a non-dryRun pass right after still prunes (dryRun is opt-in per call)", async () => {
+  it("a follow-up mode:'full' pass still prunes (mode is opt-in per call)", async () => {
     insertAgent(db, { name: "alice", workstream: "auth", paneId: "%99", status: "busy" });
     const { executor } = mockTmux([]);
     setTmuxExecutor(executor);
 
-    const dry = await reconcile(db, { workstream: "auth", dryRun: true });
+    const dry = await reconcile(db, { workstream: "auth", mode: "report-only" });
     expect(dry.prunedGhosts).toBe(1);
     expect(getAgent(db, "alice")).toBeDefined();
 
-    // Same setup, dryRun off: deletes for real.
+    // Same setup, mode:"full": deletes for real.
     const wet = await reconcile(db, { workstream: "auth" });
     expect(wet.prunedGhosts).toBe(1);
-    expect(wet.dryRun).toBe(false);
+    expect(wet.mode).toBe("full");
     expect(getAgent(db, "alice")).toBeUndefined();
   });
 
   it("skips status detection entirely (statusChanges is always 0)", async () => {
     insertAgent(db, { name: "alice", workstream: "auth", paneId: "%15", status: "spawning" });
     // Pane is alive AND its scrollback would normally flip alice
-    // spawning → busy. dryRun must suppress that write.
+    // spawning → busy. report-only must suppress that write.
     const { executor } = mockTmux([
       { windowId: "@1", paneId: "%15", title: "alice", command: "pi", scrollback: BUSY_SCROLLBACK },
     ]);
     setTmuxExecutor(executor);
 
-    const report = await reconcile(db, { workstream: "auth", dryRun: true });
-    expect(report.dryRun).toBe(true);
+    const report = await reconcile(db, { workstream: "auth", mode: "report-only" });
+    expect(report.mode).toBe("report-only");
     expect(report.statusChanges).toBe(0);
     // Status unchanged (no write).
     expect(getAgent(db, "alice")?.status).toBe("spawning");
   });
 
-  it("orphan-surface still runs in dryRun mode", async () => {
+  it("orphan-surface still runs in report-only mode", async () => {
     // No agents in DB; one pi pane exists in tmux.
     const { executor } = mockTmux([
       { windowId: "@1", paneId: "%42", title: "orphan-1", command: "pi" },
     ]);
     setTmuxExecutor(executor);
 
-    const report = await reconcile(db, { workstream: "auth", dryRun: true });
-    expect(report.dryRun).toBe(true);
+    const report = await reconcile(db, { workstream: "auth", mode: "report-only" });
+    expect(report.mode).toBe("report-only");
     expect(report.orphans.length).toBe(1);
     expect(report.orphans[0]?.paneId).toBe("%42");
   });
@@ -517,23 +517,77 @@ describe("reconcile — dryRun does not mutate (snap_undo_reconcile_destroys_rec
     //   2. destroy kills the pane
     //   3. mu undo restores the snapshot's agents row
     //   4. post-restore reconcile sees pane is dead
-    //   5. WITHOUT dryRun: prunes the agents row + cascades vcs_workspaces away
-    //   6. WITH    dryRun: counts the would-be-prune; row stays
+    //   5. WITHOUT report-only: prunes the agents row + cascades vcs_workspaces away
+    //   6. WITH    report-only: counts the would-be-prune; row stays
     insertAgent(db, { name: "dog-1", workstream: "auth", paneId: "%2919", status: "needs_input" });
     // Pane is gone in tmux (the destroy killed it).
     const { executor } = mockTmux([]);
     setTmuxExecutor(executor);
 
     // Simulate the post-restore reconcile pass.
-    const report = await reconcile(db, { workstream: "auth", dryRun: true });
+    const report = await reconcile(db, { workstream: "auth", mode: "report-only" });
 
     expect(report.prunedGhosts).toBe(1);
-    expect(report.dryRun).toBe(true);
+    expect(report.mode).toBe("report-only");
     // The contract: the recovered row IS still here.
     const dog = getAgent(db, "dog-1");
     expect(dog).toBeDefined();
     expect(dog?.workstream).toBe("auth");
     expect(dog?.paneId).toBe("%2919");
+  });
+});
+
+describe("reconcile — mode: 'status-only' refreshes status without pruning (bug_pane_title_glyph_stuck_at_needs_input)", () => {
+  it("DOES update status from scrollback (the whole point of status-only)", async () => {
+    insertAgent(db, { name: "alice", workstream: "auth", paneId: "%15", status: "spawning" });
+    const { executor } = mockTmux([
+      { windowId: "@1", paneId: "%15", title: "alice", command: "pi", scrollback: BUSY_SCROLLBACK },
+    ]);
+    setTmuxExecutor(executor);
+
+    const report = await reconcile(db, { workstream: "auth", mode: "status-only" });
+    expect(report.mode).toBe("status-only");
+    expect(report.statusChanges).toBe(1);
+    expect(getAgent(db, "alice")?.status).toBe("busy");
+  });
+
+  it("DOES NOT prune ghost rows (the whole point of NOT being mode:'full')", async () => {
+    insertAgent(db, { name: "ghost", workstream: "auth", paneId: "%999", status: "busy" });
+    const { executor } = mockTmux([]); // ghost's pane is gone
+    setTmuxExecutor(executor);
+
+    const report = await reconcile(db, { workstream: "auth", mode: "status-only" });
+    expect(report.mode).toBe("status-only");
+    expect(report.prunedGhosts).toBe(1); // counted…
+    expect(getAgent(db, "ghost")).toBeDefined(); // …but row survives
+  });
+
+  it("SKIPS status detection on placeholder agents whose pane id starts with %pending- (mid-spawn safety)", async () => {
+    // Mid-spawn: spawnAgent has inserted the agent row with the
+    // %pending-<name> sentinel pane id; createWorkspace is still
+    // running. status-only must not capturePane on the placeholder.
+    insertAgent(db, {
+      name: "alice",
+      workstream: "auth",
+      paneId: "%pending-alice",
+      status: "spawning",
+    });
+    // Empty tmux session (placeholder doesn't exist as a real pane).
+    const { executor, calls } = mockTmux([]);
+    setTmuxExecutor(executor);
+
+    const report = await reconcile(db, { workstream: "auth", mode: "status-only" });
+    expect(report.mode).toBe("status-only");
+    // Status unchanged (no scrollback capture, no detector run).
+    expect(getAgent(db, "alice")?.status).toBe("spawning");
+    expect(report.statusChanges).toBe(0);
+    // No capturePane against the fake pane id (would have errored).
+    const sawCapture = calls.some((c) => c[0] === "capture-pane" && c.includes("%pending-alice"));
+    expect(sawCapture).toBe(false);
+    // Placeholder is NOT in tmux but status-only doesn't prune
+    // (load-bearing for bug_agent_spawn_workspace_fk_failure):
+    // the row survives so createWorkspace's FK insert succeeds.
+    expect(getAgent(db, "alice")).toBeDefined();
   });
 });
 

@@ -76,6 +76,7 @@ called out under "Breaking" in each entry.
 
 ### Changed
 
+<<<<<<< HEAD
 - **`claim.integration.test.ts` regains end-to-end coverage of
   the cross-workstream guard.** Closes
   `review_test_claim_integration_xws_rewrite` in `mufeedback`.
@@ -120,6 +121,56 @@ called out under "Breaking" in each entry.
   without re-spawning the worker) — since the FK `ON DELETE SET NULL`
   on `tasks.owner` makes the agent re-spawn scenario impossible to
   produce naturally. Test-only change; no SDK behaviour change.
+
+- **`reconcile()` `dryRun: boolean` replaced with
+  `mode: "full" | "status-only" | "report-only"`.** Closes
+  `reconcile_split_dryrun_into_status_only_mode` and
+  `bug_pane_title_glyph_stuck_at_needs_input` in `mufeedback`. Live
+  surface: the operator's pane-border glyph (busy/needs_input)
+  showed the stale value indefinitely between mutating verbs because
+  `mu state` and `mu hud` polled with `dryRun: true`, which suppressed
+  prune (good — mid-spawn placeholders survive) AND status detection
+  (bad — the very thing the operator looks at the card to see).
+
+  The fix splits prune-suppression from status-suppression. Three
+  modes:
+
+  - `"full"` (default): prune ghosts (deletes the agent row, fires
+    the deleteAgent reaper that flips IN_PROGRESS tasks back to OPEN
+    with [reaper] notes), detect status, surface orphans. Used by
+    `mu agent list` — the documented escape hatch for forcing a
+    real prune + reap.
+  - `"status-only"`: refresh status + pane title (writes to DB,
+    writes tmux titles — desired side-effects of a refresh), skip
+    prune + reap. Skips status detection on placeholder agents whose
+    pane id starts with `%pending-` (mid-spawn safety; the
+    placeholder isn't a real tmux pane and capturePane would error).
+    Used by `mu state`, `mu hud`, bare `mu`, `mu agent attach`.
+  - `"report-only"`: count drift, mutate nothing (no DB writes, no
+    tmux title writes, no prune). Used by `mu doctor` (read-only
+    diagnostic) and `mu undo` (post-restore reconcile MUST NOT
+    delete the rows the snapshot just restored —
+    `snap_undo_reconcile_destroys_recovered_agents`).
+
+  **Breaking for SDK consumers** of `ReconcileOptions` /
+  `ReconcileReport` and of `ListLiveAgentsOptions`: `dryRun?:
+  boolean` is replaced by `mode?: ReconcileMode`, and
+  `ReconcileReport.dryRun: boolean` is replaced by
+  `ReconcileReport.mode: ReconcileMode`. Migration: `dryRun: true`
+  → `mode: "report-only"` (preserves no-mutation contract); default
+  / `dryRun: false` → `mode: "full"`. The new `"status-only"` shape
+  is the only net-new mode. The `mu undo --json` reconcile sub-doc
+  also renames `reconcile.dryRun: true` → `reconcile.mode:
+  "report-only"` for consistency. CLI verb behaviour is strictly
+  better: `mu state` / `mu hud` now show fresh status without
+  becoming dangerous, and `mu doctor` / `mu undo` keep their no-
+  mutation contract.
+
+  Tests: three new cases in `test/reconcile.test.ts` covering
+  status-only (DOES update status, DOES NOT prune, SKIPS placeholder
+  panes); existing `dryRun` tests across `reconcile.test.ts`,
+  `verbs.test.ts`, `snapshots.test.ts`, `cli-snapshot.test.ts`
+  rewritten in terms of the new `mode` field.
 
 - **`TaskIdInvalidError` test assertions relaxed off the exact
   sanitised-command suffix.** Closes

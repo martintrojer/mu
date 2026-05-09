@@ -539,12 +539,13 @@ describe("migration v3 -> v4: snapshots table", () => {
 //      would silently drop the vcs_workspaces row too.
 //
 // Post-fix:
-//   - reconcile(db, { dryRun: true }) reports the would-be-prune
-//     COUNT but doesn't delete. The agent + workspace rows survive
+//   - reconcile(db, { mode: "report-only" }) reports the
+//     would-be-prune COUNT but doesn't delete and doesn't write to
+//     the DB or to tmux titles. The agent + workspace rows survive
 //     the entire restore-and-reconcile cycle.
 
 describe("snap_undo_reconcile_destroys_recovered_agents (regression)", () => {
-  it("restore + dryRun reconcile preserves the agent row whose pane is dead", async () => {
+  it("restore + report-only reconcile preserves the agent row whose pane is dead", async () => {
     seedAuth();
     insertAgent(db, { name: "dog-1", workstream: "auth", paneId: "%2919", status: "needs_input" });
     db.prepare(
@@ -573,13 +574,13 @@ describe("snap_undo_reconcile_destroys_recovered_agents (regression)", () => {
     ).toEqual({ n: 1 });
 
     // Now run the post-restore reconcile pass that `mu undo` runs.
-    // tmux is empty (the destroy killed the pane). dryRun:true is
-    // load-bearing: without it, dog-1's row would be pruned (pane is
-    // dead) and the workspace would FK-CASCADE away.
+    // tmux is empty (the destroy killed the pane). mode:"report-only"
+    // is load-bearing: without it, dog-1's row would be pruned (pane
+    // is dead) and the workspace would FK-CASCADE away.
     mockTmuxAlive();
-    const report = await reconcile(db, { workstream: "auth", dryRun: true });
+    const report = await reconcile(db, { workstream: "auth", mode: "report-only" });
 
-    expect(report.dryRun).toBe(true);
+    expect(report.mode).toBe("report-only");
     // seedAuth() inserts worker-1 (pane %1, also dead in mock) AND we
     // inserted dog-1 (pane %2919). Both are reported as would-be-pruned
     // but neither is actually deleted.
@@ -591,7 +592,7 @@ describe("snap_undo_reconcile_destroys_recovered_agents (regression)", () => {
     ).toEqual({ n: 1 });
   });
 
-  it("counter-test: same scenario WITHOUT dryRun loses the rows (proves the fix is load-bearing)", async () => {
+  it("counter-test: same scenario in mode:'full' loses the rows (proves the fix is load-bearing)", async () => {
     seedAuth();
     insertAgent(db, { name: "dog-1", workstream: "auth", paneId: "%2919", status: "needs_input" });
     db.prepare(
@@ -604,9 +605,10 @@ describe("snap_undo_reconcile_destroys_recovered_agents (regression)", () => {
     db = openDb({ path: dbPath });
     expect(getAgent(db, "dog-1")).toBeDefined(); // restored
 
-    // dryRun:false is the OLD behaviour. Documents what the bug looked like.
+    // mode:"full" is the OLD (mutating) behaviour. Documents what
+    // the bug looked like before the report-only mode existed.
     mockTmuxAlive();
-    await reconcile(db, { workstream: "auth", dryRun: false });
+    await reconcile(db, { workstream: "auth", mode: "full" });
 
     // The recovered agent row is GONE again — the bug.
     expect(getAgent(db, "dog-1")).toBeUndefined();

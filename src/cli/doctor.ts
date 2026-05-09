@@ -6,7 +6,7 @@
 //   - workstream: auto-detected current workstream
 //   - state: per-workstream agent / task / log counts + reconcile drift
 //
-// Read-only (the reconcile pass uses dryRun: true so polling doesn't
+// Read-only (the reconcile pass uses mode: "report-only" so polling doesn't
 // race in-flight spawns; see bug_agent_spawn_workspace_fk_failure).
 //
 // Extracted from src/cli.ts as part of refactor_split_large_src_files.
@@ -137,11 +137,12 @@ export async function cmdDoctor(db: Db, opts: { json?: boolean } = {}): Promise<
     console.log(`  agent_logs rows  : ${counts.logs}`);
 
     // Reconciliation: ghost detection (DB rows with dead panes) + orphans.
-    // mu doctor is diagnostic — dryRun so it never deletes rows just
-    // for being polled (would race in-flight spawns; see
+    // mu doctor is diagnostic — mode: "report-only" so it never
+    // deletes rows AND never writes to the DB / tmux titles just for
+    // being polled (would race in-flight spawns; see
     // bug_agent_spawn_workspace_fk_failure).
     try {
-      const view = await listLiveAgents(db, { workstream: ws, dryRun: true });
+      const view = await listLiveAgents(db, { workstream: ws, mode: "report-only" });
       const ghostNote =
         view.report.prunedGhosts > 0
           ? pc.yellow(`pruned ${view.report.prunedGhosts} during this check`)
@@ -258,8 +259,8 @@ export async function cmdDoctorJson(db: Db): Promise<void> {
     };
     let reconcile: Record<string, unknown> | null = null;
     try {
-      // mu doctor --json: dryRun for the same reason as the human path.
-      const view = await listLiveAgents(db, { workstream: ws, dryRun: true });
+      // mu doctor --json: report-only for the same reason as the human path.
+      const view = await listLiveAgents(db, { workstream: ws, mode: "report-only" });
       reconcile = {
         prunedGhosts: view.report.prunedGhosts,
         orphanCount: view.orphans.length,

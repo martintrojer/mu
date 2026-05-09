@@ -14,9 +14,12 @@
 //                               attention surface; SQL/raw verbs as the
 //                               escape hatch underneath).
 //
-// Both pass dryRun: true to listLiveAgents — they're read-only, so the
-// periodic poll doesn't race in-flight spawns (see
-// bug_agent_spawn_workspace_fk_failure).
+// Both pass mode: "status-only" to listLiveAgents — they refresh
+// status + pane title (the operator's primary signal) but skip prune
+// + reap, so the periodic poll never deletes mid-spawn placeholders
+// (bug_agent_spawn_workspace_fk_failure) and `mu state`/`mu hud`'s
+// pane border indicator stays fresh between mutating verbs
+// (bug_pane_title_glyph_stuck_at_needs_input).
 //
 // Extracted from src/cli.ts as part of refactor_split_large_src_files.
 
@@ -57,9 +60,11 @@ export async function cmdMission(
     return;
   }
   // From here on, workstream is a string — explicit or resolved.
-  // Bare `mu` (mission control) is read-only: dryRun avoids racing
-  // in-flight spawns when polled (e.g. by `watch -n 5 mu`).
-  const view = await listLiveAgents(db, { workstream, dryRun: true });
+  // Bare `mu` (mission control) refreshes status without pruning:
+  // status-only avoids racing in-flight spawns when polled (e.g. by
+  // `watch -n 5 mu`) while still keeping the busy/needs_input glyph
+  // current. (bug_pane_title_glyph_stuck_at_needs_input.)
+  const view = await listLiveAgents(db, { workstream, mode: "status-only" });
   const tracks = getParallelTracks(db, workstream);
   const ready = listReady(db, workstream);
 
@@ -152,10 +157,11 @@ export async function cmdState(
   opts: { workstream?: string; json?: boolean; events?: number },
 ): Promise<void> {
   const workstream = await resolveWorkstream(opts.workstream);
-  // mu state is the read-only canonical-state-card verb. dryRun so
-  // polling it doesn't race in-flight spawns. To force a real prune,
+  // mu state is the canonical-state-card verb. status-only so polling
+  // it doesn't race in-flight spawns AND the operator's status glyph
+  // stays fresh between mutating verbs. To force a real prune + reap,
   // run `mu agent list -w <ws>` (the documented escape hatch).
-  const view = await listLiveAgents(db, { workstream, dryRun: true });
+  const view = await listLiveAgents(db, { workstream, mode: "status-only" });
   const tracks = getParallelTracks(db, workstream);
   const ready = listReady(db, workstream).sort(byRoiDesc);
   const blocked = listBlocked(db, workstream);
