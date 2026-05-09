@@ -5,7 +5,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { insertAgent } from "../src/agents.js";
+import { AgentNotInWorkstreamError, insertAgent } from "../src/agents.js";
 import { type Db, openDb } from "../src/db.js";
 import { listLogs } from "../src/logs.js";
 import {
@@ -735,6 +735,61 @@ describe("claimTask", () => {
       });
     });
   });
+
+  // ─ Cross-workstream guard: --for must reject when the named agent
+  //   lives in a different workstream than the task. The schema's FK
+  //   on tasks.owner is keyed on agents.name only (no workstream
+  //   qualifier), so without this pre-check the claim would silently
+  //   accept and the rest of mu would treat the row as in-scope.
+  //   Surfaced live by snap_dogfood; filed as cross_workstream_claim_for.
+  it("throws AgentNotInWorkstreamError when --for names an agent in a different workstream", async () => {
+    // 'auth' lives in workstream 'test' (set up in the outer
+    // beforeEach). Add a fresh agent in a different workstream and
+    // try to claim 'auth' for it.
+    insertAgent(db, {
+      name: "cross",
+      workstream: "other",
+      paneId: "%99",
+      status: "busy",
+    });
+    await expect(claimTask(db, "auth", { agentName: "cross" })).rejects.toBeInstanceOf(
+      AgentNotInWorkstreamError,
+    );
+    // No partial write: task untouched.
+    expect(getTask(db, "auth")?.owner).toBeNull();
+    expect(getTask(db, "auth")?.status).toBe("OPEN");
+  });
+
+  it("AgentNotInWorkstreamError from cross-workstream claim carries actionable next-steps", async () => {
+    insertAgent(db, {
+      name: "cross",
+      workstream: "other",
+      paneId: "%99",
+      status: "busy",
+    });
+    try {
+      await claimTask(db, "auth", { agentName: "cross" });
+      throw new Error("expected throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(AgentNotInWorkstreamError);
+      const e = err as AgentNotInWorkstreamError;
+      expect(e.agentName).toBe("cross");
+      expect(e.expectedWorkstream).toBe("test"); // task's workstream
+      expect(e.actualWorkstream).toBe("other"); // agent's workstream
+      const steps = e.errorNextSteps();
+      expect(steps.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("--self path is unaffected by cross-workstream guard (orchestrator-direct)", async () => {
+    // No agent FK to check on --self; the orchestrator can drive any
+    // workstream's tasks anonymously. Regression cover: the new guard
+    // must not leak into the --self path.
+    const result = await claimTask(db, "auth", { self: true, actor: "orchestrator" });
+    expect(result.owner).toBeNull();
+    expect(result.actor).toBe("orchestrator");
+    expect(getTask(db, "auth")?.status).toBe("IN_PROGRESS");
+  });
 });
 
 // ─── getTaskEdges ─────────────────────────────────────────────────────────────
@@ -952,8 +1007,19 @@ describe("listTasksByOwner", () => {
     insertAgent(db, { name: "worker-1", workstream: "auth", paneId: "%1", status: "busy" });
     insertAgent(db, { name: "worker-2", workstream: "billing", paneId: "%2", status: "busy" });
     await claimTask(db, "a", { agentName: "worker-1" });
-    await claimTask(db, "c", { agentName: "worker-1" }); // crosses workstream
-    await claimTask(db, "b", { agentName: "worker-2" });
+    // Construct the cross-workstream owner state directly. The verb
+    // path (claimTask --for) now correctly rejects this with an
+    // AgentNotInWorkstreamError (cross_workstream_claim_for fix), but
+    // the listTasksByOwner read can still legitimately surface a row
+    // whose owner lives in a different workstream — e.g. when the agent
+    // was re-spawned in a new workstream after claiming, or when an
+    // operator hand-edits via `mu sql`. The query MUST cross workstream
+    // boundaries; this test pins that contract.
+    const setOwner = db.prepare(
+      "UPDATE tasks SET owner = ?, status = 'IN_PROGRESS' WHERE local_id = ?",
+    );
+    setOwner.run("worker-1", "c");
+    setOwner.run("worker-2", "b");
 
     const ownedByW1 = listTasksByOwner(db, "worker-1").map((t) => t.localId);
     expect(ownedByW1.sort()).toEqual(["a", "c"]);

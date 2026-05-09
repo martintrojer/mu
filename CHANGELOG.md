@@ -12,6 +12,32 @@ called out under "Breaking" in each entry.
 
 ### Fixed
 
+- **`mu task claim <task> -w <wsA> --for <agent>` now rejects when
+  `<agent>` lives in a different workstream than `<task>`.** Closes
+  `cross_workstream_claim_for` in `roadmap-v0-2`; surfaced live in
+  `snap_dogfood` Section D (note #362, Finding 1).
+
+  Pre-fix, the schema's FK on `tasks.owner` references `agents(name)`
+  with no workstream qualifier, so a worker-claim from a different
+  workstream silently succeeded and the rest of mu treated the row
+  as in-scope (a scope leak, not a coordination feature).
+
+  Fix: a pre-FK check in `claimTask`'s worker path looks up the
+  resolved agent's workstream and the task's workstream; on mismatch
+  it throws the existing `AgentNotInWorkstreamError` (already wired
+  to exit 4 in `cli.ts`'s `handle()` map). The `--self` (anonymous)
+  path is untouched: there's no agent FK to check, and the
+  orchestrator legitimately drives any workstream's tasks.
+
+  Tests: 3 new in `test/tasks.test.ts` (cross-workstream `--for`
+  rejection; error carries actionable next-steps; `--self` regression
+  cover). Pre-existing tests that constructed cross-workstream owner
+  state via the buggy claim path (1 in `test/tasks.test.ts`, 3 in
+  `test/claim.integration.test.ts`) updated to either set the owner
+  via direct SQL (the read-side `listTasksByOwner` test, whose
+  cross-workstream contract is unchanged) or to spawn agents in the
+  task's workstream (the integration tests).
+
 - **Read-only verbs no longer race in-flight `--workspace` spawns.**
   Closes (re-opened) `bug_agent_spawn_workspace_fk_failure` in
   `mufeedback`. Surfaced live: `mu agent spawn ... --workspace` in

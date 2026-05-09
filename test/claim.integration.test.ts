@@ -75,10 +75,12 @@ describeIfTmux("claim integration (real tmux + real DB)", () => {
       command: "sh -c 'while true; do sleep 60; done'",
     });
 
-    // 2. Create a task to claim.
+    // 2. Create a task to claim. Same workstream as the spawned agent;
+    //    claiming a task whose workstream != the agent's now (post
+    //    cross_workstream_claim_for) raises AgentNotInWorkstreamError.
     addTask(db, {
       localId: "design",
-      workstream: "test",
+      workstream,
       title: "Design auth",
       impact: 80,
       effortDays: 2,
@@ -112,7 +114,7 @@ describeIfTmux("claim integration (real tmux + real DB)", () => {
     });
     addTask(db, {
       localId: "task1",
-      workstream: "test",
+      workstream,
       title: "Task 1",
       impact: 50,
       effortDays: 1,
@@ -140,7 +142,7 @@ describeIfTmux("claim integration (real tmux + real DB)", () => {
     });
     addTask(db, {
       localId: "task1",
-      workstream: "test",
+      workstream,
       title: "Task 1",
       impact: 50,
       effortDays: 1,

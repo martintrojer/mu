@@ -13,6 +13,7 @@
 //
 // Extracted from src/tasks.ts as part of refactor_split_large_src_files.
 
+import { AgentNotInWorkstreamError } from "../agents/errors.js";
 import type { Db } from "../db.js";
 import { emitEvent } from "../logs.js";
 import { captureSnapshot } from "../snapshots.js";
@@ -190,18 +191,33 @@ export async function claimTask(
     );
   }
 
-  // Pre-check: the FK on tasks.owner -> agents.name will reject any
+  // Pre-check (a): the FK on tasks.owner -> agents.name will reject any
   // claim from an unregistered agent with bare 'FOREIGN KEY constraint
   // failed'. Fail loud + actionable instead.
-  const claimerExists = db.prepare("SELECT 1 FROM agents WHERE name = ? LIMIT 1").get(agentName) as
-    | { 1: number }
-    | undefined;
-  if (!claimerExists) {
+  const claimerRow = db
+    .prepare("SELECT workstream FROM agents WHERE name = ? LIMIT 1")
+    .get(agentName) as { workstream: string } | undefined;
+  if (!claimerRow) {
     // If we resolved the name from $TMUX_PANE, surface the pane id so
     // the error message can suggest 'mu adopt <pane>'. If --for was
     // used, we don't know which pane is intended.
     const paneIdFromEnv = opts.agentName === undefined ? (process.env.TMUX_PANE ?? null) : null;
     throw new ClaimerNotRegisteredError(agentName, paneIdFromEnv);
+  }
+
+  // Pre-check (b): the FK is keyed on agents.name only — not on
+  // (name, workstream). Without this guard a `claim --for <agent>`
+  // succeeds even when the agent lives in a different workstream
+  // than the task; the row's owner FK passes but agents.workstream
+  // != tasks.workstream is a scope leak the rest of mu silently
+  // treats as in-scope. Surfaced live by snap_dogfood; filed as
+  // cross_workstream_claim_for. The --self path skips this entirely
+  // (orchestrator-direct, no agent FK to check).
+  const taskWsRow = db
+    .prepare("SELECT workstream FROM tasks WHERE local_id = ? LIMIT 1")
+    .get(localId) as { workstream: string } | undefined;
+  if (taskWsRow && taskWsRow.workstream !== claimerRow.workstream) {
+    throw new AgentNotInWorkstreamError(agentName, taskWsRow.workstream, claimerRow.workstream);
   }
 
   return db.transaction(() => {
