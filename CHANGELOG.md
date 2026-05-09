@@ -265,6 +265,26 @@ called out under "Breaking" in each entry.
 
 ### Fixed
 
+- **`mu task note` escape translation no longer relies on an
+  in-band sentinel string.** Closes
+  `review_code_unescape_note_text_placeholder_brittle` in
+  `mufeedback`. The `unescapeNoteText` helper in `src/cli/tasks.ts`
+  used a two-pass split/join that swapped every literal `\\` for a
+  fixed Unicode placeholder (`\u{1F511}backslash\u{1F511}`),
+  translated the remaining `\n` / `\t` / `\r` escapes, then
+  swapped the placeholder back. A note body that legitimately
+  contained the literal placeholder string would have been
+  corrupted on its way through; more importantly the in-band
+  sentinel pattern itself was harder to read than the underlying
+  intent. Replaced with a single-pass regex
+  (`/\\([\\ntr])/g`) that decides per-match what to emit, which
+  collapses the two passes into one and removes the sentinel
+  entirely. New unit tests in `test/unescape-note-text.test.ts`
+  cover `\n` / `\t` / `\r` translation, the `\\n` → literal `\n`
+  case (the one the placeholder previously protected), the
+  `\\\n` → backslash + newline case, and the no-longer-dangerous
+  placeholder-string passthrough.
+
 - **`destroyWorkstream` no longer double-counts already-gone
   workspaces as freed.** Closes
   `review_code_destroy_freed_workspaces_double_count` in

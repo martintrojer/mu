@@ -92,21 +92,27 @@ import {
  * Backslashes are protected via a NUL placeholder so `\\n` stays as
  * a literal `\n` in the output rather than being processed twice.
  */
-function unescapeNoteText(s: string): string {
-  // Two-pass: first protect literal backslashes by swapping every `\\`
-  // for an unlikely placeholder, then translate the remaining shell
-  // escapes, then restore the placeholder as a single backslash.
-  // Without the placeholder, `\\n` would yield a newline (wrong) instead
-  // of a literal `\n`.
-  const PLACEHOLDER = "\u{1F511}backslash\u{1F511}";
-  return s
-    .split("\\\\")
-    .join(PLACEHOLDER)
-    .replace(/\\n/g, "\n")
-    .replace(/\\t/g, "\t")
-    .replace(/\\r/g, "\r")
-    .split(PLACEHOLDER)
-    .join("\\");
+export function unescapeNoteText(s: string): string {
+  // Single-pass regex: match a backslash followed by one of the four
+  // recognised escape characters and decide per-match what to emit.
+  // This avoids the in-band-sentinel pattern (where a placeholder string
+  // could in principle collide with legitimate note content) and means
+  // `\\n` correctly yields a literal `\n` rather than a newline, because
+  // the leading `\\` consumes the backslash before `\n` can match.
+  return s.replace(/\\([\\ntr])/g, (_, ch: string) => {
+    switch (ch) {
+      case "\\":
+        return "\\";
+      case "n":
+        return "\n";
+      case "t":
+        return "\t";
+      case "r":
+        return "\r";
+      default:
+        return _;
+    }
+  });
 }
 
 // assertTaskInWorkstream lives in src/cli.ts now (shared root export
