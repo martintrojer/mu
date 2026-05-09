@@ -24,7 +24,7 @@ import type { TaskStatus } from "./status.js";
 
 export interface ReleaseResult {
   /** The previous owner (null if the task was already unowned). */
-  previousOwner: string | null;
+  previousOwnerName: string | null;
   /** Status before the release. */
   previousStatus: TaskStatus;
   /** Status after the release. */
@@ -55,12 +55,12 @@ export function releaseTask(db: Db, localId: string, opts: ReleaseTaskOptions): 
   if (!before) throw new TaskNotFoundError(localId);
 
   const newStatus: TaskStatus = opts.reopen ? "OPEN" : before.status;
-  const ownerChanges = before.owner !== null;
+  const ownerChanges = before.ownerName !== null;
   const statusChanges = newStatus !== before.status;
 
   if (!ownerChanges && !statusChanges) {
     return {
-      previousOwner: before.owner,
+      previousOwnerName: before.ownerName,
       previousStatus: before.status,
       status: before.status,
       changed: false,
@@ -69,21 +69,21 @@ export function releaseTask(db: Db, localId: string, opts: ReleaseTaskOptions): 
 
   // Pre-mutation snapshot — release wipes ownership which is
   // irrecoverable from history (we'd lose 'who was working on this').
-  captureSnapshot(db, `task release ${localId}`, before.workstream);
+  captureSnapshot(db, `task release ${localId}`, before.workstreamName);
 
   db.prepare(
     `UPDATE tasks SET owner_id = NULL, status = ?, updated_at = ?
       WHERE local_id = ?
         AND workstream_id = (SELECT id FROM workstreams WHERE name = ?)`,
-  ).run(newStatus, new Date().toISOString(), localId, before.workstream);
+  ).run(newStatus, new Date().toISOString(), localId, before.workstreamName);
   const statusBit = statusChanges ? `, ${before.status} → ${newStatus}` : "";
   emitEvent(
     db,
-    before.workstream,
-    `task release ${localId} (was owner=${before.owner ?? "none"}${statusBit})${evidenceSuffix(opts)}`,
+    before.workstreamName,
+    `task release ${localId} (was owner=${before.ownerName ?? "none"}${statusBit})${evidenceSuffix(opts)}`,
   );
   return {
-    previousOwner: before.owner,
+    previousOwnerName: before.ownerName,
     previousStatus: before.status,
     status: newStatus,
     changed: true,
@@ -139,12 +139,12 @@ export interface ClaimTaskOptions extends EvidenceOption {
 
 export interface ClaimResult {
   /** The agent now owning the task, or null when the claim was anonymous (--self). */
-  owner: string | null;
+  ownerName: string | null;
   /** The actor recorded in the agent_logs event — the agent name for a
    *  registered-worker claim, or the resolved actor for --self. */
-  actor: string;
+  actorName: string;
   /** The previous owner (null if it was unowned). */
-  previousOwner: string | null;
+  previousOwnerName: string | null;
   /** The status BEFORE the claim; post-claim is IN_PROGRESS unless was CLOSED. */
   previousStatus: TaskStatus;
   /** The status AFTER the claim. */
@@ -238,7 +238,7 @@ export async function claimTask(
       .run(claimerRow.id, now, localId, opts.workstream, claimerRow.id);
 
     if (result.changes === 0) {
-      throw new TaskAlreadyOwnedError(localId, before.owner ?? "<unknown>");
+      throw new TaskAlreadyOwnedError(localId, before.ownerName ?? "<unknown>");
     }
 
     const after = getTask(db, localId, opts.workstream);
@@ -251,14 +251,14 @@ export async function claimTask(
         localId,
         actor: agentName,
         anonymous: false,
-        prose: `task claim ${localId} by ${agentName} (was owner=${before.owner ?? "none"}${statusBit})${evidenceSuffix(opts)}`,
+        prose: `task claim ${localId} by ${agentName} (was owner=${before.ownerName ?? "none"}${statusBit})${evidenceSuffix(opts)}`,
       }),
       agentName,
     );
     return {
-      owner: agentName,
-      actor: agentName,
-      previousOwner: before.owner,
+      ownerName: agentName,
+      actorName: agentName,
+      previousOwnerName: before.ownerName,
       previousStatus: before.status,
       status: after.status,
     };
@@ -316,20 +316,20 @@ async function claimSelf(db: Db, localId: string, opts: ClaimTaskOptions): Promi
             AND workstream_id = (SELECT id FROM workstreams WHERE name = ?)
             AND owner_id IS NULL`,
       )
-      .run(now, localId, before.workstream);
+      .run(now, localId, before.workstreamName);
 
     if (result.changes === 0) {
       // Task exists but is already owned (by someone). Mirror the
       // worker-path error so callers can pattern-match consistently.
-      throw new TaskAlreadyOwnedError(localId, before.owner ?? "<unknown>");
+      throw new TaskAlreadyOwnedError(localId, before.ownerName ?? "<unknown>");
     }
 
-    const after = getTask(db, localId, before.workstream);
+    const after = getTask(db, localId, before.workstreamName);
     if (!after) throw new Error(`claimTask: row missing after update: ${localId}`);
     const statusBit = after.status !== before.status ? `, ${before.status} → ${after.status}` : "";
     emitEvent(
       db,
-      before.workstream,
+      before.workstreamName,
       formatClaimEvent({
         localId,
         actor,
@@ -339,9 +339,9 @@ async function claimSelf(db: Db, localId: string, opts: ClaimTaskOptions): Promi
       actor,
     );
     return {
-      owner: null,
-      actor,
-      previousOwner: before.owner,
+      ownerName: null,
+      actorName: actor,
+      previousOwnerName: before.ownerName,
       previousStatus: before.status,
       status: after.status,
     };

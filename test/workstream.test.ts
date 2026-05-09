@@ -252,14 +252,14 @@ describe("summarizeWorkstream", () => {
 
     const summary = await summarizeWorkstream(db, { workstream: "auth" });
     expect(summary).toEqual({
-      workstream: "auth",
+      name: "auth",
       tmuxSession: "mu-auth",
       tmuxAlive: true,
-      agents: 2,
-      tasks: 3,
-      edges: 2,
-      notes: 2,
-      workspaces: 0,
+      agentCount: 2,
+      taskCount: 3,
+      edgeCount: 2,
+      noteCount: 2,
+      workspaceCount: 0,
       registered: true,
     });
   });
@@ -267,10 +267,10 @@ describe("summarizeWorkstream", () => {
   it("returns all-zero counts and tmuxAlive=false for an unknown workstream", async () => {
     setTmuxExecutor(mockTmux(state).executor);
     const summary = await summarizeWorkstream(db, { workstream: "nope" });
-    expect(summary.agents).toBe(0);
-    expect(summary.tasks).toBe(0);
-    expect(summary.edges).toBe(0);
-    expect(summary.notes).toBe(0);
+    expect(summary.agentCount).toBe(0);
+    expect(summary.taskCount).toBe(0);
+    expect(summary.edgeCount).toBe(0);
+    expect(summary.noteCount).toBe(0);
     expect(summary.tmuxAlive).toBe(false);
   });
 
@@ -309,22 +309,22 @@ describe("listWorkstreams", () => {
     });
 
     const list = await listWorkstreams(db);
-    expect(list.map((w) => w.workstream)).toEqual(["auth", "billing", "empty"]);
+    expect(list.map((w) => w.name)).toEqual(["auth", "billing", "empty"]);
 
-    const auth = list.find((w) => w.workstream === "auth");
+    const auth = list.find((w) => w.name === "auth");
     expect(auth?.tmuxAlive).toBe(true);
-    expect(auth?.agents).toBe(2);
-    expect(auth?.tasks).toBe(3);
+    expect(auth?.agentCount).toBe(2);
+    expect(auth?.taskCount).toBe(3);
 
-    const billing = list.find((w) => w.workstream === "billing");
+    const billing = list.find((w) => w.name === "billing");
     expect(billing?.tmuxAlive).toBe(false);
-    expect(billing?.agents).toBe(1);
-    expect(billing?.tasks).toBe(0);
+    expect(billing?.agentCount).toBe(1);
+    expect(billing?.taskCount).toBe(0);
 
-    const empty = list.find((w) => w.workstream === "empty");
+    const empty = list.find((w) => w.name === "empty");
     expect(empty?.tmuxAlive).toBe(true);
-    expect(empty?.agents).toBe(0);
-    expect(empty?.tasks).toBe(0);
+    expect(empty?.agentCount).toBe(0);
+    expect(empty?.taskCount).toBe(0);
   });
 
   it("sorts by workstream name", async () => {
@@ -333,7 +333,7 @@ describe("listWorkstreams", () => {
     state.sessions.add("mu-mike");
     setTmuxExecutor(mockTmux(state).executor);
     const list = await listWorkstreams(db);
-    expect(list.map((w) => w.workstream)).toEqual(["alpha", "mike", "zeta"]);
+    expect(list.map((w) => w.name)).toEqual(["alpha", "mike", "zeta"]);
   });
 });
 
@@ -387,7 +387,7 @@ describe("destroyWorkstream", () => {
     // Billing intact.
     expect(state.sessions.has("mu-billing")).toBe(true);
     expect(listAgents(db, { workstream: "billing" }).map((a) => a.name)).toEqual(["billing-1"]);
-    expect(listTasks(db, "billing").map((t) => t.localId)).toEqual(["invoice"]);
+    expect(listTasks(db, "billing").map((t) => t.name)).toEqual(["invoice"]);
     const billingNotes = db
       .prepare(
         `SELECT COUNT(*) AS n FROM task_notes n
@@ -495,9 +495,9 @@ describe("destroyWorkstream", () => {
     const summary = await summarizeWorkstream(db, { workstream: "orphan" });
     expect(summary.registered).toBe(true);
     expect(summary.tmuxAlive).toBe(false);
-    expect(summary.agents).toBe(0);
-    expect(summary.tasks).toBe(0);
-    expect(summary.workspaces).toBe(0);
+    expect(summary.agentCount).toBe(0);
+    expect(summary.taskCount).toBe(0);
+    expect(summary.workspaceCount).toBe(0);
   });
 
   it("summarize reports `registered: false` for a tmux-only workstream mu never observed", async () => {

@@ -39,7 +39,7 @@ export async function cmdTaskRelease(
   const r = releaseTask(db, localId, sdkOpts);
   // Title push for the agent that just lost the task. Prev-owner could
   // be null (anonymous claim release — nothing to refresh).
-  if (r.previousOwner) await refreshAgentTitle(db, r.previousOwner, ws);
+  if (r.previousOwnerName) await refreshAgentTitle(db, r.previousOwnerName, ws);
   const nextSteps: NextStep[] = [
     {
       intent: "Reclaim",
@@ -48,7 +48,7 @@ export async function cmdTaskRelease(
     { intent: "Show current state", command: `mu task show ${localId} -w ${ws}` },
   ];
   if (opts.json) {
-    emitJson({ task: localId, ...r, nextSteps });
+    emitJson({ taskName: localId, ...r, nextSteps });
     return;
   }
   if (!r.changed) {
@@ -56,7 +56,7 @@ export async function cmdTaskRelease(
     printNextSteps(nextSteps);
     return;
   }
-  const ownerBit = r.previousOwner ? `was ${pc.bold(r.previousOwner)}` : "was unowned";
+  const ownerBit = r.previousOwnerName ? `was ${pc.bold(r.previousOwnerName)}` : "was unowned";
   const statusBit = r.previousStatus !== r.status ? ` (${r.previousStatus} → ${r.status})` : "";
   console.log(`Released ${pc.bold(localId)} ${pc.dim(`(${ownerBit})${statusBit}`)}`);
   if (opts.evidence) console.log(pc.dim(`  evidence: ${opts.evidence}`));
@@ -98,7 +98,7 @@ export async function cmdClaim(
   const result = await claimTask(db, localId, sdkOpts);
   // Title push for the new owner. Anonymous claims (--self) leave
   // owner=null — nothing to refresh.
-  if (result.owner) await refreshAgentTitle(db, result.owner, ws);
+  if (result.ownerName) await refreshAgentTitle(db, result.ownerName, ws);
   const nextSteps: NextStep[] = [
     {
       // Single-quoted example: shell metachars (`...`, $VAR, $(...))
@@ -118,13 +118,13 @@ export async function cmdClaim(
     emitJson({ ...result, nextSteps });
     return;
   }
-  if (result.owner === null) {
+  if (result.ownerName === null) {
     console.log(
-      `Claimed ${pc.bold(localId)} ${pc.dim(`(--self by ${result.actor}; ${result.previousStatus} → ${result.status}; owner=NULL)`)}`,
+      `Claimed ${pc.bold(localId)} ${pc.dim(`(--self by ${result.actorName}; ${result.previousStatus} → ${result.status}; owner=NULL)`)}`,
     );
   } else {
     console.log(
-      `Claimed ${pc.bold(localId)} for ${pc.bold(result.owner)} ${pc.dim(`(${result.previousStatus} → ${result.status})`)}`,
+      `Claimed ${pc.bold(localId)} for ${pc.bold(result.ownerName)} ${pc.dim(`(${result.previousStatus} → ${result.status})`)}`,
     );
   }
   if (opts.evidence) console.log(pc.dim(`  evidence: ${opts.evidence}`));
@@ -191,8 +191,8 @@ export async function cmdTaskWait(
   const nextSteps: NextStep[] = [];
   for (const t of stuck) {
     nextSteps.push({
-      intent: `Investigate ${t.localId} (status=${t.status})`,
-      command: `mu task show ${t.localId} -w ${ws}`,
+      intent: `Investigate ${t.name} (status=${t.status})`,
+      command: `mu task show ${t.name} -w ${ws}`,
     });
   }
   if (!result.timedOut) {
@@ -215,7 +215,7 @@ export async function cmdTaskWait(
   console.log(summary);
   for (const t of result.tasks) {
     const marker = t.reachedTarget ? pc.green("✓") : pc.dim("•");
-    console.log(`  ${marker} ${pc.bold(t.localId)} ${pc.dim(`(${t.status})`)}`);
+    console.log(`  ${marker} ${pc.bold(t.name)} ${pc.dim(`(${t.status})`)}`);
   }
   printNextSteps(nextSteps);
   if (result.timedOut) process.exit(5);

@@ -120,23 +120,24 @@ export function ensureWorkstream(db: Db, name: string): boolean {
 }
 
 export interface WorkstreamSummary {
-  workstream: string;
-  /** Tmux session name, defaults to `mu-<workstream>`. */
+  /** The workstream's own name. */
+  name: string;
+  /** Tmux session name, defaults to `mu-<name>`. */
   tmuxSession: string;
   /** True iff `tmux has-session -t <tmuxSession>` succeeds right now. */
   tmuxAlive: boolean;
   /** Rows in `agents` for this workstream. */
-  agents: number;
+  agentCount: number;
   /** Rows in `tasks` for this workstream. */
-  tasks: number;
+  taskCount: number;
   /** Rows in `task_notes` whose task is in this workstream. */
-  notes: number;
+  noteCount: number;
   /** Rows in `task_edges` whose `from_task` is in this workstream. */
-  edges: number;
+  edgeCount: number;
   /** Rows in `vcs_workspaces` for this workstream. Surfaced so the
    *  destroy dry-run can warn about per-agent worktrees that need
    *  cleanup before the FK cascade silently nukes their rows. */
-  workspaces: number;
+  workspaceCount: number;
   /** True iff a row exists in the `workstreams` table itself. False
    *  for tmux-only `mu-*` sessions that mu never observed via
    *  `mu workstream init`. Surfaced so destroy can clean up bare
@@ -227,14 +228,14 @@ export async function summarizeWorkstream(
 ): Promise<WorkstreamSummary> {
   const tmuxSession = opts.tmuxSession ?? `mu-${opts.workstream}`;
   return {
-    workstream: opts.workstream,
+    name: opts.workstream,
     tmuxSession,
     tmuxAlive: await sessionExists(tmuxSession),
-    agents: countAgents(db, opts.workstream),
-    tasks: countTasks(db, opts.workstream),
-    notes: countNotes(db, opts.workstream),
-    edges: countEdges(db, opts.workstream),
-    workspaces: listWorkspaces(db, opts.workstream).length,
+    agentCount: countAgents(db, opts.workstream),
+    taskCount: countTasks(db, opts.workstream),
+    noteCount: countNotes(db, opts.workstream),
+    edgeCount: countEdges(db, opts.workstream),
+    workspaceCount: listWorkspaces(db, opts.workstream).length,
     registered: isRegistered(db, opts.workstream),
   };
 }
@@ -316,7 +317,7 @@ export async function destroyWorkstream(db: Db, opts: WorkstreamOptions): Promis
       }
     } catch (err) {
       failedWorkspaces.push({
-        agent: ws.agent,
+        agent: ws.agentName,
         backend: ws.backend,
         path: ws.path,
         error: err instanceof Error ? err.message : String(err),
@@ -511,8 +512,8 @@ function renderTaskMarkdown(
 ): string {
   const lines: string[] = [];
   lines.push("---");
-  lines.push(`id: ${yamlScalar(task.localId)}`);
-  lines.push(`workstream: ${yamlScalar(task.workstream)}`);
+  lines.push(`id: ${yamlScalar(task.name)}`);
+  lines.push(`workstream: ${yamlScalar(task.workstreamName)}`);
   lines.push(`status: ${task.status}`);
   lines.push(`impact: ${task.impact}`);
   lines.push(`effort_days: ${task.effortDays}`);
@@ -520,7 +521,7 @@ function renderTaskMarkdown(
   // closed tasks in retrospect; emit it precomputed so consumers
   // don't have to re-derive.
   lines.push(`roi: ${(task.impact / task.effortDays).toFixed(2)}`);
-  lines.push(`owner: ${task.owner === null ? "null" : yamlScalar(task.owner)}`);
+  lines.push(`owner: ${task.ownerName === null ? "null" : yamlScalar(task.ownerName)}`);
   lines.push(`created_at: ${yamlScalar(task.createdAt)}`);
   lines.push(`updated_at: ${yamlScalar(task.updatedAt)}`);
   lines.push(`blocked_by: [${edges.blockers.map(yamlScalar).join(", ")}]`);
@@ -535,8 +536,8 @@ function renderTaskMarkdown(
   } else {
     lines.push(`## Notes (${notes.length})`);
     lines.push("");
-    for (const note of notes) {
-      lines.push(`### #${note.id} by ${note.author ?? "system"}, ${note.createdAt}`);
+    for (const [i, note] of notes.entries()) {
+      lines.push(`### #${i + 1} by ${note.author ?? "system"}, ${note.createdAt}`);
       lines.push("");
       const fence = fenceForBody(note.content);
       lines.push(fence);
@@ -565,7 +566,7 @@ function renderIndexMarkdown(workstream: string, tasks: TaskRow[]): string {
     // Pipe-escape titles so the table stays valid markdown.
     const title = t.title.replace(/\|/g, "\\|");
     lines.push(
-      `| [\`${t.localId}\`](tasks/${t.localId}.md) | ${t.status} | ${t.impact} | ${t.effortDays} | ${roi} | ${title} |`,
+      `| [\`${t.name}\`](tasks/${t.name}.md) | ${t.status} | ${t.impact} | ${t.effortDays} | ${roi} | ${title} |`,
     );
   }
   lines.push("");
@@ -676,7 +677,7 @@ export function exportWorkstream(db: Db, opts: ExportWorkstreamOptions): ExportR
   }
 
   const liveTasks = listTasks(db, opts.workstream);
-  const liveIds = new Set(liveTasks.map((t) => t.localId));
+  const liveIds = new Set(liveTasks.map((t) => t.name));
   const exportedAt = new Date().toISOString();
 
   let written = 0;
@@ -685,14 +686,14 @@ export function exportWorkstream(db: Db, opts: ExportWorkstreamOptions): ExportR
   const manifestEntries: ExportTaskEntry[] = [];
 
   for (const task of liveTasks) {
-    const edges = getTaskEdges(db, task.localId, task.workstream);
-    const notes = listNotes(db, task.localId, task.workstream);
+    const edges = getTaskEdges(db, task.name, task.workstreamName);
+    const notes = listNotes(db, task.name, task.workstreamName);
     const md = renderTaskMarkdown(task, edges, notes);
     const sha = sha256Hex(md);
-    const relPath = join("tasks", `${task.localId}.md`);
+    const relPath = join("tasks", `${task.name}.md`);
     const absPath = join(outDir, relPath);
 
-    const prev = previousById.get(task.localId);
+    const prev = previousById.get(task.name);
     const onDisk = existsSync(absPath);
     if (onDisk && prev?.sha256 === sha && prev.deletedAt === undefined) {
       // Identical to last export AND file still on disk — skip the
@@ -702,7 +703,7 @@ export function exportWorkstream(db: Db, opts: ExportWorkstreamOptions): ExportR
       writeFileSync(absPath, md, "utf8");
       written += 1;
     }
-    manifestEntries.push({ id: task.localId, path: relPath, sha256: sha });
+    manifestEntries.push({ id: task.name, path: relPath, sha256: sha });
   }
 
   // Preserve files for tasks that disappeared from the DB. We DO NOT

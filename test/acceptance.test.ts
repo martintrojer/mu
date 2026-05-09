@@ -138,10 +138,10 @@ describeIfTmux("MVP acceptance — full demo end-to-end", () => {
     });
 
     // ── Verify the graph: only `specs` is ready, launch is the only goal ──
-    expect(listReady(db, workstream).map((t) => t.localId)).toEqual(["specs"]);
+    expect(listReady(db, workstream).map((t) => t.name)).toEqual(["specs"]);
     const tracks0 = getParallelTracks(db, workstream);
     expect(tracks0).toHaveLength(1);
-    expect(tracks0[0]?.roots.map((r) => r.localId)).toEqual(["launch"]);
+    expect(tracks0[0]?.roots.map((r) => r.name)).toEqual(["launch"]);
     expect(tracks0[0]?.taskIds.size).toBe(10);
 
     // ── Spawn a 3-agent crew ──────────────────────────────────────────
@@ -175,7 +175,7 @@ describeIfTmux("MVP acceptance — full demo end-to-end", () => {
 
     // ── Workflow: alice claims specs, drops a note, closes specs ──────
     const claimResult = await claimTask(db, "specs", { agentName: "alice", workstream });
-    expect(claimResult.owner).toBe("alice");
+    expect(claimResult.ownerName).toBe("alice");
     expect(claimResult.previousStatus).toBe("OPEN");
     expect(claimResult.status).toBe("IN_PROGRESS");
 
@@ -189,15 +189,15 @@ describeIfTmux("MVP acceptance — full demo end-to-end", () => {
 
     // ── After closing specs: api and ui both become ready ────────────
     const readyAfterSpecs = listReady(db, workstream)
-      .map((t) => t.localId)
+      .map((t) => t.name)
       .sort();
     expect(readyAfterSpecs).toEqual(["api", "ui"]);
 
     // bob and revv each take one of the now-ready tasks.
     await claimTask(db, "api", { agentName: "bob", workstream });
     await claimTask(db, "ui", { agentName: "revv", workstream });
-    expect(getTask(db, "api", workstream)?.owner).toBe("bob");
-    expect(getTask(db, "ui", workstream)?.owner).toBe("revv");
+    expect(getTask(db, "api", workstream)?.ownerName).toBe("bob");
+    expect(getTask(db, "ui", workstream)?.ownerName).toBe("revv");
 
     // ── Reconciliation: agent state visible in mission control ───────
     await new Promise((resolve) => setTimeout(resolve, 200));
@@ -230,7 +230,7 @@ describeIfTmux("MVP acceptance — full demo end-to-end", () => {
       // agents(name) ON DELETE SET NULL, api.owner clears automatically
       // — the canonical "owner = current ownership, not history" model.
       // Historical attribution lives in task notes.
-      expect(getTask(db2, "api", workstream)?.owner).toBeNull();
+      expect(getTask(db2, "api", workstream)?.ownerName).toBeNull();
     } finally {
       db2.close();
       db = openDb({ path: join(tempDir, "mu.db") });

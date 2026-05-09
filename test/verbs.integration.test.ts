@@ -70,7 +70,7 @@ describeIfTmux("verbs integration (real tmux + real DB)", () => {
       command: SH_COMMAND,
     });
     expect(a.name).toBe("alice");
-    expect(a.workstream).toBe(workstream);
+    expect(a.workstreamName).toBe(workstream);
     expect(a.paneId).toMatch(/^%\d+$/);
     expect(a.status).toBe("spawning");
 

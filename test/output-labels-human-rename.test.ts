@@ -85,14 +85,17 @@ describe("output_labels_human_rename: cli-table3 column headers", () => {
 
   // ── --json shape preserved (this task is human-only) ──────────
 
-  it("`mu task list --json` still emits `localId` (JSON rename is a separate task)", async () => {
+  // POST output_json_keys_rename_v5: --json emits the v5 `name` key.
+  // The human-rename task left the JSON shape alone; the v5 rename
+  // (this task) flipped it. Both column header AND JSON now agree.
+  it("`mu task list --json` emits `name` (post v5 JSON rename)", async () => {
     const { stdout } = await runCli(["task", "list", "-w", "auth", "--json"], dbPath);
     const parsed = JSON.parse(stdout.trim()) as Array<Record<string, unknown>>;
     expect(parsed.length).toBeGreaterThan(0);
     const first = parsed[0];
     if (!first) throw new Error("expected at least one task row");
-    expect(first).toHaveProperty("localId");
-    expect(first).not.toHaveProperty("name");
+    expect(first).toHaveProperty("name");
+    expect(first).not.toHaveProperty("localId");
   });
 });
 
@@ -126,13 +129,14 @@ describe("output_labels_human_rename: approve list column header", () => {
     expect(visible).not.toMatch(/[│\s]slug[│\s]/);
   });
 
-  it("`mu approve list --json` still emits `slug` (JSON rename is a separate task)", async () => {
+  // POST output_json_keys_rename_v5: --json emits the v5 `name` key.
+  it("`mu approve list --json` emits `name` (post v5 JSON rename)", async () => {
     const { stdout } = await runCli(["approve", "list", "-w", "auth", "--json"], dbPath);
     const parsed = JSON.parse(stdout.trim()) as Array<Record<string, unknown>>;
     expect(parsed.length).toBeGreaterThan(0);
     const first = parsed[0];
     if (!first) throw new Error("expected at least one approval row");
-    expect(first).toHaveProperty("slug");
-    expect(first).not.toHaveProperty("name");
+    expect(first).toHaveProperty("name");
+    expect(first).not.toHaveProperty("slug");
   });
 });

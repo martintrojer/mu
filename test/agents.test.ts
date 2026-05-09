@@ -43,7 +43,7 @@ describe("agents CRUD", () => {
     });
     expect(row).toMatchObject({
       name: "alice",
-      workstream: "auth",
+      workstreamName: "auth",
       paneId: "%15",
       status: "spawning",
       cli: "pi", // default
@@ -103,7 +103,7 @@ describe("agents CRUD", () => {
     });
     expect(getAgent(db, "alice", "auth")).toMatchObject({
       name: "alice",
-      workstream: "auth",
+      workstreamName: "auth",
       paneId: "%15",
       status: "needs_input",
       tab: "Backend",
@@ -241,13 +241,13 @@ describe("agents CRUD", () => {
     });
     await claimTask(db, "design", { agentName: "worker-1", workstream: "auth" });
     expect(getTask(db, "design", "auth")?.status).toBe("IN_PROGRESS");
-    expect(getTask(db, "design", "auth")?.owner).toBe("worker-1");
+    expect(getTask(db, "design", "auth")?.ownerName).toBe("worker-1");
 
     deleteAgent(db, "worker-1", "auth");
 
     const after = getTask(db, "design", "auth");
     expect(after?.status).toBe("OPEN");
-    expect(after?.owner).toBeNull();
+    expect(after?.ownerName).toBeNull();
   });
 
   it("deleteAgent reaper appends a [reaper] task_note explaining the revert", async () => {
@@ -312,7 +312,7 @@ describe("agents CRUD", () => {
 
     expect(getTask(db, "a", "auth")?.status).toBe("OPEN");
     expect(getTask(db, "b", "auth")?.status).toBe("IN_PROGRESS");
-    expect(getTask(db, "b", "auth")?.owner).toBe("worker-2");
+    expect(getTask(db, "b", "auth")?.ownerName).toBe("worker-2");
   });
 
   it("deleteAgent does NOT reap CLOSED tasks (only IN_PROGRESS)", async () => {
@@ -331,7 +331,7 @@ describe("agents CRUD", () => {
 
     // Task stays CLOSED; only owner (which gets cleared via FK SET NULL).
     expect(getTask(db, "done", "auth")?.status).toBe("CLOSED");
-    expect(getTask(db, "done", "auth")?.owner).toBeNull();
+    expect(getTask(db, "done", "auth")?.ownerName).toBeNull();
   });
 });
 

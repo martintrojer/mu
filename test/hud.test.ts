@@ -216,7 +216,7 @@ describe("mu hud", () => {
     const { stdout, exitCode } = await runCli(["hud", "-w", "ws", "--json"], dbPath);
     expect(exitCode).toBeNull();
     const parsed = JSON.parse(stdout);
-    expect(parsed.workstream).toBe("ws");
+    expect(parsed.workstreamName).toBe("ws");
     expect(parsed.summary).toEqual({
       ready: 2,
       inProgress: 0,

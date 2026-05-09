@@ -479,12 +479,12 @@ export function formatReadyTable(tasks: readonly TaskRow[]): string {
   let roiW = "ROI".length;
   let ownerW = "owner".length;
   for (const t of sorted) {
-    idW = Math.max(idW, t.localId.length);
+    idW = Math.max(idW, t.name.length);
     impactW = Math.max(impactW, String(t.impact).length);
     effortW = Math.max(effortW, String(t.effortDays).length);
     const roi = (t.impact / t.effortDays).toFixed(1);
     roiW = Math.max(roiW, roi.length);
-    ownerW = Math.max(ownerW, (t.owner ?? "").length);
+    ownerW = Math.max(ownerW, (t.ownerName ?? "").length);
   }
   const padding = 6 * 3 + 1; // 6 cols
   const titleBudget = Math.max(
@@ -508,12 +508,12 @@ export function formatReadyTable(tasks: readonly TaskRow[]): string {
   for (const t of sorted) {
     const roi = (t.impact / t.effortDays).toFixed(1);
     table.push([
-      t.localId,
+      t.name,
       truncate(t.title, titleBudget),
       String(t.impact),
       String(t.effortDays),
       roi,
-      t.owner ?? "",
+      t.ownerName ?? "",
     ]);
   }
   return table.toString();
@@ -523,7 +523,7 @@ export function formatTracks(tracks: readonly Track[]): string {
   if (tracks.length === 0) return pc.dim("  (no open tracks)");
   const lines: string[] = [];
   tracks.forEach((track, i) => {
-    const rootNames = track.roots.map((r) => r.localId).join(", ");
+    const rootNames = track.roots.map((r) => r.name).join(", ");
     const verb = track.roots.length > 1 ? "merged" : "track";
     lines.push(
       `  Track ${i + 1}: ${pc.bold(rootNames)} ${pc.dim(`(${track.taskIds.size} tasks, ${track.readyCount} ready, ${verb})`)}`,
@@ -555,8 +555,8 @@ export function formatWorkspacesTable(rows: readonly WorkspaceRow[]): string {
   });
   for (const r of rows) {
     table.push([
-      r.agent,
-      r.workstream,
+      r.agentName,
+      r.workstreamName,
       r.backend,
       truncateFront(r.path, PATH_BUDGET - 2),
       r.parentRef ? pc.dim(r.parentRef.slice(0, 12)) : pc.dim("—"),
@@ -582,7 +582,7 @@ function formatBehind(n: number | null | undefined): string {
  *  and by the `recent events` section of `mu state`. Exported so the
  *  cli/log.ts module can reuse it. */
 export function printLogRow(row: LogRow): void {
-  const ws = row.workstream ?? pc.dim("—");
+  const ws = row.workstreamName ?? pc.dim("—");
   const time = row.createdAt.replace("T", " ").replace(/\.\d+Z$/, "Z");
   const kindColor =
     row.kind === "event" ? pc.cyan : row.kind === "broadcast" ? pc.yellow : (s: string) => s;
@@ -612,12 +612,12 @@ export function formatWorkstreamsTable(rows: WorkstreamSummary[]): string {
   });
   for (const r of rows) {
     table.push([
-      r.workstream,
+      r.name,
       r.tmuxAlive ? pc.green("alive") : pc.dim("—"),
-      String(r.agents),
-      String(r.tasks),
-      String(r.edges),
-      String(r.notes),
+      String(r.agentCount),
+      String(r.taskCount),
+      String(r.edgeCount),
+      String(r.noteCount),
     ]);
   }
   return table.toString();
@@ -730,7 +730,7 @@ export function sortTasks(tasks: readonly TaskRow[], key: TaskSortKey): TaskRow[
       // created_at ASC: oldest first ("what's gone stale").
       return out.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
     case "id":
-      return out.sort((a, b) => a.localId.localeCompare(b.localId));
+      return out.sort((a, b) => a.name.localeCompare(b.name));
   }
 }
 
@@ -833,16 +833,16 @@ export function formatTaskListTable(
   const widths = new Map<string, number>();
   for (const col of otherCols) widths.set(col, col.length); // header is the floor
   for (const t of tasks) {
-    widths.set("localId", Math.max(widths.get("localId") ?? 0, t.localId.length));
+    widths.set("localId", Math.max(widths.get("localId") ?? 0, t.name.length));
     if (opts.withWorkstream) {
-      widths.set("workstream", Math.max(widths.get("workstream") ?? 0, t.workstream.length));
+      widths.set("workstream", Math.max(widths.get("workstream") ?? 0, t.workstreamName.length));
     }
     widths.set("status", Math.max(widths.get("status") ?? 0, t.status.length));
     widths.set("impact", Math.max(widths.get("impact") ?? 0, String(t.impact).length));
     widths.set("effortDays", Math.max(widths.get("effortDays") ?? 0, String(t.effortDays).length));
     const roi = t.effortDays > 0 ? (t.impact / t.effortDays).toFixed(1) : "∞";
     widths.set("roi", Math.max(widths.get("roi") ?? 0, roi.length));
-    widths.set("owner", Math.max(widths.get("owner") ?? 0, (t.owner ?? "—").length));
+    widths.set("owner", Math.max(widths.get("owner") ?? 0, (t.ownerName ?? "—").length));
   }
   let timeWidth = 0;
   if (timeHeader !== null) {
@@ -868,23 +868,23 @@ export function formatTaskListTable(
     const title = truncate(t.title, titleBudget);
     const baseRow = opts.withWorkstream
       ? [
-          t.localId,
-          t.workstream,
+          t.name,
+          t.workstreamName,
           colorStatus(t.status),
           title,
           String(t.impact),
           String(t.effortDays),
           roi,
-          t.owner ?? pc.dim("—"),
+          t.ownerName ?? pc.dim("—"),
         ]
       : [
-          t.localId,
+          t.name,
           colorStatus(t.status),
           title,
           String(t.impact),
           String(t.effortDays),
           roi,
-          t.owner ?? pc.dim("—"),
+          t.ownerName ?? pc.dim("—"),
         ];
     const row = timeHeader === null ? baseRow : [...baseRow, pc.dim(timeCells[i] ?? "")];
     table.push(row);

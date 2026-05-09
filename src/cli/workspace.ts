@@ -58,7 +58,7 @@ export async function cmdWorkspaceCreate(
     return;
   }
   console.log(
-    `Created workspace ${pc.bold(ws.path)} ${pc.dim(`(backend=${ws.backend}, agent=${ws.agent}, parent=${ws.parentRef ?? "—"})`)}`,
+    `Created workspace ${pc.bold(ws.path)} ${pc.dim(`(backend=${ws.backend}, agent=${ws.agentName}, parent=${ws.parentRef ?? "—"})`)}`,
   );
   printNextSteps(nextSteps);
 }
@@ -95,7 +95,7 @@ export async function cmdWorkspaceFree(
   const ws = await resolveWorkstream(opts.workstream);
   const r = await freeWorkspace(db, agent, { commit: opts.commit ?? false, workstream: ws });
   if (opts.json) {
-    emitJson({ agent, ...r });
+    emitJson({ agentName: agent, ...r });
     return;
   }
   if (!r.removed && !r.rowDeleted) {
@@ -119,7 +119,7 @@ export async function cmdWorkspacePath(
   const ws = getWorkspaceForAgent(db, agent, wsName);
   if (!ws) throw new WorkspaceNotFoundError(agent);
   if (opts.json) {
-    emitJson({ agent, path: ws.path, backend: ws.backend });
+    emitJson({ agentName: agent, path: ws.path, backend: ws.backend });
     return;
   }
   // Print just the path, no decoration: usable for `cd $(mu workspace path X)`.
@@ -146,7 +146,7 @@ export async function cmdWorkspaceOrphans(
           },
         ];
   if (opts.json) {
-    emitJson({ workstream, orphans, nextSteps });
+    emitJson({ workstreamName: workstream, orphans, nextSteps });
     return;
   }
   if (orphans.length === 0) {
@@ -155,7 +155,7 @@ export async function cmdWorkspaceOrphans(
   }
   console.log(pc.yellow(`${orphans.length} orphan workspace dir(s) in ${pc.bold(workstream)}:`));
   for (const o of orphans) {
-    console.log(`  ${pc.bold(o.agent)}  ${pc.dim(o.path)}`);
+    console.log(`  ${pc.bold(o.agentName)}  ${pc.dim(o.path)}`);
   }
   printNextSteps(nextSteps);
 }

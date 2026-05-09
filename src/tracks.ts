@@ -57,21 +57,21 @@ export function getParallelTracks(db: Db, workstream: string): Track[] {
   // 2. Compute prerequisite subgraph for each goal.
   const subgraphs = new Map<string, Set<string>>();
   for (const goal of goals) {
-    subgraphs.set(goal.localId, getPrerequisites(db, goal.localId, workstream));
+    subgraphs.set(goal.name, getPrerequisites(db, goal.name, workstream));
   }
 
   // 3. Union-find: merge goals whose subgraphs overlap.
-  const uf = new UnionFind(goals.map((g) => g.localId));
+  const uf = new UnionFind(goals.map((g) => g.name));
   for (let i = 0; i < goals.length; i++) {
     const a = goals[i];
     if (!a) continue;
     for (let j = i + 1; j < goals.length; j++) {
       const b = goals[j];
       if (!b) continue;
-      const subA = subgraphs.get(a.localId);
-      const subB = subgraphs.get(b.localId);
+      const subA = subgraphs.get(a.name);
+      const subB = subgraphs.get(b.name);
       if (subA && subB && overlaps(subA, subB)) {
-        uf.union(a.localId, b.localId);
+        uf.union(a.name, b.name);
       }
     }
   }
@@ -80,7 +80,7 @@ export function getParallelTracks(db: Db, workstream: string): Track[] {
   const componentTaskIds = new Map<string, Set<string>>();
   const componentRoots = new Map<string, TaskRow[]>();
   for (const goal of goals) {
-    const root = uf.find(goal.localId);
+    const root = uf.find(goal.name);
     let bucket = componentTaskIds.get(root);
     if (!bucket) {
       bucket = new Set<string>();
@@ -88,14 +88,14 @@ export function getParallelTracks(db: Db, workstream: string): Track[] {
       componentRoots.set(root, []);
     }
     componentRoots.get(root)?.push(goal);
-    const sub = subgraphs.get(goal.localId);
+    const sub = subgraphs.get(goal.name);
     if (sub) {
       for (const id of sub) bucket.add(id);
     }
   }
 
   // 5. Compute ready counts per track.
-  const readyIds = new Set(listReady(db, workstream).map((t) => t.localId));
+  const readyIds = new Set(listReady(db, workstream).map((t) => t.name));
   const tracks: Track[] = [];
   for (const [root, taskIds] of componentTaskIds) {
     const trackRoots = componentRoots.get(root) ?? [];
@@ -106,8 +106,8 @@ export function getParallelTracks(db: Db, workstream: string): Track[] {
 
   // Stable order: by primary root's localId so output is deterministic.
   tracks.sort((a, b) => {
-    const an = a.roots[0]?.localId ?? "";
-    const bn = b.roots[0]?.localId ?? "";
+    const an = a.roots[0]?.name ?? "";
+    const bn = b.roots[0]?.name ?? "";
     return an.localeCompare(bn);
   });
   return tracks;

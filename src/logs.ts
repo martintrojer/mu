@@ -20,7 +20,7 @@ export interface LogRow {
   /** Monotonic AUTOINCREMENT id. Use as the cursor for `--since`. */
   seq: number;
   /** Workstream this entry belongs to, or `null` for machine-wide. */
-  workstream: string | null;
+  workstreamName: string | null;
   /** Free TEXT: agent name, "system", "user", or anything a caller picks. */
   source: string;
   /** Free TEXT: "message" (default), "event" (auto state changes),
@@ -59,7 +59,7 @@ const LOG_FROM_JOIN = "FROM agent_logs l LEFT JOIN workstreams ws ON ws.id = l.w
 function rowFromDb(row: RawLogRow): LogRow {
   return {
     seq: row.seq,
-    workstream: row.workstream,
+    workstreamName: row.workstream,
     source: row.source,
     kind: row.kind,
     payload: row.payload,
@@ -101,7 +101,7 @@ export function appendLog(db: Db, opts: AppendLogOptions): LogRow {
     .run(workstreamId, opts.source, kind, opts.payload, createdAt);
   return {
     seq: Number(result.lastInsertRowid),
-    workstream: opts.workstream,
+    workstreamName: opts.workstream,
     source: opts.source,
     kind,
     payload: opts.payload,

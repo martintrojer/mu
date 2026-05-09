@@ -59,21 +59,21 @@ export async function cmdApprovalAdd(
   };
   if (opts.slug !== undefined) addOpts.slug = opts.slug;
   const row = addApproval(db, addOpts);
-  const wsArg = row.workstream ? ` -w ${row.workstream}` : "";
+  const wsArg = row.workstreamName ? ` -w ${row.workstreamName}` : "";
   const nextSteps: NextStep[] = [
     {
       intent: "Block until decided (orchestrator)",
-      command: `mu approve wait ${row.slug}${wsArg} --timeout 600`,
+      command: `mu approve wait ${row.name}${wsArg} --timeout 600`,
     },
-    { intent: "Grant", command: `mu approve grant ${row.slug}${wsArg}` },
-    { intent: "Deny", command: `mu approve deny ${row.slug}${wsArg}` },
+    { intent: "Grant", command: `mu approve grant ${row.name}${wsArg}` },
+    { intent: "Deny", command: `mu approve deny ${row.name}${wsArg}` },
   ];
   if (opts.json) {
     emitJson({ ...row, nextSteps });
     return;
   }
   console.log(
-    `Requested approval ${pc.bold(row.slug)} ${pc.dim(`(workstream=${row.workstream ?? "—"}, by ${row.requestedBy})`)}`,
+    `Requested approval ${pc.bold(row.name)} ${pc.dim(`(workstream=${row.workstreamName ?? "—"}, by ${row.requestedBy})`)}`,
   );
   console.log(pc.dim(`  reason: ${row.reason}`));
   printNextSteps(nextSteps);
@@ -200,8 +200,8 @@ function formatApprovalsTable(rows: readonly ApprovalRow[]): string {
   for (const r of rows) {
     const reason = truncate(r.reason, REASON_BUDGET - 2);
     table.push([
-      r.slug,
-      r.workstream ?? pc.dim("—"),
+      r.name,
+      r.workstreamName ?? pc.dim("—"),
       approvalStatusColor(r.status),
       r.requestedBy,
       r.decidedBy ?? pc.dim("—"),

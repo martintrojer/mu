@@ -99,7 +99,7 @@ export async function cmdUndo(
       });
       return;
     }
-    const wsLabel = target.workstream ?? pc.dim("<whole-DB>");
+    const wsLabel = target.workstreamName ?? pc.dim("<whole-DB>");
     console.log(pc.bold(`About to restore snapshot #${target.id}`));
     console.log(`  label        : ${target.label}`);
     console.log(`  workstream   : ${wsLabel}`);
@@ -161,13 +161,13 @@ export async function cmdUndo(
       // summary.
       try {
         const report = await reconcile(fresh, {
-          workstream: ws.workstream,
+          workstream: ws.name,
           mode: "report-only",
         });
         totalGhostsWouldBePruned += report.prunedGhosts;
         totalOrphans += report.orphans.length;
         reconcilePerWorkstream.push({
-          workstream: ws.workstream,
+          workstream: ws.name,
           wouldBePrunedGhosts: report.prunedGhosts,
           orphans: report.orphans.length,
         });
@@ -285,7 +285,7 @@ export async function cmdSnapshotList(
     table.push([
       String(r.id),
       truncate(r.label, LABEL_BUDGET - 2),
-      r.workstream ?? pc.dim("<whole-DB>"),
+      r.workstreamName ?? pc.dim("<whole-DB>"),
       r.createdAt,
       formatBytes(snapshotFileSize(r)),
     ]);
@@ -313,7 +313,7 @@ export async function cmdSnapshotShow(
   }
   console.log(pc.bold(`snapshot #${row.id}`));
   console.log(`  label          : ${row.label}`);
-  console.log(`  workstream     : ${row.workstream ?? pc.dim("<whole-DB>")}`);
+  console.log(`  workstream     : ${row.workstreamName ?? pc.dim("<whole-DB>")}`);
   console.log(`  schema_version : ${row.schemaVersion}`);
   console.log(`  db_path        : ${row.dbPath}`);
   console.log(`  size           : ${formatBytes(sizeBytes)}`);

@@ -137,7 +137,7 @@ describe("captureSnapshot — round-trip + integrity", () => {
     expect(rows.length).toBe(1);
     const row = rows[0];
     if (!row) throw new Error("unreachable: rows.length checked above");
-    expect(row.workstream).toBe("auth");
+    expect(row.workstreamName).toBe("auth");
     expect(row.label).toBe("task close design");
     expect(row.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
     expect(row.dbPath).toMatch(/\/snapshots\/\d+\.db$/);
@@ -180,7 +180,7 @@ describe("captureSnapshot — round-trip + integrity", () => {
     captureSnapshot(db, "workstream destroy auth", null);
     const row = listSnapshots(db)[0];
     if (!row) throw new Error("unreachable: snapshot was just inserted");
-    expect(row.workstream).toBeNull();
+    expect(row.workstreamName).toBeNull();
   });
 
   it("rolls back the row when VACUUM INTO fails (target dir is a file)", () => {
@@ -485,7 +485,7 @@ describe("destructive verbs: snapshot is captured before mutation", () => {
     // Critical: the snapshot row survives the FK cascade because
     // there's deliberately no FK on snapshots.workstream
     // (snap_design note #293).
-    expect(destroyRow.workstream).toBeNull();
+    expect(destroyRow.workstreamName).toBeNull();
     // And the snapshot file contains the pre-destroy state of the
     // workstream's tasks.
     const snap = new Database(destroyRow.dbPath, { readonly: true });

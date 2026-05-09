@@ -35,14 +35,14 @@ export async function cmdTaskClose(
   // change as a result of close (FK SET NULL only fires on delete).
   const taskRow = getTask(db, localId, ws);
   const r = closeTask(db, localId, sdkOpts);
-  if (r.changed && taskRow?.owner) await refreshAgentTitle(db, taskRow.owner, ws);
+  if (r.changed && taskRow?.ownerName) await refreshAgentTitle(db, taskRow.ownerName, ws);
   const nextSteps: NextStep[] = [
     { intent: "Reopen if needed", command: `mu task open ${localId} -w ${ws}` },
     { intent: "Pick the next ready task", command: `mu task next -w ${ws}` },
     { intent: "See full state", command: `mu state -w ${ws}` },
   ];
   if (opts.json) {
-    emitJson({ task: localId, ...r, nextSteps });
+    emitJson({ taskName: localId, ...r, nextSteps });
     return;
   }
   if (!r.changed) {
@@ -75,7 +75,7 @@ export async function cmdTaskOpen(
     { intent: "Close again", command: `mu task close ${localId} -w ${ws}` },
   ];
   if (opts.json) {
-    emitJson({ task: localId, ...r, nextSteps });
+    emitJson({ taskName: localId, ...r, nextSteps });
     return;
   }
   if (!r.changed) {
@@ -143,7 +143,7 @@ export async function cmdTaskRejectOrDefer(
     const owners = new Set<string>();
     for (const id of r.changedIds) {
       const t = getTask(db, id, ws);
-      if (t?.owner) owners.add(t.owner);
+      if (t?.ownerName) owners.add(t.ownerName);
     }
     for (const owner of owners) await refreshAgentTitle(db, owner, ws);
   }
@@ -157,7 +157,7 @@ export async function cmdTaskRejectOrDefer(
   if (r.dryRun) {
     if (opts.json) {
       emitJson({
-        task: localId,
+        taskName: localId,
         ...r,
         nextSteps: [
           {
@@ -201,7 +201,7 @@ export async function cmdTaskRejectOrDefer(
     { intent: "See full state", command: `mu state -w ${ws}` },
   ];
   if (opts.json) {
-    emitJson({ task: localId, ...r, nextSteps });
+    emitJson({ taskName: localId, ...r, nextSteps });
     return;
   }
   if (!r.changed) {

@@ -33,7 +33,7 @@ describe("getParallelTracks — trivial cases", () => {
     addTask(db, { localId: "a", workstream: "test", title: "A", impact: 50, effortDays: 1 });
     const tracks = getParallelTracks(db, "test");
     expect(tracks).toHaveLength(1);
-    expect(tracks[0]?.roots.map((r) => r.localId)).toEqual(["a"]);
+    expect(tracks[0]?.roots.map((r) => r.name)).toEqual(["a"]);
     expect([...(tracks[0]?.taskIds ?? [])]).toEqual(["a"]);
     expect(tracks[0]?.readyCount).toBe(1);
   });
@@ -44,7 +44,7 @@ describe("getParallelTracks — trivial cases", () => {
     db.prepare("UPDATE tasks SET status='CLOSED' WHERE local_id='a'").run();
     const tracks = getParallelTracks(db, "test");
     expect(tracks).toHaveLength(1);
-    expect(tracks[0]?.roots.map((r) => r.localId)).toEqual(["b"]);
+    expect(tracks[0]?.roots.map((r) => r.name)).toEqual(["b"]);
   });
 });
 
@@ -91,7 +91,7 @@ describe("getParallelTracks — independent subtrees", () => {
 
     const tracks = getParallelTracks(db, "test");
     expect(tracks).toHaveLength(2);
-    const trackByRoot = new Map(tracks.map((t) => [t.roots[0]?.localId, t]));
+    const trackByRoot = new Map(tracks.map((t) => [t.roots[0]?.name, t]));
     expect([...(trackByRoot.get("c")?.taskIds ?? [])].sort()).toEqual(["a", "b", "c"]);
     expect([...(trackByRoot.get("z")?.taskIds ?? [])].sort()).toEqual(["x", "y", "z"]);
     // Only the leaves (a and x) are ready.
@@ -105,7 +105,7 @@ describe("getParallelTracks — independent subtrees", () => {
     addTask(db, { localId: "c", workstream: "test", title: "C", impact: 50, effortDays: 1 });
     const tracks = getParallelTracks(db, "test");
     expect(tracks).toHaveLength(3);
-    expect(tracks.map((t) => t.roots[0]?.localId).sort()).toEqual(["a", "b", "c"]);
+    expect(tracks.map((t) => t.roots[0]?.name).sort()).toEqual(["a", "b", "c"]);
   });
 });
 
@@ -143,7 +143,7 @@ describe("getParallelTracks — diamond merge", () => {
 
     const tracks = getParallelTracks(db, "test");
     expect(tracks).toHaveLength(1);
-    expect(tracks[0]?.roots.map((r) => r.localId).sort()).toEqual(["goal_a", "goal_b"]);
+    expect(tracks[0]?.roots.map((r) => r.name).sort()).toEqual(["goal_a", "goal_b"]);
     expect([...(tracks[0]?.taskIds ?? [])].sort()).toEqual(["goal_a", "goal_b", "shared"]);
     // Only `shared` is ready.
     expect(tracks[0]?.readyCount).toBe(1);
@@ -258,7 +258,7 @@ describe("getParallelTracks — diamond merge", () => {
     });
     const tracks = getParallelTracks(db, "test");
     expect(tracks).toHaveLength(1);
-    expect(tracks[0]?.roots.map((r) => r.localId).sort()).toEqual(["a", "b", "c"]);
+    expect(tracks[0]?.roots.map((r) => r.name).sort()).toEqual(["a", "b", "c"]);
     expect([...(tracks[0]?.taskIds ?? [])].sort()).toEqual(["a", "b", "c", "x", "y"]);
   });
 });
@@ -353,7 +353,7 @@ describe("getParallelTracks — MVP acceptance graph (10 tasks, 1 diamond)", () 
     // launch is the only goal. Everything is in its prereq subgraph.
     const tracks = getParallelTracks(db, "test");
     expect(tracks).toHaveLength(1);
-    expect(tracks[0]?.roots.map((r) => r.localId)).toEqual(["launch"]);
+    expect(tracks[0]?.roots.map((r) => r.name)).toEqual(["launch"]);
     expect(tracks[0]?.taskIds.size).toBe(10);
     // Only `specs` is ready initially.
     expect(tracks[0]?.readyCount).toBe(1);
@@ -384,7 +384,7 @@ describe("getParallelTracks — MVP acceptance graph (10 tasks, 1 diamond)", () 
     });
     const tracks = getParallelTracks(db, "test");
     expect(tracks).toHaveLength(1);
-    expect(tracks[0]?.roots.map((r) => r.localId).sort()).toEqual(["launch", "release_notes"]);
+    expect(tracks[0]?.roots.map((r) => r.name).sort()).toEqual(["launch", "release_notes"]);
     expect(tracks[0]?.taskIds.size).toBe(11);
   });
 
@@ -415,7 +415,7 @@ describe("getParallelTracks — MVP acceptance graph (10 tasks, 1 diamond)", () 
     }
     const tracks = getParallelTracks(db, "test");
     expect(tracks).toHaveLength(1);
-    expect(tracks[0]?.roots.map((r) => r.localId)).toEqual(["launch"]);
+    expect(tracks[0]?.roots.map((r) => r.name)).toEqual(["launch"]);
     expect(tracks[0]?.readyCount).toBe(1);
   });
 });
@@ -429,8 +429,8 @@ describe("getParallelTracks — output is deterministic", () => {
     addTask(db, { localId: "c", workstream: "test", title: "C", impact: 50, effortDays: 1 });
     const t1 = getParallelTracks(db, "test");
     const t2 = getParallelTracks(db, "test");
-    expect(t1.map((t) => t.roots.map((r) => r.localId))).toEqual(
-      t2.map((t) => t.roots.map((r) => r.localId)),
+    expect(t1.map((t) => t.roots.map((r) => r.name))).toEqual(
+      t2.map((t) => t.roots.map((r) => r.name)),
     );
   });
 
@@ -439,6 +439,6 @@ describe("getParallelTracks — output is deterministic", () => {
     addTask(db, { localId: "a", workstream: "test", title: "A", impact: 50, effortDays: 1 });
     addTask(db, { localId: "m", workstream: "test", title: "M", impact: 50, effortDays: 1 });
     const tracks = getParallelTracks(db, "test");
-    expect(tracks.map((t) => t.roots[0]?.localId)).toEqual(["a", "m", "z"]);
+    expect(tracks.map((t) => t.roots[0]?.name)).toEqual(["a", "m", "z"]);
   });
 });

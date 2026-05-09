@@ -73,7 +73,7 @@ export async function cmdInit(db: Db, name: string, opts: { json?: boolean } = {
   ];
   if (opts.json) {
     emitJson({
-      workstream: name,
+      workstreamName: name,
       sessionName,
       created,
       tmuxSessionAlreadyExisted: tmuxAlready,
@@ -125,7 +125,7 @@ export async function cmdWorkstreamExport(
   ];
   if (opts.json) {
     emitJson({
-      workstream,
+      workstreamName: workstream,
       outDir: result.outDir,
       written: result.written,
       unchanged: result.unchanged,
@@ -164,14 +164,19 @@ export async function cmdDestroy(
   const nothingToDo =
     !summary.tmuxAlive &&
     !summary.registered &&
-    summary.agents === 0 &&
-    summary.tasks === 0 &&
-    summary.notes === 0 &&
-    summary.workspaces === 0;
+    summary.agentCount === 0 &&
+    summary.taskCount === 0 &&
+    summary.noteCount === 0 &&
+    summary.workspaceCount === 0;
 
   if (nothingToDo) {
     if (opts.json) {
-      emitJson({ workstream, destroyed: false, reason: "nothing to destroy", summary });
+      emitJson({
+        workstreamName: workstream,
+        destroyed: false,
+        reason: "nothing to destroy",
+        summary,
+      });
       return;
     }
     console.log(
@@ -183,7 +188,7 @@ export async function cmdDestroy(
   if (!opts.yes) {
     if (opts.json) {
       emitJson({
-        workstream,
+        workstreamName: workstream,
         destroyed: false,
         dryRun: true,
         summary,
@@ -204,12 +209,12 @@ export async function cmdDestroy(
     console.log(
       `  tmux session : ${summary.tmuxAlive ? pc.yellow("alive (will be killed)") : pc.dim("not running")}`,
     );
-    console.log(`  agents       : ${summary.agents}`);
+    console.log(`  agents       : ${summary.agentCount}`);
     console.log(
-      `  tasks        : ${summary.tasks}  (edges: ${summary.edges}, notes: ${summary.notes})`,
+      `  tasks        : ${summary.taskCount}  (edges: ${summary.edgeCount}, notes: ${summary.noteCount})`,
     );
     console.log(
-      `  workspaces   : ${summary.workspaces}${summary.workspaces > 0 ? pc.dim(" (will be cleaned via per-backend remove)") : ""}`,
+      `  workspaces   : ${summary.workspaceCount}${summary.workspaceCount > 0 ? pc.dim(" (will be cleaned via per-backend remove)") : ""}`,
     );
     console.log("");
     console.log(pc.dim("(dry-run; rerun with --yes to actually destroy)"));
@@ -259,7 +264,7 @@ export async function cmdDestroy(
   const result = await destroyWorkstream(db, { workstream });
   if (opts.json) {
     emitJson({
-      workstream,
+      workstreamName: workstream,
       destroyed: true,
       ...result,
       autoExport: autoExport
@@ -285,14 +290,14 @@ export async function cmdDestroy(
   console.log(
     `  tmux session : ${summary.tmuxAlive ? pc.yellow("alive (will be killed)") : pc.dim("not running")}`,
   );
-  console.log(`  agents       : ${summary.agents}`);
+  console.log(`  agents       : ${summary.agentCount}`);
   console.log(
-    `  tasks        : ${summary.tasks}  (edges: ${summary.edges}, notes: ${summary.notes})`,
+    `  tasks        : ${summary.taskCount}  (edges: ${summary.edgeCount}, notes: ${summary.noteCount})`,
   );
-  console.log(`  workspaces   : ${summary.workspaces}`);
+  console.log(`  workspaces   : ${summary.workspaceCount}`);
   console.log("");
   console.log(
-    `Destroyed ${pc.bold(workstream)}: killed tmux=${result.killedTmux}, agents=${result.deletedAgents}, tasks=${result.deletedTasks}, edges=${result.deletedEdges}, notes=${result.deletedNotes}, workspaces=${result.freedWorkspaces}/${summary.workspaces}${result.alreadyGoneWorkspaces > 0 ? ` (${result.alreadyGoneWorkspaces} already gone on disk)` : ""}`,
+    `Destroyed ${pc.bold(workstream)}: killed tmux=${result.killedTmux}, agents=${result.deletedAgents}, tasks=${result.deletedTasks}, edges=${result.deletedEdges}, notes=${result.deletedNotes}, workspaces=${result.freedWorkspaces}/${summary.workspaceCount}${result.alreadyGoneWorkspaces > 0 ? ` (${result.alreadyGoneWorkspaces} already gone on disk)` : ""}`,
   );
   if (autoExportOutDir !== undefined) {
     console.log(pc.dim(`Pre-destroy export: ${autoExportOutDir}`));

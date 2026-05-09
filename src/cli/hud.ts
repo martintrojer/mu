@@ -122,13 +122,9 @@ function formatHudAgentsTable(
     nameW = Math.max(nameW, `agent ${a.name}`.length);
     // Scope by the agent's own workstream so a same-named worker
     // elsewhere can't pollute this row's task count.
-    const owned = listTasksByOwner(db, a.workstream, a.name);
+    const owned = listTasksByOwner(db, a.workstreamName, a.name);
     const taskBit =
-      owned.length === 0
-        ? "—"
-        : owned.length === 1
-          ? (owned[0]?.localId ?? "—")
-          : `⊕${owned.length}`;
+      owned.length === 0 ? "—" : owned.length === 1 ? (owned[0]?.name ?? "—") : `⊕${owned.length}`;
     taskBits.push(taskBit);
     const ago = `+${relTime(now - new Date(a.updatedAt).getTime())}`;
     agoW = Math.max(agoW, ago.length);
@@ -180,10 +176,10 @@ function formatHudTasksTable(
   let roiW = "ROI 100".length; // typical ROI width with prefix
   let ownerW = opts.withOwner ? "owner".length : 0;
   for (const t of shown) {
-    idW = Math.max(idW, `${sectionPrefix}  ${t.localId}`.length);
+    idW = Math.max(idW, `${sectionPrefix}  ${t.name}`.length);
     const roi = t.effortDays > 0 ? (t.impact / t.effortDays).toFixed(0) : "∞";
     roiW = Math.max(roiW, `ROI ${roi}`.length);
-    ownerW = Math.max(ownerW, (t.owner ?? "—").length);
+    ownerW = Math.max(ownerW, (t.ownerName ?? "—").length);
   }
   const numCols = opts.withOwner ? 4 : 3;
   const padding = numCols * 3 + 1;
@@ -198,13 +194,13 @@ function formatHudTasksTable(
     // dim for low. Owner bold-cyan (the active worker is the most
     // useful pointer in an in-progress row).
     const roiColor = roiNum >= 100 ? pc.green : roiNum >= 50 ? pc.yellow : pc.dim;
-    const idCell = `${pc.dim(sectionPrefix)}  ${pc.cyan(t.localId)}`;
+    const idCell = `${pc.dim(sectionPrefix)}  ${pc.cyan(t.name)}`;
     const row: string[] = [
       idCell,
       truncate(t.title, titleBudget),
       `${pc.dim("ROI")} ${roiColor(roiStr)}`,
     ];
-    if (opts.withOwner) row.push(t.owner ? pc.bold(pc.cyan(t.owner)) : pc.dim("—"));
+    if (opts.withOwner) row.push(t.ownerName ? pc.bold(pc.cyan(t.ownerName)) : pc.dim("—"));
     table.push(row);
   }
   return { rendered: table.toString(), rowsShown: shown.length, rowsTotal: total };
@@ -305,7 +301,7 @@ function formatHudTracksTable(
   const rootsBudget = Math.max(10, width - idxW - tasksW - readyW - kindW - padding);
   const table = newHudTable();
   shown.forEach((t, i) => {
-    const roots = t.roots.map((r) => r.localId).join(", ");
+    const roots = t.roots.map((r) => r.name).join(", ");
     const kind = t.roots.length > 1 ? "merged" : "track";
     // Colour: 'merged' diamond is structurally interesting (multiple
     // independent goals share a prerequisite) — yellow to flag it.
@@ -355,7 +351,7 @@ export async function cmdHud(db: Db, opts: HudOpts): Promise<void> {
 
   if (opts.json) {
     emitJson({
-      workstream,
+      workstreamName: workstream,
       summary: {
         ready: ready.length,
         inProgress: inProgress.length,

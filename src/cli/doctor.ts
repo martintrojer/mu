@@ -248,13 +248,13 @@ export async function cmdDoctorJson(db: Db): Promise<void> {
     } catch (err) {
       reconcile = { skipped: true, reason: err instanceof Error ? err.message : String(err) };
     }
-    workstreamStats = { workstream: ws, ...counts, reconcile };
+    workstreamStats = { workstreamName: ws, ...counts, reconcile };
   }
 
   emitJson({
     environment: env,
     db: dbReport,
-    workstream: { current: currentWorkstream },
+    workstream: { currentName: currentWorkstream },
     state: workstreamStats,
   });
 }

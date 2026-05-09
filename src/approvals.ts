@@ -22,8 +22,9 @@ import { ensureWorkstream } from "./workstream.js";
 export type ApprovalStatus = "pending" | "granted" | "denied" | "timeout";
 
 export interface ApprovalRow {
-  slug: string;
-  workstream: string | null;
+  /** Per-workstream-unique TEXT name for the approval gate. */
+  name: string;
+  workstreamName: string | null;
   reason: string;
   requestedBy: string;
   status: ApprovalStatus;
@@ -63,8 +64,8 @@ const APPROVAL_FROM_JOIN = "FROM approvals ap LEFT JOIN workstreams ws ON ws.id 
 
 function rowFromDb(row: RawApprovalRow): ApprovalRow {
   return {
-    slug: row.slug,
-    workstream: row.workstream,
+    name: row.slug,
+    workstreamName: row.workstream,
     reason: row.reason,
     requestedBy: row.requested_by,
     status: row.status as ApprovalStatus,
@@ -188,8 +189,8 @@ export function addApproval(db: Db, opts: AddApprovalOptions): ApprovalRow {
     opts.requestedBy,
   );
   return {
-    slug,
-    workstream: opts.workstream,
+    name: slug,
+    workstreamName: opts.workstream,
     reason: opts.reason,
     requestedBy: opts.requestedBy,
     status: "pending",
@@ -263,19 +264,19 @@ function decide(
   // Pre-mutation snapshot. Approval decisions are terminal
   // (pending → granted/denied/timeout); without this an accidental
   // grant has no recovery path.
-  captureSnapshot(db, `approval ${newStatus} ${slug}`, before.workstream);
+  captureSnapshot(db, `approval ${newStatus} ${slug}`, before.workstreamName);
   const decidedAt = new Date().toISOString();
   // Scope the UPDATE to the slug's workstream so v5's per-workstream
   // uniqueness can't be sidestepped by a same-slug row in another
-  // workstream. before.workstream is non-null in v5 (schema NOT NULL).
+  // workstream. before.workstreamName is non-null in v5 (schema NOT NULL).
   db.prepare(
     `UPDATE approvals SET status = ?, decided_by = ?, decided_at = ?
       WHERE slug = ?
         AND workstream_id = (SELECT id FROM workstreams WHERE name = ?)`,
-  ).run(newStatus, opts.decidedBy, decidedAt, slug, before.workstream);
+  ).run(newStatus, opts.decidedBy, decidedAt, slug, before.workstreamName);
   emitEvent(
     db,
-    before.workstream,
+    before.workstreamName,
     `approval ${newStatus} ${slug} (by ${opts.decidedBy})`,
     opts.decidedBy,
   );

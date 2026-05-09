@@ -59,7 +59,8 @@ export type { AgentStatus };
 
 export interface AgentRow {
   name: string;
-  workstream: string;
+  /** Foreign-name reference to the owning workstream. */
+  workstreamName: string;
   cli: string;
   paneId: string;
   status: AgentStatus;
@@ -121,7 +122,7 @@ const AGENT_FROM_JOIN = "FROM agents a JOIN workstreams ws ON ws.id = a.workstre
 function rowFromDb(row: RawAgentRow): AgentRow {
   return {
     name: row.name,
-    workstream: row.workstream,
+    workstreamName: row.workstream,
     cli: row.cli,
     paneId: row.pane_id,
     status: row.status as AgentStatus,
@@ -366,13 +367,13 @@ export function composeAgentTitle(db: Db, agent: AgentRow): string {
   const showStatus = agent.status !== "spawning";
   // Scope by the agent's workstream so a same-named worker in another
   // workstream can't pollute this title's task list.
-  const tasks = listTasksByOwner(db, agent.workstream, agent.name);
+  const tasks = listTasksByOwner(db, agent.workstreamName, agent.name);
   let title = agent.name;
   if (showStatus) {
     title += ` · ${STATUS_EMOJI[agent.status]}`;
   }
   if (tasks.length === 1) {
-    title += ` · ${tasks[0]?.localId}`;
+    title += ` · ${tasks[0]?.name}`;
   } else if (tasks.length > 1) {
     title += ` · ⊕${tasks.length} tasks`;
   }
@@ -520,8 +521,8 @@ export function freeAgent(db: Db, name: string, workstream: string): FreeAgentRe
   if (before.status === "free") {
     return { previousStatus: before.status, status: "free", changed: false };
   }
-  updateAgentStatus(db, name, "free", before.workstream);
-  emitEvent(db, before.workstream, `agent free ${name} (was ${before.status})`);
+  updateAgentStatus(db, name, "free", before.workstreamName);
+  emitEvent(db, before.workstreamName, `agent free ${name} (was ${before.status})`);
   return { previousStatus: before.status, status: "free", changed: true };
 }
 
@@ -578,7 +579,7 @@ export async function closeAgent(
   if (!agent) {
     return { killedPane: false, deletedRow: false, workspaceFreed: false };
   }
-  const ws = getWorkspaceForAgent(db, name, agent.workstream);
+  const ws = getWorkspaceForAgent(db, name, agent.workstreamName);
   if (ws !== undefined && opts.discardWorkspace !== true) {
     throw new WorkspacePreservedError(name, ws.path);
   }
@@ -586,22 +587,22 @@ export async function closeAgent(
   // Captures the agent row + the FK SET NULL ripple onto tasks.owner +
   // (when --discard-workspace) the vcs_workspaces row. Workstream is
   // recorded so this snapshot is filterable in `mu snapshot list`.
-  captureSnapshot(db, `agent close ${name}`, agent.workstream);
+  captureSnapshot(db, `agent close ${name}`, agent.workstreamName);
   // Free the workspace BEFORE the agent (so the on-disk dir is
   // removed cleanly, not orphaned by FK cascade). freeWorkspace is
   // idempotent on missing rows.
   let workspaceFreed = false;
   if (ws !== undefined && opts.discardWorkspace === true) {
-    await freeWorkspace(db, name, { commit: false, workstream: agent.workstream });
+    await freeWorkspace(db, name, { commit: false, workstream: agent.workstreamName });
     workspaceFreed = true;
   }
   await killPane(agent.paneId).catch(() => {
     /* idempotent — pane may already be gone */
   });
-  const deletedRow = deleteAgent(db, name, agent.workstream);
+  const deletedRow = deleteAgent(db, name, agent.workstreamName);
   emitEvent(
     db,
-    agent.workstream,
+    agent.workstreamName,
     `agent close ${name} (pane=${agent.paneId}${workspaceFreed ? ", workspace discarded" : ""})`,
   );
   return {

@@ -164,7 +164,7 @@ export async function cmdSend(
     { intent: "Watch live events", command: `mu log -w ${ws} --tail` },
   ];
   if (opts.json) {
-    emitJson({ agent: name, sentBytes: text.length, nextSteps });
+    emitJson({ agentName: name, sentBytes: text.length, nextSteps });
     return;
   }
   console.log(pc.dim(`sent ${text.length} bytes to ${name}`));
@@ -185,7 +185,7 @@ export async function cmdRead(
   });
   if (opts.json) {
     emitJson({
-      agent: name,
+      agentName: name,
       lines: opts.lines ?? null,
       scrollback: text,
       scrollbackLines: text.split("\n").length,
@@ -203,7 +203,7 @@ export async function cmdList(
   const workstream = await resolveWorkstream(opts.workstream);
   const view = await listLiveAgents(db, { workstream });
   if (opts.json) {
-    emitJson({ workstream, agents: view.agents, orphans: view.orphans });
+    emitJson({ workstreamName: workstream, agents: view.agents, orphans: view.orphans });
     return;
   }
   console.log(pc.bold(`mu-${workstream}`));
@@ -258,8 +258,8 @@ export async function cmdAgentShow(
   if (scrollback.trim() !== "") {
     const detected = detectPiStatus(scrollback);
     if (detected !== agent.status && shouldOverwriteAgentStatus(agent.status, detected)) {
-      updateAgentStatus(db, agent.name, detected, agent.workstream);
-      const refreshed = getAgent(db, name, agent.workstream);
+      updateAgentStatus(db, agent.name, detected, agent.workstreamName);
+      const refreshed = getAgent(db, name, agent.workstreamName);
       if (refreshed) displayed = refreshed;
     }
   }
@@ -270,7 +270,7 @@ export async function cmdAgentShow(
   }
 
   console.log(pc.bold(`${displayed.name}  ${statusIcon(displayed.status)} ${displayed.status}`));
-  console.log(`  workstream : ${agent.workstream}`);
+  console.log(`  workstream : ${agent.workstreamName}`);
   console.log(`  cli        : ${agent.cli}`);
   console.log(`  pane       : ${pc.dim(agent.paneId)}`);
   console.log(`  window     : ${agent.tab ?? agent.name}`);
@@ -294,7 +294,7 @@ export async function cmdMe(
   opts: { json?: boolean; includeClosed?: boolean } = {},
 ): Promise<void> {
   const self = resolveSelf(db);
-  const owned = listTasksByOwner(db, self.workstream, self.name, {
+  const owned = listTasksByOwner(db, self.workstreamName, self.name, {
     includeClosed: opts.includeClosed ?? false,
   });
 
@@ -304,7 +304,7 @@ export async function cmdMe(
   }
 
   console.log(pc.bold(`${self.name}  ${statusIcon(self.status)} ${self.status}`));
-  console.log(`  workstream : ${self.workstream}`);
+  console.log(`  workstream : ${self.workstreamName}`);
   console.log(`  cli        : ${self.cli}`);
   console.log(`  pane       : ${pc.dim(self.paneId)}`);
   console.log(`  role       : ${self.role}`);
@@ -341,7 +341,7 @@ export async function cmdClose(
     command: `mu agent spawn ${name} -w <workstream>`,
   });
   if (opts.json) {
-    emitJson({ agent: name, ...result, nextSteps: next });
+    emitJson({ agentName: name, ...result, nextSteps: next });
     return;
   }
   if (!result.killedPane && !result.deletedRow) {
@@ -425,7 +425,7 @@ export async function cmdAdopt(db: Db, paneOrTitle: string, opts: AdoptCliOpts):
     return;
   }
   console.log(
-    `Adopted ${pc.bold(result.agent.name)} ${pc.dim(`(pane ${result.agent.paneId}, workstream ${result.agent.workstream})`)}`,
+    `Adopted ${pc.bold(result.agent.name)} ${pc.dim(`(pane ${result.agent.paneId}, workstream ${result.agent.workstreamName})`)}`,
   );
   if (result.previousTitle !== null && result.previousTitle !== result.paneTitleSetTo) {
     console.log(pc.dim(`  pane title: '${result.previousTitle}' -> '${result.paneTitleSetTo}'`));
@@ -449,7 +449,7 @@ export async function cmdFree(
     { intent: "See workstream state", command: `mu state -w ${ws}` },
   ];
   if (opts.json) {
-    emitJson({ agent: name, ...r, nextSteps });
+    emitJson({ agentName: name, ...r, nextSteps });
     return;
   }
   if (!r.changed) {

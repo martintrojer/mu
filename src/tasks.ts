@@ -76,20 +76,21 @@ export {
 // ─── Domain types ──────────────────────────────────────────────────────
 
 export interface TaskRow {
-  localId: string;
-  workstream: string;
+  /** Per-workstream-unique TEXT name. The operator-facing identifier. */
+  name: string;
+  /** Foreign-name reference to the owning workstream. */
+  workstreamName: string;
   title: string;
   status: TaskStatus;
   impact: number;
   effortDays: number;
-  owner: string | null;
+  /** Foreign-name reference to the owning agent (NULL when unowned). */
+  ownerName: string | null;
   createdAt: string;
   updatedAt: string;
 }
 
 export interface TaskNoteRow {
-  id: number;
-  taskId: string;
   author: string | null;
   content: string;
   createdAt: string;
@@ -112,10 +113,6 @@ interface RawTaskRow {
 }
 
 interface RawTaskNoteRow {
-  id: number;
-  task_id: number;
-  /** Joined from tasks.local_id. */
-  task_local_id: string;
   author: string | null;
   content: string;
   created_at: string;
@@ -144,9 +141,6 @@ const TASK_FROM_JOIN = `
 `;
 
 const SELECT_NOTE_COLS = `
-  n.id AS id,
-  n.task_id AS task_id,
-  t.local_id AS task_local_id,
   n.author AS author,
   n.content AS content,
   n.created_at AS created_at
@@ -154,13 +148,13 @@ const SELECT_NOTE_COLS = `
 
 function rowFromDb(row: RawTaskRow): TaskRow {
   return {
-    localId: row.local_id,
-    workstream: row.workstream,
+    name: row.local_id,
+    workstreamName: row.workstream,
     title: row.title,
     status: row.status as TaskStatus,
     impact: row.impact,
     effortDays: row.effort_days,
-    owner: row.owner,
+    ownerName: row.owner,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -168,8 +162,6 @@ function rowFromDb(row: RawTaskRow): TaskRow {
 
 function noteFromDb(row: RawTaskNoteRow): TaskNoteRow {
   return {
-    id: row.id,
-    taskId: row.task_local_id,
     author: row.author,
     content: row.content,
     createdAt: row.created_at,
@@ -770,7 +762,7 @@ export function addNote(
   if (!task) {
     throw new TaskNotFoundError(taskLocalId);
   }
-  const taskId = taskIdFor(db, task.localId, task.workstream);
+  const taskId = taskIdFor(db, task.name, task.workstreamName);
   if (taskId === null) throw new TaskNotFoundError(taskLocalId);
   const now = new Date().toISOString();
   const result = db
@@ -779,13 +771,11 @@ export function addNote(
   const noteId = Number(result.lastInsertRowid);
   emitEvent(
     db,
-    task.workstream,
+    task.workstreamName,
     `task note ${taskLocalId} (note #${noteId} by ${opts.author ?? "orchestrator"})`,
     opts.author ?? "system",
   );
   return {
-    id: noteId,
-    taskId: taskLocalId,
     author: opts.author ?? null,
     content,
     createdAt: now,
@@ -826,16 +816,16 @@ export function addBlockEdge(
   // check + same-workstream guard run after.
   const blockerRow = lookupTaskAnyWorkstream(db, blocker);
   if (!blockerRow) throw new TaskNotFoundError(blocker);
-  if (blockedRow.workstream !== blockerRow.workstream) {
+  if (blockedRow.workstreamName !== blockerRow.workstreamName) {
     throw new CrossWorkstreamEdgeError(
       blocker,
-      blockerRow.workstream,
+      blockerRow.workstreamName,
       blocked,
-      blockedRow.workstream,
+      blockedRow.workstreamName,
     );
   }
-  const blockedId = taskIdFor(db, blocked, blockedRow.workstream);
-  const blockerId = taskIdFor(db, blocker, blockerRow.workstream);
+  const blockedId = taskIdFor(db, blocked, blockedRow.workstreamName);
+  const blockerId = taskIdFor(db, blocker, blockerRow.workstreamName);
   if (blockedId === null || blockerId === null) throw new TaskNotFoundError(blocked);
   if (wouldCreateCycle(db, blockerId, blockedId)) {
     throw new CycleError(blocker, blocked);
@@ -846,7 +836,7 @@ export function addBlockEdge(
     )
     .run(blockerId, blockedId, new Date().toISOString());
   const added = result.changes > 0;
-  if (added) emitEvent(db, blockedRow.workstream, `task block ${blocked} by ${blocker}`);
+  if (added) emitEvent(db, blockedRow.workstreamName, `task block ${blocked} by ${blocker}`);
   return { added };
 }
 
@@ -871,15 +861,15 @@ export function removeBlockEdge(
   if (!blockedRow) return { removed: false };
   const blockerRow = getTask(db, blocker, workstream);
   if (!blockerRow) return { removed: false };
-  const blockedId = taskIdFor(db, blocked, blockedRow.workstream);
-  const blockerId = taskIdFor(db, blocker, blockerRow.workstream);
+  const blockedId = taskIdFor(db, blocked, blockedRow.workstreamName);
+  const blockerId = taskIdFor(db, blocker, blockerRow.workstreamName);
   if (blockedId === null || blockerId === null) return { removed: false };
   const result = db
     .prepare("DELETE FROM task_edges WHERE from_task_id = ? AND to_task_id = ?")
     .run(blockerId, blockedId);
   const removed = result.changes > 0;
   if (removed) {
-    emitEvent(db, blockedRow.workstream, `task unblock ${blocked} by ${blocker}`);
+    emitEvent(db, blockedRow.workstreamName, `task unblock ${blocked} by ${blocker}`);
   }
   return { removed };
 }
@@ -909,12 +899,12 @@ export function deleteTask(db: Db, localId: string, workstream: string): DeleteT
   // task_notes; no per-row history can reconstruct it. Skip when the
   // row doesn't exist (the verb is idempotent on missing).
   if (before) {
-    captureSnapshot(db, `task delete ${localId}`, before.workstream);
+    captureSnapshot(db, `task delete ${localId}`, before.workstreamName);
   }
   if (!before) {
     return { deleted: false, deletedEdges: 0, deletedNotes: 0 };
   }
-  const taskId = taskIdFor(db, localId, before.workstream);
+  const taskId = taskIdFor(db, localId, before.workstreamName);
   if (taskId === null) {
     return { deleted: false, deletedEdges: 0, deletedNotes: 0 };
   }
@@ -933,7 +923,7 @@ export function deleteTask(db: Db, localId: string, workstream: string): DeleteT
   if (deleted) {
     emitEvent(
       db,
-      before.workstream,
+      before.workstreamName,
       `task delete ${localId} (cascade: ${edgesBefore} edges, ${notesBefore} notes)`,
     );
   }
@@ -979,7 +969,7 @@ export function updateTask(
 ): UpdateTaskResult {
   const before = getTask(db, localId, scope.workstream);
   if (!before) throw new TaskNotFoundError(localId);
-  const taskId = taskIdFor(db, before.localId, before.workstream);
+  const taskId = taskIdFor(db, before.name, before.workstreamName);
   if (taskId === null) throw new TaskNotFoundError(localId);
 
   const setters: string[] = [];
@@ -1011,7 +1001,11 @@ export function updateTask(
   params.push(taskId);
 
   db.prepare(`UPDATE tasks SET ${setters.join(", ")} WHERE id = ?`).run(...params);
-  emitEvent(db, before.workstream, `task update ${localId} (changed: ${changedFields.join(", ")})`);
+  emitEvent(
+    db,
+    before.workstreamName,
+    `task update ${localId} (changed: ${changedFields.join(", ")})`,
+  );
   return { updated: true, changedFields };
 }
 
@@ -1046,7 +1040,7 @@ export function reparentTask(
 ): ReparentTaskResult {
   const task = getTask(db, taskLocalId, scope.workstream);
   if (!task) throw new TaskNotFoundError(taskLocalId);
-  const taskSurrogateId = taskIdFor(db, task.localId, task.workstream);
+  const taskSurrogateId = taskIdFor(db, task.name, task.workstreamName);
   if (taskSurrogateId === null) throw new TaskNotFoundError(taskLocalId);
 
   // Resolve every blocker up-front to its surrogate id; do all
@@ -1061,15 +1055,15 @@ export function reparentTask(
     }
     const blocker = lookupTaskAnyWorkstream(db, blockerLocalId);
     if (!blocker) throw new TaskNotFoundError(blockerLocalId);
-    if (blocker.workstream !== task.workstream) {
+    if (blocker.workstreamName !== task.workstreamName) {
       throw new CrossWorkstreamEdgeError(
         blockerLocalId,
-        blocker.workstream,
+        blocker.workstreamName,
         taskLocalId,
-        task.workstream,
+        task.workstreamName,
       );
     }
-    const blockerId = taskIdFor(db, blocker.localId, blocker.workstream);
+    const blockerId = taskIdFor(db, blocker.name, blocker.workstreamName);
     if (blockerId === null) throw new TaskNotFoundError(blockerLocalId);
     if (wouldCreateCycle(db, blockerId, taskSurrogateId)) {
       throw new CycleError(blockerLocalId, taskLocalId);
@@ -1089,7 +1083,7 @@ export function reparentTask(
     const blockersBit = blockers.length > 0 ? `, new=${[...blockers].join(",")}` : "";
     emitEvent(
       db,
-      task.workstream,
+      task.workstreamName,
       `task reparent ${taskLocalId} (removed ${removed.changes} edges, added ${blockers.length}${blockersBit})`,
     );
     return { removedEdges: removed.changes, addedEdges: blockers.length };

@@ -62,12 +62,12 @@ describe("approvals SDK", () => {
       requestedBy: "worker-1",
     });
     expect(r.status).toBe("pending");
-    expect(r.workstream).toBe("auth");
+    expect(r.workstreamName).toBe("auth");
     expect(r.requestedBy).toBe("worker-1");
     expect(r.reason).toBe("delete a task");
     expect(r.decidedBy).toBeNull();
     expect(r.decidedAt).toBeNull();
-    expect(r.slug).toMatch(/^app_/);
+    expect(r.name).toMatch(/^app_/);
   });
 
   it("addApproval honours an explicit slug", () => {
@@ -77,7 +77,7 @@ describe("approvals SDK", () => {
       reason: "x",
       requestedBy: "worker-1",
     });
-    expect(r.slug).toBe("custom-slug");
+    expect(r.name).toBe("custom-slug");
   });
 
   it("addApproval emits a kind='event' log row attributed to the requester", () => {
@@ -106,7 +106,7 @@ describe("approvals SDK", () => {
     addApproval(db, { workstream: "auth", reason: "a", requestedBy: "u" });
     addApproval(db, { workstream: "billing", reason: "b", requestedBy: "u" });
     const granted = addApproval(db, { workstream: "auth", reason: "c", requestedBy: "u" });
-    grantApproval(db, granted.slug, { decidedBy: "user", workstream: "auth" });
+    grantApproval(db, granted.name, { decidedBy: "user", workstream: "auth" });
 
     expect(
       listApprovals(db, { workstream: "auth" })
@@ -122,7 +122,7 @@ describe("approvals SDK", () => {
 
   it("grantApproval flips status, records decider + timestamp, emits event", () => {
     const a = addApproval(db, { workstream: "auth", reason: "x", requestedBy: "worker-1" });
-    const r = grantApproval(db, a.slug, { decidedBy: "user", workstream: "auth" });
+    const r = grantApproval(db, a.name, { decidedBy: "user", workstream: "auth" });
     expect(r.status).toBe("granted");
     expect(r.decidedBy).toBe("user");
     expect(r.decidedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
@@ -134,7 +134,7 @@ describe("approvals SDK", () => {
 
   it("denyApproval flips status to 'denied'", () => {
     const a = addApproval(db, { workstream: "auth", reason: "x", requestedBy: "worker-1" });
-    const r = denyApproval(db, a.slug, { decidedBy: "reviewer-1", workstream: "auth" });
+    const r = denyApproval(db, a.name, { decidedBy: "reviewer-1", workstream: "auth" });
     expect(r.status).toBe("denied");
     expect(r.decidedBy).toBe("reviewer-1");
   });
@@ -150,18 +150,18 @@ describe("approvals SDK", () => {
 
   it("grant/deny on already-decided approval throws ApprovalAlreadyDecidedError", () => {
     const a = addApproval(db, { workstream: "auth", reason: "x", requestedBy: "u" });
-    grantApproval(db, a.slug, { decidedBy: "user", workstream: "auth" });
-    expect(() => grantApproval(db, a.slug, { decidedBy: "user", workstream: "auth" })).toThrow(
+    grantApproval(db, a.name, { decidedBy: "user", workstream: "auth" });
+    expect(() => grantApproval(db, a.name, { decidedBy: "user", workstream: "auth" })).toThrow(
       ApprovalAlreadyDecidedError,
     );
-    expect(() => denyApproval(db, a.slug, { decidedBy: "user", workstream: "auth" })).toThrow(
+    expect(() => denyApproval(db, a.name, { decidedBy: "user", workstream: "auth" })).toThrow(
       ApprovalAlreadyDecidedError,
     );
   });
 
   it("timeoutApproval flips status to 'timeout'", () => {
     const a = addApproval(db, { workstream: "auth", reason: "x", requestedBy: "u" });
-    const r = timeoutApproval(db, a.slug, { decidedBy: "system", workstream: "auth" });
+    const r = timeoutApproval(db, a.name, { decidedBy: "system", workstream: "auth" });
     expect(r.status).toBe("timeout");
   });
 
@@ -170,8 +170,8 @@ describe("approvals SDK", () => {
   it("waitApproval returns immediately when already decided", async () => {
     setSleepForTests(async () => {});
     const a = addApproval(db, { workstream: "auth", reason: "x", requestedBy: "u" });
-    grantApproval(db, a.slug, { decidedBy: "user", workstream: "auth" });
-    const r = await waitApproval(db, a.slug, { timeoutMs: 1000, pollMs: 10, workstream: "auth" });
+    grantApproval(db, a.name, { decidedBy: "user", workstream: "auth" });
+    const r = await waitApproval(db, a.name, { timeoutMs: 1000, pollMs: 10, workstream: "auth" });
     expect(r.status).toBe("granted");
   });
 
@@ -184,10 +184,10 @@ describe("approvals SDK", () => {
       pollCount++;
       if (pollCount === otherWriterFires) {
         // Simulate another shell granting the approval mid-wait.
-        grantApproval(db, a.slug, { decidedBy: "user", workstream: "auth" });
+        grantApproval(db, a.name, { decidedBy: "user", workstream: "auth" });
       }
     });
-    const r = await waitApproval(db, a.slug, { timeoutMs: 1000, pollMs: 1, workstream: "auth" });
+    const r = await waitApproval(db, a.name, { timeoutMs: 1000, pollMs: 1, workstream: "auth" });
     expect(r.status).toBe("granted");
     expect(pollCount).toBeGreaterThanOrEqual(otherWriterFires);
   });
@@ -195,7 +195,7 @@ describe("approvals SDK", () => {
   it("waitApproval transitions to 'timeout' when deadline elapses", async () => {
     setSleepForTests(async () => {});
     const a = addApproval(db, { workstream: "auth", reason: "x", requestedBy: "u" });
-    const r = await waitApproval(db, a.slug, {
+    const r = await waitApproval(db, a.name, {
       timeoutMs: 0.001,
       pollMs: 0.001,
       workstream: "auth",

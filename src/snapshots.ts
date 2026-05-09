@@ -48,9 +48,12 @@ import type { HasNextSteps, NextStep } from "./output.js";
 // ─── Types ────────────────────────────────────────────────────────────
 
 export interface SnapshotRow {
+  /** Operator-facing snapshot id. EXCEPTION to the no-surrogate-ids rule:
+   *  snapshots have no human-meaningful name; the id is what the
+   *  operator types in `mu undo --to <id>` / `mu snapshot show <id>`. */
   id: number;
   /** NULL for whole-DB snapshots (e.g. workstream destroy). */
-  workstream: string | null;
+  workstreamName: string | null;
   /** Human-readable operation label, e.g. "task close design". */
   label: string;
   /** Absolute path to the .db file on disk. */
@@ -73,7 +76,7 @@ interface RawSnapshotRow {
 function rowFromDb(r: RawSnapshotRow): SnapshotRow {
   return {
     id: r.id,
-    workstream: r.workstream,
+    workstreamName: r.workstream,
     label: r.label,
     dbPath: r.db_path,
     schemaVersion: r.schema_version,

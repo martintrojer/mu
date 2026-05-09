@@ -77,7 +77,7 @@ export function unescapeNoteText(s: string): string {
 
 export function printNote(n: TaskNoteRow): void {
   const author = n.author ?? "<orchestrator>";
-  console.log(`  ${pc.dim(`#${n.id} ${n.createdAt}`)}  ${pc.bold(author)}`);
+  console.log(`  ${pc.dim(n.createdAt)}  ${pc.bold(author)}`);
   for (const line of n.content.split("\n")) {
     console.log(`    ${line}`);
   }
@@ -115,22 +115,22 @@ export async function cmdTaskAdd(
     ...(blockedBy ? { blockedBy } : {}),
   });
   const nextSteps: NextStep[] = [
-    { intent: "Show this task", command: `mu task show ${task.localId} -w ${workstream}` },
+    { intent: "Show this task", command: `mu task show ${task.name} -w ${workstream}` },
     {
       // Single-quoted example: shell metachars (`...`, $VAR, $(...))
       // inside a double-quoted string expand in YOUR shell before mu
       // sees the note (mufeedback note #257). Single quotes defer
       // expansion to the agent.
       intent: "Drop a note (single-quote to defer shell expansion)",
-      command: `mu task note ${task.localId} '...' -w ${workstream}`,
+      command: `mu task note ${task.name} '...' -w ${workstream}`,
     },
     {
       intent: "Add a blocker",
-      command: `mu task block ${task.localId} --by <other-id> -w ${workstream}`,
+      command: `mu task block ${task.name} --by <other-id> -w ${workstream}`,
     },
     {
       intent: "Claim and start",
-      command: `mu task claim ${task.localId} -w ${workstream} --self  (or --for <worker>)`,
+      command: `mu task claim ${task.name} -w ${workstream} --self  (or --for <worker>)`,
     },
   ];
   if (opts.json) {
@@ -139,7 +139,7 @@ export async function cmdTaskAdd(
   }
   const idHint = localId === undefined ? pc.dim(" (id derived from title)") : "";
   console.log(
-    `Added task ${pc.bold(task.localId)}${idHint} ${pc.dim(
+    `Added task ${pc.bold(task.name)}${idHint} ${pc.dim(
       `(workstream=${workstream}, impact=${task.impact}, effort=${task.effortDays})`,
     )}`,
   );
@@ -169,10 +169,10 @@ export async function cmdTaskNote(
     { intent: "Show full task state", command: `mu task show ${localId} -w ${ws}` },
   ];
   if (opts.json) {
-    emitJson({ task: localId, note, nextSteps });
+    emitJson({ taskName: localId, note, nextSteps });
     return;
   }
-  console.log(pc.dim(`note #${note.id} appended to ${localId}`));
+  console.log(pc.dim(`note appended to ${localId}`));
   printNextSteps(nextSteps);
 }
 
@@ -188,15 +188,15 @@ export async function cmdTaskShow(
   const ws = await resolveWorkstream(opts.workstream);
   const task = getTask(db, localId, ws);
   if (!task) throw new TaskNotFoundError(localId);
-  const edges = getTaskEdges(db, localId, task.workstream);
-  const notes = listNotes(db, localId, task.workstream);
+  const edges = getTaskEdges(db, localId, task.workstreamName);
+  const notes = listNotes(db, localId, task.workstreamName);
 
   // When owner IS NULL but the task is IN_PROGRESS (or recently was),
   // the actor is in agent_logs. Surface it so 'who's working on this'
   // is answerable from `mu task show` alone.
   const lastActor =
-    task.owner === null && task.status !== "OPEN"
-      ? lastClaimActor(db, task.workstream, task.localId)
+    task.ownerName === null && task.status !== "OPEN"
+      ? lastClaimActor(db, task.workstreamName, task.name)
       : null;
 
   if (opts.json) {
@@ -211,14 +211,14 @@ export async function cmdTaskShow(
   }
 
   const roi = task.effortDays > 0 ? (task.impact / task.effortDays).toFixed(1) : "∞";
-  console.log(pc.bold(`${task.localId}  —  ${task.title}`));
-  console.log(`  workstream : ${task.workstream}`);
+  console.log(pc.bold(`${task.name}  —  ${task.title}`));
+  console.log(`  workstream : ${task.workstreamName}`);
   console.log(`  status     : ${task.status}`);
   // owner: registered worker name, or '(self: <actor>)' for an anonymous
   // claim, or '(unowned)' for OPEN tasks.
   const ownerLine =
-    task.owner !== null
-      ? task.owner
+    task.ownerName !== null
+      ? task.ownerName
       : lastActor !== null
         ? pc.dim(`(self: ${lastActor})`)
         : pc.dim("(unowned)");
@@ -256,7 +256,7 @@ export async function cmdTaskNotes(
   const ws = await resolveWorkstream(opts.workstream);
   const task = getTask(db, localId, ws);
   if (!task) throw new TaskNotFoundError(localId);
-  const notes = listNotes(db, localId, task.workstream);
+  const notes = listNotes(db, localId, task.workstreamName);
   if (opts.json) {
     emitJson(notes);
     return;
@@ -296,7 +296,7 @@ export async function cmdTaskUpdate(
     { intent: "Show updated task", command: `mu task show ${localId} -w ${ws}` },
   ];
   if (opts.json) {
-    emitJson({ task: localId, ...r, nextSteps });
+    emitJson({ taskName: localId, ...r, nextSteps });
     return;
   }
   if (!r.updated) {

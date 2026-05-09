@@ -319,7 +319,7 @@ describe("workspace SDK (with noneBackend)", () => {
       projectRoot,
       backend: "none",
     });
-    expect(ws.agent).toBe("worker-1");
+    expect(ws.agentName).toBe("worker-1");
     expect(ws.backend).toBe("none");
     expect(ws.path).toContain(join("workspaces", "auth", "worker-1"));
     expect(getWorkspaceForAgent(db, "worker-1", "auth")?.path).toBe(ws.path);
@@ -434,8 +434,8 @@ describe("workspace SDK (with noneBackend)", () => {
       projectRoot,
       backend: "none",
     });
-    expect(listWorkspaces(db, "auth").map((r) => r.agent)).toEqual(["worker-1"]);
-    expect(listWorkspaces(db, "billing").map((r) => r.agent)).toEqual(["biller"]);
+    expect(listWorkspaces(db, "auth").map((r) => r.agentName)).toEqual(["worker-1"]);
+    expect(listWorkspaces(db, "billing").map((r) => r.agentName)).toEqual(["biller"]);
     expect(listWorkspaces(db).length).toBe(2);
   });
 
@@ -542,7 +542,7 @@ describe("createWorkspace HOME-dir guard (snap_dogfood Finding 4a)", () => {
       projectRoot,
       backend: "none",
     });
-    expect(ws.agent).toBe("worker-1");
+    expect(ws.agentName).toBe("worker-1");
   });
 });
 
@@ -736,8 +736,8 @@ describe("listWorkspaceOrphans", () => {
     ).run();
     const orphans = listWorkspaceOrphans(db, "auth");
     expect(orphans.length).toBe(1);
-    expect(orphans[0]?.agent).toBe("w1");
-    expect(orphans[0]?.workstream).toBe("auth");
+    expect(orphans[0]?.agentName).toBe("w1");
+    expect(orphans[0]?.workstreamName).toBe("auth");
     expect(orphans[0]?.path).toBe(ws.path);
   });
 
@@ -760,7 +760,7 @@ describe("listWorkspaceOrphans", () => {
       `DELETE FROM vcs_workspaces WHERE agent_id = (SELECT id FROM agents WHERE name = 'orphaned')`,
     ).run();
     const orphans = listWorkspaceOrphans(db, "auth");
-    expect(orphans.map((o) => o.agent)).toEqual(["orphaned"]);
+    expect(orphans.map((o) => o.agentName)).toEqual(["orphaned"]);
   });
 });
 

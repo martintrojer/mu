@@ -129,5 +129,5 @@ function renderTree(
 }
 
 function formatTreeNodeLabel(t: TaskRow): string {
-  return `${pc.bold(t.localId)}  ${colorStatus(t.status)}  ${pc.dim(t.title)}`;
+  return `${pc.bold(t.name)}  ${colorStatus(t.status)}  ${pc.dim(t.title)}`;
 }

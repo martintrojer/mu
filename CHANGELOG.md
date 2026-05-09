@@ -12,6 +12,97 @@ called out under "Breaking" in each entry.
 
 ### Breaking
 
+- **`--json` shape rewritten end-to-end (`output_json_keys_rename_v5`).**
+  Every entity row emitted via `--json` underwent a wholesale key
+  rename to align with the v5 schema's name-vs-surrogate-id split.
+  No compat layer; no `--json-shape v4` flag; no dual-emit. mu is
+  pre-1.0 with no external `jq`-script consumer base, and v5 is the
+  right moment to burn the v4 nostalgia. Per
+  [docs/OUTPUT_LABELS_AUDIT.md](docs/OUTPUT_LABELS_AUDIT.md). The
+  full rename:
+
+  - **`TaskRow`:** `localId` → `name`; `workstream` →
+    `workstreamName`; `owner` → `ownerName`.
+  - **`TaskNoteRow`:** drop `id` (autoincrement = internal) and
+    `taskId` (caller already knows which task); shape becomes
+    `{ author, content, createdAt }`.
+  - **`AgentRow`:** `workstream` → `workstreamName`.
+  - **`WorkspaceRow`:** `agent` → `agentName`; `workstream` →
+    `workstreamName`.
+  - **`ApprovalRow`:** `slug` → `name`; `workstream` →
+    `workstreamName`.
+  - **`WorkstreamSummary`:** `workstream` → `name`; bare counts
+    `agents` / `tasks` / `notes` / `edges` / `workspaces` →
+    `agentCount` / `taskCount` / `noteCount` / `edgeCount` /
+    `workspaceCount` (the bare integer counts gain a `*Count`
+    suffix — `agents: 3` was misleading because it parses as
+    "array of agent rows").
+  - **`LogRow`:** `workstream` → `workstreamName`. `seq` stays
+    — it IS the operator-facing cursor for `--since SEQ`.
+  - **`SnapshotRow`:** `workstream` → `workstreamName`. `id`
+    stays — snapshot ids ARE operator-facing in
+    `mu undo --to <id>` / `mu snapshot show <id>`.
+  - **`ClaimResult` / `ReleaseResult`:** `owner` → `ownerName`,
+    `actor` → `actorName`, `previousOwner` → `previousOwnerName`.
+  - **`TaskWaitTaskState`:** `localId` → `name`.
+  - **Top-level wrapper objects** (composite verbs `state`, `hud`,
+    `doctor`, `workstream init / destroy / export`, `agent list`,
+    `agent send / read / close / free`, `workspace create / free /
+    path / orphans`, `task note / close / open / update / reject /
+    defer / claim / release / block / unblock / reparent / delete`):
+    every bare `workstream:` field becomes `workstreamName:`; every
+    bare `task:` (a name string) becomes `taskName:`; every bare
+    `agent:` (a name string) becomes `agentName:`; the per-verb
+    `blocked` / `blocker` (name strings) on `mu task block` /
+    `unblock` become `blockedName` / `blockerName`; `mu task
+    reparent`'s `blockers` (name array) becomes `blockerNames`.
+  - **`mu doctor`:** `workstream.current` → `workstream.currentName`;
+    nested `state.workstream` → `state.workstreamName`.
+
+  **Migration recipes (jq):**
+
+  ```bash
+  # tasks
+  jq '.localId'                      →   jq '.name'
+  jq '.[] | .localId'                →   jq '.[] | .name'
+  jq '.[] | .workstream'             →   jq '.[] | .workstreamName'
+  jq 'select(.owner == "foo")'       →   jq 'select(.ownerName == "foo")'
+
+  # workstreams
+  jq '.[] | .workstream'             →   jq '.[] | .name'
+  jq '.[] | .agents'                 →   jq '.[] | .agentCount'
+  jq '.[] | .tasks'                  →   jq '.[] | .taskCount'
+  jq '.[] | .notes'                  →   jq '.[] | .noteCount'
+  jq '.[] | .edges'                  →   jq '.[] | .edgeCount'
+  jq '.[] | .workspaces'             →   jq '.[] | .workspaceCount'
+
+  # workspaces
+  jq '.[] | .agent'                  →   jq '.[] | .agentName'
+
+  # approvals
+  jq '.slug'                         →   jq '.name'
+
+  # logs
+  jq '.[] | .workstream'             →   jq '.[] | .workstreamName'
+
+  # task notes
+  jq '.[] | .id'                     →   removed (was the autoincrement)
+  jq '.[] | .taskId'                 →   removed (caller already knows)
+
+  # claim / release results
+  jq '.owner'                        →   jq '.ownerName'
+  jq '.actor'                        →   jq '.actorName'
+  jq '.previousOwner'                →   jq '.previousOwnerName'
+  ```
+
+  CLI behaviour, exit codes, and column rendering are unchanged —
+  this is a `--json` shape rewrite only. Anti-features explicitly
+  rejected: no `--json-shape v4` flag, no dual-emit
+  `{ localId, name }`, no `_meta` block with rename hints. Snapshot
+  ids and `LogRow.seq` are preserved — they were ALWAYS
+  operator-facing (the v5 schema didn't change them) and aren't
+  surrogate-PK leaks.
+
 - **Schema bumped to v5 (surrogate INTEGER PKs).** Every entity
   table (`workstreams`, `agents`, `tasks`, `task_edges`,
   `task_notes`, `agent_logs`, `vcs_workspaces`, `approvals`) now has

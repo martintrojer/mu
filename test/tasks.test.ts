@@ -114,13 +114,13 @@ describe("addTask", () => {
       effortDays: 2,
     });
     expect(task).toMatchObject({
-      localId: "design",
-      workstream: "test",
+      name: "design",
+      workstreamName: "test",
       title: "Design",
       status: "OPEN",
       impact: 80,
       effortDays: 2,
-      owner: null,
+      ownerName: null,
     });
   });
 
@@ -179,8 +179,8 @@ describe("addTask", () => {
       impact: 50,
       effortDays: 1,
     });
-    expect(task.localId).toBe("mu_internal");
-    expect(getTask(db, "mu_internal", "test")).toMatchObject({ localId: "mu_internal" });
+    expect(task.name).toBe("mu_internal");
+    expect(getTask(db, "mu_internal", "test")).toMatchObject({ name: "mu_internal" });
   });
 
   it("rejects duplicate id with TaskExistsError", () => {
@@ -228,11 +228,11 @@ describe("addTask", () => {
       effortDays: 5,
       blockedBy: ["design"],
     });
-    expect(build.localId).toBe("build");
+    expect(build.name).toBe("build");
     // Verify edge inserted: design blocks build → build is blocked.
-    const blocked = listBlocked(db, "test").map((t) => t.localId);
+    const blocked = listBlocked(db, "test").map((t) => t.name);
     expect(blocked).toEqual(["build"]);
-    const ready = listReady(db, "test").map((t) => t.localId);
+    const ready = listReady(db, "test").map((t) => t.name);
     expect(ready).toEqual(["design"]);
   });
 
@@ -403,11 +403,11 @@ describe("addNote", () => {
     addTask(db, { localId: "a", workstream: "test", title: "A", impact: 50, effortDays: 1 });
     const note = addNote(db, "a", "DECISION: chose JWT", { workstream: "test" });
     expect(note).toMatchObject({
-      taskId: "a",
       author: null,
       content: "DECISION: chose JWT",
     });
-    expect(typeof note.id).toBe("number");
+    expect(note).not.toHaveProperty("id");
+    expect(note).not.toHaveProperty("taskId");
   });
 
   it("accepts optional author", () => {
@@ -516,21 +516,21 @@ describe("listReady / listBlocked / listGoals", () => {
   });
 
   it("ready: only `specs` is initially actionable", () => {
-    expect(listReady(db, "test").map((t) => t.localId)).toEqual(["specs"]);
+    expect(listReady(db, "test").map((t) => t.name)).toEqual(["specs"]);
   });
 
   it("ready promotes after a blocker closes", () => {
     db.prepare("UPDATE tasks SET status='CLOSED' WHERE local_id='specs'").run();
     expect(
       listReady(db, "test")
-        .map((t) => t.localId)
+        .map((t) => t.name)
         .sort(),
     ).toEqual(["api", "ui"]);
   });
 
   it("blocked: every non-specs task is initially blocked", () => {
     const blockedIds = listBlocked(db, "test")
-      .map((t) => t.localId)
+      .map((t) => t.name)
       .sort();
     expect(blockedIds).toEqual([
       "api",
@@ -546,11 +546,11 @@ describe("listReady / listBlocked / listGoals", () => {
   });
 
   it("goals: only launch (no outgoing edges) is a goal", () => {
-    expect(listGoals(db, "test").map((t) => t.localId)).toEqual(["launch"]);
+    expect(listGoals(db, "test").map((t) => t.name)).toEqual(["launch"]);
   });
 
   it("goals view excludes CLOSED tasks (a finished leaf is no longer a goal)", () => {
-    expect(listGoals(db, "test").map((t) => t.localId)).toEqual(["launch"]);
+    expect(listGoals(db, "test").map((t) => t.name)).toEqual(["launch"]);
     closeTask(db, "launch", { workstream: "test" });
     expect(listGoals(db, "test")).toEqual([]);
   });
@@ -569,11 +569,11 @@ describe("claimTask", () => {
 
   it("claims with explicit agentName", async () => {
     const result = await claimTask(db, "auth", { agentName: "alice", workstream: "test" });
-    expect(result.owner).toBe("alice");
-    expect(result.previousOwner).toBeNull();
+    expect(result.ownerName).toBe("alice");
+    expect(result.previousOwnerName).toBeNull();
     expect(result.previousStatus).toBe("OPEN");
     expect(result.status).toBe("IN_PROGRESS");
-    expect(getTask(db, "auth", "test")?.owner).toBe("alice");
+    expect(getTask(db, "auth", "test")?.ownerName).toBe("alice");
     expect(getTask(db, "auth", "test")?.status).toBe("IN_PROGRESS");
   });
 
@@ -593,7 +593,7 @@ describe("claimTask", () => {
   it("re-claim by same agent is a no-op (idempotent)", async () => {
     await claimTask(db, "auth", { agentName: "alice", workstream: "test" });
     await claimTask(db, "auth", { agentName: "alice", workstream: "test" });
-    expect(getTask(db, "auth", "test")?.owner).toBe("alice");
+    expect(getTask(db, "auth", "test")?.ownerName).toBe("alice");
   });
 
   it("throws TaskAlreadyOwnedError when another agent owns it", async () => {
@@ -602,7 +602,7 @@ describe("claimTask", () => {
       claimTask(db, "auth", { agentName: "bob", workstream: "test" }),
     ).rejects.toBeInstanceOf(TaskAlreadyOwnedError);
     // alice still owns it.
-    expect(getTask(db, "auth", "test")?.owner).toBe("alice");
+    expect(getTask(db, "auth", "test")?.ownerName).toBe("alice");
   });
 
   it("throws TaskNotFoundError for unknown task", async () => {
@@ -621,7 +621,7 @@ describe("claimTask", () => {
     setTmuxExecutor(executor);
     await withEnv("TMUX_PANE", "%15", async () => {
       const result = await claimTask(db, "auth", { workstream: "test" });
-      expect(result.owner).toBe("alice");
+      expect(result.ownerName).toBe("alice");
     });
   });
 
@@ -647,7 +647,7 @@ describe("claimTask", () => {
       claimTask(db, "auth", { agentName: "ghost", workstream: "test" }),
     ).rejects.toBeInstanceOf(ClaimerNotRegisteredError);
     // Task untouched (no partial write through the FK).
-    expect(getTask(db, "auth", "test")?.owner).toBeNull();
+    expect(getTask(db, "auth", "test")?.ownerName).toBeNull();
     expect(getTask(db, "auth", "test")?.status).toBe("OPEN");
   });
 
@@ -699,11 +699,11 @@ describe("claimTask", () => {
       actor: "orchestrator",
       workstream: "test",
     });
-    expect(result.owner).toBeNull();
-    expect(result.actor).toBe("orchestrator");
+    expect(result.ownerName).toBeNull();
+    expect(result.actorName).toBe("orchestrator");
     expect(result.previousStatus).toBe("OPEN");
     expect(result.status).toBe("IN_PROGRESS");
-    expect(getTask(db, "auth", "test")?.owner).toBeNull();
+    expect(getTask(db, "auth", "test")?.ownerName).toBeNull();
     expect(getTask(db, "auth", "test")?.status).toBe("IN_PROGRESS");
   });
 
@@ -725,8 +725,8 @@ describe("claimTask", () => {
       actor: "phantom",
       workstream: "test",
     });
-    expect(result.owner).toBeNull();
-    expect(result.actor).toBe("phantom");
+    expect(result.ownerName).toBeNull();
+    expect(result.actorName).toBe("phantom");
   });
 
   it("--self with an unowned task succeeds; --self with an owned task throws TaskAlreadyOwnedError", async () => {
@@ -735,7 +735,7 @@ describe("claimTask", () => {
       claimTask(db, "auth", { self: true, actor: "orchestrator", workstream: "test" }),
     ).rejects.toBeInstanceOf(TaskAlreadyOwnedError);
     // Alice still owns it (no overwrite).
-    expect(getTask(db, "auth", "test")?.owner).toBe("alice");
+    expect(getTask(db, "auth", "test")?.ownerName).toBe("alice");
   });
 
   it("--self and agentName together is a usage error", async () => {
@@ -759,7 +759,7 @@ describe("claimTask", () => {
     await withCleanIdentityEnv(async () => {
       await withEnv("TMUX_PANE", "%42", async () => {
         const result = await claimTask(db, "auth", { self: true, workstream: "test" });
-        expect(result.actor).toBe("orchestrator-pane");
+        expect(result.actorName).toBe("orchestrator-pane");
       });
     });
   });
@@ -768,7 +768,7 @@ describe("claimTask", () => {
     await withCleanIdentityEnv(async () => {
       await withEnv("USER", "martin", async () => {
         const result = await claimTask(db, "auth", { self: true, workstream: "test" });
-        expect(result.actor).toBe("martin");
+        expect(result.actorName).toBe("martin");
       });
     });
   });
@@ -782,7 +782,7 @@ describe("claimTask", () => {
       await withEnv("TMUX_PANE", undefined, async () => {
         await withEnv("USER", undefined, async () => {
           const result = await claimTask(db, "auth", { self: true, workstream: "test" });
-          expect(result.actor).toBe("orchestrator");
+          expect(result.actorName).toBe("orchestrator");
         });
       });
     });
@@ -812,7 +812,7 @@ describe("claimTask", () => {
       claimTask(db, "auth", { agentName: "cross", workstream: "test" }),
     ).rejects.toBeInstanceOf(ClaimerNotRegisteredError);
     // No partial write: task untouched.
-    expect(getTask(db, "auth", "test")?.owner).toBeNull();
+    expect(getTask(db, "auth", "test")?.ownerName).toBeNull();
     expect(getTask(db, "auth", "test")?.status).toBe("OPEN");
   });
 
@@ -825,8 +825,8 @@ describe("claimTask", () => {
       actor: "orchestrator",
       workstream: "test",
     });
-    expect(result.owner).toBeNull();
-    expect(result.actor).toBe("orchestrator");
+    expect(result.ownerName).toBeNull();
+    expect(result.actorName).toBe("orchestrator");
     expect(getTask(db, "auth", "test")?.status).toBe("IN_PROGRESS");
   });
 });
@@ -947,7 +947,7 @@ describe("setTaskStatus / closeTask / openTask", () => {
     await claimTask(db, "design", { agentName: "worker-1", workstream: "auth" });
     closeTask(db, "design", { workstream: "auth" });
     openTask(db, "design", { workstream: "auth" });
-    expect(getTask(db, "design", "auth")?.owner).toBe("worker-1");
+    expect(getTask(db, "design", "auth")?.ownerName).toBe("worker-1");
   });
 
   it("setTaskStatus accepts arbitrary status", () => {
@@ -996,11 +996,11 @@ describe("releaseTask", () => {
     expect(getTask(db, "design", "auth")?.status).toBe("IN_PROGRESS");
 
     const r = releaseTask(db, "design", { workstream: "auth" });
-    expect(r.previousOwner).toBe("worker-1");
+    expect(r.previousOwnerName).toBe("worker-1");
     expect(r.changed).toBe(true);
     expect(r.status).toBe("IN_PROGRESS"); // status preserved
     const after = getTask(db, "design", "auth");
-    expect(after?.owner).toBeNull();
+    expect(after?.ownerName).toBeNull();
     expect(after?.status).toBe("IN_PROGRESS");
   });
 
@@ -1011,7 +1011,7 @@ describe("releaseTask", () => {
     expect(r.status).toBe("OPEN");
     expect(r.changed).toBe(true);
     const after = getTask(db, "design", "auth");
-    expect(after?.owner).toBeNull();
+    expect(after?.ownerName).toBeNull();
     expect(after?.status).toBe("OPEN");
   });
 
@@ -1023,7 +1023,7 @@ describe("releaseTask", () => {
   it("plain release on an already-unowned task is a no-op", () => {
     const r = releaseTask(db, "design", { workstream: "auth" });
     expect(r.changed).toBe(false);
-    expect(r.previousOwner).toBeNull();
+    expect(r.previousOwnerName).toBeNull();
   });
 
   it("--reopen on a CLOSED unowned task DOES flip back to OPEN (changed=true)", () => {
@@ -1065,17 +1065,17 @@ describe("listTasksByOwner", () => {
     // returns every row whose owner.name matches, regardless of
     // workstream. Pins the contract of the cross-workstream alias.
     const ownedByW1 = listTasksByOwnerCrossWorkstream(db, "worker-1")
-      .map((t) => ({ localId: t.localId, workstream: t.workstream }))
-      .sort((a, b) => a.localId.localeCompare(b.localId));
+      .map((t) => ({ name: t.name, workstreamName: t.workstreamName }))
+      .sort((a, b) => a.name.localeCompare(b.name));
     expect(ownedByW1).toEqual([
-      { localId: "a", workstream: "auth" },
-      { localId: "c", workstream: "billing" },
+      { name: "a", workstreamName: "auth" },
+      { name: "c", workstreamName: "billing" },
     ]);
     const ownedByW2 = listTasksByOwnerCrossWorkstream(db, "worker-2").map((t) => ({
-      localId: t.localId,
-      workstream: t.workstream,
+      name: t.name,
+      workstreamName: t.workstreamName,
     }));
-    expect(ownedByW2).toEqual([{ localId: "b", workstream: "auth" }]);
+    expect(ownedByW2).toEqual([{ name: "b", workstreamName: "auth" }]);
   });
 
   it("returns empty for an agent with no claims (or unknown agent)", () => {
@@ -1095,11 +1095,11 @@ describe("listTasksByOwner", () => {
     await claimTask(db, "done", { agentName: "w1", workstream: "auth" });
     closeTask(db, "done", { workstream: "auth" }); // closeTask preserves owner intentionally
 
-    const defaultOwned = listTasksByOwner(db, "auth", "w1").map((t) => t.localId);
+    const defaultOwned = listTasksByOwner(db, "auth", "w1").map((t) => t.name);
     expect(defaultOwned).toEqual(["live"]);
 
     const allOwned = listTasksByOwner(db, "auth", "w1", { includeClosed: true })
-      .map((t) => t.localId)
+      .map((t) => t.name)
       .sort();
     expect(allOwned).toEqual(["done", "live"]);
   });
@@ -1135,10 +1135,10 @@ describe("searchTasks", () => {
   });
 
   it("matches title substring (case-insensitive), scoped to a workstream", () => {
-    expect(searchTasks(db, "jwt", { workstream: "auth" }).map((t) => t.localId)).toEqual([
+    expect(searchTasks(db, "jwt", { workstream: "auth" }).map((t) => t.name)).toEqual([
       "design_auth",
     ]);
-    expect(searchTasks(db, "DESIGN", { workstream: "auth" }).map((t) => t.localId)).toEqual([
+    expect(searchTasks(db, "DESIGN", { workstream: "auth" }).map((t) => t.name)).toEqual([
       "design_auth",
     ]);
   });
@@ -1146,7 +1146,7 @@ describe("searchTasks", () => {
   it("matches local_id substring", () => {
     expect(
       searchTasks(db, "_auth", { workstream: "auth" })
-        .map((t) => t.localId)
+        .map((t) => t.name)
         .sort(),
     ).toEqual(["build_auth", "design_auth"]);
   });
@@ -1154,7 +1154,7 @@ describe("searchTasks", () => {
   it("with no workstream, spans every workstream", () => {
     expect(
       searchTasks(db, "design")
-        .map((t) => t.localId)
+        .map((t) => t.name)
         .sort(),
     ).toEqual(["design_auth", "design_billing"]);
   });
@@ -1162,12 +1162,12 @@ describe("searchTasks", () => {
   it("--in-notes also matches note content", () => {
     // 'jwt' appears in design_auth's title AND build_auth's note.
     const ids = searchTasks(db, "jwt", { workstream: "auth", includeNotes: true }).map(
-      (t) => t.localId,
+      (t) => t.name,
     );
     expect(ids.sort()).toEqual(["build_auth", "design_auth"]);
 
     // Without --in-notes, only design_auth matches (notes ignored).
-    expect(searchTasks(db, "jwt", { workstream: "auth" }).map((t) => t.localId)).toEqual([
+    expect(searchTasks(db, "jwt", { workstream: "auth" }).map((t) => t.name)).toEqual([
       "design_auth",
     ]);
   });
@@ -1176,7 +1176,7 @@ describe("searchTasks", () => {
     addNote(db, "build_auth", "DECISION: also JWT for refresh", { workstream: "auth" });
     addNote(db, "build_auth", "VERIFIED: jwt expiry tests pass", { workstream: "auth" });
     const ids = searchTasks(db, "jwt", { workstream: "auth", includeNotes: true }).map(
-      (t) => t.localId,
+      (t) => t.name,
     );
     expect(ids.sort()).toEqual(["build_auth", "design_auth"]); // build_auth appears once despite 3 notes
   });
@@ -1604,8 +1604,8 @@ describe("mu_ prefix is a fine local_id (post schema_v5_cleanups)", () => {
       impact: 1,
       effortDays: 1,
     });
-    expect(other.localId).toBe("mu_internal");
-    expect(other.workstream).toBe("other");
+    expect(other.name).toBe("mu_internal");
+    expect(other.workstreamName).toBe("other");
   });
 });
 
@@ -1709,7 +1709,7 @@ describe("listTasks --status filter", () => {
   it("returns all tasks when status omitted (existing behaviour)", () => {
     expect(
       listTasks(db, "auth")
-        .map((t) => t.localId)
+        .map((t) => t.name)
         .sort(),
     ).toEqual(["done1", "ip1", "open1", "open2"]);
   });
@@ -1717,17 +1717,17 @@ describe("listTasks --status filter", () => {
   it("filters to a single status (string form)", () => {
     expect(
       listTasks(db, "auth", { status: "OPEN" })
-        .map((t) => t.localId)
+        .map((t) => t.name)
         .sort(),
     ).toEqual(["open1", "open2"]);
-    expect(listTasks(db, "auth", { status: "IN_PROGRESS" }).map((t) => t.localId)).toEqual(["ip1"]);
-    expect(listTasks(db, "auth", { status: "CLOSED" }).map((t) => t.localId)).toEqual(["done1"]);
+    expect(listTasks(db, "auth", { status: "IN_PROGRESS" }).map((t) => t.name)).toEqual(["ip1"]);
+    expect(listTasks(db, "auth", { status: "CLOSED" }).map((t) => t.name)).toEqual(["done1"]);
   });
 
   it("filters to multiple statuses (array form)", () => {
     expect(
       listTasks(db, "auth", { status: ["OPEN", "IN_PROGRESS"] })
-        .map((t) => t.localId)
+        .map((t) => t.name)
         .sort(),
     ).toEqual(["ip1", "open1", "open2"]);
   });
@@ -1742,13 +1742,13 @@ describe("listTasks --status filter", () => {
     });
     expect(
       listTasks(db, "auth", { status: "OPEN" })
-        .map((t) => t.localId)
+        .map((t) => t.name)
         .sort(),
     ).toEqual(["open1", "open2"]);
     // Other workstream's OPEN task isn't included when filtered to 'auth'.
     expect(
       listTasks(db, undefined, { status: "OPEN" })
-        .map((t) => t.localId)
+        .map((t) => t.name)
         .sort(),
     ).toEqual(["open1", "open2", "other_open"]);
   });
@@ -1788,9 +1788,9 @@ describe("waitForTasks", () => {
     expect(r.timedOut).toBe(false);
     expect(r.elapsedMs).toBeLessThan(100); // didn't sleep through any poll cycle
     expect(r.tasks).toEqual([
-      { localId: "a", status: "CLOSED", reachedTarget: true, stuck: false },
-      { localId: "b", status: "CLOSED", reachedTarget: true, stuck: false },
-      { localId: "c", status: "CLOSED", reachedTarget: true, stuck: false },
+      { name: "a", status: "CLOSED", reachedTarget: true, stuck: false },
+      { name: "b", status: "CLOSED", reachedTarget: true, stuck: false },
+      { name: "c", status: "CLOSED", reachedTarget: true, stuck: false },
     ]);
   });
 
@@ -1883,7 +1883,7 @@ describe("waitForTasks", () => {
     });
     expect(r.timedOut).toBe(true);
     // 'b' was deleted; defensive snapshot defaults to 'OPEN' / not reached.
-    const bState = r.tasks.find((t) => t.localId === "b");
+    const bState = r.tasks.find((t) => t.name === "b");
     expect(bState?.reachedTarget).toBe(false);
   });
 
@@ -1920,8 +1920,8 @@ describe("waitForTasks", () => {
     });
     expect(r.timedOut).toBe(false);
     expect(r.anyReached).toBe(true);
-    const aState = r.tasks.find((t) => t.localId === "a");
-    const bState = r.tasks.find((t) => t.localId === "b");
+    const aState = r.tasks.find((t) => t.name === "a");
+    const bState = r.tasks.find((t) => t.name === "b");
     expect(aState?.reachedTarget).toBe(true);
     expect(bState?.reachedTarget).toBe(false);
   });
@@ -1999,8 +1999,8 @@ describe("waitForTasks", () => {
       });
       expect(r.timedOut).toBe(true);
       // 'a' is stuck; 'b' is just OPEN with no owner (not stuck).
-      const aState = r.tasks.find((t) => t.localId === "a");
-      const bState = r.tasks.find((t) => t.localId === "b");
+      const aState = r.tasks.find((t) => t.name === "a");
+      const bState = r.tasks.find((t) => t.name === "b");
       expect(aState?.stuck).toBe(true);
       expect(bState?.stuck).toBe(false);
       // Multiple poll cycles ran (the timeout/poll math gives ~8) but
@@ -2309,8 +2309,8 @@ describe("rejectTask / deferTask", () => {
     setTaskStatus(db, "rj", "REJECTED", { workstream: "ws" });
     setTaskStatus(db, "df", "DEFERRED", { workstream: "ws" });
     // dep_r / dep_d should be in `blocked` view, NOT in `ready` view.
-    const ready = listReady(db, "ws").map((t) => t.localId);
-    const blocked = listBlocked(db, "ws").map((t) => t.localId);
+    const ready = listReady(db, "ws").map((t) => t.name);
+    const blocked = listBlocked(db, "ws").map((t) => t.name);
     expect(ready).not.toContain("dep_r");
     expect(ready).not.toContain("dep_d");
     expect(blocked).toContain("dep_r");
@@ -2323,7 +2323,7 @@ describe("rejectTask / deferTask", () => {
     addTask(db, { localId: "def_leaf", workstream: "ws", title: "DL", impact: 50, effortDays: 1 });
     setTaskStatus(db, "rej_leaf", "REJECTED", { workstream: "ws" });
     setTaskStatus(db, "def_leaf", "DEFERRED", { workstream: "ws" });
-    const goals = listGoals(db, "ws").map((g) => g.localId);
+    const goals = listGoals(db, "ws").map((g) => g.name);
     expect(goals).toContain("open_leaf");
     expect(goals).not.toContain("rej_leaf");
     expect(goals).not.toContain("def_leaf");
@@ -2340,10 +2340,10 @@ describe("rejectTask / deferTask", () => {
     ).run();
     setTaskStatus(db, "rej", "REJECTED", { workstream: "ws" });
     setTaskStatus(db, "def", "DEFERRED", { workstream: "ws" });
-    expect(listTasksByOwner(db, "ws", "w1").map((t) => t.localId)).toEqual(["live"]);
+    expect(listTasksByOwner(db, "ws", "w1").map((t) => t.name)).toEqual(["live"]);
     expect(
       listTasksByOwner(db, "ws", "w1", { includeClosed: true })
-        .map((t) => t.localId)
+        .map((t) => t.name)
         .sort(),
     ).toEqual(["def", "live", "rej"]);
   });
@@ -2442,22 +2442,22 @@ describe("sortTasks", () => {
   // deterministically (addTask stamps NOW, which we can't replay).
   // Field shape mirrors src/tasks.ts TaskRow (no extra metadata).
   function row(over: {
-    localId: string;
+    name: string;
     impact: number;
     effortDays: number;
     createdAt: string;
     updatedAt: string;
   }) {
     return {
-      localId: over.localId,
-      workstream: "ws",
-      title: over.localId,
+      name: over.name,
+      workstreamName: "ws",
+      title: over.name,
       status: "OPEN" as const,
       impact: over.impact,
       effortDays: over.effortDays,
       blockedBy: [],
       blocks: [],
-      owner: null,
+      ownerName: null,
       createdAt: over.createdAt,
       updatedAt: over.updatedAt,
     };
@@ -2465,7 +2465,7 @@ describe("sortTasks", () => {
 
   // a: low ROI (10/2 = 5), oldest, most recently touched
   const rowA = row({
-    localId: "a",
+    name: "a",
     impact: 10,
     effortDays: 2,
     createdAt: "2026-01-01T00:00:00.000Z",
@@ -2473,7 +2473,7 @@ describe("sortTasks", () => {
   });
   // b: high ROI (90/1 = 90), middle, middle touched
   const rowB = row({
-    localId: "b",
+    name: "b",
     impact: 90,
     effortDays: 1,
     createdAt: "2026-02-01T00:00:00.000Z",
@@ -2481,7 +2481,7 @@ describe("sortTasks", () => {
   });
   // c: med ROI (40/2 = 20), newest, least recently touched
   const rowC = row({
-    localId: "c",
+    name: "c",
     impact: 40,
     effortDays: 2,
     createdAt: "2026-03-01T00:00:00.000Z",
@@ -2490,20 +2490,20 @@ describe("sortTasks", () => {
   const rows = [rowA, rowB, rowC];
 
   it("roi: highest impact/effort first (default for next/ready)", () => {
-    expect(sortTasks(rows, "roi").map((t) => t.localId)).toEqual(["b", "c", "a"]);
+    expect(sortTasks(rows, "roi").map((t) => t.name)).toEqual(["b", "c", "a"]);
   });
 
   it("recency: most-recently-updated first (updated_at DESC)", () => {
-    expect(sortTasks(rows, "recency").map((t) => t.localId)).toEqual(["a", "b", "c"]);
+    expect(sortTasks(rows, "recency").map((t) => t.name)).toEqual(["a", "b", "c"]);
   });
 
   it("age: oldest-first (created_at ASC) — surfaces stale work", () => {
-    expect(sortTasks(rows, "age").map((t) => t.localId)).toEqual(["a", "b", "c"]);
+    expect(sortTasks(rows, "age").map((t) => t.name)).toEqual(["a", "b", "c"]);
   });
 
   it("id: local_id ASC — boring tiebreaker default for `task list`", () => {
     // Shuffle relative to insertion order; sort should still be a,b,c.
-    expect(sortTasks([rowC, rowA, rowB], "id").map((t) => t.localId)).toEqual(["a", "b", "c"]);
+    expect(sortTasks([rowC, rowA, rowB], "id").map((t) => t.name)).toEqual(["a", "b", "c"]);
   });
 
   it("returns a copy (does not mutate the input array)", () => {

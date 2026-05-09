@@ -72,7 +72,7 @@ async function resolveLogContext(
       // to call resolveOptionalWorkstream() like the other branches.
       return {
         source: agent.name,
-        workstream: opts.workstream ?? agent.workstream,
+        workstream: opts.workstream ?? agent.workstreamName,
       };
     }
   }
@@ -90,7 +90,7 @@ async function cmdLogWrite(db: Db, text: string, opts: LogWriteOpts): Promise<vo
   });
   console.log(
     pc.dim(
-      `seq ${row.seq}  workstream=${row.workstream ?? "—"}  source=${row.source}  kind=${row.kind}`,
+      `seq ${row.seq}  workstream=${row.workstreamName ?? "—"}  source=${row.source}  kind=${row.kind}`,
     ),
   );
 }

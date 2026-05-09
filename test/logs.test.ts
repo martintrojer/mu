@@ -48,7 +48,7 @@ describe("logs SDK", () => {
     const b = appendLog(db, { workstream: "auth", source: "worker-1", payload: "hello" });
     expect(a.seq).toBeLessThan(b.seq);
     expect(a).toMatchObject({
-      workstream: "auth",
+      workstreamName: "auth",
       source: "worker-1",
       kind: "message",
       payload: "hi",
@@ -73,7 +73,7 @@ describe("logs SDK", () => {
 
   it("appendLog accepts null workstream (machine-wide)", () => {
     const r = appendLog(db, { workstream: null, source: "user", payload: "x" });
-    expect(r.workstream).toBeNull();
+    expect(r.workstreamName).toBeNull();
   });
 
   // ─── listLogs ───────────────────────────────────────────────────────

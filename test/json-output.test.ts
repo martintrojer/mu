@@ -57,26 +57,26 @@ describe("--json output on read verbs", () => {
 
   it("workstream list --json emits a JSON array of summaries", async () => {
     const { stdout } = await runCli(["workstream", "list", "--json"], dbPath);
-    const parsed = JSON.parse(stdout.trim()) as Array<{ workstream: string }>;
+    const parsed = JSON.parse(stdout.trim()) as Array<{ name: string }>;
     expect(Array.isArray(parsed)).toBe(true);
     // listWorkstreams unions DB rows with live mu-* tmux sessions, so a
     // running tmux server may add unrelated entries. Just assert ours is
     // present.
-    expect(parsed.some((r) => r.workstream === "auth")).toBe(true);
+    expect(parsed.some((r) => r.name === "auth")).toBe(true);
   });
 
   it("task list --json emits a JSON array of TaskRows", async () => {
     const { stdout } = await runCli(["task", "list", "-w", "auth", "--json"], dbPath);
-    const parsed = JSON.parse(stdout.trim()) as Array<{ localId: string }>;
-    expect(parsed.map((t) => t.localId).sort()).toEqual(["a", "b", "c"]);
+    const parsed = JSON.parse(stdout.trim()) as Array<{ name: string }>;
+    expect(parsed.map((t) => t.name).sort()).toEqual(["a", "b", "c"]);
   });
 
   it("task next --json honors -n", async () => {
     const { stdout } = await runCli(["task", "next", "-w", "auth", "-n", "5", "--json"], dbPath);
-    const parsed = JSON.parse(stdout.trim()) as Array<{ localId: string }>;
+    const parsed = JSON.parse(stdout.trim()) as Array<{ name: string }>;
     // Only 'a' is ready (b is blocked by a, c by b). Even with -n 5.
     expect(parsed).toHaveLength(1);
-    expect(parsed[0]?.localId).toBe("a");
+    expect(parsed[0]?.name).toBe("a");
   });
 
   it("task next --json decorates each row with computed roi (impact/effortDays)", async () => {
@@ -86,26 +86,26 @@ describe("--json output on read verbs", () => {
     // inline; the JSON path didn't. Now both paths agree.
     const { stdout } = await runCli(["task", "next", "-w", "auth", "-n", "5", "--json"], dbPath);
     const parsed = JSON.parse(stdout.trim()) as Array<{
-      localId: string;
+      name: string;
       impact: number;
       effortDays: number;
       roi?: number;
     }>;
     // Task 'a' has impact=80 effortDays=2 -> roi=40. (Seeded in beforeEach.)
-    expect(parsed[0]?.localId).toBe("a");
+    expect(parsed[0]?.name).toBe("a");
     expect(parsed[0]?.roi).toBe(40);
   });
 
   it("task next -n 0 --json (the merged-in `task ready` shape) decorates with roi too", async () => {
     const { stdout } = await runCli(["task", "next", "-w", "auth", "-n", "0", "--json"], dbPath);
-    const parsed = JSON.parse(stdout.trim()) as Array<{ localId: string; roi?: number }>;
+    const parsed = JSON.parse(stdout.trim()) as Array<{ name: string; roi?: number }>;
     expect(parsed[0]?.roi).toBe(40);
   });
 
   it("task list --json decorates with roi too", async () => {
     const { stdout } = await runCli(["task", "list", "-w", "auth", "--json"], dbPath);
     const parsed = JSON.parse(stdout.trim()) as Array<{
-      localId: string;
+      name: string;
       impact: number;
       effortDays: number;
       roi?: number;
@@ -136,12 +136,12 @@ describe("--json output on read verbs", () => {
   it("task show --json emits a composite { task, blockers, dependents, notes }", async () => {
     const { stdout } = await runCli(["task", "show", "a", "-w", "auth", "--json"], dbPath);
     const parsed = JSON.parse(stdout.trim()) as {
-      task: { localId: string };
+      task: { name: string };
       blockers: string[];
       dependents: string[];
       notes: Array<{ content: string }>;
     };
-    expect(parsed.task.localId).toBe("a");
+    expect(parsed.task.name).toBe("a");
     expect(parsed.blockers).toEqual([]);
     expect(parsed.dependents).toEqual(["b"]);
     expect(parsed.notes.map((n) => n.content)).toEqual(["FILES: src/auth.ts"]);
@@ -152,19 +152,19 @@ describe("--json output on read verbs", () => {
     const parsed = JSON.parse(stdout.trim()) as {
       direction: string;
       root: {
-        task: { localId: string };
+        task: { name: string };
         children: Array<{
-          task: { localId: string };
-          children: Array<{ task: { localId: string } }>;
+          task: { name: string };
+          children: Array<{ task: { name: string } }>;
         }>;
       };
     };
     expect(parsed.direction).toBe("blockers");
-    expect(parsed.root.task.localId).toBe("c");
+    expect(parsed.root.task.name).toBe("c");
     // c → b → a
     expect(parsed.root.children).toHaveLength(1);
-    expect(parsed.root.children[0]?.task.localId).toBe("b");
-    expect(parsed.root.children[0]?.children[0]?.task.localId).toBe("a");
+    expect(parsed.root.children[0]?.task.name).toBe("b");
+    expect(parsed.root.children[0]?.children[0]?.task.name).toBe("a");
   });
 
   it("task tree --json marks diamond recurrences without expanding", async () => {
@@ -201,17 +201,17 @@ describe("--json output on read verbs", () => {
     const parsed = JSON.parse(stdout.trim()) as {
       root: {
         children: Array<{
-          task: { localId: string };
-          children: Array<{ task: { localId: string }; recurrence?: boolean }>;
+          task: { name: string };
+          children: Array<{ task: { name: string }; recurrence?: boolean }>;
         }>;
       };
     };
     // f → d, e. d expands to a; e's child a should be marked recurrence.
-    const dChild = parsed.root.children.find((c) => c.task.localId === "d");
-    const eChild = parsed.root.children.find((c) => c.task.localId === "e");
-    expect(dChild?.children[0]?.task.localId).toBe("a");
+    const dChild = parsed.root.children.find((c) => c.task.name === "d");
+    const eChild = parsed.root.children.find((c) => c.task.name === "e");
+    expect(dChild?.children[0]?.task.name).toBe("a");
     expect(dChild?.children[0]?.recurrence).toBeUndefined();
-    expect(eChild?.children[0]?.task.localId).toBe("a");
+    expect(eChild?.children[0]?.task.name).toBe("a");
     expect(eChild?.children[0]?.recurrence).toBe(true);
   });
 
@@ -223,7 +223,7 @@ describe("--json output on read verbs", () => {
     // orphans is its own top-level key.
     const { stdout } = await runCli(["state", "-w", "auth", "--json"], dbPath);
     const parsed = JSON.parse(stdout.trim()) as {
-      workstream: string;
+      workstreamName: string;
       agents: unknown[];
       orphans: unknown[];
       tasks: {
@@ -235,14 +235,14 @@ describe("--json output on read verbs", () => {
       workspaces: unknown[];
       recent_events: unknown[];
     };
-    expect(parsed.workstream).toBe("auth");
+    expect(parsed.workstreamName).toBe("auth");
     expect(Array.isArray(parsed.agents)).toBe(true);
     expect(Array.isArray(parsed.orphans)).toBe(true);
     expect(Array.isArray(parsed.tasks.ready)).toBe(true);
     expect(Array.isArray(parsed.workspaces)).toBe(true);
   });
 
-  it("agent list --json emits a { workstream, agents, orphans } shape", async () => {
+  it("agent list --json emits a { workstreamName, agents, orphans } shape", async () => {
     // Note: listLiveAgents reconciles against tmux and prunes agents
     // whose panes don't exist. Our seeded pane id %42 is fake, so the
     // reaper removes it. We assert the SHAPE of the JSON, not the
@@ -250,11 +250,11 @@ describe("--json output on read verbs", () => {
     // reconcile.test.ts.
     const { stdout } = await runCli(["agent", "list", "-w", "auth", "--json"], dbPath);
     const parsed = JSON.parse(stdout.trim()) as {
-      workstream: string;
+      workstreamName: string;
       agents: unknown[];
       orphans: unknown[];
     };
-    expect(parsed.workstream).toBe("auth");
+    expect(parsed.workstreamName).toBe("auth");
     expect(Array.isArray(parsed.agents)).toBe(true);
     expect(Array.isArray(parsed.orphans)).toBe(true);
   });
@@ -357,10 +357,10 @@ describe("--json output on read verbs", () => {
       const { stdout } = await runCli(["me", "--json"], dbPath);
       const parsed = JSON.parse(stdout.trim()) as {
         agent: { name: string };
-        ownedTasks: Array<{ localId: string }>;
+        ownedTasks: Array<{ name: string }>;
       };
       expect(parsed.agent.name).toBe("worker-1");
-      expect(parsed.ownedTasks.map((t) => t.localId)).toEqual(["a"]);
+      expect(parsed.ownedTasks.map((t) => t.name)).toEqual(["a"]);
     } finally {
       if (originalPane === undefined) {
         const key = "TMUX_PANE";
@@ -482,8 +482,8 @@ describe("task list --status", () => {
       ["task", "list", "-w", "auth", "--status", "open", "--json"],
       dbPath,
     );
-    const parsed = JSON.parse(stdout.trim()) as Array<{ localId: string }>;
-    expect(parsed.map((t) => t.localId)).toEqual(["c"]);
+    const parsed = JSON.parse(stdout.trim()) as Array<{ name: string }>;
+    expect(parsed.map((t) => t.name)).toEqual(["c"]);
   });
 
   it("rejects an invalid --status value with exit 2", async () => {
@@ -530,8 +530,8 @@ describe("task list/next/ready --sort", () => {
       ["task", "list", "-w", "auth", "--sort", "recency", "--json"],
       dbPath,
     );
-    const parsed = JSON.parse(stdout.trim()) as Array<{ localId: string }>;
-    expect(parsed.map((t) => t.localId)).toEqual(["c", "b", "a"]);
+    const parsed = JSON.parse(stdout.trim()) as Array<{ name: string }>;
+    expect(parsed.map((t) => t.name)).toEqual(["c", "b", "a"]);
   });
 
   it("--sort age orders by created_at ASC (oldest first)", async () => {
@@ -539,15 +539,15 @@ describe("task list/next/ready --sort", () => {
       ["task", "list", "-w", "auth", "--sort", "age", "--json"],
       dbPath,
     );
-    const parsed = JSON.parse(stdout.trim()) as Array<{ localId: string }>;
-    expect(parsed.map((t) => t.localId)).toEqual(["a", "b", "c"]);
+    const parsed = JSON.parse(stdout.trim()) as Array<{ name: string }>;
+    expect(parsed.map((t) => t.name)).toEqual(["a", "b", "c"]);
   });
 
   it("--sort roi (default for `next`) — highest ROI first", async () => {
     const { stdout } = await runCli(["task", "next", "-w", "auth", "-n", "5", "--json"], dbPath);
-    const parsed = JSON.parse(stdout.trim()) as Array<{ localId: string }>;
+    const parsed = JSON.parse(stdout.trim()) as Array<{ name: string }>;
     // b (90) > c (20) > a (5).
-    expect(parsed.map((t) => t.localId)).toEqual(["b", "c", "a"]);
+    expect(parsed.map((t) => t.name)).toEqual(["b", "c", "a"]);
   });
 
   it("`mu task next -n 0 --sort recency` re-sorts (overrides ROI default)", async () => {
@@ -555,8 +555,8 @@ describe("task list/next/ready --sort", () => {
       ["task", "next", "-w", "auth", "-n", "0", "--sort", "recency", "--json"],
       dbPath,
     );
-    const parsed = JSON.parse(stdout.trim()) as Array<{ localId: string }>;
-    expect(parsed.map((t) => t.localId)).toEqual(["c", "b", "a"]);
+    const parsed = JSON.parse(stdout.trim()) as Array<{ name: string }>;
+    expect(parsed.map((t) => t.name)).toEqual(["c", "b", "a"]);
   });
 
   it("renders an extra `updated` column under --sort recency (table mode)", async () => {

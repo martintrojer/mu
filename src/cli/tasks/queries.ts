@@ -45,7 +45,7 @@ export async function cmdMyTasks(
   const self = resolveSelf(db);
   // Scope by self.workstream so a same-named worker in another
   // workstream can't pollute this list.
-  const tasks = listTasksByOwner(db, self.workstream, self.name, {
+  const tasks = listTasksByOwner(db, self.workstreamName, self.name, {
     includeClosed: opts.includeClosed ?? false,
   });
   if (opts.json) {
@@ -62,14 +62,14 @@ export async function cmdMyTasks(
 export async function cmdMyNext(db: Db, opts: { lines?: number; json?: boolean }): Promise<void> {
   const self = resolveSelf(db);
   const k = opts.lines ?? 1;
-  const sorted = listReady(db, self.workstream).sort(byRoiDesc);
+  const sorted = listReady(db, self.workstreamName).sort(byRoiDesc);
   const tasks = k === 0 ? sorted : sorted.slice(0, k);
   if (opts.json) {
     emitJson(withRoiAll(tasks));
     return;
   }
   if (tasks.length === 0) {
-    console.log(pc.dim(`(no ready tasks in ${self.workstream})`));
+    console.log(pc.dim(`(no ready tasks in ${self.workstreamName})`));
     return;
   }
   console.log(formatTaskListTable(tasks));

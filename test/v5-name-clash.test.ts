@@ -114,27 +114,27 @@ describe("v5 name-clash regression: getTask / getAgent / getApproval honour work
   it("getTask(db, id, ws) picks the right workstream's row", () => {
     const a = getTask(db, "design", "wsa");
     const b = getTask(db, "design", "wsb");
-    expect(a?.workstream).toBe("wsa");
+    expect(a?.workstreamName).toBe("wsa");
     expect(a?.title).toBe("wsa design");
-    expect(b?.workstream).toBe("wsb");
+    expect(b?.workstreamName).toBe("wsb");
     expect(b?.title).toBe("wsb design");
   });
 
   it("getAgent(db, name, ws) picks the right workstream's row", () => {
     const a = getAgent(db, "worker-1", "wsa");
     const b = getAgent(db, "worker-1", "wsb");
-    expect(a?.workstream).toBe("wsa");
+    expect(a?.workstreamName).toBe("wsa");
     expect(a?.paneId).toBe("%A1");
-    expect(b?.workstream).toBe("wsb");
+    expect(b?.workstreamName).toBe("wsb");
     expect(b?.paneId).toBe("%B1");
   });
 
   it("getApproval(db, slug, ws) picks the right workstream's row", () => {
     const a = getApproval(db, "ship-it", "wsa");
     const b = getApproval(db, "ship-it", "wsb");
-    expect(a?.workstream).toBe("wsa");
+    expect(a?.workstreamName).toBe("wsa");
     expect(a?.reason).toBe("wsa reason");
-    expect(b?.workstream).toBe("wsb");
+    expect(b?.workstreamName).toBe("wsb");
     expect(b?.reason).toBe("wsb reason");
   });
 
@@ -147,13 +147,13 @@ describe("v5 name-clash regression: getTask / getAgent / getApproval honour work
       const ownedA = listTasksByOwner(db, "wsa", "worker-1");
       const ownedB = listTasksByOwner(db, "wsb", "worker-1");
       expect(ownedA).toHaveLength(1);
-      expect(ownedA[0]?.workstream).toBe("wsa");
+      expect(ownedA[0]?.workstreamName).toBe("wsa");
       expect(ownedB).toHaveLength(1);
-      expect(ownedB[0]?.workstream).toBe("wsb");
+      expect(ownedB[0]?.workstreamName).toBe("wsb");
       // The cross-workstream variant returns BOTH workstreams' tasks.
       const all = listTasksByOwnerCrossWorkstream(db, "worker-1");
       expect(all).toHaveLength(2);
-      expect(all.map((t) => t.workstream).sort()).toEqual(["wsa", "wsb"]);
+      expect(all.map((t) => t.workstreamName).sort()).toEqual(["wsa", "wsb"]);
     });
   });
 });
@@ -161,13 +161,13 @@ describe("v5 name-clash regression: getTask / getAgent / getApproval honour work
 describe("v5 name-clash regression: claimTask / releaseTask scope correctly", () => {
   it("claimTask(workstream=wsa) targets wsa's task even though wsb's exists", async () => {
     const r = await claimTask(db, "design", { agentName: "worker-1", workstream: "wsa" });
-    expect(r.owner).toBe("worker-1");
+    expect(r.ownerName).toBe("worker-1");
     // wsa's task should now be IN_PROGRESS owned by wsa's worker-1;
     // wsb's task untouched.
     expect(getTask(db, "design", "wsa")?.status).toBe("IN_PROGRESS");
-    expect(getTask(db, "design", "wsa")?.owner).toBe("worker-1");
+    expect(getTask(db, "design", "wsa")?.ownerName).toBe("worker-1");
     expect(getTask(db, "design", "wsb")?.status).toBe("OPEN");
-    expect(getTask(db, "design", "wsb")?.owner).toBeNull();
+    expect(getTask(db, "design", "wsb")?.ownerName).toBeNull();
   });
 
   it("claimTask(workstream=wsb) targets wsb's task", async () => {
@@ -181,9 +181,9 @@ describe("v5 name-clash regression: claimTask / releaseTask scope correctly", ()
     await claimTask(db, "design", { agentName: "worker-1", workstream: "wsb" });
     // Release wsa's only.
     releaseTask(db, "design", { workstream: "wsa" });
-    expect(getTask(db, "design", "wsa")?.owner).toBeNull();
+    expect(getTask(db, "design", "wsa")?.ownerName).toBeNull();
     // wsb's still owned.
-    expect(getTask(db, "design", "wsb")?.owner).toBe("worker-1");
+    expect(getTask(db, "design", "wsb")?.ownerName).toBe("worker-1");
   });
 });
 
@@ -240,7 +240,7 @@ describe("v5 name-clash regression: edit verbs scope correctly", () => {
   it("deleteTask({ workstream }) only deletes the right row", () => {
     deleteTask(db, "design", "wsa");
     expect(getTask(db, "design", "wsa")).toBeUndefined();
-    expect(getTask(db, "design", "wsb")?.workstream).toBe("wsb");
+    expect(getTask(db, "design", "wsb")?.workstreamName).toBe("wsb");
   });
 
   it("getTaskEdges({ workstream }) returns the right edges", () => {
@@ -289,13 +289,13 @@ describe("v5 name-clash regression: agent verbs scope correctly", () => {
   it("deleteAgent({ workstream }) only deletes the right row", () => {
     deleteAgent(db, "worker-1", "wsa");
     expect(getAgent(db, "worker-1", "wsa")).toBeUndefined();
-    expect(getAgent(db, "worker-1", "wsb")?.workstream).toBe("wsb");
+    expect(getAgent(db, "worker-1", "wsb")?.workstreamName).toBe("wsb");
   });
 
   it("closeAgent({ workstream }) only closes the right row", async () => {
     await closeAgent(db, "worker-1", { workstream: "wsa" });
     expect(getAgent(db, "worker-1", "wsa")).toBeUndefined();
-    expect(getAgent(db, "worker-1", "wsb")?.workstream).toBe("wsb");
+    expect(getAgent(db, "worker-1", "wsb")?.workstreamName).toBe("wsb");
   });
 
   it("refreshAgentTitle({ workstream }) doesn't touch the wrong row", async () => {
@@ -303,8 +303,8 @@ describe("v5 name-clash regression: agent verbs scope correctly", () => {
     // we just call it and confirm both registry rows are intact.
     await refreshAgentTitle(db, "worker-1", "wsa");
     await refreshAgentTitle(db, "worker-1", "wsb");
-    expect(getAgent(db, "worker-1", "wsa")?.workstream).toBe("wsa");
-    expect(getAgent(db, "worker-1", "wsb")?.workstream).toBe("wsb");
+    expect(getAgent(db, "worker-1", "wsa")?.workstreamName).toBe("wsa");
+    expect(getAgent(db, "worker-1", "wsb")?.workstreamName).toBe("wsb");
   });
 });
 
@@ -329,8 +329,8 @@ describe("v5 name-clash regression: approval verbs scope correctly", () => {
 
 describe("v5 name-clash regression: read verbs scope correctly", () => {
   it("listTasks({ workstream }) only returns that workstream's tasks", () => {
-    expect(listTasks(db, "wsa").map((t) => t.workstream)).toEqual(["wsa"]);
-    expect(listTasks(db, "wsb").map((t) => t.workstream)).toEqual(["wsb"]);
+    expect(listTasks(db, "wsa").map((t) => t.workstreamName)).toEqual(["wsa"]);
+    expect(listTasks(db, "wsb").map((t) => t.workstreamName)).toEqual(["wsb"]);
   });
 
   it("waitForTasks({ workstream }) only waits on that workstream's task", async () => {

@@ -71,10 +71,10 @@ export function setTaskStatus(
     `UPDATE tasks SET status = ?, updated_at = ?
       WHERE local_id = ?
         AND workstream_id = (SELECT id FROM workstreams WHERE name = ?)`,
-  ).run(status, new Date().toISOString(), localId, before.workstream);
+  ).run(status, new Date().toISOString(), localId, before.workstreamName);
   emitEvent(
     db,
-    before.workstream,
+    before.workstreamName,
     `task status ${localId} (${before.status} → ${status})${evidenceSuffix(opts)}`,
   );
   return { previousStatus: before.status, status, changed: true };
@@ -91,7 +91,7 @@ export function closeTask(
 ): SetStatusResult {
   const before = getTask(db, localId, opts.workstream);
   if (before && before.status !== "CLOSED") {
-    captureSnapshot(db, `task close ${localId}`, before.workstream);
+    captureSnapshot(db, `task close ${localId}`, before.workstreamName);
   }
   return setTaskStatus(db, localId, "CLOSED", opts);
 }
@@ -160,7 +160,7 @@ export interface RejectDeferResult {
 export function rejectTask(db: Db, localId: string, opts: RejectDeferOptions): RejectDeferResult {
   const before = getTask(db, localId, opts.workstream);
   if (before && before.status !== "REJECTED") {
-    captureSnapshot(db, `task reject ${localId}`, before.workstream);
+    captureSnapshot(db, `task reject ${localId}`, before.workstreamName);
   }
   return setTerminalOrParked(db, localId, "REJECTED", opts);
 }
@@ -171,7 +171,7 @@ export function rejectTask(db: Db, localId: string, opts: RejectDeferOptions): R
 export function deferTask(db: Db, localId: string, opts: RejectDeferOptions): RejectDeferResult {
   const before = getTask(db, localId, opts.workstream);
   if (before && before.status !== "DEFERRED") {
-    captureSnapshot(db, `task defer ${localId}`, before.workstream);
+    captureSnapshot(db, `task defer ${localId}`, before.workstreamName);
   }
   return setTerminalOrParked(db, localId, "DEFERRED", opts);
 }
@@ -188,7 +188,7 @@ function setTerminalOrParked(
   // Find all open (OPEN or IN_PROGRESS) tasks that transitively depend
   // on this one. Forward-edge recursive CTE from localId, scoped by
   // the root task's workstream.
-  const openDependents = findOpenDependents(db, localId, before.workstream);
+  const openDependents = findOpenDependents(db, localId, before.workstreamName);
 
   if (openDependents.length > 0 && !opts.cascade) {
     const verb = status === "REJECTED" ? "reject" : "defer";
@@ -219,7 +219,7 @@ function setTerminalOrParked(
   // target status). Every UPDATE scopes to the root's workstream
   // (dependents must share it — cross-ws edges are forbidden).
   const childOpts: EvidenceOption & { workstream: string } = {
-    workstream: before.workstream,
+    workstream: before.workstreamName,
     ...(opts.evidence !== undefined ? { evidence: opts.evidence } : {}),
   };
   const changedIds: string[] = [];

@@ -93,11 +93,11 @@ describeIfTmux("claim integration (real tmux + real DB)", () => {
     const result = await withPane(agent.paneId, () => claimTask(db, "design", { workstream }));
 
     // 4. The claim should have derived owner = "alice" from the pane title.
-    expect(result.owner).toBe("alice");
-    expect(result.previousOwner).toBeNull();
+    expect(result.ownerName).toBe("alice");
+    expect(result.previousOwnerName).toBeNull();
     expect(result.previousStatus).toBe("OPEN");
     expect(result.status).toBe("IN_PROGRESS");
-    expect(getTask(db, "design", workstream)?.owner).toBe("alice");
+    expect(getTask(db, "design", workstream)?.ownerName).toBe("alice");
   });
 
   it("two agents cannot claim the same task (atomic CAS via real tmux identities)", async () => {
@@ -123,7 +123,7 @@ describeIfTmux("claim integration (real tmux + real DB)", () => {
 
     // Alice claims first.
     const aliceResult = await withPane(alice.paneId, () => claimTask(db, "task1", { workstream }));
-    expect(aliceResult.owner).toBe("alice");
+    expect(aliceResult.ownerName).toBe("alice");
 
     // Bob's claim attempt fails — task is already owned.
     await expect(
@@ -131,7 +131,7 @@ describeIfTmux("claim integration (real tmux + real DB)", () => {
     ).rejects.toThrow(/already owned by alice/);
 
     // Final state: alice still owns it.
-    expect(getTask(db, "task1", workstream)?.owner).toBe("alice");
+    expect(getTask(db, "task1", workstream)?.ownerName).toBe("alice");
   });
 
   it("claim targeting a task that doesn't exist in the operator's workstream raises TaskNotFoundError", async () => {
@@ -163,7 +163,7 @@ describeIfTmux("claim integration (real tmux + real DB)", () => {
       withPane(alice.paneId, () => claimTask(db, "design", { workstream })),
     ).rejects.toBeInstanceOf(TaskNotFoundError);
     // Task stayed unowned (in its own workstream).
-    expect(getTask(db, "design", otherWorkstream)?.owner).toBeNull();
+    expect(getTask(db, "design", otherWorkstream)?.ownerName).toBeNull();
   });
 
   it("re-claim by the same agent is a no-op (idempotent)", async () => {
@@ -184,7 +184,7 @@ describeIfTmux("claim integration (real tmux + real DB)", () => {
     await withPane(alice.paneId, () => claimTask(db, "task1", { workstream }));
     // Second claim by alice succeeds (no error).
     const second = await withPane(alice.paneId, () => claimTask(db, "task1", { workstream }));
-    expect(second.owner).toBe("alice");
+    expect(second.ownerName).toBe("alice");
     expect(second.previousStatus).toBe("IN_PROGRESS"); // already in progress
   });
 });

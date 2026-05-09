@@ -25,8 +25,8 @@ import { captureSnapshot } from "./snapshots.js";
 import { type VcsBackend, type VcsBackendName, backendByName, detectBackend } from "./vcs.js";
 
 export interface WorkspaceRow {
-  agent: string;
-  workstream: string;
+  agentName: string;
+  workstreamName: string;
   backend: VcsBackendName;
   path: string;
   parentRef: string | null;
@@ -69,8 +69,8 @@ const WS_FROM_JOIN = `FROM vcs_workspaces v
 
 function rowFromDb(row: RawWorkspaceRow): WorkspaceRow {
   return {
-    agent: row.agent,
-    workstream: row.workstream,
+    agentName: row.agent,
+    workstreamName: row.workstream,
     backend: row.backend as VcsBackendName,
     path: row.path,
     parentRef: row.parent_ref,
@@ -222,9 +222,9 @@ export function workspacesRoot(workstream: string): string {
 export interface WorkspaceOrphan {
   /** The on-disk dir name (the agent name it WOULD be for, if mu had
    *  registered it). */
-  agent: string;
+  agentName: string;
   /** Workstream the dir is filed under. */
-  workstream: string;
+  workstreamName: string;
   /** Absolute path to the orphan dir. */
   path: string;
 }
@@ -261,7 +261,7 @@ export function listWorkspaceOrphans(db: Db, workstream: string): WorkspaceOrpha
   for (const agentDir of dirs) {
     const fullPath = join(root, agentDir);
     if (!registered.has(fullPath)) {
-      orphans.push({ agent: agentDir, workstream, path: fullPath });
+      orphans.push({ agentName: agentDir, workstreamName: workstream, path: fullPath });
     }
   }
   return orphans;
@@ -401,8 +401,8 @@ export async function createWorkspace(db: Db, opts: CreateWorkspaceOptions): Pro
   );
 
   return {
-    agent: opts.agent,
-    workstream: opts.workstream,
+    agentName: opts.agent,
+    workstreamName: opts.workstream,
     backend: backend.name,
     path,
     parentRef: created.parentRef,
@@ -564,7 +564,7 @@ export async function freeWorkspace(
   // Pre-mutation snapshot — the row deletion + on-disk teardown is
   // not recoverable from history. Snapshot is DB-only (the worktree
   // is not rolled back; that's the design's tmux/disk honesty point).
-  captureSnapshot(db, `workspace free ${agent}`, row.workstream);
+  captureSnapshot(db, `workspace free ${agent}`, row.workstreamName);
 
   const backend = backendByName(row.backend);
   const result = await backend.freeWorkspace({
@@ -573,7 +573,7 @@ export async function freeWorkspace(
   });
 
   // Resolve to surrogate ids scoped by the row's workstream.
-  const wsIdForDel = tryResolveWorkstreamId(db, row.workstream);
+  const wsIdForDel = tryResolveWorkstreamId(db, row.workstreamName);
   const del =
     wsIdForDel === null
       ? { changes: 0 }
@@ -586,7 +586,7 @@ export async function freeWorkspace(
           .run(agent, wsIdForDel, wsIdForDel);
   emitEvent(
     db,
-    row.workstream,
+    row.workstreamName,
     `workspace free ${agent} (backend=${row.backend}, path=${row.path}${result.committedRef ? `, committed=${result.committedRef.slice(0, 12)}` : ""})`,
   );
 

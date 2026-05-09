@@ -112,8 +112,8 @@ export interface TaskWaitOptions {
 }
 
 export interface TaskWaitTaskState {
-  /** The task's local_id. */
-  localId: string;
+  /** The task's per-workstream-unique name. */
+  name: string;
   /** Current status (at the moment we exit). */
   status: TaskStatus;
   /** True when this task's status equals the target. */
@@ -215,7 +215,7 @@ export async function waitForTasks(
       // deletion mid-wait shouldn't crash the wait; it's a legitimate
       // state change.)
       const status = (row?.status ?? "OPEN") as TaskStatus;
-      const owner = row?.owner ?? null;
+      const owner = row?.ownerName ?? null;
       const stuck = isStuck(status, owner);
       if (stuck && !stuckWarned.has(id)) {
         stuckWarned.add(id);
@@ -229,7 +229,7 @@ export async function waitForTasks(
             `Worker likely committed but skipped \`mu task close ${id}\`.\x1b[0m\n`,
         );
       }
-      return { localId: id, status, reachedTarget: status === target, stuck };
+      return { name: id, status, reachedTarget: status === target, stuck };
     });
     const reachedCount = tasks.filter((t) => t.reachedTarget).length;
     return {

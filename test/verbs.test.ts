@@ -274,7 +274,7 @@ describe("spawnAgent", () => {
     const agent = await spawnAgent(db, { name: "alice", workstream: "auth" });
     expect(state.sessions.has("mu-auth")).toBe(true);
     expect(agent.name).toBe("alice");
-    expect(agent.workstream).toBe("auth");
+    expect(agent.workstreamName).toBe("auth");
     expect(agent.status).toBe("spawning");
     // First call should be has-session, then new-session.
     expect(calls[0]?.[0]).toBe("has-session");
@@ -1097,7 +1097,7 @@ describe("adoptAgent (register an existing tmux pane as a managed agent)", () =>
     expect(result.paneTitleSetTo).toBe("worker-2");
     expect(result.agent.name).toBe("worker-2");
     expect(result.agent.paneId).toBe(paneId);
-    expect(result.agent.workstream).toBe("auth");
+    expect(result.agent.workstreamName).toBe("auth");
     expect(result.agent.status).toBe("free");
     expect(getAgent(db, "worker-2", "auth")).toMatchObject({ name: "worker-2", paneId });
     // No select-pane -T call (no retitle).

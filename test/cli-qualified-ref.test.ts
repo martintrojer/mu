@@ -130,7 +130,7 @@ describe("CLI: qualified entity refs", () => {
     expect(error).toBeUndefined();
     expect(exitCode).toBeNull();
     const parsed = JSON.parse(stdout.trim()) as { task: { workstream: string; title: string } };
-    expect(parsed.task.workstream).toBe("wsa");
+    expect(parsed.task.workstreamName).toBe("wsa");
     expect(parsed.task.title).toBe("wsa design");
   });
 
@@ -142,7 +142,7 @@ describe("CLI: qualified entity refs", () => {
     expect(error).toBeUndefined();
     expect(exitCode).toBeNull();
     const parsed = JSON.parse(stdout.trim()) as { task: { workstream: string; title: string } };
-    expect(parsed.task.workstream).toBe("wsb");
+    expect(parsed.task.workstreamName).toBe("wsb");
     expect(parsed.task.title).toBe("wsb design");
   });
 
@@ -151,7 +151,7 @@ describe("CLI: qualified entity refs", () => {
     try {
       const { stdout } = await runCli(["task", "show", "wsb/design", "--json"], dbPath);
       const parsed = JSON.parse(stdout.trim()) as { task: { workstream: string } };
-      expect(parsed.task.workstream).toBe("wsb");
+      expect(parsed.task.workstreamName).toBe("wsb");
     } finally {
       const k = "MU_SESSION";
       delete process.env[k];
@@ -165,7 +165,7 @@ describe("CLI: qualified entity refs", () => {
     );
     expect(error).toBeUndefined();
     const parsed = JSON.parse(stdout.trim()) as { task: { workstream: string } };
-    expect(parsed.task.workstream).toBe("wsa");
+    expect(parsed.task.workstreamName).toBe("wsa");
   });
 
   it("qualified ref + conflicting -w → exit 2 (usage)", async () => {
@@ -193,7 +193,7 @@ describe("CLI: qualified entity refs", () => {
     expect(error).toBeUndefined();
     expect(exitCode).toBeNull();
     const parsed = JSON.parse(stdout.trim()) as { task: { workstream: string } };
-    expect(parsed.task.workstream).toBe("wsa");
+    expect(parsed.task.workstreamName).toBe("wsa");
   });
 
   it("bare ref + zero matches anywhere + no -w → UsageError exit 2 (workstream required)", async () => {
@@ -221,7 +221,7 @@ describe("CLI: qualified entity refs", () => {
     const { stdout, error } = await runCli(["task", "tree", "wsb/design", "--json"], dbPath);
     expect(error).toBeUndefined();
     const parsed = JSON.parse(stdout.trim()) as { root: { task: { workstream: string } } };
-    expect(parsed.root.task.workstream).toBe("wsb");
+    expect(parsed.root.task.workstreamName).toBe("wsb");
   });
 
   it("`mu task wait` accepts qualified refs in positional list", async () => {

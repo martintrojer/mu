@@ -532,7 +532,7 @@ describe("reconcile — mode: 'report-only' does not mutate (snap_undo_reconcile
     // The contract: the recovered row IS still here.
     const dog = getAgent(db, "dog-1", "auth");
     expect(dog).toBeDefined();
-    expect(dog?.workstream).toBe("auth");
+    expect(dog?.workstreamName).toBe("auth");
     expect(dog?.paneId).toBe("%2919");
   });
 });

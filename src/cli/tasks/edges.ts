@@ -31,7 +31,7 @@ export async function cmdTaskBlock(
     { intent: "Remove this edge", command: `mu task unblock ${blocked} --by ${opts.by} -w ${ws}` },
   ];
   if (opts.json) {
-    emitJson({ blocked, blocker: opts.by, ...r, nextSteps });
+    emitJson({ blockedName: blocked, blockerName: opts.by, ...r, nextSteps });
     return;
   }
   if (!r.added) {
@@ -57,7 +57,7 @@ export async function cmdTaskUnblock(
     { intent: "Re-add the edge", command: `mu task block ${blocked} --by ${opts.by} -w ${ws}` },
   ];
   if (opts.json) {
-    emitJson({ blocked, blocker: opts.by, ...r, nextSteps });
+    emitJson({ blockedName: blocked, blockerName: opts.by, ...r, nextSteps });
     return;
   }
   if (!r.removed) {
@@ -87,7 +87,7 @@ export async function cmdTaskReparent(
     { intent: "Show the task", command: `mu task show ${localId} -w ${ws}` },
   ];
   if (opts.json) {
-    emitJson({ task: localId, blockers, ...r, nextSteps });
+    emitJson({ taskName: localId, blockerNames: blockers, ...r, nextSteps });
     return;
   }
   console.log(
@@ -118,7 +118,7 @@ export async function cmdTaskDelete(
     },
   ];
   if (opts.json) {
-    emitJson({ task: localId, ...r, nextSteps });
+    emitJson({ taskName: localId, ...r, nextSteps });
     return;
   }
   if (!r.deleted) {

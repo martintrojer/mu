@@ -70,7 +70,7 @@ export async function cmdMission(
 
   if (opts.json) {
     emitJson({
-      workstream,
+      workstreamName: workstream,
       agents: view.agents,
       orphans: view.orphans,
       tracks,
@@ -110,7 +110,7 @@ export async function cmdMission(
 async function cmdMissionNoWorkstream(db: Db, opts: { json?: boolean }): Promise<void> {
   const summaries = await listWorkstreams(db);
   if (opts.json) {
-    emitJson({ workstream: null, workstreams: summaries });
+    emitJson({ workstreamName: null, workstreams: summaries });
     return;
   }
   console.log(pc.dim("(no workstream resolved from $MU_SESSION or current tmux session)"));
@@ -190,7 +190,7 @@ export async function cmdState(
   // `agents: { active, orphans }` so `.agents | length` returned 2
   // (the number of object keys) regardless of agent count.
   const card = {
-    workstream,
+    workstreamName: workstream,
     agents: view.agents,
     orphans: view.orphans,
     tracks,
@@ -253,7 +253,7 @@ export async function cmdState(
     console.log(formatWorkspacesTable(workspaces));
   }
   if (staleWorkspaces.length > 0) {
-    const example = staleWorkspaces[0]?.agent ?? "<agent>";
+    const example = staleWorkspaces[0]?.agentName ?? "<agent>";
     console.log(
       pc.yellow(
         `⚠ Tip: Free + recreate stale workspaces to land patches against current main: mu workspace free ${example} + mu workspace create ${example}`,
@@ -268,7 +268,7 @@ export async function cmdState(
       ),
     );
     for (const o of workspaceOrphans) {
-      console.log(`  ${pc.bold(o.agent)}  ${pc.dim(o.path)}`);
+      console.log(`  ${pc.bold(o.agentName)}  ${pc.dim(o.path)}`);
     }
     console.log(pc.dim(`  Run \`mu workspace orphans -w ${workstream}\` for cleanup hints.`));
   }

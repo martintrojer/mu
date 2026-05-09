@@ -228,12 +228,12 @@ describe("mu snapshot list", () => {
     const parsed = JSON.parse(stdout.trim()) as Array<{
       id: number;
       label: string;
-      workstream: string | null;
+      workstreamName: string | null;
       sizeBytes: number | null;
     }>;
     // Newest first (id DESC).
     expect(parsed.map((r) => r.label)).toEqual(["snap-c", "snap-b", "snap-a"]);
-    expect(parsed[0]?.workstream).toBeNull();
+    expect(parsed[0]?.workstreamName).toBeNull();
     expect(parsed[0]?.sizeBytes).toBeGreaterThan(0);
   });
 
@@ -302,7 +302,7 @@ describe("mu snapshot show", () => {
     const parsed = JSON.parse(stdout.trim()) as {
       id: number;
       label: string;
-      workstream: string;
+      workstreamName: string;
       schemaVersion: number;
       dbPath: string;
       sizeBytes: number;
@@ -310,7 +310,7 @@ describe("mu snapshot show", () => {
     };
     expect(parsed.id).toBe(snap.id);
     expect(parsed.label).toBe("task close design");
-    expect(parsed.workstream).toBe("auth");
+    expect(parsed.workstreamName).toBe("auth");
     // v5 is the current schema; previous versions are rejected at openDb.
     expect(parsed.schemaVersion).toBe(5);
     expect(parsed.sizeBytes).toBeGreaterThan(0);
