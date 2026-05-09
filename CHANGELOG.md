@@ -75,6 +75,22 @@ called out under "Breaking" in each entry.
   spawn / adopt sites repeat. The three callers are now one-liners.
   Behaviour unchanged.
 
+- **`test/output.test.ts` now pins `printNextStepsTo('stderr')`
+  routes to `console.error`, not `console.log`.** Closes
+  `review_test_print_next_steps_stderr_branch_uncovered` in
+  `mufeedback`. The sink-discrimination line
+  (`sink === "stderr" ? console.error : console.log`) had zero test
+  coverage — every existing `printNextSteps` test only spied on
+  `console.log`, so a one-line refactor that flipped the conditional
+  to always-`console.log` would silently regress every typed-error
+  `nextSteps` emission (every consumer of `mu ... 2>err >ignored`
+  redirection) with the suite still green. Added one `it()` block
+  (~25 LOC) that spies both `console.error` and `console.log`,
+  invokes the stderr branch, asserts the bytes landed on stderr and
+  not stdout. Verified the test catches the regression by mutating
+  src/output.ts:100 to drop the conditional. Test-only; no
+  behaviour change.
+
 - **`mu log`'s `resolveLogContext` now uses `??` consistently
   and documents the pane-branch asymmetry.** Closes
   `review_code_resolve_log_workstream_branch_dup` in `mufeedback`.

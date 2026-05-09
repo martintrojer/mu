@@ -1,7 +1,13 @@
 // Unit tests for src/output.ts — the self-documenting output helpers.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { type NextStep, hasNextSteps, isJsonMode, printNextSteps } from "../src/output.js";
+import {
+  type NextStep,
+  hasNextSteps,
+  isJsonMode,
+  printNextSteps,
+  printNextStepsTo,
+} from "../src/output.js";
 
 // `colorEnabled()` reads `isColorSupported` from picocolors (module-level
 // constant baked at picocolors-import time) plus three env vars at call
@@ -132,6 +138,34 @@ describe("printNextSteps", () => {
     expect(logs[1]).toContain("mu task show foo");
     expect(logs[2]).toContain("Close");
     expect(logs[2]).toContain("mu task close foo");
+  });
+
+  it("printNextStepsTo('stderr') routes to console.error, NOT console.log", () => {
+    // Pin the sink discrimination in src/output.ts:
+    //   const out = sink === "stderr" ? console.error : console.log;
+    // A regression that flipped the conditional (e.g. a refactor that
+    // dropped the sink param) would silently send error nextSteps to
+    // stdout, breaking `mu ... 2>err >ignored` redirection contracts
+    // — every typed-error nextSteps emission would regress with the
+    // suite still green. See task
+    // review_test_print_next_steps_stderr_branch_uncovered.
+    const errs: string[] = [];
+    const errSpy = vi.spyOn(console, "error").mockImplementation((msg: string) => {
+      errs.push(msg);
+    });
+    try {
+      printNextStepsTo([{ intent: "X", command: "y" }], "stderr");
+      // stderr branch fires: header + 1 step. logs[] (stdout spy from
+      // beforeEach) stays empty — pinning that the conditional did NOT
+      // fall through to the stdout sink.
+      expect(errs.length).toBe(2);
+      expect(errs[0]).toContain("Next:");
+      expect(errs[1]).toContain("X");
+      expect(errs[1]).toContain("y");
+      expect(logs).toEqual([]);
+    } finally {
+      errSpy.mockRestore();
+    }
   });
 
   it("pads short labels with spaces to the longest label's width before the colon", () => {
