@@ -516,9 +516,8 @@ code. ~80 LOC of straightforward node + better-sqlite3:
 1. Open the v4 `mu.db` read-only.
 2. Create a fresh `mu.db.new` with the v5 schema (the v5 shape from
    `src/db.ts`).
-3. For each entity table in dependency order (`workstreams`,
-   `agents`, `tasks`, `task_edges`, `task_notes`, `agent_logs`,
-   `vcs_workspaces`, `approvals`, `snapshots`):
+3. For each entity table in **dependency order** (see
+   "Migration table ordering" below for the pinned sequence):
    - `SELECT *` from v4.
    - `INSERT` into v5; capture the new surrogate id.
    - Maintain an in-memory `Map<oldTextPk, newIntId>` for the FK
@@ -545,6 +544,34 @@ npx tsx scripts/migrate-v4-to-v5.ts /path/db   # explicit target
 
 After all known operator DBs are migrated, the script can be
 deleted in a follow-up commit.
+
+#### Migration table ordering (pinned)
+
+The order matters: child tables MUST come after their parents
+because we need the parent's surrogate-id map populated before we
+can rewrite the child's TEXT FK. Pin this exact sequence in the
+script, with a one-line rationale comment per step:
+
+1. **`workstreams`** — no parents; root of the hierarchy.
+2. **`agents`** — parent: `workstreams` (needs the
+   `workstream.name → workstream_id` map).
+3. **`tasks`** — parents: `workstreams` + `agents` (needs both
+   maps; `tasks.owner_id → agents.id` is the second lookup).
+4. **`task_edges`** — parent: `tasks` (rewrites
+   `from_task` / `to_task` through the `local_id → tasks.id` map;
+   composite keying is per-pair, not surrogate).
+5. **`task_notes`** — parent: `tasks`.
+6. **`agent_logs`** — parent: `workstreams` only (the `source`
+   column stays free-text; not an FK).
+7. **`vcs_workspaces`** — parents: `agents` + `workstreams` (same
+   reasoning as `tasks`).
+8. **`approvals`** — parent: `workstreams`.
+9. **`snapshots`** — no FK; copy verbatim (the `workstream`
+   column stays TEXT by design — see "What stays TEXT and why").
+10. **`schema_version`** — single-row meta table; bump to `5` as
+    the final step, AFTER every entity table is fully populated
+    and verified, so a crashed migration leaves a still-v4 DB
+    rather than a half-migrated one labelled v5.
 
 ### Piece 2: loud-fail hook in `openDb`
 
@@ -594,6 +621,78 @@ when comfortable).
 
 ---
 
+## SDK consumer impact
+
+The operator-facing CLI surface does NOT change — `mu task add
+design -w wsA` still works verbatim. But the **public SDK
+signatures DO change** for every consumer that imports from
+`src/index.ts`:
+
+- Every public SDK function that takes an entity name (`addTask`,
+  `claimTask`, `getTask`, `closeTask`, `addNote`, `spawnAgent`,
+  `getAgent`, ...) gains `workstream: string` as the first
+  positional arg (or as part of an opts bag — exact shape lives in
+  `schema_v5_sdk_signatures`).
+- This is **breaking** for any external SDK consumer. mu's own
+  CLI is the only known consumer today, so practical blast radius
+  is contained to `schema_v5_cli_boundary` updates. The change is
+  called out under **Breaking** in `CHANGELOG.md` when v5 lands.
+- `--json` output shape is **preserved**: the CLI emits
+  operator-facing names (`workstream`, `local_id`, `agent`, `slug`).
+  Surrogate ids stay strictly internal — they never leak into
+  `--json`, error payloads, log lines, or markdown exports. Anyone
+  scripting against `mu --json` sees zero churn.
+- The "could expose `internalId` someday" mention earlier in this
+  doc is hereby explicitly downgraded to **never without a real
+  consumer asking**. Anti-feature pledge applies: surrogate ids
+  are an implementation detail; promoting them to the public
+  shape would re-introduce a global namespace through the back
+  door.
+
+---
+
+## Snapshot interaction during migration
+
+The migration script renames the v4 DB to `mu.db.v4-backup-<ts>`
+before swapping in the v5 file. That backup is the migration's
+**escape hatch only** — it is NOT entered into the v5 `snapshots`
+table, and `mu undo` / `mu snapshot list` will not see it.
+
+Rationale (the simpler path; the alternative was tracking the
+backup as a real snapshot row):
+
+- A v4 snapshot can't be "restored" by the v5 `mu undo` machinery
+  in any meaningful sense — the schema differs at the FK level.
+  Surfacing it in the snapshot list would only let an operator
+  click on something that then errors with a typed
+  "v4-snapshot-not-restorable" exception. Cleaner not to surface
+  it at all.
+- The migration is a one-off script, not a recurring verb.
+  Operators run it once per machine; the backup is a safety net
+  for the few minutes between "script started" and "first v5
+  command worked". After that, the operator deletes the backup
+  manually.
+- Restore semantics are deliberately manual:
+
+  ```bash
+  # If the v5 DB looks broken after migration:
+  mv ~/.local/state/mu/mu.db ~/.local/state/mu/mu.db.v5-broken
+  mv ~/.local/state/mu/mu.db.v4-backup-<ts> ~/.local/state/mu/mu.db
+  # Re-pin mu to the pre-v5 version and continue using v4.
+  ```
+
+- The `mu undo` machinery's auto-snapshot hook is NOT triggered
+  by `scripts/migrate-v4-to-v5.ts` — the script does not import
+  the SDK, so it doesn't go through the destructive-verb hook in
+  the first place. Symmetry is preserved: the script is fully
+  self-contained, and the snapshot table stays a v5-only concept.
+
+The migration script's README header (top-of-file comment) MUST
+spell out the manual-restore procedure verbatim, so an operator
+debugging at 2am doesn't have to grep this design doc.
+
+---
+
 ## Migration test plan
 
 A single `test/migrate-v4-to-v5.integration.test.ts` (~30 LOC of
@@ -626,6 +725,31 @@ fixture + ~80 LOC of assertions). Coverage:
 9. **Loud-fail hook fires.** Open a v4 DB via `openDb()`; assert
    `SchemaTooOldError` thrown; assert exit-code mapping in
    `cli.ts` returns 4.
+10. **Production-shape fixture migrates cleanly.** The mu repo's
+    own `~/.local/state/mu/mu.db` at the time of writing has 50+
+    closed tasks across 5 workstreams (`mufeedback`,
+    `roadmap-v0-2`, `infer-rs`, `dogfood-snap`, `ws`). The
+    migration script must handle it without crashing.
+
+    Implementation: copy a sanitised export of the operator's
+    actual `mu.db` into `test/fixtures/v4-real.db` (sanitisation
+    = strip `task_notes.content` bodies and `agent_logs.payload`
+    bodies to a fixed placeholder; row counts and FK shape are
+    what we care about). Run the script; assert pre/post row
+    counts match per table. **CI-skip when the fixture is
+    missing** — some contributors won't have it locally, and the
+    fixture is too large to commit raw.
+
+    Document the fixture-generation command in the test file
+    header so it's reproducible:
+
+    ```bash
+    # Regenerate test/fixtures/v4-real.db from the live DB:
+    sqlite3 ~/.local/state/mu/mu.db ".backup test/fixtures/v4-real.db"
+    sqlite3 test/fixtures/v4-real.db \
+      "UPDATE task_notes SET content = '<sanitised>'; \
+       UPDATE agent_logs SET payload = '<sanitised>';"
+    ```
 
 The test creates the v4 fixture by hand-crafting `CREATE TABLE`
 statements (don't import the v4 `CURRENT_SCHEMA` constant — it

@@ -179,6 +179,29 @@ called out under "Breaking" in each entry.
   advisory; the operator decides which follow-ups to execute.
   Docs-only commit: typecheck + lint + test + build clean.
 
+- **`docs/SCHEMA_v5_DESIGN.md` amended (migration ordering, SDK
+  impact, real-DB fixture, snapshot interaction).** Closes
+  `schema_v5_design_amendments` in `mufeedback`. Four orchestrator
+  review gaps fixed before `schema_v5_migration_script` lands:
+  (1) the migration script's table-copy loop now has a **pinned
+  10-step ordering** (`workstreams` → `agents` → `tasks` →
+  `task_edges` → `task_notes` → `agent_logs` → `vcs_workspaces`
+  → `approvals` → `snapshots` → `schema_version`) with a per-step
+  rationale, so the implementer can't accidentally insert children
+  before parents and trip the FK rewrite map; (2) a new **"SDK
+  consumer impact"** subsection spells out that public SDK
+  signatures gain a `workstream` arg — breaking for external
+  consumers, contained for mu-the-CLI — and that `--json` shape is
+  preserved (surrogate ids never leak); (3) a 10th test in the
+  migration test plan covers the **production-shape fixture**
+  (sanitised copy of the operator's real `mu.db`, CI-skipped when
+  absent, with a fixture-regeneration command in the test header);
+  (4) a new **"Snapshot interaction during migration"** subsection
+  picks the simpler path — `mu.db.v4-backup-<ts>` is the migration
+  script's escape hatch only, NOT entered into the v5 `snapshots`
+  table, with the manual-restore procedure spelled out in the
+  script's top-of-file comment. Pure markdown; no code change.
+
 - **`src/cli/tasks.ts` split: 1234 → 29 LOC re-export hub.** Closes
   `review_code_cli_tasks_oversize` in `mufeedback`. The first-pass
   cluster split (`refactor_split_large_src_files`) carved
