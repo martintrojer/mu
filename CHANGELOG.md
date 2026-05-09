@@ -157,6 +157,32 @@ called out under "Breaking" in each entry.
   mechanical extraction — no behaviour change. typecheck + lint +
   796 tests + build green; the acceptance gate passes.
 
+- **Schema v5 design doc shipped at `docs/SCHEMA_v5_DESIGN.md`.**
+  Closes the design phase of
+  `schema_surrogate_pks_for_global_uniqueness` in `mufeedback`.
+  Restates the schema-wide pattern (every entity table gets a
+  surrogate `INTEGER PRIMARY KEY AUTOINCREMENT`; the operator-facing
+  TEXT name becomes a per-scope `UNIQUE` attribute; FKs become
+  INTEGER) and works it through every current table (workstreams,
+  agents, tasks, task_edges, task_notes, agent_logs, vcs_workspaces,
+  approvals, snapshots) showing the v4 → v5 transformation. Codifies
+  the SDK boundary discipline (public functions take operator-facing
+  names, internal helpers take surrogate ids, resolution happens
+  exactly once at the boundary). Picks the aggressive migration
+  strategy: a one-off `scripts/migrate-v4-to-v5.ts` (~80 LOC, NOT
+  shipped in `dist/`) plus a loud-fail `SchemaTooOldError` hook in
+  `openDb` for any DB at version < 5, instead of extending
+  `src/migrations.ts`. Lists the workarounds this unblocks for
+  deletion (`slugify_collision_truncates` collision-loop, the
+  reserved-`mu_` prefix gymnastics, the `cross_workstream_claim_for`
+  pre-check, the brittle `lastClaimActor` prefix-match) and the
+  follow-up tasks that land the implementation in stages
+  (`schema_v5_migration_script`, `schema_v5_drop_migrations_ts`,
+  `schema_v5_sdk_signatures`, `schema_v5_cli_boundary`,
+  `schema_v5_cleanups`). DESIGN ONLY — no `src/` change in this
+  commit; the schema stays at v4 until the migration follow-up
+  ships.
+
 - **`claim.integration.test.ts` regains end-to-end coverage of
   the cross-workstream guard.** Closes
   `review_test_claim_integration_xws_rewrite` in `mufeedback`.
