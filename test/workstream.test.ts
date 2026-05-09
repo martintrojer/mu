@@ -5,7 +5,7 @@
 // tmux session is torn down before DB rows so a tmux failure leaves the
 // registry intact.
 
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -18,6 +18,7 @@ import {
   resetTmuxExecutor,
   setTmuxExecutor,
 } from "../src/tmux.js";
+import { noneBackend } from "../src/vcs.js";
 import {
   WorkstreamNameInvalidError,
   destroyWorkstream,
@@ -320,6 +321,7 @@ describe("destroyWorkstream", () => {
       deletedNotes: 2,
       deletedEdges: 2,
       freedWorkspaces: 0,
+      alreadyGoneWorkspaces: 0,
       failedWorkspaces: [],
     });
 
@@ -370,6 +372,7 @@ describe("destroyWorkstream", () => {
       deletedNotes: 0,
       deletedEdges: 0,
       freedWorkspaces: 0,
+      alreadyGoneWorkspaces: 0,
       failedWorkspaces: [],
     });
   });
@@ -397,6 +400,7 @@ describe("destroyWorkstream", () => {
       deletedNotes: 0,
       deletedEdges: 0,
       freedWorkspaces: 0,
+      alreadyGoneWorkspaces: 0,
       failedWorkspaces: [],
     });
     expect(state.killed).toEqual(["mu-empty"]);
@@ -416,6 +420,7 @@ describe("destroyWorkstream", () => {
       deletedNotes: 0,
       deletedEdges: 0,
       freedWorkspaces: 0,
+      alreadyGoneWorkspaces: 0,
       failedWorkspaces: [],
     });
   });
@@ -465,6 +470,45 @@ describe("destroyWorkstream", () => {
     const summary = await summarizeWorkstream(db, { workstream: "tmuxonly" });
     expect(summary.registered).toBe(false);
     expect(summary.tmuxAlive).toBe(true);
+  });
+
+  // Regression for review_code_destroy_freed_workspaces_double_count:
+  // freedWorkspaces was incremented in BOTH the `removed:true` and the
+  // `removed:false` (already-gone-on-disk) branches, so the destroy
+  // report claimed credit for cleanups it never did. Now the two cases
+  // are split: actually-removed paths bump `freedWorkspaces`,
+  // already-gone paths bump `alreadyGoneWorkspaces`.
+  it("splits freedWorkspaces (real removal) from alreadyGoneWorkspaces (no-op on disk)", async () => {
+    setTmuxExecutor(mockTmux(state).executor);
+    ensureWorkstream(db, "split");
+    insertAgent(db, { name: "alive", workstream: "split", paneId: "%101", status: "free" });
+    insertAgent(db, { name: "ghost", workstream: "split", paneId: "%102", status: "free" });
+
+    const presentPath = join(tmpDir, "ws-present");
+    const missingPath = join(tmpDir, "ws-missing"); // never created on disk
+    mkdirSync(presentPath, { recursive: true });
+
+    // Two registry rows in the same workstream: one whose on-disk
+    // path exists (backend will actually remove it), one whose path
+    // is already gone (backend free is a no-op). Use `none` because
+    // its freeWorkspace is just rmDirSync — no real VCS needed.
+    const now = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO vcs_workspaces (agent, workstream, backend, path, parent_ref, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    ).run("alive", "split", noneBackend.name, presentPath, null, now);
+    db.prepare(
+      `INSERT INTO vcs_workspaces (agent, workstream, backend, path, parent_ref, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    ).run("ghost", "split", noneBackend.name, missingPath, null, now);
+
+    const result = await destroyWorkstream(db, { workstream: "split" });
+
+    expect(result.freedWorkspaces).toBe(1);
+    expect(result.alreadyGoneWorkspaces).toBe(1);
+    expect(result.failedWorkspaces).toEqual([]);
+    expect(existsSync(presentPath)).toBe(false);
+    expect(existsSync(missingPath)).toBe(false);
   });
 });
 

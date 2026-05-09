@@ -145,9 +145,17 @@ export interface DestroyResult {
   deletedNotes: number;
   /** Number of `task_edges` deleted by the cascade — informational. */
   deletedEdges: number;
-  /** Number of vcs_workspaces successfully freed (backend cleanup +
-   *  on-disk path removed). */
+  /** Number of vcs_workspaces whose on-disk path was actually
+   *  removed by the backend on this destroy. Excludes
+   *  `alreadyGoneWorkspaces` (those were no-ops on disk). */
   freedWorkspaces: number;
+  /** Number of vcs_workspaces whose registry row existed but
+   *  whose on-disk path was already gone (manual rm -rf or a prior
+   *  interrupted destroy). The DB row was cascade-deleted; the
+   *  backend did no filesystem work. Tracked separately so the
+   *  destroy report doesn't lie about how much cleanup it actually
+   *  performed. */
+  alreadyGoneWorkspaces: number;
   /** Workspaces whose backend cleanup failed (e.g. `git worktree
    *  remove` refused because of uncommitted changes). The DB row
    *  was still cascade-deleted; the on-disk path remains and needs
@@ -265,6 +273,7 @@ export async function destroyWorkstream(db: Db, opts: WorkstreamOptions): Promis
   // do NOT abort the destroy on workspace failure (the workstream
   // semantics are 'tear it all down', not 'partial cleanup').
   let freedWorkspaces = 0;
+  let alreadyGoneWorkspaces = 0;
   const failedWorkspaces: WorkspaceFailure[] = [];
   for (const ws of workspacesBefore) {
     try {
@@ -274,11 +283,16 @@ export async function destroyWorkstream(db: Db, opts: WorkstreamOptions): Promis
         commit: false,
       });
       if (result.removed) {
+        // Backend actually removed the on-disk path. This is the
+        // only case that counts as 'work done by destroy'.
         freedWorkspaces += 1;
       } else {
-        // Path was already gone (manual rm -rf); count as freed since
-        // the user's intent ('not on disk anymore') is satisfied.
-        freedWorkspaces += 1;
+        // Path was already gone (manual rm -rf or interrupted prior
+        // destroy). The DB row is cascade-deleted below either way,
+        // but we don't claim to have freed anything on disk — it was
+        // already in the desired state. Tracked separately so the
+        // user can spot stale registry rows from past mishaps.
+        alreadyGoneWorkspaces += 1;
       }
     } catch (err) {
       failedWorkspaces.push({
@@ -321,7 +335,7 @@ export async function destroyWorkstream(db: Db, opts: WorkstreamOptions): Promis
     emitEvent(
       db,
       null,
-      `workstream destroy ${opts.workstream} (agents=${agentsBefore}, tasks=${tasksBefore}, edges=${edgesBefore}, notes=${notesBefore}, workspaces=${freedWorkspaces}/${workspacesBefore.length}, tmux=${tmuxAliveBefore})`,
+      `workstream destroy ${opts.workstream} (agents=${agentsBefore}, tasks=${tasksBefore}, edges=${edgesBefore}, notes=${notesBefore}, workspaces=${freedWorkspaces}/${workspacesBefore.length}, already_gone=${alreadyGoneWorkspaces}, tmux=${tmuxAliveBefore})`,
     );
   }
 
@@ -332,6 +346,7 @@ export async function destroyWorkstream(db: Db, opts: WorkstreamOptions): Promis
     deletedNotes: notesBefore,
     deletedEdges: edgesBefore,
     freedWorkspaces,
+    alreadyGoneWorkspaces,
     failedWorkspaces,
   };
 }

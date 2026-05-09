@@ -188,6 +188,42 @@ called out under "Breaking" in each entry.
 
 ### Fixed
 
+- **`destroyWorkstream` no longer double-counts already-gone
+  workspaces as freed.** Closes
+  `review_code_destroy_freed_workspaces_double_count` in
+  `mufeedback`. The per-workspace cleanup loop in
+  `src/workstream.ts` had a dead `if (result.removed) { freed++ }
+  else { /* path already gone */ freed++ }` branch — both arms
+  bumped the same counter, so a registry row whose on-disk path
+  was already missing (manual `rm -rf` or an interrupted prior
+  destroy) was reported as a successful free even though the
+  backend did zero filesystem work. The destroy summary the user
+  saw at the CLI (`workspaces=N/M`) therefore overstated how much
+  cleanup mu actually performed.
+
+  `DestroyResult` gains a sibling field `alreadyGoneWorkspaces:
+  number`. The two cases are now split honestly:
+  `freedWorkspaces` only ticks when `backend.freeWorkspace`
+  reports `removed: true` (the on-disk path was actually deleted
+  on this destroy); `alreadyGoneWorkspaces` ticks when the
+  backend's free was a no-op because the path was already missing
+  (the DB row was still cascade-deleted, just nothing happened on
+  disk). The CLI's `Destroyed ws ...` line now appends `(N
+  already gone on disk)` only when the count is non-zero, so the
+  common case stays terse and the operator gets a hint when stale
+  registry rows exist. The `workstream destroy ...` log event
+  also gains an `already_gone=N` field for `mu log` archaeology.
+
+  Regression test in `test/workstream.test.ts`
+  ("splits freedWorkspaces (real removal) from alreadyGoneWorkspaces
+  (no-op on disk)"): seeds two `vcs_workspaces` rows in the same
+  workstream against the `none` backend — one with the on-disk
+  path present, one with it absent — and asserts
+  `freedWorkspaces=1, alreadyGoneWorkspaces=1` plus
+  `existsSync(presentPath)===false` afterward. The four existing
+  `destroyWorkstream` test assertions were updated to include
+  `alreadyGoneWorkspaces: 0`.
+
 - **`waitForTasks` now returns within `timeoutMs` even when `pollMs >
   timeoutMs`.** Closes `review_test_waitfortasks_polling_unverified`
   in `mufeedback`. The poll loop in `src/tasks/wait.ts` awaited a

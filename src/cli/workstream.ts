@@ -224,7 +224,7 @@ export async function cmdDestroy(
   console.log(`  workspaces   : ${summary.workspaces}`);
   console.log("");
   console.log(
-    `Destroyed ${pc.bold(workstream)}: killed tmux=${result.killedTmux}, agents=${result.deletedAgents}, tasks=${result.deletedTasks}, edges=${result.deletedEdges}, notes=${result.deletedNotes}, workspaces=${result.freedWorkspaces}/${summary.workspaces}`,
+    `Destroyed ${pc.bold(workstream)}: killed tmux=${result.killedTmux}, agents=${result.deletedAgents}, tasks=${result.deletedTasks}, edges=${result.deletedEdges}, notes=${result.deletedNotes}, workspaces=${result.freedWorkspaces}/${summary.workspaces}${result.alreadyGoneWorkspaces > 0 ? ` (${result.alreadyGoneWorkspaces} already gone on disk)` : ""}`,
   );
   // snap_destroy_safety: advertise the undo path that destroyWorkstream
   // gave us via captureSnapshot. Suppressed when there are workspace
