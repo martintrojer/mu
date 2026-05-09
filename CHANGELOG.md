@@ -10,6 +10,35 @@ called out under "Breaking" in each entry.
 
 ## [Unreleased]
 
+### Breaking
+
+- **Schema bumped to v5 (surrogate INTEGER PKs).** Every entity
+  table (`workstreams`, `agents`, `tasks`, `task_edges`,
+  `task_notes`, `agent_logs`, `vcs_workspaces`, `approvals`) now has
+  an `INTEGER PRIMARY KEY AUTOINCREMENT id`; foreign keys are INTEGER;
+  the operator-facing TEXT name is per-scope unique via
+  `UNIQUE (<scope>_id, <name>)`. Per
+  [docs/SCHEMA_v5_DESIGN.md](docs/SCHEMA_v5_DESIGN.md). The CLI
+  surface and `--json` output shapes are intentionally **unchanged**
+  for operators (still `mu task add design -w wsA`); the SDK
+  signatures for in-process consumers DO change in the follow-up
+  task `schema_v5_sdk_signatures`.
+
+  **SDK consumers must run `npx tsx scripts/migrate-v4-to-v5.ts`
+  exactly once per machine.** The new loud-fail hook in `openDb`
+  throws `SchemaTooOldError` (exit code 4) on any pre-v5 DB rather
+  than silently auto-migrating. The script renames the v4 file to
+  `mu.db.v4-backup-<timestamp>` before swapping in the v5 file as
+  the manual escape hatch (NOT entered into the snapshots table).
+
+  This commit lands the migration script + the v5 `src/db.ts`
+  schema + the loud-fail hook + the migration's standalone
+  integration test. **Tests across the SDK layer are expected to
+  fail until `schema_v5_sdk_signatures` lands** — the SDK still
+  reads/writes v4-shape columns. The migration test
+  (`test/migrate-v4-to-v5.integration.test.ts`) passes standalone
+  because it tests the migration in isolation.
+
 ### Added
 
 - **`mu workstream export -w <ws> [--out <dir>]` writes the

@@ -47,7 +47,7 @@ import { cmdMission, wireStateCommands } from "./cli/state.js";
 import { wireTaskCommands } from "./cli/tasks.js";
 import { wireWorkspaceCommands } from "./cli/workspace.js";
 import { wireWorkstreamCommands } from "./cli/workstream.js";
-import { type Db, openDb } from "./db.js";
+import { type Db, SchemaTooOldError, openDb } from "./db.js";
 import { type LogRow, displayEventPayload } from "./logs.js";
 import {
   type NextStep,
@@ -184,6 +184,7 @@ function classifyError(err: unknown): { label: string; exitCode: number } {
     err instanceof ApprovalAlreadyDecidedError ||
     err instanceof ClaimerNotRegisteredError ||
     err instanceof SnapshotVersionMismatchError ||
+    err instanceof SchemaTooOldError ||
     err instanceof TaskIdInvalidError
   ) {
     return { label: "conflict", exitCode: 4 };

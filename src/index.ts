@@ -42,6 +42,7 @@ export {
 export {
   CURRENT_SCHEMA_VERSION,
   EXPECTED_TABLES,
+  SchemaTooOldError,
   defaultDbPath,
   defaultStateDir,
   ensureWorkstreamStateDir,
