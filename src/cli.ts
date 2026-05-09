@@ -778,9 +778,18 @@ export function assertEntityInWorkstream<E extends Error>(
   errFactory: (keyVal: string, expectedWs: string, actualWs: string | null) => E,
 ): void {
   if (!expectedWs) return;
-  const row = db.prepare(`SELECT workstream FROM ${table} WHERE ${keyCol} = ?`).get(keyVal) as
-    | { workstream: string | null }
-    | undefined;
+  // v5: every entity table now references workstreams via a surrogate id
+  // (workstream_id) and surfaces the operator-facing name through a JOIN.
+  // Look up the actual workstream name for the row and compare against
+  // the expected; preserves the v4 contract.
+  const row = db
+    .prepare(
+      `SELECT ws.name AS workstream FROM ${table} t
+         LEFT JOIN workstreams ws ON ws.id = t.workstream_id
+        WHERE t.${keyCol} = ?
+        LIMIT 1`,
+    )
+    .get(keyVal) as { workstream: string | null } | undefined;
   if (row && row.workstream !== expectedWs) {
     throw errFactory(keyVal, expectedWs, row.workstream);
   }

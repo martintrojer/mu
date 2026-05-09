@@ -1073,7 +1073,9 @@ describe("listTasksByOwner", () => {
     // re-spawning the worker). The query MUST cross workstream
     // boundaries; this test pins that contract.
     const setOwner = db.prepare(
-      "UPDATE tasks SET owner = ?, status = 'IN_PROGRESS' WHERE local_id = ?",
+      `UPDATE tasks SET owner_id = (SELECT id FROM agents WHERE name = ? LIMIT 1),
+              status = 'IN_PROGRESS'
+        WHERE local_id = ?`,
     );
     setOwner.run("worker-1", "c");
     setOwner.run("worker-2", "b");
@@ -1620,7 +1622,8 @@ describe("evidence on lifecycle verbs", () => {
   it("releaseTask --evidence threads through (and survives --reopen)", () => {
     insertAgent(db, { name: "worker-1", workstream: "auth", paneId: "%1", status: "busy" });
     db.prepare(
-      "UPDATE tasks SET owner='worker-1', status='IN_PROGRESS' WHERE local_id='design'",
+      `UPDATE tasks SET owner_id = (SELECT id FROM agents WHERE name = 'worker-1'),
+              status='IN_PROGRESS' WHERE local_id='design'`,
     ).run();
     db.prepare("DELETE FROM agent_logs").run();
     releaseTask(db, "design", { reopen: true, evidence: "agent crashed mid-task" });
@@ -1905,7 +1908,10 @@ describe("waitForTasks", () => {
       status: "needs_input",
     });
     db.prepare(
-      "UPDATE tasks SET status = 'IN_PROGRESS', owner = ?, updated_at = ? WHERE local_id = ?",
+      `UPDATE tasks SET status = 'IN_PROGRESS',
+              owner_id = (SELECT id FROM agents WHERE name = ?),
+              updated_at = ?
+        WHERE local_id = ?`,
     ).run("worker-stuck", new Date().toISOString(), "a");
     db.prepare("UPDATE agents SET status = 'needs_input', updated_at = ? WHERE name = ?").run(
       new Date(Date.now() - 10 * 60_000).toISOString(),
@@ -1953,7 +1959,10 @@ describe("waitForTasks", () => {
       status: "needs_input",
     });
     db.prepare(
-      "UPDATE tasks SET status = 'IN_PROGRESS', owner = ?, updated_at = ? WHERE local_id = ?",
+      `UPDATE tasks SET status = 'IN_PROGRESS',
+              owner_id = (SELECT id FROM agents WHERE name = ?),
+              updated_at = ?
+        WHERE local_id = ?`,
     ).run("worker-stuck2", new Date().toISOString(), "a");
     db.prepare("UPDATE agents SET status = 'needs_input', updated_at = ? WHERE name = ?").run(
       new Date(Date.now() - 10 * 60_000).toISOString(),
@@ -2253,7 +2262,10 @@ describe("rejectTask / deferTask", () => {
     addTask(db, { localId: "live", workstream: "ws", title: "L", impact: 50, effortDays: 1 });
     addTask(db, { localId: "rej", workstream: "ws", title: "R", impact: 50, effortDays: 1 });
     addTask(db, { localId: "def", workstream: "ws", title: "D", impact: 50, effortDays: 1 });
-    db.prepare("UPDATE tasks SET owner = 'w1' WHERE local_id IN ('live','rej','def')").run();
+    db.prepare(
+      `UPDATE tasks SET owner_id = (SELECT id FROM agents WHERE name = 'w1')
+        WHERE local_id IN ('live','rej','def')`,
+    ).run();
     setTaskStatus(db, "rej", "REJECTED");
     setTaskStatus(db, "def", "DEFERRED");
     expect(listTasksByOwner(db, "w1").map((t) => t.localId)).toEqual(["live"]);

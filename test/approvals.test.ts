@@ -90,9 +90,10 @@ describe("approvals SDK", () => {
     expect(events[0]?.payload).toContain("do thing");
   });
 
-  it("addApproval accepts a null workstream (machine-wide)", () => {
-    const r = addApproval(db, { workstream: null, reason: "x", requestedBy: "user" });
-    expect(r.workstream).toBeNull();
+  it("addApproval rejects a null workstream (v5 schema requires NOT NULL)", () => {
+    expect(() => addApproval(db, { workstream: null, reason: "x", requestedBy: "user" })).toThrow(
+      /workstream is required/i,
+    );
   });
 
   // ─── getApproval / listApprovals ──────────────────────────────────

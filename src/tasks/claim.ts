@@ -69,11 +69,11 @@ export function releaseTask(db: Db, localId: string, opts: ReleaseTaskOptions = 
   // irrecoverable from history (we'd lose 'who was working on this').
   captureSnapshot(db, `task release ${localId}`, before.workstream);
 
-  db.prepare("UPDATE tasks SET owner = NULL, status = ?, updated_at = ? WHERE local_id = ?").run(
-    newStatus,
-    new Date().toISOString(),
-    localId,
-  );
+  db.prepare(
+    `UPDATE tasks SET owner_id = NULL, status = ?, updated_at = ?
+      WHERE local_id = ?
+        AND workstream_id = (SELECT id FROM workstreams WHERE name = ?)`,
+  ).run(newStatus, new Date().toISOString(), localId, before.workstream);
   const statusBit = statusChanges ? `, ${before.status} → ${newStatus}` : "";
   emitEvent(
     db,
@@ -191,31 +191,33 @@ export async function claimTask(
     );
   }
 
-  // Pre-check (a): the FK on tasks.owner -> agents.name will reject any
-  // claim from an unregistered agent with bare 'FOREIGN KEY constraint
-  // failed'. Fail loud + actionable instead.
+  // Pre-check (a): resolve the claiming agent to its surrogate id +
+  // workstream name. Fail loud + actionable on missing agent so the
+  // FK insert below doesn't surface as bare 'FOREIGN KEY constraint
+  // failed'.
   const claimerRow = db
-    .prepare("SELECT workstream FROM agents WHERE name = ? LIMIT 1")
-    .get(agentName) as { workstream: string } | undefined;
+    .prepare(
+      `SELECT a.id AS id, ws.name AS workstream
+         FROM agents a JOIN workstreams ws ON ws.id = a.workstream_id
+        WHERE a.name = ? LIMIT 1`,
+    )
+    .get(agentName) as { id: number; workstream: string } | undefined;
   if (!claimerRow) {
-    // If we resolved the name from $TMUX_PANE, surface the pane id so
-    // the error message can suggest 'mu adopt <pane>'. If --for was
-    // used, we don't know which pane is intended.
     const paneIdFromEnv = opts.agentName === undefined ? (process.env.TMUX_PANE ?? null) : null;
     throw new ClaimerNotRegisteredError(agentName, paneIdFromEnv);
   }
 
-  // Pre-check (b): the FK is keyed on agents.name only — not on
-  // (name, workstream). Without this guard a `claim --for <agent>`
-  // succeeds even when the agent lives in a different workstream
-  // than the task; the row's owner FK passes but agents.workstream
-  // != tasks.workstream is a scope leak the rest of mu silently
-  // treats as in-scope. Surfaced live by snap_dogfood; filed as
-  // cross_workstream_claim_for. The --self path skips this entirely
-  // (orchestrator-direct, no agent FK to check).
+  // Pre-check (b): cross-workstream guard. v5 makes this a per-pair
+  // FK, so the FK *itself* would catch a same-name worker in another
+  // workstream attempting to claim a task here — but we surface the
+  // typed error first for a clean message.
   const taskWsRow = db
-    .prepare("SELECT workstream FROM tasks WHERE local_id = ? LIMIT 1")
-    .get(localId) as { workstream: string } | undefined;
+    .prepare(
+      `SELECT t.id AS id, ws.name AS workstream
+         FROM tasks t JOIN workstreams ws ON ws.id = t.workstream_id
+        WHERE t.local_id = ? LIMIT 1`,
+    )
+    .get(localId) as { id: number; workstream: string } | undefined;
   if (taskWsRow && taskWsRow.workstream !== claimerRow.workstream) {
     throw new AgentNotInWorkstreamError(agentName, taskWsRow.workstream, claimerRow.workstream);
   }
@@ -228,13 +230,14 @@ export async function claimTask(
     const result = db
       .prepare(
         `UPDATE tasks
-            SET owner = ?,
+            SET owner_id = ?,
                 status = CASE WHEN status = 'OPEN' THEN 'IN_PROGRESS' ELSE status END,
                 updated_at = ?
           WHERE local_id = ?
-            AND (owner IS NULL OR owner = ?)`,
+            AND workstream_id = (SELECT id FROM workstreams WHERE name = ?)
+            AND (owner_id IS NULL OR owner_id = ?)`,
       )
-      .run(agentName, now, localId, agentName);
+      .run(claimerRow.id, now, localId, before.workstream, claimerRow.id);
 
     if (result.changes === 0) {
       throw new TaskAlreadyOwnedError(localId, before.owner ?? "<unknown>");
@@ -301,8 +304,8 @@ async function claimSelf(db: Db, localId: string, opts: ClaimTaskOptions): Promi
     if (!before) throw new TaskNotFoundError(localId);
 
     // Anonymous claim: owner stays NULL, status flips OPEN -> IN_PROGRESS.
-    // We still gate on `owner IS NULL` so an in-flight worker claim
-    // can't be silently overwritten.
+    // Gate on `owner_id IS NULL` so an in-flight worker claim can't be
+    // silently overwritten.
     const now = new Date().toISOString();
     const result = db
       .prepare(
@@ -310,9 +313,10 @@ async function claimSelf(db: Db, localId: string, opts: ClaimTaskOptions): Promi
             SET status = CASE WHEN status = 'OPEN' THEN 'IN_PROGRESS' ELSE status END,
                 updated_at = ?
           WHERE local_id = ?
-            AND owner IS NULL`,
+            AND workstream_id = (SELECT id FROM workstreams WHERE name = ?)
+            AND owner_id IS NULL`,
       )
-      .run(now, localId);
+      .run(now, localId, before.workstream);
 
     if (result.changes === 0) {
       // Task exists but is already owned (by someone). Mirror the

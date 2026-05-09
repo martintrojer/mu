@@ -360,7 +360,9 @@ describe("workspace SDK (with noneBackend)", () => {
       projectRoot,
       backend: "none",
     });
-    db.prepare("DELETE FROM vcs_workspaces WHERE agent = 'worker-1'").run();
+    db.prepare(
+      `DELETE FROM vcs_workspaces WHERE agent_id = (SELECT id FROM agents WHERE name = 'worker-1')`,
+    ).run();
     // Sanity: registry empty, dir present.
     expect(getWorkspaceForAgent(db, "worker-1")).toBeUndefined();
     expect(() => execFileSync("ls", [ws.path], { stdio: "pipe" })).not.toThrow();
@@ -383,9 +385,20 @@ describe("workspace SDK (with noneBackend)", () => {
     // undefined (i.e. we don't trip the WorkspaceExistsError early-out).
     const futurePath = workspacePath("auth", "worker-2");
     insertAgent(db, { name: "squatter", workstream: "auth", paneId: "%99", status: "busy" });
+    // v5 requires a real agent row before vcs_workspaces.agent_id can
+    // be set. Insert worker-2 too so the test's stress is on the path
+    // UNIQUE constraint, not the FK / NOT NULL on agent_id.
+    insertAgent(db, { name: "worker-2", workstream: "auth", paneId: "%100", status: "busy" });
+    const wsId = (
+      db.prepare("SELECT id FROM workstreams WHERE name = 'auth'").get() as { id: number }
+    ).id;
+    const sqId = (
+      db.prepare("SELECT id FROM agents WHERE name = 'squatter'").get() as { id: number }
+    ).id;
     db.prepare(
-      "INSERT INTO vcs_workspaces (agent, workstream, backend, path, parent_ref, created_at) VALUES (?, ?, 'none', ?, NULL, datetime('now'))",
-    ).run("squatter", "auth", futurePath);
+      `INSERT INTO vcs_workspaces (agent_id, workstream_id, backend, path, parent_ref, created_at)
+       VALUES (?, ?, 'none', ?, NULL, datetime('now'))`,
+    ).run(sqId, wsId, futurePath);
 
     // Trigger: createWorkspace for worker-2. backend.createWorkspace
     // will succeed (cp -a); the INSERT will fail (UNIQUE on path);
@@ -716,7 +729,9 @@ describe("listWorkspaceOrphans", () => {
       projectRoot: tempDir,
       backend: "none",
     });
-    db.prepare("DELETE FROM vcs_workspaces WHERE agent = 'w1'").run();
+    db.prepare(
+      `DELETE FROM vcs_workspaces WHERE agent_id = (SELECT id FROM agents WHERE name = 'w1')`,
+    ).run();
     const orphans = listWorkspaceOrphans(db, "auth");
     expect(orphans.length).toBe(1);
     expect(orphans[0]?.agent).toBe("w1");
@@ -739,7 +754,9 @@ describe("listWorkspaceOrphans", () => {
       projectRoot: tempDir,
       backend: "none",
     });
-    db.prepare("DELETE FROM vcs_workspaces WHERE agent = 'orphaned'").run();
+    db.prepare(
+      `DELETE FROM vcs_workspaces WHERE agent_id = (SELECT id FROM agents WHERE name = 'orphaned')`,
+    ).run();
     const orphans = listWorkspaceOrphans(db, "auth");
     expect(orphans.map((o) => o.agent)).toEqual(["orphaned"]);
   });

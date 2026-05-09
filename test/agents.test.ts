@@ -69,11 +69,22 @@ describe("agents CRUD", () => {
     expect(row.tab).toBe("Review");
   });
 
-  it("insertAgent rejects duplicate name (PRIMARY KEY)", () => {
+  it("insertAgent rejects duplicate name within the SAME workstream (v5 per-ws UNIQUE)", () => {
+    insertAgent(db, { name: "alice", workstream: "a", paneId: "%1", status: "busy" });
+    // v5: agents.name is per-workstream unique. Same name in DIFFERENT
+    // workstreams is now legal (cross-workstream namespace was the v4
+    // foot-gun this whole schema migration was about). The duplicate
+    // case the schema still rejects is (workstream_id, name).
+    expect(() =>
+      insertAgent(db, { name: "alice", workstream: "a", paneId: "%2", status: "busy" }),
+    ).toThrow();
+  });
+
+  it("insertAgent ALLOWS the same name in a different workstream (v5)", () => {
     insertAgent(db, { name: "alice", workstream: "a", paneId: "%1", status: "busy" });
     expect(() =>
       insertAgent(db, { name: "alice", workstream: "b", paneId: "%2", status: "busy" }),
-    ).toThrow();
+    ).not.toThrow();
   });
 
   // ─── getAgent ───────────────────────────────────────────────────────
@@ -387,7 +398,10 @@ describe("composeAgentTitle", () => {
   it("appends task id when agent owns one task", () => {
     insertAgent(db, { name: "worker-a", workstream: "ws", paneId: "%1", status: "busy" });
     addTask(db, { localId: "build_x", workstream: "ws", title: "X", impact: 50, effortDays: 1 });
-    db.prepare("UPDATE tasks SET owner='worker-a' WHERE local_id='build_x'").run();
+    db.prepare(
+      `UPDATE tasks SET owner_id = (SELECT id FROM agents WHERE name = 'worker-a')
+        WHERE local_id = 'build_x'`,
+    ).run();
     const a = getAgent(db, "worker-a");
     if (!a) throw new Error();
     expect(composeAgentTitle(db, a)).toBe(`worker-a · ${STATUS_EMOJI.busy} · build_x`);
@@ -397,7 +411,10 @@ describe("composeAgentTitle", () => {
     insertAgent(db, { name: "worker-a", workstream: "ws", paneId: "%1", status: "busy" });
     for (const id of ["t_a", "t_b", "t_c"]) {
       addTask(db, { localId: id, workstream: "ws", title: id, impact: 50, effortDays: 1 });
-      db.prepare("UPDATE tasks SET owner='worker-a' WHERE local_id=?").run(id);
+      db.prepare(
+        `UPDATE tasks SET owner_id = (SELECT id FROM agents WHERE name = 'worker-a')
+          WHERE local_id = ?`,
+      ).run(id);
     }
     const a = getAgent(db, "worker-a");
     if (!a) throw new Error();
@@ -408,7 +425,10 @@ describe("composeAgentTitle", () => {
     insertAgent(db, { name: "worker-a", workstream: "ws", paneId: "%1", status: "busy" });
     for (const id of ["live", "shipped", "wontdo"]) {
       addTask(db, { localId: id, workstream: "ws", title: id, impact: 50, effortDays: 1 });
-      db.prepare("UPDATE tasks SET owner='worker-a' WHERE local_id=?").run(id);
+      db.prepare(
+        `UPDATE tasks SET owner_id = (SELECT id FROM agents WHERE name = 'worker-a')
+          WHERE local_id = ?`,
+      ).run(id);
     }
     db.prepare("UPDATE tasks SET status='CLOSED' WHERE local_id='shipped'").run();
     db.prepare("UPDATE tasks SET status='REJECTED' WHERE local_id='wontdo'").run();
@@ -428,9 +448,10 @@ describe("composeAgentTitle", () => {
       impact: 50,
       effortDays: 1,
     });
-    db.prepare("UPDATE tasks SET owner=? WHERE local_id='task_with_an_unusually_long_id_too'").run(
-      longName,
-    );
+    db.prepare(
+      `UPDATE tasks SET owner_id = (SELECT id FROM agents WHERE name = ?)
+        WHERE local_id = 'task_with_an_unusually_long_id_too'`,
+    ).run(longName);
     const a = getAgent(db, longName);
     if (!a) throw new Error();
     const title = composeAgentTitle(db, a);

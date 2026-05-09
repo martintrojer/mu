@@ -113,22 +113,12 @@ export async function cmdDoctor(db: Db, opts: { json?: boolean } = {}): Promise<
     const ws = currentWorkstream;
     console.log(pc.bold(`\nstate (workstream=${ws})`));
     const counts = {
-      agents: countWhere(db, "agents", "workstream", ws),
-      tasks: countWhere(db, "tasks", "workstream", ws),
+      agents: countAgentsByWorkstream(db, ws),
+      tasks: countTasksByWorkstream(db, ws),
       ready: countReady(db, ws),
       blocked: countBlocked(db, ws),
-      inProgress: (
-        db
-          .prepare(
-            "SELECT COUNT(*) AS n FROM tasks WHERE workstream = ? AND status = 'IN_PROGRESS'",
-          )
-          .get(ws) as { n: number }
-      ).n,
-      logs: (
-        db.prepare("SELECT COUNT(*) AS n FROM agent_logs WHERE workstream = ?").get(ws) as {
-          n: number;
-        }
-      ).n,
+      inProgress: countInProgressByWorkstream(db, ws),
+      logs: countLogsByWorkstream(db, ws),
     };
     console.log(`  agents           : ${counts.agents}`);
     console.log(
@@ -240,22 +230,12 @@ export async function cmdDoctorJson(db: Db): Promise<void> {
   if (currentWorkstream) {
     const ws = currentWorkstream;
     const counts = {
-      agents: countWhere(db, "agents", "workstream", ws),
-      tasks: countWhere(db, "tasks", "workstream", ws),
+      agents: countAgentsByWorkstream(db, ws),
+      tasks: countTasksByWorkstream(db, ws),
       ready: countReady(db, ws),
       blocked: countBlocked(db, ws),
-      inProgress: (
-        db
-          .prepare(
-            "SELECT COUNT(*) AS n FROM tasks WHERE workstream = ? AND status = 'IN_PROGRESS'",
-          )
-          .get(ws) as { n: number }
-      ).n,
-      logs: (
-        db.prepare("SELECT COUNT(*) AS n FROM agent_logs WHERE workstream = ?").get(ws) as {
-          n: number;
-        }
-      ).n,
+      inProgress: countInProgressByWorkstream(db, ws),
+      logs: countLogsByWorkstream(db, ws),
     };
     let reconcile: Record<string, unknown> | null = null;
     try {
@@ -279,25 +259,70 @@ export async function cmdDoctorJson(db: Db): Promise<void> {
   });
 }
 
-function countWhere(db: Db, table: string, column: string, value: string): number {
+function countAgentsByWorkstream(db: Db, workstream: string): number {
   return (
-    db.prepare(`SELECT COUNT(*) AS n FROM ${table} WHERE ${column} = ?`).get(value) as {
-      n: number;
-    }
+    db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM agents a
+           JOIN workstreams ws ON ws.id = a.workstream_id
+          WHERE ws.name = ?`,
+      )
+      .get(workstream) as { n: number }
+  ).n;
+}
+function countTasksByWorkstream(db: Db, workstream: string): number {
+  return (
+    db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM tasks t
+           JOIN workstreams ws ON ws.id = t.workstream_id
+          WHERE ws.name = ?`,
+      )
+      .get(workstream) as { n: number }
+  ).n;
+}
+function countInProgressByWorkstream(db: Db, workstream: string): number {
+  return (
+    db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM tasks t
+           JOIN workstreams ws ON ws.id = t.workstream_id
+          WHERE ws.name = ? AND t.status = 'IN_PROGRESS'`,
+      )
+      .get(workstream) as { n: number }
+  ).n;
+}
+function countLogsByWorkstream(db: Db, workstream: string): number {
+  return (
+    db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM agent_logs l
+           LEFT JOIN workstreams ws ON ws.id = l.workstream_id
+          WHERE ws.name = ?`,
+      )
+      .get(workstream) as { n: number }
   ).n;
 }
 function countReady(db: Db, workstream: string): number {
   return (
-    db.prepare("SELECT COUNT(*) AS n FROM ready WHERE workstream = ?").get(workstream) as {
-      n: number;
-    }
+    db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM ready v
+           JOIN workstreams ws ON ws.id = v.workstream_id
+          WHERE ws.name = ?`,
+      )
+      .get(workstream) as { n: number }
   ).n;
 }
 function countBlocked(db: Db, workstream: string): number {
   return (
-    db.prepare("SELECT COUNT(*) AS n FROM blocked WHERE workstream = ?").get(workstream) as {
-      n: number;
-    }
+    db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM blocked v
+           JOIN workstreams ws ON ws.id = v.workstream_id
+          WHERE ws.name = ?`,
+      )
+      .get(workstream) as { n: number }
   ).n;
 }
 

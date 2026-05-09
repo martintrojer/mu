@@ -375,14 +375,22 @@ export async function destroyWorkstream(db: Db, opts: WorkstreamOptions): Promis
 
 function countAgents(db: Db, workstream: string): number {
   const row = db
-    .prepare("SELECT COUNT(*) AS n FROM agents WHERE workstream = ?")
+    .prepare(
+      `SELECT COUNT(*) AS n FROM agents a
+         JOIN workstreams ws ON ws.id = a.workstream_id
+        WHERE ws.name = ?`,
+    )
     .get(workstream) as { n: number };
   return row.n;
 }
 
 function countTasks(db: Db, workstream: string): number {
   const row = db
-    .prepare("SELECT COUNT(*) AS n FROM tasks WHERE workstream = ?")
+    .prepare(
+      `SELECT COUNT(*) AS n FROM tasks t
+         JOIN workstreams ws ON ws.id = t.workstream_id
+        WHERE ws.name = ?`,
+    )
     .get(workstream) as { n: number };
   return row.n;
 }
@@ -392,8 +400,9 @@ function countNotes(db: Db, workstream: string): number {
     .prepare(
       `SELECT COUNT(*) AS n
          FROM task_notes n
-         JOIN tasks      t ON t.local_id = n.task_id
-        WHERE t.workstream = ?`,
+         JOIN tasks      t  ON t.id = n.task_id
+         JOIN workstreams ws ON ws.id = t.workstream_id
+        WHERE ws.name = ?`,
     )
     .get(workstream) as { n: number };
   return row.n;
@@ -407,8 +416,9 @@ function countEdges(db: Db, workstream: string): number {
     .prepare(
       `SELECT COUNT(*) AS n
          FROM task_edges e
-         JOIN tasks      t ON t.local_id = e.from_task
-        WHERE t.workstream = ?`,
+         JOIN tasks      t  ON t.id = e.from_task_id
+         JOIN workstreams ws ON ws.id = t.workstream_id
+        WHERE ws.name = ?`,
     )
     .get(workstream) as { n: number };
   return row.n;

@@ -13,7 +13,7 @@
 // src/reconcile.ts. They are deliberately thin — each one is essentially
 // "look up the agent, do the tmux thing, update the registry."
 
-import type { Db } from "./db.js";
+import { type Db, resolveWorkstreamId, tryResolveWorkstreamId } from "./db.js";
 import type { AgentStatus } from "./detect.js";
 import { emitEvent } from "./logs.js";
 import { type ReconcileMode, type ReconcileReport, reconcile } from "./reconcile.js";
@@ -85,7 +85,11 @@ export interface InsertAgentInput {
 }
 
 interface RawAgentRow {
+  /** Surrogate id (v5). Carried through so internal helpers don't have
+   *  to re-resolve when they need it. */
+  id: number;
   name: string;
+  /** Joined from workstreams.name. */
   workstream: string;
   cli: string;
   pane_id: string;
@@ -95,6 +99,24 @@ interface RawAgentRow {
   created_at: string;
   updated_at: string;
 }
+
+/** SELECT clause that joins agents to workstreams, exposing the
+ *  operator-facing workstream name as `workstream` (matching the v4
+ *  TS row contract). Used by every read path. */
+const SELECT_AGENT_COLS = `
+  a.id AS id,
+  a.name AS name,
+  ws.name AS workstream,
+  a.cli AS cli,
+  a.pane_id AS pane_id,
+  a.status AS status,
+  a.role AS role,
+  a.tab AS tab,
+  a.created_at AS created_at,
+  a.updated_at AS updated_at
+`;
+
+const AGENT_FROM_JOIN = "FROM agents a JOIN workstreams ws ON ws.id = a.workstream_id";
 
 function rowFromDb(row: RawAgentRow): AgentRow {
   return {
@@ -110,19 +132,30 @@ function rowFromDb(row: RawAgentRow): AgentRow {
   };
 }
 
+/** Resolve an agent's surrogate id by name across all workstreams
+ *  (the v4 SDK contract: name was globally unique). Returns null on
+ *  miss. Used by deleteAgent + closeAgent which take just a name. */
+function agentIdByName(db: Db, name: string): number | null {
+  const row = db.prepare("SELECT id FROM agents WHERE name = ? LIMIT 1").get(name) as
+    | { id: number }
+    | undefined;
+  return row ? row.id : null;
+}
+
 export function insertAgent(db: Db, input: InsertAgentInput): AgentRow {
-  // Auto-create the workstreams row if missing so the FK on agents.workstream
-  // is always satisfied. Preserves the ergonomics where you could spawn
-  // without explicit `mu init`.
+  // Auto-create the workstreams row if missing so the FK on
+  // agents.workstream_id is always satisfied. Preserves the ergonomics
+  // where you could spawn without explicit `mu init`.
   ensureWorkstream(db, input.workstream);
+  const workstreamId = resolveWorkstreamId(db, input.workstream);
   const now = new Date().toISOString();
   db.prepare(
-    `INSERT INTO agents (name, workstream, cli, pane_id, status, role, tab, created_at, updated_at)
-     VALUES (@name, @workstream, COALESCE(@cli, 'pi'), @paneId, @status,
+    `INSERT INTO agents (name, workstream_id, cli, pane_id, status, role, tab, created_at, updated_at)
+     VALUES (@name, @workstreamId, COALESCE(@cli, 'pi'), @paneId, @status,
              COALESCE(@role, 'full-access'), @tab, @now, @now)`,
   ).run({
     name: input.name,
-    workstream: input.workstream,
+    workstreamId,
     cli: input.cli ?? null,
     paneId: input.paneId,
     status: input.status,
@@ -147,26 +180,40 @@ export function insertAgent(db: Db, input: InsertAgentInput): AgentRow {
  * reconcile prunes ghosts. We return the first match.
  */
 export function getAgentByPane(db: Db, paneId: string): AgentRow | undefined {
-  const row = db.prepare("SELECT * FROM agents WHERE pane_id = ? LIMIT 1").get(paneId) as
-    | RawAgentRow
-    | undefined;
+  const row = db
+    .prepare(`SELECT ${SELECT_AGENT_COLS} ${AGENT_FROM_JOIN} WHERE a.pane_id = ? LIMIT 1`)
+    .get(paneId) as RawAgentRow | undefined;
   return row ? rowFromDb(row) : undefined;
 }
 
 export function getAgent(db: Db, name: string): AgentRow | undefined {
-  const row = db.prepare("SELECT * FROM agents WHERE name = ?").get(name) as
-    | RawAgentRow
-    | undefined;
+  // v5: agents.name is per-workstream unique, not globally unique. The
+  // v4 SDK shape `getAgent(db, name)` is preserved by returning the
+  // first match across workstreams (sorted by ws name for determinism).
+  // Callers that care about scope (claimTask cross-workstream pre-check,
+  // adoptAgent uniqueness check) consume `.workstream` on the result.
+  const row = db
+    .prepare(
+      `SELECT ${SELECT_AGENT_COLS} ${AGENT_FROM_JOIN} WHERE a.name = ? ORDER BY ws.name LIMIT 1`,
+    )
+    .get(name) as RawAgentRow | undefined;
   return row ? rowFromDb(row) : undefined;
 }
 
 export function listAgents(db: Db, opts: { workstream?: string } = {}): AgentRow[] {
-  const rows =
-    opts.workstream === undefined
-      ? (db.prepare("SELECT * FROM agents ORDER BY workstream, name").all() as RawAgentRow[])
-      : (db
-          .prepare("SELECT * FROM agents WHERE workstream = ? ORDER BY name")
-          .all(opts.workstream) as RawAgentRow[]);
+  if (opts.workstream === undefined) {
+    const rows = db
+      .prepare(`SELECT ${SELECT_AGENT_COLS} ${AGENT_FROM_JOIN} ORDER BY ws.name, a.name`)
+      .all() as RawAgentRow[];
+    return rows.map(rowFromDb);
+  }
+  const wsId = tryResolveWorkstreamId(db, opts.workstream);
+  if (wsId === null) return [];
+  const rows = db
+    .prepare(
+      `SELECT ${SELECT_AGENT_COLS} ${AGENT_FROM_JOIN} WHERE a.workstream_id = ? ORDER BY a.name`,
+    )
+    .all(wsId) as RawAgentRow[];
   return rows.map(rowFromDb);
 }
 
@@ -180,6 +227,10 @@ export function updateAgentStatus(db: Db, name: string, status: AgentStatus): bo
     .run(status, new Date().toISOString(), name);
   return result.changes > 0;
 }
+
+/** rowFromDb retains the surrogate id but the public AgentRow shape
+ *  stays operator-facing; the id is internal-only. Strip it on the way
+ *  out by destructuring. */
 
 /**
  * Decide whether a scrollback-detected status should overwrite the
@@ -346,32 +397,41 @@ export async function refreshAgentTitle(db: Db, agentName: string): Promise<void
  */
 export function deleteAgent(db: Db, name: string): boolean {
   // Snapshot the stuck tasks BEFORE the DELETE; the FK CASCADE
-  // (SET NULL on owner) makes the post-delete query indistinguishable
+  // (SET NULL on owner_id) makes the post-delete query indistinguishable
   // from "never owned by this agent."
+  const agentId = agentIdByName(db, name);
+  if (agentId === null) {
+    // Already gone — idempotent return.
+    const result = db.prepare("DELETE FROM agents WHERE name = ?").run(name);
+    return result.changes > 0;
+  }
   const stuck = db
     .prepare(
-      "SELECT local_id AS id, workstream FROM tasks WHERE owner = ? AND status = 'IN_PROGRESS'",
+      `SELECT t.id AS taskId, t.local_id AS localId, ws.name AS workstream
+         FROM tasks t
+         JOIN workstreams ws ON ws.id = t.workstream_id
+        WHERE t.owner_id = ? AND t.status = 'IN_PROGRESS'`,
     )
-    .all(name) as Array<{ id: string; workstream: string }>;
+    .all(agentId) as Array<{ taskId: number; localId: string; workstream: string }>;
 
-  const result = db.prepare("DELETE FROM agents WHERE name = ?").run(name);
+  const result = db.prepare("DELETE FROM agents WHERE id = ?").run(agentId);
   if (result.changes === 0) return false;
 
   for (const t of stuck) {
-    db.prepare("UPDATE tasks SET status = 'OPEN', updated_at = ? WHERE local_id = ?").run(
+    db.prepare("UPDATE tasks SET status = 'OPEN', updated_at = ? WHERE id = ?").run(
       new Date().toISOString(),
-      t.id,
+      t.taskId,
     );
     addNote(
       db,
-      t.id,
+      t.localId,
       `[reaper] previous owner ${name} gone (agent removed); status reverted IN_PROGRESS → OPEN, owner cleared`,
       { author: "reaper" },
     );
     emitEvent(
       db,
       t.workstream,
-      `task reap ${t.id} (previous owner ${name} gone, IN_PROGRESS → OPEN)`,
+      `task reap ${t.localId} (previous owner ${name} gone, IN_PROGRESS → OPEN)`,
     );
   }
   return true;

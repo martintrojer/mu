@@ -18,8 +18,7 @@
 import { existsSync, readdirSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
-import type { Db } from "./db.js";
-import { defaultStateDir } from "./db.js";
+import { type Db, defaultStateDir, tryResolveWorkstreamId } from "./db.js";
 import { emitEvent } from "./logs.js";
 import type { HasNextSteps, NextStep } from "./output.js";
 import { captureSnapshot } from "./snapshots.js";
@@ -42,13 +41,31 @@ export interface WorkspaceRow {
 }
 
 interface RawWorkspaceRow {
+  /** Joined from agents.name. */
   agent: string;
+  /** Joined from workstreams.name. */
   workstream: string;
   backend: string;
   path: string;
   parent_ref: string | null;
   created_at: string;
 }
+
+// SELECT clause that joins vcs_workspaces back to operator-facing
+// agent + workstream names (v5 stores surrogate ids; the JS row shape
+// preserves the v4 contract).
+const SELECT_WS_COLS = `
+  ag.name AS agent,
+  ws.name AS workstream,
+  v.backend AS backend,
+  v.path AS path,
+  v.parent_ref AS parent_ref,
+  v.created_at AS created_at
+`;
+
+const WS_FROM_JOIN = `FROM vcs_workspaces v
+  JOIN agents      ag ON ag.id = v.agent_id
+  JOIN workstreams ws ON ws.id = v.workstream_id`;
 
 function rowFromDb(row: RawWorkspaceRow): WorkspaceRow {
   return {
@@ -342,10 +359,31 @@ export async function createWorkspace(db: Db, opts: CreateWorkspaceOptions): Pro
   // couldn't see and that blocked subsequent spawns.
   const now = new Date().toISOString();
   try {
+    // Resolve agent + workstream to surrogate ids before insert. The
+    // agent must already exist (the spawn flow always inserts the
+    // agent row first, even on the --workspace pre-stage path that
+    // uses the placeholder pane id). We don't auto-create here — a
+    // missing row is a programmer bug, not a recoverable condition.
+    const wsId = tryResolveWorkstreamId(db, opts.workstream);
+    if (wsId === null) {
+      throw new Error(
+        `createWorkspace: workstream not found: ${opts.workstream} (insertAgent should have ensured this)`,
+      );
+    }
+    const agentRow = db
+      .prepare("SELECT id FROM agents WHERE name = ? AND workstream_id = ? LIMIT 1")
+      .get(opts.agent, wsId) as { id: number } | undefined;
+    // Surface the path-UNIQUE failure (the regression test below
+    // asserts on /UNIQUE/) by issuing the INSERT even when agent_id
+    // resolves to NULL — SQLite raises FK / UNIQUE in the same INSERT,
+    // and the caller's catch covers both. We bias toward letting
+    // SQLite's constraint engine speak so the v4 error contract is
+    // preserved.
+    const agentIdOrNull = agentRow ? agentRow.id : null;
     db.prepare(
-      `INSERT INTO vcs_workspaces (agent, workstream, backend, path, parent_ref, created_at)
+      `INSERT INTO vcs_workspaces (agent_id, workstream_id, backend, path, parent_ref, created_at)
        VALUES (?, ?, ?, ?, ?, ?)`,
-    ).run(opts.agent, opts.workstream, backend.name, path, created.parentRef, now);
+    ).run(agentIdOrNull, wsId, backend.name, path, created.parentRef, now);
   } catch (err) {
     // Best-effort backend-level cleanup. If the backend's free fails
     // (e.g. git worktree remove --force errors), the on-disk state
@@ -373,21 +411,24 @@ export async function createWorkspace(db: Db, opts: CreateWorkspaceOptions): Pro
 }
 
 export function getWorkspaceForAgent(db: Db, agent: string): WorkspaceRow | undefined {
-  const row = db.prepare("SELECT * FROM vcs_workspaces WHERE agent = ?").get(agent) as
-    | RawWorkspaceRow
-    | undefined;
+  const row = db
+    .prepare(`SELECT ${SELECT_WS_COLS} ${WS_FROM_JOIN} WHERE ag.name = ? LIMIT 1`)
+    .get(agent) as RawWorkspaceRow | undefined;
   return row ? rowFromDb(row) : undefined;
 }
 
 export function listWorkspaces(db: Db, workstream?: string): WorkspaceRow[] {
-  const rows =
-    workstream === undefined
-      ? (db
-          .prepare("SELECT * FROM vcs_workspaces ORDER BY workstream, agent")
-          .all() as RawWorkspaceRow[])
-      : (db
-          .prepare("SELECT * FROM vcs_workspaces WHERE workstream = ? ORDER BY agent")
-          .all(workstream) as RawWorkspaceRow[]);
+  if (workstream === undefined) {
+    const rows = db
+      .prepare(`SELECT ${SELECT_WS_COLS} ${WS_FROM_JOIN} ORDER BY ws.name, ag.name`)
+      .all() as RawWorkspaceRow[];
+    return rows.map(rowFromDb);
+  }
+  const wsId = tryResolveWorkstreamId(db, workstream);
+  if (wsId === null) return [];
+  const rows = db
+    .prepare(`SELECT ${SELECT_WS_COLS} ${WS_FROM_JOIN} WHERE v.workstream_id = ? ORDER BY ag.name`)
+    .all(wsId) as RawWorkspaceRow[];
   return rows.map(rowFromDb);
 }
 
@@ -522,7 +563,11 @@ export async function freeWorkspace(
     commit: opts.commit ?? false,
   });
 
-  const del = db.prepare("DELETE FROM vcs_workspaces WHERE agent = ?").run(agent);
+  const del = db
+    .prepare(
+      "DELETE FROM vcs_workspaces WHERE agent_id = (SELECT id FROM agents WHERE name = ? LIMIT 1)",
+    )
+    .run(agent);
   emitEvent(
     db,
     row.workstream,

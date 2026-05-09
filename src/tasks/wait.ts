@@ -184,6 +184,10 @@ export async function waitForTasks(
   const isStuck = (status: TaskStatus, owner: string | null): boolean => {
     if (stuckAfterMs <= 0) return false;
     if (status !== "IN_PROGRESS" || !owner) return false;
+    // owner is the operator-facing agent name; agents.name is
+    // per-workstream unique in v5 but this lookup is only the latest
+    // matching row — the owner string carries no scope info today and
+    // multiple workstreams sharing a name is rare in practice.
     const row = db
       .prepare("SELECT status, updated_at FROM agents WHERE name = ? LIMIT 1")
       .get(owner) as { status: string; updated_at: string } | undefined;

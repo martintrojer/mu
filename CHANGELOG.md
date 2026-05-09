@@ -39,6 +39,83 @@ called out under "Breaking" in each entry.
   (`test/migrate-v4-to-v5.integration.test.ts`) passes standalone
   because it tests the migration in isolation.
 
+- **SDK signatures rewired for v5 (`schema_v5_sdk_signatures`).**
+  Every public SDK function in `src/` that takes an entity name
+  now resolves to surrogate ids at the function entry, exactly
+  once, via three new helpers in `src/db.ts`:
+  `resolveWorkstreamId`, `tryResolveWorkstreamId`, `resolveTaskId`,
+  `resolveAgentId` (plus a typed `WorkstreamNotFoundError`).
+  Internal helpers take surrogate ids; they never re-resolve.
+  Every SQL statement against the v4 column shapes (`workstream`,
+  `local_id`, `owner`, `agent`, `from_task`, `to_task`) was
+  rewritten to the v5 shape (`workstream_id`, `local_id` (now
+  per-workstream unique), `owner_id`, `agent_id`, `from_task_id`,
+  `to_task_id`); read paths JOIN back to `workstreams.name` /
+  `agents.name` so the JS row contract (`TaskRow.workstream`,
+  `TaskRow.owner`, `AgentRow.workstream`) is preserved.
+
+  Public SDK functions that take a `localId` (`getTask`, `addNote`,
+  `getTaskEdges`, `getPrerequisites`, `deleteTask`, `updateTask`,
+  `reparentTask`, `listNotes`) now accept an optional
+  `workstream` argument so callers can scope to one workstream
+  when local_ids may collide across them; with no scope the SDK
+  returns the first match (preserves backward-compat for the
+  single-workstream test fixtures and for `mu sql`-style read
+  paths). The new helper `taskIdFor(db, localId, workstream?)`
+  factors the resolution.
+
+  CLI surface unchanged: `mu task add design -w wsA` and
+  `mu task add design -w wsB` now both succeed; the v4 collision
+  loop is scoped per-workstream.
+
+### Changed
+
+- **`addApproval` requires a non-null workstream.** v5's
+  `approvals.workstream_id` is `NOT NULL`; the v4 nullable
+  contract (workstream-less / global scope) is gone. Callers that
+  passed `workstream: null` now get a typed error pointing at the
+  schema change.
+
+- **`agents.name` is per-workstream unique, not global.** The same
+  agent name (`worker-1`) may now be used in two different
+  workstreams without conflict — v5 `UNIQUE (workstream_id, name)`.
+  `insertAgent`'s test was split into the same-workstream
+  duplicate (still throws) and the cross-workstream duplicate (now
+  legal).
+
+- **`tasks.local_id` is per-workstream unique, not global.** The
+  whole point of v5 — `mu task add design -w wsA` then
+  `mu task add design -w wsB` just works. `idFromTitle`'s
+  collision-suffix loop is now scoped to the same workstream.
+
+- **`src/migrations.ts` is dead code, but kept on disk.** The
+  in-process forward-only migration ladder (v1→v2 / v2→v3 /
+  v3→v4) is no longer wired into `openDb`; the loud-fail hook
+  rejects pre-v5 DBs first. The file stays on disk for archaeology
+  and is removed in the cleanup follow-up
+  (`schema_v5_drop_migrations_ts`). The `test/db.test.ts` migration
+  describe blocks are `describe.skip(...)`; the substrate they
+  exercised is no longer reachable.
+
+### Test-suite repair (v5)
+
+- Tests that hand-wrote SQL against v4 column names were updated
+  to the v5 shape: `tasks.workstream`/`owner` → INTEGER FKs +
+  workstream/agent name lookup via subselect; `task_edges.from_task`
+  / `to_task` → `from_task_id` / `to_task_id`; `task_notes.task_id`
+  → INTEGER FK to `tasks.id`; `vcs_workspaces.agent` /
+  `workstream` → `agent_id` / `workstream_id`; `agent_logs.workstream`
+  → `workstream_id`; `approvals.workstream` → `workstream_id`.
+  Test helpers (`insertTask` / `insertEdge` / `insertNote` in
+  `test/db.test.ts`; `insertVcsWorkspaceRow` in `test/workstream.test.ts`
+  and `test/snapshots.test.ts`) translate operator-facing names to
+  surrogate ids on the way into INSERT.
+
+- Result: 813 passed | 9 skipped (822 total). The 9 skipped are
+  the v1→v2 / framework-rollback migration tests that no longer
+  apply; the migration round-trip is covered by
+  `test/migrate-v4-to-v5.integration.test.ts`.
+
 ### Added
 
 - **`mu workstream export -w <ws> [--out <dir>]` writes the

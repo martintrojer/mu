@@ -28,6 +28,27 @@ import {
   summarizeWorkstream,
 } from "../src/workstream.js";
 
+// ─── v5 vcs_workspaces test helper ───
+function insertVcsWorkspaceRow(
+  db: Db,
+  args: { agent: string; workstream: string; backend: string; path: string; createdAt: string },
+): void {
+  const wsId = (
+    db.prepare("SELECT id FROM workstreams WHERE name = ?").get(args.workstream) as {
+      id: number;
+    }
+  ).id;
+  const agId = (
+    db
+      .prepare("SELECT id FROM agents WHERE name = ? AND workstream_id = ?")
+      .get(args.agent, wsId) as { id: number }
+  ).id;
+  db.prepare(
+    `INSERT INTO vcs_workspaces (agent_id, workstream_id, backend, path, parent_ref, created_at)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+  ).run(agId, wsId, args.backend, args.path, null, args.createdAt);
+}
+
 // ─── Mock tmux harness ─────────────────────────────────────────────────
 
 function ok(stdout = ""): TmuxExecResult {
@@ -179,12 +200,18 @@ describe("FK SET NULL: closing an agent clears tasks.owner automatically", () =>
       effortDays: 1,
     });
     insertAgent(db, { name: "worker-1", workstream: "auth", paneId: "%1", status: "busy" });
-    db.prepare("UPDATE tasks SET owner = 'worker-1' WHERE local_id = 'design'").run();
+    // v5: tasks.owner_id is the INTEGER FK; resolve worker-1 to its id.
+    db.prepare(
+      `UPDATE tasks SET owner_id = (SELECT id FROM agents WHERE name = 'worker-1')
+        WHERE local_id = 'design'`,
+    ).run();
     expect(
       (
-        db.prepare("SELECT owner FROM tasks WHERE local_id = 'design'").get() as {
-          owner: string;
-        }
+        db
+          .prepare(
+            `SELECT a.name AS owner FROM tasks t LEFT JOIN agents a ON a.id = t.owner_id WHERE t.local_id = 'design'`,
+          )
+          .get() as { owner: string }
       ).owner,
     ).toBe("worker-1");
 
@@ -192,22 +219,27 @@ describe("FK SET NULL: closing an agent clears tasks.owner automatically", () =>
 
     expect(
       (
-        db.prepare("SELECT owner FROM tasks WHERE local_id = 'design'").get() as {
-          owner: string | null;
-        }
+        db
+          .prepare(
+            `SELECT a.name AS owner FROM tasks t LEFT JOIN agents a ON a.id = t.owner_id WHERE t.local_id = 'design'`,
+          )
+          .get() as { owner: string | null }
       ).owner,
     ).toBeNull();
   });
 
-  it("INSERT INTO tasks ... owner='ghost' is rejected by the FK", () => {
+  it("INSERT INTO tasks ... owner_id=<bogus> is rejected by the FK", () => {
     ensureWorkstream(db, "auth");
+    const wsId = (
+      db.prepare("SELECT id FROM workstreams WHERE name = 'auth'").get() as { id: number }
+    ).id;
     expect(() =>
       db
         .prepare(
-          `INSERT INTO tasks (local_id, workstream, title, status, impact, effort_days, owner, created_at, updated_at)
-           VALUES ('x', 'auth', 'X', 'OPEN', 50, 1, 'ghost', datetime('now'), datetime('now'))`,
+          `INSERT INTO tasks (workstream_id, local_id, title, status, impact, effort_days, owner_id, created_at, updated_at)
+           VALUES (?, 'x', 'X', 'OPEN', 50, 1, 999999, datetime('now'), datetime('now'))`,
         )
-        .run(),
+        .run(wsId),
     ).toThrow(/FOREIGN KEY constraint failed/);
   });
 });
@@ -357,7 +389,11 @@ describe("destroyWorkstream", () => {
     expect(listAgents(db, { workstream: "billing" }).map((a) => a.name)).toEqual(["billing-1"]);
     expect(listTasks(db, "billing").map((t) => t.localId)).toEqual(["invoice"]);
     const billingNotes = db
-      .prepare("SELECT COUNT(*) AS n FROM task_notes WHERE task_id = 'invoice'")
+      .prepare(
+        `SELECT COUNT(*) AS n FROM task_notes n
+           JOIN tasks t ON t.id = n.task_id
+          WHERE t.local_id = 'invoice'`,
+      )
       .get() as { n: number };
     expect(billingNotes.n).toBe(1);
   });
@@ -493,14 +529,20 @@ describe("destroyWorkstream", () => {
     // is already gone (backend free is a no-op). Use `none` because
     // its freeWorkspace is just rmDirSync — no real VCS needed.
     const now = new Date().toISOString();
-    db.prepare(
-      `INSERT INTO vcs_workspaces (agent, workstream, backend, path, parent_ref, created_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-    ).run("alive", "split", noneBackend.name, presentPath, null, now);
-    db.prepare(
-      `INSERT INTO vcs_workspaces (agent, workstream, backend, path, parent_ref, created_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-    ).run("ghost", "split", noneBackend.name, missingPath, null, now);
+    insertVcsWorkspaceRow(db, {
+      agent: "alive",
+      workstream: "split",
+      backend: noneBackend.name,
+      path: presentPath,
+      createdAt: now,
+    });
+    insertVcsWorkspaceRow(db, {
+      agent: "ghost",
+      workstream: "split",
+      backend: noneBackend.name,
+      path: missingPath,
+      createdAt: now,
+    });
 
     const result = await destroyWorkstream(db, { workstream: "split" });
 
@@ -532,10 +574,13 @@ describe("destroyWorkstream", () => {
     // failure shape — inject a backend whose freeWorkspace just throws.
     const ghostPath = join(tmpDir, "ws-ghost"); // never on disk; doesn't matter
     const now = new Date().toISOString();
-    db.prepare(
-      `INSERT INTO vcs_workspaces (agent, workstream, backend, path, parent_ref, created_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-    ).run("stuck", "fail", noneBackend.name, ghostPath, null, now);
+    insertVcsWorkspaceRow(db, {
+      agent: "stuck",
+      workstream: "fail",
+      backend: noneBackend.name,
+      path: ghostPath,
+      createdAt: now,
+    });
 
     const explodingBackend: VcsBackend = {
       ...noneBackend,
@@ -564,7 +609,11 @@ describe("destroyWorkstream", () => {
     // and the agent row is gone. A regression that re-raised would fail
     // these assertions.
     const wsRows = db
-      .prepare("SELECT COUNT(*) AS n FROM vcs_workspaces WHERE workstream = 'fail'")
+      .prepare(
+        `SELECT COUNT(*) AS n FROM vcs_workspaces v
+           JOIN workstreams ws ON ws.id = v.workstream_id
+          WHERE ws.name = 'fail'`,
+      )
       .get() as { n: number };
     expect(wsRows.n).toBe(0);
     expect(listAgents(db, { workstream: "fail" })).toEqual([]);
@@ -590,14 +639,20 @@ describe("destroyWorkstream", () => {
     mkdirSync(badPath, { recursive: true });
 
     const now = new Date().toISOString();
-    db.prepare(
-      `INSERT INTO vcs_workspaces (agent, workstream, backend, path, parent_ref, created_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-    ).run("good", "mixed", noneBackend.name, goodPath, null, now);
-    db.prepare(
-      `INSERT INTO vcs_workspaces (agent, workstream, backend, path, parent_ref, created_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-    ).run("bad", "mixed", noneBackend.name, badPath, null, now);
+    insertVcsWorkspaceRow(db, {
+      agent: "good",
+      workstream: "mixed",
+      backend: noneBackend.name,
+      path: goodPath,
+      createdAt: now,
+    });
+    insertVcsWorkspaceRow(db, {
+      agent: "bad",
+      workstream: "mixed",
+      backend: noneBackend.name,
+      path: badPath,
+      createdAt: now,
+    });
 
     const partitioningBackend: VcsBackend = {
       ...noneBackend,

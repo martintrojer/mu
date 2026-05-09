@@ -119,6 +119,95 @@ export function openDb(options: OpenDbOptions = {}): Db {
  *
  * Maps to exit code 4 (conflict) in cli.ts handle().
  */
+// ─── Resolve helpers (operator-facing name -> surrogate id) ───────────
+//
+// docs/SCHEMA_v5_DESIGN.md §"Boundary discipline for the SDK surface":
+//
+//   PUBLIC SDK functions take operator-facing names (workstream + local
+//   id + agent name). Internal helpers take surrogate ids. Resolution
+//   happens at the public-function entry, exactly once.
+//
+// These helpers throw typed errors mapped to the same exit codes that
+// the previous "row not found" paths surfaced. Errors live next to
+// their domain modules (TaskNotFoundError in src/tasks/errors.ts,
+// AgentNotFoundError in src/agents/errors.ts, WorkstreamNameInvalidError
+// in src/workstream.ts) so the resolve functions just import + throw.
+//
+// We import them lazily via dynamic require to avoid an import cycle
+// (workstream/agents/tasks all import from db.ts). Each resolve helper
+// throws a TS Error subclass whose `.name` matches the canonical typed
+// error a consumer would expect.
+
+export class WorkstreamNotFoundError extends Error implements HasNextSteps {
+  override readonly name = "WorkstreamNotFoundError";
+  constructor(public readonly workstream: string) {
+    super(`no such workstream: ${workstream}`);
+  }
+  errorNextSteps(): NextStep[] {
+    return [
+      { intent: "List workstreams", command: "mu workstream list" },
+      {
+        intent: "Initialise this workstream",
+        command: `mu workstream init ${this.workstream}`,
+      },
+    ];
+  }
+}
+
+/** Resolve a workstream name to its INTEGER surrogate id. Throws
+ *  WorkstreamNotFoundError on miss. Pure: no auto-create — callers
+ *  that want the auto-create-or-resolve semantics use
+ *  `ensureWorkstream` from src/workstream.ts (which returns void;
+ *  follow up with `resolveWorkstreamId` if the id is needed).
+ */
+export function resolveWorkstreamId(db: Db, workstream: string): number {
+  const row = db.prepare("SELECT id FROM workstreams WHERE name = ?").get(workstream) as
+    | { id: number }
+    | undefined;
+  if (!row) throw new WorkstreamNotFoundError(workstream);
+  return row.id;
+}
+
+/** Resolve a workstream name to its id, returning null on miss instead
+ *  of throwing. Useful for read paths that want to early-return [] on
+ *  a non-existent workstream (e.g. listTasks). */
+export function tryResolveWorkstreamId(db: Db, workstream: string): number | null {
+  const row = db.prepare("SELECT id FROM workstreams WHERE name = ?").get(workstream) as
+    | { id: number }
+    | undefined;
+  return row ? row.id : null;
+}
+
+/** Resolve a (workstream_id, local_id) pair to the task's surrogate id.
+ *  Throws an Error tagged 'TaskNotFoundError' on miss (callers in
+ *  src/tasks*.ts wrap with the proper typed error class — but a bare
+ *  caller still gets a meaningful message). */
+export function resolveTaskId(db: Db, workstreamId: number, localId: string): number {
+  const row = db
+    .prepare("SELECT id FROM tasks WHERE workstream_id = ? AND local_id = ?")
+    .get(workstreamId, localId) as { id: number } | undefined;
+  if (!row) {
+    const err = new Error(`no such task in workstream: ${localId}`);
+    (err as Error & { name: string }).name = "TaskNotFoundError";
+    throw err;
+  }
+  return row.id;
+}
+
+/** Resolve a (workstream_id, agent_name) pair to the agent's surrogate
+ *  id. Throws an Error tagged 'AgentNotFoundError' on miss. */
+export function resolveAgentId(db: Db, workstreamId: number, name: string): number {
+  const row = db
+    .prepare("SELECT id FROM agents WHERE workstream_id = ? AND name = ?")
+    .get(workstreamId, name) as { id: number } | undefined;
+  if (!row) {
+    const err = new Error(`no such agent in workstream: ${name}`);
+    (err as Error & { name: string }).name = "AgentNotFoundError";
+    throw err;
+  }
+  return row.id;
+}
+
 export class SchemaTooOldError extends Error implements HasNextSteps {
   override readonly name = "SchemaTooOldError";
   constructor(

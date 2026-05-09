@@ -282,11 +282,15 @@ describe("--json output on read verbs", () => {
     // Direct DB write to avoid pulling in the full approve namespace SDK
     // here; the helper's behaviour is what we want to assert.
     const db2 = openDb({ path: dbPath });
+    const wsId = (
+      db2.prepare("SELECT id FROM workstreams WHERE name = 'auth'").get() as { id: number }
+    ).id;
     db2
       .prepare(
-        "INSERT INTO approvals (slug, workstream, reason, status, requested_by, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+        `INSERT INTO approvals (slug, workstream_id, reason, status, requested_by, created_at)
+           VALUES (?, ?, ?, ?, ?, ?)`,
       )
-      .run("app_test1234", "auth", "test", "pending", "user", new Date().toISOString());
+      .run("app_test1234", wsId, "test", "pending", "user", new Date().toISOString());
     db2.close();
 
     const ok = await runCli(["approve", "deny", "app_test1234", "-w", "auth"], dbPath);

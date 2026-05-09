@@ -8,7 +8,7 @@
 //   - the claim protocol (atomic CAS on tasks.owner via single UPDATE)
 //   - row-shape mapping (snake_case columns → camelCase TS)
 
-import type { Db } from "./db.js";
+import { type Db, resolveWorkstreamId, tryResolveWorkstreamId } from "./db.js";
 import { emitEvent } from "./logs.js";
 import { captureSnapshot } from "./snapshots.js";
 import {
@@ -96,12 +96,16 @@ export interface TaskNoteRow {
 }
 
 interface RawTaskRow {
+  /** Surrogate id (v5). */
+  id: number;
   local_id: string;
+  /** Joined from workstreams.name. */
   workstream: string;
   title: string;
   status: string;
   impact: number;
   effort_days: number;
+  /** Joined from agents.name via owner_id. NULL when unowned. */
   owner: string | null;
   created_at: string;
   updated_at: string;
@@ -109,11 +113,44 @@ interface RawTaskRow {
 
 interface RawTaskNoteRow {
   id: number;
-  task_id: string;
+  task_id: number;
+  /** Joined from tasks.local_id. */
+  task_local_id: string;
   author: string | null;
   content: string;
   created_at: string;
 }
+
+// SELECT clause for v5 task reads. Joins workstreams + agents to expose
+// the operator-facing names as `workstream` and `owner`. Used by every
+// read path so callers don't see surrogate ids.
+const SELECT_TASK_COLS = `
+  t.id AS id,
+  t.local_id AS local_id,
+  ws.name AS workstream,
+  t.title AS title,
+  t.status AS status,
+  t.impact AS impact,
+  t.effort_days AS effort_days,
+  ag.name AS owner,
+  t.created_at AS created_at,
+  t.updated_at AS updated_at
+`;
+
+const TASK_FROM_JOIN = `
+  FROM tasks t
+  JOIN workstreams ws ON ws.id = t.workstream_id
+  LEFT JOIN agents ag ON ag.id = t.owner_id
+`;
+
+const SELECT_NOTE_COLS = `
+  n.id AS id,
+  n.task_id AS task_id,
+  t.local_id AS task_local_id,
+  n.author AS author,
+  n.content AS content,
+  n.created_at AS created_at
+`;
 
 function rowFromDb(row: RawTaskRow): TaskRow {
   return {
@@ -132,11 +169,31 @@ function rowFromDb(row: RawTaskRow): TaskRow {
 function noteFromDb(row: RawTaskNoteRow): TaskNoteRow {
   return {
     id: row.id,
-    taskId: row.task_id,
+    taskId: row.task_local_id,
     author: row.author,
     content: row.content,
     createdAt: row.created_at,
   };
+}
+
+/** Resolve a (workstream?, localId) pair to the surrogate task id.
+ *  When workstream is undefined, falls back to a unique-match across
+ *  all workstreams (the v4 SDK contract: local_id was globally unique;
+ *  v5 keeps backward-compat for single-workstream test fixtures by
+ *  returning the unique row, throwing TaskNotFoundError on miss). */
+function taskIdFor(db: Db, localId: string, workstream?: string): number | null {
+  if (workstream !== undefined) {
+    const wsId = tryResolveWorkstreamId(db, workstream);
+    if (wsId === null) return null;
+    const row = db
+      .prepare("SELECT id FROM tasks WHERE workstream_id = ? AND local_id = ?")
+      .get(wsId, localId) as { id: number } | undefined;
+    return row ? row.id : null;
+  }
+  const row = db.prepare("SELECT id FROM tasks WHERE local_id = ? LIMIT 1").get(localId) as
+    | { id: number }
+    | undefined;
+  return row ? row.id : null;
 }
 
 // ─── ID validation ─────────────────────────────────────────────────────
@@ -225,19 +282,15 @@ export function slugifyTitle(title: string): string {
  */
 export function idFromTitle(db: Db, workstream: string, title: string): string {
   const base = slugifyTitle(title);
-  if (getTask(db, base) === undefined) return base;
-  // Truncate the BASE before adding the suffix, not the
-  // suffix-after-concat. Concat-then-slice (the previous shape)
-  // chops off the suffix when base.length is at SLUG_HARD_CAP,
-  // making `_2` through `_999` all collapse back to base and the
-  // loop exhaust 998 iterations before throwing an inscrutable
-  // error. (review_code_slugify_collision_truncates: latent bug,
-  // surfaced theoretically when a base hit the 64-char hard cap.)
+  // v5: tasks.local_id is per-workstream unique. Collision check is
+  // scoped to the same workstream so the same slug can be reused
+  // across workstreams without the suffix loop.
+  if (getTask(db, base, workstream) === undefined) return base;
   for (let i = 2; i < 1000; i++) {
     const suffix = `_${i}`;
     const truncatedBase = base.slice(0, SLUG_HARD_CAP - suffix.length);
     const candidate = `${truncatedBase}${suffix}`;
-    if (getTask(db, candidate) === undefined) return candidate;
+    if (getTask(db, candidate, workstream) === undefined) return candidate;
   }
   throw new Error(`could not derive a unique id from title in workstream ${workstream}: ${title}`);
 }
@@ -268,10 +321,22 @@ export function sanitiseTaskId(input: string): string {
 
 // ─── Read primitives ───────────────────────────────────────────────────
 
-export function getTask(db: Db, localId: string): TaskRow | undefined {
-  const row = db.prepare("SELECT * FROM tasks WHERE local_id = ?").get(localId) as
-    | RawTaskRow
-    | undefined;
+export function getTask(db: Db, localId: string, workstream?: string): TaskRow | undefined {
+  if (workstream !== undefined) {
+    const wsId = tryResolveWorkstreamId(db, workstream);
+    if (wsId === null) return undefined;
+    const row = db
+      .prepare(
+        `SELECT ${SELECT_TASK_COLS} ${TASK_FROM_JOIN} WHERE t.workstream_id = ? AND t.local_id = ?`,
+      )
+      .get(wsId, localId) as RawTaskRow | undefined;
+    return row ? rowFromDb(row) : undefined;
+  }
+  const row = db
+    .prepare(
+      `SELECT ${SELECT_TASK_COLS} ${TASK_FROM_JOIN} WHERE t.local_id = ? ORDER BY ws.name LIMIT 1`,
+    )
+    .get(localId) as RawTaskRow | undefined;
   return row ? rowFromDb(row) : undefined;
 }
 
@@ -296,39 +361,75 @@ export function listTasks(db: Db, workstream?: string, opts: ListTasksOptions = 
   const where: string[] = [];
   const params: unknown[] = [];
   if (workstream !== undefined) {
-    where.push("workstream = ?");
-    params.push(workstream);
+    const wsId = tryResolveWorkstreamId(db, workstream);
+    if (wsId === null) return [];
+    where.push("t.workstream_id = ?");
+    params.push(wsId);
   }
   if (statuses !== undefined) {
-    where.push(`status IN (${statuses.map(() => "?").join(", ")})`);
+    where.push(`t.status IN (${statuses.map(() => "?").join(", ")})`);
     params.push(...statuses);
   }
   const sql =
     where.length === 0
-      ? "SELECT * FROM tasks ORDER BY local_id"
-      : `SELECT * FROM tasks WHERE ${where.join(" AND ")} ORDER BY local_id`;
+      ? `SELECT ${SELECT_TASK_COLS} ${TASK_FROM_JOIN} ORDER BY t.local_id`
+      : `SELECT ${SELECT_TASK_COLS} ${TASK_FROM_JOIN} WHERE ${where.join(" AND ")} ORDER BY t.local_id`;
   const rows = db.prepare(sql).all(...params) as RawTaskRow[];
   return rows.map(rowFromDb);
 }
 
+// The three views (ready, blocked, goals) project tasks.* directly,
+// so they expose v5 columns (id, workstream_id, owner_id). We wrap
+// them with the same JOINs as TASK_FROM_JOIN to translate back to the
+// operator-facing v4 row shape.
+const VIEW_FROM_JOIN = (view: string) => `
+  FROM ${view} v
+  JOIN workstreams ws ON ws.id = v.workstream_id
+  LEFT JOIN agents ag ON ag.id = v.owner_id
+`;
+const SELECT_VIEW_COLS = `
+  v.id AS id,
+  v.local_id AS local_id,
+  ws.name AS workstream,
+  v.title AS title,
+  v.status AS status,
+  v.impact AS impact,
+  v.effort_days AS effort_days,
+  ag.name AS owner,
+  v.created_at AS created_at,
+  v.updated_at AS updated_at
+`;
+
 export function listReady(db: Db, workstream: string): TaskRow[] {
+  const wsId = tryResolveWorkstreamId(db, workstream);
+  if (wsId === null) return [];
   const rows = db
-    .prepare("SELECT * FROM ready WHERE workstream = ? ORDER BY local_id")
-    .all(workstream) as RawTaskRow[];
+    .prepare(
+      `SELECT ${SELECT_VIEW_COLS} ${VIEW_FROM_JOIN("ready")} WHERE v.workstream_id = ? ORDER BY v.local_id`,
+    )
+    .all(wsId) as RawTaskRow[];
   return rows.map(rowFromDb);
 }
 
 export function listBlocked(db: Db, workstream: string): TaskRow[] {
+  const wsId = tryResolveWorkstreamId(db, workstream);
+  if (wsId === null) return [];
   const rows = db
-    .prepare("SELECT * FROM blocked WHERE workstream = ? ORDER BY local_id")
-    .all(workstream) as RawTaskRow[];
+    .prepare(
+      `SELECT ${SELECT_VIEW_COLS} ${VIEW_FROM_JOIN("blocked")} WHERE v.workstream_id = ? ORDER BY v.local_id`,
+    )
+    .all(wsId) as RawTaskRow[];
   return rows.map(rowFromDb);
 }
 
 export function listGoals(db: Db, workstream: string): TaskRow[] {
+  const wsId = tryResolveWorkstreamId(db, workstream);
+  if (wsId === null) return [];
   const rows = db
-    .prepare("SELECT * FROM goals WHERE workstream = ? ORDER BY local_id")
-    .all(workstream) as RawTaskRow[];
+    .prepare(
+      `SELECT ${SELECT_VIEW_COLS} ${VIEW_FROM_JOIN("goals")} WHERE v.workstream_id = ? ORDER BY v.local_id`,
+    )
+    .all(wsId) as RawTaskRow[];
   return rows.map(rowFromDb);
 }
 
@@ -337,11 +438,13 @@ export function listGoals(db: Db, workstream: string): TaskRow[] {
  *  exposed as a named SDK helper so those CLI verbs don't re-derive
  *  the row-shape conversion (review_code_raw_task_state_duplicate). */
 export function listInProgress(db: Db, workstream: string): TaskRow[] {
+  const wsId = tryResolveWorkstreamId(db, workstream);
+  if (wsId === null) return [];
   const rows = db
     .prepare(
-      "SELECT * FROM tasks WHERE workstream = ? AND status = 'IN_PROGRESS' ORDER BY updated_at DESC",
+      `SELECT ${SELECT_TASK_COLS} ${TASK_FROM_JOIN} WHERE t.workstream_id = ? AND t.status = 'IN_PROGRESS' ORDER BY t.updated_at DESC`,
     )
-    .all(workstream) as RawTaskRow[];
+    .all(wsId) as RawTaskRow[];
   return rows.map(rowFromDb);
 }
 
@@ -351,17 +454,26 @@ export function listInProgress(db: Db, workstream: string): TaskRow[] {
  *  raw-row type that was duplicating RawTaskRow
  *  (review_code_raw_task_state_duplicate). */
 export function listRecentClosed(db: Db, workstream: string, limit = 5): TaskRow[] {
+  const wsId = tryResolveWorkstreamId(db, workstream);
+  if (wsId === null) return [];
   const rows = db
     .prepare(
-      "SELECT * FROM tasks WHERE workstream = ? AND status = 'CLOSED' ORDER BY updated_at DESC LIMIT ?",
+      `SELECT ${SELECT_TASK_COLS} ${TASK_FROM_JOIN} WHERE t.workstream_id = ? AND t.status = 'CLOSED' ORDER BY t.updated_at DESC LIMIT ?`,
     )
-    .all(workstream, limit) as RawTaskRow[];
+    .all(wsId, limit) as RawTaskRow[];
   return rows.map(rowFromDb);
 }
 
-export function listNotes(db: Db, taskId: string): TaskNoteRow[] {
+/** List notes for a task. Operator-facing local_id; resolves to the
+ *  surrogate task id via taskIdFor (with optional workstream scope). */
+export function listNotes(db: Db, taskLocalId: string, workstream?: string): TaskNoteRow[] {
+  const taskId = taskIdFor(db, taskLocalId, workstream);
+  if (taskId === null) return [];
   const rows = db
-    .prepare("SELECT * FROM task_notes WHERE task_id = ? ORDER BY id")
+    .prepare(
+      `SELECT ${SELECT_NOTE_COLS} FROM task_notes n JOIN tasks t ON t.id = n.task_id
+        WHERE n.task_id = ? ORDER BY n.id`,
+    )
     .all(taskId) as RawTaskNoteRow[];
   return rows.map(noteFromDb);
 }
@@ -390,9 +502,12 @@ export function listTasksByOwner(
   // obvious one; REJECTED and DEFERRED are also off the agent's plate
   // (the user has decided 'won't do' or 'not now'). includeClosed
   // re-includes ALL of those so historical attribution is recoverable.
-  const sql = opts.includeClosed
-    ? "SELECT * FROM tasks WHERE owner = ? ORDER BY workstream, local_id"
-    : "SELECT * FROM tasks WHERE owner = ? AND status NOT IN ('CLOSED', 'REJECTED', 'DEFERRED') ORDER BY workstream, local_id";
+  // Filter on the joined ag.name so the operator-facing owner string
+  // still drives the lookup; FK is now via owner_id.
+  const filter = opts.includeClosed ? "" : "AND t.status NOT IN ('CLOSED', 'REJECTED', 'DEFERRED')";
+  const sql = `SELECT ${SELECT_TASK_COLS} ${TASK_FROM_JOIN}
+               WHERE ag.name = ? ${filter}
+               ORDER BY ws.name, t.local_id`;
   const rows = db.prepare(sql).all(owner) as RawTaskRow[];
   return rows.map(rowFromDb);
 }
@@ -412,14 +527,14 @@ export interface SearchTasksOptions {
  */
 export function searchTasks(db: Db, pattern: string, opts: SearchTasksOptions = {}): TaskRow[] {
   const like = `%${pattern.toLowerCase()}%`;
-  const wsClause = opts.workstream === undefined ? "" : "t.workstream = ? AND";
+  const wsClause = opts.workstream === undefined ? "" : "ws.name = ? AND";
   const wsParams = opts.workstream === undefined ? [] : [opts.workstream];
   const orderBy =
-    opts.workstream === undefined ? "ORDER BY t.workstream, t.local_id" : "ORDER BY t.local_id";
+    opts.workstream === undefined ? "ORDER BY ws.name, t.local_id" : "ORDER BY t.local_id";
 
   if (opts.includeNotes) {
-    const sql = `SELECT DISTINCT t.* FROM tasks t
-                 LEFT JOIN task_notes n ON n.task_id = t.local_id
+    const sql = `SELECT DISTINCT ${SELECT_TASK_COLS} ${TASK_FROM_JOIN}
+                 LEFT JOIN task_notes n ON n.task_id = t.id
                  WHERE ${wsClause} (
                    LOWER(t.title) LIKE ?
                    OR LOWER(t.local_id) LIKE ?
@@ -429,7 +544,7 @@ export function searchTasks(db: Db, pattern: string, opts: SearchTasksOptions = 
     return (db.prepare(sql).all(...wsParams, like, like, like) as RawTaskRow[]).map(rowFromDb);
   }
 
-  const sql = `SELECT t.* FROM tasks t
+  const sql = `SELECT ${SELECT_TASK_COLS} ${TASK_FROM_JOIN}
                WHERE ${wsClause} (LOWER(t.title) LIKE ? OR LOWER(t.local_id) LIKE ?)
                ${orderBy}`;
   return (db.prepare(sql).all(...wsParams, like, like) as RawTaskRow[]).map(rowFromDb);
@@ -447,17 +562,27 @@ export interface TaskEdges {
  * `getPrerequisites()`; this helper is the immediate-neighbour view used
  * by `mu task show`.
  */
-export function getTaskEdges(db: Db, taskId: string): TaskEdges {
+export function getTaskEdges(db: Db, taskLocalId: string, workstream?: string): TaskEdges {
+  const taskId = taskIdFor(db, taskLocalId, workstream);
+  if (taskId === null) return { blockers: [], dependents: [] };
   const blockers = (
     db
-      .prepare("SELECT from_task FROM task_edges WHERE to_task = ? ORDER BY from_task")
-      .all(taskId) as { from_task: string }[]
-  ).map((r) => r.from_task);
+      .prepare(
+        `SELECT t.local_id AS id FROM task_edges e
+           JOIN tasks t ON t.id = e.from_task_id
+          WHERE e.to_task_id = ? ORDER BY t.local_id`,
+      )
+      .all(taskId) as { id: string }[]
+  ).map((r) => r.id);
   const dependents = (
     db
-      .prepare("SELECT to_task FROM task_edges WHERE from_task = ? ORDER BY to_task")
-      .all(taskId) as { to_task: string }[]
-  ).map((r) => r.to_task);
+      .prepare(
+        `SELECT t.local_id AS id FROM task_edges e
+           JOIN tasks t ON t.id = e.to_task_id
+          WHERE e.from_task_id = ? ORDER BY t.local_id`,
+      )
+      .all(taskId) as { id: string }[]
+  ).map((r) => r.id);
   return { blockers, dependents };
 }
 
@@ -466,18 +591,24 @@ export function getTaskEdges(db: Db, taskId: string): TaskEdges {
  * traversal (i.e. the set of tasks that block this one), including the
  * task itself.
  */
-export function getPrerequisites(db: Db, taskId: string): Set<string> {
+export function getPrerequisites(db: Db, taskLocalId: string, workstream?: string): Set<string> {
+  const taskId = taskIdFor(db, taskLocalId, workstream);
+  if (taskId === null) return new Set([taskLocalId]);
+  // Walk reverse edges in surrogate-id space, then translate back to
+  // local_id strings. The seed must be the surrogate id; we union the
+  // local_id of the seed itself for backward-compat with the v4 contract
+  // (getPrerequisites returns an inclusive set).
   const rows = db
     .prepare(
       `WITH RECURSIVE reach(node) AS (
          SELECT ?
          UNION
-         SELECT from_task FROM task_edges, reach WHERE to_task = reach.node
+         SELECT from_task_id FROM task_edges, reach WHERE to_task_id = reach.node
        )
-       SELECT node FROM reach`,
+       SELECT t.local_id AS local_id FROM reach r JOIN tasks t ON t.id = r.node`,
     )
-    .all(taskId) as { node: string }[];
-  return new Set(rows.map((r) => r.node));
+    .all(taskId) as { local_id: string }[];
+  return new Set(rows.map((r) => r.local_id));
 }
 
 // ─── Internal: cycle check ─────────────────────────────────────────────
@@ -486,18 +617,18 @@ export function getPrerequisites(db: Db, taskId: string): Set<string> {
  * Adding edge `from -> to` creates a cycle iff there's already a path
  * `to -> ... -> from`. SQL recursive CTE expresses this exactly.
  */
-function wouldCreateCycle(db: Db, from: string, to: string): boolean {
-  if (from === to) return true;
+function wouldCreateCycle(db: Db, fromId: number, toId: number): boolean {
+  if (fromId === toId) return true;
   const result = db
     .prepare(
       `WITH RECURSIVE forward(node) AS (
          SELECT ?
          UNION
-         SELECT to_task FROM task_edges, forward WHERE from_task = forward.node
+         SELECT to_task_id FROM task_edges, forward WHERE from_task_id = forward.node
        )
        SELECT 1 AS hit FROM forward WHERE node = ? LIMIT 1`,
     )
-    .get(to, from) as { hit: number } | undefined;
+    .get(toId, fromId) as { hit: number } | undefined;
   return result !== undefined;
 }
 
@@ -539,27 +670,43 @@ export function addTask(db: Db, opts: AddTaskOptions): TaskRow {
   if (!isValidTaskId(opts.localId)) {
     throw new TaskIdInvalidError(opts.localId, "syntax");
   }
-  if (getTask(db, opts.localId) !== undefined) {
-    throw new TaskExistsError(opts.localId);
-  }
 
   return db.transaction(() => {
-    // Auto-create the workstream row so tasks.workstream FK is satisfied
-    // (preserves the spawn-without-init ergonomics; see ensureWorkstream's docstring).
+    // Auto-create the workstream row so tasks.workstream_id FK is
+    // satisfied (preserves spawn-without-init ergonomics).
     ensureWorkstream(db, opts.workstream);
+    const wsId = resolveWorkstreamId(db, opts.workstream);
+
+    // Per-workstream uniqueness: a duplicate local_id within the same
+    // workstream throws TaskExistsError. Different workstreams may
+    // legitimately share local_ids in v5.
+    const existing = db
+      .prepare("SELECT id FROM tasks WHERE workstream_id = ? AND local_id = ?")
+      .get(wsId, opts.localId) as { id: number } | undefined;
+    if (existing) {
+      throw new TaskExistsError(opts.localId);
+    }
+
     const now = new Date().toISOString();
-    db.prepare(
-      `INSERT INTO tasks (local_id, workstream, title, status, impact, effort_days, created_at, updated_at)
-       VALUES (?, ?, ?, 'OPEN', ?, ?, ?, ?)`,
-    ).run(opts.localId, opts.workstream, opts.title, opts.impact, opts.effortDays, now, now);
+    const insertResult = db
+      .prepare(
+        `INSERT INTO tasks (workstream_id, local_id, title, status, impact, effort_days, created_at, updated_at)
+         VALUES (?, ?, ?, 'OPEN', ?, ?, ?, ?)`,
+      )
+      .run(wsId, opts.localId, opts.title, opts.impact, opts.effortDays, now, now);
+    const newTaskId = Number(insertResult.lastInsertRowid);
 
     if (opts.blockedBy && opts.blockedBy.length > 0) {
-      const blockerLookup = db.prepare("SELECT workstream FROM tasks WHERE local_id = ?");
+      const blockerLookup = db.prepare(
+        `SELECT t.id AS id, ws.name AS workstream FROM tasks t
+           JOIN workstreams ws ON ws.id = t.workstream_id
+          WHERE t.local_id = ? LIMIT 1`,
+      );
       const insertEdge = db.prepare(
-        "INSERT INTO task_edges (from_task, to_task, created_at) VALUES (?, ?, ?)",
+        "INSERT INTO task_edges (from_task_id, to_task_id, created_at) VALUES (?, ?, ?)",
       );
       for (const blocker of opts.blockedBy) {
-        const row = blockerLookup.get(blocker) as { workstream: string } | undefined;
+        const row = blockerLookup.get(blocker) as { id: number; workstream: string } | undefined;
         if (!row) {
           throw new TaskNotFoundError(blocker);
         }
@@ -571,14 +718,14 @@ export function addTask(db: Db, opts: AddTaskOptions): TaskRow {
             opts.workstream,
           );
         }
-        if (wouldCreateCycle(db, blocker, opts.localId)) {
+        if (wouldCreateCycle(db, row.id, newTaskId)) {
           throw new CycleError(blocker, opts.localId);
         }
-        insertEdge.run(blocker, opts.localId, now);
+        insertEdge.run(row.id, newTaskId, now);
       }
     }
 
-    const row = getTask(db, opts.localId);
+    const row = getTask(db, opts.localId, opts.workstream);
     if (!row) throw new Error(`addTask: row missing after insert: ${opts.localId}`);
     const blockedBy =
       opts.blockedBy && opts.blockedBy.length > 0 ? `, blocked-by=${opts.blockedBy.join(",")}` : "";
@@ -596,18 +743,24 @@ export function addTask(db: Db, opts: AddTaskOptions): TaskRow {
 export interface AddNoteOptions {
   /** Free-form author label. Convention: agent name, "user", or "orchestrator". */
   author?: string;
+  /** Workstream context (operator-facing name). When omitted, the SDK
+   *  resolves the task by local_id alone (single-workstream fixtures);
+   *  pass when local_ids may collide across workstreams. */
+  workstream?: string;
 }
 
 export function addNote(
   db: Db,
-  taskId: string,
+  taskLocalId: string,
   content: string,
   opts: AddNoteOptions = {},
 ): TaskNoteRow {
-  const task = getTask(db, taskId);
+  const task = getTask(db, taskLocalId, opts.workstream);
   if (!task) {
-    throw new TaskNotFoundError(taskId);
+    throw new TaskNotFoundError(taskLocalId);
   }
+  const taskId = taskIdFor(db, task.localId, task.workstream);
+  if (taskId === null) throw new TaskNotFoundError(taskLocalId);
   const now = new Date().toISOString();
   const result = db
     .prepare("INSERT INTO task_notes (task_id, author, content, created_at) VALUES (?, ?, ?, ?)")
@@ -616,12 +769,12 @@ export function addNote(
   emitEvent(
     db,
     task.workstream,
-    `task note ${taskId} (note #${noteId} by ${opts.author ?? "orchestrator"})`,
+    `task note ${taskLocalId} (note #${noteId} by ${opts.author ?? "orchestrator"})`,
     opts.author ?? "system",
   );
   return {
     id: noteId,
-    taskId,
+    taskId: taskLocalId,
     author: opts.author ?? null,
     content,
     createdAt: now,
@@ -662,12 +815,17 @@ export function addBlockEdge(db: Db, blocked: string, blocker: string): BlockEdg
       blockedRow.workstream,
     );
   }
-  if (wouldCreateCycle(db, blocker, blocked)) {
+  const blockedId = taskIdFor(db, blocked, blockedRow.workstream);
+  const blockerId = taskIdFor(db, blocker, blockerRow.workstream);
+  if (blockedId === null || blockerId === null) throw new TaskNotFoundError(blocked);
+  if (wouldCreateCycle(db, blockerId, blockedId)) {
     throw new CycleError(blocker, blocked);
   }
   const result = db
-    .prepare("INSERT OR IGNORE INTO task_edges (from_task, to_task, created_at) VALUES (?, ?, ?)")
-    .run(blocker, blocked, new Date().toISOString());
+    .prepare(
+      "INSERT OR IGNORE INTO task_edges (from_task_id, to_task_id, created_at) VALUES (?, ?, ?)",
+    )
+    .run(blockerId, blockedId, new Date().toISOString());
   const added = result.changes > 0;
   if (added) emitEvent(db, blockedRow.workstream, `task block ${blocked} by ${blocker}`);
   return { added };
@@ -685,16 +843,19 @@ export interface RemoveBlockEdgeResult {
  * tasks are gone too.
  */
 export function removeBlockEdge(db: Db, blocked: string, blocker: string): RemoveBlockEdgeResult {
+  const blockedRow = getTask(db, blocked);
+  if (!blockedRow) return { removed: false };
+  const blockerRow = getTask(db, blocker);
+  if (!blockerRow) return { removed: false };
+  const blockedId = taskIdFor(db, blocked, blockedRow.workstream);
+  const blockerId = taskIdFor(db, blocker, blockerRow.workstream);
+  if (blockedId === null || blockerId === null) return { removed: false };
   const result = db
-    .prepare("DELETE FROM task_edges WHERE from_task = ? AND to_task = ?")
-    .run(blocker, blocked);
+    .prepare("DELETE FROM task_edges WHERE from_task_id = ? AND to_task_id = ?")
+    .run(blockerId, blockedId);
   const removed = result.changes > 0;
   if (removed) {
-    // Use the blocked task's workstream as the channel (both tasks must
-    // be in the same workstream by the addBlockEdge invariant).
-    const blockedRow = getTask(db, blocked);
-    const ws = blockedRow?.workstream ?? null;
-    emitEvent(db, ws, `task unblock ${blocked} by ${blocker}`);
+    emitEvent(db, blockedRow.workstream, `task unblock ${blocked} by ${blocker}`);
   }
   return { removed };
 }
@@ -718,27 +879,34 @@ export interface DeleteTaskResult {
  * Pre-counts the cascade victims for reporting because SQLite's
  * `changes()` only reports rows directly affected by the DELETE.
  */
-export function deleteTask(db: Db, localId: string): DeleteTaskResult {
-  const before = getTask(db, localId);
+export function deleteTask(db: Db, localId: string, workstream?: string): DeleteTaskResult {
+  const before = getTask(db, localId, workstream);
   // Pre-mutation snapshot. delete cascades into task_edges and
   // task_notes; no per-row history can reconstruct it. Skip when the
   // row doesn't exist (the verb is idempotent on missing).
   if (before) {
     captureSnapshot(db, `task delete ${localId}`, before.workstream);
   }
+  if (!before) {
+    return { deleted: false, deletedEdges: 0, deletedNotes: 0 };
+  }
+  const taskId = taskIdFor(db, localId, before.workstream);
+  if (taskId === null) {
+    return { deleted: false, deletedEdges: 0, deletedNotes: 0 };
+  }
   const edgesBefore = (
     db
-      .prepare("SELECT COUNT(*) AS n FROM task_edges WHERE from_task = ? OR to_task = ?")
-      .get(localId, localId) as { n: number }
+      .prepare("SELECT COUNT(*) AS n FROM task_edges WHERE from_task_id = ? OR to_task_id = ?")
+      .get(taskId, taskId) as { n: number }
   ).n;
   const notesBefore = (
-    db.prepare("SELECT COUNT(*) AS n FROM task_notes WHERE task_id = ?").get(localId) as {
+    db.prepare("SELECT COUNT(*) AS n FROM task_notes WHERE task_id = ?").get(taskId) as {
       n: number;
     }
   ).n;
-  const result = db.prepare("DELETE FROM tasks WHERE local_id = ?").run(localId);
+  const result = db.prepare("DELETE FROM tasks WHERE id = ?").run(taskId);
   const deleted = result.changes > 0;
-  if (deleted && before) {
+  if (deleted) {
     emitEvent(
       db,
       before.workstream,
@@ -775,9 +943,20 @@ export interface UpdateTaskResult {
  * (use `claimTask` / `releaseTask`), local_id (rename is deferred), or
  * workstream (cross-workstream moves are deferred).
  */
-export function updateTask(db: Db, localId: string, opts: UpdateTaskOptions): UpdateTaskResult {
-  const before = getTask(db, localId);
+export interface UpdateTaskScopeOption {
+  workstream?: string;
+}
+
+export function updateTask(
+  db: Db,
+  localId: string,
+  opts: UpdateTaskOptions,
+  scope: UpdateTaskScopeOption = {},
+): UpdateTaskResult {
+  const before = getTask(db, localId, scope.workstream);
   if (!before) throw new TaskNotFoundError(localId);
+  const taskId = taskIdFor(db, before.localId, before.workstream);
+  if (taskId === null) throw new TaskNotFoundError(localId);
 
   const setters: string[] = [];
   const params: unknown[] = [];
@@ -805,9 +984,9 @@ export function updateTask(db: Db, localId: string, opts: UpdateTaskOptions): Up
 
   setters.push("updated_at = ?");
   params.push(new Date().toISOString());
-  params.push(localId);
+  params.push(taskId);
 
-  db.prepare(`UPDATE tasks SET ${setters.join(", ")} WHERE local_id = ?`).run(...params);
+  db.prepare(`UPDATE tasks SET ${setters.join(", ")} WHERE id = ?`).run(...params);
   emitEvent(db, before.workstream, `task update ${localId} (changed: ${changedFields.join(", ")})`);
   return { updated: true, changedFields };
 }
@@ -837,40 +1016,57 @@ export interface ReparentTaskResult {
  */
 export function reparentTask(
   db: Db,
-  taskId: string,
+  taskLocalId: string,
   blockers: readonly string[],
+  scope: { workstream?: string } = {},
 ): ReparentTaskResult {
-  const task = getTask(db, taskId);
-  if (!task) throw new TaskNotFoundError(taskId);
+  const task = getTask(db, taskLocalId, scope.workstream);
+  if (!task) throw new TaskNotFoundError(taskLocalId);
+  const taskSurrogateId = taskIdFor(db, task.localId, task.workstream);
+  if (taskSurrogateId === null) throw new TaskNotFoundError(taskLocalId);
 
-  for (const blockerId of blockers) {
-    if (blockerId === taskId) {
-      throw new CycleError(blockerId, taskId);
+  // Resolve every blocker up-front to its surrogate id; do all
+  // existence + same-workstream + cycle checks before any DELETE.
+  // Look up blockers globally (no scope) so a blocker that exists in
+  // a DIFFERENT workstream surfaces CrossWorkstreamEdgeError, not
+  // TaskNotFoundError. This matches the pre-v5 contract.
+  const blockerIds: number[] = [];
+  for (const blockerLocalId of blockers) {
+    if (blockerLocalId === taskLocalId) {
+      throw new CycleError(blockerLocalId, taskLocalId);
     }
-    const blocker = getTask(db, blockerId);
-    if (!blocker) throw new TaskNotFoundError(blockerId);
+    const blocker = getTask(db, blockerLocalId);
+    if (!blocker) throw new TaskNotFoundError(blockerLocalId);
     if (blocker.workstream !== task.workstream) {
-      throw new CrossWorkstreamEdgeError(blockerId, blocker.workstream, taskId, task.workstream);
+      throw new CrossWorkstreamEdgeError(
+        blockerLocalId,
+        blocker.workstream,
+        taskLocalId,
+        task.workstream,
+      );
     }
-    if (wouldCreateCycle(db, blockerId, taskId)) {
-      throw new CycleError(blockerId, taskId);
+    const blockerId = taskIdFor(db, blocker.localId, blocker.workstream);
+    if (blockerId === null) throw new TaskNotFoundError(blockerLocalId);
+    if (wouldCreateCycle(db, blockerId, taskSurrogateId)) {
+      throw new CycleError(blockerLocalId, taskLocalId);
     }
+    blockerIds.push(blockerId);
   }
 
   return db.transaction(() => {
-    const removed = db.prepare("DELETE FROM task_edges WHERE to_task = ?").run(taskId);
+    const removed = db.prepare("DELETE FROM task_edges WHERE to_task_id = ?").run(taskSurrogateId);
     const insertEdge = db.prepare(
-      "INSERT INTO task_edges (from_task, to_task, created_at) VALUES (?, ?, ?)",
+      "INSERT INTO task_edges (from_task_id, to_task_id, created_at) VALUES (?, ?, ?)",
     );
     const now = new Date().toISOString();
-    for (const blockerId of blockers) {
-      insertEdge.run(blockerId, taskId, now);
+    for (const blockerId of blockerIds) {
+      insertEdge.run(blockerId, taskSurrogateId, now);
     }
     const blockersBit = blockers.length > 0 ? `, new=${[...blockers].join(",")}` : "";
     emitEvent(
       db,
       task.workstream,
-      `task reparent ${taskId} (removed ${removed.changes} edges, added ${blockers.length}${blockersBit})`,
+      `task reparent ${taskLocalId} (removed ${removed.changes} edges, added ${blockers.length}${blockersBit})`,
     );
     return { removedEdges: removed.changes, addedEdges: blockers.length };
   })();

@@ -144,6 +144,7 @@ describe("openDb", () => {
     insertTask(db, { id: "b", title: "B", impact: 50, effortDays: 1 });
     insertEdge(db, "a", "b");
     db.prepare("UPDATE tasks SET status='CLOSED' WHERE local_id='a'").run();
+    void taskIdByLocalId; // silence "unused" warning when this test path doesn't hit it
     const ready = (
       db.prepare("SELECT local_id FROM ready ORDER BY local_id").all() as {
         local_id: string;
@@ -178,7 +179,8 @@ describe("openDb", () => {
     insertNote(db, "a", "alice", "starting work");
     insertNote(db, "a", "alice", "finished part 1");
 
-    db.prepare("DELETE FROM tasks WHERE local_id='a'").run();
+    const aId = taskIdByLocalId(db, "a");
+    db.prepare("DELETE FROM tasks WHERE id = ?").run(aId);
 
     const edges = db.prepare("SELECT * FROM task_edges").all();
     const notes = db.prepare("SELECT * FROM task_notes").all();
@@ -204,13 +206,18 @@ describe("openDb", () => {
   it("rejects unknown task status", () => {
     const db = openDb({ path: dbPath });
     ensureTestWorkstream(db, "test");
+    const wsId = (
+      db.prepare("SELECT id FROM workstreams WHERE name = ?").get("test") as {
+        id: number;
+      }
+    ).id;
     expect(() =>
       db
         .prepare(
-          `INSERT INTO tasks (local_id, workstream, title, status, impact, effort_days, created_at, updated_at)
-         VALUES ('x', 'test', 'X', 'BOGUS', 50, 1, datetime('now'), datetime('now'))`,
+          `INSERT INTO tasks (workstream_id, local_id, title, status, impact, effort_days, created_at, updated_at)
+         VALUES (?, 'x', 'X', 'BOGUS', 50, 1, datetime('now'), datetime('now'))`,
         )
-        .run(),
+        .run(wsId),
     ).toThrow();
     db.close();
   });
@@ -232,13 +239,18 @@ describe("openDb", () => {
   it("agent insert and basic CRUD round-trip", () => {
     const db = openDb({ path: dbPath });
     ensureTestWorkstream(db, "auth");
+    const wsId = (
+      db.prepare("SELECT id FROM workstreams WHERE name = ?").get("auth") as {
+        id: number;
+      }
+    ).id;
     const now = new Date().toISOString();
     db.prepare(
-      `INSERT INTO agents (name, workstream, cli, pane_id, status, role, tab, created_at, updated_at)
+      `INSERT INTO agents (name, workstream_id, cli, pane_id, status, role, tab, created_at, updated_at)
        VALUES (@name, @ws, @cli, @pane, @status, @role, @tab, @t, @t)`,
     ).run({
       name: "alice",
-      ws: "auth",
+      ws: wsId,
       cli: "pi",
       pane: "%15",
       status: "spawning",
@@ -246,7 +258,12 @@ describe("openDb", () => {
       tab: "Backend",
       t: now,
     });
-    const row = db.prepare("SELECT * FROM agents WHERE name='alice'").get() as {
+    const row = db
+      .prepare(
+        `SELECT a.name AS name, ws.name AS workstream, a.cli AS cli, a.pane_id AS pane_id, a.status AS status
+           FROM agents a JOIN workstreams ws ON ws.id = a.workstream_id WHERE a.name = 'alice'`,
+      )
+      .get() as {
       name: string;
       workstream: string;
       cli: string;
@@ -344,14 +361,19 @@ interface InsertTaskInput {
 }
 
 function insertTask(db: Db, input: InsertTaskInput): void {
-  // Workstreams table is FK-referenced by tasks; ensure the row exists
-  // before the task INSERT (mirrors what addTask does via
-  // ensureWorkstream).
+  // v5: tasks references workstream_id (INTEGER FK) and uses INTEGER
+  // PK on tasks.id. Helpers translate the test fixture's operator-facing
+  // strings to surrogate ids on the way in.
   ensureTestWorkstream(db, "test");
+  const wsId = (
+    db.prepare("SELECT id FROM workstreams WHERE name = ?").get("test") as {
+      id: number;
+    }
+  ).id;
   db.prepare(
-    `INSERT INTO tasks (local_id, workstream, title, status, impact, effort_days, created_at, updated_at)
-     VALUES (@id, 'test', @title, @status, @impact, @effort_days, datetime('now'), datetime('now'))`,
-  ).run({
+    `INSERT INTO tasks (workstream_id, local_id, title, status, impact, effort_days, created_at, updated_at)
+     VALUES (?, @id, @title, @status, @impact, @effort_days, datetime('now'), datetime('now'))`,
+  ).run(wsId, {
     id: input.id,
     title: input.title,
     status: input.status ?? "OPEN",
@@ -366,13 +388,38 @@ function ensureTestWorkstream(db: Db, name: string): void {
   ).run(name);
 }
 
-function insertEdge(db: Db, from: string, to: string): void {
-  db.prepare(
-    `INSERT INTO task_edges (from_task, to_task, created_at) VALUES (?, ?, datetime('now'))`,
-  ).run(from, to);
+function taskIdByLocalId(db: Db, localId: string): number {
+  const row = db.prepare("SELECT id FROM tasks WHERE local_id = ? LIMIT 1").get(localId) as
+    | { id: number }
+    | undefined;
+  if (!row) throw new Error(`taskIdByLocalId: not found: ${localId}`);
+  return row.id;
 }
 
-function insertNote(db: Db, taskId: string, author: string, content: string): void {
+function insertEdge(db: Db, from: string, to: string): void {
+  // v5: task_edges holds INTEGER FKs (from_task_id, to_task_id).
+  // Translate the test fixture's operator-facing local_ids.
+  // For the FK-violation test (insertEdge(a, ghost)), the lookup will
+  // throw "not found"; tests catch it via .toThrow().
+  let toId: number;
+  try {
+    toId = taskIdByLocalId(db, to);
+  } catch {
+    // Match the v4 'FOREIGN KEY constraint failed' contract by inserting
+    // a deliberately invalid id so SQLite raises the FK error.
+    db.prepare(
+      `INSERT INTO task_edges (from_task_id, to_task_id, created_at) VALUES (?, ?, datetime('now'))`,
+    ).run(taskIdByLocalId(db, from), -999999);
+    return;
+  }
+  const fromId = from === to ? toId : taskIdByLocalId(db, from);
+  db.prepare(
+    `INSERT INTO task_edges (from_task_id, to_task_id, created_at) VALUES (?, ?, datetime('now'))`,
+  ).run(fromId, toId);
+}
+
+function insertNote(db: Db, taskLocalId: string, author: string, content: string): void {
+  const taskId = taskIdByLocalId(db, taskLocalId);
   db.prepare(
     `INSERT INTO task_notes (task_id, author, content, created_at)
      VALUES (?, ?, ?, datetime('now'))`,
@@ -381,7 +428,14 @@ function insertNote(db: Db, taskId: string, author: string, content: string): vo
 
 // ─── Schema migrations ──────────────────────────────────────────
 
-describe("schema migrations: v1 -> v2 (add ON UPDATE CASCADE)", () => {
+// v5 dropped the in-process forward-only migration ladder; pre-v5 DBs
+// are now rejected at openDb time with SchemaTooOldError, and the
+// scripts/migrate-v4-to-v5.ts integration test covers the loud-fail
+// + round-trip. The v1→v2 / v2→v3 / v3→v4 in-process migrators are
+// still on disk for archaeology (kept by schema_v5_drop_migrations_ts
+// as the cleanup follow-up) but no longer wired into openDb. Skip the
+// suite that exercised them.
+describe.skip("schema migrations: v1 -> v2 (add ON UPDATE CASCADE)", () => {
   let tempDir: string;
   let dbPath: string;
 
@@ -586,7 +640,7 @@ describe("schema migrations: v1 -> v2 (add ON UPDATE CASCADE)", () => {
 
 // ─── Migration framework: rollback safety ───────────────────────
 
-describe("schema migrations: framework integrity (rollback on FK violations)", () => {
+describe.skip("schema migrations: framework integrity (rollback on FK violations)", () => {
   let tempDir: string;
   let dbPath: string;
 

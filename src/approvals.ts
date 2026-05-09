@@ -12,11 +12,12 @@
 // emits a kind='event' row to agent_logs.
 
 import { randomBytes } from "node:crypto";
-import type { Db } from "./db.js";
+import { type Db, resolveWorkstreamId, tryResolveWorkstreamId } from "./db.js";
 import { emitEvent } from "./logs.js";
 import type { HasNextSteps, NextStep } from "./output.js";
 import { captureSnapshot } from "./snapshots.js";
 import { sleep } from "./tmux.js";
+import { ensureWorkstream } from "./workstream.js";
 
 export type ApprovalStatus = "pending" | "granted" | "denied" | "timeout";
 
@@ -33,6 +34,9 @@ export interface ApprovalRow {
 
 interface RawApprovalRow {
   slug: string;
+  /** Joined from workstreams.name (NULL only if workstream_id is
+   *  somehow NULL — v5 schema has the column NOT NULL but historical
+   *  rows from migration may be edge cases). */
   workstream: string | null;
   reason: string;
   requested_by: string;
@@ -41,6 +45,22 @@ interface RawApprovalRow {
   decided_at: string | null;
   created_at: string;
 }
+
+const SELECT_APPROVAL_COLS = `
+  ap.slug AS slug,
+  ws.name AS workstream,
+  ap.reason AS reason,
+  ap.requested_by AS requested_by,
+  ap.status AS status,
+  ap.decided_by AS decided_by,
+  ap.decided_at AS decided_at,
+  ap.created_at AS created_at
+`;
+
+// LEFT JOIN: defensive for migrated DBs where workstream_id might in
+// theory be NULL (the v5 schema has it NOT NULL, but historical edge
+// cases shouldn't crash a read path).
+const APPROVAL_FROM_JOIN = "FROM approvals ap LEFT JOIN workstreams ws ON ws.id = ap.workstream_id";
 
 function rowFromDb(row: RawApprovalRow): ApprovalRow {
   return {
@@ -155,10 +175,20 @@ export interface AddApprovalOptions {
 export function addApproval(db: Db, opts: AddApprovalOptions): ApprovalRow {
   const slug = opts.slug ?? generateApprovalSlug();
   const createdAt = new Date().toISOString();
+  // v5: approvals.workstream_id is NOT NULL. The v4 contract permitted
+  // null (workstream-less / global scope); preserve that callable
+  // surface by promoting null to a synthetic '__global__' workstream
+  // — actually, the simpler fix is to require a workstream here. The
+  // CLI always passes one, and tests in single-ws fixtures pass theirs.
+  if (opts.workstream === null) {
+    throw new Error("addApproval: workstream is required (v5 schema)");
+  }
+  ensureWorkstream(db, opts.workstream);
+  const wsId = resolveWorkstreamId(db, opts.workstream);
   db.prepare(
-    `INSERT INTO approvals (slug, workstream, reason, requested_by, status, created_at)
+    `INSERT INTO approvals (slug, workstream_id, reason, requested_by, status, created_at)
      VALUES (?, ?, ?, ?, 'pending', ?)`,
-  ).run(slug, opts.workstream, opts.reason, opts.requestedBy, createdAt);
+  ).run(slug, wsId, opts.reason, opts.requestedBy, createdAt);
   emitEvent(
     db,
     opts.workstream,
@@ -178,9 +208,12 @@ export function addApproval(db: Db, opts: AddApprovalOptions): ApprovalRow {
 }
 
 export function getApproval(db: Db, slug: string): ApprovalRow | undefined {
-  const row = db.prepare("SELECT * FROM approvals WHERE slug = ?").get(slug) as
-    | RawApprovalRow
-    | undefined;
+  // v5: slug is per-workstream unique. The v4 SDK contract was "first
+  // match by slug"; preserve it here. Tests / CLI consumers that need
+  // strict scoping use listApprovals + filter.
+  const row = db
+    .prepare(`SELECT ${SELECT_APPROVAL_COLS} ${APPROVAL_FROM_JOIN} WHERE ap.slug = ? LIMIT 1`)
+    .get(slug) as RawApprovalRow | undefined;
   return row ? rowFromDb(row) : undefined;
 }
 
@@ -193,16 +226,20 @@ export function listApprovals(db: Db, opts: ListApprovalsOptions = {}): Approval
   const conditions: string[] = [];
   const params: unknown[] = [];
   if (opts.workstream !== undefined) {
-    conditions.push("workstream = ?");
-    params.push(opts.workstream);
+    const wsId = tryResolveWorkstreamId(db, opts.workstream);
+    if (wsId === null) return [];
+    conditions.push("ap.workstream_id = ?");
+    params.push(wsId);
   }
   if (opts.status !== undefined) {
-    conditions.push("status = ?");
+    conditions.push("ap.status = ?");
     params.push(opts.status);
   }
   const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
   const rows = db
-    .prepare(`SELECT * FROM approvals ${where} ORDER BY created_at DESC`)
+    .prepare(
+      `SELECT ${SELECT_APPROVAL_COLS} ${APPROVAL_FROM_JOIN} ${where} ORDER BY ap.created_at DESC`,
+    )
     .all(...params) as RawApprovalRow[];
   return rows.map(rowFromDb);
 }
@@ -232,12 +269,20 @@ function decide(
   // grant has no recovery path.
   captureSnapshot(db, `approval ${newStatus} ${slug}`, before.workstream);
   const decidedAt = new Date().toISOString();
-  db.prepare("UPDATE approvals SET status = ?, decided_by = ?, decided_at = ? WHERE slug = ?").run(
-    newStatus,
-    opts.decidedBy,
-    decidedAt,
-    slug,
-  );
+  // Scope the UPDATE to the slug's workstream so v5's per-workstream
+  // uniqueness can't be sidestepped by a same-slug row in another
+  // workstream.
+  if (before.workstream === null) {
+    db.prepare(
+      "UPDATE approvals SET status = ?, decided_by = ?, decided_at = ? WHERE slug = ? AND workstream_id IS NULL",
+    ).run(newStatus, opts.decidedBy, decidedAt, slug);
+  } else {
+    db.prepare(
+      `UPDATE approvals SET status = ?, decided_by = ?, decided_at = ?
+        WHERE slug = ?
+          AND workstream_id = (SELECT id FROM workstreams WHERE name = ?)`,
+    ).run(newStatus, opts.decidedBy, decidedAt, slug, before.workstream);
+  }
   emitEvent(
     db,
     before.workstream,

@@ -304,7 +304,8 @@ describe("restoreSnapshot — actual file swap + redo path", () => {
     // Force a checkpoint so the WAL file exists.
     db.pragma("wal_checkpoint(TRUNCATE)");
     db.prepare(
-      "INSERT INTO task_notes (task_id, content, created_at) VALUES ('design','x',datetime('now'))",
+      `INSERT INTO task_notes (task_id, content, created_at)
+         VALUES ((SELECT id FROM tasks WHERE local_id='design' LIMIT 1),'x',datetime('now'))`,
     ).run();
     const snap = captureSnapshot(db, "snap", "auth");
     const result = restoreSnapshot(db, snap.id);
@@ -425,7 +426,10 @@ describe("destructive verbs: snapshot is captured before mutation", () => {
 
   it("releaseTask snapshots when ownership is non-trivial", () => {
     seedAuth();
-    db.prepare("UPDATE tasks SET owner = 'worker-1' WHERE local_id = 'design'").run();
+    db.prepare(
+      `UPDATE tasks SET owner_id = (SELECT id FROM agents WHERE name = 'worker-1')
+        WHERE local_id = 'design'`,
+    ).run();
     releaseTask(db, "design");
     expect(listSnapshots(db).map((r) => r.label)).toContain("task release design");
   });
@@ -486,9 +490,13 @@ describe("destructive verbs: snapshot is captured before mutation", () => {
     // workstream's tasks.
     const snap = new Database(destroyRow.dbPath, { readonly: true });
     try {
-      const n = snap.prepare("SELECT COUNT(*) AS n FROM tasks WHERE workstream = 'auth'").get() as {
-        n: number;
-      };
+      const n = snap
+        .prepare(
+          `SELECT COUNT(*) AS n FROM tasks t
+             JOIN workstreams ws ON ws.id = t.workstream_id
+            WHERE ws.name = 'auth'`,
+        )
+        .get() as { n: number };
       expect(n.n).toBe(2);
     } finally {
       snap.close();
@@ -548,9 +556,12 @@ describe("snap_undo_reconcile_destroys_recovered_agents (regression)", () => {
   it("restore + report-only reconcile preserves the agent row whose pane is dead", async () => {
     seedAuth();
     insertAgent(db, { name: "dog-1", workstream: "auth", paneId: "%2919", status: "needs_input" });
-    db.prepare(
-      "INSERT INTO vcs_workspaces (agent, workstream, backend, path, created_at) VALUES (?, ?, ?, ?, datetime('now'))",
-    ).run("dog-1", "auth", "git", "/tmp/dogfood-test/dog-1");
+    insertVcsWorkspaceRowSnap(db, {
+      agent: "dog-1",
+      workstream: "auth",
+      backend: "git",
+      path: "/tmp/dogfood-test/dog-1",
+    });
 
     // Snapshot now (mirrors a pre-destroy snapshot).
     const snap = captureSnapshot(db, "workstream destroy auth", null);
@@ -559,9 +570,7 @@ describe("snap_undo_reconcile_destroys_recovered_agents (regression)", () => {
     // the vcs_workspaces row away).
     db.prepare("DELETE FROM agents WHERE name = 'dog-1'").run();
     expect(getAgent(db, "dog-1")).toBeUndefined();
-    expect(
-      db.prepare("SELECT COUNT(*) AS n FROM vcs_workspaces WHERE agent='dog-1'").get(),
-    ).toEqual({ n: 0 });
+    expect(countWorkspacesForAgent(db, "dog-1")).toBe(0);
 
     // Restore. restoreSnapshot CLOSES the live db handle, so we re-open.
     restoreSnapshot(db, snap.id);
@@ -569,9 +578,7 @@ describe("snap_undo_reconcile_destroys_recovered_agents (regression)", () => {
 
     // Sanity: the rows came back from the snapshot file.
     expect(getAgent(db, "dog-1")).toBeDefined();
-    expect(
-      db.prepare("SELECT COUNT(*) AS n FROM vcs_workspaces WHERE agent='dog-1'").get(),
-    ).toEqual({ n: 1 });
+    expect(countWorkspacesForAgent(db, "dog-1")).toBe(1);
 
     // Now run the post-restore reconcile pass that `mu undo` runs.
     // tmux is empty (the destroy killed the pane). mode:"report-only"
@@ -587,17 +594,18 @@ describe("snap_undo_reconcile_destroys_recovered_agents (regression)", () => {
     expect(report.prunedGhosts).toBe(2);
     expect(getAgent(db, "dog-1")).toBeDefined();
     expect(getAgent(db, "worker-1")).toBeDefined();
-    expect(
-      db.prepare("SELECT COUNT(*) AS n FROM vcs_workspaces WHERE agent='dog-1'").get(),
-    ).toEqual({ n: 1 });
+    expect(countWorkspacesForAgent(db, "dog-1")).toBe(1);
   });
 
   it("counter-test: same scenario in mode:'full' loses the rows (proves the fix is load-bearing)", async () => {
     seedAuth();
     insertAgent(db, { name: "dog-1", workstream: "auth", paneId: "%2919", status: "needs_input" });
-    db.prepare(
-      "INSERT INTO vcs_workspaces (agent, workstream, backend, path, created_at) VALUES (?, ?, ?, ?, datetime('now'))",
-    ).run("dog-1", "auth", "git", "/tmp/dogfood-test2/dog-1");
+    insertVcsWorkspaceRowSnap(db, {
+      agent: "dog-1",
+      workstream: "auth",
+      backend: "git",
+      path: "/tmp/dogfood-test2/dog-1",
+    });
     const snap = captureSnapshot(db, "workstream destroy auth", null);
     db.prepare("DELETE FROM agents WHERE name = 'dog-1'").run();
 
@@ -613,8 +621,38 @@ describe("snap_undo_reconcile_destroys_recovered_agents (regression)", () => {
     // The recovered agent row is GONE again — the bug.
     expect(getAgent(db, "dog-1")).toBeUndefined();
     // And FK CASCADE took the workspace too.
-    expect(
-      db.prepare("SELECT COUNT(*) AS n FROM vcs_workspaces WHERE agent='dog-1'").get(),
-    ).toEqual({ n: 0 });
+    expect(countWorkspacesForAgent(db, "dog-1")).toBe(0);
   });
+
+  // v5 helpers used by the two regression tests above.
+  function insertVcsWorkspaceRowSnap(
+    db: Db,
+    args: { agent: string; workstream: string; backend: string; path: string },
+  ): void {
+    const wsId = (
+      db.prepare("SELECT id FROM workstreams WHERE name = ?").get(args.workstream) as {
+        id: number;
+      }
+    ).id;
+    const agId = (
+      db
+        .prepare("SELECT id FROM agents WHERE name = ? AND workstream_id = ?")
+        .get(args.agent, wsId) as { id: number }
+    ).id;
+    db.prepare(
+      `INSERT INTO vcs_workspaces (agent_id, workstream_id, backend, path, created_at)
+       VALUES (?, ?, ?, ?, datetime('now'))`,
+    ).run(agId, wsId, args.backend, args.path);
+  }
+
+  function countWorkspacesForAgent(db: Db, agent: string): number {
+    const row = db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM vcs_workspaces v
+           JOIN agents a ON a.id = v.agent_id
+          WHERE a.name = ?`,
+      )
+      .get(agent) as { n: number };
+    return row.n;
+  }
 });

@@ -12,7 +12,7 @@
 // `seq > <last>`; AUTOINCREMENT guarantees seq never recycles even
 // after deletes, so the cursor is durable.
 
-import type { Db } from "./db.js";
+import { type Db, tryResolveWorkstreamId } from "./db.js";
 
 export type LogKind = "message" | "event" | "broadcast" | string;
 
@@ -34,12 +34,27 @@ export interface LogRow {
 
 interface RawLogRow {
   seq: number;
+  /** Joined from workstreams.name. Null when workstream_id is NULL. */
   workstream: string | null;
   source: string;
   kind: string;
   payload: string;
   created_at: string;
 }
+
+/** SELECT clause for joining workstream_id back to the operator-facing
+ *  workstream name. Used by every read path so the JS-side row shape
+ *  preserves the v4 contract. */
+const SELECT_LOG_COLS = `
+  l.seq AS seq,
+  ws.name AS workstream,
+  l.source AS source,
+  l.kind AS kind,
+  l.payload AS payload,
+  l.created_at AS created_at
+`;
+
+const LOG_FROM_JOIN = "FROM agent_logs l LEFT JOIN workstreams ws ON ws.id = l.workstream_id";
 
 function rowFromDb(row: RawLogRow): LogRow {
   return {
@@ -71,12 +86,19 @@ export interface AppendLogOptions {
 export function appendLog(db: Db, opts: AppendLogOptions): LogRow {
   const kind = opts.kind ?? "message";
   const createdAt = new Date().toISOString();
+  // Resolve workstream name -> surrogate id. Null stays null. We do NOT
+  // throw on a missing workstream here — an event payload may legitimately
+  // reference a workstream the row for which is being concurrently dropped
+  // (e.g. workstream destroy emits its own log row with workstream=null
+  // for exactly this reason). Best-effort resolution.
+  const workstreamId =
+    opts.workstream === null ? null : tryResolveWorkstreamId(db, opts.workstream);
   const result = db
     .prepare(
-      `INSERT INTO agent_logs (workstream, source, kind, payload, created_at)
+      `INSERT INTO agent_logs (workstream_id, source, kind, payload, created_at)
        VALUES (?, ?, ?, ?, ?)`,
     )
-    .run(opts.workstream, opts.source, kind, opts.payload, createdAt);
+    .run(workstreamId, opts.source, kind, opts.payload, createdAt);
   return {
     seq: Number(result.lastInsertRowid),
     workstream: opts.workstream,
@@ -111,21 +133,24 @@ export function listLogs(db: Db, opts: ListLogsOptions = {}): LogRow[] {
   const params: unknown[] = [];
 
   if (opts.workstream === null) {
-    conditions.push("workstream IS NULL");
+    conditions.push("l.workstream_id IS NULL");
   } else if (opts.workstream !== undefined) {
-    conditions.push("workstream = ?");
-    params.push(opts.workstream);
+    // Resolve once; if the workstream doesn't exist the result set is empty.
+    const wsId = tryResolveWorkstreamId(db, opts.workstream);
+    if (wsId === null) return [];
+    conditions.push("l.workstream_id = ?");
+    params.push(wsId);
   }
   if (opts.since !== undefined) {
-    conditions.push("seq > ?");
+    conditions.push("l.seq > ?");
     params.push(opts.since);
   }
   if (opts.source !== undefined) {
-    conditions.push("source = ?");
+    conditions.push("l.source = ?");
     params.push(opts.source);
   }
   if (opts.kind !== undefined) {
-    conditions.push("kind = ?");
+    conditions.push("l.kind = ?");
     params.push(opts.kind);
   }
 
@@ -137,12 +162,12 @@ export function listLogs(db: Db, opts: ListLogsOptions = {}): LogRow[] {
   //     (descending) then reverse so the caller still sees oldest-first.
   if (opts.limit !== undefined && opts.since === undefined) {
     const rowsDesc = db
-      .prepare(`SELECT * FROM agent_logs ${where} ORDER BY seq DESC LIMIT ?`)
+      .prepare(`SELECT ${SELECT_LOG_COLS} ${LOG_FROM_JOIN} ${where} ORDER BY l.seq DESC LIMIT ?`)
       .all(...params, opts.limit) as RawLogRow[];
     return rowsDesc.reverse().map(rowFromDb);
   }
 
-  let sql = `SELECT * FROM agent_logs ${where} ORDER BY seq ASC`;
+  let sql = `SELECT ${SELECT_LOG_COLS} ${LOG_FROM_JOIN} ${where} ORDER BY l.seq ASC`;
   if (opts.limit !== undefined) {
     sql += " LIMIT ?";
     params.push(opts.limit);
@@ -258,13 +283,15 @@ export function lastClaimActor(db: Db, workstream: string, localId: string): str
   // completeness, even though they can't appear in a valid id).
   const escaped = localId.replace(/[\\%_]/g, (c) => `\\${c}`);
   const pattern = `${CLAIM_EVENT_PREFIX}\t${escaped}\t%`;
+  const wsId = tryResolveWorkstreamId(db, workstream);
+  if (wsId === null) return null;
   const row = db
     .prepare(
       `SELECT payload FROM agent_logs
-        WHERE workstream = ? AND kind = 'event' AND payload LIKE ? ESCAPE '\\'
+        WHERE workstream_id = ? AND kind = 'event' AND payload LIKE ? ESCAPE '\\'
         ORDER BY seq DESC LIMIT 1`,
     )
-    .get(workstream, pattern) as { payload: string } | undefined;
+    .get(wsId, pattern) as { payload: string } | undefined;
   if (!row) return null;
   return parseClaimEventActor(row.payload);
 }

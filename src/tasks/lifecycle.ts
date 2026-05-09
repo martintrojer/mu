@@ -64,11 +64,14 @@ export function setTaskStatus(
   if (before.status === status) {
     return { previousStatus: before.status, status, changed: false };
   }
-  db.prepare("UPDATE tasks SET status = ?, updated_at = ? WHERE local_id = ?").run(
-    status,
-    new Date().toISOString(),
-    localId,
-  );
+  // v5: tasks.local_id is per-workstream unique. Scope to the row's
+  // workstream so the UPDATE doesn't accidentally touch a same-named
+  // task in another workstream.
+  db.prepare(
+    `UPDATE tasks SET status = ?, updated_at = ?
+      WHERE local_id = ?
+        AND workstream_id = (SELECT id FROM workstreams WHERE name = ?)`,
+  ).run(status, new Date().toISOString(), localId, before.workstream);
   emitEvent(
     db,
     before.workstream,
@@ -236,24 +239,32 @@ function setTerminalOrParked(
  *
  *  Ordering: BFS-equivalent via DISTINCT + ORDER BY local_id; cascade
  *  applies one row at a time so each setTaskStatus is logged. */
-function findOpenDependents(db: Db, taskId: string): string[] {
+function findOpenDependents(db: Db, taskLocalId: string): string[] {
+  // Resolve the seed task to its surrogate id, then walk forward
+  // edges in surrogate-id space; project back to local_id at the end.
+  const seed = db.prepare("SELECT id FROM tasks WHERE local_id = ? LIMIT 1").get(taskLocalId) as
+    | { id: number }
+    | undefined;
+  if (!seed) return [];
   const rows = db
     .prepare(
       `WITH RECURSIVE forward(node) AS (
-         SELECT e.to_task
+         SELECT e.to_task_id
            FROM task_edges e
-           JOIN tasks      t ON t.local_id = e.to_task
-          WHERE e.from_task = ?
+           JOIN tasks      t ON t.id = e.to_task_id
+          WHERE e.from_task_id = ?
             AND t.status IN ('OPEN', 'IN_PROGRESS')
          UNION
-         SELECT e.to_task
+         SELECT e.to_task_id
            FROM task_edges e
-           JOIN forward    f ON f.node = e.from_task
-           JOIN tasks      t ON t.local_id = e.to_task
+           JOIN forward    f ON f.node = e.from_task_id
+           JOIN tasks      t ON t.id = e.to_task_id
           WHERE t.status IN ('OPEN', 'IN_PROGRESS')
        )
-       SELECT DISTINCT node AS local_id FROM forward ORDER BY node`,
+       SELECT DISTINCT t.local_id AS local_id FROM forward f
+         JOIN tasks t ON t.id = f.node
+        ORDER BY t.local_id`,
     )
-    .all(taskId) as { local_id: string }[];
+    .all(seed.id) as { local_id: string }[];
   return rows.map((r) => r.local_id);
 }
