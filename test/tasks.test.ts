@@ -1066,10 +1066,11 @@ describe("listTasksByOwner", () => {
     // Construct the cross-workstream owner state directly. The verb
     // path (claimTask --for) now correctly rejects this with an
     // AgentNotInWorkstreamError (cross_workstream_claim_for fix), but
-    // the listTasksByOwner read can still legitimately surface a row
-    // whose owner lives in a different workstream — e.g. when the agent
-    // was re-spawned in a new workstream after claiming, or when an
-    // operator hand-edits via `mu sql`. The query MUST cross workstream
+    // the listTasksByOwner read still has to surface rows whose owner
+    // lives in a different workstream than the task. The state arises
+    // in real life from operator hand-edits via `mu sql` (e.g. fixing
+    // a misrouted claim, or migrating tasks between workstreams without
+    // re-spawning the worker). The query MUST cross workstream
     // boundaries; this test pins that contract.
     const setOwner = db.prepare(
       "UPDATE tasks SET owner = ?, status = 'IN_PROGRESS' WHERE local_id = ?",
@@ -1077,10 +1078,23 @@ describe("listTasksByOwner", () => {
     setOwner.run("worker-1", "c");
     setOwner.run("worker-2", "b");
 
-    const ownedByW1 = listTasksByOwner(db, "worker-1").map((t) => t.localId);
-    expect(ownedByW1.sort()).toEqual(["a", "c"]);
-    const ownedByW2 = listTasksByOwner(db, "worker-2").map((t) => t.localId);
-    expect(ownedByW2).toEqual(["b"]);
+    // Assert on full (localId, workstream) pairs — not just ids — to
+    // prove the SDK does not silently filter by the owner's home
+    // workstream. If a future refactor adds `WHERE workstream = ?` to
+    // listTasksByOwner, the cross-workstream row drops out and this
+    // assertion fails loudly.
+    const ownedByW1 = listTasksByOwner(db, "worker-1")
+      .map((t) => ({ localId: t.localId, workstream: t.workstream }))
+      .sort((a, b) => a.localId.localeCompare(b.localId));
+    expect(ownedByW1).toEqual([
+      { localId: "a", workstream: "auth" },
+      { localId: "c", workstream: "billing" },
+    ]);
+    const ownedByW2 = listTasksByOwner(db, "worker-2").map((t) => ({
+      localId: t.localId,
+      workstream: t.workstream,
+    }));
+    expect(ownedByW2).toEqual([{ localId: "b", workstream: "auth" }]);
   });
 
   it("returns empty for an agent with no claims (or unknown agent)", () => {

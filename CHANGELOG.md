@@ -100,6 +100,27 @@ called out under "Breaking" in each entry.
   asserts `AgentNotInWorkstreamError` plus that the task stayed
   unowned. +30 LOC test-only, no production change.
 
+- **`listTasksByOwner` cross-workstream test now actually exercises
+  the read codepath.** Closes
+  `review_test_listtasksbyowner_xws_owner_state_unreachable` in
+  `mufeedback`. The existing `"returns tasks owned by an agent across
+  workstreams"` case in `test/tasks.test.ts` set up a cross-workstream
+  owner state via raw SQL (the verb path now rejects it after the
+  `cross_workstream_claim_for` fix) but only checked task ids — it
+  never asserted that the returned rows actually carried their
+  cross-workstream `workstream` value, so a future refactor that added
+  `WHERE workstream = ?` to `listTasksByOwner` could pass the test as
+  long as the in-workstream row stayed. Tightened the assertions to
+  compare full `{ localId, workstream }` pairs (`{ "a", "auth" }` +
+  `{ "c", "billing" }` for `worker-1`; `{ "b", "auth" }` for
+  `worker-2`), which proves the SDK does not silently filter by the
+  owner's home workstream. Setup comment updated to point at the only
+  real-life producer of this state — operator hand-edits via `mu sql`
+  (e.g. fixing a misrouted claim or migrating tasks between workstreams
+  without re-spawning the worker) — since the FK `ON DELETE SET NULL`
+  on `tasks.owner` makes the agent re-spawn scenario impossible to
+  produce naturally. Test-only change; no SDK behaviour change.
+
 - **`TaskIdInvalidError` test assertions relaxed off the exact
   sanitised-command suffix.** Closes
   `review_test_invalid_id_overspecs_sanitised_command` in
