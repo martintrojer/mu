@@ -40,8 +40,6 @@ export interface EvidenceOption {
   evidence?: string;
 }
 
-/** Render `… evidence="<text>"` suffix when evidence is provided.
- *  Quoted so multi-word strings stay legible in the event payload. */
 /** Render the optional `--evidence "<text>"` payload as the trailing
  *  ' evidence="..."' on every state-changing event. Exported because
  *  claimTask/releaseTask in src/tasks/claim.ts also use it. */
