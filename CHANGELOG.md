@@ -115,7 +115,38 @@ called out under "Breaking" in each entry.
 
 ### Changed
 
-<<<<<<< HEAD
+- **`docs/VERB_AUDIT.md`: honest typed-vs-`mu sql` audit of every
+  verb.** Closes `audit_verbs_typed_vs_sql` in `mufeedback`.
+  Scores all 58 verbs (49 sub-verbs across 7 namespaces + 9
+  top-level: bare `mu`, `whoami`, `my-tasks`, `my-next`, `state`,
+  `hud`, `sql`, `undo`, `doctor`) on four dimensions: atomicity,
+  side-effect beyond SQL, error-mapping value, and Next-step /
+  output value. Result: 51 KEEP, 3 REMOVE candidates (`mu task
+  search` / `task blocked` / `task goals`), 4 MERGE candidates
+  (`mu task ready` into `task next -n 0`; the three `whoami` /
+  `my-tasks` / `my-next` self-verbs into a proposed `mu me
+  [tasks|next]`). Each disposition filed as its own follow-up
+  task with the SQL recipe (or merge target) inline:
+  `audit_remove_task_blocked`, `audit_remove_task_goals`,
+  `audit_remove_task_search`, `audit_merge_task_ready_into_next`,
+  `audit_merge_self_verbs_into_mu_me`. One bug surfaced
+  incidentally during enumeration and filed separately:
+  `bug_adopt_verb_unwired` — `cmdAdopt` exists in
+  `src/cli/agents.ts:346` and the verb is documented everywhere
+  (`docs/USAGE_GUIDE.md`, `skills/mu/SKILL.md`, `mu agent list`'s
+  orphan-pane hint, `mu undo`'s scrollback hint) but no
+  `wireXxxCommands` registers it on the top-level program
+  (regression in the `f42e86d` `wireXxxCommands` refactor).
+  The audit also marks `mu task close` / `task claim` /
+  `task wait` / `approve wait` as **CONTRACT-DEPENDENT** per the
+  operator's `agent_close_discipline_gap` calibration data point
+  from this same session: these verbs are individually high-value
+  (typed errors, atomic CAS, exit codes, JSON-first output), but
+  their downstream value depends on the agent honouring the
+  close-with-evidence / claim-with-evidence discipline. Audit is
+  advisory; the operator decides which follow-ups to execute.
+  Docs-only commit: typecheck + lint + test + build clean.
+
 - **`src/cli/tasks.ts` split: 1234 → 29 LOC re-export hub.** Closes
   `review_code_cli_tasks_oversize` in `mufeedback`. The first-pass
   cluster split (`refactor_split_large_src_files`) carved
