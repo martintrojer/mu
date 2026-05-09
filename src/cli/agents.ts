@@ -3,7 +3,6 @@
 //
 // Extracted from src/cli.ts as part of refactor_split_large_src_files.
 
-import pc from "picocolors";
 import {
   type AdoptAgentOptions,
   type AdoptAgentResult,
@@ -33,7 +32,7 @@ import {
 } from "../cli.js";
 import type { Db } from "../db.js";
 import { detectPiStatus } from "../detect.js";
-import { type NextStep, printNextSteps } from "../output.js";
+import { type NextStep, pc, printNextSteps } from "../output.js";
 import { listTasksByOwner } from "../tasks.js";
 import {
   capturePane,

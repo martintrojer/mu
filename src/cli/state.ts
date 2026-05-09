@@ -20,7 +20,6 @@
 //
 // Extracted from src/cli.ts as part of refactor_split_large_src_files.
 
-import pc from "picocolors";
 import { listLiveAgents } from "../agents.js";
 import {
   type RawTaskRowForState,
@@ -40,6 +39,7 @@ import {
 } from "../cli.js";
 import type { Db } from "../db.js";
 import { listLogs } from "../logs.js";
+import { pc } from "../output.js";
 import { listBlocked, listReady } from "../tasks.js";
 import { getParallelTracks } from "../tracks.js";
 import { listWorkspaceOrphans, listWorkspaces } from "../workspace.js";

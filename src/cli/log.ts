@@ -8,11 +8,11 @@
 //
 // Extracted from src/cli.ts as part of refactor_split_large_src_files.
 
-import pc from "picocolors";
 import { getAgentByPane } from "../agents.js";
 import { emitJson, printLogRow, resolveOptionalWorkstream } from "../cli.js";
 import type { Db } from "../db.js";
 import { type ListLogsOptions, appendLog, latestSeq, listLogs } from "../logs.js";
+import { pc } from "../output.js";
 
 export interface LogReadOpts {
   workstream?: string;

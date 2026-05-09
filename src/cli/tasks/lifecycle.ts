@@ -8,11 +8,10 @@
 //
 // Extracted from src/cli/tasks.ts as part of refactor_split_large_src_files.
 
-import pc from "picocolors";
 import { refreshAgentTitle } from "../../agents.js";
 import { UsageError, assertTaskInWorkstream, emitJson, resolveWorkstream } from "../../cli.js";
 import type { Db } from "../../db.js";
-import { type NextStep, printNextSteps } from "../../output.js";
+import { type NextStep, pc, printNextSteps } from "../../output.js";
 import { closeTask, deferTask, getTask, openTask, rejectTask } from "../../tasks.js";
 
 export async function cmdTaskClose(

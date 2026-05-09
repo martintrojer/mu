@@ -18,7 +18,7 @@
 // Extracted from src/cli.ts as part of refactor_split_large_src_files.
 
 import Table from "cli-table3";
-import pc from "picocolors";
+
 import { getAgentByPane } from "../agents.js";
 import {
   type AddApprovalOptions,
@@ -34,7 +34,7 @@ import {
 } from "../approvals.js";
 import { UsageError, emitJson, resolveOptionalWorkstream } from "../cli.js";
 import type { Db } from "../db.js";
-import { type NextStep, printNextSteps } from "../output.js";
+import { type NextStep, pc, printNextSteps } from "../output.js";
 
 export async function cmdApprovalAdd(
   db: Db,

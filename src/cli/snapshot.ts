@@ -17,10 +17,10 @@
 // Extracted from src/cli.ts as part of refactor_split_large_src_files.
 
 import Table from "cli-table3";
-import pc from "picocolors";
+
 import { emitJson } from "../cli.js";
 import { type Db, openDb } from "../db.js";
-import { printNextSteps } from "../output.js";
+import { pc, printNextSteps } from "../output.js";
 import { reconcile } from "../reconcile.js";
 import {
   SnapshotNotFoundError,

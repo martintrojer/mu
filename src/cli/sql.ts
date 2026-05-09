@@ -12,9 +12,9 @@
 // Extracted from src/cli.ts as part of refactor_split_large_src_files.
 
 import Table from "cli-table3";
-import pc from "picocolors";
 import { UsageError, emitJson } from "../cli.js";
 import type { Db } from "../db.js";
+import { pc } from "../output.js";
 
 export async function cmdSql(
   db: Db,

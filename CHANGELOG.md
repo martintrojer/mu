@@ -12,6 +12,38 @@ called out under "Breaking" in each entry.
 
 ### Fixed
 
+- **HUD colors survive `watch` and other non-TTY pipes.** Closes
+  `hud_colors_stripped_under_watch_and` in `mufeedback`. Surfaced
+  live: `watch --no-title -n 2 --color mu hud -w roadmap-v0-2`
+  rendered the HUD with no colors (status emojis without fg color,
+  dim hints not dimmed, bold headers plain) even though the same
+  `mu hud` in a regular shell rendered colors correctly.
+
+  Root cause: picocolors auto-detects color support from
+  `process.stdout.isTTY && env.TERM !== 'dumb'`. `watch` runs the
+  command with stdout as a pipe, so `isTTY` is false and picocolors
+  disables ANSI output. `watch --color` only tells `watch` to
+  *preserve* ANSI from the captured output — it can't make the
+  child process emit them in the first place. Same problem applies
+  to `tmux display-popup -E mu hud | cat` and any pipe-into-pager
+  flow inside tmux.
+
+  Fix: new `colorEnabled()` helper in `src/output.ts` returns true
+  if any of `picocolors.isColorSupported`, `MU_FORCE_COLOR`,
+  `FORCE_COLOR`, or `process.env.TMUX !== undefined` (the
+  load-bearing clause: surrounding pane is a real terminal even
+  though our stdout is a pipe). `NO_COLOR` trumps all four, per
+  the no-color.org convention. Every `picocolors` import in `src/`
+  is now a re-export from `src/output.ts` (`export const pc =
+  picocolors.createColors(colorEnabled())`), so every color-using
+  verb — not just `mu hud` — picks up the fix uniformly.
+
+  Tests: new `test/output.test.ts` covers the env-var matrix
+  (no env / TMUX / MU_FORCE_COLOR / FORCE_COLOR / NO_COLOR
+  precedence); existing `test/hud.test.ts` updated to set
+  `NO_COLOR=1` via `vi.hoisted()` so its raw-layout substring
+  assertions stay deterministic regardless of where the test runs.
+
 - **`mu task claim <task> -w <wsA> --for <agent>` now rejects when
   `<agent>` lives in a different workstream than `<task>`.** Closes
   `cross_workstream_claim_for` in `roadmap-v0-2`; surfaced live in

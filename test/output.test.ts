@@ -3,6 +3,102 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type NextStep, hasNextSteps, isJsonMode, printNextSteps } from "../src/output.js";
 
+// `colorEnabled()` reads `isColorSupported` from picocolors (module-level
+// constant baked at picocolors-import time) plus three env vars at call
+// time. To test the matrix deterministically without depending on the
+// vitest runner's TTY/CI state, we re-import `src/output.ts` per case
+// after `vi.doMock`-ing picocolors with the desired `isColorSupported`
+// and clearing env vars via the computed-key delete form (per AGENTS.md).
+async function loadColorEnabledWith(opts: {
+  isColorSupported: boolean;
+  env: { TMUX?: string; FORCE_COLOR?: string; MU_FORCE_COLOR?: string };
+}): Promise<() => boolean> {
+  // Wipe the three env vars unconditionally; only reapply the ones the
+  // caller asked for. AGENTS.md mandates the computed-key form because
+  // biome's --unsafe rewrite has historically turned `delete
+  // process.env.X` into `process.env.X = undefined` (which silently
+  // produces the literal string "undefined").
+  for (const k of ["TMUX", "FORCE_COLOR", "MU_FORCE_COLOR", "NO_COLOR"] as const) {
+    const key = k;
+    delete process.env[key];
+  }
+  for (const [k, v] of Object.entries(opts.env)) {
+    if (v !== undefined) process.env[k] = v;
+  }
+  vi.resetModules();
+  vi.doMock("picocolors", async () => {
+    // picocolors is CJS (`export = picocolors`); src/output.ts uses
+    // `import picocolors from "picocolors"` so the *default export*
+    // must carry isColorSupported. We rebuild the default to spread
+    // the real module's surface plus our overridden flag.
+    const actual = await vi.importActual<{ default: typeof import("picocolors") }>("picocolors");
+    const real = actual.default;
+    return { default: { ...real, isColorSupported: opts.isColorSupported } };
+  });
+  const mod = await import("../src/output.js");
+  return mod.colorEnabled;
+}
+
+describe("colorEnabled (env-var matrix + isTTY delegation)", () => {
+  const originalEnv = { ...process.env };
+
+  afterEach(() => {
+    vi.doUnmock("picocolors");
+    vi.resetModules();
+    // Restore any env vars the test mutated.
+    for (const k of ["TMUX", "FORCE_COLOR", "MU_FORCE_COLOR", "NO_COLOR"] as const) {
+      const key = k;
+      delete process.env[key];
+      if (originalEnv[key] !== undefined) process.env[key] = originalEnv[key];
+    }
+  });
+
+  it("returns false when no env vars are set and isTTY is false", async () => {
+    const colorEnabled = await loadColorEnabledWith({ isColorSupported: false, env: {} });
+    expect(colorEnabled()).toBe(false);
+  });
+
+  it("returns true when TMUX is set (the load-bearing fix for `watch` inside tmux)", async () => {
+    const colorEnabled = await loadColorEnabledWith({
+      isColorSupported: false,
+      env: { TMUX: "/tmp/tmux-1000/default,12345,0" },
+    });
+    expect(colorEnabled()).toBe(true);
+  });
+
+  it("returns true when MU_FORCE_COLOR=1", async () => {
+    const colorEnabled = await loadColorEnabledWith({
+      isColorSupported: false,
+      env: { MU_FORCE_COLOR: "1" },
+    });
+    expect(colorEnabled()).toBe(true);
+  });
+
+  it("returns true when FORCE_COLOR=1", async () => {
+    const colorEnabled = await loadColorEnabledWith({
+      isColorSupported: false,
+      env: { FORCE_COLOR: "1" },
+    });
+    expect(colorEnabled()).toBe(true);
+  });
+
+  it("returns true when no env vars are set but picocolors' isColorSupported is true (TTY path)", async () => {
+    const colorEnabled = await loadColorEnabledWith({ isColorSupported: true, env: {} });
+    expect(colorEnabled()).toBe(true);
+  });
+
+  it("returns false when NO_COLOR is set even with TMUX + FORCE_COLOR + isTTY=true (NO_COLOR trumps)", async () => {
+    // The standard cross-tool opt-out (https://no-color.org/) wins over
+    // every positive signal. Without this guard the TMUX clause would
+    // override picocolors' own NO_COLOR check and surprise users.
+    const colorEnabled = await loadColorEnabledWith({
+      isColorSupported: true,
+      env: { NO_COLOR: "1", TMUX: "/tmp/tmux/0", FORCE_COLOR: "1", MU_FORCE_COLOR: "1" },
+    });
+    expect(colorEnabled()).toBe(false);
+  });
+});
+
 describe("printNextSteps", () => {
   let logs: string[];
   let logSpy: ReturnType<typeof vi.spyOn>;

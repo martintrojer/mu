@@ -4,7 +4,6 @@
 //
 // Extracted from src/cli/tasks.ts as part of refactor_split_large_src_files.
 
-import pc from "picocolors";
 import {
   byRoiDesc,
   emitJson,
@@ -14,6 +13,7 @@ import {
   withRoiAll,
 } from "../../cli.js";
 import type { Db } from "../../db.js";
+import { pc } from "../../output.js";
 import {
   type SearchTasksOptions,
   listBlocked,

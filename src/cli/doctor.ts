@@ -11,10 +11,10 @@
 //
 // Extracted from src/cli.ts as part of refactor_split_large_src_files.
 
-import pc from "picocolors";
 import { listLiveAgents } from "../agents.js";
 import { emitJson, resolveWorkstream } from "../cli.js";
 import { CURRENT_SCHEMA_VERSION, type Db, EXPECTED_TABLES, defaultDbPath } from "../db.js";
+import { pc } from "../output.js";
 import { tmux } from "../tmux.js";
 
 export async function cmdDoctor(db: Db, opts: { json?: boolean } = {}): Promise<void> {

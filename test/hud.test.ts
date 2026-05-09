@@ -13,7 +13,20 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+// Force colorless output for the whole file. The literal-substring
+// assertions below (e.g. `expect(stdout).toContain("ready  alpha")`)
+// fail when picocolors emits ANSI escapes around HUD cells. The HUD's
+// `pc` instance is baked at src/output.ts module-load time, so we have
+// to set NO_COLOR *before* `./_runCli.js` is imported (which transitively
+// imports src/output.ts). vi.hoisted() moves this above the imports.
+// `colorEnabled()` honors NO_COLOR over every other signal
+// (TMUX/FORCE_COLOR/MU_FORCE_COLOR), so this disables ANSI regardless
+// of how the test runner was launched (e.g. `npm test` inside tmux).
+vi.hoisted(() => {
+  process.env.NO_COLOR = "1";
+});
 import { runCli } from "./_runCli.js";
 
 describe("mu hud", () => {

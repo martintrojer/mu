@@ -11,7 +11,6 @@
 //
 // Extracted from src/cli.ts as part of refactor_split_large_src_files.
 
-import pc from "picocolors";
 import { cmdTaskClose, cmdTaskDefer, cmdTaskOpen, cmdTaskReject } from "./tasks/lifecycle.js";
 // Import the cluster's verb modules locally (so wireTaskCommands can
 // reference them) AND re-export so external callers continue to
@@ -55,7 +54,7 @@ import {
 } from "../cli.js";
 import type { Db } from "../db.js";
 import { listLogs } from "../logs.js";
-import { type NextStep, printNextSteps } from "../output.js";
+import { type NextStep, pc, printNextSteps } from "../output.js";
 import {
   TASK_STATUS_LIST,
   TaskNotFoundError,

@@ -20,7 +20,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import Table from "cli-table3";
 import { Command, InvalidArgumentError } from "commander";
-import pc from "picocolors";
+
 import {
   AgentDiedOnSpawnError,
   AgentExistsError,
@@ -51,7 +51,7 @@ import { wireWorkspaceCommands } from "./cli/workspace.js";
 import { wireWorkstreamCommands } from "./cli/workstream.js";
 import { type Db, openDb } from "./db.js";
 import type { LogRow } from "./logs.js";
-import { type NextStep, hasNextSteps, isJsonMode, printNextStepsTo } from "./output.js";
+import { type NextStep, hasNextSteps, isJsonMode, pc, printNextStepsTo } from "./output.js";
 import {
   SnapshotFileMissingError,
   SnapshotNotFoundError,

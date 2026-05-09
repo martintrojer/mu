@@ -10,7 +10,55 @@
 // src/workstream.ts (error nextSteps), and tests. Keeping the type +
 // helpers in one place avoids circular imports.
 
-import pc from "picocolors";
+import picocolors from "picocolors";
+
+/**
+ * Should we emit ANSI color escapes from this process?
+ *
+ * picocolors auto-detects color support from `process.stdout.isTTY &&
+ * env.TERM !== 'dumb'`. That works for plain shells but loses colors
+ * whenever stdout is a pipe — most painfully under `watch --color mu
+ * hud` and `tmux display-popup -E mu hud | cat`, where the surrounding
+ * pane is a real terminal but our own stdout is a pipe.
+ *
+ * We force colors on when ANY of:
+ *   - picocolors' own auto-detect says yes (`isColorSupported` — TTY +
+ *     non-dumb TERM, the normal happy path);
+ *   - `MU_FORCE_COLOR` is set (mu-specific override; doesn't require
+ *     users to know the picocolors / chalk convention);
+ *   - `FORCE_COLOR` is set (the standard env var picocolors itself
+ *     consults inside `isColorSupported`, but we re-check it for clarity
+ *     and to keep the helper self-contained / testable);
+ *   - `TMUX` is set (the load-bearing fix for `watch` inside tmux: the
+ *     surrounding pane is a real terminal even though our stdout is a
+ *     pipe).
+ *
+ * `NO_COLOR` (the cross-tool opt-out convention, https://no-color.org/)
+ * trumps every other signal — including TMUX/MU_FORCE_COLOR/FORCE_COLOR.
+ * We respect it explicitly because the TMUX clause would otherwise
+ * override picocolors' own NO_COLOR check, surprising users who set
+ * NO_COLOR globally and then run mu inside tmux.
+ *
+ * See task hud_colors_stripped_under_watch_and for the full repro.
+ */
+export function colorEnabled(): boolean {
+  if (process.env.NO_COLOR !== undefined) return false;
+  return (
+    picocolors.isColorSupported ||
+    process.env.MU_FORCE_COLOR !== undefined ||
+    process.env.FORCE_COLOR !== undefined ||
+    process.env.TMUX !== undefined
+  );
+}
+
+/**
+ * The single picocolors instance the rest of the codebase imports.
+ * Built once at module load with `colorEnabled()` baked in, so every
+ * caller (cli.ts, src/cli/*.ts) renders consistently regardless of
+ * isTTY heuristics. Any other module that needs `pc` should import
+ * this one rather than reaching for `picocolors` directly.
+ */
+export const pc = picocolors.createColors(colorEnabled());
 
 /**
  * One actionable next step. The `intent` is human-prose ("Drop notes

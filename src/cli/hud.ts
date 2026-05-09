@@ -18,7 +18,6 @@
 // Extracted from src/cli.ts as part of refactor_split_large_src_files.
 
 import Table from "cli-table3";
-import pc from "picocolors";
 import { type AgentRow, type AgentStatus, listLiveAgents } from "../agents.js";
 import {
   type RawTaskRowForState,
@@ -33,6 +32,7 @@ import {
 } from "../cli.js";
 import type { Db } from "../db.js";
 import { type LogRow, listLogs } from "../logs.js";
+import { pc } from "../output.js";
 import { type TaskRow, listReady, listTasksByOwner } from "../tasks.js";
 import { currentPaneSize } from "../tmux.js";
 import { type Track, getParallelTracks } from "../tracks.js";
