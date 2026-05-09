@@ -632,7 +632,8 @@ mu sql "SELECT name FROM sqlite_master WHERE type IN ('table','view') ORDER BY t
 
 | Want                                                  | Typed verb                              |
 | ----------------------------------------------------- | --------------------------------------- |
-| Tasks owned by an agent                               | `mu task owned-by <agent> [--json]`     |
+| Tasks owned by an agent (current workstream)          | `mu task owned-by <agent> [--json]`     |
+| Tasks owned by ANY same-named worker (all workstreams)| `mu task owned-by <agent> --all [--json]`|
 | Highest-ROI ready task                                | `mu task next [-w] [-n K] [--json]`     |
 | What did I touch most recently / what's stale         | `mu task list --sort recency` / `--sort age` |
 | Visualise what blocks what                            | `mu task tree <id> [--json]`            |

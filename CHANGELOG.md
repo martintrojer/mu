@@ -258,6 +258,74 @@ called out under "Breaking" in each entry.
 
 ### Fixed
 
+- **Per-workstream name lookups no longer silently misroute to the
+  wrong workstream's row.** Closes
+  `bug_v5_name_clash_silent_misroute` in `mufeedback` (Phase 1; Phase
+  2 — a `NameAmbiguousError` for the rare unscoped caller — is
+  filed as a follow-up). Live surface: post-v5 the schema legitimately
+  allows the same TEXT name (`tasks.local_id`, `agents.name`,
+  `approvals.slug`) in multiple workstreams — the whole point of
+  `UNIQUE (workstream_id, <name>)`. But many internal SDK paths still
+  did `WHERE name = ? LIMIT 1`, picking an arbitrary row when the same
+  name lived in two workstreams. The common case it broke: two
+  operators both spawning `worker-1` (one per workstream) and the
+  claim path's pre-check at `src/tasks/claim.ts` resolving to either
+  worker arbitrarily — sometimes succeeding, sometimes raising a
+  confusing cross-workstream error.
+
+  Fix: every public SDK function that takes a TEXT name now also
+  takes (or threads through from a parent context) the workstream.
+  Internal SQL filters by `(workstream_id, name)` instead of bare
+  name. The CLI wrappers always pass the resolved workstream
+  (`-w` / `$MU_SESSION` / tmux session) so the common case is
+  honest. The v4 fall-back "no workstream context" branch survives
+  inside an `if (workstream !== undefined)` gate at every reachable
+  call site (e.g. `getTask(db, id)` still works for single-workstream
+  test fixtures and `mu sql`-style read paths) — those branches are
+  enumerated in `scripts/grep-name-without-workstream.allowlist`.
+
+  Specifically scoped: `getTask`, `getAgent`, `getApproval`,
+  `getWorkspaceForAgent`, `agentIdByName`, `updateAgentStatus`,
+  `deleteAgent`, `closeAgent`, `freeAgent`, `freeWorkspace`,
+  `refreshAgentTitle`, `sendToAgent`, `readAgent`, `setTaskStatus`,
+  `closeTask`, `openTask`, `rejectTask`, `deferTask`, `releaseTask`,
+  `claimTask` (load-bearing: both the claimer-row pre-check and the
+  task-workstream guard now take the resolved workstream),
+  `findOpenDependents`, `waitForTasks` (including the stuck-detector
+  agent lookup), `addNote`, `updateTask`, `deleteTask`, `getTaskEdges`,
+  `listNotes`, `grantApproval`, `denyApproval`, `timeoutApproval`,
+  `waitApproval`, `assertEntityInWorkstream` (the pre-check that
+  surfaced `*NotInWorkstreamError`), and the `addTask` blocker
+  resolver (now prefers same-workstream blockers, falls back to the
+  cross-ws lookup so `CrossWorkstreamEdgeError` still fires for the
+  cross-ws case).
+
+  `listTasksByOwner` gains an `opts.workstream` parameter (the CLI's
+  `mu task owned-by <agent>` defaults to the resolved workstream now;
+  pass `--all` for the v4 cross-workstream behaviour). The cross-ws
+  intent has its own typed alias `listTasksByOwnerCrossWorkstream`
+  so call sites read honestly.
+
+  CI guard: `scripts/grep-name-without-workstream.sh` scans every
+  `db.prepare("…")` call in `src/` for a SQL fragment that filters
+  by `local_id` / `slug` / an entity `name` column WITHOUT also
+  scoping by `workstream_id` somewhere in the same prepared
+  statement. Wired into `npm run lint`. The script is allow-listed
+  by `<file>::<one-line-SQL>` (line-number-stable across Biome
+  reformats) for the documented v4 fall-back paths above; new
+  entries require a comment explaining why the call is unreachable
+  from any operator-facing CLI verb.
+
+  Tests: `test/v5-name-clash.test.ts` seeds two workstreams with the
+  same agent / task / approval names and exercises every public SDK
+  function listed above, asserting each picks the RIGHT workstream's
+  row given the resolved context. 26 new cases.
+
+  Phase 2 (`NameAmbiguousError` for SDK consumers that genuinely
+  can't pin down a workstream from context) is a separate follow-up
+  per the original diagnosis note — Phase 1 fixes the load-bearing
+  common case.
+
 - **`mu adopt <pane>` is wired again — the verb was dead code since
   the f42e86d wireXxxCommands refactor.** Closes
   `bug_adopt_verb_unwired` in `mufeedback` (surfaced incidentally by

@@ -410,7 +410,22 @@ export async function createWorkspace(db: Db, opts: CreateWorkspaceOptions): Pro
   };
 }
 
-export function getWorkspaceForAgent(db: Db, agent: string): WorkspaceRow | undefined {
+export function getWorkspaceForAgent(
+  db: Db,
+  agent: string,
+  workstream?: string,
+): WorkspaceRow | undefined {
+  // Pass `workstream` from any caller that has it in context to avoid
+  // a silent cross-workstream resolution when the same agent name
+  // exists in multiple workstreams (bug_v5_name_clash_silent_misroute).
+  if (workstream !== undefined) {
+    const wsId = tryResolveWorkstreamId(db, workstream);
+    if (wsId === null) return undefined;
+    const row = db
+      .prepare(`SELECT ${SELECT_WS_COLS} ${WS_FROM_JOIN} WHERE ag.name = ? AND v.workstream_id = ?`)
+      .get(agent, wsId) as RawWorkspaceRow | undefined;
+    return row ? rowFromDb(row) : undefined;
+  }
   const row = db
     .prepare(`SELECT ${SELECT_WS_COLS} ${WS_FROM_JOIN} WHERE ag.name = ? LIMIT 1`)
     .get(agent) as RawWorkspaceRow | undefined;
@@ -547,9 +562,9 @@ export interface FreeWorkspaceResult {
 export async function freeWorkspace(
   db: Db,
   agent: string,
-  opts: FreeWorkspaceOptions = {},
+  opts: FreeWorkspaceOptions & { workstream?: string } = {},
 ): Promise<FreeWorkspaceResult> {
-  const row = getWorkspaceForAgent(db, agent);
+  const row = getWorkspaceForAgent(db, agent, opts.workstream);
   if (!row) return { removed: false, rowDeleted: false };
 
   // Pre-mutation snapshot — the row deletion + on-disk teardown is
@@ -563,11 +578,20 @@ export async function freeWorkspace(
     commit: opts.commit ?? false,
   });
 
-  const del = db
-    .prepare(
-      "DELETE FROM vcs_workspaces WHERE agent_id = (SELECT id FROM agents WHERE name = ? LIMIT 1)",
-    )
-    .run(agent);
+  // Resolve to surrogate ids scoped by the row's workstream so a
+  // same-named worker elsewhere can't be torn down by accident
+  // (bug_v5_name_clash_silent_misroute).
+  const wsIdForDel = tryResolveWorkstreamId(db, row.workstream);
+  const del =
+    wsIdForDel === null
+      ? { changes: 0 }
+      : db
+          .prepare(
+            `DELETE FROM vcs_workspaces
+             WHERE agent_id = (SELECT id FROM agents WHERE name = ? AND workstream_id = ?)
+               AND workstream_id = ?`,
+          )
+          .run(agent, wsIdForDel, wsIdForDel);
   emitEvent(
     db,
     row.workstream,

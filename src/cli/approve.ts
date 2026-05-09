@@ -113,7 +113,13 @@ export async function cmdApprovalGrant(
 ): Promise<void> {
   assertApprovalInWorkstream(db, slug, opts.workstream);
   const decidedBy = opts.by ?? resolveSelfNameOrUser(db);
-  const row = grantApproval(db, slug, { decidedBy });
+  // Pass workstream when known so a same-slug approval in another
+  // workstream isn't granted by accident
+  // (bug_v5_name_clash_silent_misroute).
+  const row = grantApproval(db, slug, {
+    decidedBy,
+    ...(opts.workstream !== undefined ? { workstream: opts.workstream } : {}),
+  });
   if (opts.json) {
     emitJson(row);
     return;
@@ -128,7 +134,10 @@ export async function cmdApprovalDeny(
 ): Promise<void> {
   assertApprovalInWorkstream(db, slug, opts.workstream);
   const decidedBy = opts.by ?? resolveSelfNameOrUser(db);
-  const row = denyApproval(db, slug, { decidedBy });
+  const row = denyApproval(db, slug, {
+    decidedBy,
+    ...(opts.workstream !== undefined ? { workstream: opts.workstream } : {}),
+  });
   if (opts.json) {
     emitJson(row);
     return;
@@ -144,7 +153,10 @@ export async function cmdApprovalWait(
   assertApprovalInWorkstream(db, slug, opts.workstream);
   // --timeout in seconds for shell ergonomics; SDK takes ms.
   const timeoutMs = opts.timeout !== undefined ? opts.timeout * 1000 : 600_000;
-  const row = await waitApproval(db, slug, { timeoutMs });
+  const row = await waitApproval(db, slug, {
+    timeoutMs,
+    ...(opts.workstream !== undefined ? { workstream: opts.workstream } : {}),
+  });
   if (opts.json) {
     emitJson(row);
   } else {

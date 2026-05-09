@@ -132,10 +132,21 @@ function rowFromDb(row: RawAgentRow): AgentRow {
   };
 }
 
-/** Resolve an agent's surrogate id by name across all workstreams
- *  (the v4 SDK contract: name was globally unique). Returns null on
- *  miss. Used by deleteAgent + closeAgent which take just a name. */
-function agentIdByName(db: Db, name: string): number | null {
+/** Resolve an agent's surrogate id by (name, workstream). When
+ *  `workstream` is omitted, falls back to the v4 "first match by
+ *  name" contract (used by single-workstream test fixtures). Pass
+ *  `workstream` from any caller that has it in context to avoid the
+ *  silent-misroute when the same name lives in multiple workstreams
+ *  (bug_v5_name_clash_silent_misroute). */
+function agentIdByName(db: Db, name: string, workstream?: string): number | null {
+  if (workstream !== undefined) {
+    const wsId = tryResolveWorkstreamId(db, workstream);
+    if (wsId === null) return null;
+    const row = db
+      .prepare("SELECT id FROM agents WHERE name = ? AND workstream_id = ?")
+      .get(name, wsId) as { id: number } | undefined;
+    return row ? row.id : null;
+  }
   const row = db.prepare("SELECT id FROM agents WHERE name = ? LIMIT 1").get(name) as
     | { id: number }
     | undefined;
@@ -163,7 +174,7 @@ export function insertAgent(db: Db, input: InsertAgentInput): AgentRow {
     tab: input.tab ?? null,
     now,
   });
-  const row = getAgent(db, input.name);
+  const row = getAgent(db, input.name, input.workstream);
   if (!row) throw new Error(`agents.insertAgent: row not found after insert: ${input.name}`);
   return row;
 }
@@ -186,12 +197,23 @@ export function getAgentByPane(db: Db, paneId: string): AgentRow | undefined {
   return row ? rowFromDb(row) : undefined;
 }
 
-export function getAgent(db: Db, name: string): AgentRow | undefined {
-  // v5: agents.name is per-workstream unique, not globally unique. The
-  // v4 SDK shape `getAgent(db, name)` is preserved by returning the
-  // first match across workstreams (sorted by ws name for determinism).
-  // Callers that care about scope (claimTask cross-workstream pre-check,
-  // adoptAgent uniqueness check) consume `.workstream` on the result.
+export function getAgent(db: Db, name: string, workstream?: string): AgentRow | undefined {
+  // v5: agents.name is per-workstream unique, not globally unique.
+  // Pass `workstream` from any caller that has it in context to avoid
+  // a silent-misroute when the same name exists in multiple
+  // workstreams (bug_v5_name_clash_silent_misroute). Callers without
+  // a workstream context fall back to the v4 "first match by name"
+  // contract (sorted by ws name for determinism).
+  if (workstream !== undefined) {
+    const wsId = tryResolveWorkstreamId(db, workstream);
+    if (wsId === null) return undefined;
+    const row = db
+      .prepare(
+        `SELECT ${SELECT_AGENT_COLS} ${AGENT_FROM_JOIN} WHERE a.name = ? AND a.workstream_id = ?`,
+      )
+      .get(name, wsId) as RawAgentRow | undefined;
+    return row ? rowFromDb(row) : undefined;
+  }
   const row = db
     .prepare(
       `SELECT ${SELECT_AGENT_COLS} ${AGENT_FROM_JOIN} WHERE a.name = ? ORDER BY ws.name LIMIT 1`,
@@ -220,8 +242,27 @@ export function listAgents(db: Db, opts: { workstream?: string } = {}): AgentRow
 /**
  * Update an agent's status. Returns true if a row was matched.
  * Also bumps updated_at.
+ *
+ * Pass `workstream` from any caller that has it in context to avoid a
+ * silent cross-workstream UPDATE when the same name lives in multiple
+ * workstreams (bug_v5_name_clash_silent_misroute). Without it, the
+ * v4 contract "update every row matching by name" applies — acceptable
+ * for single-workstream callers / tests, dangerous for the multi-ws case.
  */
-export function updateAgentStatus(db: Db, name: string, status: AgentStatus): boolean {
+export function updateAgentStatus(
+  db: Db,
+  name: string,
+  status: AgentStatus,
+  workstream?: string,
+): boolean {
+  if (workstream !== undefined) {
+    const wsId = tryResolveWorkstreamId(db, workstream);
+    if (wsId === null) return false;
+    const result = db
+      .prepare("UPDATE agents SET status = ?, updated_at = ? WHERE name = ? AND workstream_id = ?")
+      .run(status, new Date().toISOString(), name, wsId);
+    return result.changes > 0;
+  }
   const result = db
     .prepare("UPDATE agents SET status = ?, updated_at = ? WHERE name = ?")
     .run(status, new Date().toISOString(), name);
@@ -355,7 +396,10 @@ export function composeAgentTitle(db: Db, agent: AgentRow): string {
   // 'spawning' is the initial state at row insert. Don't decorate —
   // surfaces as just the agent name until detection runs.
   const showStatus = agent.status !== "spawning";
-  const tasks = listTasksByOwner(db, agent.name); // already filters CLOSED/REJECTED/DEFERRED
+  // Scope by the agent's workstream so a same-named worker in another
+  // workstream can't pollute this title's task list
+  // (bug_v5_name_clash_silent_misroute).
+  const tasks = listTasksByOwner(db, agent.name, { workstream: agent.workstream });
   let title = agent.name;
   if (showStatus) {
     title += ` · ${STATUS_EMOJI[agent.status]}`;
@@ -374,9 +418,17 @@ export function composeAgentTitle(db: Db, agent: AgentRow): string {
 
 /** Push a fresh pane title for `agentName`. Best-effort — a missing
  *  agent, a placeholder pane id, or a tmux failure are all swallowed
- *  silently (titles are decorative; never block the calling verb). */
-export async function refreshAgentTitle(db: Db, agentName: string): Promise<void> {
-  const agent = getAgent(db, agentName);
+ *  silently (titles are decorative; never block the calling verb).
+ *
+ *  Pass `workstream` from any caller that has it in context to avoid
+ *  resolving the wrong agent on a name clash
+ *  (bug_v5_name_clash_silent_misroute). */
+export async function refreshAgentTitle(
+  db: Db,
+  agentName: string,
+  workstream?: string,
+): Promise<void> {
+  const agent = getAgent(db, agentName, workstream);
   if (!agent) return;
   if (isPendingPaneId(agent.paneId)) return; // workspace pre-stage placeholder; see PENDING_PANE_PREFIX
   const title = composeAgentTitle(db, agent);
@@ -395,13 +447,23 @@ export async function refreshAgentTitle(db: Db, agentName: string): Promise<void
  * crashed (or was explicitly closed mid-task) leaves the task graph
  * in a wrong state — IN_PROGRESS forever, with no owner to release.
  */
-export function deleteAgent(db: Db, name: string): boolean {
+export function deleteAgent(db: Db, name: string, workstream?: string): boolean {
   // Snapshot the stuck tasks BEFORE the DELETE; the FK CASCADE
   // (SET NULL on owner_id) makes the post-delete query indistinguishable
   // from "never owned by this agent."
-  const agentId = agentIdByName(db, name);
+  // Scope by workstream when provided so a same-named worker elsewhere
+  // can't be deleted by accident (bug_v5_name_clash_silent_misroute).
+  const agentId = agentIdByName(db, name, workstream);
   if (agentId === null) {
     // Already gone — idempotent return.
+    if (workstream !== undefined) {
+      const wsId = tryResolveWorkstreamId(db, workstream);
+      if (wsId === null) return false;
+      const result = db
+        .prepare("DELETE FROM agents WHERE name = ? AND workstream_id = ?")
+        .run(name, wsId);
+      return result.changes > 0;
+    }
     const result = db.prepare("DELETE FROM agents WHERE name = ?").run(name);
     return result.changes > 0;
   }
@@ -457,9 +519,9 @@ export async function sendToAgent(
   db: Db,
   name: string,
   text: string,
-  opts: SendOptions = {},
+  opts: SendOptions & { workstream?: string } = {},
 ): Promise<void> {
-  const agent = getAgent(db, name);
+  const agent = getAgent(db, name, opts.workstream);
   if (!agent) throw new AgentNotFoundError(name);
   await sendToPane(agent.paneId, text, opts);
 }
@@ -468,8 +530,12 @@ export async function sendToAgent(
  * Read scrollback from an agent's pane. With no options, returns the full
  * scrollback (`-S - -E -`); with `lines: N`, returns only the last N lines.
  */
-export async function readAgent(db: Db, name: string, opts: CaptureOptions = {}): Promise<string> {
-  const agent = getAgent(db, name);
+export async function readAgent(
+  db: Db,
+  name: string,
+  opts: CaptureOptions & { workstream?: string } = {},
+): Promise<string> {
+  const agent = getAgent(db, name, opts.workstream);
   if (!agent) throw new AgentNotFoundError(name);
   return capturePane(agent.paneId, opts);
 }
@@ -495,13 +561,13 @@ export interface FreeAgentResult {
  * Idempotent: setting an already-free agent to free is a no-op (returns
  * `changed: false`). Throws AgentNotFoundError on missing.
  */
-export function freeAgent(db: Db, name: string): FreeAgentResult {
-  const before = getAgent(db, name);
+export function freeAgent(db: Db, name: string, workstream?: string): FreeAgentResult {
+  const before = getAgent(db, name, workstream);
   if (!before) throw new AgentNotFoundError(name);
   if (before.status === "free") {
     return { previousStatus: before.status, status: "free", changed: false };
   }
-  updateAgentStatus(db, name, "free");
+  updateAgentStatus(db, name, "free", before.workstream);
   emitEvent(db, before.workstream, `agent free ${name} (was ${before.status})`);
   return { previousStatus: before.status, status: "free", changed: true };
 }
@@ -553,13 +619,13 @@ export interface CloseAgentResult {
 export async function closeAgent(
   db: Db,
   name: string,
-  opts: CloseAgentOptions = {},
+  opts: CloseAgentOptions & { workstream?: string } = {},
 ): Promise<CloseAgentResult> {
-  const agent = getAgent(db, name);
+  const agent = getAgent(db, name, opts.workstream);
   if (!agent) {
     return { killedPane: false, deletedRow: false, workspaceFreed: false };
   }
-  const ws = getWorkspaceForAgent(db, name);
+  const ws = getWorkspaceForAgent(db, name, agent.workstream);
   if (ws !== undefined && opts.discardWorkspace !== true) {
     throw new WorkspacePreservedError(name, ws.path);
   }
@@ -573,13 +639,13 @@ export async function closeAgent(
   // idempotent on missing rows.
   let workspaceFreed = false;
   if (ws !== undefined && opts.discardWorkspace === true) {
-    await freeWorkspace(db, name, { commit: false });
+    await freeWorkspace(db, name, { commit: false, workstream: agent.workstream });
     workspaceFreed = true;
   }
   await killPane(agent.paneId).catch(() => {
     /* idempotent — pane may already be gone */
   });
-  const deletedRow = deleteAgent(db, name);
+  const deletedRow = deleteAgent(db, name, agent.workstream);
   emitEvent(
     db,
     agent.workstream,

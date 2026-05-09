@@ -111,7 +111,11 @@ export async function spawnAgent(db: Db, opts: SpawnAgentOptions): Promise<Agent
       `invalid agent name: ${JSON.stringify(opts.name)} (expected /^[a-z][a-z0-9_-]{0,31}$/)`,
     );
   }
-  if (getAgent(db, opts.name) !== undefined) {
+  // Per-workstream uniqueness check: v5 allows the same agent name in
+  // different workstreams. Scope the existence check to the spawn's
+  // workstream so two operators spawning 'worker-1' in wsA and wsB
+  // both succeed (bug_v5_name_clash_silent_misroute).
+  if (getAgent(db, opts.name, opts.workstream) !== undefined) {
     throw new AgentExistsError(opts.name);
   }
 
@@ -160,7 +164,7 @@ export async function spawnAgent(db: Db, opts: SpawnAgentOptions): Promise<Agent
     await enableMuPaneBordersForPane(paneId);
     agent = finalizeAgentRow(db, { opts, cli, paneId, hasWorkspace });
   } catch (err) {
-    await rollbackSpawn(db, opts.name, paneId, hasWorkspace);
+    await rollbackSpawn(db, opts.name, paneId, hasWorkspace, opts.workstream);
     throw err;
   }
 
@@ -172,7 +176,7 @@ export async function spawnAgent(db: Db, opts: SpawnAgentOptions): Promise<Agent
   try {
     await awaitSpawnLiveness(paneId, opts.name);
   } catch (err) {
-    await rollbackSpawn(db, opts.name, paneId, hasWorkspace);
+    await rollbackSpawn(db, opts.name, paneId, hasWorkspace, opts.workstream);
     throw err;
   }
   emitEvent(
@@ -184,7 +188,7 @@ export async function spawnAgent(db: Db, opts: SpawnAgentOptions): Promise<Agent
   // point, which composeAgentTitle renders as bare name (no decoration
   // until the first detect cycle). Reconcile will re-push as soon as
   // the operator runs any status-reading verb.
-  await refreshAgentTitle(db, opts.name);
+  await refreshAgentTitle(db, opts.name, opts.workstream);
   return agent;
 }
 
@@ -229,7 +233,7 @@ async function prestageWorkspace(db: Db, opts: SpawnAgentOptions, cli: string): 
     const ws = await createWorkspace(db, wsOpts);
     return ws.path;
   } catch (err) {
-    deleteAgent(db, opts.name);
+    deleteAgent(db, opts.name, opts.workstream);
     throw err;
   }
 }
@@ -258,12 +262,15 @@ function finalizeAgentRow(
       tab: opts.tab ?? null,
     });
   }
-  db.prepare("UPDATE agents SET pane_id = ?, updated_at = ? WHERE name = ?").run(
-    paneId,
-    new Date().toISOString(),
-    opts.name,
-  );
-  const row = getAgent(db, opts.name);
+  // Scope the patch to the spawn's workstream so a same-named worker
+  // in another workstream isn't repointed at this pane
+  // (bug_v5_name_clash_silent_misroute).
+  db.prepare(
+    `UPDATE agents SET pane_id = ?, updated_at = ?
+      WHERE name = ?
+        AND workstream_id = (SELECT id FROM workstreams WHERE name = ?)`,
+  ).run(paneId, new Date().toISOString(), opts.name, opts.workstream);
+  const row = getAgent(db, opts.name, opts.workstream);
   if (!row) throw new Error(`spawnAgent: agent vanished after workspace stage: ${opts.name}`);
   return row;
 }
@@ -278,12 +285,16 @@ async function rollbackSpawn(
   name: string,
   paneId: string,
   hasWorkspace: boolean,
+  workstream: string,
 ): Promise<void> {
   await killPane(paneId).catch(() => {});
   if (hasWorkspace) {
-    await freeWorkspace(db, name).catch(() => {});
+    // Scope cleanup to the spawn's workstream so a same-named worker
+    // elsewhere isn't torn down by accident
+    // (bug_v5_name_clash_silent_misroute).
+    await freeWorkspace(db, name, { workstream }).catch(() => {});
   }
-  deleteAgent(db, name);
+  deleteAgent(db, name, workstream);
 }
 
 /**

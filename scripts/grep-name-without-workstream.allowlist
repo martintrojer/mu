@@ -1,0 +1,78 @@
+# Allow-list for scripts/grep-name-without-workstream.sh
+#
+# Each entry is `<file>::<one-line-normalised-SQL>`. The SQL key is
+# stable across formatter reflows (Biome reformats can shift line
+# numbers); the SQL itself is what we mean.
+#
+# Every entry below is an intentional v4 fall-back path inside an
+# `if (workstream !== undefined)`-gated branch. The scoped variant
+# sits next to it; the fall-back exists so the v4 SDK contract
+# `getTask(db, id)` / `getAgent(db, name)` still works for
+# single-workstream test fixtures and for `mu sql`-style read paths
+# that genuinely don't know the workstream.
+#
+# DO NOT add new entries to bypass real misroutes. The whole point of
+# bug_v5_name_clash_silent_misroute is to make these lookups
+# workstream-scoped at every reachable call site. New entries are
+# acceptable only when the call site can prove (in the comment above
+# the entry) that no operator-facing CLI verb can reach it.
+
+# v4 fall-back: agentIdByName when caller passes no workstream.
+# Reached only from deleteAgent(db, name) without a workstream arg
+# (test fixtures, idempotent close-of-already-gone). The scoped
+# branch sits next to it inside `if (workstream !== undefined)`.
+src/agents.ts::SELECT id FROM agents WHERE name = ? LIMIT 1
+
+# v4 fall-back: getAgent(db, name) without workstream. Single-ws
+# test fixtures + the few SDK consumers that legitimately scan
+# agents-by-name across workstreams.
+src/agents.ts::SELECT ${SELECT_AGENT_COLS} ${AGENT_FROM_JOIN} WHERE a.name = ? ORDER BY ws.name LIMIT 1
+
+# v4 fall-back: updateAgentStatus(db, name, status) without
+# workstream. reconcile.ts now passes workstream explicitly; this
+# branch covers the SDK back-compat shape.
+src/agents.ts::UPDATE agents SET status = ?, updated_at = ? WHERE name = ?
+
+# v4 fall-back: deleteAgent(db, name) without workstream
+# (idempotent re-delete of an already-gone agent).
+src/agents.ts::DELETE FROM agents WHERE name = ?
+
+# v4 fall-back: getApproval(db, slug) without workstream. Approval
+# slugs are app_<8hex>, collision-rare; the CLI's wait/grant/deny
+# now pass workstream when known.
+src/approvals.ts::SELECT ${SELECT_APPROVAL_COLS} ${APPROVAL_FROM_JOIN} WHERE ap.slug = ? LIMIT 1
+
+# v4 fall-back: claim's claimerRow lookup when no workstream context
+# is provided (e.g. SDK consumer calls claimTask without opts.workstream).
+# The scoped variant in the same prepare-pair handles the CLI path.
+src/tasks/claim.ts::SELECT a.id AS id, ws.name AS workstream FROM agents a JOIN workstreams ws ON ws.id = a.workstream_id WHERE a.name = ? LIMIT 1
+
+# v4 fall-back: claim's taskWsRow lookup. Same shape. The
+# cross-workstream guard below still raises a typed error if the
+# fall-back picks a row in a different workstream than the claimer.
+src/tasks/claim.ts::SELECT t.id AS id, ws.name AS workstream FROM tasks t JOIN workstreams ws ON ws.id = t.workstream_id WHERE t.local_id = ? LIMIT 1
+
+# v4 fall-back: waitForTasks's stuck-detector agent lookup when
+# the caller didn't pass opts.workstream. The CLI's mu task wait
+# always passes one.
+src/tasks/wait.ts::SELECT status, updated_at FROM agents WHERE name = ? LIMIT 1
+
+# v4 fall-back: taskIdFor(db, localId) without workstream. Single-ws
+# test fixtures + reparentTask's blocker lookup (which then validates
+# blocker.workstream === root.workstream and surfaces
+# CrossWorkstreamEdgeError on a mismatch).
+src/tasks.ts::SELECT id FROM tasks WHERE local_id = ? LIMIT 1
+
+# v4 fall-back: getTask(db, localId) without workstream. Same shape.
+src/tasks.ts::SELECT ${SELECT_TASK_COLS} ${TASK_FROM_JOIN} WHERE t.local_id = ? ORDER BY ws.name LIMIT 1
+
+# v4 fall-back: addTask's blockerLookupAnyWs. Used after the
+# same-workstream lookup misses, so a cross-ws blocker surfaces as
+# CrossWorkstreamEdgeError instead of the less-actionable
+# TaskNotFoundError. Cycle check + same-workstream guard run after.
+src/tasks.ts::SELECT t.id AS id, ws.name AS workstream FROM tasks t JOIN workstreams ws ON ws.id = t.workstream_id WHERE t.local_id = ? LIMIT 1
+
+# v4 fall-back: getWorkspaceForAgent(db, agent) without workstream.
+# Single-ws test fixtures + SDK consumers that don't know the ws.
+# The CLI wraps every reachable verb with the scoped variant.
+src/workspace.ts::SELECT ${SELECT_WS_COLS} ${WS_FROM_JOIN} WHERE ag.name = ? LIMIT 1

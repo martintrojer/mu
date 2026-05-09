@@ -336,6 +336,18 @@ each are deliberately small.
 - **Writes go through the typed SDK functions** (`src/agents.ts`,
   `src/tasks.ts`, etc.) which validate, transact, snapshot (for
   destructive verbs), and reconcile.
+- **Workstream scoping is mandatory at the CLI boundary.** Post-v5,
+  TEXT names (`tasks.local_id`, `agents.name`, `approvals.slug`) are
+  per-workstream unique — the same name may legitimately exist in two
+  workstreams. Every public SDK function that takes such a name also
+  takes (or threads from a parent context) the workstream; internal
+  SQL filters by `(workstream_id, name)`. Test fixtures and `mu sql`
+  read paths can omit the workstream and fall back to the v4
+  first-match-by-name contract; those branches are sealed by
+  `scripts/grep-name-without-workstream.sh` (a CI guard wired into
+  `npm run lint`) which scans every `db.prepare(…)` call for unscoped
+  name lookups. Allow-list lives at
+  `scripts/grep-name-without-workstream.allowlist`.
 - **Snapshots are insurance, not version history.** Captured only
   before destructive verbs (workstream destroy, agent close, task
   close/reject/defer/release/delete, workspace free, approve

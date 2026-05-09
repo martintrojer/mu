@@ -27,13 +27,16 @@ export async function cmdTaskRelease(
   opts: { reopen?: boolean; evidence?: string; workstream?: string; json?: boolean },
 ): Promise<void> {
   assertTaskInWorkstream(db, localId, opts.workstream);
-  const sdkOpts: { reopen: boolean; evidence?: string } = { reopen: opts.reopen ?? false };
+  const ws = await resolveWorkstream(opts.workstream);
+  const sdkOpts: { reopen: boolean; evidence?: string; workstream: string } = {
+    reopen: opts.reopen ?? false,
+    workstream: ws,
+  };
   if (opts.evidence !== undefined) sdkOpts.evidence = opts.evidence;
   const r = releaseTask(db, localId, sdkOpts);
   // Title push for the agent that just lost the task. Prev-owner could
   // be null (anonymous claim release — nothing to refresh).
-  if (r.previousOwner) await refreshAgentTitle(db, r.previousOwner);
-  const ws = await resolveWorkstream(opts.workstream);
+  if (r.previousOwner) await refreshAgentTitle(db, r.previousOwner, ws);
   const nextSteps: NextStep[] = [
     {
       intent: "Reclaim",
@@ -70,6 +73,7 @@ export async function cmdClaim(
   },
 ): Promise<void> {
   assertTaskInWorkstream(db, localId, opts.workstream);
+  const ws = await resolveWorkstream(opts.workstream);
   if (opts.self === true && opts.for !== undefined) {
     throw new UsageError("--self and --for are mutually exclusive");
   }
@@ -81,7 +85,8 @@ export async function cmdClaim(
     self?: boolean;
     actor?: string;
     evidence?: string;
-  } = {};
+    workstream: string;
+  } = { workstream: ws };
   if (opts.for) sdkOpts.agentName = opts.for;
   if (opts.self) sdkOpts.self = true;
   if (opts.actor !== undefined) sdkOpts.actor = opts.actor;
@@ -89,8 +94,7 @@ export async function cmdClaim(
   const result = await claimTask(db, localId, sdkOpts);
   // Title push for the new owner. Anonymous claims (--self) leave
   // owner=null — nothing to refresh.
-  if (result.owner) await refreshAgentTitle(db, result.owner);
-  const ws = await resolveWorkstream(opts.workstream);
+  if (result.owner) await refreshAgentTitle(db, result.owner, ws);
   const nextSteps: NextStep[] = [
     {
       // Single-quoted example: shell metachars (`...`, $VAR, $(...))
@@ -158,7 +162,8 @@ export async function cmdTaskWait(
     any?: boolean;
     timeoutMs: number;
     stuckAfterMs: number;
-  } = { timeoutMs, stuckAfterMs };
+    workstream: string;
+  } = { timeoutMs, stuckAfterMs, workstream: ws };
   if (statusOpt !== undefined) sdkOpts.status = statusOpt;
   if (opts.any) sdkOpts.any = true;
 

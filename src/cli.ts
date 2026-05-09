@@ -785,20 +785,35 @@ export function assertEntityInWorkstream<E extends Error>(
   errFactory: (keyVal: string, expectedWs: string, actualWs: string | null) => E,
 ): void {
   if (!expectedWs) return;
-  // v5: every entity table now references workstreams via a surrogate id
-  // (workstream_id) and surfaces the operator-facing name through a JOIN.
-  // Look up the actual workstream name for the row and compare against
-  // the expected; preserves the v4 contract.
-  const row = db
+  // v5: per-scope unique TEXT names mean a bare
+  // `WHERE keyCol = ? LIMIT 1` could pick the wrong workstream's row
+  // and falsely raise NotInWorkstreamError when the expected workstream
+  // ALSO has a row of this name (bug_v5_name_clash_silent_misroute).
+  // Fast path: if a row exists in the expected workstream, we're done.
+  const inScope = db
+    .prepare(
+      `SELECT 1 AS hit FROM ${table} t
+         JOIN workstreams ws ON ws.id = t.workstream_id
+        WHERE t.${keyCol} = ? AND ws.name = ?
+        LIMIT 1`,
+    )
+    .get(keyVal, expectedWs) as { hit: number } | undefined;
+  if (inScope) return;
+  // Slow path: name doesn't exist in expected ws — check whether it
+  // exists anywhere else so we can raise the typed mismatch error
+  // (rather than letting downstream raise the generic NotFoundError).
+  // Pick any other workstream's row deterministically.
+  const elsewhere = db
     .prepare(
       `SELECT ws.name AS workstream FROM ${table} t
          LEFT JOIN workstreams ws ON ws.id = t.workstream_id
         WHERE t.${keyCol} = ?
+        ORDER BY ws.name
         LIMIT 1`,
     )
     .get(keyVal) as { workstream: string | null } | undefined;
-  if (row && row.workstream !== expectedWs) {
-    throw errFactory(keyVal, expectedWs, row.workstream);
+  if (elsewhere) {
+    throw errFactory(keyVal, expectedWs, elsewhere.workstream);
   }
 }
 

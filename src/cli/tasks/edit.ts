@@ -167,6 +167,7 @@ export async function cmdTaskNote(
   opts: { workstream?: string; json?: boolean; author?: string } = {},
 ): Promise<void> {
   assertTaskInWorkstream(db, localId, opts.workstream);
+  const ws = await resolveWorkstream(opts.workstream);
   // Author resolution: explicit --author wins; otherwise consult
   // MU_AGENT_NAME (env var injected at spawn) > pane title > $USER >
   // 'orchestrator'. Surfaced from mufeedback note #176: notes from
@@ -174,8 +175,7 @@ export async function cmdTaskNote(
   // wasn't propagating identity. After this fix, mu-spawned workers'
   // notes are correctly attributed to the agent name.
   const author = opts.author ?? (await resolveActorIdentity());
-  const note = addNote(db, localId, unescapeNoteText(content), { author });
-  const ws = await resolveWorkstream(opts.workstream);
+  const note = addNote(db, localId, unescapeNoteText(content), { author, workstream: ws });
   const nextSteps: NextStep[] = [
     { intent: "Show all notes on this task", command: `mu task notes ${localId} -w ${ws}` },
     { intent: "Show full task state", command: `mu task show ${localId} -w ${ws}` },
@@ -194,10 +194,15 @@ export async function cmdTaskShow(
   opts: { json?: boolean; workstream?: string } = {},
 ): Promise<void> {
   assertTaskInWorkstream(db, localId, opts.workstream);
-  const task = getTask(db, localId);
+  // Workstream is optional on `mu task show`: when -w resolves we
+  // scope to it (avoids name-clash misroute,
+  // bug_v5_name_clash_silent_misroute); otherwise getTask falls back
+  // to the v4 first-match-by-id contract so a single-workstream user
+  // can still type `mu task show a` from anywhere.
+  const task = getTask(db, localId, opts.workstream);
   if (!task) throw new TaskNotFoundError(localId);
-  const edges = getTaskEdges(db, localId);
-  const notes = listNotes(db, localId);
+  const edges = getTaskEdges(db, localId, task.workstream);
+  const notes = listNotes(db, localId, task.workstream);
 
   // When owner IS NULL but the task is IN_PROGRESS (or recently was),
   // the actor is in agent_logs. Surface it so 'who's working on this'
@@ -260,8 +265,9 @@ export async function cmdTaskNotes(
   opts: { json?: boolean; workstream?: string } = {},
 ): Promise<void> {
   assertTaskInWorkstream(db, localId, opts.workstream);
-  if (!getTask(db, localId)) throw new TaskNotFoundError(localId);
-  const notes = listNotes(db, localId);
+  const task = getTask(db, localId, opts.workstream);
+  if (!task) throw new TaskNotFoundError(localId);
+  const notes = listNotes(db, localId, task.workstream);
   if (opts.json) {
     emitJson(notes);
     return;
@@ -285,6 +291,7 @@ export async function cmdTaskUpdate(
   },
 ): Promise<void> {
   assertTaskInWorkstream(db, localId, opts.workstream);
+  const ws = await resolveWorkstream(opts.workstream);
   const updateOpts: UpdateTaskOptions = {};
   if (opts.title !== undefined) updateOpts.title = opts.title;
   if (opts.impact !== undefined) updateOpts.impact = opts.impact;
@@ -294,8 +301,7 @@ export async function cmdTaskUpdate(
       "nothing to update; pass at least one of --title, --impact, --effort-days",
     );
   }
-  const r = updateTask(db, localId, updateOpts);
-  const ws = await resolveWorkstream(opts.workstream);
+  const r = updateTask(db, localId, updateOpts, { workstream: ws });
   const nextSteps: NextStep[] = [
     { intent: "Show updated task", command: `mu task show ${localId} -w ${ws}` },
   ];

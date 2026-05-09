@@ -52,14 +52,18 @@ export function evidenceSuffix(opts: EvidenceOption | undefined): string {
  * Flip a task's status to any of OPEN / IN_PROGRESS / CLOSED.
  * Idempotent: setting a task to its current status is a no-op (returns
  * `changed: false`) rather than throwing. Owner is unchanged.
+ *
+ * Pass `opts.workstream` from any caller that has it in context to
+ * avoid resolving the wrong row on a name clash
+ * (bug_v5_name_clash_silent_misroute).
  */
 export function setTaskStatus(
   db: Db,
   localId: string,
   status: TaskStatus,
-  opts: EvidenceOption = {},
+  opts: EvidenceOption & { workstream?: string } = {},
 ): SetStatusResult {
-  const before = getTask(db, localId);
+  const before = getTask(db, localId, opts.workstream);
   if (!before) throw new TaskNotFoundError(localId);
   if (before.status === status) {
     return { previousStatus: before.status, status, changed: false };
@@ -84,8 +88,12 @@ export function setTaskStatus(
  *  Pre-snapshots the DB (snap_design §CAPTURE STRATEGY > WHEN). Skipped
  *  for the idempotent no-op (already CLOSED) so we don't accumulate
  *  empty-delta snapshots on retry loops. */
-export function closeTask(db: Db, localId: string, opts: EvidenceOption = {}): SetStatusResult {
-  const before = getTask(db, localId);
+export function closeTask(
+  db: Db,
+  localId: string,
+  opts: EvidenceOption & { workstream?: string } = {},
+): SetStatusResult {
+  const before = getTask(db, localId, opts.workstream);
   if (before && before.status !== "CLOSED") {
     captureSnapshot(db, `task close ${localId}`, before.workstream);
   }
@@ -94,7 +102,11 @@ export function closeTask(db: Db, localId: string, opts: EvidenceOption = {}): S
 
 /** Convenience: setTaskStatus(db, id, "OPEN"). Owner intentionally NOT
  *  cleared — use `releaseTask` for that. Accepts evidence. */
-export function openTask(db: Db, localId: string, opts: EvidenceOption = {}): SetStatusResult {
+export function openTask(
+  db: Db,
+  localId: string,
+  opts: EvidenceOption & { workstream?: string } = {},
+): SetStatusResult {
   return setTaskStatus(db, localId, "OPEN", opts);
 }
 
@@ -109,6 +121,11 @@ export function openTask(db: Db, localId: string, opts: EvidenceOption = {}): Se
 // dependent.
 
 export interface RejectDeferOptions extends EvidenceOption {
+  /** Workstream context for the root task. When set, all internal
+   *  task lookups (including the dependent walk) scope to this
+   *  workstream so a same-named task elsewhere can't be touched
+   *  (bug_v5_name_clash_silent_misroute). */
+  workstream?: string;
   /** If true, walk the transitive dependent closure and (with `yes`)
    *  apply the same status to every dependent, atomically. Without
    *  `yes`, runs as a dry-run: returns the list of tasks that WOULD
@@ -151,7 +168,7 @@ export function rejectTask(
   localId: string,
   opts: RejectDeferOptions = {},
 ): RejectDeferResult {
-  const before = getTask(db, localId);
+  const before = getTask(db, localId, opts.workstream);
   if (before && before.status !== "REJECTED") {
     captureSnapshot(db, `task reject ${localId}`, before.workstream);
   }
@@ -166,7 +183,7 @@ export function deferTask(
   localId: string,
   opts: RejectDeferOptions = {},
 ): RejectDeferResult {
-  const before = getTask(db, localId);
+  const before = getTask(db, localId, opts.workstream);
   if (before && before.status !== "DEFERRED") {
     captureSnapshot(db, `task defer ${localId}`, before.workstream);
   }
@@ -179,12 +196,14 @@ function setTerminalOrParked(
   status: "REJECTED" | "DEFERRED",
   opts: RejectDeferOptions,
 ): RejectDeferResult {
-  const before = getTask(db, localId);
+  const before = getTask(db, localId, opts.workstream);
   if (!before) throw new TaskNotFoundError(localId);
 
   // Find all open (OPEN or IN_PROGRESS) tasks that transitively depend
-  // on this one. Forward-edge recursive CTE from localId.
-  const openDependents = findOpenDependents(db, localId);
+  // on this one. Forward-edge recursive CTE from localId. Scope by the
+  // root task's workstream so a same-named task elsewhere can't seed
+  // the walk (bug_v5_name_clash_silent_misroute).
+  const openDependents = findOpenDependents(db, localId, before.workstream);
 
   if (openDependents.length > 0 && !opts.cascade) {
     const verb = status === "REJECTED" ? "reject" : "defer";
@@ -212,10 +231,17 @@ function setTerminalOrParked(
 
   // Apply to root first, then dependents in BFS order. setTaskStatus
   // emits one event per task and is idempotent (no-op if already in
-  // target status).
+  // target status). Scope every UPDATE by the root's workstream
+  // (dependents must share it — cross-ws edges are forbidden) so a
+  // same-named task elsewhere can't be flipped
+  // (bug_v5_name_clash_silent_misroute).
+  const childOpts: EvidenceOption & { workstream: string } = {
+    workstream: before.workstream,
+    ...(opts.evidence !== undefined ? { evidence: opts.evidence } : {}),
+  };
   const changedIds: string[] = [];
   for (const id of affectedIds) {
-    const r = setTaskStatus(db, id, status, opts);
+    const r = setTaskStatus(db, id, status, childOpts);
     if (r.changed) changedIds.push(id);
   }
 
@@ -239,12 +265,18 @@ function setTerminalOrParked(
  *
  *  Ordering: BFS-equivalent via DISTINCT + ORDER BY local_id; cascade
  *  applies one row at a time so each setTaskStatus is logged. */
-function findOpenDependents(db: Db, taskLocalId: string): string[] {
+function findOpenDependents(db: Db, taskLocalId: string, workstream: string): string[] {
   // Resolve the seed task to its surrogate id, then walk forward
   // edges in surrogate-id space; project back to local_id at the end.
-  const seed = db.prepare("SELECT id FROM tasks WHERE local_id = ? LIMIT 1").get(taskLocalId) as
-    | { id: number }
-    | undefined;
+  // Scope the seed by workstream (v5 per-workstream local_id) so a
+  // same-named task elsewhere can't seed a cascade in this workstream
+  // (bug_v5_name_clash_silent_misroute).
+  const seed = db
+    .prepare(
+      `SELECT id FROM tasks WHERE local_id = ?
+        AND workstream_id = (SELECT id FROM workstreams WHERE name = ?)`,
+    )
+    .get(taskLocalId, workstream) as { id: number } | undefined;
   if (!seed) return [];
   const rows = db
     .prepare(

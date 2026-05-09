@@ -479,9 +479,8 @@ export function listNotes(db: Db, taskLocalId: string, workstream?: string): Tas
 }
 
 /**
- * All tasks currently owned by `agent`, across every workstream
- * (agent names are PRIMARY KEY — globally unique — so this is
- * unambiguous). Sorted by workstream, then local_id.
+ * All tasks currently owned by `agent` in a given workstream
+ * (v5: agents.name is per-workstream unique). Sorted by local_id.
  *
  * Defaults to **excluding CLOSED** since the verb's purpose is "what
  * is X currently working on?" and a closed task is no longer being
@@ -489,14 +488,21 @@ export function listNotes(db: Db, taskLocalId: string, workstream?: string): Tas
  * historical record (so audit/notes can attribute decisions); pass
  * `{ includeClosed: true }` to surface that history.
  *
- * Real bug found in real use: `mu task owned-by worker-1` was
- * returning CLOSED tasks alongside live ones, making it impossible
- * to tell at a glance what the agent was actually doing.
+ * Workstream scoping (load-bearing post-v5):
+ *   - Pass `opts.workstream` to scope to a single workstream. This is
+ *     what every `mu task owned-by <agent>` / `mu my-tasks` /
+ *     `composeAgentTitle` consumer wants — they have an in-context
+ *     workstream and would silently misroute on a name clash without
+ *     it (bug_v5_name_clash_silent_misroute).
+ *   - Omit `workstream` only when you genuinely want every workstream's
+ *     tasks owned by an agent of this name (rare; the CLI does NOT
+ *     surface this). Use `listTasksByOwnerCrossWorkstream` for that
+ *     intent so the call site reads honestly.
  */
 export function listTasksByOwner(
   db: Db,
   owner: string,
-  opts: { includeClosed?: boolean } = {},
+  opts: { includeClosed?: boolean; workstream?: string } = {},
 ): TaskRow[] {
   // 'Live work' = not in any terminal-or-parked state. CLOSED is the
   // obvious one; REJECTED and DEFERRED are also off the agent's plate
@@ -505,11 +511,37 @@ export function listTasksByOwner(
   // Filter on the joined ag.name so the operator-facing owner string
   // still drives the lookup; FK is now via owner_id.
   const filter = opts.includeClosed ? "" : "AND t.status NOT IN ('CLOSED', 'REJECTED', 'DEFERRED')";
+  if (opts.workstream !== undefined) {
+    const wsId = tryResolveWorkstreamId(db, opts.workstream);
+    if (wsId === null) return [];
+    const sql = `SELECT ${SELECT_TASK_COLS} ${TASK_FROM_JOIN}
+                 WHERE ag.name = ? AND t.workstream_id = ? ${filter}
+                 ORDER BY t.local_id`;
+    return (db.prepare(sql).all(owner, wsId) as RawTaskRow[]).map(rowFromDb);
+  }
   const sql = `SELECT ${SELECT_TASK_COLS} ${TASK_FROM_JOIN}
                WHERE ag.name = ? ${filter}
                ORDER BY ws.name, t.local_id`;
   const rows = db.prepare(sql).all(owner) as RawTaskRow[];
   return rows.map(rowFromDb);
+}
+
+/**
+ * Cross-workstream variant of `listTasksByOwner`. Returns tasks owned
+ * by ANY agent of the given name across every workstream — the
+ * historical v4 contract. Use sparingly: agent names are no longer
+ * globally unique in v5, so this is for genuine cross-workstream
+ * surfaces (e.g. an audit dashboard), not for "what's worker-1 doing
+ * in this workstream". The bare name is the join key, so two distinct
+ * worker-1 agents in different workstreams contribute their tasks to
+ * the same result list.
+ */
+export function listTasksByOwnerCrossWorkstream(
+  db: Db,
+  owner: string,
+  opts: { includeClosed?: boolean } = {},
+): TaskRow[] {
+  return listTasksByOwner(db, owner, opts);
 }
 
 export interface SearchTasksOptions {
@@ -697,7 +729,19 @@ export function addTask(db: Db, opts: AddTaskOptions): TaskRow {
     const newTaskId = Number(insertResult.lastInsertRowid);
 
     if (opts.blockedBy && opts.blockedBy.length > 0) {
-      const blockerLookup = db.prepare(
+      // Prefer the same-workstream blocker first (v5 per-workstream
+      // local_id), then fall back to a global lookup so a cross-ws
+      // blocker still surfaces CrossWorkstreamEdgeError (not
+      // TaskNotFoundError). Without the same-ws preference, two
+      // blockers of the same local_id (one in this ws, one elsewhere)
+      // could silently bind to the wrong row
+      // (bug_v5_name_clash_silent_misroute).
+      const blockerLookupSameWs = db.prepare(
+        `SELECT t.id AS id, ws.name AS workstream FROM tasks t
+           JOIN workstreams ws ON ws.id = t.workstream_id
+          WHERE t.local_id = ? AND t.workstream_id = ?`,
+      );
+      const blockerLookupAnyWs = db.prepare(
         `SELECT t.id AS id, ws.name AS workstream FROM tasks t
            JOIN workstreams ws ON ws.id = t.workstream_id
           WHERE t.local_id = ? LIMIT 1`,
@@ -706,7 +750,9 @@ export function addTask(db: Db, opts: AddTaskOptions): TaskRow {
         "INSERT INTO task_edges (from_task_id, to_task_id, created_at) VALUES (?, ?, ?)",
       );
       for (const blocker of opts.blockedBy) {
-        const row = blockerLookup.get(blocker) as { id: number; workstream: string } | undefined;
+        const row = (blockerLookupSameWs.get(blocker, wsId) ?? blockerLookupAnyWs.get(blocker)) as
+          | { id: number; workstream: string }
+          | undefined;
         if (!row) {
           throw new TaskNotFoundError(blocker);
         }

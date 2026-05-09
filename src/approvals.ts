@@ -207,10 +207,24 @@ export function addApproval(db: Db, opts: AddApprovalOptions): ApprovalRow {
   };
 }
 
-export function getApproval(db: Db, slug: string): ApprovalRow | undefined {
-  // v5: slug is per-workstream unique. The v4 SDK contract was "first
-  // match by slug"; preserve it here. Tests / CLI consumers that need
-  // strict scoping use listApprovals + filter.
+export function getApproval(db: Db, slug: string, workstream?: string): ApprovalRow | undefined {
+  // v5: slug is per-workstream unique. Pass `workstream` from any
+  // caller that has it in context to avoid resolving the wrong row
+  // on a slug clash (bug_v5_name_clash_silent_misroute). Without a
+  // workstream context, falls back to the v4 "first match by slug"
+  // contract — acceptable for `mu approve grant <slug> --all`-style
+  // surfaces and for tests that use single-workstream fixtures.
+  if (workstream !== undefined) {
+    const wsId = tryResolveWorkstreamId(db, workstream);
+    if (wsId === null) return undefined;
+    const row = db
+      .prepare(
+        `SELECT ${SELECT_APPROVAL_COLS} ${APPROVAL_FROM_JOIN}
+          WHERE ap.slug = ? AND ap.workstream_id = ?`,
+      )
+      .get(slug, wsId) as RawApprovalRow | undefined;
+    return row ? rowFromDb(row) : undefined;
+  }
   const row = db
     .prepare(`SELECT ${SELECT_APPROVAL_COLS} ${APPROVAL_FROM_JOIN} WHERE ap.slug = ? LIMIT 1`)
     .get(slug) as RawApprovalRow | undefined;
@@ -257,9 +271,9 @@ function decide(
   db: Db,
   slug: string,
   newStatus: Exclude<ApprovalStatus, "pending">,
-  opts: DecideApprovalOptions,
+  opts: DecideApprovalOptions & { workstream?: string },
 ): ApprovalRow {
-  const before = getApproval(db, slug);
+  const before = getApproval(db, slug, opts.workstream);
   if (!before) throw new ApprovalNotFoundError(slug);
   if (before.status !== "pending") {
     throw new ApprovalAlreadyDecidedError(slug, before.status);
@@ -289,16 +303,24 @@ function decide(
     `approval ${newStatus} ${slug} (by ${opts.decidedBy})`,
     opts.decidedBy,
   );
-  const after = getApproval(db, slug);
+  const after = getApproval(db, slug, before.workstream ?? undefined);
   if (!after) throw new Error(`approval vanished after update: ${slug}`);
   return after;
 }
 
-export function grantApproval(db: Db, slug: string, opts: DecideApprovalOptions): ApprovalRow {
+export function grantApproval(
+  db: Db,
+  slug: string,
+  opts: DecideApprovalOptions & { workstream?: string },
+): ApprovalRow {
   return decide(db, slug, "granted", opts);
 }
 
-export function denyApproval(db: Db, slug: string, opts: DecideApprovalOptions): ApprovalRow {
+export function denyApproval(
+  db: Db,
+  slug: string,
+  opts: DecideApprovalOptions & { workstream?: string },
+): ApprovalRow {
   return decide(db, slug, "denied", opts);
 }
 
@@ -307,7 +329,11 @@ export function denyApproval(db: Db, slug: string, opts: DecideApprovalOptions):
  * when its deadline elapses; also exposed for `mu approve timeout` to
  * proactively clear an abandoned request.
  */
-export function timeoutApproval(db: Db, slug: string, opts: DecideApprovalOptions): ApprovalRow {
+export function timeoutApproval(
+  db: Db,
+  slug: string,
+  opts: DecideApprovalOptions & { workstream?: string },
+): ApprovalRow {
   return decide(db, slug, "timeout", opts);
 }
 
@@ -332,14 +358,14 @@ export interface WaitApprovalOptions {
 export async function waitApproval(
   db: Db,
   slug: string,
-  opts: WaitApprovalOptions = {},
+  opts: WaitApprovalOptions & { workstream?: string } = {},
 ): Promise<ApprovalRow> {
   const timeoutMs = opts.timeoutMs ?? 600_000;
   const pollMs = opts.pollMs ?? 1000;
   const deadline = timeoutMs > 0 ? Date.now() + timeoutMs : Number.POSITIVE_INFINITY;
 
   for (;;) {
-    const row = getApproval(db, slug);
+    const row = getApproval(db, slug, opts.workstream);
     if (!row) throw new ApprovalNotFoundError(slug);
     if (row.status !== "pending") return row;
     if (Date.now() >= deadline) {
@@ -347,10 +373,13 @@ export async function waitApproval(
       // read and now. timeoutApproval will throw AlreadyDecided in that
       // case; treat that as success and re-read.
       try {
-        return timeoutApproval(db, slug, { decidedBy: "system" });
+        return timeoutApproval(db, slug, {
+          decidedBy: "system",
+          ...(opts.workstream !== undefined ? { workstream: opts.workstream } : {}),
+        });
       } catch (err) {
         if (err instanceof ApprovalAlreadyDecidedError) {
-          const after = getApproval(db, slug);
+          const after = getApproval(db, slug, opts.workstream);
           if (!after) throw new ApprovalNotFoundError(slug);
           return after;
         }

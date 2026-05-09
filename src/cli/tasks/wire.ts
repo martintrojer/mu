@@ -148,15 +148,25 @@ export function wireTaskCommands(program: Command): void {
   task
     .command("owned-by <agent>")
     .description(
-      "List tasks currently owned by an agent (cross-workstream; agent names are global). Excludes CLOSED by default — pass --include-closed for the full historical owner list.",
+      "List tasks owned by an agent. Defaults to the current workstream (v5: agent names are per-workstream unique). Pass --all to surface every workstream's same-named worker. Excludes CLOSED by default — pass --include-closed for the full historical owner list.",
     )
     .option(
       "--include-closed",
       "include CLOSED tasks (closeTask preserves owner as historical record; default omits them)",
     )
+    .option(
+      "--all",
+      "surface every workstream's same-named agent (cross-workstream; v4 default behaviour)",
+    )
+    .option(...WORKSTREAM_OPT)
     .option(...JSON_OPT)
     .action(function (agent: string) {
-      const opts = (this as Command).opts() as { json?: boolean; includeClosed?: boolean };
+      const opts = (this as Command).optsWithGlobals() as {
+        json?: boolean;
+        includeClosed?: boolean;
+        all?: boolean;
+        workstream?: string;
+      };
       return handle((db) => cmdTaskOwnedBy(db, agent, opts))();
     });
 

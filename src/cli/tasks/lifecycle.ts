@@ -20,14 +20,15 @@ export async function cmdTaskClose(
   opts: { evidence?: string; workstream?: string; json?: boolean } = {},
 ): Promise<void> {
   assertTaskInWorkstream(db, localId, opts.workstream);
-  const sdkOpts = opts.evidence !== undefined ? { evidence: opts.evidence } : {};
+  const ws = await resolveWorkstream(opts.workstream);
+  const sdkOpts: { evidence?: string; workstream: string } = { workstream: ws };
+  if (opts.evidence !== undefined) sdkOpts.evidence = opts.evidence;
   // Capture the owner BEFORE closeTask so we can refresh their title
   // even though closeTask doesn't return owner info. owner won't
   // change as a result of close (FK SET NULL only fires on delete).
-  const taskRow = getTask(db, localId);
+  const taskRow = getTask(db, localId, ws);
   const r = closeTask(db, localId, sdkOpts);
-  if (r.changed && taskRow?.owner) await refreshAgentTitle(db, taskRow.owner);
-  const ws = await resolveWorkstream(opts.workstream);
+  if (r.changed && taskRow?.owner) await refreshAgentTitle(db, taskRow.owner, ws);
   const nextSteps: NextStep[] = [
     { intent: "Reopen if needed", command: `mu task open ${localId} -w ${ws}` },
     { intent: "Pick the next ready task", command: `mu task next -w ${ws}` },
@@ -54,9 +55,10 @@ export async function cmdTaskOpen(
   opts: { evidence?: string; workstream?: string; json?: boolean } = {},
 ): Promise<void> {
   assertTaskInWorkstream(db, localId, opts.workstream);
-  const sdkOpts = opts.evidence !== undefined ? { evidence: opts.evidence } : {};
-  const r = openTask(db, localId, sdkOpts);
   const ws = await resolveWorkstream(opts.workstream);
+  const sdkOpts: { evidence?: string; workstream: string } = { workstream: ws };
+  if (opts.evidence !== undefined) sdkOpts.evidence = opts.evidence;
+  const r = openTask(db, localId, sdkOpts);
   const nextSteps: NextStep[] = [
     {
       intent: "Claim it",
@@ -112,12 +114,15 @@ export async function cmdTaskRejectOrDefer(
   opts: RejectDeferOpts,
 ): Promise<void> {
   assertTaskInWorkstream(db, localId, opts.workstream);
+  const ws = await resolveWorkstream(opts.workstream);
   if (opts.yes && !opts.cascade) {
     throw new UsageError(
       `--yes requires --cascade (--yes only meaningful when committing a cascade preview; for single-task ${verb}, --yes is a no-op)`,
     );
   }
-  const sdkOpts: { evidence?: string; cascade?: boolean; yes?: boolean } = {};
+  const sdkOpts: { evidence?: string; cascade?: boolean; yes?: boolean; workstream: string } = {
+    workstream: ws,
+  };
   if (opts.evidence !== undefined) sdkOpts.evidence = opts.evidence;
   if (opts.cascade) sdkOpts.cascade = true;
   if (opts.yes) sdkOpts.yes = true;
@@ -128,12 +133,11 @@ export async function cmdTaskRejectOrDefer(
   if (r.changed) {
     const owners = new Set<string>();
     for (const id of r.changedIds) {
-      const t = getTask(db, id);
+      const t = getTask(db, id, ws);
       if (t?.owner) owners.add(t.owner);
     }
-    for (const owner of owners) await refreshAgentTitle(db, owner);
+    for (const owner of owners) await refreshAgentTitle(db, owner, ws);
   }
-  const ws = await resolveWorkstream(opts.workstream);
   const past = verb === "reject" ? "Rejected" : "Deferred";
   const status = verb === "reject" ? "REJECTED" : "DEFERRED";
 
@@ -163,7 +167,7 @@ export async function cmdTaskRejectOrDefer(
       `${past === "Rejected" ? "Reject" : "Defer"} ${pc.bold(localId)} would sweep ${r.affectedIds.length} task(s) (root + ${r.affectedIds.length - 1} dependent(s)):`,
     );
     for (const id of r.affectedIds) {
-      const t = getTask(db, id);
+      const t = getTask(db, id, ws);
       const title = t ? (t.title.length > 50 ? `${t.title.slice(0, 49)}…` : t.title) : "?";
       const marker = id === localId ? pc.bold("  *") : "   ";
       console.log(`${marker} ${pc.bold(id)}  ${pc.dim(title)}`);

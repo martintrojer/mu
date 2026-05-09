@@ -99,7 +99,7 @@ export async function cmdSpawn(db: Db, name: string, opts: SpawnOpts): Promise<v
       ? { workspaceProjectRoot: opts.workspaceProjectRoot }
       : {}),
   });
-  const workspace = opts.workspace ? getWorkspaceForAgent(db, name) : undefined;
+  const workspace = opts.workspace ? getWorkspaceForAgent(db, name, workstream) : undefined;
   // Resolve the actual command that landed in the pane, so the operator
   // can confirm `--command 'pi-meta --no-solo'` (etc.) took effect.
   // Mirrors the resolution chain in spawnAgent: explicit --command >
@@ -148,8 +148,8 @@ export async function cmdSend(
   opts: { workstream?: string; json?: boolean } = {},
 ): Promise<void> {
   assertAgentInWorkstream(db, name, opts.workstream);
-  await sendToAgent(db, name, text);
   const ws = await resolveWorkstream(opts.workstream);
+  await sendToAgent(db, name, text, { workstream: ws });
   const nextSteps: NextStep[] = [
     { intent: "Read response", command: `mu agent read ${name} -n 50 -w ${ws}` },
     { intent: "Watch live events", command: `mu log -w ${ws} --tail` },
@@ -168,7 +168,11 @@ export async function cmdRead(
   opts: { lines?: number; workstream?: string; json?: boolean },
 ): Promise<void> {
   assertAgentInWorkstream(db, name, opts.workstream);
-  const text = await readAgent(db, name, opts.lines !== undefined ? { lines: opts.lines } : {});
+  const ws = await resolveWorkstream(opts.workstream);
+  const text = await readAgent(db, name, {
+    workstream: ws,
+    ...(opts.lines !== undefined ? { lines: opts.lines } : {}),
+  });
   if (opts.json) {
     emitJson({
       agent: name,
@@ -217,7 +221,12 @@ export async function cmdAgentShow(
   opts: { lines?: number; json?: boolean; workstream?: string },
 ): Promise<void> {
   assertAgentInWorkstream(db, name, opts.workstream);
-  const agent = getAgent(db, name);
+  // Workstream is optional on `mu agent show`: when -w resolves,
+  // scope the lookup to it (avoids name-clash misroute,
+  // bug_v5_name_clash_silent_misroute); otherwise getAgent falls back
+  // to the v4 first-match-by-name contract so a single-workstream user
+  // can still type `mu agent show worker-1` from anywhere.
+  const agent = getAgent(db, name, opts.workstream);
   if (!agent) throw new AgentNotFoundError(name);
   const lines = opts.lines ?? 20;
   let scrollback: string;
@@ -240,8 +249,8 @@ export async function cmdAgentShow(
   if (scrollback.trim() !== "") {
     const detected = detectPiStatus(scrollback);
     if (detected !== agent.status && shouldOverwriteAgentStatus(agent.status, detected)) {
-      updateAgentStatus(db, agent.name, detected);
-      const refreshed = getAgent(db, name);
+      updateAgentStatus(db, agent.name, detected, agent.workstream);
+      const refreshed = getAgent(db, name, agent.workstream);
       if (refreshed) displayed = refreshed;
     }
   }
@@ -278,6 +287,7 @@ export async function cmdWhoami(
   const self = resolveSelf(db);
   const owned = listTasksByOwner(db, self.name, {
     includeClosed: opts.includeClosed ?? false,
+    workstream: self.workstream,
   });
 
   if (opts.json) {
@@ -305,11 +315,11 @@ export async function cmdClose(
   opts: { workstream?: string; json?: boolean; discardWorkspace?: boolean } = {},
 ): Promise<void> {
   assertAgentInWorkstream(db, name, opts.workstream);
-  const result = await closeAgent(
-    db,
-    name,
-    opts.discardWorkspace === true ? { discardWorkspace: true } : {},
-  );
+  const ws = await resolveWorkstream(opts.workstream);
+  const result = await closeAgent(db, name, {
+    workstream: ws,
+    ...(opts.discardWorkspace === true ? { discardWorkspace: true } : {}),
+  });
   const next: NextStep[] = [];
   if (result.workspaceFreed) {
     next.push({
@@ -375,7 +385,7 @@ export async function cmdAdopt(db: Db, paneOrTitle: string, opts: AdoptCliOpts):
   const result: AdoptAgentResult = await adoptAgent(db, adoptOpts);
   // Refresh title with composed state. Adopt may have set it to just
   // the agent name; this re-renders with status emoji etc.
-  await refreshAgentTitle(db, result.agent.name);
+  await refreshAgentTitle(db, result.agent.name, ws);
 
   // Window-scoped border for the adopted pane's window. (cmdInit set
   // it on _mu but adopted panes can be in any window.) Self-checks
@@ -420,9 +430,9 @@ export async function cmdFree(
   opts: { workstream?: string; json?: boolean } = {},
 ): Promise<void> {
   assertAgentInWorkstream(db, name, opts.workstream);
-  const r = freeAgent(db, name);
-  if (r.changed) await refreshAgentTitle(db, name);
   const ws = await resolveWorkstream(opts.workstream);
+  const r = freeAgent(db, name, ws);
+  if (r.changed) await refreshAgentTitle(db, name, ws);
   const nextSteps: NextStep[] = [
     { intent: "Send work to the freed agent", command: `mu agent send ${name} '...' -w ${ws}` },
     { intent: "Close the agent", command: `mu agent close ${name} -w ${ws}` },

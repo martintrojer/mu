@@ -152,8 +152,11 @@ export async function adoptAgent(db: Db, opts: AdoptAgentOptions): Promise<Adopt
     throw new AgentExistsError(existingByPane.name);
   }
 
-  // Step 6: name not taken (in any workstream — agents.name is the PK).
-  const existingByName = getAgent(db, resolvedName);
+  // Step 6: name not taken in THIS workstream. v5 makes agent names
+  // per-workstream unique — 'worker-1' may legally exist in another
+  // workstream; only refuse when it collides in the workstream we're
+  // adopting into (bug_v5_name_clash_silent_misroute).
+  const existingByName = getAgent(db, resolvedName, opts.workstream);
   if (existingByName) {
     throw new AgentExistsError(resolvedName);
   }

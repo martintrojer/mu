@@ -142,7 +142,7 @@ export async function reconcile(db: Db, opts: ReconcileOptions): Promise<Reconci
     if (tmuxByPaneId.has(agent.paneId)) {
       survivors.push(agent);
     } else {
-      if (mode === "full") deleteAgent(db, agent.name);
+      if (mode === "full") deleteAgent(db, agent.name, agent.workstream);
       prunedGhosts++;
     }
   }
@@ -167,7 +167,7 @@ export async function reconcile(db: Db, opts: ReconcileOptions): Promise<Reconci
       const scrollback = await capturePane(agent.paneId, { lines: 100 });
       const detected = detectPiStatus(scrollback);
       if (shouldOverwriteAgentStatus(agent.status, detected) && detected !== agent.status) {
-        updateAgentStatus(db, agent.name, detected);
+        updateAgentStatus(db, agent.name, detected, agent.workstream);
         statusChanges++;
       }
       // ALWAYS refresh the pane title (even when status didn't change),
@@ -179,7 +179,7 @@ export async function reconcile(db: Db, opts: ReconcileOptions): Promise<Reconci
       //      (claim / release / close) re-propagate even if the status
       //      detector didn't flip.
       // Best-effort: a tmux failure here never blocks the reconcile report.
-      await refreshAgentTitle(db, agent.name);
+      await refreshAgentTitle(db, agent.name, agent.workstream);
     }
   }
 

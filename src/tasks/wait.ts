@@ -93,6 +93,12 @@ export interface TaskWaitOptions {
   timeoutMs?: number;
   /** Polling interval. Default 1000ms; overridable for tests. */
   pollMs?: number;
+  /** Workstream context for the listed tasks AND the stuck-detector's
+   *  agent lookup. When set, every internal `getTask` / agent SELECT
+   *  scopes by workstream so a same-named task or worker elsewhere
+   *  can't pollute the wait result (bug_v5_name_clash_silent_misroute).
+   *  The CLI's `mu task wait` always passes this. */
+  workstream?: string;
   /** Emit a yellow STUCK warning to stderr (once per task per wait call)
    *  when an IN_PROGRESS task's owner has been in `needs_input` for at
    *  least this many milliseconds since the agent row's last update.
@@ -160,12 +166,13 @@ export async function waitForTasks(
   const timeoutMs = opts.timeoutMs ?? 600_000;
   const pollMs = opts.pollMs ?? 1000;
   const stuckAfterMs = opts.stuckAfterMs ?? 300_000;
+  const workstream = opts.workstream;
   const deadline = timeoutMs > 0 ? Date.now() + timeoutMs : Number.POSITIVE_INFINITY;
   const startedAt = Date.now();
 
-  // Pre-flight: every id must exist.
+  // Pre-flight: every id must exist (in the optional workstream scope).
   for (const id of localIds) {
-    if (getTask(db, id) === undefined) throw new TaskNotFoundError(id);
+    if (getTask(db, id, workstream) === undefined) throw new TaskNotFoundError(id);
   }
 
   // Per-task dedupe: emit the STUCK warning at most ONCE per wait call,
@@ -185,12 +192,21 @@ export async function waitForTasks(
     if (stuckAfterMs <= 0) return false;
     if (status !== "IN_PROGRESS" || !owner) return false;
     // owner is the operator-facing agent name; agents.name is
-    // per-workstream unique in v5 but this lookup is only the latest
-    // matching row — the owner string carries no scope info today and
-    // multiple workstreams sharing a name is rare in practice.
-    const row = db
-      .prepare("SELECT status, updated_at FROM agents WHERE name = ? LIMIT 1")
-      .get(owner) as { status: string; updated_at: string } | undefined;
+    // per-workstream unique in v5. When we know the workstream, scope
+    // the lookup so a same-named worker elsewhere doesn't spuriously
+    // mark this task stuck (bug_v5_name_clash_silent_misroute).
+    const row = (
+      workstream !== undefined
+        ? db
+            .prepare(
+              `SELECT a.status AS status, a.updated_at AS updated_at
+                 FROM agents a
+                 JOIN workstreams ws ON ws.id = a.workstream_id
+                WHERE a.name = ? AND ws.name = ?`,
+            )
+            .get(owner, workstream)
+        : db.prepare("SELECT status, updated_at FROM agents WHERE name = ? LIMIT 1").get(owner)
+    ) as { status: string; updated_at: string } | undefined;
     if (!row || row.status !== "needs_input") return false;
     const ageMs = Date.now() - new Date(row.updated_at).getTime();
     return ageMs >= stuckAfterMs;
@@ -199,7 +215,7 @@ export async function waitForTasks(
   /** Read current state of all tasks; returns the result shape. */
   const snapshot = (): TaskWaitResult => {
     const tasks: TaskWaitTaskState[] = localIds.map((id) => {
-      const row = getTask(db, id);
+      const row = getTask(db, id, workstream);
       // Defensive: if a task was deleted mid-wait, treat as 'never
       // reached'. (Not the same as TaskNotFoundError pre-flight —
       // deletion mid-wait shouldn't crash the wait; it's a legitimate

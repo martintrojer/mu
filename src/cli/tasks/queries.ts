@@ -36,8 +36,11 @@ export async function cmdMyTasks(
   opts: { json?: boolean; includeClosed?: boolean } = {},
 ): Promise<void> {
   const self = resolveSelf(db);
+  // Scope by self.workstream so a same-named worker in another
+  // workstream can't pollute this list (bug_v5_name_clash_silent_misroute).
   const tasks = listTasksByOwner(db, self.name, {
     includeClosed: opts.includeClosed ?? false,
+    workstream: self.workstream,
   });
   if (opts.json) {
     emitJson(withRoiAll(tasks));
@@ -172,11 +175,19 @@ export async function cmdTaskGoals(
 export async function cmdTaskOwnedBy(
   db: Db,
   agent: string,
-  opts: { json?: boolean; includeClosed?: boolean } = {},
+  opts: { json?: boolean; includeClosed?: boolean; workstream?: string; all?: boolean } = {},
 ): Promise<void> {
-  const tasks = listTasksByOwner(db, agent, {
+  // Default behaviour: scope to the resolved workstream (so the common
+  // case 'mu task owned-by worker-1' returns only this workstream's
+  // worker-1, not every workstream's). --all explicitly opts back into
+  // the cross-workstream view (bug_v5_name_clash_silent_misroute).
+  const sdkOpts: { includeClosed?: boolean; workstream?: string } = {
     includeClosed: opts.includeClosed ?? false,
-  });
+  };
+  if (!opts.all) {
+    sdkOpts.workstream = await resolveWorkstream(opts.workstream);
+  }
+  const tasks = listTasksByOwner(db, agent, sdkOpts);
   if (opts.json) {
     emitJson(withRoiAll(tasks));
     return;
@@ -185,9 +196,10 @@ export async function cmdTaskOwnedBy(
     console.log(pc.dim(`(no tasks owned by ${agent})`));
     return;
   }
-  // owned-by is cross-workstream by design (agent names are global)
-  // so always show the workstream column.
-  console.log(formatTaskListTable(tasks, { withWorkstream: true }));
+  // Surface the workstream column when we're showing cross-workstream
+  // results (--all); for the scoped (default) case the column would
+  // be redundant.
+  console.log(formatTaskListTable(tasks, { withWorkstream: opts.all === true }));
 }
 
 export async function cmdTaskSearch(
