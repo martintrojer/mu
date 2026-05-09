@@ -629,6 +629,26 @@ export function wireAgentCommands(program: Command): void {
       return handle((db) => cmdAttach(db, name, opts))();
     });
 
+  // `mu adopt` is intentionally TOP-LEVEL, not nested under `mu agent`,
+  // matching the original e20af89 design and every doc/skill/orphan-hint
+  // reference (`mu adopt %15`, not `mu agent adopt %15`). It was dropped
+  // on the floor in the f42e86d wireXxxCommands split — bug_adopt_verb_unwired.
+  program
+    .command("adopt <pane-or-title>")
+    .description(
+      "Register an existing tmux pane as a managed mu agent (the inverse of `mu agent list`'s 'orphan' state). Pane id form '%15' or pane title form 'worker-2'.",
+    )
+    .option("--name <name>", "agent name (defaults to the pane's current title)")
+    .option("--cli <cli>", "agent CLI key (default: pi)")
+    .option("--role <role>", "full-access | read-only", "full-access")
+    .option(...WORKSTREAM_OPT)
+    .option(...JSON_OPT)
+    .action(function (paneOrTitle: string) {
+      // optsWithGlobals so the top-level -w / --json flags propagate.
+      const opts = (this as Command).optsWithGlobals() as AdoptCliOpts;
+      return handle((db) => cmdAdopt(db, paneOrTitle, opts))();
+    });
+
   // ─── task ───────────────────────────────────────────────────────────
 }
 

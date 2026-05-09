@@ -115,6 +115,32 @@ called out under "Breaking" in each entry.
 
 ### Fixed
 
+- **`mu adopt <pane>` is wired again — the verb was dead code since
+  the f42e86d wireXxxCommands refactor.** Closes
+  `bug_adopt_verb_unwired` in `mufeedback` (surfaced incidentally by
+  `audit_verbs_typed_vs_sql`). The pre-refactor `src/cli.ts` had a
+  top-level `program.command("adopt <pane-or-title>")` registration;
+  the f42e86d split that walled buildProgram into per-namespace
+  `wireXxxCommands(program)` helpers wired the `agent <verb>`
+  subcommands but dropped the top-level `adopt` registration on the
+  floor. Result: `mu adopt %15` returned commander's generic `error:
+  too many arguments. Expected 0 arguments but got 2.` instead of
+  reaching `cmdAdopt`. Yet the verb was still advertised by every
+  surface that tells the operator how to recover from an orphan pane
+  — `docs/USAGE_GUIDE.md`, `skills/mu/SKILL.md`, the `mu agent list`
+  orphan-output hint, `mu undo`'s scrollback hint — each one a
+  broken promise. Fix: `wireAgentCommands` now also registers the
+  top-level `program.command("adopt <pane-or-title>")` (intentionally
+  top-level, not nested under `mu agent`, matching the original
+  e20af89 design). The verb body (`cmdAdopt` + `adoptAgent`) was
+  unchanged — every existing case 1–8 test in
+  `test/verbs.test.ts` was already exercising the SDK directly.
+  Two new regression cases assert the wiring: (1) `mu adopt <pane>
+  -w <ws>` reaches `cmdAdopt` (commander does not parse-error,
+  agent row appears in the registry), (2) `mu adopt --help` produces
+  the verb's own help screen with `<pane-or-title>` in the usage line
+  rather than the program-level help.
+
 - **`mu task show` no longer silently loses the `--self` actor on
   long-running workstreams.** Closes
   `review_code_last_claim_actor_brittle` in `mufeedback` (smallest
