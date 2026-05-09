@@ -115,6 +115,7 @@ called out under "Breaking" in each entry.
 
 ### Changed
 
+<<<<<<< HEAD
 - **`src/cli/tasks.ts` split: 1234 → 29 LOC re-export hub.** Closes
   `review_code_cli_tasks_oversize` in `mufeedback`. The first-pass
   cluster split (`refactor_split_large_src_files`) carved
@@ -182,6 +183,55 @@ called out under "Breaking" in each entry.
   `schema_v5_cleanups`). DESIGN ONLY — no `src/` change in this
   commit; the schema stays at v4 until the migration follow-up
   ships.
+
+- **Every `cli-table3` table site now uses a shared `muTable()`
+  helper that bakes in the HUD's truncation safety belt** (`wordWrap:
+  false` plus per-column `colWidths`). Closes
+  `tables_truncate_long_cols_audit` in `mufeedback`. Surfaced live:
+  `mu workspace list` blew the terminal width during one session
+  because the `path` column rendered the full ~70-char absolute path
+  uncut, pushing the table out to ~200 chars and forcing a
+  horizontal-scrollback or wrap (the wrap broke the box-drawing
+  chars in some output snapshots). Same shape risk in any verb that
+  emits a Table where one column carries user-data of unpredictable
+  length (titles, paths, evidence, JSON payloads).
+
+  New helper `muTable({ head, colWidths?, style? })` in
+  `src/output.ts` returns a `cli-table3.Table` with `wordWrap:
+  false` (so cells exceeding their column width truncate with `…`
+  instead of wrapping to a second row), `style` defaulting to the
+  borderless `{ head: [], border: [] }` look every multi-table verb
+  already used, and `colWidths` applied only when supplied (`null`
+  per-column = auto). Surfaces eight existing call sites: the five
+  `format*Table` helpers in `src/cli.ts` (agents / ready / task-list
+  / workspaces / workstreams), `src/cli/snapshot.ts` (snapshot list),
+  `src/cli/sql.ts` (`mu sql` rows), and `src/cli/approve.ts`
+  (approval list). The HUD's `newHudTable` was already correct and
+  is left untouched (it builds its own borderless variant for the
+  same reason). Per-site truncation budgets stay scoped to the
+  column the operator is least likely to read in full and most
+  likely to be long: `path` (40 cols, **front**-truncated via the
+  new `truncateFront()` so the trailing `<workstream>/<agent>`
+  suffix survives), `name` on workstreams (40), `label` on snapshots
+  (50), `reason` on approvals (60), `window` + `role` on agents
+  (32 / 14). `mu sql` is the only site that can't pick a fixed
+  budget (every column is user-data of unknown length); it divides
+  the terminal width evenly across columns with a 12-char floor.
+
+  Anti-features explicitly NOT shipped (per the audit note): no
+  `--full` / `--no-truncate` flag per verb (anti-feature — `--json`
+  already emits the full value), no auto-truncation of every column
+  (per-column targeting is the whole point), and JSON output is
+  untouched. Also leaves the table sites in `src/cli/tasks.ts` for
+  a follow-up so this audit doesn't conflict with the parallel work
+  on that file.
+
+  Tests: two new cases in `test/output.test.ts` pin the helper
+  contract — (1) a cell longer than its `colWidths` becomes one
+  truncated visual row (5 lines for a single-row table; a wrap
+  regression would push it to 6) with an `…` suffix, and (2) the
+  helper still renders correctly when no `colWidths` are supplied
+  (auto-sized columns, safety belt still on).
 
 - **`claim.integration.test.ts` regains end-to-end coverage of
   the cross-workstream guard.** Closes

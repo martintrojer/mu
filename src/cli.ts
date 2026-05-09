@@ -18,7 +18,6 @@
 import { readFileSync, realpathSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import Table from "cli-table3";
 import { Command, InvalidArgumentError } from "commander";
 
 import {
@@ -50,7 +49,14 @@ import { wireWorkspaceCommands } from "./cli/workspace.js";
 import { wireWorkstreamCommands } from "./cli/workstream.js";
 import { type Db, openDb } from "./db.js";
 import type { LogRow } from "./logs.js";
-import { type NextStep, hasNextSteps, isJsonMode, pc, printNextStepsTo } from "./output.js";
+import {
+  type NextStep,
+  hasNextSteps,
+  isJsonMode,
+  muTable,
+  pc,
+  printNextStepsTo,
+} from "./output.js";
 import {
   SnapshotFileMissingError,
   SnapshotNotFoundError,
@@ -277,7 +283,11 @@ export function statusIcon(status: AgentStatus): string {
 
 export function formatAgentsTable(agents: readonly AgentRow[]): string {
   if (agents.length === 0) return pc.dim("  (no agents)");
-  const table = new Table({
+  // Cap the variable-width columns so a long tmux window name (or a
+  // future free-text role) can't push the table past the terminal.
+  // Other columns are bounded by their schemas (name 32-char cap,
+  // cli is one of pi/codex/claude, status is one of OPEN/...).
+  const table = muTable({
     head: [
       pc.bold(""),
       pc.bold("name"),
@@ -286,6 +296,7 @@ export function formatAgentsTable(agents: readonly AgentRow[]): string {
       pc.bold("window"),
       pc.bold("role"),
     ],
+    colWidths: [null, null, null, null, 32, 14],
     style: { head: [] },
   });
   for (const a of agents) {
@@ -326,7 +337,9 @@ export function formatReadyTable(tasks: readonly TaskRow[]): string {
     terminalWidth() - (idW + impactW + effortW + roiW + ownerW) - padding,
   );
 
-  const table = new Table({
+  // Title is pre-truncated above; use muTable so wordWrap:false acts
+  // as a safety belt for any other cell we don't pre-trim.
+  const table = muTable({
     head: [
       pc.bold("id"),
       pc.bold("title"),
@@ -373,18 +386,24 @@ export function formatTracks(tracks: readonly Track[]): string {
  *  or wasn't asked for (no decorateWithStaleness call). Surfaced by
  *  bug_workspace_stale_parent_silent_drift. */
 export function formatWorkspacesTable(rows: readonly WorkspaceRow[]): string {
-  const table = new Table({
+  // The path column is the one that bit operators today: an absolute
+  // ~/.local/state/mu/workspaces/<ws>/worker-foo path runs ~70 chars
+  // and pushed the table to ~200 cols. Front-truncate so the useful
+  // trailing `<ws>/<agent>` suffix survives, then cap the column with
+  // colWidths as a safety belt (tables_truncate_long_cols_audit).
+  const PATH_BUDGET = 40;
+  const table = muTable({
     head: ["agent", "workstream", "backend", "path", "parent_ref", "behind", "created"].map((h) =>
       pc.bold(h),
     ),
-    style: { head: [], border: [] },
+    colWidths: [null, null, null, PATH_BUDGET, null, null, null],
   });
   for (const r of rows) {
     table.push([
       r.agent,
       r.workstream,
       r.backend,
-      r.path,
+      truncateFront(r.path, PATH_BUDGET - 2),
       r.parentRef ? pc.dim(r.parentRef.slice(0, 12)) : pc.dim("—"),
       formatBehind(r.commitsBehindMain),
       pc.dim(r.createdAt),
@@ -424,9 +443,12 @@ export function printLogRow(row: LogRow): void {
  * cli/state.ts can both import it without a lateral cli/* dependency.
  */
 export function formatWorkstreamsTable(rows: WorkstreamSummary[]): string {
-  const table = new Table({
+  // Workstream names are user-chosen free-form text; everything else
+  // is a small int / fixed-shape token. Cap the name column so a long
+  // workstream name doesn't push the row counts off-screen.
+  const table = muTable({
     head: ["name", "tmux", "agents", "tasks", "edges", "notes"].map((h) => pc.bold(h)),
-    style: { head: [], border: [] },
+    colWidths: [40, null, null, null, null, null],
   });
   for (const r of rows) {
     table.push([
@@ -594,6 +616,18 @@ export function truncate(s: string, max: number): string {
   return `${s.slice(0, max - 1)}…`;
 }
 
+/** Front-truncate `s` to fit `max` columns, prepending an ellipsis when
+ *  truncated. Used for paths where the trailing `<workstream>/<agent>`
+ *  suffix is the only useful bit (the leading `~/.local/state/mu/...`
+ *  prefix is identical for every row). Surfaced live by `mu workspace
+ *  list` blowing the terminal width on the `path` column
+ *  (tables_truncate_long_cols_audit). */
+export function truncateFront(s: string, max: number): string {
+  if (max <= 1) return s.slice(-max);
+  if (s.length <= max) return s;
+  return `…${s.slice(-(max - 1))}`;
+}
+
 function terminalWidth(): number {
   return process.stdout.columns ?? DEFAULT_TERMINAL_WIDTH;
 }
@@ -662,9 +696,10 @@ export function formatTaskListTable(
   const padding = numCols * 3 + 1;
   const titleBudget = Math.max(20, terminalWidth() - otherTotal - padding);
 
-  const table = new Table({
+  // Title is pre-truncated to titleBudget above; muTable adds the
+  // wordWrap:false safety belt for any cell we don't trim.
+  const table = muTable({
     head: head.map((h) => pc.bold(h)),
-    style: { head: [], border: [] },
   });
   for (let i = 0; i < tasks.length; i++) {
     const t = tasks[i];

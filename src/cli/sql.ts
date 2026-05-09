@@ -11,10 +11,9 @@
 //
 // Extracted from src/cli.ts as part of refactor_split_large_src_files.
 
-import Table from "cli-table3";
 import { UsageError, emitJson } from "../cli.js";
 import type { Db } from "../db.js";
-import { pc } from "../output.js";
+import { muTable, pc } from "../output.js";
 
 export async function cmdSql(
   db: Db,
@@ -126,7 +125,21 @@ export async function cmdSql(
     }
     const first = rows[0] as Record<string, unknown>;
     const keys = Object.keys(first);
-    const table = new Table({ head: keys.map((k) => pc.bold(k)), style: { head: [] } });
+    // SQL is the escape hatch: every column is user-data of unknown
+    // length. Divide the terminal width evenly across columns (subject
+    // to a 12-char floor) so a single wide cell can't push the table
+    // out to ~200 cols and break the TUI layout. cli-table3's
+    // wordWrap:false (via muTable) truncates with … when a cell
+    // exceeds its column width (tables_truncate_long_cols_audit).
+    const termWidth = process.stdout.columns ?? 100;
+    const padding = keys.length * 3 + 1; // 2-char cell padding + 1-char border per col
+    const perCol = Math.max(12, Math.floor((termWidth - padding) / Math.max(1, keys.length)));
+    const colWidths = keys.map(() => perCol);
+    const table = muTable({
+      head: keys.map((k) => pc.bold(k)),
+      colWidths,
+      style: { head: [] },
+    });
     for (const row of rows) {
       const obj = row as Record<string, unknown>;
       table.push(keys.map((k) => formatCell(obj[k])));

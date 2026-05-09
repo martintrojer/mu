@@ -6,6 +6,7 @@ import {
   colorEnabled,
   hasNextSteps,
   isJsonMode,
+  muTable,
   printNextSteps,
   printNextStepsTo,
 } from "../src/output.js";
@@ -193,6 +194,48 @@ describe("printNextSteps", () => {
     // review_test_output_padding_implementation_test.
     expect(stripAnsi(logs[1] ?? "")).toBe("  Short             : a");
     expect(stripAnsi(logs[2] ?? "")).toBe("  Much longer label : b");
+  });
+});
+
+describe("muTable (cli-table3 wrapper with the mu-standard truncation safety belt)", () => {
+  // Strip ANSI escape sequences so width assertions are decoupled from
+  // colorEnabled() (mirror the helper in the printNextSteps padding
+  // test above).
+  const ESC = String.fromCharCode(0x1b);
+  const ansiRe = new RegExp(`${ESC}\\[[0-9;]*m`, "g");
+  const stripAnsi = (s: string): string => s.replace(ansiRe, "");
+
+  it("truncates a cell longer than its colWidth with an ellipsis (no wrap to a 2nd row)", () => {
+    // Pin the load-bearing contract: a long cell becomes one truncated
+    // visual row, NOT two wrapped rows. wordWrap:false + colWidths is
+    // what cli-table3 needs to do this; the rest of the codebase relies
+    // on it (e.g. mu hud's row budget would silently blow out under
+    // word-wrap). Surfaced live by `mu workspace list` blowing the
+    // terminal width on the path column
+    // (tables_truncate_long_cols_audit).
+    const t = muTable({
+      head: ["a", "b"],
+      colWidths: [null, 10],
+    });
+    t.push(["x", "abcdefghijklmnopqrstuvwxyz"]);
+    const out = stripAnsi(t.toString());
+    // Exactly one ellipsis; the wrapped-to-2-rows regression would
+    // produce zero (and the row count below would jump from 3 to 4).
+    expect(out).toContain("…");
+    // 5 lines for a 1-row table with a header (top border, header,
+    // separator, data row, bottom border). A wrap to a 2-row data
+    // cell would push it to 6.
+    expect(out.split("\n").length).toBe(5);
+  });
+
+  it("omits colWidths entirely when caller passes none (column-width auto, wrap-safety belt still on)", () => {
+    // No colWidths means cli-table3 sizes columns to fit; wordWrap:false
+    // still applies so the safety belt holds even on auto-sized
+    // columns. We just assert the table renders and contains the data
+    // (no "colWidths required" runtime guard regressed in).
+    const t = muTable({ head: ["a", "b"] });
+    t.push(["hello", "world"]);
+    expect(stripAnsi(t.toString())).toContain("hello");
   });
 });
 

@@ -10,6 +10,7 @@
 // src/workstream.ts (error nextSteps), and tests. Keeping the type +
 // helpers in one place avoids circular imports.
 
+import Table from "cli-table3";
 import picocolors from "picocolors";
 
 /**
@@ -111,6 +112,45 @@ export function printNextStepsTo(steps: readonly NextStep[], sink: "stdout" | "s
     const label = step.intent.padEnd(labelWidth);
     out(pc.dim(`  ${label} : ${step.command}`));
   }
+}
+
+/**
+ * Build a cli-table3 Table with the mu-standard safety belt:
+ * `wordWrap: false` (cells wider than their column truncate with `…`
+ * instead of wrapping to a second visual row), per-column max widths
+ * applied only where the caller asks (`null` = auto), and a default
+ * borderless style mirroring the HUD/workspace/workstream tables.
+ *
+ * Callers should pre-truncate values they care about via the
+ * `truncate()` / `truncateFront()` helpers in cli.ts (the proactive
+ * path); `wordWrap: false` is the safety belt for the cells they
+ * miss. See HUD's `newHudTable` for the load-bearing rationale
+ * (src/cli/hud.ts).
+ *
+ * Surfaced live by `mu workspace list` blowing the terminal width on
+ * the `path` column (tables_truncate_long_cols_audit). Don't try to
+ * cap every column — apply `colWidths` only on the column(s) the
+ * operator is least likely to read in full and most likely to be
+ * long. Don't add a `--full` / `--no-truncate` flag per verb either;
+ * `--json` already emits the full value.
+ */
+export function muTable(opts: {
+  head: string[];
+  /** Per-column max widths in cells (`null` = auto width). When
+   *  supplied, the array length must match `head`. cli-table3
+   *  truncates with `…` because we set `wordWrap: false`. */
+  colWidths?: (number | null)[];
+  /** Style override; defaults to `{ head: [], border: [] }` (mu's
+   *  borderless look). Pass `{ head: [] }` to keep cli-table3's
+   *  default border styling. */
+  style?: { head?: string[]; border?: string[] };
+}): InstanceType<typeof Table> {
+  return new Table({
+    head: opts.head,
+    ...(opts.colWidths !== undefined ? { colWidths: opts.colWidths } : {}),
+    style: opts.style ?? { head: [], border: [] },
+    wordWrap: false,
+  });
 }
 
 /**

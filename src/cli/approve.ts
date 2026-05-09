@@ -17,8 +17,6 @@
 //
 // Extracted from src/cli.ts as part of refactor_split_large_src_files.
 
-import Table from "cli-table3";
-
 import {
   type AddApprovalOptions,
   ApprovalNotInWorkstreamError,
@@ -38,7 +36,7 @@ import {
   resolveSelfOptional,
 } from "../cli.js";
 import type { Db } from "../db.js";
-import { type NextStep, pc, printNextSteps } from "../output.js";
+import { type NextStep, muTable, pc, printNextSteps } from "../output.js";
 
 export async function cmdApprovalAdd(
   db: Db,
@@ -180,20 +178,26 @@ function approvalStatusColor(status: ApprovalStatus): string {
 }
 
 function formatApprovalsTable(rows: readonly ApprovalRow[]): string {
-  const table = new Table({
+  // The reason column is free-form prose ("requested by user during X");
+  // cap it so a long reason can't push the rest of the row off-screen
+  // (tables_truncate_long_cols_audit). The other columns are bounded
+  // by their schemas (slugs, statuses, agent names).
+  const REASON_BUDGET = 60;
+  const table = muTable({
     head: ["slug", "workstream", "status", "requested_by", "decided_by", "reason", "created"].map(
       (h) => pc.bold(h),
     ),
-    style: { head: [], border: [] },
+    colWidths: [null, null, null, null, null, REASON_BUDGET, null],
   });
   for (const r of rows) {
+    const reason = truncate(r.reason, REASON_BUDGET - 2);
     table.push([
       r.slug,
       r.workstream ?? pc.dim("—"),
       approvalStatusColor(r.status),
       r.requestedBy,
       r.decidedBy ?? pc.dim("—"),
-      r.reason,
+      reason,
       pc.dim(r.createdAt),
     ]);
   }
@@ -235,7 +239,7 @@ function resolveSelfNameOrUser(db: Db): string {
 // every per-namespace builder lives next to its cmd functions.
 
 import type { Command } from "commander";
-import { JSON_OPT, WORKSTREAM_OPT, handle, parseLines } from "../cli.js";
+import { JSON_OPT, WORKSTREAM_OPT, handle, parseLines, truncate } from "../cli.js";
 
 export function wireApproveCommands(program: Command): void {
   const approve = program

@@ -16,11 +16,9 @@
 //
 // Extracted from src/cli.ts as part of refactor_split_large_src_files.
 
-import Table from "cli-table3";
-
-import { emitJson } from "../cli.js";
+import { emitJson, truncate } from "../cli.js";
 import { type Db, openDb } from "../db.js";
-import { pc, printNextSteps } from "../output.js";
+import { muTable, pc, printNextSteps } from "../output.js";
 import { reconcile } from "../reconcile.js";
 import {
   SnapshotNotFoundError,
@@ -267,7 +265,12 @@ export async function cmdSnapshotList(
     ]);
     return;
   }
-  const table = new Table({
+  // Snapshot labels are free-text (e.g. "task close <id> evidence=..."
+  // can run dozens of chars). Cap the label column so a long label
+  // can't push id/created_at off-screen
+  // (tables_truncate_long_cols_audit).
+  const LABEL_BUDGET = 50;
+  const table = muTable({
     head: [
       pc.bold("id"),
       pc.bold("label"),
@@ -275,12 +278,13 @@ export async function cmdSnapshotList(
       pc.bold("created_at"),
       pc.bold("size"),
     ],
+    colWidths: [null, LABEL_BUDGET, null, null, null],
     style: { head: [] },
   });
   for (const r of rows) {
     table.push([
       String(r.id),
-      r.label,
+      truncate(r.label, LABEL_BUDGET - 2),
       r.workstream ?? pc.dim("<whole-DB>"),
       r.createdAt,
       formatBytes(snapshotFileSize(r)),
