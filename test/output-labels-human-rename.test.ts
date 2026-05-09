@@ -2,10 +2,12 @@
 // `output_labels_human_rename` (Phase 2 of OUTPUT_LABELS_AUDIT).
 //
 // Convention (per docs/OUTPUT_LABELS_AUDIT.md):
-//   - `mu task list / next / ready / owned-by / my-tasks / my-next`
-//     table header `id` → `name`. (`task blocked / goals / search`
-//     were removed in audit_cleanups_post_schema_v5_wave; the SQL
-//     escape hatch is documented in docs/USAGE_GUIDE.md.)
+//   - `mu task list / next / owned-by` table header `id` → `name`.
+//     (`task blocked / goals / search` were removed in
+//     audit_cleanups_post_schema_v5_wave; `task ready` was merged
+//     into `task next -n 0` in the same wave; `my-tasks` / `my-next`
+//     became `mu me tasks` / `mu me next`. The SQL escape hatches
+//     for the removed verbs live in docs/USAGE_GUIDE.md.)
 //   - `mu approve list` table header `slug` → `name`.
 //
 // JSON shape is intentionally NOT touched here (the JSON rename is
@@ -67,8 +69,8 @@ describe("output_labels_human_rename: cli-table3 column headers", () => {
     expect(visible).not.toMatch(/[│\s]id[│\s]/);
   });
 
-  it("`mu task ready` renders a `name` column header (not `id`)", async () => {
-    const { stdout } = await runCli(["task", "ready", "-w", "auth"], dbPath);
+  it("`mu task next -n 0` (merged-in `task ready`) renders a `name` column header (not `id`)", async () => {
+    const { stdout } = await runCli(["task", "next", "-w", "auth", "-n", "0"], dbPath);
     const visible = stripAnsi(stdout);
     expect(visible).toContain("name");
     expect(visible).not.toMatch(/[│\s]id[│\s]/);

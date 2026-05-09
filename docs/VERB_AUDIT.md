@@ -526,8 +526,12 @@ target) inline in the note.
 - Error-map    : 0
 - Output value : 1 (same renderer as `task next`)
 - SCORE: 1/4
-- DISPOSITION: **MERGE** into `task next` (`mu task next -n 0` or
-  `--all`). Filed as `audit_merge_task_ready_into_next`.
+- DISPOSITION: **MERGE** into `task next`. **SHIPPED** in
+  `audit_merge_task_ready_into_next`
+  (audit_cleanups_post_schema_v5_wave). `mu task next -n 0` is now
+  the unlimited shape (K=0 in `cmdTaskNext` skips the slice). The
+  `task ready` Commander wiring + `cmdTaskReady` were deleted; the
+  `ready` SQL view stays (used by `mu state` / `mu hud`).
 
 ### `mu task blocked`
 
@@ -993,10 +997,11 @@ kept as-is for in-pane ergonomics. Worker decides."
 - Output value : 1 (composed: agent identity block + owned tasks
   table)
 - SCORE: 2/4 (+1 effective for being THE in-pane "who am I?" verb)
-- DISPOSITION: **MERGE** into `mu me`. The composition value is
-  real but the verb-name overlap with `my-tasks` (which is
-  literally just the second half of `whoami`'s output) is the
-  smell. Filed as `audit_merge_self_verbs_into_mu_me`.
+- DISPOSITION: **MERGE** into `mu me`. **SHIPPED** in
+  `audit_merge_self_verbs_into_mu_me`
+  (audit_cleanups_post_schema_v5_wave). `cmdWhoami` was renamed to
+  `cmdMe`; the `whoami` top-level Commander wiring is gone (no
+  back-compat alias — we're pre-1.0).
 
 ### `mu my-tasks`
 
@@ -1008,8 +1013,11 @@ kept as-is for in-pane ergonomics. Worker decides."
 - Output value : 1 (table; alias for `task owned-by <self>`)
 - SCORE: 1/4 (+1 effective only because of in-pane brevity; covered
   by `mu task owned-by` plus self-resolution)
-- DISPOSITION: **MERGE** into `mu me tasks`. Filed as
-  `audit_merge_self_verbs_into_mu_me`.
+- DISPOSITION: **MERGE** into `mu me tasks`. **SHIPPED** in
+  `audit_merge_self_verbs_into_mu_me`
+  (audit_cleanups_post_schema_v5_wave). `cmdMyTasks` survives as
+  the subcommand action; the `my-tasks` top-level Commander wiring
+  is gone.
 
 ### `mu my-next`
 
@@ -1020,8 +1028,12 @@ kept as-is for in-pane ergonomics. Worker decides."
 - Output value : 1 (top-K table; alias for `task next -w
   <self.workstream>`)
 - SCORE: 1/4 (+1 effective for in-pane brevity)
-- DISPOSITION: **MERGE** into `mu me next`. Filed as
-  `audit_merge_self_verbs_into_mu_me`.
+- DISPOSITION: **MERGE** into `mu me next`. **SHIPPED** in
+  `audit_merge_self_verbs_into_mu_me`
+  (audit_cleanups_post_schema_v5_wave). `cmdMyNext` survives as
+  the subcommand action (with `-n 0` extended to mean "all ready",
+  matching `task next`); the `my-next` top-level Commander wiring
+  is gone.
 
 The merge target is the SAME follow-up task because the three
 verbs are obviously a cluster — picking one off without the other
@@ -1057,11 +1069,11 @@ in the same commit per the project rule.
 
 | Task id                              | Disposition | Verb(s)                              |
 |--------------------------------------|-------------|--------------------------------------|
-| `audit_merge_task_ready_into_next`   | MERGE       | `mu task ready` → `mu task next -n 0` |
+| `audit_merge_task_ready_into_next` — SHIPPED | MERGE | `mu task ready` → `mu task next -n 0` |
 | `audit_remove_task_blocked` — SHIPPED | REMOVE      | `mu task blocked` → `mu sql … FROM blocked …` |
 | `audit_remove_task_goals` — SHIPPED   | REMOVE      | `mu task goals` → `mu sql … FROM goals …` |
 | `audit_remove_task_search` — SHIPPED  | REMOVE      | `mu task search` → `mu sql … LIKE …` |
-| `audit_merge_self_verbs_into_mu_me`  | MERGE       | `whoami` / `my-tasks` / `my-next` → `mu me [tasks\|next]` |
+| `audit_merge_self_verbs_into_mu_me` — SHIPPED | MERGE | `whoami` / `my-tasks` / `my-next` → `mu me [tasks\|next]` |
 | `bug_adopt_verb_unwired`             | BUG         | `mu adopt` is dead code (cmdAdopt exists, no `wireXxx` registers it) |
 
 Each follow-up task carries the SQL recipe (or merge target) in

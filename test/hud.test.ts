@@ -120,7 +120,7 @@ describe("mu hud", () => {
 
     // Ready section fits but truncated; '+N more' footer fires.
     expect(stdout).toContain("ready  alpha");
-    expect(stdout).toMatch(/… \+\d+ more \(mu task ready -w ws\)/);
+    expect(stdout).toMatch(/… \+\d+ more \(mu task next -n 0 -w ws\)/);
 
     // Less important sections (in-progress empty, tracks/recent come
     // later) can't fit — no recent-events rows in output.

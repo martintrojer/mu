@@ -213,11 +213,11 @@ mu agent attach <name>               # print scrollback + tmux attach hint
 # Registration (1) — the inverse of spawn
 mu adopt <pane-id|pane-title>        # register an orphan pane as a managed agent
 
-# Tasks (19)
+# Tasks (18)
 mu task add [id] --title T --impact N --effort-days N [--blocked-by A,B]
 mu task list [--status S] [--sort K]   # every task; --sort id|roi|recency|age
-mu task next [-n K] [--sort K]         # top-K ready (default --sort roi)
-mu task ready [--sort K]               # all ready (default --sort roi)
+mu task next [-n K] [--sort K]         # top-K ready (default K=1, --sort roi)
+                                     # -n 0 = all ready (replaces removed `task ready`)
                                      # --sort recency = updated_at DESC; age = created_at ASC
                                      # both add a relative-time column to the table
 mu task owned-by <agent>             # what is <agent> working on?
@@ -241,10 +241,10 @@ mu task wait <id> [<id>...] [--status S] [--any] [--timeout SECONDS]
                                          # (default CLOSED, all-of); exit 0 / 5
 mu task delete <id>                  # cascades to edges+notes; no undo
 
-# Self-identification (3) — in-pane only
-mu whoami                            # name + workstream + cli + owned tasks
-mu my-tasks                          # alias for task owned-by <self>
-mu my-next [-n K]                    # alias for task next -w <self.ws>
+# Self-identification (1 verb, 2 subcommands) — in-pane only
+mu me                                # name + workstream + cli + owned tasks
+mu me tasks                          # just the owned-tasks table
+mu me next [-n K]                    # top-K ready in <self.ws> (-n 0 = all)
 
 # Workspace (4) — per-agent VCS working copies
 mu workspace create <agent> [--backend jj|sl|git|none] [--from REF]
@@ -512,7 +512,7 @@ edges, notes, workspaces, logs).
 
 ## If you ARE the agent (in-pane patterns)
 
-Verbs auto-resolve via `$TMUX_PANE` — `mu whoami`, `mu my-next`,
+Verbs auto-resolve via `$TMUX_PANE` — `mu me`, `mu me next`,
 `mu task claim` all work without a name argument. The pane title
 (set at spawn) IS the agent identity.
 
@@ -532,8 +532,8 @@ There are two patterns:
 Working loop (worker path):
 
 ```bash
-mu whoami                                              # orient
-mu my-next                                             # find work
+mu me                                                  # orient
+mu me next                                             # find work
 mu task show <id>; mu task notes <id>                  # read context
 mu task claim <id> --evidence "..."                    # claim
 mu task note <id> "FILES: ...\nDECISION: ..."          # work; drop notes

@@ -1,7 +1,14 @@
 // mu — every `mu agent ...` verb + spawn / send / read / list / show /
-// close / free / adopt / attach + whoami.
+// close / free / adopt / attach + the top-level `mu me` agent-self
+// verb (default + `tasks` / `next` subcommands).
 //
 // Extracted from src/cli.ts as part of refactor_split_large_src_files.
+//
+// `whoami` / `my-tasks` / `my-next` were merged into `mu me` /
+// `mu me tasks` / `mu me next` in audit_merge_self_verbs_into_mu_me
+// (audit_cleanups_post_schema_v5_wave). The three old verbs are
+// gone; the three cmd functions (`cmdMe`, `cmdMyTasks`, `cmdMyNext`)
+// stayed (with `cmdMe` formerly `cmdWhoami`).
 
 import {
   type AdoptAgentOptions,
@@ -282,7 +289,7 @@ export async function cmdAgentShow(
   }
 }
 
-export async function cmdWhoami(
+export async function cmdMe(
   db: Db,
   opts: { json?: boolean; includeClosed?: boolean } = {},
 ): Promise<void> {
@@ -303,7 +310,7 @@ export async function cmdWhoami(
   console.log(`  role       : ${self.role}`);
   console.log("");
   if (owned.length === 0) {
-    console.log(pc.dim("Currently owns no tasks. Try `mu my-next` for a recommendation."));
+    console.log(pc.dim("Currently owns no tasks. Try `mu me next` for a recommendation."));
     return;
   }
   console.log(pc.bold(`Currently owns ${owned.length} task${owned.length === 1 ? "" : "s"}`));
@@ -667,22 +674,26 @@ export function wireAgentCommands(program: Command): void {
 }
 
 export function wireSelfCommands(program: Command): void {
-  program
-    .command("whoami")
+  // `mu me` is the merged self-identity verb (audit_merge_self_verbs_into_mu_me).
+  // Default action: identity block + owned tasks (was `mu whoami`).
+  // Subcommands:
+  //   mu me tasks       — just the owned-tasks table (was `mu my-tasks`)
+  //   mu me next [-n K] — top-K ready in self.workstream (was `mu my-next`)
+  const me = program
+    .command("me")
     .description(
-      "Identify the agent running this process (via $TMUX_PANE) plus its currently-owned tasks (excludes CLOSED by default)",
+      "Identify the agent running this process (via $TMUX_PANE) plus its currently-owned tasks (excludes CLOSED by default). Subcommands: `mu me tasks` for just the owned-tasks table; `mu me next [-n K]` for the top-K ready tasks in this agent's workstream.",
     )
     .option("--include-closed", "include CLOSED tasks in the owned-tasks list")
     .option(...JSON_OPT)
     .action(function () {
       const opts = (this as Command).opts() as { json?: boolean; includeClosed?: boolean };
-      return handle((db) => cmdWhoami(db, opts))();
+      return handle((db) => cmdMe(db, opts))();
     });
 
-  program
-    .command("my-tasks")
+  me.command("tasks")
     .description(
-      "List tasks owned by the current agent (alias for `task owned-by <self>`). Excludes CLOSED by default.",
+      "List tasks owned by the current agent (the second half of `mu me`'s output). Excludes CLOSED by default.",
     )
     .option("--include-closed", "include CLOSED tasks in the list")
     .option(...JSON_OPT)
@@ -691,12 +702,15 @@ export function wireSelfCommands(program: Command): void {
       return handle((db) => cmdMyTasks(db, opts))();
     });
 
-  program
-    .command("my-next")
+  me.command("next")
     .description(
       "Top-K ready tasks in the current agent's workstream (alias for `task next -w <self.workstream>`)",
     )
-    .option("-n, --lines <k>", "how many top-K tasks to return (default 1)", parseLines)
+    .option(
+      "-n, --lines <k>",
+      "how many top-K tasks to return (default 1; 0 = all ready)",
+      parseLines,
+    )
     .option(...JSON_OPT)
     .action(function () {
       const opts = (this as Command).opts() as { lines?: number; json?: boolean };

@@ -70,6 +70,39 @@ called out under "Breaking" in each entry.
 
 ### Changed
 
+- **`mu task ready` merged into `mu task next -n 0`** — closes
+  `audit_merge_task_ready_into_next` in `mufeedback` (child of
+  `audit_cleanups_post_schema_v5_wave`). Both verbs ran the IDENTICAL
+  query against the `ready` SQL view; the only difference was
+  whether the result was sliced. `cmdTaskNext` now treats `-n 0` as
+  "unlimited" (the historical `task ready` shape); the default
+  `-n 1` keeps the historical "what should I do right now?"
+  behaviour. The `task ready` Commander wiring + `cmdTaskReady`
+  function are gone (~25 LOC); the `ready` SQL view stays
+  (consumed by `mu state` and `mu hud`). The `mu hud` truncation
+  footer for the ready section now reads
+  `(mu task next -n 0 -w <ws>)` instead of `(mu task ready -w <ws>)`.
+  No back-compat alias — we're pre-1.0 and the audit recommended a
+  clean break. Tests using `mu task ready` were rewritten to
+  `mu task next -n 0` (`json-output.test.ts`,
+  `output-labels-human-rename.test.ts`, `hud.test.ts`).
+
+- **`mu whoami` / `mu my-tasks` / `mu my-next` merged into
+  `mu me [tasks|next]`** — closes `audit_merge_self_verbs_into_mu_me`
+  in `mufeedback` (child of `audit_cleanups_post_schema_v5_wave`).
+  All three were obvious clones of the same agent-self-resolution
+  shape (`whoami` was literally `my-tasks` plus an identity block).
+  `mu me` is now THE in-pane self-identity verb (default action =
+  former `whoami`); `mu me tasks` is the just-the-table form
+  (former `my-tasks`); `mu me next [-n K]` is the top-K ready form
+  (former `my-next`, with `-n 0` extended to mean "all ready" to
+  match `task next`). `cmdWhoami` was renamed to `cmdMe`;
+  `cmdMyTasks` / `cmdMyNext` survive as the subcommand actions.
+  No back-compat aliases — we're pre-1.0; in-pane scripts that ran
+  `mu whoami` / `mu my-tasks` / `mu my-next` need a one-line edit.
+  Surface count: 3 top-level verbs → 1 verb + 2 subcommands
+  (cleaner `mu --help`, identical capability).
+
 - **CLI output labels audit shipped
   (`output_id_vs_name_audit`).** New doc
   [docs/OUTPUT_LABELS_AUDIT.md](docs/OUTPUT_LABELS_AUDIT.md) reviews

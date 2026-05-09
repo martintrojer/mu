@@ -312,7 +312,7 @@ What the DSL would have provided, and what ships instead:
 | `mu eval`                                     | `mu sql` for raw queries; `bash -c` for actions         |
 | `mu repl`                                     | `node` + `import("mu-agent")` for in-proc exploration   |
 | `mu.create / spawn / claim / send / ...`      | `mu task add / agent spawn / task claim / agent send`   |
-| `mu.ready()` / `mu.parallelTracks()`          | `mu task ready --json` / bare `mu --json` / `mu state --json` |
+| `mu.ready()` / `mu.parallelTracks()`          | `mu task next -n 0 --json` / bare `mu --json` / `mu state --json` |
 | Forward refs via deferred string IDs          | Add tasks in topological order, or use `mu task block` after-the-fact |
 | Atomic transactions wrapping a script         | Per-verb transactions in the SDK; idempotent verbs      |
 | `mu.step()` replay cache                      | Not built; if needed, build on top of `agent_logs` event seq |

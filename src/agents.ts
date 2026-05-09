@@ -171,7 +171,7 @@ export function insertAgent(db: Db, input: InsertAgentInput): AgentRow {
 
 /**
  * Look up an agent by its tmux pane id (e.g. `%4`). Returns undefined if
- * no agent currently owns that pane. Used by `mu whoami` and friends to
+ * no agent currently owns that pane. Used by `mu me` and friends to
  * answer "which agent am I?" from `$TMUX_PANE` without the LLM having to
  * remember its own name.
  *

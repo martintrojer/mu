@@ -96,8 +96,8 @@ describe("--json output on read verbs", () => {
     expect(parsed[0]?.roi).toBe(40);
   });
 
-  it("task ready --json decorates with roi too", async () => {
-    const { stdout } = await runCli(["task", "ready", "-w", "auth", "--json"], dbPath);
+  it("task next -n 0 --json (the merged-in `task ready` shape) decorates with roi too", async () => {
+    const { stdout } = await runCli(["task", "next", "-w", "auth", "-n", "0", "--json"], dbPath);
     const parsed = JSON.parse(stdout.trim()) as Array<{ localId: string; roi?: number }>;
     expect(parsed[0]?.roi).toBe(40);
   });
@@ -123,13 +123,13 @@ describe("--json output on read verbs", () => {
     expect(parsed.task.roi).toBe(40);
   });
 
-  it("task ready --json on an empty result emits [] (not '(no ready tasks)')", async () => {
+  it("task next -n 0 --json on an empty result emits [] (not '(no ready tasks)')", async () => {
     // Close 'a' so 'b' becomes ready; close 'b' so 'c' becomes ready;
     // close 'c' so nothing is ready.
     const db2 = openDb({ path: dbPath });
     db2.prepare("UPDATE tasks SET status = 'CLOSED'").run();
     db2.close();
-    const { stdout } = await runCli(["task", "ready", "-w", "auth", "--json"], dbPath);
+    const { stdout } = await runCli(["task", "next", "-w", "auth", "-n", "0", "--json"], dbPath);
     expect(stdout.trim()).toBe("[]");
   });
 
@@ -345,8 +345,8 @@ describe("--json output on read verbs", () => {
     expect(closeBad.stderr).toMatch(/conflict:/);
   });
 
-  it("whoami --json emits { agent, ownedTasks } for a managed pane", async () => {
-    // whoami doesn't reconcile — it just looks the agent up by pane id
+  it("`mu me --json` emits { agent, ownedTasks } for a managed pane", async () => {
+    // `mu me` doesn't reconcile — it just looks the agent up by pane id
     // — so the seeded fake pane id is fine.
     const db2 = openDb({ path: dbPath });
     await claimTask(db2, "a", { agentName: "worker-1", workstream: "auth" });
@@ -354,7 +354,7 @@ describe("--json output on read verbs", () => {
     const originalPane = process.env.TMUX_PANE;
     process.env.TMUX_PANE = "%42";
     try {
-      const { stdout } = await runCli(["whoami", "--json"], dbPath);
+      const { stdout } = await runCli(["me", "--json"], dbPath);
       const parsed = JSON.parse(stdout.trim()) as {
         agent: { name: string };
         ownedTasks: Array<{ localId: string }>;
@@ -550,9 +550,9 @@ describe("task list/next/ready --sort", () => {
     expect(parsed.map((t) => t.localId)).toEqual(["b", "c", "a"]);
   });
 
-  it("`mu task ready --sort recency` re-sorts (overrides ROI default)", async () => {
+  it("`mu task next -n 0 --sort recency` re-sorts (overrides ROI default)", async () => {
     const { stdout } = await runCli(
-      ["task", "ready", "-w", "auth", "--sort", "recency", "--json"],
+      ["task", "next", "-w", "auth", "-n", "0", "--sort", "recency", "--json"],
       dbPath,
     );
     const parsed = JSON.parse(stdout.trim()) as Array<{ localId: string }>;
@@ -576,7 +576,7 @@ describe("task list/next/ready --sort", () => {
     expect(stdoutDefault).not.toContain("updated");
     expect(stdoutDefault).not.toContain("created");
     const { stdout: stdoutRoi } = await runCli(
-      ["task", "ready", "-w", "auth", "--sort", "roi"],
+      ["task", "next", "-w", "auth", "-n", "0", "--sort", "roi"],
       dbPath,
     );
     expect(stdoutRoi).not.toContain("updated");

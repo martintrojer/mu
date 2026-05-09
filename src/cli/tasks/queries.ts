@@ -1,17 +1,20 @@
 // mu — `mu task` query verbs (read-only; no DB writes).
 //
-// list, next, ready, owned-by.
-// Plus the `mu my-tasks` / `mu my-next` agent-self aliases (also
-// read-only; they query against `resolveSelf(db)` instead of -w).
+// list, next, owned-by.
+// Plus the `mu me tasks` / `mu me next` agent-self subcommands (also
+// read-only; they query against `resolveSelf(db)` instead of -w —
+// wired in src/cli/agents.ts via `wireSelfCommands`).
 //
 // Extracted from src/cli/tasks.ts as part of refactor_split_large_src_files.
 //
 // Removed in audit_cleanups_post_schema_v5_wave: `task blocked`,
-// `task goals`, `task search`. The underlying SDK helpers (`listBlocked`,
-// `listGoals`, `searchTasks`) survive — `mu state` / `mu tracks`
-// consume them, and `searchTasks` keeps its unit-test coverage as
-// reusable surface. The audit's SQL recipes for the removed verbs
-// live in docs/USAGE_GUIDE.md "What's NOT in 0.2.0".
+// `task goals`, `task search`, `task ready` (the latter merged into
+// `task next -n 0`, which now means "all ready, unlimited"). The
+// underlying SDK helpers (`listBlocked`, `listGoals`, `searchTasks`)
+// survive — `mu state` / `mu tracks` consume them, and `searchTasks`
+// keeps its unit-test coverage as reusable surface. The audit's SQL
+// recipes for the removed verbs live in docs/USAGE_GUIDE.md
+// "What's NOT in 0.2.0".
 
 import {
   type TaskSortKey,
@@ -59,7 +62,8 @@ export async function cmdMyTasks(
 export async function cmdMyNext(db: Db, opts: { lines?: number; json?: boolean }): Promise<void> {
   const self = resolveSelf(db);
   const k = opts.lines ?? 1;
-  const tasks = listReady(db, self.workstream).sort(byRoiDesc).slice(0, k);
+  const sorted = listReady(db, self.workstream).sort(byRoiDesc);
+  const tasks = k === 0 ? sorted : sorted.slice(0, k);
   if (opts.json) {
     emitJson(withRoiAll(tasks));
     return;
@@ -98,6 +102,10 @@ export async function cmdTaskList(
 
 // ROI = impact / effort_days. Higher first. Tasks with effortDays=0
 // (would divide by zero) sort to the top by treating their ROI as Infinity.
+//
+// `-n 0` means "unlimited" — the merged-in `task ready` semantics
+// from audit_merge_task_ready_into_next. Default K=1 keeps the
+// historical "what should I do right now?" shape.
 export async function cmdTaskNext(
   db: Db,
   opts: { workstream?: string; lines?: number; json?: boolean; sort?: string },
@@ -105,28 +113,8 @@ export async function cmdTaskNext(
   const workstream = await resolveWorkstream(opts.workstream);
   const k = opts.lines ?? 1;
   const sortKey: TaskSortKey = opts.sort === undefined ? "roi" : parseSortOption(opts.sort);
-  const tasks = sortTasks(listReady(db, workstream), sortKey).slice(0, k);
-  if (opts.json) {
-    emitJson(withRoiAll(tasks));
-    return;
-  }
-  if (tasks.length === 0) {
-    console.log(pc.dim("(no ready tasks)"));
-    return;
-  }
-  const tableOpts: Parameters<typeof formatTaskListTable>[1] = {};
-  const basis = relTimeBasisForSort(sortKey);
-  if (basis !== null) tableOpts.relTimeBasis = basis;
-  console.log(formatTaskListTable(tasks, tableOpts));
-}
-
-export async function cmdTaskReady(
-  db: Db,
-  opts: { workstream?: string; json?: boolean; sort?: string },
-): Promise<void> {
-  const workstream = await resolveWorkstream(opts.workstream);
-  const sortKey: TaskSortKey = opts.sort === undefined ? "roi" : parseSortOption(opts.sort);
-  const tasks = sortTasks(listReady(db, workstream), sortKey);
+  const sorted = sortTasks(listReady(db, workstream), sortKey);
+  const tasks = k === 0 ? sorted : sorted.slice(0, k);
   if (opts.json) {
     emitJson(withRoiAll(tasks));
     return;

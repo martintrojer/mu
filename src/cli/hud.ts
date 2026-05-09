@@ -488,7 +488,7 @@ export async function cmdHud(db: Db, opts: HudOpts): Promise<void> {
         withOwner: false,
       }),
     ready.length,
-    `mu task ready -w ${workstream}`,
+    `mu task next -n 0 -w ${workstream}`,
   );
 
   // 4. In progress.

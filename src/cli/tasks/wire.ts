@@ -23,7 +23,7 @@ import { cmdClaim, cmdTaskRelease, cmdTaskWait } from "./claim.js";
 import { cmdTaskBlock, cmdTaskDelete, cmdTaskReparent, cmdTaskUnblock } from "./edges.js";
 import { cmdTaskAdd, cmdTaskNote, cmdTaskNotes, cmdTaskShow, cmdTaskUpdate } from "./edit.js";
 import { cmdTaskClose, cmdTaskDefer, cmdTaskOpen, cmdTaskReject } from "./lifecycle.js";
-import { cmdTaskList, cmdTaskNext, cmdTaskOwnedBy, cmdTaskReady } from "./queries.js";
+import { cmdTaskList, cmdTaskNext, cmdTaskOwnedBy } from "./queries.js";
 import { cmdTaskTree } from "./tree.js";
 
 export function wireTaskCommands(program: Command): void {
@@ -86,9 +86,13 @@ export function wireTaskCommands(program: Command): void {
   task
     .command("next")
     .description(
-      "Show the next ready task(s) by ROI (impact / effort_days). The 'what should I do?' verb.",
+      "Show the next ready task(s) by ROI (impact / effort_days). The 'what should I do?' verb. Pass -n 0 for the unlimited 'what is doable?' shape (merged-in `task ready`).",
     )
-    .option("-n, --lines <k>", "how many top-K tasks to return (default 1)", parseLines)
+    .option(
+      "-n, --lines <k>",
+      "how many top-K tasks to return (default 1; 0 = all ready)",
+      parseLines,
+    )
     .option(...WORKSTREAM_OPT)
     .option("--sort <key>", `${SORT_OPT_DESC} (default roi)`)
     .option(...JSON_OPT)
@@ -100,21 +104,6 @@ export function wireTaskCommands(program: Command): void {
         sort?: string;
       };
       return handle((db) => cmdTaskNext(db, opts))();
-    });
-
-  task
-    .command("ready")
-    .description("List ready tasks (OPEN with all blockers CLOSED), sorted by ROI")
-    .option(...WORKSTREAM_OPT)
-    .option("--sort <key>", `${SORT_OPT_DESC} (default roi)`)
-    .option(...JSON_OPT)
-    .action(function () {
-      const opts = (this as Command).opts() as {
-        workstream?: string;
-        json?: boolean;
-        sort?: string;
-      };
-      return handle((db) => cmdTaskReady(db, opts))();
     });
 
   task

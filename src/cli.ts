@@ -640,7 +640,7 @@ export function resolveSelfOptional(db: Db): AgentRow | null {
 /**
  * Strict variant of `resolveSelfOptional`: throws UsageError with a
  * helpful message if `$TMUX_PANE` is unset or the pane isn't a
- * managed agent. Used by `mu whoami` / `my-tasks` / `my-next` to give
+ * managed agent. Used by `mu me` / `mu me tasks` / `mu me next` to give
  * an LLM-in-a-pane zero-config self-identification. Lives in cli.ts
  * so cli/agents.ts and cli/tasks.ts can both import it without a
  * lateral cli/* dependency.
