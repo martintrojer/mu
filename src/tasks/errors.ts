@@ -15,6 +15,7 @@
 // Extracted from src/tasks.ts as part of refactor_split_large_src_files.
 
 import type { HasNextSteps, NextStep } from "../output.js";
+import { sanitiseTaskId } from "../tasks.js";
 
 export class TaskNotFoundError extends Error implements HasNextSteps {
   override readonly name = "TaskNotFoundError";
@@ -31,27 +32,6 @@ export class TaskNotFoundError extends Error implements HasNextSteps {
       { intent: "Find which workstream owns it", command: `mu task search ${this.taskId} --all` },
     ];
   }
-}
-
-/**
- * Sanitise a free-form string into a candidate task id.
- *
- * Lowercases, replaces every non-`[a-z0-9_-]` char with `_`, trims any
- * leading non-letter (the schema requires the first char to be a
- * letter), truncates to 64 chars, and rewrites a leading `mu_` (the
- * reserved system-id prefix) into `t_mu_`. Returns `"task"` when the
- * input has no usable letters at all so the suggestion in
- * `TaskIdInvalidError.errorNextSteps()` is always a runnable command.
- *
- * Mirrors `slugifyTitle`'s prefix corrections so suggested ids will
- * pass `isValidTaskId` if the user runs them verbatim.
- */
-export function sanitiseTaskId(input: string): string {
-  let s = input.toLowerCase().replace(/[^a-z0-9_-]/g, "_");
-  s = s.replace(/^[^a-z]+/, "");
-  s = s.slice(0, 64);
-  if (s.startsWith("mu_")) s = `t_${s}`.slice(0, 64);
-  return s.length === 0 ? "task" : s;
 }
 
 /**

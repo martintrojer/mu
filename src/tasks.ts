@@ -242,6 +242,30 @@ export function idFromTitle(db: Db, workstream: string, title: string): string {
   throw new Error(`could not derive a unique id from title in workstream ${workstream}: ${title}`);
 }
 
+/**
+ * Sanitise a free-form string into a candidate task id.
+ *
+ * Lowercases, replaces every non-`[a-z0-9_-]` char with `_`, trims any
+ * leading non-letter (the schema requires the first char to be a
+ * letter), truncates to 64 chars, and rewrites a leading `mu_` (the
+ * reserved system-id prefix) into `t_mu_`. Returns `"task"` when the
+ * input has no usable letters at all so the suggestion in
+ * `TaskIdInvalidError.errorNextSteps()` is always a runnable command.
+ *
+ * Mirrors `slugifyTitle`'s prefix corrections so suggested ids will
+ * pass `isValidTaskId` if the user runs them verbatim. Lives next to
+ * `slugifyTitle` rather than in `tasks/errors.ts` because it's a slug
+ * helper, not an error helper — the only caller happens to be
+ * `TaskIdInvalidError.errorNextSteps()`.
+ */
+export function sanitiseTaskId(input: string): string {
+  let s = input.toLowerCase().replace(/[^a-z0-9_-]/g, "_");
+  s = s.replace(/^[^a-z]+/, "");
+  s = s.slice(0, SLUG_HARD_CAP);
+  if (s.startsWith(RESERVED_PREFIX)) s = `t_${s}`.slice(0, SLUG_HARD_CAP);
+  return s.length === 0 ? "task" : s;
+}
+
 // ─── Read primitives ───────────────────────────────────────────────────
 
 export function getTask(db: Db, localId: string): TaskRow | undefined {

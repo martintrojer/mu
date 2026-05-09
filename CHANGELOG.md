@@ -71,6 +71,23 @@ called out under "Breaking" in each entry.
   `--stuck-after` warning above: docs catch the ones that read SKILL,
   the warning catches the ones that don't.
 
+- **Moved `sanitiseTaskId` from `src/tasks/errors.ts` to `src/tasks.ts`
+  (next to `slugifyTitle` / `idFromTitle`).** Closes
+  `review_code_taskerrors_sanitise_lives_in_errors` in `mufeedback`.
+  `sanitiseTaskId` is a slug helper (lowercase + non-alnum-replace +
+  first-char-fix + reserved-prefix-fix), not an error helper — it just
+  happened to be defined inside the file that holds
+  `TaskIdInvalidError` because the only caller is
+  `TaskIdInvalidError.errorNextSteps()`. Living in `tasks/errors.ts`
+  was a layering smell (the helper conceptually belongs to the task-id
+  namespace alongside `slugifyTitle`, which mirrors the same prefix
+  corrections) and a future-drift risk (the next person needing to
+  sanitise a task id would have grepped `src/tasks.ts`, missed it, and
+  written a third copy). The function now reuses the existing
+  `SLUG_HARD_CAP` (64) and `RESERVED_PREFIX` (`mu_`) constants from
+  `src/tasks.ts` instead of repeating the literals; `tasks/errors.ts`
+  imports it back from `"../tasks.js"` for the one error-message hint.
+  Behaviour unchanged.
 
 - **De-duplicated `shouldOverwriteAgentStatus` policy (one impl in
   `src/agents.ts`).** Closes `review_code_should_overwrite_status_dup`
