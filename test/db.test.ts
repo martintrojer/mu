@@ -28,7 +28,7 @@ describe("openDb", () => {
     // No throw = parent dirs created.
   });
 
-  it("applies the nine expected tables", () => {
+  it("applies the expected tables (v6: 5 archive_* tables added)", () => {
     const db = openDb({ path: dbPath });
     const tables = (
       db
@@ -41,6 +41,11 @@ describe("openDb", () => {
       "agent_logs",
       "agents",
       "approvals",
+      "archived_edges",
+      "archived_events",
+      "archived_notes",
+      "archived_tasks",
+      "archives",
       "schema_version",
       "snapshots",
       "task_edges",
@@ -92,6 +97,11 @@ describe("openDb", () => {
       "agent_logs",
       "agents",
       "approvals",
+      "archived_edges",
+      "archived_events",
+      "archived_notes",
+      "archived_tasks",
+      "archives",
       "schema_version",
       "snapshots",
       "task_edges",

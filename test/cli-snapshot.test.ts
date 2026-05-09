@@ -311,8 +311,9 @@ describe("mu snapshot show", () => {
     expect(parsed.id).toBe(snap.id);
     expect(parsed.label).toBe("task close design");
     expect(parsed.workstreamName).toBe("auth");
-    // v5 is the current schema; previous versions are rejected at openDb.
-    expect(parsed.schemaVersion).toBe(5);
+    // v6 is the current schema (v5 → v6 was additive: 5 archive_*
+    // tables); pre-v5 versions are rejected at openDb.
+    expect(parsed.schemaVersion).toBe(6);
     expect(parsed.sizeBytes).toBeGreaterThan(0);
   });
 });

@@ -273,7 +273,7 @@ anticipatory layering. Each module is concrete and consumed today.
 
 | Module                | Responsibility                                                                            |
 | --------------------- | ----------------------------------------------------------------------------------------- |
-| `src/db.ts`           | SQLite (better-sqlite3) connection, WAL mode, schema (10 tables + 3 views, **schema v5** — surrogate INTEGER PKs everywhere), default paths, `resolveWorkstreamId` (the SDK boundary's first leg) |
+| `src/db.ts`           | SQLite (better-sqlite3) connection, WAL mode, schema (15 tables + 3 views, **schema v6** — v5 surrogate-INTEGER-PK substrate plus 5 additive `archive_*` tables), default paths, `resolveWorkstreamId` (the SDK boundary's first leg). v5 → v6 in-place bump on open (additive only). |
 | `src/tmux.ts`         | Single tmux executor wrapper, send protocol (bracketed-paste), pane validation            |
 | `src/detect.ts`       | Pi-only status detector (`busy` / `needs_input` / `idle` / `done`)                        |
 | `src/reconcile.ts`    | Ghost prune + status detect + orphan surface; "reality wins"                              |
@@ -281,6 +281,7 @@ anticipatory layering. Each module is concrete and consumed today.
 | `src/tasks.ts`        | CRUD + every read/write verb on the DAG; cycle check; claim CAS; auto-event emission      |
 | `src/tracks.ts`       | Parallel-tracks union-find with diamond merge                                             |
 | `src/workstream.ts`   | ensureWorkstream / list / summarize / destroy / export (markdown rendering of task graph + notes; idempotent via per-file sha256 in `manifest.json`; deleted-task preservation) |
+| `src/archives.ts`     | Cross-workstream **archives** (Phase 1 SDK; CLI in Phase 2): `createArchive` / `listArchives` / `getArchive` / `deleteArchive` / `addToArchive` (idempotent at `(archive, source_workstream)`) / `removeFromArchive` / `listArchivedTasks`. Backed by the v6 `archives` + `archived_tasks` + `archived_edges` + `archived_notes` + `archived_events` tables; archives outlive workstreams (TEXT `source_workstream` columns, no FK). |
 | `src/logs.ts`         | `agent_logs` SDK: appendLog / listLogs / latestSeq / emitEvent                            |
 | `src/vcs.ts`          | `VcsBackend` interface + jj / sl / git / none impls; detection precedence; `commitsBehind(workspacePath, ref)` for staleness signal (no auto-fetch; pure observation) |
 | `src/workspace.ts`    | Per-agent VCS workspaces (registry layer on top of vcs.ts); CRUD + cascade; orphan-dir detection (`listWorkspaceOrphans`); staleness decoration (`decorateWithStaleness` populates `commitsBehindMain` per row) |

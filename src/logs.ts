@@ -348,4 +348,10 @@ export const EVENT_VERB_PREFIXES: readonly string[] = [
   "approval granted",
   "approval denied",
   "approval timeout",
+  // src/archives.ts — v6 archive verbs. Machine-wide events
+  // (workstream=null) because archives outlive workstreams.
+  "archive create",
+  "archive delete",
+  "archive add",
+  "archive remove",
 ];

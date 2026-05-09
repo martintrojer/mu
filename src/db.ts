@@ -95,18 +95,20 @@ export function openDb(options: OpenDbOptions = {}): Db {
     // Detect schema version BEFORE applySchema so a real v<5 DB is not
     // silently stamped as v5 by the CREATE-IF-NOT-EXISTS in applySchema.
     const detectedVersion = detectExistingSchemaVersion(db);
-    if (detectedVersion !== null && detectedVersion < CURRENT_SCHEMA_VERSION) {
+    if (detectedVersion !== null && detectedVersion < MIN_ACCEPTED_SCHEMA_VERSION) {
       // Loud-fail: refuse to touch a pre-v5 DB. The operator
       // restores the one-shot migrator from git history and retries.
       // (See docs/ARCHITECTURE.md § Surrogate-PK + SDK-boundary
       // discipline for the v5 substrate; the migrator was deleted
       // in the post-landing cleanup per the temp-impl-artifact rule.)
+      // v5 DBs are forward-bumped to v6 in `applySchema` (purely
+      // additive change).
       try {
         db.close();
       } catch {
         // best effort
       }
-      throw new SchemaTooOldError(detectedVersion, CURRENT_SCHEMA_VERSION);
+      throw new SchemaTooOldError(detectedVersion, MIN_ACCEPTED_SCHEMA_VERSION);
     }
     applySchema(db);
   } else {
@@ -291,22 +293,43 @@ export function ensureWorkstreamStateDir(workstream: string): string {
  * no-op for the table CREATEs (IF NOT EXISTS) but DOES recreate the
  * views. Pre-v5 DBs never reach this function — openDb's loud-fail
  * hook rejects them with SchemaTooOldError first.
+ *
+ * v5 → v6 in-place bump: v6 is purely additive (5 new archive_*
+ * tables; no existing column / FK / view touched). The CREATE TABLE
+ * IF NOT EXISTS blocks above already create the new tables on a v5
+ * DB; the UPDATE below stamps schema_version to 6 so subsequent
+ * opens see the post-bump version. Forward-only and idempotent.
  */
 function applySchema(db: Db): void {
   db.exec(CURRENT_SCHEMA);
   // Stamp the version on a fresh DB. INSERT OR IGNORE so we don't
-  // overwrite the version on an existing v5 DB.
+  // overwrite the version on an existing v5+ DB.
   db.prepare("INSERT OR IGNORE INTO schema_version (id, version) VALUES (1, ?)").run(
+    CURRENT_SCHEMA_VERSION,
+  );
+  // v5 → v6 forward-additive bump: archive_* tables landed in v6;
+  // a v5 DB that just had them CREATE-IF-NOT-EXISTSed above is now
+  // structurally a v6 DB. Bump the recorded version. Guarded by
+  // `version < ?` so a future v7 open against a v6 DB doesn't
+  // accidentally downgrade.
+  db.prepare("UPDATE schema_version SET version = ? WHERE id = 1 AND version < ?").run(
+    CURRENT_SCHEMA_VERSION,
     CURRENT_SCHEMA_VERSION,
   );
 }
 
-/** The schema version a fresh DB starts at. v5 is the surrogate-PK
- *  shape (docs/ARCHITECTURE.md § Surrogate-PK + SDK-boundary
- *  discipline). Pre-v5 DBs are rejected at openDb time; the
- *  one-shot v4→v5 migrator was deleted post-landing per the
- *  temp-impl-artifact rule (recover from git history if needed). */
-export const CURRENT_SCHEMA_VERSION = 5;
+/** The schema version a fresh DB starts at. v6 is the v5 substrate
+ *  (surrogate-PK shape; docs/ARCHITECTURE.md § Surrogate-PK + SDK-
+ *  boundary discipline) plus 5 additive archive_* tables. The
+ *  refusal floor is v5 — pre-v5 DBs throw `SchemaTooOldError`; v5
+ *  DBs are forward-bumped to v6 in place by `applySchema`. */
+export const CURRENT_SCHEMA_VERSION = 6;
+
+/** The lowest schema version `openDb` will accept. v5 DBs are
+ *  forward-bumped to v6 in place (the v5 → v6 transition is purely
+ *  additive — 5 new tables, no existing column changed). Pre-v5
+ *  DBs throw `SchemaTooOldError`. */
+const MIN_ACCEPTED_SCHEMA_VERSION = 5;
 
 /** Tables a healthy DB must contain. Single source of truth so
  *  `mu doctor` and any other consumer don't drift. Adding a new table
@@ -319,6 +342,11 @@ export const EXPECTED_TABLES: readonly string[] = [
   "agent_logs",
   "agents",
   "approvals",
+  "archived_edges",
+  "archived_events",
+  "archived_notes",
+  "archived_tasks",
+  "archives",
   "schema_version",
   "snapshots",
   "task_edges",
@@ -562,6 +590,94 @@ CREATE TABLE IF NOT EXISTS snapshots (
 
 CREATE INDEX IF NOT EXISTS idx_snapshots_created_at ON snapshots (created_at);
 CREATE INDEX IF NOT EXISTS idx_snapshots_workstream ON snapshots (workstream);
+
+-- ─── v6 archive tables (additive on top of v5) ────────────────────
+--
+-- 5 new tables landed in v6 to back the mu archive verb (cross-workstream
+-- preservation of CLOSED/REJECTED/DEFERRED tasks before destroy).
+-- Additive only: no existing column / FK / view touched. The v5 → v6
+-- transition is in-place via applySchema (no separate migration
+-- script). See docs/VOCABULARY.md § archive for terminology.
+--
+-- Design constraint: archives outlive workstreams. archives.label is
+-- globally unique (NOT per-workstream), and archived_tasks columns
+-- that refer to the source workstream are TEXT (not FKs) so the
+-- destroyed workstream's name stays readable post-destroy.
+
+-- archives: one row per operator-named archive bucket. label is
+-- globally unique because archives outlive workstreams (an archive
+-- whose label was scoped to a workstream would lose its name when
+-- the workstream is destroyed).
+CREATE TABLE IF NOT EXISTS archives (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  label         TEXT UNIQUE NOT NULL,
+  description   TEXT,
+  created_at    TEXT NOT NULL,
+  last_added_at TEXT NOT NULL                  -- bumped on every successful add (additive accumulation invariant)
+);
+
+-- archived_tasks: snapshot of a task at archive time. source_workstream
+-- is intentionally TEXT (the source workstream may be destroyed after
+-- archive); owner_name is snapshotted for the same reason. The
+-- (archive_id, source_workstream, original_local_id) UNIQUE is the
+-- idempotency lever for mu archive add re-runs.
+CREATE TABLE IF NOT EXISTS archived_tasks (
+  id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+  archive_id          INTEGER NOT NULL REFERENCES archives (id) ON DELETE CASCADE,
+  source_workstream   TEXT NOT NULL,
+  original_local_id   TEXT NOT NULL,
+  title               TEXT NOT NULL,
+  status              TEXT NOT NULL,
+  impact              INTEGER NOT NULL,
+  effort_days         REAL NOT NULL,
+  owner_name          TEXT,
+  archived_at_status  TEXT NOT NULL,
+  archived_at         TEXT NOT NULL,
+  original_created_at TEXT NOT NULL,
+  original_updated_at TEXT NOT NULL,
+  UNIQUE (archive_id, source_workstream, original_local_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_archived_tasks_archive ON archived_tasks (archive_id);
+CREATE INDEX IF NOT EXISTS idx_archived_tasks_source ON archived_tasks (archive_id, source_workstream);
+
+-- archived_edges: composite PK by pair of archived_tasks ids.
+-- archive_id is denormalised so a CASCADE on the archive cleans every
+-- edge in one shot.
+CREATE TABLE IF NOT EXISTS archived_edges (
+  archive_id        INTEGER NOT NULL REFERENCES archives (id) ON DELETE CASCADE,
+  from_archived_id  INTEGER NOT NULL REFERENCES archived_tasks (id) ON DELETE CASCADE,
+  to_archived_id    INTEGER NOT NULL REFERENCES archived_tasks (id) ON DELETE CASCADE,
+  PRIMARY KEY (archive_id, from_archived_id, to_archived_id)
+);
+
+-- archived_notes: snapshot of task_notes for archived tasks. author
+-- stays free-text, mirroring task_notes.
+CREATE TABLE IF NOT EXISTS archived_notes (
+  id               INTEGER PRIMARY KEY AUTOINCREMENT,
+  archive_id       INTEGER NOT NULL REFERENCES archives (id) ON DELETE CASCADE,
+  archived_task_id INTEGER NOT NULL REFERENCES archived_tasks (id) ON DELETE CASCADE,
+  author           TEXT,
+  content          TEXT NOT NULL,
+  created_at       TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_archived_notes_task ON archived_notes (archived_task_id);
+
+-- archived_events: snapshot of kind='event' rows from agent_logs for
+-- the source workstream at archive time. Only events (not the full
+-- message log; that's recoverable via snapshot+undo if ever needed).
+CREATE TABLE IF NOT EXISTS archived_events (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  archive_id        INTEGER NOT NULL REFERENCES archives (id) ON DELETE CASCADE,
+  source_workstream TEXT NOT NULL,
+  seq               INTEGER NOT NULL,
+  source            TEXT NOT NULL,
+  payload           TEXT NOT NULL,
+  created_at        TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_archived_events_archive ON archived_events (archive_id, source_workstream);
 
 -- ─── Views (always replaced so the latest definition wins) ────────────
 -- See READY_VIEW_SQL / BLOCKED_VIEW_SQL / GOALS_VIEW_SQL above for the

@@ -10,6 +10,30 @@ called out under "Breaking" in each entry.
 
 ## [Unreleased]
 
+## [0.3.0] — unreleased
+
+### Schema
+
+- **Schema v6: 5 new `archive_*` tables; additive only.** Backs the
+  in-progress `mu archive` verb (cross-workstream preservation of
+  task graphs before destroy). Tables: `archives`, `archived_tasks`,
+  `archived_edges`, `archived_notes`, `archived_events`. v5 DBs are
+  forward-bumped to v6 in place by `applySchema` (no migration
+  script needed; the v5 → v6 transition touches no existing column,
+  FK, or view). The pre-v5 refusal floor stays in place.
+
+### Added
+
+- **`src/archives.ts` SDK** (Phase 1 of the v0.3 archive feature):
+  `createArchive`, `listArchives`, `getArchive`, `deleteArchive`,
+  `addToArchive`, `removeFromArchive`, `listArchivedTasks`. Idempotent
+  at (archive, source_workstream) granularity — re-running
+  `addToArchive` against the same workstream is a no-op; adding a
+  new task and re-running picks up only the delta. Typed errors:
+  `ArchiveNotFoundError`, `ArchiveAlreadyExistsError`,
+  `ArchiveLabelInvalidError`. Phases 2 (CLI), 3 (destroy hook), and
+  4 (export renderer) follow.
+
 ## [0.2.0] — 2026-05-09
 
 ### Breaking

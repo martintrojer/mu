@@ -19,18 +19,15 @@ src/db.ts:21
 src/db.ts:23
 
 # SchemaTooOldError docstring (recovery instructions).
-src/db.ts:122
-src/db.ts:123
+src/db.ts:124
+src/db.ts:125
 
 # SchemaTooOldError message + nextSteps.
-src/db.ts:223
-src/db.ts:229
-src/db.ts:230
-src/db.ts:235
-
-# CURRENT_SCHEMA_VERSION docstring describing migration provenance.
-src/db.ts:307
+src/db.ts:225
+src/db.ts:231
+src/db.ts:232
+src/db.ts:237
 
 # EXPECTED_TABLES docstring referencing the v4→v5 transition as the
 # canonical example.
-src/db.ts:316
+src/db.ts:339

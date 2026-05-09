@@ -40,6 +40,26 @@ export {
   type SpawnAgentOptions,
 } from "./agents.js";
 export {
+  type AddToArchiveResult,
+  type Archive,
+  ArchiveAlreadyExistsError,
+  ArchiveLabelInvalidError,
+  ArchiveNotFoundError,
+  type ArchiveSourceSummary,
+  type ArchiveSummary,
+  type ArchivedTaskRow,
+  type ListArchivedTasksOptions,
+  type RemoveFromArchiveResult,
+  addToArchive,
+  createArchive,
+  deleteArchive,
+  getArchive,
+  isValidArchiveLabel,
+  listArchives,
+  listArchivedTasks,
+  removeFromArchive,
+} from "./archives.js";
+export {
   CURRENT_SCHEMA_VERSION,
   EXPECTED_TABLES,
   SchemaTooOldError,
