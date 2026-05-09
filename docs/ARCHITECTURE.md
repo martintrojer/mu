@@ -282,8 +282,8 @@ anticipatory layering. Each module is concrete and consumed today.
 | `src/tracks.ts`       | Parallel-tracks union-find with diamond merge                                             |
 | `src/workstream.ts`   | ensureWorkstream / list / summarize / destroy                                             |
 | `src/logs.ts`         | `agent_logs` SDK: appendLog / listLogs / latestSeq / emitEvent                            |
-| `src/vcs.ts`          | `VcsBackend` interface + jj / sl / git / none impls; detection precedence                 |
-| `src/workspace.ts`    | Per-agent VCS workspaces (registry layer on top of vcs.ts); CRUD + cascade; orphan-dir detection (`listWorkspaceOrphans`) |
+| `src/vcs.ts`          | `VcsBackend` interface + jj / sl / git / none impls; detection precedence; `commitsBehind(workspacePath, ref)` for staleness signal (no auto-fetch; pure observation) |
+| `src/workspace.ts`    | Per-agent VCS workspaces (registry layer on top of vcs.ts); CRUD + cascade; orphan-dir detection (`listWorkspaceOrphans`); staleness decoration (`decorateWithStaleness` populates `commitsBehindMain` per row) |
 | `src/snapshots.ts`    | Whole-DB snapshots (`VACUUM INTO`); auto-captured before destructive verbs (schema v4); SDK for `mu undo` |
 | `src/migrations.ts`   | Forward-only schema migrations (v1→v2 ON UPDATE CASCADE; v2→v3 REJECTED+DEFERRED; v3→v4 snapshots) |
 | `src/output.ts`       | NextStep type + `printNextSteps` + `errorNextSteps` plumbing for self-documenting output |
@@ -321,7 +321,7 @@ each are deliberately small.
 
 | Seam                | Add a new impl by...                                                                                                          |
 | ------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `VcsBackend`        | Implementing `detect / createWorkspace / freeWorkspace` (~80–150 LOC; jj/sl/git/none are working examples)                    |
+| `VcsBackend`        | Implementing `detect / createWorkspace / freeWorkspace / commitsBehind` (~80–150 LOC; jj/sl/git/none are working examples)        |
 | Per-CLI `Detector`  | Adding patterns to `detectPiStatus` (vanilla pi `to interrupt)`; pi-meta + every TUI wrapper covered by Braille spinner glyph fallback `[\u2800-\u28FF]`)                  |
 | New typed verb      | Add an SDK function in the relevant `src/*.ts`; add a `cmd<Verb>` to the matching `src/cli/<namespace>.ts` (or create a new namespace if the verb doesn't fit existing ones); wire one commander block in `src/cli.ts`'s `buildProgram()` (use `handle()` for the exit-code map; route through `printNextSteps` for self-documenting output) |
 | New schema migration| Bump `CURRENT_SCHEMA_VERSION` in `src/db.ts`; add a `(toVersion -> fn)` to `MIGRATIONS` in `src/migrations.ts`; mirror the new shape in `CURRENT_SCHEMA`. v1→v2→v3→v4 examples in place |

@@ -18,6 +18,7 @@ import {
   WorkspaceNotFoundError,
   WorkspacePathNotEmptyError,
   createWorkspace,
+  decorateWithStaleness,
   freeWorkspace,
   getWorkspaceForAgent,
   listWorkspaceOrphans,
@@ -762,5 +763,190 @@ describe("listWorkspaceOrphans", () => {
     db.prepare("DELETE FROM vcs_workspaces WHERE agent = 'orphaned'").run();
     const orphans = listWorkspaceOrphans(db, "auth");
     expect(orphans.map((o) => o.agent)).toEqual(["orphaned"]);
+  });
+});
+
+// ─── commitsBehind / decorateWithStaleness ────────────────────────
+//
+// Surfaced by bug_workspace_stale_parent_silent_drift: long-lived
+// workspaces silently drift from main with no signal to the operator.
+// Each backend's commitsBehind() reports how many commits the
+// parent_ref is behind the local refs cache's notion of "main".
+// Pure observation: NO automatic fetch.
+
+describe("noneBackend.commitsBehind always returns null", () => {
+  it("none has no notion of main", async () => {
+    const wsPath = join(stateRoot, "workspaces", "auth", "worker-1");
+    await noneBackend.createWorkspace({ projectRoot, workspacePath: wsPath });
+    expect(await noneBackend.commitsBehind(wsPath, "any-ref")).toBeNull();
+  });
+});
+
+gitDescribe("gitBackend.commitsBehind", () => {
+  // The git tests construct a fake "origin" remote so the workspace
+  // has a real refs/remotes/origin/HEAD to resolve. We use a bare
+  // clone as the "remote" and add it as origin in the workspace.
+  let originDir: string;
+  let consumerProject: string;
+
+  beforeEach(() => {
+    // origin = a bare repo we can advance without affecting `projectRoot`.
+    originDir = mkdtempSync(join(tmpdir(), "mu-origin-"));
+    execFileSync("git", ["init", "-q", "-b", "main", projectRoot], { stdio: "ignore" });
+    writeFileSync(join(projectRoot, "a.txt"), "a\n");
+    execFileSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", "add", "."], {
+      cwd: projectRoot,
+    });
+    execFileSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "c1"], {
+      cwd: projectRoot,
+    });
+    // Make a bare "origin" out of projectRoot's history.
+    execFileSync("git", ["clone", "--bare", projectRoot, originDir], { stdio: "ignore" });
+    // Now make a fresh consumer that has origin set to the bare. The
+    // workspace will be a worktree of THIS consumer (not projectRoot)
+    // so origin/HEAD resolves correctly.
+    consumerProject = mkdtempSync(join(tmpdir(), "mu-consumer-"));
+    rmSync(consumerProject, { recursive: true, force: true });
+    execFileSync("git", ["clone", "-q", originDir, consumerProject], { stdio: "ignore" });
+  });
+
+  afterEach(() => {
+    for (const dir of [originDir, consumerProject]) {
+      try {
+        rmSync(dir, { recursive: true, force: true });
+      } catch {}
+    }
+  });
+
+  it("returns 0 when parent_ref equals current main", async () => {
+    const wsPath = join(stateRoot, "workspaces", "auth", "worker-1");
+    const r = await gitBackend.createWorkspace({
+      projectRoot: consumerProject,
+      workspacePath: wsPath,
+    });
+    expect(r.parentRef).toBeTruthy();
+    const behind = await gitBackend.commitsBehind(wsPath, r.parentRef ?? "");
+    expect(behind).toBe(0);
+  });
+
+  it("returns N>0 after origin/main advances by N commits", async () => {
+    const wsPath = join(stateRoot, "workspaces", "auth", "worker-1");
+    const r = await gitBackend.createWorkspace({
+      projectRoot: consumerProject,
+      workspacePath: wsPath,
+    });
+    // Advance origin by 3 commits, then have the consumer fetch so the
+    // local origin/main moves while parent_ref stays put.
+    const advancer = mkdtempSync(join(tmpdir(), "mu-advance-"));
+    execFileSync("git", ["clone", "-q", originDir, advancer], { stdio: "ignore" });
+    for (let i = 0; i < 3; i++) {
+      writeFileSync(join(advancer, `f${i}.txt`), `${i}\n`);
+      execFileSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", "add", "."], {
+        cwd: advancer,
+      });
+      execFileSync(
+        "git",
+        ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", `c${i + 2}`],
+        { cwd: advancer },
+      );
+    }
+    execFileSync("git", ["push", "-q", "origin", "main"], { cwd: advancer });
+    rmSync(advancer, { recursive: true, force: true });
+    // Now have the workspace fetch (the human side of the bug — we
+    // EXPLICITLY simulate the operator running `git fetch`; mu itself
+    // does NOT fetch). Without fetch, refs/remotes/origin/main would
+    // still point at the original commit and behind=0.
+    execFileSync("git", ["fetch", "-q", "origin"], { cwd: wsPath });
+    const behind = await gitBackend.commitsBehind(wsPath, r.parentRef ?? "");
+    expect(behind).toBe(3);
+  });
+
+  it("returns null when no main can be resolved (no remote)", async () => {
+    // Use the original projectRoot which has NO origin remote.
+    const wsPath = join(stateRoot, "workspaces", "auth", "worker-2");
+    const r = await gitBackend.createWorkspace({ projectRoot, workspacePath: wsPath });
+    const behind = await gitBackend.commitsBehind(wsPath, r.parentRef ?? "");
+    expect(behind).toBeNull();
+  });
+
+  it("returns null on a missing workspace dir", async () => {
+    const behind = await gitBackend.commitsBehind(join(stateRoot, "nope"), "deadbeef");
+    expect(behind).toBeNull();
+  });
+});
+
+jjDescribe("jjBackend.commitsBehind returns a number or null", () => {
+  beforeEach(() => {
+    execFileSync("jj", ["git", "init", projectRoot], { stdio: "ignore" });
+    writeFileSync(join(projectRoot, "README"), "hello\n");
+    execFileSync("jj", ["commit", "-m", "init"], { cwd: projectRoot, stdio: "ignore" });
+  });
+
+  it("returns either a non-negative number or null (smoke)", async () => {
+    const wsPath = join(stateRoot, "workspaces", "auth", "worker-1");
+    const r = await jjBackend.createWorkspace({ projectRoot, workspacePath: wsPath });
+    const behind = await jjBackend.commitsBehind(wsPath, r.parentRef ?? "");
+    // jj's trunk() is heuristic; on a fresh repo with no remote it
+    // may resolve to @ (giving 0) or fail (giving null). Either is
+    // a sane answer; we just want to confirm we get one of them, not
+    // a thrown error or NaN.
+    expect(behind === null || (typeof behind === "number" && behind >= 0)).toBe(true);
+  });
+});
+
+slDescribe("slBackend.commitsBehind returns a number or null", () => {
+  beforeEach(() => {
+    execFileSync("sl", ["init", projectRoot], { stdio: "ignore" });
+    writeFileSync(join(projectRoot, "README"), "hello\n");
+    execFileSync("sl", ["--config", "ui.username=t <t@t>", "commit", "-A", "-m", "init"], {
+      cwd: projectRoot,
+      stdio: "ignore",
+    });
+  });
+
+  it("returns either a non-negative number or null (smoke)", async () => {
+    const wsPath = join(stateRoot, "workspaces", "auth", "worker-1");
+    const r = await slBackend.createWorkspace({ projectRoot, workspacePath: wsPath });
+    const behind = await slBackend.commitsBehind(wsPath, r.parentRef ?? "");
+    expect(behind === null || (typeof behind === "number" && behind >= 0)).toBe(true);
+  });
+});
+
+describe("decorateWithStaleness", () => {
+  it("populates commitsBehindMain on every row (null for none-backend)", async () => {
+    insertAgent(db, { name: "w2", workstream: "auth", paneId: "%2", status: "busy" });
+    await createWorkspace(db, {
+      agent: "worker-1",
+      workstream: "auth",
+      projectRoot,
+      backend: "none",
+    });
+    await createWorkspace(db, {
+      agent: "w2",
+      workstream: "auth",
+      projectRoot,
+      backend: "none",
+    });
+    const rows = listWorkspaces(db, "auth");
+    const decorated = await decorateWithStaleness(rows);
+    expect(decorated).toHaveLength(2);
+    for (const r of decorated) {
+      // none-backend always returns null (no notion of main).
+      expect(r.commitsBehindMain).toBeNull();
+    }
+  });
+
+  it("sets commitsBehindMain to null when parent_ref is null", async () => {
+    await createWorkspace(db, {
+      agent: "worker-1",
+      workstream: "auth",
+      projectRoot,
+      backend: "none",
+    });
+    // The none-backend explicitly returns parent_ref=null on create,
+    // so this should bypass the backend call.
+    const decorated = await decorateWithStaleness(listWorkspaces(db, "auth"));
+    expect(decorated[0]?.parentRef).toBeNull();
+    expect(decorated[0]?.commitsBehindMain).toBeNull();
   });
 });

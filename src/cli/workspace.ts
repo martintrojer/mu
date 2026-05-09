@@ -16,6 +16,7 @@ import type { VcsBackendName } from "../vcs.js";
 import {
   WorkspaceNotFoundError,
   createWorkspace,
+  decorateWithStaleness,
   freeWorkspace,
   getWorkspaceForAgent,
   listWorkspaceOrphans,
@@ -66,15 +67,20 @@ export async function cmdWorkspaceList(
 ): Promise<void> {
   const workstream = opts.all ? undefined : await resolveWorkstream(opts.workstream);
   const rows = listWorkspaces(db, workstream);
+  // decorateWithStaleness is the staleness signal from
+  // bug_workspace_stale_parent_silent_drift: ask each row's backend how
+  // many commits its parent_ref is behind main. Pure observation; no
+  // automatic fetch.
+  const decorated = await decorateWithStaleness(rows);
   if (opts.json) {
-    emitJson(rows);
+    emitJson(decorated);
     return;
   }
-  if (rows.length === 0) {
+  if (decorated.length === 0) {
     console.log(pc.dim(workstream ? `(no workspaces in ${workstream})` : "(no workspaces)"));
     return;
   }
-  console.log(formatWorkspacesTable(rows));
+  console.log(formatWorkspacesTable(decorated));
 }
 
 export async function cmdWorkspaceFree(

@@ -32,6 +32,13 @@ export interface WorkspaceRow {
   path: string;
   parentRef: string | null;
   createdAt: string;
+  /** How many commits the workspace's parent_ref is behind the project's
+   *  default branch HEAD, as of the last time the workspace's local refs
+   *  cache was updated. Undefined when not yet computed (the listWorkspaces
+   *  fast path leaves it unset; call decorateWithStaleness to populate).
+   *  Null when staleness was queried but cannot be computed (no main found,
+   *  none-backend, missing parent_ref, command failure). */
+  commitsBehindMain?: number | null;
 }
 
 interface RawWorkspaceRow {
@@ -374,6 +381,38 @@ export function listWorkspaces(db: Db, workstream?: string): WorkspaceRow[] {
           .prepare("SELECT * FROM vcs_workspaces WHERE workstream = ? ORDER BY agent")
           .all(workstream) as RawWorkspaceRow[]);
   return rows.map(rowFromDb);
+}
+
+/**
+ * Decorate each row with `commitsBehindMain` by asking the row's backend
+ * how far the parent_ref is behind the project's default branch HEAD.
+ * Cheap, pure observation: NO automatic `git fetch` / `jj git fetch` /
+ * `sl pull`. The number is as fresh as the workspace's local refs cache.
+ *
+ * Surfaced by bug_workspace_stale_parent_silent_drift: long-lived
+ * workspaces silently drift from main, and there was no signal to the
+ * operator. `mu workspace list` and `mu state` show the result.
+ *
+ * Returns a NEW array; does not mutate the input. Rows whose parent_ref
+ * is missing, or whose backend's commitsBehind throws / returns null,
+ * get `commitsBehindMain: null`.
+ */
+export async function decorateWithStaleness(
+  rows: readonly WorkspaceRow[],
+): Promise<WorkspaceRow[]> {
+  return Promise.all(
+    rows.map(async (r) => {
+      if (r.parentRef === null) return { ...r, commitsBehindMain: null };
+      let n: number | null;
+      try {
+        const backend = backendByName(r.backend);
+        n = await backend.commitsBehind(r.path, r.parentRef);
+      } catch {
+        n = null;
+      }
+      return { ...r, commitsBehindMain: n };
+    }),
+  );
 }
 
 export interface FreeWorkspaceOptions {

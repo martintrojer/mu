@@ -191,6 +191,7 @@ export {
   WorkspacePathNotEmptyError,
   WorkspaceNotFoundError,
   createWorkspace,
+  decorateWithStaleness,
   freeWorkspace,
   getWorkspaceForAgent,
   listWorkspaceOrphans,

@@ -10,6 +10,51 @@ called out under "Breaking" in each entry.
 
 ## [Unreleased]
 
+### Added
+
+- **Workspace staleness signal in `mu state` and `mu workspace list`.**
+  Closes `bug_workspace_stale_parent_silent_drift` in `mufeedback`
+  (Option 2 only — warn-only). Surfaced live: `roadmap-v0-2`'s
+  `worker-1` workspace was 9 commits behind main when dispatched on
+  `cross_workstream_claim_for`; the worker correctly implemented the
+  fix against its stale tree, but the resulting diff vs. main was
+  6500 insertions / 7700 deletions because the workspace pre-dated
+  the `refactor_split_large_src_files` series. The orchestrator had
+  no signal that the workspace had drifted.
+
+  Each row in `vcs_workspaces` now carries an optional
+  `commitsBehindMain` field, populated by a new
+  `decorateWithStaleness(rows)` SDK helper that calls the row's
+  backend's `commitsBehind(workspacePath, ref)` method. The number
+  is rendered as a color-coded `behind` column (green ≤2, yellow
+  3–9, red ≥10). When `mu state` finds ANY workspace ≥10 commits
+  behind, it prefixes the Workspaces section header with a yellow
+  `⚠ (N stale ≥10 commits behind)` annotation and appends a one-
+  line tip pointing at the only remediation today: `mu workspace
+  free <agent> + mu workspace create <agent>`.
+
+  Pure observation: NO automatic `git fetch` / `jj git fetch` /
+  `sl pull`. The number is as fresh as the workspace's local
+  remote-tracking refs cache; the operator decides when to refresh.
+  Backends that can't resolve the project's default branch (no
+  `origin/HEAD`, no `origin/main`, no `origin/master` for git;
+  unresolvable `trunk()` for jj/sl) return `null`, which renders as
+  a dim `—` and never triggers the warn line. The `none` backend
+  (no VCS) always returns `null`.
+
+  Out of scope (deliberate): a `mu workspace rebase` verb (Option 1
+  in the bug's diagnosis) — filed as a follow-up if Option 2's
+  warning leaves residual friction. Auto-rebase (Option 3) is an
+  anti-feature (silent mutation). Reject-stale-spawn (Option 4)
+  layers on top of Option 1 only.
+
+  Tests: `test/workspace.test.ts` covers each backend's
+  `commitsBehind` (git fetches OK after a manual fetch; jj and sl
+  return sane numbers or null; none always returns null) plus
+  `decorateWithStaleness` shape; new `test/workspace-staleness.test.ts`
+  drives the CLI in-process to assert the rendered table column +
+  the `mu state` warn line at the threshold boundary.
+
 ### Fixed
 
 - **`mu workspace create` no longer leaves a partial dir behind on

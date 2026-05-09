@@ -366,10 +366,15 @@ export function formatTracks(tracks: readonly Track[]): string {
 
 /** Workspaces table renderer. Used by `mu workspace list` and by
  *  `mu state`'s Workspaces section — exported so cli/workspace.ts
- *  can reuse it. */
+ *  can reuse it. The `behind` column shows how many commits the row's
+ *  parent_ref is behind the project's default branch HEAD; color-coded
+ *  green ≤2, yellow 3–9, red ≥10. Renders "—" when the count couldn't
+ *  be computed (no main resolvable, none-backend, missing parent_ref)
+ *  or wasn't asked for (no decorateWithStaleness call). Surfaced by
+ *  bug_workspace_stale_parent_silent_drift. */
 export function formatWorkspacesTable(rows: readonly WorkspaceRow[]): string {
   const table = new Table({
-    head: ["agent", "workstream", "backend", "path", "parent_ref", "created"].map((h) =>
+    head: ["agent", "workstream", "backend", "path", "parent_ref", "behind", "created"].map((h) =>
       pc.bold(h),
     ),
     style: { head: [], border: [] },
@@ -381,10 +386,22 @@ export function formatWorkspacesTable(rows: readonly WorkspaceRow[]): string {
       r.backend,
       r.path,
       r.parentRef ? pc.dim(r.parentRef.slice(0, 12)) : pc.dim("—"),
+      formatBehind(r.commitsBehindMain),
       pc.dim(r.createdAt),
     ]);
   }
   return table.toString();
+}
+
+/** Color-code the commits-behind-main count. Green ≤2 (fresh), yellow
+ *  3–9 (drifting), red ≥10 (stale). Undefined / null renders as a dim
+ *  em-dash so the column stays well-typed even when staleness wasn't
+ *  computed. */
+function formatBehind(n: number | null | undefined): string {
+  if (n === undefined || n === null) return pc.dim("—");
+  if (n <= 2) return pc.green(String(n));
+  if (n <= 9) return pc.yellow(String(n));
+  return pc.red(String(n));
 }
 
 /** Helper types/converters used by `mu state` and `mu hud` for their

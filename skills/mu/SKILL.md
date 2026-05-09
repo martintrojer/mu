@@ -248,7 +248,7 @@ mu my-next [-n K]                    # alias for task next -w <self.ws>
 
 # Workspace (4) — per-agent VCS working copies
 mu workspace create <agent> [--backend jj|sl|git|none] [--from REF]
-mu workspace list [--all]
+mu workspace list [--all]                # `behind` column: ≤ 2 green, 3–9 yellow, ≥ 10 red
 mu workspace free <agent> [--commit]
 mu workspace path <agent>            # cd $(mu workspace path X)
 mu workspace orphans                 # on-disk dirs with no DB row

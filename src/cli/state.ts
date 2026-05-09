@@ -42,7 +42,7 @@ import { listLogs } from "../logs.js";
 import { pc } from "../output.js";
 import { listBlocked, listReady } from "../tasks.js";
 import { getParallelTracks } from "../tracks.js";
-import { listWorkspaceOrphans, listWorkspaces } from "../workspace.js";
+import { decorateWithStaleness, listWorkspaceOrphans, listWorkspaces } from "../workspace.js";
 import { listWorkstreams } from "../workstream.js";
 
 export async function cmdMission(
@@ -175,7 +175,18 @@ export async function cmdState(
       )
       .all(workstream) as RawTaskRowForState[]
   ).map(rawTaskRowToTask);
-  const workspaces = listWorkspaces(db, workstream);
+  // Decorate workspaces with staleness (commits-behind-main) per
+  // bug_workspace_stale_parent_silent_drift. Pure observation: backends
+  // never fetch; they read whatever the local refs cache says. Rows
+  // whose backend can't compute a number get commitsBehindMain: null.
+  const workspaces = await decorateWithStaleness(listWorkspaces(db, workstream));
+  const STALE_THRESHOLD = 10;
+  const staleWorkspaces = workspaces.filter(
+    (w) =>
+      w.commitsBehindMain !== undefined &&
+      w.commitsBehindMain !== null &&
+      w.commitsBehindMain >= STALE_THRESHOLD,
+  );
   const workspaceOrphans = listWorkspaceOrphans(db, workstream);
   const eventLimit = opts.events ?? 20;
   const recentEvents = listLogs(db, { workstream, kind: "event", limit: eventLimit });
@@ -234,11 +245,28 @@ export async function cmdState(
   console.log(pc.bold(`Recent closed (${recentClosed.length})`));
   console.log(recentClosed.length === 0 ? pc.dim("  (none)") : formatTaskListTable(recentClosed));
   console.log("");
-  console.log(pc.bold(`Workspaces (${workspaces.length})`));
+  // Workspaces section. When any workspace is ≥ STALE_THRESHOLD commits
+  // behind main, append a one-line warning + a tip pointing at the
+  // free+recreate recovery (the only remediation today; Option 1's
+  // `mu workspace rebase` verb is filed as a follow-up). Per
+  // bug_workspace_stale_parent_silent_drift.
+  const workspacesHeader =
+    staleWorkspaces.length > 0
+      ? `${pc.bold(`Workspaces (${workspaces.length})`)} ${pc.yellow(`⚠ (${staleWorkspaces.length} stale ≥${STALE_THRESHOLD} commits behind):`)}`
+      : pc.bold(`Workspaces (${workspaces.length})`);
+  console.log(workspacesHeader);
   if (workspaces.length === 0) {
     console.log(pc.dim("  (none)"));
   } else {
     console.log(formatWorkspacesTable(workspaces));
+  }
+  if (staleWorkspaces.length > 0) {
+    const example = staleWorkspaces[0]?.agent ?? "<agent>";
+    console.log(
+      pc.yellow(
+        `⚠ Tip: Free + recreate stale workspaces to land patches against current main: mu workspace free ${example} + mu workspace create ${example}`,
+      ),
+    );
   }
   if (workspaceOrphans.length > 0) {
     console.log("");

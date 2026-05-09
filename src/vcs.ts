@@ -79,6 +79,26 @@ export interface VcsBackend {
   createWorkspace(opts: CreateWorkspaceOptions): Promise<CreateWorkspaceResult>;
 
   freeWorkspace(opts: FreeWorkspaceOptions): Promise<FreeWorkspaceResult>;
+
+  /**
+   * Count commits that the project's default branch ("main") has but
+   * `ref` does not — i.e. how many commits `ref` is BEHIND main.
+   *
+   * Used by `mu workspace list` and `mu state` to surface staleness
+   * (bug_workspace_stale_parent_silent_drift). Cheap, pure-observation:
+   * NO automatic fetch. We compare against whatever main resolves to in
+   * the workspace's LOCAL refs cache. The user can `git fetch` (or
+   * equivalent) themselves if they want a fresher number.
+   *
+   * Returns null when:
+   *  - main / trunk cannot be resolved (no origin/HEAD, no origin/main,
+   *    no origin/master, no trunk() bookmark, etc.)
+   *  - the underlying VCS command fails for any reason (detached worktree,
+   *    missing refs, the `none` backend which has no notion of "main")
+   *
+   * Callers treat null as "unknown — render — — and don't warn".
+   */
+  commitsBehind(workspacePath: string, ref: string): Promise<number | null>;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────
@@ -143,6 +163,12 @@ export const noneBackend: VcsBackend = {
     const removed = rmDirSync(opts.workspacePath);
     return { removed };
   },
+
+  // The `none` backend has no VCS to compare against — there's no
+  // notion of "main" for a `cp -a` snapshot. Always null.
+  async commitsBehind(_workspacePath, _ref) {
+    return null;
+  },
 };
 
 // ─── git backend ─────────────────────────────────────────────────────
@@ -184,6 +210,28 @@ export const gitBackend: VcsBackend = {
     // Resolve the actual SHA we ended up on for the parentRef record.
     const sha = await run("git", ["rev-parse", "HEAD"], opts.workspacePath);
     return { parentRef: sha };
+  },
+
+  // Compute commits-behind as: count of commits reachable from main
+  // but not from `ref`. Resolves "main" via origin/HEAD (the symbolic
+  // ref the remote advertises), falling back to origin/main and then
+  // origin/master. Returns null when none of those resolve, or when
+  // the rev-list call fails (e.g. ref unknown locally).
+  //
+  // Pure observation: NO `git fetch`. The number is as fresh as the
+  // last time the user (or some other process) updated the local
+  // remote-tracking refs.
+  async commitsBehind(workspacePath, ref) {
+    if (!existsSync(workspacePath)) return null;
+    const main = await resolveGitMainRef(workspacePath);
+    if (main === undefined) return null;
+    try {
+      const out = await run("git", ["rev-list", "--count", `${ref}..${main}`], workspacePath);
+      const n = Number.parseInt(out.trim(), 10);
+      return Number.isFinite(n) ? n : null;
+    } catch {
+      return null;
+    }
   },
 
   async freeWorkspace(opts) {
@@ -242,6 +290,31 @@ export const gitBackend: VcsBackend = {
     return result;
   },
 };
+
+/**
+ * Resolve the workspace's notion of "main". Tries, in order:
+ *   1. `origin/HEAD` — the symbolic ref the remote published
+ *      (e.g. "refs/remotes/origin/main"). The most accurate signal.
+ *   2. `refs/remotes/origin/main` — the convention.
+ *   3. `refs/remotes/origin/master` — pre-rename convention.
+ * Returns the resolved ref string (suitable for `git rev-list`) or
+ * undefined if none of the three resolve.
+ */
+async function resolveGitMainRef(workspacePath: string): Promise<string | undefined> {
+  for (const candidate of [
+    "refs/remotes/origin/HEAD",
+    "refs/remotes/origin/main",
+    "refs/remotes/origin/master",
+  ]) {
+    try {
+      await exec("git", ["rev-parse", "--verify", "--quiet", candidate], { cwd: workspacePath });
+      return candidate;
+    } catch {
+      /* try next */
+    }
+  }
+  return undefined;
+}
 
 async function isGitDirty(workspacePath: string): Promise<boolean> {
   // Three independent checks: working-tree changes, staged changes,
@@ -356,6 +429,40 @@ export const jjBackend: VcsBackend = {
     if (committedRef !== undefined) result.committedRef = committedRef;
     return result;
   },
+
+  // Compute commits-behind via jj's `trunk()` revset, which resolves
+  // to the project's configured trunk (default-branch heuristic).
+  // Returns null when trunk() is unresolvable (e.g. fresh repo with
+  // no configured trunk) or when the log call fails.
+  //
+  // Pure observation: NO `jj git fetch`.
+  async commitsBehind(workspacePath, ref) {
+    if (!existsSync(workspacePath)) return null;
+    try {
+      // `<ref>..trunk()` is the set of commits reachable from trunk
+      // but not from ref — exactly the staleness number. Template `"x\n"`
+      // gives one line per commit, which we count.
+      const out = await run(
+        "jj",
+        [
+          "log",
+          "-r",
+          `${ref}..trunk()`,
+          "--no-graph",
+          "--no-pager",
+          "--color",
+          "never",
+          "--template",
+          '"x\\n"',
+        ],
+        workspacePath,
+      );
+      if (out.length === 0) return 0;
+      return out.split("\n").filter((l) => l.length > 0).length;
+    } catch {
+      return null;
+    }
+  },
 };
 
 function jjWorkspaceName(workspacePath: string): string {
@@ -431,6 +538,27 @@ export const slBackend: VcsBackend = {
     const result: FreeWorkspaceResult = { removed: true };
     if (committedRef !== undefined) result.committedRef = committedRef;
     return result;
+  },
+
+  // Same shape as the jj impl: count commits in trunk() not reachable
+  // from ref. Sapling's revset language is close enough to jj's that
+  // the same idiom works. Returns null when trunk() is unresolvable
+  // (fresh repo, missing remote bookmark, etc.) or the log fails.
+  //
+  // Pure observation: NO `sl pull`.
+  async commitsBehind(workspacePath, ref) {
+    if (!existsSync(workspacePath)) return null;
+    try {
+      const out = await run(
+        "sl",
+        ["log", "-r", `${ref}::trunk() - ${ref}`, "--template", "x\\n"],
+        workspacePath,
+      );
+      if (out.length === 0) return 0;
+      return out.split("\n").filter((l) => l.length > 0).length;
+    } catch {
+      return null;
+    }
   },
 };
 
