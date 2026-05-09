@@ -307,6 +307,33 @@ export function listGoals(db: Db, workstream: string): TaskRow[] {
   return rows.map(rowFromDb);
 }
 
+/** All IN_PROGRESS tasks in a workstream, most-recently-touched first.
+ *  Used by `mu state` and `mu hud` to populate their in-progress slice;
+ *  exposed as a named SDK helper so those CLI verbs don't re-derive
+ *  the row-shape conversion (review_code_raw_task_state_duplicate). */
+export function listInProgress(db: Db, workstream: string): TaskRow[] {
+  const rows = db
+    .prepare(
+      "SELECT * FROM tasks WHERE workstream = ? AND status = 'IN_PROGRESS' ORDER BY updated_at DESC",
+    )
+    .all(workstream) as RawTaskRow[];
+  return rows.map(rowFromDb);
+}
+
+/** Most-recently-closed tasks in a workstream, newest first, capped at
+ *  `limit` (default 5). Used by `mu state` for its 'recent closed'
+ *  slice; exposed as a named SDK helper so the CLI no longer needs the
+ *  raw-row type that was duplicating RawTaskRow
+ *  (review_code_raw_task_state_duplicate). */
+export function listRecentClosed(db: Db, workstream: string, limit = 5): TaskRow[] {
+  const rows = db
+    .prepare(
+      "SELECT * FROM tasks WHERE workstream = ? AND status = 'CLOSED' ORDER BY updated_at DESC LIMIT ?",
+    )
+    .all(workstream, limit) as RawTaskRow[];
+  return rows.map(rowFromDb);
+}
+
 export function listNotes(db: Db, taskId: string): TaskNoteRow[] {
   const rows = db
     .prepare("SELECT * FROM task_notes WHERE task_id = ? ORDER BY id")

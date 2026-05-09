@@ -12,6 +12,28 @@ called out under "Breaking" in each entry.
 
 ### Changed
 
+- **De-duplicated `RawTaskRowForState` + `rawTaskRowToTask` (CLI →
+  SDK consolidation).** Closes `review_code_raw_task_state_duplicate`
+  in `mufeedback`. The `IN_PROGRESS` and `recent CLOSED` task slices
+  used by `mu state` and `mu hud` were re-querying the `tasks` table
+  inline and re-implementing the snake_case → camelCase row-shape
+  conversion via a CLI-level `RawTaskRowForState` interface +
+  `rawTaskRowToTask` helper exported from `src/cli.ts`. That row shape
+  was byte-identical to the private `RawTaskRow` already used by the
+  rest of `src/tasks.ts` (inside `listReady` / `listBlocked` /
+  `listGoals` / etc.), so an eventual `TaskRow` field addition would
+  have had to be threaded through three converters in lockstep with no
+  compiler help (the duplicate type would have silently dropped the
+  new column on the floor). Two new SDK helpers now live alongside the
+  existing list-by-view helpers: `listInProgress(db, workstream)` and
+  `listRecentClosed(db, workstream, limit?)`. `mu state` and `mu hud`
+  call them directly; the CLI-level raw row + converter are deleted
+  (-30 LOC in `src/cli.ts`, -25 LOC net across the two `cli/*`
+  callers, +27 LOC of SDK helpers, +2 LOC of `src/index.ts`
+  re-exports — net **-26 LOC** with one fewer exported surface and
+  one fewer place that has to learn about new task columns). No SQL
+  projections changed; only the wrapper around them.
+
 - **`mu`-managed tmux panes now have a visually distinct frame on
   all four sides, not just the labeled top status band.** Closes
   the first half of `tmux_pane_border_top_and_bottom_plus_glyph_audit`

@@ -22,7 +22,6 @@
 
 import { listLiveAgents } from "../agents.js";
 import {
-  type RawTaskRowForState,
   byRoiDesc,
   emitJson,
   formatAgentsTable,
@@ -32,7 +31,6 @@ import {
   formatWorkspacesTable,
   formatWorkstreamsTable,
   printLogRow,
-  rawTaskRowToTask,
   resolveOptionalWorkstream,
   resolveWorkstream,
   withRoiAll,
@@ -40,7 +38,7 @@ import {
 import type { Db } from "../db.js";
 import { listLogs } from "../logs.js";
 import { pc } from "../output.js";
-import { listBlocked, listReady } from "../tasks.js";
+import { listBlocked, listInProgress, listReady, listRecentClosed } from "../tasks.js";
 import { getParallelTracks } from "../tracks.js";
 import { decorateWithStaleness, listWorkspaceOrphans, listWorkspaces } from "../workspace.js";
 import { listWorkstreams } from "../workstream.js";
@@ -161,20 +159,8 @@ export async function cmdState(
   const tracks = getParallelTracks(db, workstream);
   const ready = listReady(db, workstream).sort(byRoiDesc);
   const blocked = listBlocked(db, workstream);
-  const inProgress = (
-    db
-      .prepare(
-        "SELECT * FROM tasks WHERE workstream = ? AND status = 'IN_PROGRESS' ORDER BY updated_at DESC",
-      )
-      .all(workstream) as RawTaskRowForState[]
-  ).map(rawTaskRowToTask);
-  const recentClosed = (
-    db
-      .prepare(
-        "SELECT * FROM tasks WHERE workstream = ? AND status = 'CLOSED' ORDER BY updated_at DESC LIMIT 5",
-      )
-      .all(workstream) as RawTaskRowForState[]
-  ).map(rawTaskRowToTask);
+  const inProgress = listInProgress(db, workstream);
+  const recentClosed = listRecentClosed(db, workstream);
   // Decorate workspaces with staleness (commits-behind-main) per
   // bug_workspace_stale_parent_silent_drift. Pure observation: backends
   // never fetch; they read whatever the local refs cache says. Rows
@@ -288,9 +274,6 @@ export async function cmdState(
     for (const row of recentEvents) printLogRow(row);
   }
 }
-
-// (RawTaskRowForState + rawTaskRowToTask live in src/cli.ts so cmdHud
-// can reuse them.)
 
 // ─── commander wiring ────────────────────────────────────────────────
 //

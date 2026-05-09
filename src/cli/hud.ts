@@ -20,11 +20,9 @@
 import Table from "cli-table3";
 import { type AgentRow, type AgentStatus, listLiveAgents } from "../agents.js";
 import {
-  type RawTaskRowForState,
   UsageError,
   byRoiDesc,
   emitJson,
-  rawTaskRowToTask,
   relTime,
   resolveWorkstream,
   statusIcon,
@@ -34,7 +32,7 @@ import {
 import type { Db } from "../db.js";
 import { type LogRow, listLogs } from "../logs.js";
 import { pc } from "../output.js";
-import { type TaskRow, listReady, listTasksByOwner } from "../tasks.js";
+import { type TaskRow, listInProgress, listReady, listTasksByOwner } from "../tasks.js";
 import { currentPaneSize } from "../tmux.js";
 import { type Track, getParallelTracks } from "../tracks.js";
 
@@ -333,13 +331,7 @@ export async function cmdHud(db: Db, opts: HudOpts): Promise<void> {
   const view = await listLiveAgents(db, { workstream, dryRun: true });
   const tracks = getParallelTracks(db, workstream);
   const ready = listReady(db, workstream).sort(byRoiDesc);
-  const inProgress = (
-    db
-      .prepare(
-        "SELECT * FROM tasks WHERE workstream = ? AND status = 'IN_PROGRESS' ORDER BY updated_at DESC",
-      )
-      .all(workstream) as RawTaskRowForState[]
-  ).map(rawTaskRowToTask);
+  const inProgress = listInProgress(db, workstream);
   const eventLimit = opts.lines ?? 10;
   const recentEvents = listLogs(db, { workstream, kind: "event", limit: eventLimit });
 

@@ -406,36 +406,6 @@ function formatBehind(n: number | null | undefined): string {
   return pc.red(String(n));
 }
 
-/** Helper types/converters used by `mu state` and `mu hud` for their
- *  IN_PROGRESS / recent_closed slices. Both verbs re-query the tasks
- *  table directly (with status + ordering not exposed by listTasks)
- *  so the column-name conversion lives here as a shared helper. */
-export interface RawTaskRowForState {
-  local_id: string;
-  workstream: string;
-  title: string;
-  status: string;
-  impact: number;
-  effort_days: number;
-  owner: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export function rawTaskRowToTask(r: RawTaskRowForState): TaskRow {
-  return {
-    localId: r.local_id,
-    workstream: r.workstream,
-    title: r.title,
-    status: r.status as TaskRow["status"],
-    impact: r.impact,
-    effortDays: r.effort_days,
-    owner: r.owner,
-    createdAt: r.created_at,
-    updatedAt: r.updated_at,
-  };
-}
-
 /** One agent_logs row, human-formatted. Used by `mu log` (read + tail)
  *  and by the `recent events` section of `mu state`. Exported so the
  *  cli/log.ts module can reuse it. */
