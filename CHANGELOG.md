@@ -10,6 +10,8 @@ called out under "Breaking" in each entry.
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-05-09
+
 ### Breaking
 
 - **`--json` shape rewritten end-to-end** (`output_json_keys_rename_v5`).
