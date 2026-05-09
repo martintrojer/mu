@@ -9,7 +9,7 @@
 //                         owned-by / search / my-tasks / my-next
 //   ./tasks/lifecycle.ts  close / open / reject / defer
 //   ./tasks/edit.ts       add / show / notes / note / update
-//                         + unescapeNoteText / lastClaimActor / printNote
+//                         + unescapeNoteText / printNote
 //   ./tasks/edges.ts      block / unblock / reparent / delete
 //   ./tasks/claim.ts      claim / release / wait
 //   ./tasks/tree.ts       tree

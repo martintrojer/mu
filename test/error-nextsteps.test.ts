@@ -53,12 +53,7 @@ describe("typed errors all carry actionable errorNextSteps()", () => {
     // recovery is to use the auto-derived path (--title) or the
     // sanitised candidate. The sanitised id appears in the second
     // step's command.
-    [new TaskIdInvalidError("Bad ID", "syntax"), "TaskIdInvalidError (syntax)", ["bad_id"]],
-    [
-      new TaskIdInvalidError("mu_x", "reserved-prefix"),
-      "TaskIdInvalidError (reserved)",
-      ["t_mu_x"],
-    ],
+    [new TaskIdInvalidError("Bad ID"), "TaskIdInvalidError", ["bad_id"]],
     [
       new TaskNotInWorkstreamError("foo", "expected", "actual"),
       "TaskNotInWorkstreamError",

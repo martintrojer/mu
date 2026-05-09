@@ -208,12 +208,8 @@ function taskIdFor(db: Db, localId: string, workstream: string): number | null {
 /** Lowercase alpha first, then alnum / underscore / hyphen, ≤64 chars. */
 const TASK_ID_RE = /^[a-z][a-z0-9_-]{0,63}$/;
 
-/** The `mu_` prefix is reserved for system-generated IDs. Mirrors
- *  `tg`'s `T<digits>` reservation. */
-const RESERVED_PREFIX = "mu_";
-
 export function isValidTaskId(id: string): boolean {
-  return TASK_ID_RE.test(id) && !id.startsWith(RESERVED_PREFIX);
+  return TASK_ID_RE.test(id);
 }
 
 /**
@@ -233,8 +229,7 @@ const SLUG_SOFT_CAP = 40;
 
 /**
  * Hard ceiling for any generated id. Schema has no length limit, but
- * 64 keeps ids comfortable in tables, JSON, and tmux pane titles. The
- * collision-suffix loop also respects this.
+ * 64 keeps ids comfortable in tables, JSON, and tmux pane titles.
  */
 const SLUG_HARD_CAP = 64;
 
@@ -269,34 +264,24 @@ export function slugifyTitle(title: string): string {
     const lastSep = window.lastIndexOf("_");
     trimmed = lastSep > 0 ? window.slice(0, lastSep) : window;
   }
-  // Two prefix-corrections so derived slugs always pass the schema:
-  //  - first char must be a letter → prefix `t_` if it isn't
-  //  - the `mu_` prefix is reserved for system-generated IDs (see
-  //    RESERVED_PREFIX above) → prefix `t_` so titles like
-  //    "Mu smoke test" don't dead-end at addTask's reserved-prefix
-  //    check. The explicit-id rejection still applies when a caller
-  //    hand-writes `mu_foo`.
-  const fixed = /^[a-z]/.test(trimmed) ? trimmed : `t_${trimmed}`;
-  const safe = fixed.startsWith(RESERVED_PREFIX) ? `t_${fixed}` : fixed;
-  return safe.slice(0, SLUG_HARD_CAP);
+  // First char must be a letter → prefix `t_` if it isn't. v5 has no
+  // global namespace and no reserved prefix; `mu_foo` is a perfectly
+  // valid local_id (per-workstream unique).
+  return /^[a-z]/.test(trimmed)
+    ? trimmed.slice(0, SLUG_HARD_CAP)
+    : `t_${trimmed}`.slice(0, SLUG_HARD_CAP);
 }
 
 /**
- * Generate a unique task id from a title. On collision in `workstream`,
- * appends `_2`, `_3`, … until unique. Tasks are keyed on `local_id`
- * globally today, so collision check spans every workstream (a future
- * composite-PK migration would scope this).
+ * Generate a unique task id from a title. v5: tasks.local_id is
+ * per-workstream unique, so the collision check scopes to one
+ * workstream. On collision, appends `_2`, `_3`, … until unique.
  */
 export function idFromTitle(db: Db, workstream: string, title: string): string {
   const base = slugifyTitle(title);
-  // v5: tasks.local_id is per-workstream unique. Collision check is
-  // scoped to the same workstream so the same slug can be reused
-  // across workstreams without the suffix loop.
   if (getTask(db, base, workstream) === undefined) return base;
   for (let i = 2; i < 1000; i++) {
-    const suffix = `_${i}`;
-    const truncatedBase = base.slice(0, SLUG_HARD_CAP - suffix.length);
-    const candidate = `${truncatedBase}${suffix}`;
+    const candidate = `${base}_${i}`.slice(0, SLUG_HARD_CAP);
     if (getTask(db, candidate, workstream) === undefined) return candidate;
   }
   throw new Error(`could not derive a unique id from title in workstream ${workstream}: ${title}`);
@@ -307,9 +292,8 @@ export function idFromTitle(db: Db, workstream: string, title: string): string {
  *
  * Lowercases, replaces every non-`[a-z0-9_-]` char with `_`, trims any
  * leading non-letter (the schema requires the first char to be a
- * letter), truncates to 64 chars, and rewrites a leading `mu_` (the
- * reserved system-id prefix) into `t_mu_`. Returns `"task"` when the
- * input has no usable letters at all so the suggestion in
+ * letter), truncates to 64 chars. Returns `"task"` when the input has
+ * no usable letters at all so the suggestion in
  * `TaskIdInvalidError.errorNextSteps()` is always a runnable command.
  *
  * Mirrors `slugifyTitle`'s prefix corrections so suggested ids will
@@ -319,10 +303,11 @@ export function idFromTitle(db: Db, workstream: string, title: string): string {
  * `TaskIdInvalidError.errorNextSteps()`.
  */
 export function sanitiseTaskId(input: string): string {
-  let s = input.toLowerCase().replace(/[^a-z0-9_-]/g, "_");
-  s = s.replace(/^[^a-z]+/, "");
-  s = s.slice(0, SLUG_HARD_CAP);
-  if (s.startsWith(RESERVED_PREFIX)) s = `t_${s}`.slice(0, SLUG_HARD_CAP);
+  const s = input
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, "_")
+    .replace(/^[^a-z]+/, "")
+    .slice(0, SLUG_HARD_CAP);
   return s.length === 0 ? "task" : s;
 }
 
@@ -680,11 +665,8 @@ export interface AddTaskOptions {
  * called here so the same primitive is exercised by tests.
  */
 export function addTask(db: Db, opts: AddTaskOptions): TaskRow {
-  if (opts.localId.startsWith("mu_")) {
-    throw new TaskIdInvalidError(opts.localId, "reserved-prefix");
-  }
   if (!isValidTaskId(opts.localId)) {
-    throw new TaskIdInvalidError(opts.localId, "syntax");
+    throw new TaskIdInvalidError(opts.localId);
   }
 
   return db.transaction(() => {

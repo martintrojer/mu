@@ -7,9 +7,12 @@
 //
 // Plus the helpers:
 //   unescapeNoteText  — \n / \t / \r / \\ inside a quoted string body
-//   lastClaimActor    — back-fills "who's working on this" from
-//                       agent_logs when owner IS NULL (the --self path)
 //   printNote         — shared note formatter for show + notes
+//
+// `who claimed this task?` for the owner=NULL --self path comes from
+// the SDK's lastClaimActor (src/logs.ts) directly — the prior CLI-side
+// thin-wrapper was a vestigial re-export from the cluster split, gone
+// in schema_v5_cleanups.
 //
 // Extracted from src/cli/tasks.ts as part of the wire-out follow-up
 // to refactor_split_large_src_files.
@@ -23,7 +26,7 @@ import {
   withRoiAll,
 } from "../../cli.js";
 import type { Db } from "../../db.js";
-import { lastClaimActor as sdkLastClaimActor } from "../../logs.js";
+import { lastClaimActor } from "../../logs.js";
 import { type NextStep, pc, printNextSteps } from "../../output.js";
 import {
   TaskNotFoundError,
@@ -70,23 +73,6 @@ export function unescapeNoteText(s: string): string {
         return _;
     }
   });
-}
-
-/**
- * Find the actor of the most recent `task claim <id>` event for a task.
- * Used to surface 'who's working on this' when `tasks.owner IS NULL`
- * (the --self / anonymous-claim case). Returns null when no claim
- * event exists for this task.
- *
- * Thin wrapper around the SDK's lastClaimActor (src/logs.ts). The
- * SDK does an indexed structured-prefix lookup against the
- * `task.claim<TAB>...` payload format that claimTask emits — so this
- * is correct for arbitrarily-old claims (no recent-window cap) and
- * robust against payload-prose churn. See
- * review_code_last_claim_actor_brittle.
- */
-export function lastClaimActor(db: Db, workstream: string, localId: string): string | null {
-  return sdkLastClaimActor(db, workstream, localId);
 }
 
 export function printNote(n: TaskNoteRow): void {

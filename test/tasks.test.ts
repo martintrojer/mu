@@ -152,7 +152,6 @@ describe("addTask", () => {
     expect(caught).not.toBeInstanceOf(TypeError);
     const err = caught as TaskIdInvalidError;
     expect(err.attempted).toBe("Bad ID");
-    expect(err.reason).toBe("syntax");
     const steps = err.errorNextSteps();
     expect(steps.length).toBeGreaterThan(0);
     // First step: drop --id and pass --title (auto-derive path).
@@ -169,33 +168,19 @@ describe("addTask", () => {
     expect(listTasks(db)).toEqual([]);
   });
 
-  it("reserved 'mu_' prefix throws TaskIdInvalidError with reason='reserved-prefix'", () => {
-    let caught: unknown;
-    try {
-      addTask(db, {
-        localId: "mu_internal",
-        workstream: "test",
-        title: "x",
-        impact: 50,
-        effortDays: 1,
-      });
-    } catch (e) {
-      caught = e;
-    }
-    expect(caught).toBeInstanceOf(TaskIdInvalidError);
-    expect((caught as TaskIdInvalidError).reason).toBe("reserved-prefix");
-    // Sanitised candidate must rewrite the leading 'mu_' so the
-    // suggested command would actually pass isValidTaskId.
-    const steps = (caught as TaskIdInvalidError).errorNextSteps();
-    // Assert only the load-bearing parts: verb, sanitised id (with the
-    // 'mu_' prefix rewritten to 't_mu_'), and --title flag. The exact
-    // suffix shape is cosmetic and shouldn't pin the test.
-    const sanitisedStep = steps.find((s) => s.intent.toLowerCase().includes("sanitise"));
-    const sanitisedCmd = sanitisedStep?.command ?? "";
-    expect(sanitisedCmd).toContain("mu task add");
-    expect(sanitisedCmd).toContain("t_mu_internal");
-    expect(sanitisedCmd).not.toMatch(/ mu_/);
-    expect(sanitisedCmd).toMatch(/--title/);
+  // Post schema_v5_cleanups: the `mu_` prefix is no longer reserved.
+  // v5 has no global namespace; tasks.local_id is per-workstream
+  // unique so `mu_foo` is a perfectly valid id.
+  it("accepts a leading 'mu_' prefix on a local_id (no reservation in v5)", () => {
+    const task = addTask(db, {
+      localId: "mu_internal",
+      workstream: "test",
+      title: "x",
+      impact: 50,
+      effortDays: 1,
+    });
+    expect(task.localId).toBe("mu_internal");
+    expect(getTask(db, "mu_internal", "test")).toMatchObject({ localId: "mu_internal" });
   });
 
   it("rejects duplicate id with TaskExistsError", () => {
@@ -1512,13 +1497,13 @@ describe("slugifyTitle", () => {
     expect(slugifyTitle("2024 retro")).toBe("t_2024_retro");
   });
 
-  it("prefixes t_ when the slug starts with the reserved mu_ prefix", () => {
-    // Real bug found in real use: title "Mu smoke test" slugified to
-    // mu_smoke_test which then dead-ended at addTask's reserved-prefix
-    // check. The fix prepends t_ so the derived slug always passes.
-    expect(slugifyTitle("Mu smoke test")).toBe("t_mu_smoke_test");
-    expect(slugifyTitle("mu testing")).toBe("t_mu_testing");
-    expect(slugifyTitle("MU_THING")).toBe("t_mu_thing");
+  // Post schema_v5_cleanups: titles starting with `Mu ...` slugify
+  // to `mu_...` directly — the reserved-prefix gymnastics that
+  // rewrote them to `t_mu_...` are gone (no global namespace in v5).
+  it("slugs starting with mu_ are accepted as-is (no reservation in v5)", () => {
+    expect(slugifyTitle("Mu smoke test")).toBe("mu_smoke_test");
+    expect(slugifyTitle("mu testing")).toBe("mu_testing");
+    expect(slugifyTitle("MU_THING")).toBe("mu_thing");
   });
 
   it("caps a one-giant-word title at the 40-char soft cap (no underscore to break on)", () => {
@@ -1578,16 +1563,30 @@ describe("idFromTitle", () => {
   });
 });
 
-describe("mu_ prefix reservation", () => {
-  it("isValidTaskId rejects mu_ prefix", () => {
-    expect(isValidTaskId("mu_foo")).toBe(false);
-    expect(isValidTaskId("mu_")).toBe(false);
-    // Just a 'mu' prefix WITHOUT the underscore is fine.
+// Post schema_v5_cleanups: `mu_` is no longer a reserved prefix.
+// v5's per-workstream UNIQUE on (workstream_id, local_id) replaces
+// the old global namespace; nothing system-generated lives in a
+// shared global slot anymore. The mu_ ids that used to be rejected
+// are now perfectly valid local_ids.
+describe("mu_ prefix is a fine local_id (post schema_v5_cleanups)", () => {
+  it("isValidTaskId accepts mu_ prefix", () => {
+    expect(isValidTaskId("mu_foo")).toBe(true);
+    // Length-1 names like `mu_` still fail because they need at least
+    // a leading letter; `mu_` is a letter + `_` which IS valid.
+    expect(isValidTaskId("mu_")).toBe(true);
     expect(isValidTaskId("music")).toBe(true);
     expect(isValidTaskId("mu")).toBe(true);
   });
 
-  it("addTask refuses mu_ ids with a clear error", () => {
+  it("addTask accepts an mu_ id and the per-workstream UNIQUE catches collisions", () => {
+    addTask(db, {
+      localId: "mu_internal",
+      workstream: "auth",
+      title: "x",
+      impact: 1,
+      effortDays: 1,
+    });
+    // Same id in same workstream: TaskExistsError (per-workstream UNIQUE).
     expect(() =>
       addTask(db, {
         localId: "mu_internal",
@@ -1596,7 +1595,17 @@ describe("mu_ prefix reservation", () => {
         impact: 1,
         effortDays: 1,
       }),
-    ).toThrow(/the "mu_" prefix is reserved/);
+    ).toThrow(TaskExistsError);
+    // Same id in a DIFFERENT workstream: legal (per-workstream scope).
+    const other = addTask(db, {
+      localId: "mu_internal",
+      workstream: "other",
+      title: "x",
+      impact: 1,
+      effortDays: 1,
+    });
+    expect(other.localId).toBe("mu_internal");
+    expect(other.workstream).toBe("other");
   });
 });
 

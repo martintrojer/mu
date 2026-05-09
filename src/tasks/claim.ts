@@ -200,32 +200,28 @@ export async function claimTask(
     );
   }
 
-  // Pre-check: resolve the claiming agent to its surrogate id within
-  // opts.workstream. Fail loud + actionable on missing agent so the
-  // FK insert below doesn't surface as bare 'FOREIGN KEY constraint
-  // failed'. Scoping by (workstream, name) is the v5 invariant.
-  //
-  // The cross-workstream-guard pre-check is gone in v5 — both the
-  // task and the claimer are resolved in opts.workstream, so a
-  // mismatch is structurally impossible. A task that lives in a
-  // different workstream surfaces as TaskNotFoundError below, the
-  // same shape every other verb raises.
+  // Resolve the claiming agent to its surrogate id within
+  // opts.workstream. The FK from tasks.owner_id -> agents.id plus
+  // per-workstream UNIQUE on (workstream_id, name) makes cross-ws
+  // ownership structurally impossible at the schema level (v5); this
+  // SELECT exists only to surface a typed ClaimerNotRegisteredError
+  // instead of a bare 'FOREIGN KEY constraint failed' from SQLite.
   const claimerRow = db
     .prepare(
-      `SELECT a.id AS id, ws.name AS workstream
+      `SELECT a.id AS id
          FROM agents a JOIN workstreams ws ON ws.id = a.workstream_id
         WHERE a.name = ? AND ws.name = ?`,
     )
-    .get(agentName, opts.workstream) as { id: number; workstream: string } | undefined;
+    .get(agentName, opts.workstream) as { id: number } | undefined;
   if (!claimerRow) {
     const paneIdFromEnv = opts.agentName === undefined ? (process.env.TMUX_PANE ?? null) : null;
     throw new ClaimerNotRegisteredError(agentName, paneIdFromEnv);
   }
 
   return db.transaction(() => {
-    // Resolve the task within the claimer's workstream. This locks the
+    // Resolve the task within opts.workstream. This locks the
     // (workstream, local_id) pair for the rest of the transaction.
-    const before = getTask(db, localId, claimerRow.workstream);
+    const before = getTask(db, localId, opts.workstream);
     if (!before) throw new TaskNotFoundError(localId);
 
     const now = new Date().toISOString();
@@ -239,18 +235,18 @@ export async function claimTask(
             AND workstream_id = (SELECT id FROM workstreams WHERE name = ?)
             AND (owner_id IS NULL OR owner_id = ?)`,
       )
-      .run(claimerRow.id, now, localId, before.workstream, claimerRow.id);
+      .run(claimerRow.id, now, localId, opts.workstream, claimerRow.id);
 
     if (result.changes === 0) {
       throw new TaskAlreadyOwnedError(localId, before.owner ?? "<unknown>");
     }
 
-    const after = getTask(db, localId, before.workstream);
+    const after = getTask(db, localId, opts.workstream);
     if (!after) throw new Error(`claimTask: row missing after update: ${localId}`);
     const statusBit = after.status !== before.status ? `, ${before.status} → ${after.status}` : "";
     emitEvent(
       db,
-      before.workstream,
+      opts.workstream,
       formatClaimEvent({
         localId,
         actor: agentName,

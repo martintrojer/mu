@@ -35,8 +35,7 @@ export class TaskNotFoundError extends Error implements HasNextSteps {
 }
 
 /**
- * Thrown by `addTask` when `localId` violates the id rules — either
- * the reserved `mu_` prefix or the schema regex
+ * Thrown by `addTask` when `localId` violates the schema regex
  * `/^[a-z][a-z0-9_-]{0,63}$/`. Replaces a bare `TypeError` so the
  * CLI's `handle()` wrapper can map it to exit code 4 (validation /
  * conflict) and surface a `--json` `nextSteps` block pointing at
@@ -44,15 +43,8 @@ export class TaskNotFoundError extends Error implements HasNextSteps {
  */
 export class TaskIdInvalidError extends Error implements HasNextSteps {
   override readonly name = "TaskIdInvalidError";
-  constructor(
-    public readonly attempted: string,
-    public readonly reason: "reserved-prefix" | "syntax",
-  ) {
-    const detail =
-      reason === "reserved-prefix"
-        ? 'the "mu_" prefix is reserved for system-generated IDs'
-        : "expected /^[a-z][a-z0-9_-]{0,63}$/";
-    super(`invalid task id: ${JSON.stringify(attempted)} (${detail})`);
+  constructor(public readonly attempted: string) {
+    super(`invalid task id: ${JSON.stringify(attempted)} (expected /^[a-z][a-z0-9_-]{0,63}$/)`);
   }
   errorNextSteps(): NextStep[] {
     const sanitised = sanitiseTaskId(this.attempted);

@@ -761,15 +761,16 @@ file as a string constant.
 ## Obsoleted workarounds
 
 The following workarounds become defunct on the v5 landing and
-get deleted in `schema_v5_cleanups`:
+are deleted in `schema_v5_cleanups` (✅ shipped, see the
+[CHANGELOG](../CHANGELOG.md) [Unreleased] / Removed entry):
 
-| Workaround | What goes away |
+| Workaround | What went away |
 |---|---|
-| `idFromTitle` slugify+collision-loop (`review_code_slugify_collision_truncates`) | No global namespace; collision-loop becomes a 1-line "uniquify within workstream" check. |
-| `mu_` reserved-prefix gymnastics in `TaskIdInvalidError` | No global namespace; `mu_foo` is a fine `local_id`. |
-| `cross_workstream_claim_for` pre-check in `src/tasks/claim.ts` | The FK from `tasks.owner_id → agents.id` plus per-workstream unique on `(workstream_id, name)` makes cross-ws ownership naturally impossible. The check simplifies back to the FK. |
+| `idFromTitle` slugify+collision-loop (`review_code_slugify_collision_truncates`) | ✅ Defensive `base.slice(SLUG_HARD_CAP - suffix.length)` truncation removed; the per-workstream UNIQUE scopes the collision check to one workstream. |
+| `mu_` reserved-prefix gymnastics in `TaskIdInvalidError` | ✅ `RESERVED_PREFIX` constant + `addTask` reserved-prefix branch + `slugifyTitle` `mu_`→`t_mu_` rewrite + `sanitiseTaskId` `mu_`→`t_mu_` rewrite all deleted; `TaskIdInvalidError`'s `"reserved-prefix" \| "syntax"` discriminant collapsed to a single error case; `mu_foo` is a fine `local_id`. |
+| `cross_workstream_claim_for` pre-check in `src/tasks/claim.ts` | ✅ Cross-ws guard branch removed in `v5_prune_v4_fallback_branches`; the residual claimer-lookup pre-check (typed `ClaimerNotRegisteredError` ergonomic) shrunk to drop the unused `ws.name` SELECT column in `schema_v5_cleanups`. |
 | `nit_no_task_move_verb` (deferred) | Becomes a typed verb: `mu task move <local_id> --to-workstream <ws>` is `UPDATE tasks SET workstream_id = ?, local_id = ? WHERE id = ?`. Atomic. |
-| `lastClaimActor` brittle prefix-match (`review_code_last_claim_actor_brittle`) | Today does prefix-matching against free-text event payloads using `local_id` strings. v5 surrogate-id lookup is exact. |
+| `lastClaimActor` brittle prefix-match (`review_code_last_claim_actor_brittle`) | ✅ Structured tab-delimited claim-event prefix shipped in 50ad794 (indexed LIKE on `task.claim<TAB><id><TAB>%`); the residual CLI-side `lastClaimActor` thin-wrapper in `src/cli/tasks/edit.ts` deleted in `schema_v5_cleanups`. (A surrogate `task_id` column on `agent_logs` for a true exact-match lookup is a future schema-bump follow-up; the structured-prefix is robust enough today.) |
 | Workstream rename via `mu sql "UPDATE workstreams SET name='new' ..."` | Still works, but is now a single-row update with no cascade chain. (Could be promoted to a typed `mu workstream rename` verb in a follow-up.) |
 | Long-DB naming-clash hell | Defunct — `local_id` is per-workstream. |
 

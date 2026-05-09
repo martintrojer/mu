@@ -303,6 +303,83 @@ called out under "Breaking" in each entry.
 
 ### Removed
 
+- **Four schema-v5-defunct workarounds deleted (`schema_v5_cleanups`;
+  net ≈ −40 LOC src+test).** Closes `schema_v5_cleanups` in
+  `mufeedback` — the final task in the v5 follow-up wave (per
+  [docs/SCHEMA_v5_DESIGN.md](docs/SCHEMA_v5_DESIGN.md) "Obsoleted
+  workarounds"). Each workaround existed because v4 had a global
+  TEXT namespace; v5's per-workstream UNIQUE on `(workstream_id,
+  name)` makes them all moot.
+
+  1. **`mu_` reserved-prefix gymnastics** in `TaskIdInvalidError` /
+     `addTask` / `slugifyTitle` / `sanitiseTaskId`. Pre-v5 the
+     `mu_` prefix was reserved for system-generated ids in the
+     global namespace; `addTask` rejected operator-typed `mu_foo`,
+     `slugifyTitle` rewrote `Mu smoke test` → `t_mu_smoke_test`,
+     `sanitiseTaskId` rewrote `mu_x` → `t_mu_x` in the suggestion
+     for `TaskIdInvalidError`'s nextSteps. v5 has no global
+     namespace; nothing is system-generated into a shared slot;
+     `mu_foo` is now a perfectly valid `local_id`. Removed the
+     `RESERVED_PREFIX` constant, the `addTask` reserved-prefix
+     branch, the `slugifyTitle` `mu_` rewrite, the `sanitiseTaskId`
+     `mu_` rewrite, and the `"reserved-prefix" | "syntax"` discriminant
+     on `TaskIdInvalidError` (only `"syntax"` remained). The two
+     pinning tests in `test/tasks.test.ts` were rewritten as
+     positive assertions: `mu_internal` is now accepted by
+     `addTask`, and the per-workstream UNIQUE catches in-workstream
+     collisions while allowing the same id in a different
+     workstream. The `error-nextsteps.test.ts` row for the reserved
+     case was deleted (only the syntax row remains).
+
+  2. **`idFromTitle` slugify+collision-loop hard-cap defensive
+     truncation** (`review_code_slugify_collision_truncates`). The
+     loop body computed `base.slice(0, SLUG_HARD_CAP - suffix.length)`
+     to defend against a pathological case where `_999` would be
+     truncated off, infinite-looping. v5's per-workstream collision
+     scope means the loop runs in one workstream's namespace; the
+     base is always ≤ `SLUG_SOFT_CAP` (40), well below `SLUG_HARD_CAP`
+     (64), so `base + _<i>` never overflows in normal operation. The
+     loop simplifies to `base + _<i>` with a simple slice ceiling.
+
+  3. **`cross_workstream_claim_for` pre-check residue in
+     `src/tasks/claim.ts`.** The cross-workstream guard branch
+     itself was already deleted in `v5_prune_v4_fallback_branches`
+     (FK + per-workstream UNIQUE makes the mismatch structurally
+     impossible). The remaining pre-check (resolving the claimer's
+     surrogate id within `opts.workstream` so the FK error becomes
+     a typed `ClaimerNotRegisteredError`) was carrying a vestigial
+     `ws.name` SELECT column that no caller read. Dropped that
+     column; renamed downstream `before.workstream` references to
+     `opts.workstream` (they're equal by construction now); shrank
+     the doc-comment to one paragraph that names the FK + UNIQUE
+     as the structural guard, with the pre-check existing only for
+     the typed-error ergonomic. The unit test
+     `test/tasks.test.ts` "claims by an agent missing in
+     opts.workstream raise ClaimerNotRegisteredError" already pins
+     the FK + UNIQUE behaviour at the SDK boundary; no new test
+     needed.
+
+  4. **`lastClaimActor` brittle CLI-side wrapper** in
+     `src/cli/tasks/edit.ts` (`review_code_last_claim_actor_brittle`
+     follow-up). The actual prefix-match brittleness was fixed in
+     50ad794 by switching the agent_logs payload to a
+     tab-delimited structured prefix (`task.claim<TAB><id><TAB>actor=...`)
+     with an indexed LIKE lookup. What remained was a thin
+     CLI-side `lastClaimActor(db, ws, id) =>
+     sdkLastClaimActor(db, ws, id)` indirection that existed only
+     because the function used to live in `cli.ts` before the SDK
+     extraction. Deleted the wrapper; `cmdTaskShow` calls the SDK
+     `lastClaimActor` from `src/logs.ts` directly. Tests already
+     exercise the SDK function in `test/logs.test.ts`.
+
+  Also: pre-existing v4-reference comment in `src/cli/tasks/tree.ts`
+  (`v4-fallback prune (commit 6621d8b)`) tripped the
+  `v5_prune_v4_fallback_branches` lint guard; rephrased to drop the
+  v4 framing.
+
+  Gate: typecheck + lint (incl. both grep guards) + 878/878 tests +
+  build all green.
+
 - **Every "preserves the v4 contract" fall-back branch in `src/`
   deleted (≈ −160 LOC).** Closes `v5_prune_v4_fallback_branches` in
   `mufeedback`. Pre-v5 the SDK kept dual-shape signatures on every
