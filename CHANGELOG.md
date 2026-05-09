@@ -76,7 +76,6 @@ called out under "Breaking" in each entry.
 
 ### Changed
 
-<<<<<<< HEAD
 - **`claim.integration.test.ts` regains end-to-end coverage of
   the cross-workstream guard.** Closes
   `review_test_claim_integration_xws_rewrite` in `mufeedback`.
@@ -171,6 +170,31 @@ called out under "Breaking" in each entry.
   panes); existing `dryRun` tests across `reconcile.test.ts`,
   `verbs.test.ts`, `snapshots.test.ts`, `cli-snapshot.test.ts`
   rewritten in terms of the new `mode` field.
+
+- **`destroyWorkstream` `failedWorkspaces` accumulation path now
+  has direct test coverage.** Closes
+  `review_test_destroy_failed_workspaces_uncovered` in
+  `mufeedback`. The previous `destroyWorkstream` describe block in
+  `test/workstream.test.ts` had four cases that all asserted
+  `failedWorkspaces: []`, never seeding a vcs_workspaces row whose
+  backend.freeWorkspace would throw — the new-in-v0.2 try/catch
+  around backend cleanup (the explicit fix for mufeedback note
+  #195) had zero coverage. A regression that dropped the try/catch
+  (turning a single bad worktree into an aborted destroy with
+  half-cleaned state) would pass every existing test. Two new
+  cases now exercise the failure path directly: (1) a backend
+  whose `freeWorkspace` throws is captured into
+  `failedWorkspaces` with the documented `{agent, backend, path,
+  error}` shape, the destroy still completes, and the FK cascade
+  still wipes the registry rows; (2) a mixed run with one good and
+  one throwing backend correctly partitions into
+  `freedWorkspaces=1` + `failedWorkspaces=[…one entry]`, the good
+  path is rm'd and the bad path is left on disk for the user to
+  clean. Backed by a new `WorkstreamOptions.resolveBackend`
+  injection seam (defaults to `backendByName`) — mirrors the
+  `createWorkspace` `opts.backend` precedent: tests pass a
+  pre-built `VcsBackend` object instead of mutating the exported
+  singletons. +112/−2 LOC, production behaviour unchanged.
 
 - **`TaskIdInvalidError` test assertions relaxed off the exact
   sanitised-command suffix.** Closes

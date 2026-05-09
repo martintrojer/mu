@@ -21,7 +21,7 @@ import { emitEvent } from "./logs.js";
 import type { HasNextSteps, NextStep } from "./output.js";
 import { captureSnapshot } from "./snapshots.js";
 import { killSession, listSessions, sessionExists } from "./tmux.js";
-import { backendByName } from "./vcs.js";
+import { type VcsBackend, type VcsBackendName, backendByName } from "./vcs.js";
 import { listWorkspaces } from "./workspace.js";
 
 /**
@@ -174,6 +174,13 @@ export interface WorkstreamOptions {
   workstream: string;
   /** Override the tmux session name. Defaults to `mu-<workstream>`. */
   tmuxSession?: string;
+  /** Override the per-name VcsBackend resolver. Defaults to
+   *  `backendByName`. Lets tests inject a fake backend (e.g. one whose
+   *  `freeWorkspace` throws) without mutating the exported singletons —
+   *  same pattern as `createWorkspace`'s `opts.backend` accepting a
+   *  pre-built `VcsBackend` object. Production callers leave this
+   *  unset. */
+  resolveBackend?: (name: VcsBackendName) => VcsBackend;
 }
 
 /**
@@ -275,9 +282,10 @@ export async function destroyWorkstream(db: Db, opts: WorkstreamOptions): Promis
   let freedWorkspaces = 0;
   let alreadyGoneWorkspaces = 0;
   const failedWorkspaces: WorkspaceFailure[] = [];
+  const resolveBackend = opts.resolveBackend ?? backendByName;
   for (const ws of workspacesBefore) {
     try {
-      const backend = backendByName(ws.backend);
+      const backend = resolveBackend(ws.backend);
       const result = await backend.freeWorkspace({
         workspacePath: ws.path,
         commit: false,

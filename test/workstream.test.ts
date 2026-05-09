@@ -18,7 +18,7 @@ import {
   resetTmuxExecutor,
   setTmuxExecutor,
 } from "../src/tmux.js";
-import { noneBackend } from "../src/vcs.js";
+import { type VcsBackend, noneBackend } from "../src/vcs.js";
 import {
   WorkstreamNameInvalidError,
   destroyWorkstream,
@@ -509,6 +509,123 @@ describe("destroyWorkstream", () => {
     expect(result.failedWorkspaces).toEqual([]);
     expect(existsSync(presentPath)).toBe(false);
     expect(existsSync(missingPath)).toBe(false);
+  });
+
+  // Regression for review_test_destroy_failed_workspaces_uncovered:
+  // every prior destroyWorkstream test asserted `failedWorkspaces: []`,
+  // so the failure-accumulation path (the try/catch around
+  // backend.freeWorkspace in src/workstream.ts) had zero coverage. A
+  // future refactor that dropped the try/catch — turning a single bad
+  // worktree into an aborted destroy with half-cleaned state — would
+  // pass every existing test. These two cases pin down the v0.2
+  // contract: a backend throw is captured into `failedWorkspaces` (not
+  // re-raised), the destroy still proceeds, and the FK cascade still
+  // wipes the registry rows.
+  it("records a backend throw as a failedWorkspaces entry and still completes the destroy", async () => {
+    setTmuxExecutor(mockTmux(state).executor);
+    ensureWorkstream(db, "fail");
+    insertAgent(db, { name: "stuck", workstream: "fail", paneId: "%201", status: "free" });
+
+    // Real-world analogue: `git worktree remove` refuses because of
+    // uncommitted changes, or `jj workspace forget` fails on a
+    // permission error. We don't need a real VCS to exercise the
+    // failure shape — inject a backend whose freeWorkspace just throws.
+    const ghostPath = join(tmpDir, "ws-ghost"); // never on disk; doesn't matter
+    const now = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO vcs_workspaces (agent, workstream, backend, path, parent_ref, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    ).run("stuck", "fail", noneBackend.name, ghostPath, null, now);
+
+    const explodingBackend: VcsBackend = {
+      ...noneBackend,
+      async freeWorkspace() {
+        throw new Error("git worktree remove --force refused: uncommitted changes");
+      },
+    };
+    const result = await destroyWorkstream(db, {
+      workstream: "fail",
+      resolveBackend: () => explodingBackend,
+    });
+
+    expect(result.freedWorkspaces).toBe(0);
+    expect(result.alreadyGoneWorkspaces).toBe(0);
+    expect(result.failedWorkspaces).toEqual([
+      {
+        agent: "stuck",
+        backend: noneBackend.name,
+        path: ghostPath,
+        error: expect.stringContaining("git worktree remove --force refused"),
+      },
+    ]);
+
+    // Destroy must NOT have aborted on the throw — the FK CASCADE on
+    // workstreams→vcs_workspaces still ran, the registry row is gone,
+    // and the agent row is gone. A regression that re-raised would fail
+    // these assertions.
+    const wsRows = db
+      .prepare("SELECT COUNT(*) AS n FROM vcs_workspaces WHERE workstream = 'fail'")
+      .get() as { n: number };
+    expect(wsRows.n).toBe(0);
+    expect(listAgents(db, { workstream: "fail" })).toEqual([]);
+    const wsCount = db
+      .prepare("SELECT COUNT(*) AS n FROM workstreams WHERE name = 'fail'")
+      .get() as { n: number };
+    expect(wsCount.n).toBe(0);
+  });
+
+  it("partitions mixed success/failure correctly (one freed, one failed)", async () => {
+    setTmuxExecutor(mockTmux(state).executor);
+    ensureWorkstream(db, "mixed");
+    insertAgent(db, { name: "good", workstream: "mixed", paneId: "%301", status: "free" });
+    insertAgent(db, { name: "bad", workstream: "mixed", paneId: "%302", status: "free" });
+
+    // Both rows reference the same registered backend name; the
+    // injected resolver returns a per-agent backend that either
+    // succeeds (delegates to noneBackend.freeWorkspace, which rmDirSync's
+    // an existing tempdir) or throws.
+    const goodPath = join(tmpDir, "ws-good");
+    const badPath = join(tmpDir, "ws-bad");
+    mkdirSync(goodPath, { recursive: true });
+    mkdirSync(badPath, { recursive: true });
+
+    const now = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO vcs_workspaces (agent, workstream, backend, path, parent_ref, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    ).run("good", "mixed", noneBackend.name, goodPath, null, now);
+    db.prepare(
+      `INSERT INTO vcs_workspaces (agent, workstream, backend, path, parent_ref, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    ).run("bad", "mixed", noneBackend.name, badPath, null, now);
+
+    const partitioningBackend: VcsBackend = {
+      ...noneBackend,
+      async freeWorkspace(opts) {
+        if (opts.workspacePath === badPath) {
+          throw new Error(`mock backend refused to free ${opts.workspacePath}`);
+        }
+        return noneBackend.freeWorkspace(opts);
+      },
+    };
+    const result = await destroyWorkstream(db, {
+      workstream: "mixed",
+      resolveBackend: () => partitioningBackend,
+    });
+
+    expect(result.freedWorkspaces).toBe(1);
+    expect(result.alreadyGoneWorkspaces).toBe(0);
+    expect(result.failedWorkspaces).toHaveLength(1);
+    expect(result.failedWorkspaces[0]).toEqual({
+      agent: "bad",
+      backend: noneBackend.name,
+      path: badPath,
+      error: expect.stringContaining("mock backend refused"),
+    });
+    // Good path actually rm'd; bad path remains on disk for the user
+    // to clean (the WARNING block in cli/workstream.ts directs them).
+    expect(existsSync(goodPath)).toBe(false);
+    expect(existsSync(badPath)).toBe(true);
   });
 });
 
