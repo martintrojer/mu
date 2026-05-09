@@ -9,7 +9,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { spawnAgent } from "../src/agents.js";
+import { AgentNotInWorkstreamError, spawnAgent } from "../src/agents.js";
 import { type Db, openDb } from "../src/db.js";
 import { addTask, claimTask, getTask } from "../src/tasks.js";
 import { killSession, resetTmuxExecutor } from "../src/tmux.js";
@@ -131,6 +131,38 @@ describeIfTmux("claim integration (real tmux + real DB)", () => {
 
     // Final state: alice still owns it.
     expect(getTask(db, "task1")?.owner).toBe("alice");
+  });
+
+  it("claim from a pane in workstream A targeting a task in workstream B rejects (real-tmux pane-title → agents-row → cross-workstream guard)", async () => {
+    // Pins the end-to-end chain that the unit test in test/tasks.test.ts
+    // can't exercise: real tmux pane title → currentAgentName() →
+    // agents-row workstream lookup → AgentNotInWorkstreamError. The unit
+    // test inserts the agents row directly with insertAgent() and a
+    // mocked tmux executor, so a refactor that breaks the
+    // pane-title-parse path or the agents.workstream SELECT would slip
+    // through it. See review_test_claim_integration_xws_rewrite.
+    const alice = await spawnAgent(db, {
+      name: "alice",
+      workstream,
+      cli: "sh",
+      command: "sh -c 'while true; do sleep 60; done'",
+    });
+    // Task lives in a DIFFERENT workstream — no agents in it, no tmux
+    // session needed (addTask auto-ensures the workstream row).
+    const otherWorkstream = `${workstream}-other`;
+    addTask(db, {
+      localId: "design",
+      workstream: otherWorkstream,
+      title: "Design auth",
+      impact: 80,
+      effortDays: 2,
+    });
+
+    await expect(withPane(alice.paneId, () => claimTask(db, "design"))).rejects.toBeInstanceOf(
+      AgentNotInWorkstreamError,
+    );
+    // Task stayed unowned.
+    expect(getTask(db, "design")?.owner).toBeNull();
   });
 
   it("re-claim by the same agent is a no-op (idempotent)", async () => {

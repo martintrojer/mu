@@ -76,6 +76,30 @@ called out under "Breaking" in each entry.
 
 ### Changed
 
+- **`claim.integration.test.ts` regains end-to-end coverage of
+  the cross-workstream guard.** Closes
+  `review_test_claim_integration_xws_rewrite` in `mufeedback`.
+  When `cross_workstream_claim_for` shipped, three fixtures in
+  `test/claim.integration.test.ts` were rewritten to spawn agents
+  in the same workstream as the task they claim (so the new
+  `AgentNotInWorkstreamError` guard didn't reject the test setup
+  itself). The repair was correct but it removed the only
+  integration test that exercised the real-tmux pane-title →
+  `currentAgentName()` → agents-row workstream lookup →
+  cross-workstream guard chain end-to-end. The unit test in
+  `test/tasks.test.ts` pins `AgentNotInWorkstreamError` against an
+  `insertAgent`-d row with a mocked tmux executor, so a refactor
+  that broke the title-parse path or the
+  `SELECT workstream FROM agents WHERE name = ?` lookup (e.g.
+  someone adding a `status != 'terminated'` filter) would slip
+  through it. New fourth `it()` spawns alice in workstream A,
+  `addTask`s in a different workstream B (no second tmux session
+  needed — `addTask` auto-ensures the row), then calls
+  `claimTask` from inside alice's pane via
+  `withPane(alice.paneId, () => claimTask(db, "design"))` and
+  asserts `AgentNotInWorkstreamError` plus that the task stayed
+  unowned. +30 LOC test-only, no production change.
+
 - **`TaskIdInvalidError` test assertions relaxed off the exact
   sanitised-command suffix.** Closes
   `review_test_invalid_id_overspecs_sanitised_command` in
