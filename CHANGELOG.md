@@ -76,6 +76,48 @@ called out under "Breaking" in each entry.
 
 ### Changed
 
+- **`src/cli/tasks.ts` split: 1234 → 29 LOC re-export hub.** Closes
+  `review_code_cli_tasks_oversize` in `mufeedback`. The first-pass
+  cluster split (`refactor_split_large_src_files`) carved
+  `cli/tasks/lifecycle.ts` and `cli/tasks/queries.ts` out, but the
+  parent file was still 1234 LOC — well past the AGENTS.md
+  "refactor signal" of 800 — because `wireTaskCommands` (~440 LOC of
+  Commander glue) plus the remaining thirteen `cmd*` functions all
+  still lived there. Second pass extracts five sibling files in
+  `src/cli/tasks/`:
+
+  - `wire.ts` (479) — `wireTaskCommands`, the Commander-glue verb
+    table.
+  - `edit.ts` (319) — `cmdTaskAdd` / `Show` / `Notes` / `Note` /
+    `Update` plus the helpers `unescapeNoteText` (the
+    `\n` / `\t` / `\r` / `\\` decoder used by note bodies),
+    `lastClaimActor` (back-fills "who's working on this" from
+    `agent_logs` when `owner IS NULL`), `printNote`.
+  - `claim.ts` (202) — `cmdClaim` / `cmdTaskRelease` / `cmdTaskWait`
+    (the ownership + sync verbs that all touch the claim CAS path).
+  - `edges.ts` (122) — `cmdTaskBlock` / `Unblock` / `Reparent` /
+    `Delete` (every verb that mutates `task_edges` or cascades
+    through it).
+  - `tree.ts` (118) — `cmdTaskTree` plus the JSON / ASCII renderers.
+
+  `cmdMyTasks` and `cmdMyNext` move into `cli/tasks/queries.ts`
+  (they're query-shaped — read-only, no DB writes — and the file
+  was already 174 LOC, well under cap). `cli/tasks.ts` becomes a
+  29-line re-export hub that surfaces only what callers OUTSIDE the
+  cluster import: `wireTaskCommands` (`src/cli.ts`),
+  `cmdMyTasks`/`cmdMyNext` (`src/cli/agents.ts`'s `mu my-tasks` /
+  `my-next` aliases), and `unescapeNoteText`
+  (`test/unescape-note-text.test.ts`). Adding more would
+  re-introduce the dead surface that
+  `review_code_cli_tasks_re_export_indirection` just removed.
+
+  Net: every file in the cluster is now < 500 LOC (median 200), the
+  parent went from 1234 to 29, and the wire-up now lives next to
+  the verb modules it dispatches to. ARCHITECTURE.md's module table
+  gains a `src/cli/tasks/*.ts` row covering the cluster. Pure
+  mechanical extraction — no behaviour change. typecheck + lint +
+  796 tests + build green; the acceptance gate passes.
+
 - **`claim.integration.test.ts` regains end-to-end coverage of
   the cross-workstream guard.** Closes
   `review_test_claim_integration_xws_rewrite` in `mufeedback`.

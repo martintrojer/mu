@@ -1,16 +1,20 @@
 // mu — `mu task` query verbs (read-only; no DB writes).
 //
 // list, next, ready, blocked, goals, owned-by, search.
+// Plus the `mu my-tasks` / `mu my-next` agent-self aliases (also
+// read-only; they query against `resolveSelf(db)` instead of -w).
 //
 // Extracted from src/cli/tasks.ts as part of refactor_split_large_src_files.
 
 import {
   type TaskSortKey,
+  byRoiDesc,
   emitJson,
   formatTaskListTable,
   parseSortOption,
   parseStatusOption,
   relTimeBasisForSort,
+  resolveSelf,
   resolveWorkstream,
   sortTasks,
   withRoiAll,
@@ -26,6 +30,40 @@ import {
   listTasksByOwner,
   searchTasks,
 } from "../../tasks.js";
+
+export async function cmdMyTasks(
+  db: Db,
+  opts: { json?: boolean; includeClosed?: boolean } = {},
+): Promise<void> {
+  const self = resolveSelf(db);
+  const tasks = listTasksByOwner(db, self.name, {
+    includeClosed: opts.includeClosed ?? false,
+  });
+  if (opts.json) {
+    emitJson(withRoiAll(tasks));
+    return;
+  }
+  if (tasks.length === 0) {
+    console.log(pc.dim(`(${self.name} owns no tasks)`));
+    return;
+  }
+  console.log(formatTaskListTable(tasks));
+}
+
+export async function cmdMyNext(db: Db, opts: { lines?: number; json?: boolean }): Promise<void> {
+  const self = resolveSelf(db);
+  const k = opts.lines ?? 1;
+  const tasks = listReady(db, self.workstream).sort(byRoiDesc).slice(0, k);
+  if (opts.json) {
+    emitJson(withRoiAll(tasks));
+    return;
+  }
+  if (tasks.length === 0) {
+    console.log(pc.dim(`(no ready tasks in ${self.workstream})`));
+    return;
+  }
+  console.log(formatTaskListTable(tasks));
+}
 
 export async function cmdTaskList(
   db: Db,
