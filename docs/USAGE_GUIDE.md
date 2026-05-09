@@ -873,6 +873,43 @@ Or nuke the entire DB:
 rm ~/.local/state/mu/mu.db                           # next mu invocation re-creates an empty schema
 ```
 
+### Preserve the conversation as markdown before destroying
+
+A workstream's task graph + notes IS the project memory — the
+durable record of what was decided and why. `mu workstream destroy`
+blows that away (a snapshot is taken, but it's a binary `.db` only
+readable through `mu undo`). For code review, project handoff,
+git-checked-in artifacts, or just `grep`, render the workstream as
+plain markdown first:
+
+```bash
+mu workstream export -w auth-refactor                         # → ./auth-refactor/
+mu workstream export -w auth-refactor --out ~/notes/auth/     # explicit dir
+```
+
+The directory contains `README.md` (counts), `INDEX.md` (table of
+every task), `tasks/<id>.md` (one file per task with frontmatter +
+full notes), and `manifest.json` (per-file sha256 + the
+`agent_logs.seq` cursor at export time). It's idempotent: re-export
+against the same `--out` rewrites only files whose markdown
+actually changed (mtime preserved on identical files); tasks added
+since the previous export get fresh files; tasks deleted from the
+DB STAY on disk with a `> **Deleted from DB on <ts>**` banner so
+you never lose context that may already be git-blamed.
+
+`mu workstream destroy --yes` auto-runs an export to
+`<state-dir>/exports/<workstream>-<timestamp>/` BEFORE killing the
+tmux session and dropping the rows, so the conversation survives
+even if you forgot. Pass `--no-export` to opt out.
+
+```bash
+(cd auth-refactor && git init && git add . && git commit -m 'auth-refactor snapshot')
+```
+
+Markdown only by design — no HTML/PDF, no embedded VCS, no
+cross-workstream merge, no re-import. Operators can pandoc /
+`git init` themselves.
+
 ---
 
 ## 16. One-shot demo script

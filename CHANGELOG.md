@@ -12,6 +12,45 @@ called out under "Breaking" in each entry.
 
 ### Added
 
+- **`mu workstream export -w <ws> [--out <dir>]` writes the
+  workstream's task graph + notes as a directory of plain markdown.**
+  Closes `export_tasks_to_md_folder` in `mufeedback`. One `.md` per
+  task (frontmatter for status / impact / effort / ROI / owner /
+  timestamps / blocked_by / blocks; body holds the title and every
+  note in chronological order, each fenced with a backtick run long
+  enough to escape any literal triple-fence inside the note),
+  plus `INDEX.md` (table of every live task), `README.md` (counts
+  per status), and `manifest.json` (per-file sha256 + the
+  `latestSeq(db)` cursor at export time). Idempotent against the
+  same `--out`: a second export rewrites only files whose markdown
+  changed (sha256 short-circuit; mtime preserved on identical
+  files), tasks added since the previous export get fresh files,
+  and tasks deleted from the DB STAY on disk with a one-time
+  `> **Deleted from DB on <ts>**` banner so operators never lose
+  context they may have already git-blamed. Default `--out` is
+  `./<workstream>/`. The verb is markdown-only by design — HTML/PDF,
+  embedded VCS, cross-workstream merge, and re-import are explicit
+  anti-features (operator can `git init && git add . && git commit`
+  themselves).
+
+  `mu workstream destroy --yes` now auto-exports to
+  `<state-dir>/exports/<workstream>-<timestamp>/` BEFORE killing the
+  tmux session and dropping the DB rows, so the conversation
+  survives the destroy without an explicit operator step. A failed
+  auto-export prints a yellow WARNING and proceeds with the destroy
+  — destroy in CI cleanup scripts must not be silently gated by a
+  transient artifact-dir error. Opt out with `--no-export`. The
+  destroy summary line is followed by a dim `Pre-destroy export:
+  <path>` so the operator can find the artifact.
+
+  Tests: 7 new cases in `test/workstream.test.ts` (initial export
+  shape; idempotent re-export rewrites zero files and preserves
+  mtime; note append rewrites exactly one file; status change
+  rewrites only the affected file; new task gets a fresh file;
+  deleted task is preserved with one banner that's not
+  re-prepended on subsequent re-exports; literal triple-fence
+  inside a note survives via dynamic outer fencing).
+
 - **`mu task wait --stuck-after <seconds>` warns when a worker
   committed but skipped `mu task close`.** Closes
   `agent_close_discipline_gap` in `mufeedback` (Phase 1 of 2). Live

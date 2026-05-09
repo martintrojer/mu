@@ -8,8 +8,9 @@
 //
 // Extracted from src/cli.ts as part of refactor_split_large_src_files.
 
+import { join } from "node:path";
 import { emitJson, formatWorkstreamsTable, resolveWorkstream } from "../cli.js";
-import type { Db } from "../db.js";
+import { type Db, defaultStateDir } from "../db.js";
 import { type NextStep, pc, printNextSteps } from "../output.js";
 import {
   enableMuPaneBordersForSession,
@@ -21,6 +22,7 @@ import {
 import {
   destroyWorkstream,
   ensureWorkstream,
+  exportWorkstream,
   listWorkstreams,
   summarizeWorkstream,
 } from "../workstream.js";
@@ -108,9 +110,50 @@ export async function cmdWorkstreamList(db: Db, opts: { json?: boolean } = {}): 
   console.log(formatWorkstreamsTable(summaries));
 }
 
+export async function cmdWorkstreamExport(
+  db: Db,
+  opts: { workstream?: string; out?: string; json?: boolean },
+): Promise<void> {
+  const workstream = await resolveWorkstream(opts.workstream);
+  const result = exportWorkstream(db, { workstream, outDir: opts.out });
+  const nextSteps: NextStep[] = [
+    { intent: "Browse the export", command: `ls ${result.outDir}` },
+    {
+      intent: "Track in git",
+      command: `(cd ${result.outDir} && git init && git add . && git commit -m '${workstream} export')`,
+    },
+  ];
+  if (opts.json) {
+    emitJson({
+      workstream,
+      outDir: result.outDir,
+      written: result.written,
+      unchanged: result.unchanged,
+      preserved: result.preserved,
+      manifestPath: result.manifestPath,
+      tasks: result.manifest.tasks,
+      nextSteps,
+    });
+    return;
+  }
+  console.log(
+    `Exported ${pc.bold(workstream)} → ${pc.bold(result.outDir)} (written=${result.written}, unchanged=${result.unchanged}, preserved=${result.preserved})`,
+  );
+  printNextSteps(nextSteps);
+}
+
+/** Default auto-export path used by `mu workstream destroy`'s
+ *  pre-destroy hook. Lives under the state directory so it survives
+ *  the destroy itself; the timestamp is suffixed so back-to-back
+ *  destroy/recreate cycles don't clobber prior exports. */
+function autoExportDir(workstream: string): string {
+  const ts = new Date().toISOString().replace(/[:.]/g, "-");
+  return join(defaultStateDir(), "exports", `${workstream}-${ts}`);
+}
+
 export async function cmdDestroy(
   db: Db,
-  opts: { workstream?: string; yes?: boolean; json?: boolean },
+  opts: { workstream?: string; yes?: boolean; json?: boolean; export?: boolean },
 ): Promise<void> {
   const workstream = await resolveWorkstream(opts.workstream);
   const summary = await summarizeWorkstream(db, { workstream });
@@ -188,12 +231,40 @@ export async function cmdDestroy(
     return;
   }
 
+  // Auto-export to the state dir BEFORE killing tmux / dropping rows.
+  // Opt-out via --no-export. Per the originating design note: a failed
+  // export must NOT block the destroy (warn + proceed) — operators
+  // running destroy in a CI cleanup script should not be silently
+  // gated by a transient disk error in an artifact dir.
+  const autoExport = opts.export !== false;
+  let autoExportOutDir: string | undefined;
+  let autoExportError: string | undefined;
+  if (autoExport) {
+    const dir = autoExportDir(workstream);
+    try {
+      const exp = exportWorkstream(db, { workstream, outDir: dir });
+      autoExportOutDir = exp.outDir;
+    } catch (err) {
+      autoExportError = err instanceof Error ? err.message : String(err);
+      if (!opts.json) {
+        console.log(
+          pc.yellow(
+            `WARNING: auto-export to ${dir} failed: ${autoExportError}; proceeding with destroy anyway`,
+          ),
+        );
+      }
+    }
+  }
+
   const result = await destroyWorkstream(db, { workstream });
   if (opts.json) {
     emitJson({
       workstream,
       destroyed: true,
       ...result,
+      autoExport: autoExport
+        ? { outDir: autoExportOutDir, error: autoExportError }
+        : { skipped: true },
       // snap_destroy_safety: machine-readable hint that the destroy is
       // reversible (DB-only) via mu undo. Suppressed when there are
       // workspace failures so the cleanup steps stay the headline.
@@ -223,6 +294,9 @@ export async function cmdDestroy(
   console.log(
     `Destroyed ${pc.bold(workstream)}: killed tmux=${result.killedTmux}, agents=${result.deletedAgents}, tasks=${result.deletedTasks}, edges=${result.deletedEdges}, notes=${result.deletedNotes}, workspaces=${result.freedWorkspaces}/${summary.workspaces}${result.alreadyGoneWorkspaces > 0 ? ` (${result.alreadyGoneWorkspaces} already gone on disk)` : ""}`,
   );
+  if (autoExportOutDir !== undefined) {
+    console.log(pc.dim(`Pre-destroy export: ${autoExportOutDir}`));
+  }
   // snap_destroy_safety: advertise the undo path that destroyWorkstream
   // gave us via captureSnapshot. Suppressed when there are workspace
   // failures so the WARNING + cleanup steps below stay the headline.
@@ -292,13 +366,32 @@ export function wireWorkstreamCommands(program: Command): void {
     )
     .option(...WORKSTREAM_OPT)
     .option("-y, --yes", "actually destroy (without this flag, prints a dry-run summary)")
+    .option("--no-export", "skip the pre-destroy markdown export to <state-dir>/exports/<ws>-<ts>/")
     .option(...JSON_OPT)
     .action(function () {
       const opts = (this as Command).opts() as {
         workstream?: string;
         yes?: boolean;
         json?: boolean;
+        export?: boolean;
       };
       return handle((db) => cmdDestroy(db, opts))();
+    });
+
+  workstream
+    .command("export")
+    .description(
+      "Render a workstream's task graph + notes as a directory of markdown (one .md per task + INDEX.md + README.md + manifest.json). Idempotent: re-export rewrites only changed files; deleted tasks are preserved with a banner.",
+    )
+    .option(...WORKSTREAM_OPT)
+    .option("--out <dir>", "output directory (defaults to ./<workstream>/)")
+    .option(...JSON_OPT)
+    .action(function () {
+      const opts = (this as Command).opts() as {
+        workstream?: string;
+        out?: string;
+        json?: boolean;
+      };
+      return handle((db) => cmdWorkstreamExport(db, opts))();
     });
 }

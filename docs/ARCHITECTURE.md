@@ -280,7 +280,7 @@ anticipatory layering. Each module is concrete and consumed today.
 | `src/agents.ts`       | CRUD + spawn / send / read / list / show / close / free / adopt; spawn liveness; reaper; pane-title composition (`composeAgentTitle`) |
 | `src/tasks.ts`        | CRUD + every read/write verb on the DAG; cycle check; claim CAS; auto-event emission      |
 | `src/tracks.ts`       | Parallel-tracks union-find with diamond merge                                             |
-| `src/workstream.ts`   | ensureWorkstream / list / summarize / destroy                                             |
+| `src/workstream.ts`   | ensureWorkstream / list / summarize / destroy / export (markdown rendering of task graph + notes; idempotent via per-file sha256 in `manifest.json`; deleted-task preservation) |
 | `src/logs.ts`         | `agent_logs` SDK: appendLog / listLogs / latestSeq / emitEvent                            |
 | `src/vcs.ts`          | `VcsBackend` interface + jj / sl / git / none impls; detection precedence; `commitsBehind(workspacePath, ref)` for staleness signal (no auto-fetch; pure observation) |
 | `src/workspace.ts`    | Per-agent VCS workspaces (registry layer on top of vcs.ts); CRUD + cascade; orphan-dir detection (`listWorkspaceOrphans`); staleness decoration (`decorateWithStaleness` populates `commitsBehindMain` per row) |

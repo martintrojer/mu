@@ -56,7 +56,7 @@ mu/
 │   ├── agents.ts          # CRUD + spawn/send/read/list/close/free + liveness + reaper
 │   ├── tasks.ts           # CRUD + every read/write verb + cycle check + claim CAS
 │   ├── tracks.ts          # parallel-tracks union-find with diamond merge
-│   ├── workstream.ts      # ensureWorkstream / list / summarize / destroy
+│   ├── workstream.ts      # ensureWorkstream / list / summarize / destroy / export
 │   ├── logs.ts            # agent_logs SDK (append, list, latestSeq, emitEvent)
 │   ├── vcs.ts             # VcsBackend interface + jj/sl/git/none impls
 │   ├── workspace.ts       # per-agent VCS workspaces (CRUD over vcs_workspaces)
@@ -66,7 +66,7 @@ mu/
 │   ├── approvals.ts       # human-in-the-loop gate (add/grant/deny/wait)
 │   ├── cli.ts             # commander wiring, handle()/classifyError, shared format helpers
 │   ├── cli/               # one-file-per-verb-namespace; thin wrappers over the SDK
-│   │   ├── workstream.ts  # init / list / destroy / state
+│   │   ├── workstream.ts  # init / list / destroy / export
 │   │   ├── agents.ts      # spawn / send / read / list / show / close / free / adopt / attach
 │   │   ├── tasks.ts       # add / claim / release / close / open / reject / defer / note / show / tree / ...
 │   │   ├── workspace.ts   # workspace create / list / free / path / orphans

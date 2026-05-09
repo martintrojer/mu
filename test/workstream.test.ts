@@ -701,3 +701,174 @@ describe("ensureWorkstream — name validation", () => {
     expect(ensureWorkstream(db, "auth-refactor")).toBe(false); // idempotent
   });
 });
+
+// ─── exportWorkstream ──────────────────────────────────────────────────
+
+import { closeTask, deleteTask } from "../src/tasks.js";
+import { exportWorkstream } from "../src/workstream.js";
+
+describe("exportWorkstream", () => {
+  function exportFiles(outDir: string): string[] {
+    const fs = require("node:fs") as typeof import("node:fs");
+    const out: string[] = [];
+    const walk = (dir: string, prefix: string): void => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const rel = prefix === "" ? entry.name : `${prefix}/${entry.name}`;
+        if (entry.isDirectory()) walk(join(dir, entry.name), rel);
+        else out.push(rel);
+      }
+    };
+    walk(outDir, "");
+    return out.sort();
+  }
+
+  it("writes one .md per task plus INDEX.md, README.md, manifest.json", async () => {
+    setTmuxExecutor(mockTmux(state).executor);
+    seedAuth();
+    const outDir = join(tmpDir, "exp");
+
+    const result = exportWorkstream(db, { workstream: "auth", outDir });
+
+    expect(result.written).toBe(3);
+    expect(result.unchanged).toBe(0);
+    expect(result.preserved).toBe(0);
+    expect(result.manifest.tasks.map((t) => t.id)).toEqual(["build", "design", "ship"]);
+    expect(exportFiles(outDir)).toEqual([
+      "INDEX.md",
+      "README.md",
+      "manifest.json",
+      "tasks/build.md",
+      "tasks/design.md",
+      "tasks/ship.md",
+    ]);
+
+    const fs = await import("node:fs");
+    const designMd = fs.readFileSync(join(outDir, "tasks/design.md"), "utf8");
+    expect(designMd).toMatch(/^---\nid: "design"\n/);
+    expect(designMd).toMatch(/status: OPEN/);
+    expect(designMd).toMatch(/blocks: \["build"\]/);
+    expect(designMd).toMatch(/# Design/);
+    expect(designMd).toMatch(/### #1 by system,/);
+    expect(designMd).toMatch(/DECISION: JWT/);
+    // Manifest sha matches the file we just read.
+    const sha = require("node:crypto").createHash("sha256").update(designMd, "utf8").digest("hex");
+    expect(result.manifest.tasks.find((t) => t.id === "design")?.sha256).toBe(sha);
+  });
+
+  it("is idempotent: a second export against an unchanged DB rewrites zero task files", async () => {
+    setTmuxExecutor(mockTmux(state).executor);
+    seedAuth();
+    const outDir = join(tmpDir, "exp");
+
+    exportWorkstream(db, { workstream: "auth", outDir });
+    const fs = await import("node:fs");
+    const beforeMtime = fs.statSync(join(outDir, "tasks/design.md")).mtimeMs;
+    // Force a measurable mtime gap so an accidental rewrite would
+    // surface even on coarse filesystems.
+    await new Promise((r) => setTimeout(r, 25));
+
+    const second = exportWorkstream(db, { workstream: "auth", outDir });
+    expect(second.written).toBe(0);
+    expect(second.unchanged).toBe(3);
+    expect(second.preserved).toBe(0);
+    const afterMtime = fs.statSync(join(outDir, "tasks/design.md")).mtimeMs;
+    expect(afterMtime).toBe(beforeMtime);
+  });
+
+  it("note append rewrites exactly one task file with the new note section", async () => {
+    setTmuxExecutor(mockTmux(state).executor);
+    seedAuth();
+    const outDir = join(tmpDir, "exp");
+    exportWorkstream(db, { workstream: "auth", outDir });
+    addNote(db, "build", "FOLLOWUP: handle edge case");
+
+    const second = exportWorkstream(db, { workstream: "auth", outDir });
+    expect(second.written).toBe(1);
+    expect(second.unchanged).toBe(2);
+
+    const fs = await import("node:fs");
+    const buildMd = fs.readFileSync(join(outDir, "tasks/build.md"), "utf8");
+    expect(buildMd).toMatch(/FOLLOWUP: handle edge case/);
+    // Other tasks untouched.
+    const designMd = fs.readFileSync(join(outDir, "tasks/design.md"), "utf8");
+    expect(designMd).not.toMatch(/FOLLOWUP/);
+  });
+
+  it("status change rewrites the affected task's frontmatter only", async () => {
+    setTmuxExecutor(mockTmux(state).executor);
+    seedAuth();
+    const outDir = join(tmpDir, "exp");
+    exportWorkstream(db, { workstream: "auth", outDir });
+    closeTask(db, "design", { evidence: "shipped" });
+
+    const second = exportWorkstream(db, { workstream: "auth", outDir });
+    expect(second.written).toBe(1);
+    expect(second.unchanged).toBe(2);
+
+    const fs = await import("node:fs");
+    const designMd = fs.readFileSync(join(outDir, "tasks/design.md"), "utf8");
+    expect(designMd).toMatch(/status: CLOSED/);
+  });
+
+  it("new task added between exports gets a fresh .md", async () => {
+    setTmuxExecutor(mockTmux(state).executor);
+    seedAuth();
+    const outDir = join(tmpDir, "exp");
+    exportWorkstream(db, { workstream: "auth", outDir });
+    addTask(db, {
+      localId: "deploy",
+      workstream: "auth",
+      title: "Deploy",
+      impact: 70,
+      effortDays: 1,
+    });
+
+    const second = exportWorkstream(db, { workstream: "auth", outDir });
+    expect(second.written).toBe(1);
+    expect(second.unchanged).toBe(3);
+    expect(second.manifest.tasks.map((t) => t.id)).toEqual(["build", "deploy", "design", "ship"]);
+    expect(existsSync(join(outDir, "tasks/deploy.md"))).toBe(true);
+  });
+
+  it("deleted task is preserved on disk with a banner; banner is not re-prepended on re-export", async () => {
+    setTmuxExecutor(mockTmux(state).executor);
+    seedAuth();
+    const outDir = join(tmpDir, "exp");
+    exportWorkstream(db, { workstream: "auth", outDir });
+
+    // Tear down `ship` (deleteTask cascades; design+build untouched).
+    deleteTask(db, "ship");
+
+    const second = exportWorkstream(db, { workstream: "auth", outDir });
+    expect(second.preserved).toBe(1);
+    const fs = await import("node:fs");
+    const shipMd = fs.readFileSync(join(outDir, "tasks/ship.md"), "utf8");
+    expect(shipMd).toMatch(/^> \*\*Deleted from DB on /);
+
+    // A third export must NOT prepend a SECOND banner.
+    const third = exportWorkstream(db, { workstream: "auth", outDir });
+    expect(third.preserved).toBe(1);
+    const shipMd2 = fs.readFileSync(join(outDir, "tasks/ship.md"), "utf8");
+    const bannerCount = (shipMd2.match(/Deleted from DB on/g) ?? []).length;
+    expect(bannerCount).toBe(1);
+  });
+
+  it("survives notes containing literal triple-fence content via dynamic fencing", async () => {
+    setTmuxExecutor(mockTmux(state).executor);
+    addTask(db, {
+      localId: "fence",
+      workstream: "auth",
+      title: "Fence test",
+      impact: 50,
+      effortDays: 1,
+    });
+    addNote(db, "fence", "```ts\nconst x = 1;\n```");
+    const outDir = join(tmpDir, "exp");
+    exportWorkstream(db, { workstream: "auth", outDir });
+    const fs = await import("node:fs");
+    const md = fs.readFileSync(join(outDir, "tasks/fence.md"), "utf8");
+    // Outer fence must be longer than the inner triple-fence to keep
+    // it intact for downstream renderers.
+    expect(md).toMatch(/````\n```ts\nconst x = 1;\n```\n````/);
+  });
+});
