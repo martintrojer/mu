@@ -892,4 +892,19 @@ describe("parseAgentNameFromTitle", () => {
     expect(parseAgentNameFromTitle("  worker-a  ")).toBe("worker-a");
     expect(parseAgentNameFromTitle(`  worker-a · ${STATUS_EMOJI.needs_input}  `)).toBe("worker-a");
   });
+
+  // Drift guard: every STATUS_EMOJI codepoint must round-trip through
+  // parseAgentNameFromTitle. The earlier `needs_input + busy` cases
+  // pinned 2 of 7 glyphs; this loop pins all 7 so a one-codepoint
+  // change to STATUS_EMOJI[unreachable] (or any other entry) fails
+  // loud instead of silently degrading the HUD.
+  it("recovers the agent name for every STATUS_EMOJI entry", () => {
+    for (const [status, glyph] of Object.entries(STATUS_EMOJI)) {
+      expect(parseAgentNameFromTitle(`worker-a · ${glyph}`), `status=${status}`).toBe("worker-a");
+      expect(
+        parseAgentNameFromTitle(`worker-a · ${glyph} · build_x`),
+        `status=${status} (with claim)`,
+      ).toBe("worker-a");
+    }
+  });
 });

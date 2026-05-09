@@ -108,6 +108,28 @@ called out under "Breaking" in each entry.
   spawn / adopt sites repeat. The three callers are now one-liners.
   Behaviour unchanged.
 
+- **`parseAgentNameFromTitle` / `composeAgentTitle` tests now
+  interpolate every `STATUS_EMOJI` entry, not just three.** Closes
+  `review_test_status_emoji_drift_only_three_glyphs` in
+  `mufeedback`. The drift-cleanup commit (`d1d43e0`) made a virtue
+  of glyph-source-of-truth — the comment above the existing
+  fixture says "any drift between composeAgentTitle and
+  parseAgentNameFromTitle is the bug we're guarding against" — but
+  in practice only `busy`, `needs_input`, and `free` were pinned.
+  The other 4 of 7 statuses (`spawning`, `needs_permission`,
+  `unreachable`, `terminated`) had no fixture coverage; flipping
+  e.g. `STATUS_EMOJI.unreachable` to a different question-mark
+  glyph silently passed the suite while regressing the HUD. Added
+  one `it()` to `test/tmux.test.ts` that loops over
+  `Object.entries(STATUS_EMOJI)` and asserts both the bare
+  `name · glyph` and `name · glyph · build_x` shapes round-trip
+  through `parseAgentNameFromTitle`. Added the matching loop in
+  `test/agents.test.ts` that inserts an agent in each status and
+  asserts `composeAgentTitle` interpolates the correct glyph (with
+  the documented exception that `spawning` is undecorated, per
+  `composeAgentTitle`'s own comment). Test-only; no behaviour
+  change.
+
 - **`test/output.test.ts` now pins `printNextStepsTo('stderr')`
   routes to `console.error`, not `console.log`.** Closes
   `review_test_print_next_steps_stderr_branch_uncovered` in

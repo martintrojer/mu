@@ -364,6 +364,26 @@ describe("composeAgentTitle", () => {
     expect(composeAgentTitle(db, a)).toBe(`worker-a · ${STATUS_EMOJI.free}`);
   });
 
+  // Drift guard: pin every STATUS_EMOJI codepoint into composeAgentTitle
+  // so any one-codepoint change (e.g. swapping unreachable's glyph) fails
+  // loud. 'spawning' is intentionally undecorated (see composeAgentTitle
+  // comment) so we assert the bare-name shape for it instead.
+  it("interpolates STATUS_EMOJI for every status (and skips it for 'spawning')", () => {
+    for (const status of Object.keys(STATUS_EMOJI) as (keyof typeof STATUS_EMOJI)[]) {
+      insertAgent(db, {
+        name: `w_${status}`,
+        workstream: "ws",
+        paneId: `%${status}`,
+        status,
+      });
+      const a = getAgent(db, `w_${status}`);
+      if (!a) throw new Error();
+      const expected =
+        status === "spawning" ? `w_${status}` : `w_${status} · ${STATUS_EMOJI[status]}`;
+      expect(composeAgentTitle(db, a), `status=${status}`).toBe(expected);
+    }
+  });
+
   it("appends task id when agent owns one task", () => {
     insertAgent(db, { name: "worker-a", workstream: "ws", paneId: "%1", status: "busy" });
     addTask(db, { localId: "build_x", workstream: "ws", title: "X", impact: 50, effortDays: 1 });
