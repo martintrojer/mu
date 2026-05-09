@@ -12,6 +12,53 @@ called out under "Breaking" in each entry.
 
 ### Fixed
 
+- **`mu workspace create` no longer leaves a partial dir behind on
+  failure, and refuses outright when projectRoot is `$HOME`.** Closes
+  `workspace_create_partial_dir_on_failure` in `roadmap-v0-2`;
+  surfaced live in `snap_dogfood` Finding 4. Two interlocking
+  sub-bugs:
+
+  1. `mu workspace create` invoked from `cwd=$HOME` with no
+     `--project-root` would kick the `none` backend into a recursive
+     `cp -a $HOME/.` of the user's home directory — ~/Music,
+     ~/.config, ~/Library, etc. — into
+     `~/.local/state/mu/workspaces/<ws>/<agent>/`. On macOS the
+     first DRM-protected file in `~/Music` stalls the copy
+     indefinitely.
+  2. On interrupt (or any backend throw) mid-`createWorkspace`, the
+     partial on-disk dir was left behind AND no DB row was ever
+     inserted, so `mu workspace list` showed nothing while the next
+     `mu workspace create` refused with `WorkspacePathNotEmptyError`.
+
+  Fix:
+  - New typed `HomeDirAsProjectRootError` (exit 4): thrown when
+    `path.resolve(projectRoot) === path.resolve(os.homedir())` —
+    catches `cd && mu workspace create`, `--project-root ~/`,
+    `--project-root ~/.`, etc. Direct children of `$HOME` (e.g.
+    `~/Documents`) are deliberately NOT blocked; that would be
+    overreach. There is no `--force` escape hatch — the resolution
+    is `--project-root <real-path>` (or `cd` somewhere real).
+  - `createWorkspace` now wraps `backend.createWorkspace` in a
+    try/catch: on throw, the partial workspace path is removed via
+    `rm -rf` (best-effort) before the original error is re-thrown.
+    This complements the existing INSERT-failure rollback (from
+    `bug_agent_spawn_workspace_fk_failure`), so the on-disk +
+    registry-row pair is now atomic-ish at every failure boundary.
+
+  The orphan-detection path (`mu workspace orphans`) already
+  surfaces the partial dir if cleanup fails (the dir-with-no-row
+  case); verified by code reading.
+
+  Tests: `test/workspace.test.ts` adds (a) HOME guard rejects via
+  `homedir()`, `${homedir()}/`, and `${homedir()}/./`; (b) a flaky
+  backend that creates a partial dir then throws is cleaned up,
+  and a follow-up `createWorkspace` succeeds without
+  `WorkspacePathNotEmptyError`. Manually verified end-to-end with
+  `cd $HOME && mu workspace create ...` (rejected with the typed
+  error + nextSteps, exit 4) and with a real `--project-root /tmp`
+  (the `cp -a` hit unprintable sockets, threw, and the partial dir
+  was cleaned up cleanly).
+
 - **HUD colors survive `watch` and other non-TTY pipes.** Closes
   `hud_colors_stripped_under_watch_and` in `mufeedback`. Surfaced
   live: `watch --no-title -n 2 --color mu hud -w roadmap-v0-2`

@@ -186,6 +186,7 @@ export {
   type FreeWorkspaceOptions as WorkspaceFreeOptions,
   type FreeWorkspaceResult as WorkspaceFreeResult,
   type WorkspaceRow,
+  HomeDirAsProjectRootError,
   WorkspaceExistsError,
   WorkspacePathNotEmptyError,
   WorkspaceNotFoundError,

@@ -15,8 +15,9 @@
 // workspace lives under the same state dir as the DB so a single
 // `rm -rf ~/.local/state/mu` cleans everything.
 
-import { existsSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readdirSync, rmSync } from "node:fs";
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
 import type { Db } from "./db.js";
 import { defaultStateDir } from "./db.js";
 import { emitEvent } from "./logs.js";
@@ -139,6 +140,46 @@ export class WorkspacePathNotEmptyError extends Error implements HasNextSteps {
 }
 
 /**
+ * Thrown by createWorkspace when the resolved projectRoot is the
+ * user's $HOME. Surfaced by snap_dogfood Finding 4: a `mu workspace
+ * create` invoked from cwd=$HOME with no --project-root began a
+ * recursive `cp -a` of $HOME (~/Music, ~/.config, ...) into the
+ * workspace dir, stalled on DRM-protected files, and on ctrl-C left
+ * a partial dir behind with no DB row.
+ *
+ * The guard's whole point is to make the user pick a real project
+ * deliberately — there's no --force escape hatch on purpose. The
+ * resolution is `--project-root <real-path>` (or `cd` into a real
+ * project first).
+ *
+ * Maps to exit code 4 (conflict).
+ */
+export class HomeDirAsProjectRootError extends Error implements HasNextSteps {
+  override readonly name = "HomeDirAsProjectRootError";
+  constructor(
+    public readonly agent: string,
+    public readonly workstream: string,
+    public readonly homeDir: string,
+  ) {
+    super(
+      `refusing to create workspace with projectRoot=$HOME (${homeDir}); a recursive copy/clone of your home directory is almost never what you want`,
+    );
+  }
+  errorNextSteps(): NextStep[] {
+    return [
+      {
+        intent: "Re-run from inside a real project directory",
+        command: `cd <your-project> && mu workspace create ${this.agent} -w ${this.workstream}`,
+      },
+      {
+        intent: "Or pass --project-root explicitly",
+        command: `mu workspace create ${this.agent} -w ${this.workstream} --project-root <your-project>`,
+      },
+    ];
+  }
+}
+
+/**
  * Compose the canonical on-disk path for an agent's workspace. Used by
  * createWorkspace and reachable from `mu workspace path` so the user
  * can `cd $(mu workspace path foo)` even before the directory exists.
@@ -228,6 +269,16 @@ export async function createWorkspace(db: Db, opts: CreateWorkspaceOptions): Pro
   }
 
   const projectRoot = opts.projectRoot ?? process.cwd();
+
+  // Footgun guard: refuse projectRoot=$HOME. resolve() normalises a
+  // trailing slash, `.`, symlinks-in-name, etc., so `cd && mu workspace
+  // create ...` and `--project-root ~/` are all blocked the same way.
+  // Direct children of $HOME (e.g. ~/Documents) are NOT blocked —
+  // that would be overreach. See snap_dogfood Finding 4.
+  if (resolve(projectRoot) === resolve(homedir())) {
+    throw new HomeDirAsProjectRootError(opts.agent, opts.workstream, homedir());
+  }
+
   const backend = opts.backend ? backendByName(opts.backend) : await detectBackend(projectRoot);
   const path = workspacePath(opts.workstream, opts.agent);
 
@@ -245,7 +296,26 @@ export async function createWorkspace(db: Db, opts: CreateWorkspaceOptions): Pro
   };
   if (opts.parentRef !== undefined) createOpts.parentRef = opts.parentRef;
 
-  const created = await backend.createWorkspace(createOpts);
+  // Wrap the backend's on-disk side effect in a cleanup guard. If the
+  // backend throws mid-way (cp -a hits a DRM-protected file, git
+  // worktree add fails after creating the dir, an interrupt during a
+  // long copy), the partial dir would otherwise be left behind with
+  // no DB row — exactly the failure mode from snap_dogfood Finding 4,
+  // which then blocked subsequent `mu workspace create` calls with
+  // WorkspacePathNotEmptyError. Best-effort: if the rm itself fails,
+  // surface the original error and let the user clean up via
+  // `mu workspace orphans`.
+  let created: Awaited<ReturnType<typeof backend.createWorkspace>>;
+  try {
+    created = await backend.createWorkspace(createOpts);
+  } catch (err) {
+    try {
+      rmSync(path, { recursive: true, force: true });
+    } catch {
+      // best-effort; original error wins
+    }
+    throw err;
+  }
 
   // Roll back the on-disk + VCS-registry side effect if the DB row
   // insert fails (FK violation, schema constraint, sqlite_busy timeout).

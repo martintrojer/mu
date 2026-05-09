@@ -75,6 +75,7 @@ import {
 import { PaneNotFoundError, TmuxError, tmux } from "./tmux.js";
 import type { Track } from "./tracks.js";
 import {
+  HomeDirAsProjectRootError,
   WorkspaceExistsError,
   WorkspaceNotFoundError,
   WorkspacePathNotEmptyError,
@@ -174,6 +175,7 @@ function classifyError(err: unknown): { label: string; exitCode: number } {
     err instanceof WorkspaceExistsError ||
     err instanceof WorkspacePathNotEmptyError ||
     err instanceof WorkspacePreservedError ||
+    err instanceof HomeDirAsProjectRootError ||
     err instanceof ApprovalAlreadyDecidedError ||
     err instanceof ClaimerNotRegisteredError ||
     err instanceof SnapshotVersionMismatchError

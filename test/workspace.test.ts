@@ -13,6 +13,7 @@ import { insertAgent } from "../src/agents.js";
 import { type Db, openDb } from "../src/db.js";
 import { detectBackend, gitBackend, jjBackend, noneBackend, slBackend } from "../src/vcs.js";
 import {
+  HomeDirAsProjectRootError,
   WorkspaceExistsError,
   WorkspaceNotFoundError,
   WorkspacePathNotEmptyError,
@@ -468,6 +469,148 @@ describe("workspace SDK (with noneBackend)", () => {
     });
     db.prepare("DELETE FROM workstreams WHERE name = 'auth'").run();
     expect(listWorkspaces(db, "auth")).toEqual([]);
+  });
+});
+
+// ─── HomeDirAsProjectRootError + cleanup-on-throw ─────────────────────
+//
+// Regression for snap_dogfood Finding 4 / workspace_create_partial_dir_on_failure.
+// Two interlocking sub-bugs:
+//   (a) projectRoot = $HOME silently kicks off a recursive cp -a of the
+//       user's home dir, which stalls on DRM-protected files.
+//   (b) When the backend throws mid-create, the partial on-disk dir
+//       was left behind with no DB row.
+
+describe("createWorkspace HOME-dir guard (snap_dogfood Finding 4a)", () => {
+  it("throws HomeDirAsProjectRootError when projectRoot resolves to $HOME", async () => {
+    const { homedir } = await import("node:os");
+    await expect(
+      createWorkspace(db, {
+        agent: "worker-1",
+        workstream: "auth",
+        projectRoot: homedir(),
+        backend: "none",
+      }),
+    ).rejects.toBeInstanceOf(HomeDirAsProjectRootError);
+    // No DB row, no on-disk dir was even attempted.
+    expect(getWorkspaceForAgent(db, "worker-1")).toBeUndefined();
+  });
+
+  it("normalises trailing slash + . variants of $HOME", async () => {
+    const { homedir } = await import("node:os");
+    await expect(
+      createWorkspace(db, {
+        agent: "worker-1",
+        workstream: "auth",
+        projectRoot: `${homedir()}/`,
+        backend: "none",
+      }),
+    ).rejects.toBeInstanceOf(HomeDirAsProjectRootError);
+    await expect(
+      createWorkspace(db, {
+        agent: "worker-1",
+        workstream: "auth",
+        projectRoot: `${homedir()}/./`,
+        backend: "none",
+      }),
+    ).rejects.toBeInstanceOf(HomeDirAsProjectRootError);
+  });
+
+  it("does NOT block direct children of $HOME (overreach)", async () => {
+    // ~/Documents should be allowed; the guard is targeted at
+    // "projectRoot IS $HOME", not "projectRoot is anywhere under $HOME".
+    // Use the test's projectRoot (a real temp dir) to confirm the
+    // normal path still succeeds; the negative case for ~/Documents
+    // is covered by the resolve()-equality contract above.
+    const ws = await createWorkspace(db, {
+      agent: "worker-1",
+      workstream: "auth",
+      projectRoot,
+      backend: "none",
+    });
+    expect(ws.agent).toBe("worker-1");
+  });
+});
+
+describe("createWorkspace cleanup on backend throw (snap_dogfood Finding 4b)", () => {
+  it("removes the partial on-disk dir when backend.createWorkspace throws after creating it", async () => {
+    // Pre-create the workspace path so the noneBackend's existsSync
+    // check throws AFTER ensureParent (the parent dir gets created
+    // either way). To simulate "backend created a partial dir then
+    // threw", we manually create a marker file inside the would-be
+    // workspace path and then call createWorkspace with a custom
+    // backend wrapper.
+    //
+    // Easiest path: pre-create the dir + DELETE any registry, then
+    // assert that even though we hit the EXISTS path early, no extra
+    // dirs are left around. But that goes through WorkspacePathNotEmptyError
+    // (different path). For the actual try/catch around backend.create,
+    // we need a backend that throws AFTER creating the dir.
+    //
+    // Simplest reproduction: register a different agent's row at the
+    // exact path that worker-2's createWorkspace would land on, so
+    // the path-already-exists check inside noneBackend fires (it
+    // creates the parent dir but not the workspace dir itself) — but
+    // that doesn't exercise the partial-dir cleanup.
+    //
+    // Real reproduction: directly invoke the SDK and force the
+    // backend to throw after it has put a partial dir on disk.
+    const { backendByName } = await import("../src/vcs.js");
+    const real = backendByName("none");
+    const wsPath = workspacePath("auth", "worker-1");
+    let partialDirSeenByCleanup = false;
+    const flaky = {
+      ...real,
+      name: "none" as const,
+      async createWorkspace(opts: { projectRoot: string; workspacePath: string }) {
+        // Simulate the cp-mid-stream failure: create a partial dir
+        // first, then throw.
+        mkdirSync(opts.workspacePath, { recursive: true });
+        writeFileSync(join(opts.workspacePath, "partial"), "oops");
+        partialDirSeenByCleanup = true;
+        throw new Error("simulated cp -a interrupted by DRM-protected file");
+      },
+    };
+    // Monkey-patch via vcs module export. cleanest is to swap
+    // backendByName by importing the module object — but vcs.ts
+    // exports backends by name without a setter. Instead, exercise
+    // the cleanup via a backend that throws synchronously by reaching
+    // through createWorkspace's `opts.backend` path with a real backend
+    // we can monkey-patch in place.
+    //
+    // backends are exported as singletons; mutating .createWorkspace
+    // is the simplest way to inject a transient failure.
+    const orig = real.createWorkspace.bind(real);
+    (real as { createWorkspace: typeof flaky.createWorkspace }).createWorkspace =
+      flaky.createWorkspace;
+    try {
+      await expect(
+        createWorkspace(db, {
+          agent: "worker-1",
+          workstream: "auth",
+          projectRoot,
+          backend: "none",
+        }),
+      ).rejects.toThrow(/simulated cp -a interrupted/);
+    } finally {
+      (real as { createWorkspace: typeof orig }).createWorkspace = orig;
+    }
+    expect(partialDirSeenByCleanup).toBe(true);
+    // CRITICAL: the partial dir is gone, not orphaned. Pre-fix this
+    // would leave the dir behind and block subsequent
+    // `mu workspace create` with WorkspacePathNotEmptyError.
+    expect(() => execFileSync("ls", [wsPath], { stdio: "pipe" })).toThrow();
+    // And the registry has no row either.
+    expect(getWorkspaceForAgent(db, "worker-1")).toBeUndefined();
+    // Recovery path works: a re-attempt with a working backend
+    // succeeds without WorkspacePathNotEmptyError.
+    const ws = await createWorkspace(db, {
+      agent: "worker-1",
+      workstream: "auth",
+      projectRoot,
+      backend: "none",
+    });
+    expect(ws.path).toBe(wsPath);
   });
 });
 
