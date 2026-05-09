@@ -34,6 +34,30 @@ called out under "Breaking" in each entry.
   one fewer place that has to learn about new task columns). No SQL
   projections changed; only the wrapper around them.
 
+- **`ready` / `blocked` / `goals` view DDL now lives in one place
+  (`src/db.ts`).** Closes `review_code_views_recreated_thrice` in
+  `mufeedback`. The three views were previously redefined at three
+  sites: the canonical `CURRENT_SCHEMA` block in `src/db.ts`, plus
+  inline `CREATE VIEW` blocks at the end of both `migrateV1ToV2`
+  and `migrateV2ToV3` (each migration drops the views before
+  rebuilding view-dependent tables and so has to recreate them).
+  Comparing the SQL byte-for-byte: `ready` and `blocked` were
+  identical across all three sites; `goals` matched in `db.ts` and
+  `migrateV2ToV3` (the v3 shape, excluding `CLOSED` + `REJECTED` +
+  `DEFERRED`) but differed in `migrateV1ToV2` (the v2 shape,
+  excluding only `CLOSED`). Three new exported constants in
+  `src/db.ts` — `READY_VIEW_SQL`, `BLOCKED_VIEW_SQL`,
+  `GOALS_VIEW_SQL` — each emit a `DROP VIEW IF EXISTS` + `CREATE
+  VIEW`. `applySchema` interpolates all three into the schema
+  template; `migrateV2ToV3` imports and `db.exec`s all three
+  (`v3` IS the current shape); `migrateV1ToV2` imports `READY` +
+  `BLOCKED` but keeps its own inline `goals` body since rewriting
+  it to the current shape would lie about what the v2 schema
+  looked like. Migrations remain forward-only history. `mu doctor`
+  on a fresh DB still reports schema OK and all three views are
+  queryable; `db.test.ts` continues to exercise both v1→v2 and
+  v2→v3 migrate paths.
+
 - **`mu`-managed tmux panes now have a visually distinct frame on
   all four sides, not just the labeled top status band.** Closes
   the first half of `tmux_pane_border_top_and_bottom_plus_glyph_audit`

@@ -188,6 +188,74 @@ export const EXPECTED_TABLES: readonly string[] = [
   "workstreams",
 ];
 
+// ─── View DDL — single source of truth ────────────────────────────────
+//
+// The three views (ready, blocked, goals) get DROPped + CREATEd in
+// three places: applySchema (here, on every openDb), and twice in
+// src/migrations.ts (the v1->v2 and v2->v3 migrations both have to
+// rebuild views after dropping tables they depend on). Defining the
+// SQL once here and importing it from migrations.ts keeps the current
+// shape from drifting silently.
+//
+// HISTORICAL NOTE: migrateV1ToV2 keeps its OWN inline `goals` view
+// because the v2 shape (`status <> 'CLOSED'`) differs from the v3
+// shape (`status NOT IN ('CLOSED','REJECTED','DEFERRED')`). The
+// constant below is the CURRENT (v3+) shape; rewriting v1->v2 to use
+// it would retroactively rewrite history. ready and blocked are byte-
+// identical across every version so far, so v1->v2 imports those.
+//
+// Each constant is self-contained: DROP IF EXISTS + CREATE. Running
+// DROP twice in a row is harmless, so callers that already DROP up-
+// front (the migrations do, before rebuilding tables the views depend
+// on) can still re-execute these without churn.
+
+export const READY_VIEW_SQL = `
+DROP VIEW IF EXISTS ready;
+CREATE VIEW ready AS
+  SELECT t.*
+    FROM tasks t
+   WHERE t.status = 'OPEN'
+     AND NOT EXISTS (
+       SELECT 1
+         FROM task_edges e
+         JOIN tasks      b ON e.from_task = b.local_id
+        WHERE e.to_task = t.local_id
+          AND b.status <> 'CLOSED'
+     );
+`;
+
+export const BLOCKED_VIEW_SQL = `
+DROP VIEW IF EXISTS blocked;
+CREATE VIEW blocked AS
+  SELECT t.*
+    FROM tasks t
+   WHERE t.status = 'OPEN'
+     AND EXISTS (
+       SELECT 1
+         FROM task_edges e
+         JOIN tasks      b ON e.from_task = b.local_id
+        WHERE e.to_task = t.local_id
+          AND b.status <> 'CLOSED'
+     );
+`;
+
+// A goal is an active endpoint of the DAG — a task with no dependents
+// that we're still working toward. CLOSED, REJECTED, and DEFERRED are
+// all excluded: a finished/abandoned/parked leaf is not an active goal.
+// (REJECTED and DEFERRED still BLOCK dependents per the views above
+// — they're terminal/parked from the perspective of 'what's a goal',
+// but they don't satisfy a blocked-by edge: only CLOSED does that.)
+export const GOALS_VIEW_SQL = `
+DROP VIEW IF EXISTS goals;
+CREATE VIEW goals AS
+  SELECT t.*
+    FROM tasks t
+   WHERE t.status NOT IN ('CLOSED', 'REJECTED', 'DEFERRED')
+     AND NOT EXISTS (
+       SELECT 1 FROM task_edges WHERE from_task = t.local_id
+     );
+`;
+
 const CURRENT_SCHEMA = `
 -- ─── Schema versioning ────────────────────────────────────────────────
 --
@@ -433,45 +501,9 @@ CREATE INDEX IF NOT EXISTS idx_snapshots_created_at ON snapshots (created_at);
 CREATE INDEX IF NOT EXISTS idx_snapshots_workstream ON snapshots (workstream);
 
 -- ─── Views (always replaced so the latest definition wins) ────────────
-
-DROP VIEW IF EXISTS ready;
-CREATE VIEW ready AS
-  SELECT t.*
-    FROM tasks t
-   WHERE t.status = 'OPEN'
-     AND NOT EXISTS (
-       SELECT 1
-         FROM task_edges e
-         JOIN tasks      b ON e.from_task = b.local_id
-        WHERE e.to_task = t.local_id
-          AND b.status <> 'CLOSED'
-     );
-
-DROP VIEW IF EXISTS blocked;
-CREATE VIEW blocked AS
-  SELECT t.*
-    FROM tasks t
-   WHERE t.status = 'OPEN'
-     AND EXISTS (
-       SELECT 1
-         FROM task_edges e
-         JOIN tasks      b ON e.from_task = b.local_id
-        WHERE e.to_task = t.local_id
-          AND b.status <> 'CLOSED'
-     );
-
--- A goal is an active endpoint of the DAG — a task with no dependents
--- that we're still working toward. CLOSED, REJECTED, and DEFERRED are
--- all excluded: a finished/abandoned/parked leaf is not an active goal.
--- (REJECTED and DEFERRED still BLOCK dependents per the views above
--- — they're terminal/parked from the perspective of 'what's a goal',
--- but they don't satisfy a blocked-by edge: only CLOSED does that.)
-DROP VIEW IF EXISTS goals;
-CREATE VIEW goals AS
-  SELECT t.*
-    FROM tasks t
-   WHERE t.status NOT IN ('CLOSED', 'REJECTED', 'DEFERRED')
-     AND NOT EXISTS (
-       SELECT 1 FROM task_edges WHERE from_task = t.local_id
-     );
+-- See READY_VIEW_SQL / BLOCKED_VIEW_SQL / GOALS_VIEW_SQL above for the
+-- canonical DDL — interpolated here so applySchema is one db.exec().
+${READY_VIEW_SQL}
+${BLOCKED_VIEW_SQL}
+${GOALS_VIEW_SQL}
 `;

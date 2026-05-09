@@ -18,7 +18,13 @@
 //   4. Cover both the fresh-create AND the migrate-existing paths
 //      in test/db.test.ts.
 
-import { CURRENT_SCHEMA_VERSION, type Db } from "./db.js";
+import {
+  BLOCKED_VIEW_SQL,
+  CURRENT_SCHEMA_VERSION,
+  type Db,
+  GOALS_VIEW_SQL,
+  READY_VIEW_SQL,
+} from "./db.js";
 
 type Migration = (db: Db) => void;
 
@@ -344,29 +350,16 @@ function migrateV1ToV2(db: Db): void {
   // Recreate views inline so the DB is fully usable the moment the
   // migration commits (applySchema also recreates them on every open,
   // but we shouldn't depend on that order).
+  //
+  // ready and blocked are byte-identical across every version so far,
+  // so we pull from the canonical constants in src/db.ts. goals is
+  // KEPT INLINE here as a faithful record of the v2 shape
+  // (`status <> 'CLOSED'`); the v3 shape widens that exclude list,
+  // and migrations are forward-only history — rewriting v1->v2 to
+  // emit a v3-shape view would be a lie about what v2 looked like.
+  db.exec(READY_VIEW_SQL);
+  db.exec(BLOCKED_VIEW_SQL);
   db.exec(`
-    CREATE VIEW ready AS
-      SELECT t.*
-        FROM tasks t
-       WHERE t.status = 'OPEN'
-         AND NOT EXISTS (
-           SELECT 1
-             FROM task_edges e
-             JOIN tasks      b ON e.from_task = b.local_id
-            WHERE e.to_task = t.local_id
-              AND b.status <> 'CLOSED'
-         );
-    CREATE VIEW blocked AS
-      SELECT t.*
-        FROM tasks t
-       WHERE t.status = 'OPEN'
-         AND EXISTS (
-           SELECT 1
-             FROM task_edges e
-             JOIN tasks      b ON e.from_task = b.local_id
-            WHERE e.to_task = t.local_id
-              AND b.status <> 'CLOSED'
-         );
     CREATE VIEW goals AS
       SELECT t.*
         FROM tasks t
@@ -470,36 +463,11 @@ function migrateV2ToV3(db: Db): void {
 
   // Recreate views — ready/blocked unchanged from v2 (only CLOSED
   // satisfies a blocked-by edge, both before and after); goals widens
-  // its exclude list to also drop REJECTED + DEFERRED leaves.
-  db.exec(`
-    CREATE VIEW ready AS
-      SELECT t.*
-        FROM tasks t
-       WHERE t.status = 'OPEN'
-         AND NOT EXISTS (
-           SELECT 1
-             FROM task_edges e
-             JOIN tasks      b ON e.from_task = b.local_id
-            WHERE e.to_task = t.local_id
-              AND b.status <> 'CLOSED'
-         );
-    CREATE VIEW blocked AS
-      SELECT t.*
-        FROM tasks t
-       WHERE t.status = 'OPEN'
-         AND EXISTS (
-           SELECT 1
-             FROM task_edges e
-             JOIN tasks      b ON e.from_task = b.local_id
-            WHERE e.to_task = t.local_id
-              AND b.status <> 'CLOSED'
-         );
-    CREATE VIEW goals AS
-      SELECT t.*
-        FROM tasks t
-       WHERE t.status NOT IN ('CLOSED', 'REJECTED', 'DEFERRED')
-         AND NOT EXISTS (
-           SELECT 1 FROM task_edges WHERE from_task = t.local_id
-         );
-  `);
+  // its exclude list to also drop REJECTED + DEFERRED leaves. All three
+  // pulled from the canonical constants in src/db.ts — v3 IS the
+  // current shape, so the live constant is also the historically-
+  // correct v3 shape.
+  db.exec(READY_VIEW_SQL);
+  db.exec(BLOCKED_VIEW_SQL);
+  db.exec(GOALS_VIEW_SQL);
 }
