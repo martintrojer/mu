@@ -17,11 +17,10 @@
 // IMPORTANT: src/db.ts knows ONLY the v5 shape. Pre-v5 DBs are
 // rejected at openDb time with SchemaTooOldError; the operator runs
 // scripts/migrate-v4-to-v5.ts once to bring a v4 DB forward. The old
-// in-process forward-only migration ladder still lives in
-// src/migrations.ts for the moment (kept by
-// schema_v5_drop_migrations_ts as the cleanup follow-up); it is no
-// longer wired into openDb because the loud-fail hook below catches
-// every pre-v5 DB before any migration would have run.
+// in-process forward-only migration ladder (v1→v2, v2→v3, v3→v4) was
+// removed in schema_v5_drop_migrations_ts: with the loud-fail hook
+// below catching every pre-v5 DB before openDb returns, none of those
+// migration paths could ever run.
 
 import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
@@ -279,12 +278,13 @@ export function ensureWorkstreamStateDir(workstream: string): string {
  * For fresh DBs this writes the current schema shape and stamps
  * schema_version = CURRENT_SCHEMA_VERSION. For existing DBs this is a
  * no-op for the table CREATEs (IF NOT EXISTS) but DOES recreate the
- * views. Migrations against older shapes are handled by runMigrations.
+ * views. Pre-v5 DBs never reach this function — openDb's loud-fail
+ * hook rejects them with SchemaTooOldError first.
  */
 function applySchema(db: Db): void {
   db.exec(CURRENT_SCHEMA);
   // Stamp the version on a fresh DB. INSERT OR IGNORE so we don't
-  // overwrite an existing version (which the migration logic owns).
+  // overwrite the version on an existing v5 DB.
   db.prepare("INSERT OR IGNORE INTO schema_version (id, version) VALUES (1, ?)").run(
     CURRENT_SCHEMA_VERSION,
   );
@@ -297,8 +297,10 @@ export const CURRENT_SCHEMA_VERSION = 5;
 
 /** Tables a healthy DB must contain. Single source of truth so
  *  `mu doctor` and any other consumer don't drift. Adding a new table
- *  = one new entry here AND a CREATE TABLE in CURRENT_SCHEMA AND a
- *  migration in src/migrations.ts that adds it to existing DBs. */
+ *  = one new entry here AND a CREATE TABLE in CURRENT_SCHEMA. (Schema
+ *  changes that aren't backward-compatible bump CURRENT_SCHEMA_VERSION
+ *  and ship with a one-shot script under scripts/, mirroring
+ *  scripts/migrate-v4-to-v5.ts.) */
 export const EXPECTED_TABLES: readonly string[] = [
   "agent_logs",
   "agents",
@@ -314,24 +316,15 @@ export const EXPECTED_TABLES: readonly string[] = [
 
 // ─── View DDL — single source of truth ────────────────────────────────
 //
-// The three views (ready, blocked, goals) get DROPped + CREATEd in
-// three places: applySchema (here, on every openDb), and twice in
-// src/migrations.ts (the v1->v2 and v2->v3 migrations both have to
-// rebuild views after dropping tables they depend on). Defining the
-// SQL once here and importing it from migrations.ts keeps the current
-// shape from drifting silently.
+// The three views (ready, blocked, goals) get DROPped + CREATEd by
+// applySchema on every openDb. Each constant is self-contained:
+// DROP IF EXISTS + CREATE. Running DROP twice in a row is harmless,
+// so callers that already DROP up-front can still re-execute these
+// without churn.
 //
-// HISTORICAL NOTE: migrateV1ToV2 keeps its OWN inline `goals` view
-// because the v2 shape (`status <> 'CLOSED'`) differs from the v3
-// shape (`status NOT IN ('CLOSED','REJECTED','DEFERRED')`). The
-// constant below is the CURRENT (v3+) shape; rewriting v1->v2 to use
-// it would retroactively rewrite history. ready and blocked are byte-
-// identical across every version so far, so v1->v2 imports those.
-//
-// Each constant is self-contained: DROP IF EXISTS + CREATE. Running
-// DROP twice in a row is harmless, so callers that already DROP up-
-// front (the migrations do, before rebuilding tables the views depend
-// on) can still re-execute these without churn.
+// Exported as named constants so consumers can reference the canonical
+// shape (e.g. one-shot migration scripts under scripts/) without
+// duplicating SQL.
 
 export const READY_VIEW_SQL = `
 DROP VIEW IF EXISTS ready;

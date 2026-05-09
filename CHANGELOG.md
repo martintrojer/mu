@@ -204,6 +204,21 @@ called out under "Breaking" in each entry.
 
 ### Removed
 
+- **`src/migrations.ts` deleted (≈ −450 LOC src+test).** Closes
+  `schema_v5_drop_migrations_ts` in `mufeedback`. The v1→v2 / v2→v3
+  / v3→v4 in-process forward migrators were dead code: the v5
+  loud-fail hook in `openDb` (added by `schema_v5_migration_script`)
+  rejects every pre-v5 DB with `SchemaTooOldError` before any
+  migration would run, and the v4→v5 transition is a one-shot
+  out-of-process script (`scripts/migrate-v4-to-v5.ts`). Net delta:
+  `src/migrations.ts` removed (−473 LOC), the two `describe.skip`
+  migration suites in `test/db.test.ts` removed (−403 LOC), the
+  `_runOneMigration` test seam removed, the comment in `src/db.ts`
+  ("Migrations are versioned via…") rewritten, and the
+  `src/migrations.ts` row dropped from `docs/ARCHITECTURE.md`'s
+  module table. Behaviour unchanged — nothing in production reached
+  those paths since `schema_v5_migration_script` shipped.
+
 - **`src/cli/tasks.ts` no longer re-exports the lifecycle/queries
   cluster's `cmd*` functions.** Closes
   `review_code_cli_tasks_re_export_indirection` in `mufeedback`.

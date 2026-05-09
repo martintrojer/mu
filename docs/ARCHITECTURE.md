@@ -285,7 +285,6 @@ anticipatory layering. Each module is concrete and consumed today.
 | `src/vcs.ts`          | `VcsBackend` interface + jj / sl / git / none impls; detection precedence; `commitsBehind(workspacePath, ref)` for staleness signal (no auto-fetch; pure observation) |
 | `src/workspace.ts`    | Per-agent VCS workspaces (registry layer on top of vcs.ts); CRUD + cascade; orphan-dir detection (`listWorkspaceOrphans`); staleness decoration (`decorateWithStaleness` populates `commitsBehindMain` per row) |
 | `src/snapshots.ts`    | Whole-DB snapshots (`VACUUM INTO`); auto-captured before destructive verbs (schema v4); SDK for `mu undo` |
-| `src/migrations.ts`   | Forward-only schema migrations (v1→v2 ON UPDATE CASCADE; v2→v3 REJECTED+DEFERRED; v3→v4 snapshots) |
 | `src/output.ts`       | NextStep type + `printNextSteps` + `errorNextSteps` plumbing for self-documenting output |
 | `src/approvals.ts`    | Human-in-the-loop gate: add/grant/deny/wait verbs                                         |
 | `src/cli.ts`          | commander entry; `buildProgram()` + `handle()` (exit-code map); shared format helpers (`formatTaskListTable` / `formatAgentsTable` / `formatReadyTable` / `formatTracks`); `pc.dim`/`pc.cyan` colour palette helpers |
@@ -325,7 +324,7 @@ each are deliberately small.
 | `VcsBackend`        | Implementing `detect / createWorkspace / freeWorkspace / commitsBehind` (~80–150 LOC; jj/sl/git/none are working examples)        |
 | Per-CLI `Detector`  | Adding patterns to `detectPiStatus` (vanilla pi `to interrupt)`; pi-meta + every TUI wrapper covered by Braille spinner glyph fallback `[\u2800-\u28FF]`)                  |
 | New typed verb      | Add an SDK function in the relevant `src/*.ts`; add a `cmd<Verb>` to the matching `src/cli/<namespace>.ts` (or create a new namespace if the verb doesn't fit existing ones); wire one commander block in `src/cli.ts`'s `buildProgram()` (use `handle()` for the exit-code map; route through `printNextSteps` for self-documenting output) |
-| New schema migration| Bump `CURRENT_SCHEMA_VERSION` in `src/db.ts`; add a `(toVersion -> fn)` to `MIGRATIONS` in `src/migrations.ts`; mirror the new shape in `CURRENT_SCHEMA`. v1→v2→v3→v4 examples in place |
+| New schema migration| Bump `CURRENT_SCHEMA_VERSION` in `src/db.ts`; mirror the new shape in `CURRENT_SCHEMA`; ship a one-shot script under `scripts/` (mirroring `scripts/migrate-v4-to-v5.ts`) that the operator runs once. The loud-fail hook in `openDb` rejects pre-current DBs with `SchemaTooOldError` (exit code 4) |
 | Snapshot hook       | Add `await captureSnapshot(db, 'verb-name', workstream)` at the top of any new destructive verb (one-liner; GC + restore behaviour automatic) |
 
 ## State of truth

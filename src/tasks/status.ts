@@ -25,9 +25,9 @@ export const TASK_STATUSES: readonly TaskStatus[] = [
  *
  *  (The complement — 'statuses that satisfy a blocked-by edge' — is
  *  just `["CLOSED"]` and is hardcoded inline in the SQL views in
- *  src/db.ts + src/migrations.ts. A constant for it was tried and
- *  reverted: a one-element array doesn't earn its keep, and
- *  parameterising the SQL views from a TS const would be brittle.) */
+ *  src/db.ts. A constant for it was tried and reverted: a one-element
+ *  array doesn't earn its keep, and parameterising the SQL views from
+ *  a TS const would be brittle.) */
 export const STATUSES_TERMINAL_OR_PARKED: readonly TaskStatus[] = [
   "CLOSED",
   "REJECTED",
