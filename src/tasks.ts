@@ -376,14 +376,36 @@ const SELECT_VIEW_COLS = `
   v.updated_at AS updated_at
 `;
 
-export function listReady(db: Db, workstream: string): TaskRow[] {
+/** Options for listReady. The optional `statuses` filter composes
+ *  on top of the `ready` view (which itself constrains to
+ *  `status='OPEN'`); passing only OPEN is identical to today's no-
+ *  filter shape, passing only non-OPEN values returns []. Exists so
+ *  `mu task next --status` can mirror the multi-status flag shape
+ *  shipped on `mu task list` (task_list_multi_status_union). */
+export interface ListReadyOptions {
+  status?: TaskStatus | readonly TaskStatus[];
+}
+
+export function listReady(db: Db, workstream: string, opts: ListReadyOptions = {}): TaskRow[] {
   const wsId = tryResolveWorkstreamId(db, workstream);
   if (wsId === null) return [];
+  const statuses =
+    opts.status === undefined
+      ? undefined
+      : Array.isArray(opts.status)
+        ? (opts.status as TaskStatus[])
+        : [opts.status as TaskStatus];
+  const where: string[] = ["v.workstream_id = ?"];
+  const params: unknown[] = [wsId];
+  if (statuses !== undefined && statuses.length > 0) {
+    where.push(`v.status IN (${statuses.map(() => "?").join(", ")})`);
+    params.push(...statuses);
+  }
   const rows = db
     .prepare(
-      `SELECT ${SELECT_VIEW_COLS} ${VIEW_FROM_JOIN("ready")} WHERE v.workstream_id = ? ORDER BY v.local_id`,
+      `SELECT ${SELECT_VIEW_COLS} ${VIEW_FROM_JOIN("ready")} WHERE ${where.join(" AND ")} ORDER BY v.local_id`,
     )
-    .all(wsId) as RawTaskRow[];
+    .all(...params) as RawTaskRow[];
   return rows.map(rowFromDb);
 }
 

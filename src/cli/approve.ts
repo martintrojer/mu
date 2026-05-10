@@ -32,6 +32,7 @@ import {
   UsageError,
   assertEntityInWorkstream,
   emitJson,
+  parseCsvFlag,
   resolveEntityRef,
   resolveOptionalWorkstream,
   resolveSelfOptional,
@@ -81,20 +82,33 @@ export async function cmdApprovalAdd(
 
 export async function cmdApprovalList(
   db: Db,
-  opts: { workstream?: string; status?: string; all?: boolean; json?: boolean },
+  opts: { workstream?: string; status?: string[]; all?: boolean; json?: boolean },
 ): Promise<void> {
-  const listOpts: { workstream?: string; status?: ApprovalStatus } = {};
+  const listOpts: { workstream?: string; status?: ApprovalStatus[] } = {};
   if (!opts.all) {
     const ws = opts.workstream ?? (await resolveOptionalWorkstream());
     if (ws) listOpts.workstream = ws;
   }
-  if (opts.status !== undefined) {
-    if (!isApprovalStatus(opts.status)) {
-      throw new UsageError(
-        `--status must be one of pending|granted|denied|timeout (got ${JSON.stringify(opts.status)})`,
-      );
+  // --status accepts repeat OR comma-separate OR mix (mirrors
+  // task list / task next per task_list_multi_status_union).
+  // Empty / missing == no filter; dedup is case-insensitive
+  // (parseApprovalStatus normalises to lower).
+  const fragments = parseCsvFlag(opts.status);
+  if (fragments.length > 0) {
+    const seen = new Set<ApprovalStatus>();
+    const statuses: ApprovalStatus[] = [];
+    for (const raw of fragments) {
+      const lower = raw.toLowerCase();
+      if (!isApprovalStatus(lower)) {
+        throw new UsageError(
+          `--status must be one of pending|granted|denied|timeout (got ${JSON.stringify(raw)})`,
+        );
+      }
+      if (seen.has(lower)) continue;
+      seen.add(lower);
+      statuses.push(lower);
     }
-    listOpts.status = opts.status;
+    listOpts.status = statuses;
   }
   const rows = listApprovals(db, listOpts);
   if (opts.json) {
@@ -280,13 +294,16 @@ export function wireApproveCommands(program: Command): void {
     .description(
       "List approvals in the current workstream. --status filters; --all spans every workstream.",
     )
-    .option("--status <s>", "pending | granted | denied | timeout")
+    .option(
+      "--status <s...>",
+      "filter by status (pending | granted | denied | timeout; case-insensitive; repeat or comma-separate; or both)",
+    )
     .option("--all", "span every workstream")
     .option(...WORKSTREAM_OPT)
     .option(...JSON_OPT)
     .action(function () {
       const opts = (this as Command).opts() as {
-        status?: string;
+        status?: string[];
         all?: boolean;
         workstream?: string;
         json?: boolean;

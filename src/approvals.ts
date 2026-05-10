@@ -216,10 +216,19 @@ export function getApproval(db: Db, slug: string, workstream: string): ApprovalR
 
 export interface ListApprovalsOptions {
   workstream?: string;
-  status?: ApprovalStatus;
+  /** Filter to one or more statuses. Single value behaves identically
+   *  to the legacy `status: ApprovalStatus`; an array becomes
+   *  `WHERE status IN (?, ?, …)` (parameterised). Omitted = all. */
+  status?: ApprovalStatus | readonly ApprovalStatus[];
 }
 
 export function listApprovals(db: Db, opts: ListApprovalsOptions = {}): ApprovalRow[] {
+  const statuses =
+    opts.status === undefined
+      ? undefined
+      : Array.isArray(opts.status)
+        ? (opts.status as ApprovalStatus[])
+        : [opts.status as ApprovalStatus];
   const conditions: string[] = [];
   const params: unknown[] = [];
   if (opts.workstream !== undefined) {
@@ -228,9 +237,9 @@ export function listApprovals(db: Db, opts: ListApprovalsOptions = {}): Approval
     conditions.push("ap.workstream_id = ?");
     params.push(wsId);
   }
-  if (opts.status !== undefined) {
-    conditions.push("ap.status = ?");
-    params.push(opts.status);
+  if (statuses !== undefined && statuses.length > 0) {
+    conditions.push(`ap.status IN (${statuses.map(() => "?").join(", ")})`);
+    params.push(...statuses);
   }
   const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
   const rows = db

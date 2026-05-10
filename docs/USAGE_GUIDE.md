@@ -156,8 +156,13 @@ syntactic signal is `<value...>` in the help-text metavar (the
 triple-dot); the parenthetical "repeat or comma-separate; or both"
 reinforces it. Variadic positionals (e.g. `mu task wait a b c`) keep
 their Unix-style space-separated shape — operands are not commas.
-Single-valued flags (`-w`, `--by`, `--status`, `--title`, ...) stay
-single.
+Single-valued flags (`-w`, `--by`, `--title`, ...) stay single. The
+`--status` filter on `mu task list`, `mu task next`, and `mu approve
+list` accepts the same multi-value shape (`--status OPEN,IN_PROGRESS`,
+`--status OPEN --status CLOSED`, or any mix) and returns the union.
+Missing `--status` keeps today's no-filter shape (no auto-default).
+`mu task wait --status` stays single — the verb means "wait until
+reaches THIS status".
 
 ---
 

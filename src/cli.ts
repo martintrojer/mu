@@ -307,6 +307,33 @@ export function parseStatusOption(raw: string, flag = "--status"): TaskStatus {
   return upper;
 }
 
+/** Multi-status flag parser for the `--status <s...>` shape used by
+ *  `mu task list / task next / approve list` (per
+ *  task_list_multi_status_union). Composes parseCsvFlag (repeat OR
+ *  comma-separated OR mix) with per-element parseStatusOption
+ *  validation, then dedups case-insensitively (parseStatusOption
+ *  upper-cases). Returns `undefined` when the flag is absent or
+ *  resolves to an empty array — semantically "no filter", matching
+ *  today's no-`--status` shape. Throws UsageError naming the offending
+ *  element on the first invalid value (so the operator sees which one
+ *  failed, not just "some value was wrong"). */
+export function parseStatusesOption(
+  values: readonly string[] | undefined,
+  flag = "--status",
+): TaskStatus[] | undefined {
+  const fragments = parseCsvFlag(values);
+  if (fragments.length === 0) return undefined;
+  const seen = new Set<TaskStatus>();
+  const out: TaskStatus[] = [];
+  for (const raw of fragments) {
+    const status = parseStatusOption(raw, flag);
+    if (seen.has(status)) continue;
+    seen.add(status);
+    out.push(status);
+  }
+  return out;
+}
+
 /**
  * Map a typed error to (label, exitCode). The label is the prefix
  * before the message in human output (e.g. "conflict", "not found");

@@ -235,9 +235,11 @@ mu adopt <pane-id|pane-title>        # register an orphan pane as a managed agen
 
 # Tasks (18)
 mu task add [id] --title T --impact N --effort-days N [--blocked-by A,B]
-mu task list [--status S] [--sort K]   # every task; --sort id|roi|recency|age
-mu task next [-n K] [--sort K]         # top-K ready (default K=1, --sort roi); -n 0 = all
+mu task list [--status S...] [--sort K]  # every task; --sort id|roi|recency|age
+                                     # --status accepts repeat OR comma-separate OR mix (union)
+mu task next [-n K] [--sort K] [--status S...]  # top-K ready (default K=1, --sort roi); -n 0 = all
                                      # --sort: id|roi|recency|age (time-based adds rel-time col)
+                                     # --status: same multi-value shape as task list
 mu task owned-by <agent>             # what is <agent> working on?
 mu task show <id>                    # row + edges + notes
 mu task tree <id> [--down]           # ASCII blockers (or dependents)
@@ -278,7 +280,7 @@ mu log --tail [--since SEQ]          # subscribe
 
 # Approvals (5) — human-in-the-loop
 mu approve add --reason "..." [--slug X]   # returns slug
-mu approve list [--status S]
+mu approve list [--status S...]      # --status: pending|granted|denied|timeout (multi-value, union)
 mu approve grant <slug>
 mu approve deny  <slug>
 mu approve wait  <slug> [--timeout SECONDS]   # exit 0 / 4 / 5

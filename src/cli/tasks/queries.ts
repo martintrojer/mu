@@ -22,7 +22,7 @@ import {
   emitJson,
   formatTaskListTable,
   parseSortOption,
-  parseStatusOption,
+  parseStatusesOption,
   relTimeBasisForSort,
   resolveSelf,
   resolveWorkstream,
@@ -77,12 +77,16 @@ export async function cmdMyNext(db: Db, opts: { lines?: number; json?: boolean }
 
 export async function cmdTaskList(
   db: Db,
-  opts: { workstream?: string; json?: boolean; status?: string; sort?: string },
+  opts: { workstream?: string; json?: boolean; status?: string[]; sort?: string },
 ): Promise<void> {
   const workstream = await resolveWorkstream(opts.workstream);
   const listOpts: Parameters<typeof listTasks>[2] = {};
-  if (opts.status !== undefined) {
-    listOpts.status = parseStatusOption(opts.status);
+  // --status accepts repeat OR comma-separate OR mix; parseStatusesOption
+  // handles parseCsvFlag + per-element validate + dedup. Returns
+  // undefined for no filter (matches today's no-flag shape).
+  const statuses = parseStatusesOption(opts.status);
+  if (statuses !== undefined) {
+    listOpts.status = statuses;
   }
   // Default sort for `mu task list` is `id` (preserves prior
   // behaviour: SQL ORDER BY local_id). The other read verbs default
@@ -108,12 +112,17 @@ export async function cmdTaskList(
 // historical "what should I do right now?" shape.
 export async function cmdTaskNext(
   db: Db,
-  opts: { workstream?: string; lines?: number; json?: boolean; sort?: string },
+  opts: { workstream?: string; lines?: number; json?: boolean; sort?: string; status?: string[] },
 ): Promise<void> {
   const workstream = await resolveWorkstream(opts.workstream);
   const k = opts.lines ?? 1;
   const sortKey: TaskSortKey = opts.sort === undefined ? "roi" : parseSortOption(opts.sort);
-  const sorted = sortTasks(listReady(db, workstream), sortKey);
+  const readyOpts: Parameters<typeof listReady>[2] = {};
+  const statuses = parseStatusesOption(opts.status);
+  if (statuses !== undefined) {
+    readyOpts.status = statuses;
+  }
+  const sorted = sortTasks(listReady(db, workstream, readyOpts), sortKey);
   const tasks = k === 0 ? sorted : sorted.slice(0, k);
   if (opts.json) {
     emitJson(withRoiAll(tasks));

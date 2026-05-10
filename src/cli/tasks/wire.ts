@@ -68,8 +68,8 @@ export function wireTaskCommands(program: Command): void {
     .description("List every task in the current workstream (id, status, ROI, owner)")
     .option(...WORKSTREAM_OPT)
     .option(
-      "--status <status>",
-      `filter by lifecycle status (${TASK_STATUS_LIST}; case-insensitive)`,
+      "--status <status...>",
+      `filter by lifecycle status (${TASK_STATUS_LIST}; case-insensitive; repeat or comma-separate; or both)`,
     )
     .option("--sort <key>", `${SORT_OPT_DESC} (default id)`)
     .option(...JSON_OPT)
@@ -77,7 +77,7 @@ export function wireTaskCommands(program: Command): void {
       const opts = (this as Command).opts() as {
         workstream?: string;
         json?: boolean;
-        status?: string;
+        status?: string[];
         sort?: string;
       };
       return handle((db) => cmdTaskList(db, opts))();
@@ -95,6 +95,10 @@ export function wireTaskCommands(program: Command): void {
     )
     .option(...WORKSTREAM_OPT)
     .option("--sort <key>", `${SORT_OPT_DESC} (default roi)`)
+    .option(
+      "--status <status...>",
+      `filter by lifecycle status (${TASK_STATUS_LIST}; case-insensitive; repeat or comma-separate; or both)`,
+    )
     .option(...JSON_OPT)
     .action(function () {
       const opts = (this as Command).opts() as {
@@ -102,6 +106,7 @@ export function wireTaskCommands(program: Command): void {
         lines?: number;
         json?: boolean;
         sort?: string;
+        status?: string[];
       };
       return handle((db) => cmdTaskNext(db, opts))();
     });
