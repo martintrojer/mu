@@ -162,10 +162,7 @@ interface StateOpts {
   lines?: number; // alias short-flag -n (hud muscle memory)
 }
 
-async function resolveWorkstreamSet(
-  db: Db,
-  opts: StateOpts,
-): Promise<{ workstreams: string[]; resolvedNothing: boolean }> {
+async function resolveWorkstreamSet(db: Db, opts: StateOpts): Promise<string[]> {
   const explicitW = opts.workstream !== undefined && opts.workstream.length > 0;
   const explicitAll = opts.all === true;
   if (explicitAll && explicitW) {
@@ -173,7 +170,7 @@ async function resolveWorkstreamSet(
   }
   if (explicitAll) {
     const all = await listWorkstreams(db);
-    return { workstreams: all.map((w) => w.name), resolvedNothing: false };
+    return all.map((w) => w.name);
   }
   if (explicitW) {
     // parseCsvFlag canonicalises repeat / comma / mixed forms into a
@@ -186,14 +183,14 @@ async function resolveWorkstreamSet(
       for (const n of deduped) {
         if (tryResolveWorkstreamId(db, n) === null) throw new WorkstreamNotFoundError(n);
       }
-      return { workstreams: deduped, resolvedNothing: false };
+      return deduped;
     }
   }
   // No explicit -w (or it canonicalised away to nothing): auto-resolve
   // a single workstream from $MU_SESSION / tmux session.
   const single = await resolveOptionalWorkstream();
-  if (single === null) return { workstreams: [], resolvedNothing: true };
-  return { workstreams: [single], resolvedNothing: false };
+  if (single === null) return [];
+  return [single];
 }
 
 // ─── JSON shape ─────────────────────────────────────────────────────
@@ -250,7 +247,7 @@ export async function cmdState(db: Db, opts: StateOpts): Promise<void> {
     }
   }
 
-  const { workstreams, resolvedNothing } = await resolveWorkstreamSet(db, opts);
+  const workstreams = await resolveWorkstreamSet(db, opts);
 
   // --all on an empty machine: render empty hint cleanly.
   if (workstreams.length === 0) {
@@ -261,10 +258,6 @@ export async function cmdState(db: Db, opts: StateOpts): Promise<void> {
     console.log(pc.dim("(no workstreams)"));
     return;
   }
-  // Defensive: resolveWorkstreamSet only returns resolvedNothing=true
-  // when workstreams is empty (handled above), but the typing carries
-  // it for clarity.
-  void resolvedNothing;
 
   const eventLimit = opts.events ?? opts.lines ?? (opts.hud === true ? 10 : 20);
   const perWs: PerWsData[] = [];
