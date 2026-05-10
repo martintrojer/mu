@@ -81,6 +81,19 @@ export function resetWaitPollCount(): void {
   pollCount = 0;
 }
 
+/** A single task ref the wait verb is watching. Cross-workstream
+ *  waits arrive as a heterogeneous list of (workstream, name) pairs;
+ *  the legacy single-workstream call passes the same workstream on
+ *  every ref. task_wait_cross_workstream. */
+export interface TaskWaitRef {
+  /** The workstream the task lives in. Each ref carries its own so
+   *  the SDK doesn't need a single "the workstream" — cross-ws waits
+   *  pass refs from multiple workstreams in one call. */
+  workstreamName: string;
+  /** The task's per-workstream-unique local id. */
+  name: string;
+}
+
 export interface TaskWaitOptions {
   /** Target status. Default 'CLOSED'. */
   status?: TaskStatus;
@@ -92,10 +105,13 @@ export interface TaskWaitOptions {
   timeoutMs?: number;
   /** Polling interval. Default 1000ms; overridable for tests. */
   pollMs?: number;
-  /** Workstream context for the listed tasks AND the stuck-detector's
-   *  agent lookup. Every internal `getTask` / agent SELECT scopes by
-   *  workstream (v5 per-workstream-unique TEXT names). */
-  workstream: string;
+  /** Workstream context applied to bare-string ids. Required when the
+   *  caller passes `string[]`; ignored when the caller passes
+   *  `TaskWaitRef[]` (each ref carries its own ws). The legacy
+   *  single-ws SDK call site keeps its today's shape; the cross-ws
+   *  callers (CLI verb) pass `TaskWaitRef[]` and omit `workstream`.
+   *  task_wait_cross_workstream. */
+  workstream?: string;
   /** Emit a yellow STUCK warning to stderr (once per task per wait call)
    *  when an IN_PROGRESS task's owner has been in `needs_input` for at
    *  least this many milliseconds since the agent row's last update.
@@ -123,6 +139,10 @@ export interface TaskWaitOptions {
 }
 
 export interface TaskWaitTaskState {
+  /** The workstream this task lives in. Cross-workstream waits
+   *  return a mixed list; the workstream is part of identity.
+   *  task_wait_cross_workstream. */
+  workstreamName: string;
   /** The task's per-workstream-unique name. */
   name: string;
   /** Current status (at the moment we exit). */
@@ -167,30 +187,48 @@ export interface TaskWaitResult {
  */
 export async function waitForTasks(
   db: Db,
-  localIds: readonly string[],
+  input: readonly TaskWaitRef[] | readonly string[],
   opts: TaskWaitOptions,
 ): Promise<TaskWaitResult> {
-  if (localIds.length === 0) {
-    throw new Error("waitForTasks: localIds must be non-empty");
+  if (input.length === 0) {
+    throw new Error("waitForTasks: refs must be non-empty");
   }
+  // Normalise to TaskWaitRef[]. The string[] shape preserves today's
+  // single-workstream SDK contract (callers pass `workstream` on
+  // opts); the TaskWaitRef[] shape carries its own ws per ref so
+  // cross-workstream waits don't need a sentinel.
+  const refs: readonly TaskWaitRef[] = input.map((entry) => {
+    if (typeof entry === "string") {
+      if (opts.workstream === undefined)
+        throw new Error(
+          "waitForTasks: string ids require opts.workstream; pass TaskWaitRef[] for cross-workstream waits",
+        );
+      return { workstreamName: opts.workstream, name: entry };
+    }
+    return entry;
+  });
   const target: TaskStatus = opts.status ?? "CLOSED";
   const wantAny = opts.any === true;
   const timeoutMs = opts.timeoutMs ?? 600_000;
   const pollMs = opts.pollMs ?? 1000;
   const stuckAfterMs = opts.stuckAfterMs ?? 300_000;
-  const workstream = opts.workstream;
   const deadline = timeoutMs > 0 ? Date.now() + timeoutMs : Number.POSITIVE_INFINITY;
   const startedAt = Date.now();
 
-  // Pre-flight: every id must exist in the workstream scope.
-  for (const id of localIds) {
-    if (getTask(db, id, workstream) === undefined) throw new TaskNotFoundError(id);
+  // Pre-flight: every ref must exist in its own workstream scope.
+  // Cross-workstream waits validate each ref against its declared ws
+  // — a typo in the workstream half of `<ws>/<name>` should land here
+  // with a clear TaskNotFoundError, not silently wait forever.
+  for (const ref of refs) {
+    if (getTask(db, ref.name, ref.workstreamName) === undefined)
+      throw new TaskNotFoundError(`${ref.workstreamName}/${ref.name}`);
   }
 
-  // Per-task dedupe: emit the STUCK warning at most ONCE per wait call,
-  // not once per poll cycle. Operators don't want their stderr filled
-  // with the same yellow line every second; one nudge is enough.
+  // Per-(ws,name) dedupe: emit the STUCK warning at most ONCE per wait
+  // call, not once per poll cycle. Operators don't want their stderr
+  // filled with the same yellow line every second; one nudge is enough.
   const stuckWarned = new Set<string>();
+  const refKey = (ref: TaskWaitRef): string => `${ref.workstreamName}/${ref.name}`;
 
   /**
    * Detect the agent_close_discipline_gap pattern for one task:
@@ -200,7 +238,7 @@ export async function waitForTasks(
    * avoid an import cycle (src/agents.ts already imports from
    * src/tasks.ts).
    */
-  const isStuck = (status: TaskStatus, owner: string | null): boolean => {
+  const isStuck = (status: TaskStatus, owner: string | null, workstream: string): boolean => {
     if (stuckAfterMs <= 0) return false;
     if (status !== "IN_PROGRESS" || !owner) return false;
     // owner is the operator-facing agent name; agents.name is
@@ -222,25 +260,27 @@ export async function waitForTasks(
 
   /** Read current state of all tasks; returns the result shape. */
   const snapshot = (): TaskWaitResult => {
-    const tasks: TaskWaitTaskState[] = localIds.map((id) => {
-      const row = getTask(db, id, workstream);
+    const tasks: TaskWaitTaskState[] = refs.map((ref) => {
+      const row = getTask(db, ref.name, ref.workstreamName);
       // Defensive: if a task was deleted mid-wait, treat as 'never
       // reached'. (Not the same as TaskNotFoundError pre-flight —
       // deletion mid-wait shouldn't crash the wait; it's a legitimate
       // state change.)
       const status = (row?.status ?? "OPEN") as TaskStatus;
       const owner = row?.ownerName ?? null;
-      const stuck = isStuck(status, owner);
-      if (stuck && !stuckWarned.has(id)) {
-        stuckWarned.add(id);
+      const stuck = isStuck(status, owner, ref.workstreamName);
+      const key = refKey(ref);
+      if (stuck && !stuckWarned.has(key)) {
+        stuckWarned.add(key);
         // Yellow ANSI escape inline (no picocolors import — keeps the
         // SDK module dep-free; the CLI layer already pulls picocolors).
         // The message is one line, prefixed with `mu task wait:` so
-        // log greppers can target it.
+        // log greppers can target it. Cross-ws waits include the
+        // qualified `<ws>/<name>` so the operator sees which.
         currentStuckWarn(
-          `\x1b[33mmu task wait: ${id} stuck — owner=${owner ?? "<none>"} in needs_input ` +
+          `\x1b[33mmu task wait: ${key} stuck — owner=${owner ?? "<none>"} in needs_input ` +
             `(>= ${stuckAfterMs}ms since last status change). ` +
-            `Worker likely committed but skipped \`mu task close ${id}\`.\x1b[0m\n`,
+            `Worker likely committed but skipped \`mu task close ${ref.name}\`.\x1b[0m\n`,
         );
         // Persist a corroborating kind='event' row so other consumers
         // (mu state, mu log --kind event, dashboards) see the same
@@ -250,12 +290,19 @@ export async function waitForTasks(
         const ageSecs = Math.round(stuckAfterMs / 1000);
         emitEvent(
           db,
-          workstream,
-          `agent stalled ${owner ?? "<none>"} owns ${id} for ${ageSecs}s`,
+          ref.workstreamName,
+          `agent stalled ${owner ?? "<none>"} owns ${ref.name} for ${ageSecs}s`,
           owner ?? "system",
         );
       }
-      return { name: id, status, owner, reachedTarget: status === target, stuck };
+      return {
+        workstreamName: ref.workstreamName,
+        name: ref.name,
+        status,
+        owner,
+        reachedTarget: status === target,
+        stuck,
+      };
     });
     const reachedCount = tasks.filter((t) => t.reachedTarget).length;
     return {

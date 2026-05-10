@@ -90,10 +90,19 @@ export async function runCli(argv: readonly string[], dbPath: string): Promise<C
   // The CLI's handle() wrapper calls process.exit(N) on typed errors;
   // intercept so the test process keeps running. Throw a sentinel so
   // the parseAsync awaits don't stall.
+  //
+  // We capture the FIRST exit code only — a verb that calls
+  // `process.exit(5)` directly (e.g. cmdTaskWait on timeout) gets
+  // wrapped by handle() which catches the shim Error, runs
+  // emitError(), and calls process.exit(1). The first exit code is
+  // the one the verb intended; the second is handle's fallback for
+  // an "unknown error" that's actually our own shim. Without this,
+  // tests asserting `exit 5` would see `1`. (task_wait_cross_workstream
+  // surfaced this when the --json timeout test was added.)
   // biome-ignore lint/suspicious/noExplicitAny: shim signature matches what we need
   (process as any).exit = (code?: number) => {
-    exitCode = code ?? 0;
-    throw new Error(`__exit__:${exitCode}`);
+    if (exitCode === null) exitCode = code ?? 0;
+    throw new Error(`__exit__:${code ?? 0}`);
   };
 
   let caughtError: Error | undefined;

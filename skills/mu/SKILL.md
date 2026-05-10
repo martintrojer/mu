@@ -142,11 +142,18 @@ Every turn:
   literal reminder, agents commit + report success in chat without
   running the typed close, and `mu task wait` hangs until
   `--stuck-after` fires.
-- **Pipeline cherry-picks; don't barrier.** Cherry-pick + verify +
-  free + dispatch next as each task closes; don't wait for all N.
-  Call `mu agent list -w <ws>` per poll to keep the reaper warm.
-- **Cross-workstream `mu task wait` doesn't exist yet.** Hand-roll
-  via `mu task show <id> -w <ws> --json` per task.
+- **Pipeline cherry-picks; don't barrier.** One wait, one
+  cherry-pick, one verify, one workspace recycle, repeat. Don't
+  block on all-N before picking the first. The verb that makes this
+  trivial is `mu task wait <ref> [<ref>...] --first --json`: it
+  prints the firing ref's qualified id to stdout AND emits a
+  `firing` field to JSON, so `closed=$(mu task wait ... --first
+  --json | jq -r .firing.qualifiedId)` is the loop body.
+- **Cross-workstream `mu task wait` is built in.** Pass qualified
+  refs `<workstream>/<name>` directly; `-w` is dropped when every
+  ref is qualified, and the per-poll reconcile loops over every
+  workstream in the set (so dead-pane reaping fires across the
+  whole wait surface, not just `-w`).
 - **Agent showed up as idle (⚠ glyph; alive but assigned, no recent
   progress)** — see scrollback via `mu agent show <name> -n N`;
   recover via `mu agent send <name> '<retry>'` OR `mu task release
@@ -260,13 +267,19 @@ mu task block <blocked> --by <blocker>     # cycle + workstream checked
 mu task unblock <blocked> --by <blocker>
 mu task update <id> [--title|--impact|--effort-days]
 mu task reparent <id> --blocked-by A,B   # atomic edge replacement
-mu task wait <id> [<id>...] [--status S] [--any] [--timeout SECONDS]
+mu task wait <ref> [<ref>...] [--status S] [--first|--any] [--timeout SECONDS]
                                          # block until tasks reach status
-                                         # (default CLOSED, all-of). Reconciles
-                                         # each poll so a dead-pane worker fails
-                                         # fast: exit 0 met / 5 timeout / 6 the
-                                         # reaper flipped a watched task back to
-                                         # OPEN (only when target=CLOSED).
+                                         # (default CLOSED, all-of). Each <ref>
+                                         # is bare (uses -w) or qualified
+                                         # `<ws>/<name>` (cross-workstream;
+                                         # -w not required when ALL qualified).
+                                         # --first = --any + prints firing
+                                         # qualified id to stdout + JSON {firing}.
+                                         # Reconciles each ws-in-set per poll so
+                                         # a dead-pane worker fails fast: exit
+                                         # 0 met / 5 timeout / 6 the reaper
+                                         # flipped a WATCHED task back to OPEN
+                                         # (only when target=CLOSED).
 mu task delete <id>                  # cascades to edges+notes; no undo
 
 # Self-identification (1 verb, 2 subcommands) — in-pane only
@@ -598,14 +611,21 @@ spell out:
 # Wait until 'design' closes, then start the next thing
 mu task wait design && mu task claim build_auth --self --evidence 'design closed'
 
-# Dispatch N workers, wait for ALL
+# Dispatch N workers, wait for ALL (single workstream)
 mu task wait design build_a build_b --timeout 1200
 
-# Race: act on the FIRST done (--any)
-mu task wait probe_a probe_b probe_c --any --json | jq .tasks
+# Cross-workstream: qualified refs, no -w needed
+mu task wait roadmap-v0-3/archive mufeedback-v03/cli_audit --timeout 1800
+
+# Pipeline-cherry-pick loop: --first prints WHICH closed; act on it,
+# then loop. The recipe (cherry-pick + verify + free + recreate) is
+# in nextSteps too — jq it out, don't reinvent.
+closed=$(mu task wait wsa/foo wsb/bar --first --json | jq -r .firing.qualifiedId)
+# closed="wsb/bar" — cherry-pick that worker's HEAD; verify; free; loop.
 ```
 
-Default target status is CLOSED. Exit 0 = met; 5 = timeout; 3 =
+Default target status is CLOSED. Exit 0 = met; 5 = timeout; 6 = the
+reaper flipped a watched task back to OPEN (target=CLOSED only); 3 =
 missing task id. See `mu task wait --help`.
 
 ## DOs

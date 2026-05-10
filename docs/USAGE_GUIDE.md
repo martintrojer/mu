@@ -727,22 +727,88 @@ mu sql "SELECT name FROM sqlite_master WHERE type IN ('table','view') ORDER BY t
 | Replace all blockers atomically                       | `mu task reparent <id> --blocked-by ...`    |
 | Modify scalar fields                                  | `mu task update <id> [--title ...]`     |
 | Read the activity log / subscribe to events           | `mu log [--tail] [--kind event]`        |
-| Block until tasks reach a status (orchestrator wait)  | `mu task wait <id> [<id>...] [--any] [--timeout S]` |
+| Block until tasks reach a status (orchestrator wait)  | `mu task wait <ref> [<ref>...] [--first|--any] [--timeout S]` |
+
+### `mu task wait`: cross-workstream refs + `--first` returns WHICH
+
+Each `<ref>` is either a bare task name (resolves via `-w` /
+`$MU_SESSION` / tmux session) or a qualified `<workstream>/<name>`
+ref. When all refs are qualified, `-w` is not required; mixed lists
+are allowed (bare uses `-w`, qualified uses its prefix).
+
+```bash
+# All-bare with -w  — today's classic shape, unchanged
+mu task wait build_a build_b -w mufeedback-v03 --timeout 1200
+
+# All-qualified  — cross-workstream wait, no -w needed
+mu task wait roadmap-v0-3/archive_phase2 mufeedback-v03/cli_audit --timeout 1800
+
+# Mixed  — bare uses -w; qualified ignores it
+mu task wait cli_audit roadmap-v0-3/archive_phase2 -w mufeedback-v03
+```
+
+`--first` is an alias for `--any` that ALSO prints the firing ref's
+qualified id to stdout (and adds a `firing` field to `--json`). Use
+it to drive a single-shot dispatch loop — one wait, one cherry-pick,
+one verify, one workspace recycle:
+
+```bash
+# The dispatch-pipeline recipe: cycle until in_flight is empty.
+in_flight=( mufeedback-v03/foo mufeedback-v03/bar roadmap-v0-3/baz )
+while (( ${#in_flight[@]} > 0 )); do
+  closed=$(mu task wait "${in_flight[@]}" --first --timeout 90 --json \
+    | jq -r '.firing.qualifiedId // empty')
+  if [[ -z "$closed" ]]; then break; fi  # timeout or exit 6 — see below
+
+  # 1. Cherry-pick the worker's HEAD (the worker is named in the
+  #    nextSteps array — or use `mu task show` to look up).
+  worker=$(mu task show "${closed##*/}" -w "${closed%%/*}" --json | jq -r .ownerName)
+  ws=${closed%%/*}
+  git cherry-pick "$(cd "$(mu workspace path "$worker" -w "$ws")" && git log -1 --format=%H)"
+
+  # 2. Verify
+  npm run typecheck && npm run lint && npm run test && npm run build
+
+  # 3. Free + recreate the workspace for the next dispatch
+  mu workspace free   "$worker" -w "$ws"
+  mu workspace create "$worker" -w "$ws"
+
+  # 4. Drop $closed from in_flight, dispatch the next task, repeat.
+  in_flight=( "${in_flight[@]/$closed}" )
+done
+```
+
+The `--json` shape on success is `{ firing, all, timedOut, nextSteps,
+... }`:
+
+* `firing`   — `{ workstreamName, name, qualifiedId, status, owner }`
+  on `--first` / `--any` success; `null` on `--all` success or on
+  timeout.
+* `all`      — array of refs that REACHED the target (with
+  `qualifiedId` + `reachedAt`).
+* `timedOut` — array of refs that did NOT reach the target. Empty on
+  clean success; populated on partial-progress timeout.
+* `nextSteps`— the same hint list printed to stdout (cherry-pick,
+  verify, free + recreate, or `mu task show` for unmet refs).
 
 ### Wait exit codes (`mu task wait`)
 
 `mu task wait` polls the watched tasks every second (cheap indexed
-SELECT + a per-poll workstream reconcile) and exits with one of:
+SELECT + a per-poll reconcile of every workstream in the wait set)
+and exits with one of:
 
 | Exit | Meaning                                                                 |
 |------|-------------------------------------------------------------------------|
-| `0`  | The wait condition was met (`--all` reached, or `--any` saw at least one). |
-| `5`  | `--timeout` expired before the condition was met.                         |
-| `6`  | **REAPER_DETECTED.** A watched task transitioned `IN_PROGRESS → OPEN` between polls because the reconciler detected the owning pane was dead and the reaper flipped the task back. Fires only when the wait target is `CLOSED` (the default) — with `--status OPEN` a reaper-flip TO open IS the success and the wait returns `0`. Re-dispatch a worker (`mu agent spawn ... && mu task claim --for ...`) and re-run the wait. (`task_wait_reconcile_dead_panes`) |
+| `0`  | The wait condition was met (`--all` reached, or `--any` / `--first` saw at least one). |
+| `5`  | `--timeout` expired before the condition was met. `--json` payload still includes `all` (refs that did reach) and `timedOut` (refs that didn't). |
+| `6`  | **REAPER_DETECTED.** A WATCHED task transitioned `IN_PROGRESS → OPEN` between polls because the reconciler detected the owning pane was dead and the reaper flipped the task back. Scoped to the wait set: a reaper-flip in some other workstream (or some other task in the same workstream) does NOT trigger exit 6. Fires only when the wait target is `CLOSED` (the default) — with `--status OPEN` a reaper-flip TO open IS the success and the wait returns `0`. Re-dispatch a worker (`mu agent spawn ... && mu task claim --for ...`) and re-run the wait. (`task_wait_reconcile_dead_panes` + `task_wait_cross_workstream`) |
 
 The per-poll reconcile means a worker pane that died **before** you
 ran `mu task wait` is also reaped on the first tick — you'll see exit
 `6` in well under a second instead of running out the `--timeout`.
+For cross-workstream waits the reconcile loops over every workstream
+in the wait set (so a dead pane in workstream B is reaped while you
+wait on its task there too).
 
 ### Common ad-hoc queries
 

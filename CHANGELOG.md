@@ -59,6 +59,27 @@ called out under "Breaking" in each entry.
   LOC src/ (entire `src/cli/hud.ts` lifted into `src/cli/state.ts`
   as render helpers).
 
+- **`mu task wait` accepts cross-workstream qualified refs and gains
+  `--first` (alias of `--any` that prints WHICH ref closed)**
+  (`task_wait_cross_workstream`). Each `<ref>` is now bare
+  (resolves via `-w` / `$MU_SESSION` / tmux session) or qualified
+  `<workstream>/<name>` — `-w` is dropped when every ref is
+  qualified; mixed lists are allowed. The per-poll reconcile loops
+  over every workstream in the wait set (so reaper-flip exit 6
+  fires across the whole watched surface, NOT just `-w`); a
+  reaper-flip on an UNWATCHED workstream does not bleed into the
+  exit code. `--first` adds a `firing: { workstreamName, name,
+  qualifiedId, status, owner }` field to `--json` and prints the
+  qualified id to stdout, so the dispatch-pipeline loop reduces to
+  `closed=$(mu task wait <refs> --first --json | jq -r .firing.qualifiedId);
+  cherry-pick; verify; free; recreate; repeat`. `--json` shape on
+  the default `--all` path: `{ firing: null, all: [<ref reaching
+  status>...], timedOut: [<unmet refs>...], nextSteps }`. SDK
+  `waitForTasks` now accepts `TaskWaitRef[]` (each carrying its own
+  `workstreamName`) in addition to the legacy `string[] + opts.workstream`
+  shape; new exported `TaskWaitRef` type; `TaskWaitTaskState` gains
+  a `workstreamName` field.
+
 - **`mu task wait` now reconciles the workstream each poll and fails
   fast on a dead worker pane** (`task_wait_reconcile_dead_panes`).
   Per-poll `reconcile(mode: "full")` runs the reaper, which flips an

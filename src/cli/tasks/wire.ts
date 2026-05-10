@@ -407,13 +407,17 @@ export function wireTaskCommands(program: Command): void {
   task
     .command("wait <ids...>")
     .description(
-      "Block until the listed tasks reach --status (default CLOSED). Default: every task must reach the target (--all). Pass --any to exit on the first one that does. Exit 0 = condition met; 5 = timeout.",
+      "Block until the listed tasks reach --status (default CLOSED). Each <id> may be bare (resolves via -w / $MU_SESSION / tmux) or qualified `<workstream>/<name>` (cross-workstream waits don't need -w). Default: every task must reach the target (--all). --any / --first exit on the first one that does; --first additionally prints the firing ref's qualified id to stdout. Exit 0 = condition met; 5 = timeout; 6 = a watched task was reaper-flipped IN_PROGRESS→OPEN (target=CLOSED only).",
     )
     .option(
       "--status <status>",
       `target status (${TASK_STATUS_LIST}, case-insensitive); default CLOSED`,
     )
     .option("--any", "succeed as soon as ONE listed task reaches the target (default: all must)")
+    .option(
+      "--first",
+      "alias for --any that ALSO prints the firing ref's qualified id to stdout (--json adds a `firing` field). Use to drive a single-shot dispatch loop: `closed=$(mu task wait a b --first --json | jq -r .firing.qualifiedId)`.",
+    )
     .option("--timeout <seconds>", "max seconds to wait (0 = forever, default 600)", parseLines)
     .option(
       "--stuck-after <seconds>",
@@ -426,6 +430,7 @@ export function wireTaskCommands(program: Command): void {
       const opts = (this as Command).opts() as {
         status?: string;
         any?: boolean;
+        first?: boolean;
         timeout?: number;
         stuckAfter?: number;
         workstream?: string;

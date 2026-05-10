@@ -49,6 +49,7 @@ export {
   setWaitSleepForTests,
   setWaitStuckWarnForTests,
   type TaskWaitOptions,
+  type TaskWaitRef,
   type TaskWaitResult,
   type TaskWaitTaskState,
   waitForTasks,

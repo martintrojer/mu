@@ -230,3 +230,137 @@ describeIfTmux("mu task wait — reaper-detection integration", () => {
     expect(stderr).toMatch(/reaper/i);
   });
 });
+
+// task_wait_cross_workstream: a reaper-flip on a task we are NOT
+// watching must not trigger exit 6. We wait on workstream A's task
+// (the worker pane stays alive); meanwhile workstream B has its
+// own dead-pane worker whose task gets reaper-flipped. The wait on
+// A times out (or completes when we close A's task), but never
+// surfaces exit 6 because the priorState/check loop is scoped to
+// the watched refs.
+describeIfTmux("mu task wait — cross-workstream reaper isolation", () => {
+  let tempDir: string;
+  let dbPath: string;
+  let db: Db;
+  let wsA: string;
+  let wsB: string;
+  let sessionA: string;
+  let sessionB: string;
+  let restoreSleep: ((ms: number) => Promise<void>) | undefined;
+
+  beforeEach(() => {
+    resetTmuxExecutor();
+    process.env.MU_SPAWN_LIVENESS_MS = "0";
+    tempDir = mkdtempSync(join(tmpdir(), "mu-wait-x-"));
+    dbPath = join(tempDir, "mu.db");
+    db = openDb({ path: dbPath });
+    const tag = `${process.pid.toString(36)}-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`;
+    wsA = `wxa-${tag}`;
+    wsB = `wxb-${tag}`;
+    sessionA = `mu-${wsA}`;
+    sessionB = `mu-${wsB}`;
+    ensureWorkstream(db, wsA);
+    ensureWorkstream(db, wsB);
+    restoreSleep = setWaitSleepForTests(async (ms) => {
+      await new Promise((resolve) => setTimeout(resolve, Math.min(ms, 25)));
+    });
+  });
+
+  afterEach(async () => {
+    if (restoreSleep !== undefined) setWaitSleepForTests(restoreSleep);
+    const key = "MU_SPAWN_LIVENESS_MS";
+    delete process.env[key];
+    try {
+      db.close();
+    } catch {}
+    try {
+      await killSession(sessionA);
+    } catch {}
+    try {
+      await killSession(sessionB);
+    } catch {}
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  const SH = "sh -c 'while true; do sleep 60; done'";
+
+  it("reaper-flip on UNWATCHED workstream B does NOT trigger exit 6 on watch of A", async () => {
+    // wsA: alive worker owns alphaTask; we'll wait on alphaTask only.
+    await spawnAgent(db, { name: "a-worker", workstream: wsA, cli: "sh", command: SH });
+    addTask(db, {
+      localId: "alphatask",
+      workstream: wsA,
+      title: "A",
+      impact: 50,
+      effortDays: 1,
+    });
+    await claimTask(db, "alphatask", { agentName: "a-worker", workstream: wsA });
+
+    // wsB: a worker owning betaTask, then we kill its pane mid-wait.
+    // The reaper-flip happens in wsB; the wait verb only watches wsA.
+    const beta = await spawnAgent(db, {
+      name: "b-worker",
+      workstream: wsB,
+      cli: "sh",
+      command: SH,
+    });
+    addTask(db, { localId: "betatask", workstream: wsB, title: "B", impact: 50, effortDays: 1 });
+    await claimTask(db, "betatask", { agentName: "b-worker", workstream: wsB });
+
+    // Kill B's pane mid-wait. Then close A's task so the wait succeeds
+    // (so we know the wait wasn't aborted by some unrelated error).
+    setTimeout(() => {
+      void killPane(beta.paneId);
+    }, 100);
+    setTimeout(() => {
+      setTaskStatus(db, "alphatask", "CLOSED", { workstream: wsA });
+    }, 300);
+
+    const { exitCode, stderr } = await runCli(
+      // Bare ref + -w wsA (NOT a cross-ws wait — the cross-ws part
+      // here is the side-effect: B's reaper firing during a wsA wait
+      // must NOT bleed into the wsA exit code).
+      ["task", "wait", "alphatask", "-w", wsA, "--timeout", "30"],
+      dbPath,
+    );
+    expect(exitCode).toBeNull(); // clean exit, NOT exit 6
+    expect(stderr).not.toMatch(/reaper/i);
+  });
+
+  it("cross-ws qualified refs: reaper on a watched ref in B fires exit 6", async () => {
+    // Same setup, but we ALSO watch wsB/betaTask via qualified ref.
+    // Now the reaper-flip on B IS the watched event — exit 6 fires.
+    await spawnAgent(db, { name: "a-worker", workstream: wsA, cli: "sh", command: SH });
+    addTask(db, {
+      localId: "alphatask",
+      workstream: wsA,
+      title: "A",
+      impact: 50,
+      effortDays: 1,
+    });
+    await claimTask(db, "alphatask", { agentName: "a-worker", workstream: wsA });
+
+    const beta = await spawnAgent(db, {
+      name: "b-worker",
+      workstream: wsB,
+      cli: "sh",
+      command: SH,
+    });
+    addTask(db, { localId: "betatask", workstream: wsB, title: "B", impact: 50, effortDays: 1 });
+    await claimTask(db, "betatask", { agentName: "b-worker", workstream: wsB });
+
+    setTimeout(() => {
+      void killPane(beta.paneId);
+    }, 100);
+
+    const { exitCode, stderr } = await runCli(
+      ["task", "wait", `${wsA}/alphatask`, `${wsB}/betatask`, "--timeout", "30"],
+      dbPath,
+    );
+    expect(exitCode).toBe(6);
+    // Names the dead ref's bare id (the typed error names the local
+    // task id; the wait set is qualified-aware).
+    expect(stderr).toContain("betatask");
+    expect(stderr).toMatch(/reaper/i);
+  });
+});

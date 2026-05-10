@@ -147,6 +147,7 @@ export {
   setWaitStuckWarnForTests,
   waitForTasks,
   type TaskWaitOptions,
+  type TaskWaitRef,
   type TaskWaitResult,
   type TaskWaitTaskState,
   type AddNoteOptions,
