@@ -156,8 +156,8 @@ export class SnapshotVersionMismatchError extends Error implements HasNextSteps 
             command: `mu sql "SELECT id, label, created_at FROM snapshots WHERE schema_version = ${this.currentVersion} ORDER BY id DESC"`,
           },
           {
-            intent: "Inspect the stale snapshot read-only",
-            command: `mu sql --db <snapshot-path> "SELECT * FROM tasks"`,
+            intent: "Inspect the stale snapshot read-only (snapshot is forensic; bypass mu)",
+            command: `sqlite3 <snapshot-path> "SELECT * FROM tasks"`,
           },
         ]
       : [

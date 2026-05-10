@@ -268,7 +268,14 @@ describe("restoreSnapshot — version checks + errors", () => {
       const e = err as SnapshotVersionMismatchError;
       expect(e.snapshotVersion).toBe(CURRENT_SCHEMA_VERSION - 1);
       expect(e.currentVersion).toBe(CURRENT_SCHEMA_VERSION);
-      expect(e.errorNextSteps().length).toBeGreaterThan(0);
+      const steps = e.errorNextSteps();
+      expect(steps.length).toBeGreaterThan(0);
+      // Regression: the inspect-snapshot hint must not reference a `--db`
+      // flag — `mu sql` doesn't accept one and commander would exit 1.
+      // The forensic snapshot is inspected via raw sqlite3 instead.
+      for (const step of steps) {
+        expect(step.command).not.toMatch(/mu sql\s+--db\b/);
+      }
     }
   });
 });
