@@ -148,7 +148,7 @@ release is about the *task*.
 | `mu task add <id> ...`                | Creates a new OPEN task                               |
 | `mu task update <id> --status closed` | Lifecycle transition                                  |
 | `mu task claim <task> [--for <agent>]`     | Atomic: sets `owner`, flips status to `IN_PROGRESS`   |
-| `mu release <task>`                   | Clears `owner`. Status unchanged (still IN_PROGRESS unless updated separately) |
+| `mu release <task>`                   | Clears `owner`. Auto-flips `IN_PROGRESS` → `OPEN` (so the task re-enters the ready set); other statuses preserved. `--reopen` forces `OPEN` from `CLOSED`/`REJECTED`/`DEFERRED` |
 | `mu task note <task> "..."`           | Appends to `task_notes`. Never edits prior notes.     |
 
 ---

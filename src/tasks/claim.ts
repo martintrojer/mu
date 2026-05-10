@@ -37,24 +37,42 @@ export interface ReleaseTaskOptions extends EvidenceOption {
   /** Workstream context for the task (v5: tasks.local_id is
    *  per-workstream unique). */
   workstream: string;
-  /** If true, also flip status back to OPEN (so the task is ready for
-   *  another claim). Default false: status preserved. */
+  /** Force `status = OPEN` regardless of the current status. Without
+   *  this flag, `IN_PROGRESS` is also flipped to `OPEN` automatically
+   *  (so a released task isn't left structurally stranded with
+   *  `owner=NULL, status=IN_PROGRESS`); CLOSED / REJECTED / DEFERRED
+   *  are preserved. `--reopen` is the override for the rarer "un-
+   *  close and hand back to the pool" workflow. */
   reopen?: boolean;
 }
 
 /**
- * Release a task: clear `tasks.owner`. Optionally also flip status back
- * to OPEN via `--reopen` for the common "agent gave up mid-flight, hand
- * it back to the pool" workflow.
+ * Release a task: clear `tasks.owner`.
  *
- * Idempotent: releasing an already-unowned task with no `--reopen` is a
- * no-op (returns `changed: false`). Throws TaskNotFoundError on missing.
+ * Status side-effects (review_release_open_in_progress_inconsistency):
+ *   - IN_PROGRESS → OPEN automatically (without it, the task is
+ *     stranded: no owner to drive it forward, but `mu task next`
+ *     skips it because it's not OPEN).
+ *   - OPEN / CLOSED / REJECTED / DEFERRED preserved.
+ *   - `--reopen` forces OPEN regardless of current status — the
+ *     escape hatch for un-closing a CLOSED owned task in one verb.
+ *
+ * Idempotent: releasing an already-unowned task with no `--reopen` and
+ * no IN_PROGRESS status is a no-op (returns `changed: false`).
+ * Throws TaskNotFoundError on missing.
  */
 export function releaseTask(db: Db, localId: string, opts: ReleaseTaskOptions): ReleaseResult {
   const before = getTask(db, localId, opts.workstream);
   if (!before) throw new TaskNotFoundError(localId);
 
-  const newStatus: TaskStatus = opts.reopen ? "OPEN" : before.status;
+  // Default: auto-flip IN_PROGRESS → OPEN so the released task isn't
+  // left in the structurally weird owner=NULL/IN_PROGRESS limbo.
+  // --reopen still wins for any status (CLOSED / REJECTED / DEFERRED).
+  const newStatus: TaskStatus = opts.reopen
+    ? "OPEN"
+    : before.status === "IN_PROGRESS"
+      ? "OPEN"
+      : before.status;
   const ownerChanges = before.ownerName !== null;
   const statusChanges = newStatus !== before.status;
 

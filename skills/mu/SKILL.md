@@ -284,7 +284,10 @@ mu task claim <id> [--for <worker> | --self [--actor <name>]]
                                      # (resolves in task's ws) or
                                      # qualified '<ws>/<name>' for
                                      # cross-workstream dispatch.
-mu task release <id> [--reopen]      # clear owner; optionally flip OPEN
+mu task release <id> [--reopen]      # clear owner; IN_PROGRESS → OPEN
+                                     # auto-flips so task re-enters ready;
+                                     # --reopen forces OPEN from
+                                     # CLOSED/REJECTED/DEFERRED
 mu task close <id>                   # → CLOSED (idempotent)
 mu task open <id>                    # → OPEN (idempotent)
 mu task reject <id> [--cascade [--yes]]   # → REJECTED (won't do; still blocks ↓)

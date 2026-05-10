@@ -73,6 +73,31 @@ called out under "Breaking" in each entry.
 
 ### Changed
 
+- **`mu task release` auto-flips `IN_PROGRESS` → `OPEN` by default;
+  `--reopen` re-scoped to the un-close escape hatch**
+  (`review_release_open_in_progress_inconsistency`). Bare `mu task
+  release <id>` against an `IN_PROGRESS` task used to clear `owner`
+  but leave `status = IN_PROGRESS` — a structurally stranded state
+  (no owner to drive the task forward; `mu task next` skipped it
+  because it wasn't `OPEN`; `mu task wait` blocked indefinitely; `mu
+  state`'s in-progress section listed it with an empty owner column).
+  The reaper's dead-pane recovery already does the right thing
+  (clears owner AND flips to `OPEN`); release now matches. New
+  default semantics:
+    * `IN_PROGRESS` → owner cleared + status flipped to `OPEN` (the
+      "give it back to the pool" workflow operators already describe).
+    * `OPEN` → owner cleared, status preserved (today's behaviour).
+    * `CLOSED` / `REJECTED` / `DEFERRED` → owner cleared, status
+      preserved (release is not an un-decide).
+  `--reopen` is now the explicit force-OPEN escape hatch — useful
+  when un-closing a `CLOSED` owned task in one verb (previously the
+  only thing `--reopen` did beyond bare release; on an `IN_PROGRESS`
+  task `--reopen` is now a no-op vs. bare release). Pre-1.0 breaking
+  change in the `releaseTask` SDK return shape (`status` may now be
+  `OPEN` where it would have been `IN_PROGRESS`); CLI exit code and
+  flag surface unchanged. Snapshot + agent_logs event behaviour
+  unchanged.
+
 - **`mu state` gains `--hud` and `--mission` render flags. Bare `mu`
   (no verb) is now an alias for `mu state --mission`** (today's
   stripped 5-col glance card; `merge_state_into_hud_render_mode`).

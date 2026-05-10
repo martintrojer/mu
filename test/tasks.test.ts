@@ -992,20 +992,25 @@ describe("releaseTask", () => {
     insertAgent(db, { name: "worker-1", workstream: "auth", paneId: "%1", status: "busy" });
   });
 
-  it("clears owner on a claimed task; status preserved by default", async () => {
+  it("clears owner on a claimed task; auto-flips IN_PROGRESS → OPEN", async () => {
+    // review_release_open_in_progress_inconsistency: bare release
+    // used to leave owner=NULL/IN_PROGRESS — a stranded state. The
+    // SDK now flips IN_PROGRESS → OPEN automatically so the task
+    // re-enters the ready set.
     await claimTask(db, "design", { agentName: "worker-1", workstream: "auth" });
     expect(getTask(db, "design", "auth")?.status).toBe("IN_PROGRESS");
 
     const r = releaseTask(db, "design", { workstream: "auth" });
     expect(r.previousOwnerName).toBe("worker-1");
     expect(r.changed).toBe(true);
-    expect(r.status).toBe("IN_PROGRESS"); // status preserved
+    expect(r.previousStatus).toBe("IN_PROGRESS");
+    expect(r.status).toBe("OPEN");
     const after = getTask(db, "design", "auth");
     expect(after?.ownerName).toBeNull();
-    expect(after?.status).toBe("IN_PROGRESS");
+    expect(after?.status).toBe("OPEN");
   });
 
-  it("--reopen also flips status back to OPEN", async () => {
+  it("--reopen on a claimed IN_PROGRESS task also flips to OPEN (same shape as bare release)", async () => {
     await claimTask(db, "design", { agentName: "worker-1", workstream: "auth" });
     const r = releaseTask(db, "design", { reopen: true, workstream: "auth" });
     expect(r.previousStatus).toBe("IN_PROGRESS");
@@ -1014,6 +1019,31 @@ describe("releaseTask", () => {
     const after = getTask(db, "design", "auth");
     expect(after?.ownerName).toBeNull();
     expect(after?.status).toBe("OPEN");
+  });
+
+  it("--reopen on a CLOSED owned task forces OPEN (the un-close escape hatch)", async () => {
+    await claimTask(db, "design", { agentName: "worker-1", workstream: "auth" });
+    closeTask(db, "design", { workstream: "auth" });
+    // Owner is preserved across closeTask, status=CLOSED.
+    expect(getTask(db, "design", "auth")?.status).toBe("CLOSED");
+    const r = releaseTask(db, "design", { reopen: true, workstream: "auth" });
+    expect(r.previousStatus).toBe("CLOSED");
+    expect(r.status).toBe("OPEN");
+    const after = getTask(db, "design", "auth");
+    expect(after?.ownerName).toBeNull();
+    expect(after?.status).toBe("OPEN");
+  });
+
+  it("bare release on a CLOSED owned task clears owner but preserves status", async () => {
+    await claimTask(db, "design", { agentName: "worker-1", workstream: "auth" });
+    closeTask(db, "design", { workstream: "auth" });
+    const r = releaseTask(db, "design", { workstream: "auth" });
+    expect(r.changed).toBe(true);
+    expect(r.previousStatus).toBe("CLOSED");
+    expect(r.status).toBe("CLOSED");
+    const after = getTask(db, "design", "auth");
+    expect(after?.ownerName).toBeNull();
+    expect(after?.status).toBe("CLOSED");
   });
 
   it("--reopen on an already-OPEN unowned task is a no-op", () => {

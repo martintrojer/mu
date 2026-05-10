@@ -281,9 +281,12 @@ export function wireTaskCommands(program: Command): void {
   task
     .command("release <id>")
     .description(
-      "Clear a task's owner; pass --reopen to also flip status back to OPEN (idempotent)",
+      "Clear a task's owner. IN_PROGRESS auto-flips to OPEN so the task re-enters the ready set; other statuses preserved. Use --reopen to force OPEN from CLOSED/REJECTED/DEFERRED. Idempotent.",
     )
-    .option("--reopen", "also flip status back to OPEN")
+    .option(
+      "--reopen",
+      "force status to OPEN regardless of current status (escape hatch for un-closing a CLOSED owned task in one verb)",
+    )
     .option(...WORKSTREAM_OPT)
     .option(...EVIDENCE_OPT)
     .option(...JSON_OPT)

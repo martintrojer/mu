@@ -697,12 +697,16 @@ mu task open design                 # CLOSED → OPEN (e.g. closed by mistake)
 Both are idempotent (closing an already-CLOSED task prints a no-op
 message and exits 0). Owner is intentionally left intact — use
 `mu task release <id>` to clear ownership when an agent bails on a
-task mid-flight (optionally with `--reopen` to also flip status back
-to OPEN, the canonical "hand it back to the pool" workflow):
+task mid-flight. `IN_PROGRESS` auto-flips back to `OPEN` so the
+task re-enters the ready set (the canonical "hand it back to the
+pool" workflow). `--reopen` is the escape hatch for forcing `OPEN`
+from `CLOSED` / `REJECTED` / `DEFERRED`:
 
 ```bash
-mu task release design              # clear owner; status preserved
-mu task release design --reopen     # clear owner AND flip back to OPEN
+mu task release design              # clear owner; IN_PROGRESS → OPEN
+                                    # (CLOSED / REJECTED / DEFERRED preserved)
+mu task release design --reopen     # clear owner AND force status to OPEN
+                                    # (un-close + release in one verb)
 ```
 
 Now run `mu` again — `build` has become ready (its only blocker
