@@ -354,6 +354,20 @@ called out under "Breaking" in each entry.
 
 ### Fixed
 
+- **SKILL.md `Next:` invariant now matches the empirical truth: it's
+  emitted on MUTATING verbs only**
+  (`nextsteps_audit_read_verbs_emit_no_nextsteps`). The skill claimed
+  "Every successful verb also prints a `Next:` block" but ~17
+  read-only verbs (`mu task list/next/owned-by/tree/show/notes`, `mu
+  state` all 3 modes, `mu doctor`, `mu log read`, `mu workspace
+  list/path`, `mu agent show/list/read/attach`, `mu me`, `mu archive
+  show` happy path) have always omitted it on the read happy path —
+  the table itself is the answer and the operator already chose to
+  look. Doc-side fix (per fix-sketch on the task note: code-side
+  would be ~50 LOC across 17 verbs to add hints of dubious value to
+  idempotent verbs the operator just typed). VOCABULARY.md needed no
+  change — it never asserted the universal form.
+
 - **`TaskNotFoundError` next-step recipe no longer references the
   removed `tasks.workstream` column**
   (`nextsteps_audit_task_not_found_workstream_col`). The hint a

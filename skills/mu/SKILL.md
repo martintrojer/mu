@@ -245,8 +245,14 @@ One-liners only. Run `mu <verb> --help` for every flag, defaults,
 and interactions — the CLI is the canonical reference. Every verb
 below accepts `--json` for machine-readable output (one exception:
 `mu agent attach`, which prints a tmux command for a human).
-Every successful verb also prints a `Next:` block of suggested
-follow-up commands; agents read it, humans skim past it.
+Every successful **mutating** verb also prints a `Next:` block of
+suggested follow-up commands; agents read it, humans skim past it.
+Read-only verbs (`mu task list/next/owned-by/tree/show/notes`, `mu
+state`, `mu doctor`, `mu log read`, `mu workspace list/path`, `mu
+agent show/list/read/attach`, `mu me`) intentionally omit it — the
+operator already chose to look, and the table itself is the answer.
+When a read verb leaves you needing a follow-up, every other verb's
+`--help` lists the obvious ones.
 
 ```bash
 # Workstream (4)
