@@ -10,6 +10,26 @@ called out under "Breaking" in each entry.
 
 ## [Unreleased]
 
+### Added
+
+- **Derived `idle` flag on `AgentRow`: alive + assigned + no recent
+  progress** (`idle_assigned_agent_detection`). Surfaces the third
+  agent lifecycle state (pi crashed mid-task without crashing the
+  pane: `Operation aborted`, model timeouts, transient connection
+  drops). Predicate: `status === 'needs_input'` AND owns ≥1
+  IN_PROGRESS task AND `(now - updated_at) >= MU_IDLE_THRESHOLD_MS`
+  (default 300_000ms; matches today's `mu task wait --stuck-after`
+  default). Computed at read time only — NOT a 5th status enum
+  value, NOT stored in the DB. `listLiveAgents` enriches each row;
+  `mu state` (full / hud / mission) prefixes a yellow ⚠ glyph and
+  yellows the agent name when idle; `mu state --json` emits
+  `idle: true` (omitted otherwise). `mu task wait --stuck-after`
+  also persists a `kind='event'` row payload `agent stalled <name>
+  owns <task-id> for <secs>s` as corroborating signal. Recovery is
+  operator-driven: `mu agent send <name> '<retry>'` or `mu task
+  release <id> --reopen` — mu deliberately does NOT auto-restart pi
+  or auto-release the task (idle is ambiguous; the operator decides).
+
 ### Removed
 
 - **`mu hud` removed; behavior moved to `mu state --hud`**

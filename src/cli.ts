@@ -492,6 +492,15 @@ export function statusIcon(status: AgentStatus): string {
   return STATUS_COLORS[status](STATUS_EMOJI[status]);
 }
 
+/**
+ * Glyph used to flag the derived 'idle but assigned' state
+ * (`AgentRow.idle === true`; idle_assigned_agent_detection). Plain
+ * Unicode warning sign so it renders the same in cli-table3 cells
+ * AND in single-line prose without needing a Nerd Font (the agent's
+ * primary status glyph still uses Nerd Font via STATUS_EMOJI).
+ */
+export const IDLE_GLYPH = "⚠";
+
 export function formatAgentsTable(agents: readonly AgentRow[]): string {
   if (agents.length === 0) return pc.dim("  (no agents)");
   // Cap the variable-width columns so a long tmux window name (or a
@@ -511,9 +520,18 @@ export function formatAgentsTable(agents: readonly AgentRow[]): string {
     style: { head: [] },
   });
   for (const a of agents) {
+    // Idle (alive + assigned + no recent progress): supplement the
+    // status glyph with a yellow ⚠ prefix, and yellow the agent
+    // name itself so the row is visually obvious. The status column
+    // stays the truth ('needs_input') — the ⚠ is the supplement.
+    const idle = a.idle === true;
+    const glyphCell = idle
+      ? `${pc.yellow(IDLE_GLYPH)} ${statusIcon(a.status)}`
+      : statusIcon(a.status);
+    const nameCell = idle ? pc.yellow(a.name) : a.name;
     table.push([
-      statusIcon(a.status),
-      a.name,
+      glyphCell,
+      nameCell,
       a.cli,
       a.status,
       a.tab ?? a.name,

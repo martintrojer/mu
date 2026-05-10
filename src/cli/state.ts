@@ -45,6 +45,7 @@
 import Table from "cli-table3";
 import { type AgentRow, type AgentStatus, listLiveAgents } from "../agents.js";
 import {
+  IDLE_GLYPH,
   JSON_OPT,
   UsageError,
   byRoiDesc,
@@ -579,14 +580,20 @@ function formatHudAgentsTable(
     const truncated = truncate(taskBit, taskBudget);
     const taskCell =
       taskBit === "—" || taskBit.startsWith("⊕") ? pc.dim(truncated) : pc.cyan(truncated);
+    // Idle (alive + assigned + no recent progress): prepend the ⚠
+    // glyph to the status cell and yellow the agent name. Status text
+    // stays truthful ('needs_input') — idle is a supplement, not a
+    // 5th status. See idle_assigned_agent_detection.
+    const idle = a.idle === true;
+    const statusCell = idle
+      ? `${pc.yellow(IDLE_GLYPH)} ${statusIcon(a.status)}`
+      : statusIcon(a.status);
+    const nameCell = idle
+      ? `${pc.dim("agent")} ${pc.yellow(a.name)}`
+      : `${pc.dim("agent")} ${pc.bold(a.name)}`;
     const cells: string[] = [];
     if (multi) cells.push(wsCell(ws));
-    cells.push(
-      statusIcon(a.status),
-      `${pc.dim("agent")} ${pc.bold(a.name)}`,
-      taskCell,
-      pc.dim(ago),
-    );
+    cells.push(statusCell, nameCell, taskCell, pc.dim(ago));
     table.push(cells);
   });
   return { rendered: table.toString(), rowsShown: shown.length, rowsTotal: total };

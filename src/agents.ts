@@ -71,6 +71,63 @@ export interface AgentRow {
   createdAt: string;
   /** ISO 8601 timestamp. */
   updatedAt: string;
+  /**
+   * Derived 'idle but assigned' flag (idle_assigned_agent_detection).
+   * Set ONLY by `listLiveAgents` (and the helper `computeAgentIdle`);
+   * never stored in the DB. Predicate:
+   *   status === 'needs_input'
+   *   AND owns ≥1 IN_PROGRESS task in this workstream
+   *   AND (now - updated_at) >= MU_IDLE_THRESHOLD_MS (default 300_000ms)
+   *
+   * Surfaces the third lifecycle state (alive but assigned, no recent
+   * progress) to `mu state` renders + `mu state --json`. Omitted (i.e.
+   * absent — NOT `false`) when the predicate doesn't fire, so JSON
+   * consumers can do a simple `if (agent.idle)` check and the field
+   * stays out of the way for callers that don't care.
+   */
+  idle?: boolean;
+}
+
+/** Default idle threshold. Matches today's `mu task wait --stuck-after`
+ *  default so the two paths agree on what counts as 'stalled'. */
+const DEFAULT_IDLE_THRESHOLD_MS = 300_000;
+
+/**
+ * Read the operator-tunable idle threshold (`MU_IDLE_THRESHOLD_MS`).
+ * Returns the default on any unparsable / negative value rather than
+ * throwing — env-var typos shouldn't crash `mu state`.
+ */
+export function idleThresholdMs(): number {
+  const env = process.env.MU_IDLE_THRESHOLD_MS;
+  if (env === undefined || env === "") return DEFAULT_IDLE_THRESHOLD_MS;
+  const n = Number.parseInt(env, 10);
+  if (!Number.isFinite(n) || n < 0) return DEFAULT_IDLE_THRESHOLD_MS;
+  return n;
+}
+
+/**
+ * Decide whether an agent is in the 'idle but assigned' state. Pure
+ * read on (agents, tasks); no side effects. Exported so `listLiveAgents`,
+ * the renderers, and tests can share one source of truth.
+ */
+export function computeAgentIdle(db: Db, agent: AgentRow, now: number = Date.now()): boolean {
+  if (agent.status !== "needs_input") return false;
+  const threshold = idleThresholdMs();
+  if (threshold <= 0) return false;
+  const updated = Date.parse(agent.updatedAt);
+  if (!Number.isFinite(updated)) return false;
+  if (now - updated < threshold) return false;
+  const wsId = tryResolveWorkstreamId(db, agent.workstreamName);
+  if (wsId === null) return false;
+  const row = db
+    .prepare(
+      `SELECT COUNT(*) AS n
+         FROM tasks t
+         JOIN agents a ON a.id = t.owner_id
+        WHERE a.name = ? AND a.workstream_id = ? AND t.status = 'IN_PROGRESS'`,
+    )
+    .get(agent.name, wsId) as { n: number };
+  return row.n > 0;
 }
 
 export interface InsertAgentInput {
@@ -666,6 +723,14 @@ export async function listLiveAgents(db: Db, opts: ListLiveAgentsOptions): Promi
     ...(opts.tmuxSession !== undefined ? { tmuxSession: opts.tmuxSession } : {}),
     ...(opts.mode !== undefined ? { mode: opts.mode } : {}),
   });
-  const agents = listAgents(db, { workstream: opts.workstream });
+  const baseAgents = listAgents(db, { workstream: opts.workstream });
+  // Enrich with the derived `idle` flag (idle_assigned_agent_detection).
+  // One COUNT per agent — cheap; the agents table in any one workstream
+  // is small (typical wave: <10 rows). We add the field only when
+  // idle=true, so non-idle rows JSON-serialize without the noise.
+  const now = Date.now();
+  const agents: AgentRow[] = baseAgents.map((a) =>
+    computeAgentIdle(db, a, now) ? { ...a, idle: true } : a,
+  );
   return { agents, orphans: report.orphans, report };
 }

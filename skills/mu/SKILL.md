@@ -147,6 +147,10 @@ Every turn:
   Call `mu agent list -w <ws>` per poll to keep the reaper warm.
 - **Cross-workstream `mu task wait` doesn't exist yet.** Hand-roll
   via `mu task show <id> -w <ws> --json` per task.
+- **Agent showed up as idle (⚠ glyph; alive but assigned, no recent
+  progress)** — see scrollback via `mu agent show <name> -n N`;
+  recover via `mu agent send <name> '<retry>'` OR `mu task release
+  <id> --reopen`. Tunable via `MU_IDLE_THRESHOLD_MS` (default 5 min).
 
 ### Parallelisation decision table
 

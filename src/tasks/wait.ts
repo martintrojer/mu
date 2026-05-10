@@ -26,6 +26,7 @@
 // Extracted from src/tasks.ts as part of refactor_split_large_src_files.
 
 import type { Db } from "../db.js";
+import { emitEvent } from "../logs.js";
 import { getTask } from "../tasks.js";
 import { TaskNotFoundError } from "./errors.js";
 import type { TaskStatus } from "./status.js";
@@ -240,6 +241,18 @@ export async function waitForTasks(
           `\x1b[33mmu task wait: ${id} stuck — owner=${owner ?? "<none>"} in needs_input ` +
             `(>= ${stuckAfterMs}ms since last status change). ` +
             `Worker likely committed but skipped \`mu task close ${id}\`.\x1b[0m\n`,
+        );
+        // Persist a corroborating kind='event' row so other consumers
+        // (mu state, mu log --kind event, dashboards) see the same
+        // signal that the new derived `idle` flag surfaces in the
+        // agents table. The stderr warning stays — observation-only,
+        // operator decides recovery. See idle_assigned_agent_detection.
+        const ageSecs = Math.round(stuckAfterMs / 1000);
+        emitEvent(
+          db,
+          workstream,
+          `agent stalled ${owner ?? "<none>"} owns ${id} for ${ageSecs}s`,
+          owner ?? "system",
         );
       }
       return { name: id, status, owner, reachedTarget: status === target, stuck };
