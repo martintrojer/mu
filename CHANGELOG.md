@@ -354,6 +354,20 @@ called out under "Breaking" in each entry.
 
 ### Fixed
 
+- **`AgentDiedOnSpawnError.errorNextSteps()` now leads with a per-spawn
+  `--command` recipe** (`agent_spawn_liveness_check_trips_on`). The
+  prior Next: block jumped straight to `export MU_<UPPER_CLI>_COMMAND`,
+  which is overkill for a one-off spawn (e.g. a single read-only scout
+  hitting a wrapper CLI's per-project solo lock) and silently leaks
+  into every subsequent spawn in the shell. The per-spawn recipe
+  (`mu agent spawn <name> --command "<cli> <bypass-flag>"`, e.g.
+  `pi-meta --no-solo`) already worked but was undocumented in the
+  error path. Step order is now scrollback / per-spawn / global / disable
+  liveness / doctor — smallest-blast-radius first. Error message body
+  unchanged. Regression test in `test/error-nextsteps.test.ts` pins
+  the per-spawn step's existence, position before the env-var step,
+  and agent-name interpolation.
+
 - **Task JSON now exposes `localId` alongside `name`**
   (`task_list_show_json_omits_localid_only`). Prior to this fix,
   `mu task list/next/show --json` only carried the per-workstream

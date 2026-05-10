@@ -187,6 +187,34 @@ describe("error-specific structured-step assertions", () => {
     const steps = err.errorNextSteps();
     expect(steps.some((s) => s.command.includes("list-panes"))).toBe(true);
   });
+
+  // agent_spawn_liveness_check_trips_on: the spawn-died Next: block
+  // used to suggest only the global env-var override, which is
+  // overkill for one-off spawns (and silently affects every later
+  // spawn in the same shell). The per-spawn `--command` recipe must
+  // be advertised AND must come BEFORE the env-var step.
+  it("AgentDiedOnSpawnError advertises per-spawn --command override before the global env-var", () => {
+    const err = new AgentDiedOnSpawnError("scout-perf-1", "%42", undefined);
+    const steps = err.errorNextSteps();
+
+    const perSpawnIdx = steps.findIndex(
+      (s) => s.command.startsWith("mu agent spawn ") && s.command.includes('--command "'),
+    );
+    expect(
+      perSpawnIdx,
+      `expected a per-spawn --command step; got: ${JSON.stringify(steps)}`,
+    ).toBeGreaterThanOrEqual(0);
+
+    // Agent name is interpolated into the per-spawn recipe so the
+    // operator can copy-paste it verbatim.
+    expect(steps[perSpawnIdx]?.command).toContain("scout-perf-1");
+
+    const globalIdx = steps.findIndex((s) => s.command.includes("MU_PI_COMMAND"));
+    expect(globalIdx, "expected the global env-var step to still exist").toBeGreaterThanOrEqual(0);
+
+    // Per-spawn (right scope for one-offs) must come first.
+    expect(perSpawnIdx).toBeLessThan(globalIdx);
+  });
 });
 
 // Regression: nextsteps_audit_task_not_found_workstream_col

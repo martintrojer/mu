@@ -136,8 +136,18 @@ export class AgentDiedOnSpawnError extends Error implements HasNextSteps {
         command: `mu agent read ${this.agentName} -n 100`,
       },
       {
-        intent: "Override the spawn command to a non-blocking variant",
-        command: 'export MU_PI_COMMAND="pi-alt --some-flag"   (or pass --command "..." to spawn)',
+        // agent_spawn_liveness_check_trips_on: per-spawn override is
+        // the right scope for one-offs (e.g. wrapper CLIs blocking
+        // on a per-project solo lock). Listed first so operators
+        // reach for it before exporting an env var that leaks into
+        // every subsequent spawn in the shell.
+        intent: "Override per spawn (one-off; no env-var leak)",
+        command: `mu agent spawn ${this.agentName} --command "<cli> <bypass-flag>"   (e.g. pi-meta --no-solo)`,
+      },
+      {
+        intent:
+          "Make the override the default for this CLI (applies to every subsequent spawn in this shell)",
+        command: 'export MU_PI_COMMAND="pi-alt --some-flag"',
       },
       {
         intent: "Disable the liveness check (CI / known long-lived sh subprocess)",
