@@ -22,6 +22,7 @@ import {
   freeWorkspace,
   getWorkspaceForAgent,
   listAllOrphanWorkspaces,
+  listCommitsForWorkspace,
   listWorkspaceOrphans,
   listWorkspaces,
   refreshWorkspace,
@@ -147,6 +148,33 @@ export async function cmdWorkspaceRefresh(
     }
   }
   printNextSteps(nextSteps);
+}
+
+export async function cmdWorkspaceCommits(
+  db: Db,
+  rawAgent: string,
+  opts: { workstream?: string; since?: string; json?: boolean } = {},
+): Promise<void> {
+  const { name: agent } = await resolveEntityRef(db, rawAgent, opts, "workspace");
+  assertAgentInWorkstream(db, agent, opts.workstream);
+  const workstream = await resolveWorkstream(opts.workstream);
+  const listOpts: Parameters<typeof listCommitsForWorkspace>[2] = { workstream };
+  if (opts.since !== undefined) listOpts.since = opts.since;
+  const r = await listCommitsForWorkspace(db, agent, listOpts);
+  if (opts.json) {
+    emitJson(r.commits);
+    return;
+  }
+  if (r.commits.length === 0) {
+    console.log(pc.dim(`(no commits in ${agent} since ${r.baseRef.slice(0, 12)})`));
+    return;
+  }
+  // Plain `<sha> <subject>` per line, oldest-first — the format the
+  // dogfood incantation produced via `git log --oneline base..HEAD`.
+  // Stays grep/awk/jq-friendly without --json.
+  for (const c of r.commits) {
+    console.log(`${c.sha} ${c.subject}`);
+  }
 }
 
 export async function cmdWorkspacePath(
@@ -330,6 +358,23 @@ export function wireWorkspaceCommands(program: Command): void {
         json?: boolean;
       };
       return handle((db) => cmdWorkspaceFree(db, agent, opts))();
+    });
+
+  workspace
+    .command("commits <agent>")
+    .description(
+      "Print commits the agent's workspace has on top of its recorded parent_ref (the fork point), oldest-first. Default text output is `<sha> <subject>` per line; --json emits the full array `[{sha, subject, body, authorDate}]` for piping. --since <ref> overrides the base. The `none` backend errors (no fork point to compare against).",
+    )
+    .option("--since <ref>", "override the base ref (default: workspace's recorded parent_ref)")
+    .option(...WORKSTREAM_OPT)
+    .option(...JSON_OPT)
+    .action(function (agent: string) {
+      const opts = (this as Command).opts() as {
+        since?: string;
+        workstream?: string;
+        json?: boolean;
+      };
+      return handle((db) => cmdWorkspaceCommits(db, agent, opts))();
     });
 
   workspace

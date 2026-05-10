@@ -808,7 +808,10 @@ while (( ${#in_flight[@]} > 0 )); do
   #    nextSteps array — or use `mu task show` to look up).
   worker=$(mu task show "${closed##*/}" -w "${closed%%/*}" --json | jq -r .ownerName)
   ws=${closed%%/*}
-  git cherry-pick "$(cd "$(mu workspace path "$worker" -w "$ws")" && git log -1 --format=%H)"
+  # `mu workspace commits --json` knows the workspace's parent_ref
+  # so this is one verb instead of `cd $(mu workspace path) && git log`.
+  sha=$(mu workspace commits "$worker" -w "$ws" --json | jq -r '.[-1].sha')
+  git cherry-pick "$sha"
 
   # 2. Verify
   npm run typecheck && npm run lint && npm run test && npm run build

@@ -24,6 +24,7 @@ import { emitEvent } from "./logs.js";
 import type { HasNextSteps, NextStep } from "./output.js";
 import { captureSnapshot } from "./snapshots.js";
 import {
+  type CommitSummary,
   type RebaseResult,
   type VcsBackend,
   type VcsBackendName,
@@ -682,6 +683,72 @@ export async function refreshWorkspace(
     `workspace refresh ${opts.agent} (backend=${row.backend}, fromRef=${result.fromRef}, replayed=${result.replayed.length})`,
   );
   return { ...result, vcs: row.backend, workspacePath: row.path };
+}
+
+export interface ListCommitsOptions {
+  workstream: string;
+  /** Optional override of the base ref (default: the workspace row's
+   *  parent_ref). Useful when the operator wants to ask "what's on
+   *  top of an arbitrary ref" without re-creating the workspace. */
+  since?: string;
+}
+
+export interface ListCommitsResult {
+  /** Backend name (mirrors the row). */
+  vcs: VcsBackendName;
+  /** The base ref actually used. */
+  baseRef: string;
+  /** The commits, oldest-first. Empty when the workspace is exactly
+   *  at baseRef. */
+  commits: CommitSummary[];
+  /** The workspace's on-disk path (so JSON consumers don't have to
+   *  call `mu workspace path` separately). */
+  workspacePath: string;
+}
+
+/**
+ * List commits the workspace has on top of its `parent_ref` (or the
+ * `--since` override), oldest-first. Promotes the dogfood-painful
+ *     cd $(mu workspace path X) && git log <base>..HEAD
+ * incantation into a typed verb that knows the workspace's
+ * recorded fork point.
+ *
+ * Throws (with typed errors propagated from the backend):
+ *   - WorkspaceNotFoundError    — no row for this (agent, workstream)
+ *   - WorkspaceVcsRequiredError — backend == none
+ *   - any backend-level Error   — unknown ref, missing repo, etc.
+ *
+ * Surfaced by fb_workspace_commits_verb.
+ */
+export async function listCommitsForWorkspace(
+  db: Db,
+  agent: string,
+  opts: ListCommitsOptions,
+): Promise<ListCommitsResult> {
+  const row = getWorkspaceForAgent(db, agent, opts.workstream);
+  if (!row) throw new WorkspaceNotFoundError(agent);
+  const backend = backendByName(row.backend);
+  // Dispatch FIRST when the backend can't possibly answer (none),
+  // so the operator sees the typed WorkspaceVcsRequiredError with
+  // its Next: hints rather than a generic "no recorded parent_ref"
+  // string. The backend.commitsSinceBase impl is the source of
+  // truth on "is this verb meaningful for this backend?".
+  const baseRef = opts.since ?? row.parentRef;
+  if (baseRef === null || baseRef.length === 0) {
+    if (row.backend === "none") {
+      // Force the typed error path — baseRef value doesn't matter
+      // since none.commitsSinceBase ignores it.
+      await backend.commitsSinceBase(row.path, "");
+    }
+    // Without a recorded parent_ref AND no --since override there's
+    // no defensible answer to "commits since fork". Surface as a
+    // standard Error (no typed UX upgrade until a real user hits this
+    // — the row's parent_ref is set by every backend that supports
+    // commits at all).
+    throw new Error(`workspace ${agent} has no recorded parent_ref; pass --since <ref> explicitly`);
+  }
+  const commits = await backend.commitsSinceBase(row.path, baseRef);
+  return { vcs: row.backend, baseRef, commits, workspacePath: row.path };
 }
 
 /**

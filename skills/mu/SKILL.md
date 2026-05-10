@@ -270,8 +270,10 @@ running a wave.
   --by <blocker>`.
 - **Self (in-pane)**: `mu me`, `mu me tasks`, `mu me next`.
 - **Workspace**: `create`, `list` (`behind` column), `refresh`
-  (`--from <ref>`; rebases without killing the agent), `free`,
-  `path` (`cd $(mu workspace path X)`), `orphans`.
+  (`--from <ref>`; rebases without killing the agent), `commits`
+  (`--since <ref>`; oldest-first `<sha> <subject>` or full `--json`
+  `[{sha,subject,body,authorDate}]`), `free`, `path`
+  (`cd $(mu workspace path X)`), `orphans`.
 - **Activity log**: `mu log "text"` (write), `mu log -n N` (read),
   `mu log --tail` (subscribe). Don't pipe `--tail` for waits — use
   `mu task wait`.
@@ -361,9 +363,13 @@ IDs auto-derive from titles via slugify.
 res=$(mu task wait t1 t2 t3 -w ws --any --first --json \
         --timeout 600 --on-stall exit)
 firing=$(jq -r .firing.qualifiedId <<<"$res")
-sha=$(cd $(mu workspace path $worker -w ws) \
-        && git log --format='%H %s' main..HEAD \
-        | awk -v id="${firing#*/}" '$2 ~ "^"id":" {print $1; exit}')
+# `mu workspace commits` knows the workspace's recorded parent_ref,
+# so no `cd $(mu workspace path) && git log <base>..HEAD` incantation.
+# --json gives [{sha, subject, body, authorDate}]; pick the worker's
+# task-prefixed commit by id.
+sha=$(mu workspace commits $worker -w ws --json \
+        | jq -r --arg id "${firing#*/}" \
+            '.[] | select(.subject | startswith($id+":")) | .sha' | head -1)
 git cherry-pick $sha && cargo test --lib
 # Next turn: same wait on the smaller set.
 ```

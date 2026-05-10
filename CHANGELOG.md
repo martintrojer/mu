@@ -31,6 +31,29 @@ called out under "Breaking" in each entry.
   `CloseSkippedResult` return shape (typed-union with
   `SetStatusResult`).
 
+- **`mu workspace commits <agent> [--since <ref>]`**
+  (`fb_workspace_commits_verb` /
+  `mu_workspace_commits_print_since_fork`). Promotes the dogfood-
+  painful `cd $(mu workspace path X) && git log <base>..HEAD`
+  incantation into a typed verb that knows the workspace's
+  recorded `parent_ref`. Default text output is `<sha> <subject>`
+  per line, oldest-first. `--json` emits the full array
+  `[{sha, subject, body, authorDate}]` for piping (e.g.
+  `mu workspace commits worker-X --json | jq -r '.[] | select(...) |
+  .sha' | xargs git cherry-pick`).
+  - **git**: `git log --reverse -z --format='%H%x00%s%x00%b%x00%aI'
+    <base>..HEAD` (NUL-delimited per record so subjects/bodies with
+    embedded newlines survive parsing).
+  - **jj / sl**: equivalent NUL-field / `\x1e`-record templates;
+    `parseNulRecords()` is the shared parser.
+  - **none**: throws `WorkspaceVcsRequiredError` (exit 4) — cp -a
+    snapshots have no fork point.
+  - SDK: `listCommitsForWorkspace(db, agent, opts)` returns
+    `{ vcs, baseRef, commits, workspacePath }`.
+  - VcsBackend interface gains
+    `commitsSinceBase(workspacePath, baseRef): Promise<CommitSummary[]>`
+    where `CommitSummary = { sha, subject, body, authorDate }`.
+
 - **`mu workspace refresh <agent> [--from <ref>]`**
   (`fb_workspace_recycle_verb` /
   `mu_workspace_refresh_rebase_agent`). Rebases an agent's workspace

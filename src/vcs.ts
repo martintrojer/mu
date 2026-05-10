@@ -55,9 +55,21 @@ export interface RebaseResult {
   conflicts: string[];
 }
 
+export interface CommitSummary {
+  /** Full commit / change id. */
+  sha: string;
+  /** First-line description / subject. */
+  subject: string;
+  /** Remainder of the commit message (may be empty). */
+  body: string;
+  /** ISO-8601 author / commit timestamp. */
+  authorDate: string;
+}
+
 /**
- * Thrown by `rebaseTo` on the `none` backend (cp -a snapshots have
- * no notion of a rebase target). Maps to exit code 4.
+ * Thrown by `rebaseTo` / `commitsSinceBase` on the `none` backend
+ * (cp -a snapshots have no notion of a rebase target / fork point).
+ * Maps to exit code 4.
  */
 export class WorkspaceVcsRequiredError extends Error implements HasNextSteps {
   override readonly name = "WorkspaceVcsRequiredError";
@@ -231,6 +243,21 @@ export interface VcsBackend {
    * the on-disk dir without touching the agent or pane.
    */
   rebaseTo(workspacePath: string, fromRef?: string): Promise<RebaseResult>;
+
+  /**
+   * List commits the workspace has on top of `baseRef`, oldest-first.
+   * Used by `mu workspace commits` (fb_workspace_commits_verb) to
+   * promote the dogfood-painful
+   *     cd $(mu workspace path X) && git log <base>..HEAD
+   * incantation into a typed verb that knows the workspace's
+   * parent_ref. The CommitSummary fields survive subjects/bodies with
+   * embedded newlines (NUL-delimited record format on the wire).
+   *
+   * `none` throws WorkspaceVcsRequiredError. Returns `[]` when the
+   * workspace is exactly at baseRef (no commits since fork). Throws
+   * on backend command failure (unknown ref, missing repo).
+   */
+  commitsSinceBase(workspacePath: string, baseRef: string): Promise<CommitSummary[]>;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────
@@ -306,6 +333,12 @@ export const noneBackend: VcsBackend = {
   // CLI's handle() maps it to exit 4 with a clean Next: hint.
   async rebaseTo(workspacePath, _fromRef) {
     throw new WorkspaceVcsRequiredError("refresh", workspacePath);
+  },
+
+  // none has no notion of a fork point either — a cp -a snapshot
+  // doesn't track history. Same typed error as rebaseTo.
+  async commitsSinceBase(workspacePath, _baseRef) {
+    throw new WorkspaceVcsRequiredError("commits", workspacePath);
   },
 };
 
@@ -442,6 +475,41 @@ export const gitBackend: VcsBackend = {
     );
     const replayed = logOut.length === 0 ? [] : logOut.split("\n");
     return { fromRef: resolvedRef, replayed, conflicts: [] };
+  },
+
+  // List commits in (baseRef..HEAD), oldest-first. The format string
+  // packs four NUL-delimited fields per record, then a record
+  // separator '\x1e' (RECORD-SEPARATOR control char) so subjects /
+  // bodies with embedded newlines or NULs survive parsing. We don't
+  // use a JSON template because git's `--format` is field-oriented;
+  // %x00 (NUL) and %x1e (RS) are git's portable escape sequences.
+  async commitsSinceBase(workspacePath, baseRef) {
+    if (!existsSync(workspacePath)) {
+      throw new Error(`vcs git: workspace path missing: ${workspacePath}`);
+    }
+    const out = await run(
+      "git",
+      ["log", "--reverse", "-z", "--format=%H%x00%s%x00%b%x00%aI", `${baseRef}..HEAD`],
+      workspacePath,
+    );
+    if (out.length === 0) return [];
+    // -z makes git use NUL as the record separator; combined with our
+    // %x00 field separators each commit looks like:
+    //   <sha>\0<subject>\0<body>\0<authorDate>\0
+    // i.e. four fields followed by the record-terminating NUL git
+    // injects with -z. Splitting on NUL leaves us with 4N fields plus
+    // a trailing empty string we drop.
+    const fields = out.split("\x00");
+    const records: CommitSummary[] = [];
+    for (let i = 0; i + 3 < fields.length; i += 4) {
+      const sha = fields[i] ?? "";
+      const subject = fields[i + 1] ?? "";
+      const body = fields[i + 2] ?? "";
+      const authorDate = fields[i + 3] ?? "";
+      if (sha.length === 0) continue;
+      records.push({ sha, subject, body, authorDate });
+    }
+    return records;
   },
 
   async freeWorkspace(opts) {
@@ -776,7 +844,65 @@ export const jjBackend: VcsBackend = {
     void preRev;
     return { fromRef: target, replayed, conflicts: [] };
   },
+
+  // List jj commits in (baseRef..@), oldest-first. jj's templating
+  // gives us per-field strings; we glue them with NUL field-separators
+  // and \x1e record-separators so multi-line descriptions/bodies
+  // round-trip cleanly. The author timestamp template is
+  // `author.timestamp().format("%Y-%m-%dT%H:%M:%S%:z")` which is
+  // ISO-8601 (matches git's --aiso strict / --aI).
+  async commitsSinceBase(workspacePath, baseRef) {
+    if (!existsSync(workspacePath)) {
+      throw new Error(`vcs jj: workspace path missing: ${workspacePath}`);
+    }
+    const out = await run(
+      "jj",
+      [
+        "log",
+        "-r",
+        `${baseRef}..@`,
+        "--no-graph",
+        "--no-pager",
+        "--color",
+        "never",
+        "--reversed",
+        "--template",
+        // commit_id\0subject\0body\0iso-date\x1e per record. The
+        // outer string is jj-template syntax; \\x00 / \\x1e are
+        // jj-template literal escape sequences. body = full
+        // description (jj has no portable "rest of message" template,
+        // and a small duplication of the first line beats a brittle
+        // string-slicing template that breaks across jj versions).
+        'commit_id ++ "\\x00" ++ description.first_line() ++ "\\x00" ++ description ++ "\\x00" ++ author.timestamp().format("%Y-%m-%dT%H:%M:%S%:z") ++ "\\x1e"',
+      ],
+      workspacePath,
+    );
+    return parseNulRecords(out);
+  },
 };
+
+/**
+ * Parse the NUL-field / \x1e-record format used by the jj/sl
+ * commitsSinceBase impls. Each record is `sha\0subject\0body\0date`
+ * terminated by \x1e. Empty input → [].
+ */
+function parseNulRecords(raw: string): CommitSummary[] {
+  if (raw.length === 0) return [];
+  const records: CommitSummary[] = [];
+  for (const rec of raw.split("\x1e")) {
+    if (rec.length === 0) continue;
+    const fields = rec.split("\x00");
+    const sha = fields[0] ?? "";
+    if (sha.length === 0) continue;
+    records.push({
+      sha,
+      subject: fields[1] ?? "",
+      body: fields[2] ?? "",
+      authorDate: fields[3] ?? "",
+    });
+  }
+  return records;
+}
 
 function jjWorkspaceName(workspacePath: string): string {
   // basename of /foo/bar/worker-1 → worker-1
@@ -917,6 +1043,31 @@ export const slBackend: VcsBackend = {
       .map((l) => l.trim())
       .filter((l) => l.length > 0);
     return { fromRef: target, replayed, conflicts: [] };
+  },
+
+  // List sl commits in (baseRef..., minus baseRef itself), oldest-
+  // first. Same NUL-field / \x1e-record format as the jj impl;
+  // sl's templating uses {field} braces (not jj's `++` operator) but
+  // the field set is equivalent ({node}, {desc|firstline}, {desc},
+  // {date|isodate}).
+  async commitsSinceBase(workspacePath, baseRef) {
+    if (!existsSync(workspacePath)) {
+      throw new Error(`vcs sl: workspace path missing: ${workspacePath}`);
+    }
+    const out = await run(
+      "sl",
+      [
+        "log",
+        "-r",
+        `${baseRef}::. - ${baseRef}`,
+        "--template",
+        "{node}\\0{desc|firstline}\\0{desc}\\0{date|isodatesec}\\x1e",
+      ],
+      workspacePath,
+    );
+    // sl emits oldest-last by default; reverse to oldest-first to match
+    // the git/jj contract.
+    return parseNulRecords(out).reverse();
   },
 };
 
