@@ -180,7 +180,9 @@ Every turn:
 - **Agent showed up as idle (⚠ glyph; alive but assigned, no recent
   progress)** — see scrollback via `mu agent show <name> -n N`;
   recover via `mu agent send <name> '<retry>'` OR `mu task release
-  <id> --reopen`. Tunable via `MU_IDLE_THRESHOLD_MS` (default 5 min).
+  <id>` (bare release auto-flips IN_PROGRESS → OPEN; `--reopen` is
+  only for un-closing CLOSED/REJECTED/DEFERRED). Tunable via
+  `MU_IDLE_THRESHOLD_MS` (default 5 min).
 
 ### Parallelisation decision table
 
@@ -284,9 +286,9 @@ mu task claim <id> [--for <worker> | --self [--actor <name>]]
                                      # (resolves in task's ws) or
                                      # qualified '<ws>/<name>' for
                                      # cross-workstream dispatch.
-mu task release <id> [--reopen]      # clear owner; IN_PROGRESS → OPEN
-                                     # auto-flips so task re-enters ready;
-                                     # --reopen forces OPEN from
+mu task release <id>                 # clear owner; IN_PROGRESS → OPEN
+                                     # auto-flips so task re-enters ready
+mu task release <id> --reopen        # un-close: forces OPEN from
                                      # CLOSED/REJECTED/DEFERRED
 mu task close <id>                   # → CLOSED (idempotent)
 mu task open <id>                    # → OPEN (idempotent)
@@ -405,7 +407,7 @@ valid model strings: `pi --list-models [fuzzy-search]`.
 When an agent's pane dies (or you `mu agent close` mid-task), any
 IN_PROGRESS task it owned auto-reverts to OPEN with a `[reaper]` note
 explaining what happened, plus a `task reap` event in `agent_logs`.
-You don't have to manually `task release --reopen` after a crash.
+You don't have to manually `task release` after a crash.
 
 ### Known limitations
 
