@@ -24,15 +24,15 @@ extension are thin facades over the same core modules.
        ▼            ▼               ▼                  ▼
 ┌────────────────────────────────────────────────────────────────┐
 │  mu core (shared TS modules)                                    │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌───────┐│
-│  │ agents/  │ │  tasks/  │ │   vcs/   │ │ registry/│ │ eval/ ││
-│  │ tmux     │ │ schema   │ │ jj       │ │ snapshot │ │ vm    ││
-│  │ detect   │ │ queries  │ │ sapling  │ │ logs     │ │ defer ││
-│  │ state    │ │ tracks   │ │ git      │ │ doctor   │ │ refs  ││
-│  │          │ │ claim    │ │ none     │ │          │ │       ││
-│  └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘ └───┬───┘│
-└───────┼────────────┼────────────┼────────────┼───────────┼────┘
-        ▼            ▼            ▼            ▼           ▼
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────────┐   │
+│  │ agents/  │  │  tasks/  │  │   vcs/   │  │  registry/   │   │
+│  │ tmux     │  │ schema   │  │ jj       │  │  snapshot    │   │
+│  │ detect   │  │ queries  │  │ sapling  │  │  logs        │   │
+│  │ state    │  │ tracks   │  │ git      │  │  doctor      │   │
+│  │          │  │ claim    │  │ none     │  │              │   │
+│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └──────┬───────┘   │
+└───────┼─────────────┼─────────────┼───────────────┼───────────┘
+        ▼             ▼             ▼               ▼
 ┌────────────────────────────────────────────────────────────────┐
 │  Substrates                                                     │
 │  SQLite (~/.local/state/mu/mu.db) · tmux panes · jj/sl/git workspaces       │

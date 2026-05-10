@@ -178,7 +178,7 @@ verbose for a second consumer.
 
 Theme: every destructive action becomes recoverable.
 
-### `snapshots` table + auto-snapshot before mutation — SHIPPED in v0.2 (schema v4; tables carried into v5)
+### `snapshots` table + auto-snapshot before mutation — SHIPPED in v0.2 (schema v4; tables carried into v5, and unchanged in v6/v7)
 
 `captureSnapshot()` runs at the top of every destructive verb
 (workstream destroy, agent close, task close/reject/defer/release/
@@ -271,6 +271,11 @@ as the universal substrate-wide pattern, not just on tasks. See
 [docs/ARCHITECTURE.md § Surrogate-PK + SDK-boundary discipline](ARCHITECTURE.md#surrogate-pk--sdk-boundary-discipline-load-bearing).
 Two operators both running `mu task add design` in different
 workstreams just works; same for agents.
+
+Post-v5 evolution: schema v6 added the cross-workstream archive
+tables (`archives`, `archived_tasks`, `archived_edges`,
+`archived_notes`, `archived_events`); schema v7 dropped the
+unused `approvals` table. The surrogate-PK shape is unchanged.
 
 ---
 

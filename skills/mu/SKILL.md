@@ -430,10 +430,11 @@ You don't have to manually `task release` after a crash.
 ## SQL escape hatch
 
 `mu sql "<query>"` for anything not yet typed. Schema (v7):
-9 core tables (`workstreams`, `agents`, `tasks`, `task_edges`,
-`task_notes`, `agent_logs`, `vcs_workspaces`, `snapshots`,
-`schema_version`) + 5 archive tables (`archives`, `archived_tasks`,
-`archived_edges`, `archived_notes`, `archived_events`) + 3 views
+8 core tables (`workstreams`, `agents`, `tasks`, `task_edges`,
+`task_notes`, `agent_logs`, `vcs_workspaces`, `snapshots`) +
+1 meta table (`schema_version`, single-row integer) + 5 archive
+tables (`archives`, `archived_tasks`, `archived_edges`,
+`archived_notes`, `archived_events`) + 3 views
 (`ready`, `blocked`, `goals`). Every entity table has an INTEGER `id` PK; the
 operator-facing TEXT name is per-workstream `UNIQUE`. Inspect with
 `mu sql "SELECT name FROM sqlite_master WHERE type IN ('table','view')"`
