@@ -452,10 +452,26 @@ describe("colorEventPayload", () => {
     }
   });
 
+  // AST-based audit of every emitEvent callsite under src/. The
+  // earlier regex-grep version (review_eventprefix_grep_test_brittle)
+  // had three loopholes that silently let drift through:
+  //   1. Variable third args (`emitEvent(db, ws, msg)`) never matched.
+  //   2. Template literals starting with interpolation (`\`${kind}
+  //      foo\``) collapsed to empty head and were skipped.
+  //   3. The `words.length === 2` filter dropped any single-word
+  //      payload outright.
+  // Walking the AST removes the regex altogether: every CallExpression
+  // named `emitEvent` is examined, the payload-shape is resolved by
+  // syntax (string literal / no-substitution template / template
+  // expression / `formatClaimEvent({prose: ...})`), and any payload we
+  // can't extract is itself a failure. That makes the test airtight
+  // — the property it claims to enforce.
   it("every emitEvent callsite under src/ uses a payload prefix in EVENT_VERB_PREFIXES", async () => {
     const { EVENT_VERB_PREFIXES } = await import("../src/logs.js");
     const { readFileSync, readdirSync, statSync } = await import("node:fs");
     const { join: pj } = await import("node:path");
+    const ts = await import("typescript");
+
     function walk(dir: string, out: string[] = []): string[] {
       for (const entry of readdirSync(dir)) {
         const full = pj(dir, entry);
@@ -465,28 +481,122 @@ describe("colorEventPayload", () => {
       }
       return out;
     }
-    const files = walk("src");
-    const callsites: { file: string; payloadPrefix: string }[] = [];
-    for (const file of files) {
-      const src = readFileSync(file, "utf8");
-      const re = /emitEvent\s*\(\s*[^,]+,\s*[^,]+,\s*([`'"])((?:\\.|(?!\1)[\s\S])*?)\1/g;
-      let m: RegExpExecArray | null;
-      // biome-ignore lint/suspicious/noAssignInExpressions: classic regex loop
-      while ((m = re.exec(src)) !== null) {
-        const literal = m[2] ?? "";
-        const head = literal.split("${")[0] ?? "";
-        const words = head.trim().split(/\s+/).slice(0, 2);
-        if (words.length === 2) {
-          callsites.push({ file, payloadPrefix: words.join(" ") });
+
+    /**
+     * Resolve a payload AST node to a literal string in which every
+     * `${...}` interpolation is replaced by the sentinel `\x00`. The
+     * sentinel marks 'unknown text here' without colliding with any
+     * real character a verb prefix could legitimately use.
+     *
+     * Returns null when the node is a form we can't statically
+     * resolve (a bare identifier, a function call other than
+     * `formatClaimEvent`, a binary `+` chain, etc.). The caller
+     * treats null as a hard failure: every emitEvent payload MUST be
+     * one of the recognised shapes.
+     */
+    function resolvePayload(node: import("typescript").Node): string | null {
+      if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
+        return node.text;
+      }
+      if (ts.isTemplateExpression(node)) {
+        let out = node.head.text;
+        for (const span of node.templateSpans) {
+          out += `\x00${span.literal.text}`;
+        }
+        return out;
+      }
+      // formatClaimEvent({ prose: "task claim ...", ... })
+      if (
+        ts.isCallExpression(node) &&
+        ts.isIdentifier(node.expression) &&
+        node.expression.text === "formatClaimEvent" &&
+        node.arguments.length === 1
+      ) {
+        const arg = node.arguments[0];
+        if (arg && ts.isObjectLiteralExpression(arg)) {
+          for (const prop of arg.properties) {
+            if (
+              ts.isPropertyAssignment(prop) &&
+              ts.isIdentifier(prop.name) &&
+              prop.name.text === "prose"
+            ) {
+              return resolvePayload(prop.initializer);
+            }
+          }
         }
       }
+      return null;
     }
-    expect(callsites.length).toBeGreaterThan(0);
-    const knownPrefixes = new Set(EVENT_VERB_PREFIXES);
-    const unknown = callsites.filter((c) => !knownPrefixes.has(c.payloadPrefix));
+
+    interface Site {
+      file: string;
+      line: number;
+      payload: string | null;
+    }
+    const sites: Site[] = [];
+    for (const file of walk("src")) {
+      const src = readFileSync(file, "utf8");
+      const sf = ts.createSourceFile(file, src, ts.ScriptTarget.Latest, true);
+      const visit = (node: import("typescript").Node): void => {
+        if (
+          ts.isCallExpression(node) &&
+          ts.isIdentifier(node.expression) &&
+          node.expression.text === "emitEvent" &&
+          node.arguments.length >= 3
+        ) {
+          const payloadArg = node.arguments[2];
+          const payload = payloadArg ? resolvePayload(payloadArg) : null;
+          const { line } = sf.getLineAndCharacterOfPosition(node.getStart(sf));
+          sites.push({ file, line: line + 1, payload });
+        }
+        ts.forEachChild(node, visit);
+      };
+      visit(sf);
+    }
+
+    // Sanity: we should have found every callsite. The codebase has
+    // ~20+ live emitters; if this drops to a handful the AST walk has
+    // regressed (e.g. wrong identifier name).
+    expect(sites.length).toBeGreaterThanOrEqual(20);
+
+    // No callsite may have an unresolvable payload. If you hit this,
+    // either (a) refactor the emitter to use one of the recognised
+    // shapes (literal / template / formatClaimEvent({prose: ...})),
+    // or (b) extend `resolvePayload` above to handle the new shape.
+    const unresolved = sites.filter((s) => s.payload === null);
+    expect(
+      unresolved,
+      `emitEvent callsites whose payload shape we can't statically resolve (extend resolvePayload): ${JSON.stringify(
+        unresolved.map((s) => `${s.file}:${s.line}`),
+        null,
+        2,
+      )}`,
+    ).toEqual([]);
+
+    // Build the prefix-match check. A payload matches if it begins
+    // with `<verb> ` for some verb in EVENT_VERB_PREFIXES, OR equals
+    // the verb exactly (single-token tail), OR begins with `<verb>\x00`
+    // (a template literal where the next token is interpolated).
+    const knownPrefixes = [...EVENT_VERB_PREFIXES];
+    const matches = (payload: string): string | null => {
+      for (const verb of knownPrefixes) {
+        if (
+          payload === verb ||
+          payload.startsWith(`${verb} `) ||
+          payload.startsWith(`${verb}\x00`) ||
+          payload.startsWith(`${verb}.`)
+        ) {
+          return verb;
+        }
+      }
+      return null;
+    };
+    const unknown = sites
+      .filter((s) => s.payload !== null && matches(s.payload) === null)
+      .map((s) => ({ file: s.file, line: s.line, payload: s.payload }));
     expect(
       unknown,
-      `emitEvent callsites with payload prefixes not in EVENT_VERB_PREFIXES: ${JSON.stringify(unknown, null, 2)}`,
+      `emitEvent callsites whose payload prefix is not in EVENT_VERB_PREFIXES: ${JSON.stringify(unknown, null, 2)}`,
     ).toEqual([]);
   });
 });
