@@ -289,6 +289,7 @@ mu archive show <label>                            # detail card + per-source-wo
 mu archive add <label> -w <ws> [--destroy]         # IDEMPOTENT; --destroy cascades to mu workstream destroy --yes
 mu archive remove <label> -w <ws>                  # surgical un-archive of one source workstream
 mu archive delete <label> [--yes]                  # two-phase; --yes captures a snapshot first
+mu archive search <pattern> [--label <l>]          # LIKE-search archived titles + note content (--limit N, --json)
 
 # Escape hatch + state + health
 mu sql "<query>"                     # SELECT / UPDATE / DELETE / WITH

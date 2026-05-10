@@ -447,3 +447,122 @@ describe("mu workstream destroy --archive", () => {
     post.close();
   });
 });
+
+// ─── mu archive search ──────────────────────────────────────────────
+//
+// Phase 4b. Tests the thin commander glue + the SDK contract end-to-
+// end through runCli (in-process buildProgram + parseAsync).
+
+describe("mu archive search", () => {
+  beforeEach(async () => {
+    // Seed: two archives, each with their own source workstream.
+    // alpha has a unique title token + a notes match; beta has its
+    // own title.
+    await runCli(["archive", "create", "wave"], dbPath);
+    await runCli(["archive", "add", "wave", "-w", "alpha"], dbPath);
+    await runCli(["archive", "create", "other"], dbPath);
+    await runCli(["archive", "add", "other", "-w", "beta"], dbPath);
+  });
+
+  it("matches a title across every archive (table)", async () => {
+    const { stdout, error, exitCode } = await runCli(["archive", "search", "Build"], dbPath);
+    expect(error).toBeUndefined();
+    expect(exitCode).toBeNull();
+    expect(stdout).toContain("build");
+    expect(stdout).toContain("wave");
+    expect(stdout).toContain("hit(s)");
+  });
+
+  it("matches a note's content (--json)", async () => {
+    const { stdout, error } = await runCli(["archive", "search", "design note", "--json"], dbPath);
+    expect(error).toBeUndefined();
+    const hits = JSON.parse(stdout.trim()) as Array<{
+      archiveLabel: string;
+      sourceWorkstream: string;
+      originalLocalId: string;
+      matchKind: "title" | "note";
+      matchSnippet: string;
+    }>;
+    expect(hits.length).toBe(1);
+    expect(hits[0]?.matchKind).toBe("note");
+    expect(hits[0]?.archiveLabel).toBe("wave");
+    expect(hits[0]?.originalLocalId).toBe("design");
+    expect(hits[0]?.matchSnippet).toContain("design note");
+  });
+
+  it("--label scopes to a single archive", async () => {
+    // Both archives have a title containing 'esign' (Design alpha,
+    // Design beta). Without --label we get 2; with --label wave we
+    // get 1.
+    const all = await runCli(["archive", "search", "esign", "--json"], dbPath);
+    const allHits = JSON.parse(all.stdout.trim()) as Array<{ archiveLabel: string }>;
+    const labels = new Set(allHits.map((h) => h.archiveLabel));
+    expect(labels.size).toBe(2);
+
+    const scoped = await runCli(
+      ["archive", "search", "esign", "--label", "wave", "--json"],
+      dbPath,
+    );
+    const scopedHits = JSON.parse(scoped.stdout.trim()) as Array<{ archiveLabel: string }>;
+    expect(scopedHits.every((h) => h.archiveLabel === "wave")).toBe(true);
+    expect(scopedHits.length).toBeGreaterThan(0);
+  });
+
+  it("--label nonexistent → ArchiveNotFoundError; exit 3", async () => {
+    const { stderr, exitCode } = await runCli(
+      ["archive", "search", "x", "--label", "ghost"],
+      dbPath,
+    );
+    expect(exitCode).toBe(3);
+    expect(stderr).toMatch(/no such archive/i);
+  });
+
+  it("--limit truncates the result set", async () => {
+    const { stdout, error } = await runCli(
+      ["archive", "search", "esign", "--limit", "1", "--json"],
+      dbPath,
+    );
+    expect(error).toBeUndefined();
+    const hits = JSON.parse(stdout.trim()) as unknown[];
+    expect(hits).toHaveLength(1);
+  });
+
+  it("empty pattern → UsageError; exit 2", async () => {
+    const { stderr, exitCode } = await runCli(["archive", "search", ""], dbPath);
+    expect(exitCode).toBe(2);
+    expect(stderr).toMatch(/search pattern is required/i);
+  });
+
+  it("whitespace-only pattern → UsageError; exit 2", async () => {
+    const { stderr, exitCode } = await runCli(["archive", "search", "   "], dbPath);
+    expect(exitCode).toBe(2);
+    expect(stderr).toMatch(/search pattern is required/i);
+  });
+
+  it("empty results render '(no matches)' + Next steps", async () => {
+    const { stdout, error } = await runCli(["archive", "search", "absolutely-nope"], dbPath);
+    expect(error).toBeUndefined();
+    expect(stdout).toContain("(no matches)");
+    expect(stdout).toContain("Next:");
+  });
+
+  it("empty results --json emits []", async () => {
+    const { stdout, error } = await runCli(
+      ["archive", "search", "absolutely-nope", "--json"],
+      dbPath,
+    );
+    expect(error).toBeUndefined();
+    expect(JSON.parse(stdout.trim())).toEqual([]);
+  });
+
+  it("SQL-injection attempt is parameter-bound; archives table survives", async () => {
+    const malicious = "'); DROP TABLE archives; --";
+    const { stdout, error } = await runCli(["archive", "search", malicious, "--json"], dbPath);
+    expect(error).toBeUndefined();
+    expect(JSON.parse(stdout.trim())).toEqual([]);
+    // Both archives still listed.
+    const list = await runCli(["archive", "list", "--json"], dbPath);
+    const arr = JSON.parse(list.stdout.trim()) as Array<{ label: string }>;
+    expect(arr.map((a) => a.label).sort()).toEqual(["other", "wave"]);
+  });
+});

@@ -45,6 +45,7 @@ import {
   listArchivedTasks,
   listArchives,
   removeFromArchive,
+  searchArchives,
 } from "../src/archives.js";
 import { CURRENT_SCHEMA_VERSION, type Db, SchemaTooOldError, openDb } from "../src/db.js";
 import { addNote, addTask } from "../src/tasks.js";
@@ -243,6 +244,147 @@ describe("archives SDK", () => {
 
   it("getArchive on missing label throws ArchiveNotFoundError", () => {
     expect(() => getArchive(db, "ghost")).toThrow(ArchiveNotFoundError);
+  });
+
+  // ─── searchArchives ──────────────────────────────────────
+
+  describe("searchArchives", () => {
+    function seedTwoArchives(): void {
+      ensureWorkstream(db, "alpha");
+      addTask(db, {
+        localId: "oauth",
+        workstream: "alpha",
+        title: "Implement OAuth flow",
+        impact: 80,
+        effortDays: 1,
+      });
+      addTask(db, {
+        localId: "login",
+        workstream: "alpha",
+        title: "Wire login form",
+        impact: 50,
+        effortDays: 1,
+      });
+      addNote(db, "login", "reminder: refresh tokens still TODO", {
+        workstream: "alpha",
+        author: "user",
+      });
+      ensureWorkstream(db, "beta");
+      addTask(db, {
+        localId: "design",
+        workstream: "beta",
+        title: "Design dashboard",
+        impact: 70,
+        effortDays: 1,
+      });
+      createArchive(db, "wave-a");
+      addToArchive(db, "wave-a", "alpha");
+      createArchive(db, "wave-b");
+      addToArchive(db, "wave-b", "beta");
+    }
+
+    it("matches by title only and returns matchKind='title' with a snippet", () => {
+      seedTwoArchives();
+      const hits = searchArchives(db, { pattern: "OAuth" });
+      expect(hits).toHaveLength(1);
+      expect(hits[0]?.archiveLabel).toBe("wave-a");
+      expect(hits[0]?.originalLocalId).toBe("oauth");
+      expect(hits[0]?.matchKind).toBe("title");
+      expect(hits[0]?.matchSnippet).toContain("OAuth");
+    });
+
+    it("matches by note content and surfaces the note snippet", () => {
+      seedTwoArchives();
+      const hits = searchArchives(db, { pattern: "refresh tokens" });
+      expect(hits).toHaveLength(1);
+      expect(hits[0]?.matchKind).toBe("note");
+      expect(hits[0]?.originalLocalId).toBe("login");
+      expect(hits[0]?.matchSnippet).toContain("refresh tokens");
+    });
+
+    it("--label scopes the search to a single archive", () => {
+      seedTwoArchives();
+      // Without --label, both 'oauth' (wave-a) and 'design' (wave-b)
+      // share no common pattern — use a substring that hits both.
+      const all = searchArchives(db, { pattern: "e" });
+      const labelsAcross = new Set(all.map((h) => h.archiveLabel));
+      expect(labelsAcross.size).toBeGreaterThan(1);
+      const onlyA = searchArchives(db, { pattern: "e", label: "wave-a" });
+      expect(onlyA.every((h) => h.archiveLabel === "wave-a")).toBe(true);
+      expect(onlyA.length).toBeGreaterThan(0);
+    });
+
+    it("--label nonexistent throws ArchiveNotFoundError", () => {
+      seedTwoArchives();
+      expect(() => searchArchives(db, { pattern: "x", label: "ghost" })).toThrow(
+        ArchiveNotFoundError,
+      );
+    });
+
+    it("--limit truncates the result set", () => {
+      ensureWorkstream(db, "big");
+      for (let i = 0; i < 8; i++) {
+        addTask(db, {
+          localId: `t${i}`,
+          workstream: "big",
+          title: `Match candidate ${i}`,
+          impact: 50,
+          effortDays: 1,
+        });
+      }
+      createArchive(db, "big");
+      addToArchive(db, "big", "big");
+      const hits = searchArchives(db, { pattern: "Match", limit: 3 });
+      expect(hits).toHaveLength(3);
+    });
+
+    it("empty pattern throws (defensive guard for direct callers)", () => {
+      createArchive(db, "wave");
+      expect(() => searchArchives(db, { pattern: "" })).toThrow();
+      expect(() => searchArchives(db, { pattern: "   " })).toThrow();
+    });
+
+    it("SQL injection attempt does NOT drop archives table", () => {
+      seedTwoArchives();
+      const before = listArchives(db)
+        .map((a) => a.label)
+        .sort();
+      // Pattern crafted to look dangerous if it were string-concatted
+      // into the SQL. Bound as a parameter, so it just becomes a
+      // literal LIKE needle that matches nothing.
+      const malicious = "'); DROP TABLE archives; --";
+      const hits = searchArchives(db, { pattern: malicious });
+      expect(hits).toEqual([]);
+      const after = listArchives(db)
+        .map((a) => a.label)
+        .sort();
+      expect(after).toEqual(before);
+      // Sanity: archives table still exists and is queryable.
+      const tableRow = db
+        .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='archives'")
+        .get();
+      expect(tableRow).toBeDefined();
+    });
+
+    it("prefers title over note when the same task matches both", () => {
+      ensureWorkstream(db, "both");
+      addTask(db, {
+        localId: "x",
+        workstream: "both",
+        title: "alpha-keyword title",
+        impact: 50,
+        effortDays: 1,
+      });
+      addNote(db, "x", "also mentions alpha-keyword in the body", {
+        workstream: "both",
+        author: "user",
+      });
+      createArchive(db, "dup");
+      addToArchive(db, "dup", "both");
+      const hits = searchArchives(db, { pattern: "alpha-keyword" });
+      expect(hits).toHaveLength(1);
+      expect(hits[0]?.matchKind).toBe("title");
+    });
   });
 
   it("removeFromArchive on a workstream that never contributed is a no-op (zero counts)", () => {

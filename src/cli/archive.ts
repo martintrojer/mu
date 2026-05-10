@@ -22,6 +22,7 @@ import {
   ArchiveAlreadyExistsError,
   ArchiveLabelInvalidError,
   ArchiveNotFoundError,
+  type ArchiveSearchHit,
   type ArchiveSummary,
   addToArchive,
   createArchive,
@@ -29,8 +30,9 @@ import {
   getArchive,
   listArchives,
   removeFromArchive,
+  searchArchives,
 } from "../archives.js";
-import { emitJson, relTime, resolveWorkstream } from "../cli.js";
+import { UsageError, emitJson, relTime, resolveWorkstream, truncate } from "../cli.js";
 import type { Db } from "../db.js";
 import { type NextStep, muTable, pc, printNextSteps } from "../output.js";
 import { captureSnapshot } from "../snapshots.js";
@@ -371,6 +373,80 @@ export async function cmdArchiveDelete(
   ]);
 }
 
+// ─── search ───────────────────────────────────────────────────────
+//
+// `mu archive search <pattern>` — LIKE-search across archived task
+// titles AND archived note content. The SDK (searchArchives) does
+// the heavy lifting; this is a thin formatter. Empty patterns are
+// rejected at the CLI boundary with UsageError so the SDK doesn't
+// have to embed CLI-flavoured error messages.
+
+export async function cmdArchiveSearch(
+  db: Db,
+  pattern: string,
+  opts: { label?: string; limit?: string; json?: boolean } = {},
+): Promise<void> {
+  if (pattern.trim().length === 0) {
+    throw new UsageError("search pattern is required");
+  }
+  const limit = opts.limit !== undefined ? Number(opts.limit) : undefined;
+  if (limit !== undefined && (Number.isNaN(limit) || limit < 1)) {
+    throw new UsageError(`--limit must be a positive integer (got ${JSON.stringify(opts.limit)})`);
+  }
+  const hits: ArchiveSearchHit[] = searchArchives(db, {
+    pattern,
+    label: opts.label,
+    limit,
+  });
+
+  if (opts.json) {
+    emitJson(hits);
+    return;
+  }
+
+  const nextSteps: NextStep[] = [
+    {
+      intent: "Inspect a specific archive by label",
+      command: "mu archive show <label>",
+    },
+    {
+      intent: "Pull raw archived rows directly",
+      command:
+        "mu sql \"SELECT * FROM archived_tasks t JOIN archives a ON a.id=t.archive_id WHERE LOWER(t.title) LIKE '%PATTERN%'\"",
+    },
+  ];
+
+  if (hits.length === 0) {
+    console.log(pc.dim("(no matches)"));
+    printNextSteps(nextSteps);
+    return;
+  }
+
+  // Snippet column gets the bulk of the table; archive label / id
+  // are short fixed-shape values. The snippet itself is already
+  // capped at ~120 chars by the SDK; truncate further to keep the
+  // table readable on standard 80–120 col terminals.
+  const SNIPPET_BUDGET = 60;
+  const TITLE_BUDGET = 32;
+  const table = muTable({
+    head: ["archive", "source-ws", "id", "kind", "title", "snippet"].map((h) => pc.bold(h)),
+    colWidths: [20, 20, 16, 8, TITLE_BUDGET, SNIPPET_BUDGET],
+  });
+  for (const h of hits) {
+    table.push([
+      h.archiveLabel,
+      h.sourceWorkstream,
+      h.originalLocalId,
+      h.matchKind === "title" ? pc.cyan("title") : pc.dim("note"),
+      truncate(h.title, TITLE_BUDGET - 2),
+      pc.dim(truncate(h.matchSnippet, SNIPPET_BUDGET - 2)),
+    ]);
+  }
+  console.log(table.toString());
+  console.log(pc.dim(`(${hits.length} hit(s))`));
+  printNextSteps(nextSteps);
+}
+
 // ─── commander wiring ────────────────────────────────────────────────
 //
 // wireArchiveCommands is called by buildProgram() in src/cli.ts. Wired
@@ -466,6 +542,23 @@ export function wireArchiveCommands(program: Command): void {
         json?: boolean;
       };
       return handle((db) => cmdArchiveRemove(db, label, opts))();
+    });
+
+  archive
+    .command("search <pattern>")
+    .description(
+      "LIKE-search archived task titles AND archived note content across every archive (or a single one with --label). Pattern is bound as a SQL parameter; SQL-injection-safe.",
+    )
+    .option("--label <label>", "restrict to one archive (throws ArchiveNotFoundError on miss)")
+    .option("--limit <n>", "cap on results (default 50)")
+    .option(...JSON_OPT)
+    .action(function (pattern: string) {
+      const opts = (this as Command).opts() as {
+        label?: string;
+        limit?: string;
+        json?: boolean;
+      };
+      return handle((db) => cmdArchiveSearch(db, pattern, opts))();
     });
 
   archive

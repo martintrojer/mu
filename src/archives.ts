@@ -697,6 +697,211 @@ export interface ListArchivedTasksOptions {
  * so the output is deterministic and groups each workstream's
  * contribution together.
  */
+// ─── searchArchives ──────────────────────────────────────────────────
+
+export interface ArchiveSearchHit {
+  /** Operator-facing label of the parent archive. */
+  archiveLabel: string;
+  /** TEXT name of the source workstream this row came from. */
+  sourceWorkstream: string;
+  /** local_id the task had in its source workstream. */
+  originalLocalId: string;
+  /** Snapshotted title (always present, even on a note match). */
+  title: string;
+  /** Where the match was found: the title column, or one of this
+   *  task's archived_notes.content rows. Title matches win when
+   *  both apply (the dedup pass below picks one row per task). */
+  matchKind: "title" | "note";
+  /** Up to ~120 chars of context centered on the FIRST occurrence
+   *  of the pattern in the matching field. Case-insensitive index;
+   *  the snippet itself preserves original casing. */
+  matchSnippet: string;
+}
+
+export interface SearchArchivesOptions {
+  /** LIKE-style needle. Wrapped in `%…%` automatically; `_` and `%`
+   *  inside the pattern are still SQL LIKE wildcards (matches the
+   *  `searchTasks` convention in src/tasks.ts). Empty / whitespace-
+   *  only patterns throw — the CLI is the canonical caller and
+   *  enforces it via UsageError before we get here, but the SDK
+   *  guards it too so direct programmatic callers don't accidentally
+   *  match every row. */
+  pattern: string;
+  /** Restrict to one archive label; undefined = search every
+   *  archive. Throws ArchiveNotFoundError on miss. */
+  label?: string;
+  /** Cap on hits returned. Default 50; values below 1 fall back to
+   *  the default. There is no `--all` escape hatch — for unbounded
+   *  exports use `mu sql`. */
+  limit?: number;
+}
+
+/** Default + cap for searchArchives. Mirrors the `--limit 50` shape
+ *  used elsewhere; deliberately small so an interactive search
+ *  doesn't dump thousands of rows by default. */
+const SEARCH_DEFAULT_LIMIT = 50;
+/** Width of the snippet window (chars before+after the match). 120 is
+ *  the contract from the design note: enough context to disambiguate
+ *  matches in a table without wrapping a typical 80-col terminal. */
+const SNIPPET_WIDTH = 120;
+
+/** Build a ~SNIPPET_WIDTH-char snippet centered on the first
+ *  case-insensitive occurrence of `needle` in `haystack`. Adds an
+ *  ellipsis prefix/suffix when we trimmed; preserves original casing
+ *  in the returned slice. SQL LIKE wildcards (`%`, `_`) in `needle`
+ *  are stripped before the match-locating step (we don't try to
+ *  reproduce LIKE-pattern semantics here — a glob like `foo%bar`
+ *  centers on "foo"). Pure helper; no DB access. */
+function snippetAround(haystack: string, needle: string): string {
+  const literal = needle.replace(/[%_]/g, "");
+  if (literal.length === 0) {
+    // Pattern is just wildcards — return a head slice so the row
+    // isn't blank in the table.
+    return haystack.length <= SNIPPET_WIDTH ? haystack : `${haystack.slice(0, SNIPPET_WIDTH - 1)}…`;
+  }
+  const idx = haystack.toLowerCase().indexOf(literal.toLowerCase());
+  if (idx < 0) {
+    // Match was via SQL LIKE (e.g. `_` wildcard) but the literal
+    // isn't present. Fall back to a head slice rather than throw.
+    return haystack.length <= SNIPPET_WIDTH ? haystack : `${haystack.slice(0, SNIPPET_WIDTH - 1)}…`;
+  }
+  const half = Math.floor((SNIPPET_WIDTH - literal.length) / 2);
+  const start = Math.max(0, idx - half);
+  const end = Math.min(haystack.length, start + SNIPPET_WIDTH);
+  const head = start > 0 ? "…" : "";
+  const tail = end < haystack.length ? "…" : "";
+  return `${head}${haystack.slice(start, end)}${tail}`;
+}
+
+/**
+ * LIKE-search archived task titles AND archived note content. The
+ * pattern is bound as a SQL parameter (never concatenated): an
+ * archive label like `'); DROP TABLE archives; --` round-trips
+ * through `?` without touching the DDL surface.
+ *
+ * Behaviour:
+ *   - One row per (archive, source_workstream, original_local_id)
+ *     pair. When a task matches via BOTH title and note, the title
+ *     row wins (matchKind='title'); only note matches stand on
+ *     their own as matchKind='note'.
+ *   - With `opts.label`, restricts to that archive. Resolves the
+ *     label up-front via the helper; throws ArchiveNotFoundError
+ *     on miss.
+ *   - Results sorted by (archive label, source workstream,
+ *     original_local_id) — the same order `mu archive show` uses,
+ *     so a search hit lines up with the show output.
+ *   - `limit` defaults to 50 and caps the result set. There is no
+ *     unbounded mode (use `mu sql` for raw extracts).
+ */
+export function searchArchives(db: Db, opts: SearchArchivesOptions): ArchiveSearchHit[] {
+  const trimmed = opts.pattern.trim();
+  if (trimmed.length === 0) {
+    // Defensive guard for direct SDK callers; the CLI throws
+    // UsageError("search pattern is required") before we get here.
+    throw new Error("searchArchives: pattern must be non-empty");
+  }
+  const like = `%${trimmed}%`;
+  const limit =
+    opts.limit !== undefined && opts.limit > 0 ? Math.floor(opts.limit) : SEARCH_DEFAULT_LIMIT;
+
+  // archiveId resolves up-front so a missing label fails loudly
+  // before we run a (potentially expensive) full-table scan.
+  let archiveFilterSql = "";
+  const archiveFilterParams: unknown[] = [];
+  if (opts.label !== undefined) {
+    // getArchive throws ArchiveNotFoundError on miss — the contract.
+    const archive = getArchive(db, opts.label);
+    archiveFilterSql = " AND a.id = ?";
+    archiveFilterParams.push(archive.id);
+  }
+
+  // Title hits: one row per archived_tasks row whose title matches.
+  // The pattern is a parameter, never a string concat.
+  const titleRows = db
+    .prepare(
+      `SELECT a.label             AS archive_label,
+              t.source_workstream AS source_workstream,
+              t.original_local_id AS original_local_id,
+              t.title             AS title
+         FROM archived_tasks t
+         JOIN archives a ON a.id = t.archive_id
+        WHERE LOWER(t.title) LIKE LOWER(?)${archiveFilterSql}`,
+    )
+    .all(like, ...archiveFilterParams) as {
+    archive_label: string;
+    source_workstream: string;
+    original_local_id: string;
+    title: string;
+  }[];
+
+  // Note hits: one row per archived_notes row that matches. We need
+  // both the note content (for the snippet) AND the parent task's
+  // title (for the table). DISTINCT-on-task is enforced in the JS
+  // dedup step below — SQL DISTINCT here would only help if we
+  // collapsed before reading n.content, losing the snippet source.
+  const noteRows = db
+    .prepare(
+      `SELECT a.label             AS archive_label,
+              t.source_workstream AS source_workstream,
+              t.original_local_id AS original_local_id,
+              t.title             AS title,
+              n.content           AS content
+         FROM archived_notes n
+         JOIN archived_tasks t ON t.id = n.archived_task_id
+         JOIN archives a ON a.id = t.archive_id
+        WHERE LOWER(n.content) LIKE LOWER(?)${archiveFilterSql}
+        ORDER BY n.id`,
+    )
+    .all(like, ...archiveFilterParams) as {
+    archive_label: string;
+    source_workstream: string;
+    original_local_id: string;
+    title: string;
+    content: string;
+  }[];
+
+  // Merge: title matches win over note matches for the same task.
+  // Key on (archive label, source ws, original_local_id) — the
+  // archive-side composite identity.
+  const seen = new Set<string>();
+  const hits: ArchiveSearchHit[] = [];
+  for (const r of titleRows) {
+    const key = `${r.archive_label}\u0000${r.source_workstream}\u0000${r.original_local_id}`;
+    seen.add(key);
+    hits.push({
+      archiveLabel: r.archive_label,
+      sourceWorkstream: r.source_workstream,
+      originalLocalId: r.original_local_id,
+      title: r.title,
+      matchKind: "title",
+      matchSnippet: snippetAround(r.title, trimmed),
+    });
+  }
+  for (const r of noteRows) {
+    const key = `${r.archive_label}\u0000${r.source_workstream}\u0000${r.original_local_id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    hits.push({
+      archiveLabel: r.archive_label,
+      sourceWorkstream: r.source_workstream,
+      originalLocalId: r.original_local_id,
+      title: r.title,
+      matchKind: "note",
+      matchSnippet: snippetAround(r.content, trimmed),
+    });
+  }
+
+  hits.sort((a, b) => {
+    if (a.archiveLabel !== b.archiveLabel) return a.archiveLabel < b.archiveLabel ? -1 : 1;
+    if (a.sourceWorkstream !== b.sourceWorkstream)
+      return a.sourceWorkstream < b.sourceWorkstream ? -1 : 1;
+    if (a.originalLocalId !== b.originalLocalId)
+      return a.originalLocalId < b.originalLocalId ? -1 : 1;
+    return 0;
+  });
+  return hits.slice(0, limit);
+}
+
 export function listArchivedTasks(
   db: Db,
   label: string,

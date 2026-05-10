@@ -55,6 +55,15 @@ called out under "Breaking" in each entry.
   `ArchiveLabelInvalidError`. Phases 2 (CLI), 3 (destroy hook), and
   4 (export renderer) follow.
 
+- **`mu archive search <pattern>` — LIKE-search archived titles
+  AND archived note content** (Phase 4b). `--label <l>` scopes to one
+  archive (throws `ArchiveNotFoundError` on miss); `--limit N`
+  defaults to 50; `--json` emits the `ArchiveSearchHit[]` array.
+  The pattern is bound as a SQL parameter (never concatenated), so
+  `mu archive search "'); DROP TABLE archives; --"` is just an
+  empty result. Title matches win over note matches when the same
+  task hits both.
+
 - **`mu archive create / list / show / add / remove / delete` —
   feature complete (6 verbs + tests + docs).** Phase 2 of the v0.3
   archive feature: thin commander glue (`src/cli/archive.ts`) over

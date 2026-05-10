@@ -45,11 +45,13 @@ export {
   ArchiveAlreadyExistsError,
   ArchiveLabelInvalidError,
   ArchiveNotFoundError,
+  type ArchiveSearchHit,
   type ArchiveSourceSummary,
   type ArchiveSummary,
   type ArchivedTaskRow,
   type ListArchivedTasksOptions,
   type RemoveFromArchiveResult,
+  type SearchArchivesOptions,
   addToArchive,
   createArchive,
   deleteArchive,
@@ -58,6 +60,7 @@ export {
   listArchives,
   listArchivedTasks,
   removeFromArchive,
+  searchArchives,
 } from "./archives.js";
 export {
   CURRENT_SCHEMA_VERSION,

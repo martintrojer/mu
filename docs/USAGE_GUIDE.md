@@ -968,6 +968,7 @@ mu archive add v0-3-wave -w mufeedback-v03
 mu archive add v0-3-wave -w roadmap-v0-3 --destroy   # cascade: archive THEN destroy
 mu archive list                                       # label | tasks | sources | created | last_added
 mu archive show v0-3-wave                             # detail card + per-source-workstream summary
+mu archive search 'oauth' [--label v0-3-wave]         # LIKE-search archived titles + note content (--limit N, --json)
 ```
 
 Key properties:
