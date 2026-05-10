@@ -146,7 +146,7 @@ release is about the *task*.
 | Verb                                  | Effect                                                |
 | ------------------------------------- | ----------------------------------------------------- |
 | `mu task add <id> ...`                | Creates a new OPEN task                               |
-| `mu task update <id> --status closed` | Lifecycle transition                                  |
+| `mu task close/open/reject/defer <id>` | Lifecycle transition                                 |
 | `mu task claim <task> [--for <agent>]`     | Atomic: sets `owner`, flips status to `IN_PROGRESS`   |
 | `mu release <task>`                   | Clears `owner`. Auto-flips `IN_PROGRESS` → `OPEN` (so the task re-enters the ready set); other statuses preserved. `--reopen` forces `OPEN` from `CLOSED`/`REJECTED`/`DEFERRED` |
 | `mu task note <task> "..."`           | Appends to `task_notes`. Never edits prior notes.     |
@@ -284,7 +284,8 @@ XDG-Base-Directory-Spec compliant. The state directory resolves as:
   surfaced by `mu workspace orphans -w <workstream>` and
   `mu state -w <workstream>`.
 - `<state-dir>/snapshots/<id>.db` — whole-DB snapshots auto-captured
-  before destructive verbs (schema v5). Indexed by the `snapshots`
+  before destructive verbs (introduced in schema v4; carried forward).
+  Indexed by the `snapshots`
   table; restore via `mu undo` (inspect via `mu snapshot list` /
   `mu snapshot show <id>`). Default colocation: snapshots live
   next to the live DB, so per-test isolation works without env
