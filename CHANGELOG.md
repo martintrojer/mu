@@ -63,6 +63,14 @@ called out under "Breaking" in each entry.
 
 ### Removed
 
+- **Phantom `mu workspace adopt` hint dropped from `cmdWorkspaceOrphans`
+  nextSteps** (`nextsteps_audit_workspace_orphans_phantom_verb`). The
+  hint pointed operators at a verb that does not exist (and at a
+  ROADMAP entry that also does not exist), violating the "nextSteps
+  must not point at non-existent verbs" framing. Workspace adoption
+  is theoretical; the remaining `git worktree remove` / `rm -rf`
+  hint is the one workable path.
+
 - **`docs/OUTPUT_LABELS_AUDIT.md` removed.** v0.2 single-purpose
   audit; output-label rename work shipped; no live readers.
 

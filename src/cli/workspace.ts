@@ -140,10 +140,6 @@ export async function cmdWorkspaceOrphans(
             intent: "Remove a specific orphan dir (git: also prunes worktree registry)",
             command: `(cd <project-root> && git worktree remove --force ${orphans[0]?.path}) || rm -rf ${orphans[0]?.path}`,
           },
-          {
-            intent: "Adopt the dir as a managed workspace",
-            command: "mu workspace adopt  (deferred; see roadmap)",
-          },
         ];
   if (opts.json) {
     emitJson({ workstreamName: workstream, orphans, nextSteps });
