@@ -1056,12 +1056,13 @@ export function assertEntityInWorkstream<E extends Error>(
 
 /**
  * Sister of `assertTaskInWorkstream` for verbs that target an agent
- * by name. Agent names are globally unique today (PK on agents.name),
- * so the `-w` flag is purely a scope check: operators think workstream-
- * first and `-w` turns silent wrong-target acts into clear
- * `AgentNotInWorkstreamError` (exit 4). No-op when `workstream` is
- * undefined or the agent doesn't exist (downstream handler raises
- * `AgentNotFoundError`).
+ * by name. Agent names are per-workstream unique
+ * (`UNIQUE(workstream_id, name)` in src/db.ts), so the same name can
+ * exist in multiple workstreams; `-w` is the scope check that turns a
+ * wrong-target verb into a clear `AgentNotInWorkstreamError` (exit 4)
+ * instead of silently operating on a same-named agent in another
+ * workstream. No-op when `workstream` is undefined or the agent
+ * doesn't exist (downstream handler raises `AgentNotFoundError`).
  */
 export function assertAgentInWorkstream(
   db: Db,
