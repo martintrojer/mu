@@ -2,12 +2,12 @@
   "bucketVersion": 2,
   "bucketLabel": "mu",
   "bucketCreatedAt": "2026-05-10T07:39:54.416Z",
-  "bucketLastUpdatedAt": "2026-05-10T07:39:54.416Z",
-  "muVersion": "0.1.0",
+  "bucketLastUpdatedAt": "2026-05-10T14:06:43.666Z",
+  "muVersion": "0.3.0",
   "sources": {
     "mufeedback": {
       "addedAt": "2026-05-10T07:39:54.416Z",
-      "lastReExportedAt": "2026-05-10T07:39:54.416Z",
+      "lastReExportedAt": "2026-05-10T14:06:43.666Z",
       "eventsSeqAtExport": 1644,
       "tasks": [
         {
@@ -539,7 +539,7 @@
     },
     "roadmap-v0-2": {
       "addedAt": "2026-05-10T07:39:54.416Z",
-      "lastReExportedAt": "2026-05-10T07:39:54.416Z",
+      "lastReExportedAt": "2026-05-10T14:06:43.666Z",
       "eventsSeqAtExport": 1645,
       "tasks": [
         {
@@ -766,6 +766,380 @@
           "id": "workspace_create_partial_dir_on_failure",
           "path": "roadmap-v0-2/tasks/workspace_create_partial_dir_on_failure.md",
           "sha256": "f84a12dc25e3f8621dc6d18be1832b96404ea2d7afeba6c53f69b7f8a894472f"
+        }
+      ]
+    },
+    "mufeedback-v03": {
+      "addedAt": "2026-05-10T14:06:43.666Z",
+      "lastReExportedAt": "2026-05-10T14:06:43.666Z",
+      "eventsSeqAtExport": 2211,
+      "tasks": [
+        {
+          "id": "audit_next_steps_coverage_correctness",
+          "path": "mufeedback-v03/tasks/audit_next_steps_coverage_correctness.md",
+          "sha256": "c69f505ea925ab259755ab32ac647244b58605dde6d645631ac6f35c15d871d2"
+        },
+        {
+          "id": "cli_audit_plurality_uniformity",
+          "path": "mufeedback-v03/tasks/cli_audit_plurality_uniformity.md",
+          "sha256": "fdb5c2652aefc2f617ee186ca6ca86bc9253349742c16187d88edca315c4bb59"
+        },
+        {
+          "id": "cli_help_alphabetical_subcommands",
+          "path": "mufeedback-v03/tasks/cli_help_alphabetical_subcommands.md",
+          "sha256": "061e54b4bb299573d2e5c566c86bf102508dd284ff689ccfc5e6f675e7ae0725"
+        },
+        {
+          "id": "cli_task_wait_integration_flakes_under_load",
+          "path": "mufeedback-v03/tasks/cli_task_wait_integration_flakes_under_load.md",
+          "sha256": "c7433c9399dab35bd29accade8cd8541fec8871f061c47873d5d6b334ee04fc1"
+        },
+        {
+          "id": "destroy_empty_match_tmux_only",
+          "path": "mufeedback-v03/tasks/destroy_empty_match_tmux_only.md",
+          "sha256": "eda5094305d7bf8a2645473df265f87aa559a7409b223e63e2a812e6199d50b6"
+        },
+        {
+          "id": "doc_stale_agentsmd_tree",
+          "path": "mufeedback-v03/tasks/doc_stale_agentsmd_tree.md",
+          "sha256": "dc902c2b2a148e51e488e46a9025e4841a1b2cee80721d5b90ec3480015be2f0"
+        },
+        {
+          "id": "doc_stale_arch_modules_table",
+          "path": "mufeedback-v03/tasks/doc_stale_arch_modules_table.md",
+          "sha256": "add97ff4b2291f0e30f3aba7fe0eba7e37c266c48934e5473558db4bf7449dbf"
+        },
+        {
+          "id": "doc_stale_changelog_unreleased_dup_03",
+          "path": "mufeedback-v03/tasks/doc_stale_changelog_unreleased_dup_03.md",
+          "sha256": "7d1a2947ea4ba20ebcdbc26828fc4714d4a0b75f52f2ca4d52681d579dc4fc6f"
+        },
+        {
+          "id": "doc_stale_omnibus_minor",
+          "path": "mufeedback-v03/tasks/doc_stale_omnibus_minor.md",
+          "sha256": "6d2280577c9d8a9105053552878ec834498bf14e32f4512c44b74d96cb60c842"
+        },
+        {
+          "id": "doc_stale_output_labels_audit_approve",
+          "path": "mufeedback-v03/tasks/doc_stale_output_labels_audit_approve.md",
+          "sha256": "78c06b296b5a24dc891ea189687eb9e917e49d5b16d5256bcdd1521c360e5d86"
+        },
+        {
+          "id": "doc_stale_skill_release_reopen",
+          "path": "mufeedback-v03/tasks/doc_stale_skill_release_reopen.md",
+          "sha256": "fa70ad743fbb69224856978e7dafbbb83026ab6af482890464414fa07adccc19"
+        },
+        {
+          "id": "doc_stale_skill_schema_sql",
+          "path": "mufeedback-v03/tasks/doc_stale_skill_schema_sql.md",
+          "sha256": "52371c24aa8280711b48bfb3dd1bbdc9704dc45d93ef7651de1115c513c59bdc"
+        },
+        {
+          "id": "doc_stale_usage_guide_v02",
+          "path": "mufeedback-v03/tasks/doc_stale_usage_guide_v02.md",
+          "sha256": "4fda928910d1170880ce715119ebf2c404b93b54643023032e6ae1ccade04444"
+        },
+        {
+          "id": "doc_stale_verb_audit_v01",
+          "path": "mufeedback-v03/tasks/doc_stale_verb_audit_v01.md",
+          "sha256": "ef4fcbdcb2ff057e3efb43c2d4b81e67e3de68c0a5c4be507dd2907f9535d7d8"
+        },
+        {
+          "id": "doc_stale_vision_namespaces_tables",
+          "path": "mufeedback-v03/tasks/doc_stale_vision_namespaces_tables.md",
+          "sha256": "090348e9429af9e1fc22d2d258f0110d9d14c2839c10038580e8b68e75fbfef0"
+        },
+        {
+          "id": "doc_stale_vocab_release_update",
+          "path": "mufeedback-v03/tasks/doc_stale_vocab_release_update.md",
+          "sha256": "6123eeef7b40f1b1f8165df264a5b7b52db9917981f10e3ca130ba66acb9e4f1"
+        },
+        {
+          "id": "full_repo_code_review_v03",
+          "path": "mufeedback-v03/tasks/full_repo_code_review_v03.md",
+          "sha256": "a523c2fc59a698feb5f15f88c533936c76a9024328e854e8a02bbb84cf953efd"
+        },
+        {
+          "id": "full_repo_doc_staleness_review_v03",
+          "path": "mufeedback-v03/tasks/full_repo_doc_staleness_review_v03.md",
+          "sha256": "cfd3e40a47885fff2d92741d13df519f64fe1609b1a209034214aebbfe23e243"
+        },
+        {
+          "id": "full_repo_test_review_v03",
+          "path": "mufeedback-v03/tasks/full_repo_test_review_v03.md",
+          "sha256": "cc02f2e97ea5c68e474485bc44b00b8ad0cc4a75f4cced83f6de3b609d64f6b9"
+        },
+        {
+          "id": "hud_multi_workstream",
+          "path": "mufeedback-v03/tasks/hud_multi_workstream.md",
+          "sha256": "a8b517bc558398a66166736f49421db7e7d9726bf21cc317388fcf56483fc457"
+        },
+        {
+          "id": "hud_unify_workstream_flag",
+          "path": "mufeedback-v03/tasks/hud_unify_workstream_flag.md",
+          "sha256": "f9630961ebb022fea9f386fc03a70b664d5089d20680c24b49468bc3756bcbaa"
+        },
+        {
+          "id": "hud_workstream_name_consistent",
+          "path": "mufeedback-v03/tasks/hud_workstream_name_consistent.md",
+          "sha256": "1b3c7a8382110abd62c012fe0ee2cf3323cc9e5ca6f6fea5d8acc7374cc25681"
+        },
+        {
+          "id": "idle_assigned_agent_detection",
+          "path": "mufeedback-v03/tasks/idle_assigned_agent_detection.md",
+          "sha256": "fe188bcb80fa379deb9497f2eba536171faa6da718f129497fdd2f97f4f1b939"
+        },
+        {
+          "id": "merge_state_into_hud_render_mode",
+          "path": "mufeedback-v03/tasks/merge_state_into_hud_render_mode.md",
+          "sha256": "e9cb83f717177c30b8390c1eb2d38752cd41f098146b1953fed5bb639228cf2f"
+        },
+        {
+          "id": "nextsteps_audit_cross_workstream_edge_v4_columns",
+          "path": "mufeedback-v03/tasks/nextsteps_audit_cross_workstream_edge_v4_columns.md",
+          "sha256": "26dedd9f8a19ce100cee910cb7379b6967208cc3353fd02f11cebd7b9850c64a"
+        },
+        {
+          "id": "nextsteps_audit_read_verbs_emit_no_nextsteps",
+          "path": "mufeedback-v03/tasks/nextsteps_audit_read_verbs_emit_no_nextsteps.md",
+          "sha256": "a07d3ab13b7e0d2140ef70e2f8ede63b4017f9569fc7008dee82b0fb8e03e796"
+        },
+        {
+          "id": "nextsteps_audit_snapshot_show_raw_sqlite3",
+          "path": "mufeedback-v03/tasks/nextsteps_audit_snapshot_show_raw_sqlite3.md",
+          "sha256": "b7192fc442c37d2c9936d3a8e68d618a822720761f315e72b5a9c7059ff4fc9f"
+        },
+        {
+          "id": "nextsteps_audit_sql_db_flag_does_not_exist",
+          "path": "mufeedback-v03/tasks/nextsteps_audit_sql_db_flag_does_not_exist.md",
+          "sha256": "119341c8642523fea29ea8a39f6590b92dd4a3bbe62a16a1fbd3df362b5d9f99"
+        },
+        {
+          "id": "nextsteps_audit_task_not_found_workstream_col",
+          "path": "mufeedback-v03/tasks/nextsteps_audit_task_not_found_workstream_col.md",
+          "sha256": "2098169033d03d3b09c54c5627656995a61a2609c48026d58dd12b705cb2dd33"
+        },
+        {
+          "id": "nextsteps_audit_workspace_orphans_phantom_verb",
+          "path": "mufeedback-v03/tasks/nextsteps_audit_workspace_orphans_phantom_verb.md",
+          "sha256": "7a5a8195face8991a6f470f870461fe314f6834053babae16e33c962f2323257"
+        },
+        {
+          "id": "remove_approvals_dead_weight",
+          "path": "mufeedback-v03/tasks/remove_approvals_dead_weight.md",
+          "sha256": "42e5fb3ed07b03a6fc04be390c472172df4c3d8c52feac2f16921c2688d1c711"
+        },
+        {
+          "id": "remove_or_shrink_verb_audit_md",
+          "path": "mufeedback-v03/tasks/remove_or_shrink_verb_audit_md.md",
+          "sha256": "f41e8b22cde8ef34dc8de83277863fd4cda8bd5d18ba6b05266177433985503d"
+        },
+        {
+          "id": "remove_output_labels_audit_md",
+          "path": "mufeedback-v03/tasks/remove_output_labels_audit_md.md",
+          "sha256": "b8a419e134d0a1358f99cf2199c9bdc7ba82e74c26064ea8aad9b836ec2f60f5"
+        },
+        {
+          "id": "remove_scripts_dir",
+          "path": "mufeedback-v03/tasks/remove_scripts_dir.md",
+          "sha256": "413c7b6d9d60c0cca559c49a3ca69fdc8dfa4b2e77e5a98ba2242a2f09a569d3"
+        },
+        {
+          "id": "review_agent_exists_message_stale",
+          "path": "mufeedback-v03/tasks/review_agent_exists_message_stale.md",
+          "sha256": "ce734bfc7de95c2200f6cdb16c18a0460098a9304592581f15106ccfbcf58948"
+        },
+        {
+          "id": "review_assert_agent_in_workstream_stale_doc",
+          "path": "mufeedback-v03/tasks/review_assert_agent_in_workstream_stale_doc.md",
+          "sha256": "62ea5b8ccc51316527cabe06ed86be70c7a70504bbb5ddf3626e22e25a1ca87b"
+        },
+        {
+          "id": "review_cli_ts_past_refactor_signal",
+          "path": "mufeedback-v03/tasks/review_cli_ts_past_refactor_signal.md",
+          "sha256": "e5970f90a3dd84bd220b9aaf45c366e559a2bdb9242f1a047d4b0f2d8f00ec10"
+        },
+        {
+          "id": "review_count_helpers_duplicated_three_files",
+          "path": "mufeedback-v03/tasks/review_count_helpers_duplicated_three_files.md",
+          "sha256": "126b8294f19f383fc1959c56407eee82f1b0e2e8e7fe93b1ab021eb908921c4a"
+        },
+        {
+          "id": "review_export_archive_double_resolves_label",
+          "path": "mufeedback-v03/tasks/review_export_archive_double_resolves_label.md",
+          "sha256": "923b822d227e54b395c2b80b261da170616946a2fa84b9b0b165be8a52c85167"
+        },
+        {
+          "id": "review_omnibus_minor_polish",
+          "path": "mufeedback-v03/tasks/review_omnibus_minor_polish.md",
+          "sha256": "de0be6b64deba0b687da5a312f16f029a11f2fe97cd696272d3a2a73ea0d6828"
+        },
+        {
+          "id": "review_release_open_in_progress_inconsistency",
+          "path": "mufeedback-v03/tasks/review_release_open_in_progress_inconsistency.md",
+          "sha256": "8a9d53f0dffc92f449fa8f7014e265cee3a8ac0f2391a94d68a10cb46609ef18"
+        },
+        {
+          "id": "review_resolved_nothing_dead_branch",
+          "path": "mufeedback-v03/tasks/review_resolved_nothing_dead_branch.md",
+          "sha256": "19d5a779fb9c3bcbb9e64b1f7d20473b2d3e01981476702bce8e50b7a99839d6"
+        },
+        {
+          "id": "review_unblock_flag_typo_in_error_nextstep",
+          "path": "mufeedback-v03/tasks/review_unblock_flag_typo_in_error_nextstep.md",
+          "sha256": "a74e0b4bc67c7b2a064c1f7ca818e5b6e657a5aa9fa16ee4cf0402d0f9066660"
+        },
+        {
+          "id": "review_undo_stale_drun_comment",
+          "path": "mufeedback-v03/tasks/review_undo_stale_drun_comment.md",
+          "sha256": "974d01476676441eccc008affcefeb050fe337c78729ec53d34391964ff4354c"
+        },
+        {
+          "id": "scripts_dir_revisit_before_v0_3",
+          "path": "mufeedback-v03/tasks/scripts_dir_revisit_before_v0_3.md",
+          "sha256": "5c66e62466271a191b445dfcf692db4cdf82c611b528ac53501f967ca4161dfb"
+        },
+        {
+          "id": "skill_terse_rewrite",
+          "path": "mufeedback-v03/tasks/skill_terse_rewrite.md",
+          "sha256": "e93c7b05a2944eb0d67318e4d32bd2439f91be6087654d953e77fed059066441"
+        },
+        {
+          "id": "task_claim_for_cross_workstream",
+          "path": "mufeedback-v03/tasks/task_claim_for_cross_workstream.md",
+          "sha256": "436078f613c3fac97acd0ccba3a2805389514530f4e7097aab81b93fc6c38306"
+        },
+        {
+          "id": "task_list_multi_status_union",
+          "path": "mufeedback-v03/tasks/task_list_multi_status_union.md",
+          "sha256": "e28177131c0f44182953fa99aa9d029768303d18792ed04f891f0c2304ebf23e"
+        },
+        {
+          "id": "task_wait_any_returns_which",
+          "path": "mufeedback-v03/tasks/task_wait_any_returns_which.md",
+          "sha256": "caea1455f254cd6b86155f37086ca78ffa5b40861578c4996b886acb7ff5420b"
+        },
+        {
+          "id": "task_wait_cross_workstream",
+          "path": "mufeedback-v03/tasks/task_wait_cross_workstream.md",
+          "sha256": "9247586b1e6d01d002db249dbd7640eb7cd9fa1d91ce92d052bece3a7aef9af2"
+        },
+        {
+          "id": "task_wait_reconcile_dead_panes",
+          "path": "mufeedback-v03/tasks/task_wait_reconcile_dead_panes.md",
+          "sha256": "e88f066daad84bdb6ba0a3feb51b4f59fcb49f4cd16f42b2f4c9be8248efa4d4"
+        },
+        {
+          "id": "task_wait_stall_action_flag",
+          "path": "mufeedback-v03/tasks/task_wait_stall_action_flag.md",
+          "sha256": "054059834a7acfb6b46b3c866a5824730f491336794ea4c1c9792548764e6104"
+        },
+        {
+          "id": "testreview_acceptance_settimeout_race",
+          "path": "mufeedback-v03/tasks/testreview_acceptance_settimeout_race.md",
+          "sha256": "1d2a7d63100e140350be1647360c7d03b30608b063c838177520f2eb51d0d48e"
+        },
+        {
+          "id": "testreview_agent_stalled_event_unasserted",
+          "path": "mufeedback-v03/tasks/testreview_agent_stalled_event_unasserted.md",
+          "sha256": "b6bb188f17c8787dab979b18b9a63bcd29298a5b27d8674462f20110f1bcfce4"
+        },
+        {
+          "id": "testreview_cross_ws_wait_weak_exitcode",
+          "path": "mufeedback-v03/tasks/testreview_cross_ws_wait_weak_exitcode.md",
+          "sha256": "17df54868cbda46117136d7b4e635baa20ed2b35ce1550403e2a53b5b0575b3c"
+        },
+        {
+          "id": "testreview_eventprefix_grep_test_brittle",
+          "path": "mufeedback-v03/tasks/testreview_eventprefix_grep_test_brittle.md",
+          "sha256": "3f7d9e207ebc52a15ec3aa43c053c833cf51244ab0c658277ed7c3878d4b4af3"
+        },
+        {
+          "id": "testreview_idle_listliveagents_no_e2e_test",
+          "path": "mufeedback-v03/tasks/testreview_idle_listliveagents_no_e2e_test.md",
+          "sha256": "8e463354d26c3fbba17dc7f5423497a09bd1ce12843b93e60070d78dba688569"
+        },
+        {
+          "id": "testreview_polling_helper_duplicated",
+          "path": "mufeedback-v03/tasks/testreview_polling_helper_duplicated.md",
+          "sha256": "1b3e23ba79c4a0a383a73f2269b1ea0be67290fec7853b98507931ada696f49c"
+        },
+        {
+          "id": "testreview_runcli_isjsonmode_argv_seam",
+          "path": "mufeedback-v03/tasks/testreview_runcli_isjsonmode_argv_seam.md",
+          "sha256": "d6a6a59d030b4906e07d9b5b4225ee6f161500327ca6c3621aefa3cc1f64c79b"
+        },
+        {
+          "id": "testreview_test_files_past_800loc",
+          "path": "mufeedback-v03/tasks/testreview_test_files_past_800loc.md",
+          "sha256": "2aaaec95a3ecc8520b344d233a7de93415218de146bdc8ed07267641f0eb68c3"
+        },
+        {
+          "id": "testreview_wait_5s_default_timeout_flake",
+          "path": "mufeedback-v03/tasks/testreview_wait_5s_default_timeout_flake.md",
+          "sha256": "6901170ea99d390d14fac4cfa1c44053d046a40f4ad5455b67e1153a1dbd6a6f"
+        },
+        {
+          "id": "workspace_create_typed_no_agent_error",
+          "path": "mufeedback-v03/tasks/workspace_create_typed_no_agent_error.md",
+          "sha256": "6c8577a94a6c5fb97ef7266ba2e82804730d7ec2b560d567ff1e36acd21be754"
+        },
+        {
+          "id": "workstream_archive_verb",
+          "path": "mufeedback-v03/tasks/workstream_archive_verb.md",
+          "sha256": "1bc9e26e74220e2d7fa175607046b73762d5f051642280335df23d8eb1f31e05"
+        },
+        {
+          "id": "workstream_destroy_empty_sweep",
+          "path": "mufeedback-v03/tasks/workstream_destroy_empty_sweep.md",
+          "sha256": "6401105457eb914d95967b6327488c007749b1b310a3b7a2a436137c87e8216f"
+        },
+        {
+          "id": "workstream_export_additive_multi_workstream",
+          "path": "mufeedback-v03/tasks/workstream_export_additive_multi_workstream.md",
+          "sha256": "87556475f479858b6abe7eeaefc1b6f4a24038c52d7705e1210b46a5dc5f7dcb"
+        },
+        {
+          "id": "workstream_import_partial_source_ws",
+          "path": "mufeedback-v03/tasks/workstream_import_partial_source_ws.md",
+          "sha256": "0c5c61a3db0a0576f52a561a78801014a24f11142af393f3d6bef2a414ced80e"
+        }
+      ]
+    },
+    "roadmap-v0-3": {
+      "addedAt": "2026-05-10T14:06:43.666Z",
+      "lastReExportedAt": "2026-05-10T14:06:43.666Z",
+      "eventsSeqAtExport": 1762,
+      "tasks": [
+        {
+          "id": "archive_phase1_schema_sdk",
+          "path": "roadmap-v0-3/tasks/archive_phase1_schema_sdk.md",
+          "sha256": "13bfa5c1b547aeb6629273940fca865507a6a190e2a49e1e44c5a5020fde6a38"
+        },
+        {
+          "id": "archive_phase2_cli_verbs",
+          "path": "roadmap-v0-3/tasks/archive_phase2_cli_verbs.md",
+          "sha256": "39af8ec75bfa2e142049569d8776c2b35c3008b02e6c66d19076011fe4838655"
+        },
+        {
+          "id": "archive_phase3_destroy_integration",
+          "path": "roadmap-v0-3/tasks/archive_phase3_destroy_integration.md",
+          "sha256": "afce0bbb69090ea28e096334124fdae45a65204ed264235af5c1cca9dfbdce71"
+        },
+        {
+          "id": "archive_phase4_export_renderer_unified",
+          "path": "roadmap-v0-3/tasks/archive_phase4_export_renderer_unified.md",
+          "sha256": "7ea10be3b20f155e49939e4ff8e79d1eb5b8f600f9e01c89f520320c3604e40e"
+        },
+        {
+          "id": "archive_phase4b_search",
+          "path": "roadmap-v0-3/tasks/archive_phase4b_search.md",
+          "sha256": "dd60ef9eda9ea92b1a5ed6bb200a894254e4b510036faf29e53d0f51f0624822"
+        },
+        {
+          "id": "workstream_import_from_markdown",
+          "path": "roadmap-v0-3/tasks/workstream_import_from_markdown.md",
+          "sha256": "d7fd44f1e53b91ccff6843b08f652da342536e619236fb94ec8c866957f9c8a1"
         }
       ]
     }
