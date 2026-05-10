@@ -268,33 +268,38 @@ Key properties:
 
 ## Modules (actual src/ layout)
 
-Flat `src/` directory; ~12 files. No `core/` subdirectory; no
-anticipatory layering. Each module is concrete and consumed today.
+Mostly-flat `src/`: 18 root `.ts` files plus two cohesive
+subclusters (`src/agents/`, `src/tasks/`) and the `src/cli/` verb
+wrappers (with their own `src/cli/tasks/` sub-cluster). No
+`core/` subdirectory; no anticipatory layering. Subclusters obey
+the AGENTS.md rule: imports flow cluster → root, never upward.
+Each module is concrete and consumed today.
 
 | Module                | Responsibility                                                                            |
 | --------------------- | ----------------------------------------------------------------------------------------- |
-| `src/db.ts`           | SQLite (better-sqlite3) connection, WAL mode, schema (15 tables + 3 views, **schema v6** — v5 surrogate-INTEGER-PK substrate plus 5 additive `archive_*` tables), default paths, `resolveWorkstreamId` (the SDK boundary's first leg). v5 → v6 in-place bump on open (additive only). |
+| `src/db.ts`           | SQLite (better-sqlite3) connection, WAL mode, schema (14 tables + 3 views, **schema v7** — v5 surrogate-INTEGER-PK substrate, plus v6's 5 additive `archive_*` tables, minus v7's drop of `approvals`), default paths, `resolveWorkstreamId` (the SDK boundary's first leg). Pre-current DBs are upgraded in place on `openDb`: v5 → v6 was additive (CREATE-TABLE-IF-NOT-EXISTS), v6 → v7 is destructive-but-idempotent (`DROP TABLE IF EXISTS approvals` runs before `applySchema`); both happen with no migration script. |
 | `src/tmux.ts`         | Single tmux executor wrapper, send protocol (bracketed-paste), pane validation            |
 | `src/detect.ts`       | Pi-only status detector (`busy` / `needs_input` / `idle` / `done`)                        |
 | `src/reconcile.ts`    | Ghost prune + status detect + orphan surface; "reality wins"                              |
-| `src/agents.ts`       | CRUD + spawn / send / read / list / show / close / free / adopt; spawn liveness; reaper; pane-title composition (`composeAgentTitle`) |
-| `src/tasks.ts`        | CRUD + every read/write verb on the DAG; cycle check; claim CAS; auto-event emission      |
+| `src/agents.ts`       | Hub: CRUD + send / read / list / close / free + liveness + reaper. Re-exports `src/agents/*` (spawn, adopt, errors); pane-title composition (`composeAgentTitle`) lives here. |
+| `src/agents/*.ts`     | Cohesive cluster of agent-lifecycle internals: `spawn.ts` (spawnAgent + resolveCliCommand / awaitSpawnLiveness / pane create-or-reuse / prestage / rollback), `adopt.ts` (register an existing tmux pane as a managed agent), `errors.ts` (typed agent error classes — `AgentNotFoundError`, `AgentDiedOnSpawnError`, …). |
+| `src/tasks.ts`        | Hub: every read/write verb on the DAG (edit / edges / queries) + cycle check + auto-event emission. Re-exports `src/tasks/*` (status, claim, lifecycle, wait, errors). |
+| `src/tasks/*.ts`      | Cohesive cluster of task-graph internals: `status.ts` (TaskStatus enum + helpers — single source of truth), `claim.ts` (claim/release + `resolveActorIdentity`, atomic CAS), `lifecycle.ts` (setTaskStatus / closeTask / openTask / rejectTask / deferTask + cascade), `wait.ts` (waitForTasks: block until tasks reach a target status), `errors.ts` (typed task error classes — `TaskAlreadyOwnedError`, `CycleError`, …). |
 | `src/tracks.ts`       | Parallel-tracks union-find with diamond merge                                             |
 | `src/workstream.ts`   | ensureWorkstream / list / summarize / destroy / export (thin wrapper around the bucket renderer) |
 | `src/exporting.ts`    | Unified bucket renderer for `mu workstream export` and `mu archive export`: per-task markdown + manifest.json (`bucketVersion: 2`); idempotent via per-file sha256; deleted-task preservation banner; refuses pre-0.3 single-source layouts |
 | `src/importing.ts`    | Inverse of `src/exporting.ts`: parses a v0.3 bucket directory and rebuilds every source-ws as live tasks + edges + notes. Markdown-only (never reads .db); per-source-ws transactional; refuses silent merges into existing workstreams |
-| `src/archives.ts`     | Cross-workstream **archives** (Phase 1 SDK; CLI in Phase 2): `createArchive` / `listArchives` / `getArchive` / `deleteArchive` / `addToArchive` (idempotent at `(archive, source_workstream)`) / `removeFromArchive` / `listArchivedTasks`. Backed by the v6 `archives` + `archived_tasks` + `archived_edges` + `archived_notes` + `archived_events` tables; archives outlive workstreams (TEXT `source_workstream` columns, no FK). |
+| `src/archives.ts`     | Cross-workstream **archives** — feature complete (SDK + 6 CLI verbs: `mu archive create / list / show / add / remove / delete`, plus `search` and `export` via the unified bucket renderer): `createArchive` / `listArchives` / `getArchive` / `deleteArchive` / `addToArchive` (idempotent at `(archive, source_workstream)`) / `removeFromArchive` / `listArchivedTasks`. Backed by the v6 `archives` + `archived_tasks` + `archived_edges` + `archived_notes` + `archived_events` tables; archives outlive workstreams (TEXT `source_workstream` columns, no FK). |
 | `src/logs.ts`         | `agent_logs` SDK: appendLog / listLogs / latestSeq / emitEvent                            |
 | `src/vcs.ts`          | `VcsBackend` interface + jj / sl / git / none impls; detection precedence; `commitsBehind(workspacePath, ref)` for staleness signal (no auto-fetch; pure observation) |
 | `src/workspace.ts`    | Per-agent VCS workspaces (registry layer on top of vcs.ts); CRUD + cascade; orphan-dir detection (`listWorkspaceOrphans`); staleness decoration (`decorateWithStaleness` populates `commitsBehindMain` per row) |
-| `src/snapshots.ts`    | Whole-DB snapshots (`VACUUM INTO`); auto-captured before destructive verbs (schema v4); SDK for `mu undo` |
+| `src/snapshots.ts`    | Whole-DB snapshots (`VACUUM INTO`); auto-captured before destructive verbs; SDK for `mu undo`. The `snapshots` table is schema v4 (carried forward unchanged through v5/v6/v7). |
 | `src/output.ts`       | NextStep type + `printNextSteps` + `errorNextSteps` plumbing for self-documenting output |
-| `src/cli.ts`          | commander entry; `buildProgram()` + `handle()` (exit-code map); shared format helpers (`formatTaskListTable` / `formatAgentsTable` / `formatReadyTable` / `formatTracks`); `pc.dim`/`pc.cyan` colour palette helpers |
-| `src/cli/*.ts`        | one file per verb-namespace; thin wrappers over the SDK; `--json` rendering for every read verb. Currently: `workstream.ts`, `agents.ts`, `tasks.ts`, `workspace.ts`, `log.ts`, `archive.ts`, `hud.ts`, `snapshot.ts`, `sql.ts`, `doctor.ts`, `state.ts`. Two non-verb cluster-mates carry the rendering + error-handling primitives that every verb wrapper imports: `format.ts` (table renderers, status colourers, `truncate`/`relTime`) and `handle.ts` (typed-error → exit-code map + the `handle()` wrapper). Imports flow cluster → root (never the other way); `cli.ts` re-exports `format.ts`/`handle.ts` symbols for back-compat with existing import sites. |
-| `src/cli/tasks/*.ts`  | sub-cluster of the `mu task` namespace; `tasks.ts` at the root re-exports only what callers outside the cluster import (`wireTaskCommands`, `cmdMyNext`/`cmdMyTasks`, `unescapeNoteText`). One file per concern: `queries.ts` (list/next/owned-by + the `cmdMyTasks` / `cmdMyNext` helpers that back `mu me tasks` / `mu me next`), `lifecycle.ts` (close/open/reject/defer + cascade preview), `edit.ts` (add/show/notes/note/update + helpers), `edges.ts` (block/unblock/reparent/delete), `claim.ts` (claim/release/wait), `tree.ts` (tree rendering), `wire.ts` (Commander glue). Each file < 500 LOC; the hub is < 30. |
+| `src/cli.ts`          | commander entry; `buildProgram()` (re-exports `format`/`handle` symbols for back-compat with existing import sites). |
+| `src/cli/*.ts`        | one file per verb-namespace; thin wrappers over the SDK; `--json` rendering for every read verb. Currently: `workstream.ts`, `agents.ts`, `tasks.ts`, `workspace.ts`, `log.ts`, `archive.ts`, `state.ts` (canonical state card + bare `mu` mission-control / hud render mode), `snapshot.ts`, `sql.ts`, `doctor.ts`. Two non-verb cluster-mates carry the rendering + error-handling primitives that every verb wrapper imports: `format.ts` (table renderers, status colourers, `truncate`/`relTime`) and `handle.ts` (typed-error → exit-code map + the `handle()` wrapper). Imports flow cluster → root (never the other way). |
+| `src/cli/tasks/*.ts`  | sub-cluster of the `mu task` namespace; `tasks.ts` at the root re-exports only what callers outside the cluster import (`wireTaskCommands`, `cmdMyNext`/`cmdMyTasks`, `unescapeNoteText`). One file per concern: `queries.ts` (list/next/owned-by + the `cmdMyTasks` / `cmdMyNext` helpers that back `mu me tasks` / `mu me next`), `lifecycle.ts` (close/open/reject/defer + cascade preview), `edit.ts` (add/show/notes/note/update + helpers), `edges.ts` (block/unblock/reparent/delete), `claim.ts` (claim/release/wait), `tree.ts` (tree rendering), `wire.ts` (Commander glue). Each file < 600 LOC; the hub is < 35. |
 | `src/index.ts`        | SDK entrypoint (re-exports)                                                               |
-| `skills/mu/`          | Bundled skill teaching the LLM the model + verb list + jq pipelines                       |
-| `agents/`             | Two builtin agent .md role docs (read by the LLM in the pane; not part of spawn contract) |
+| `skills/mu/SKILL.md`  | Bundled skill teaching the LLM the model + verb list + jq pipelines                       |
 
 ## Data flow
 
@@ -326,7 +331,7 @@ each are deliberately small.
 | `VcsBackend`        | Implementing `detect / createWorkspace / freeWorkspace / commitsBehind` (~80–150 LOC; jj/sl/git/none are working examples)        |
 | Per-CLI `Detector`  | Adding patterns to `detectPiStatus` (vanilla pi `to interrupt)`; pi-meta + every TUI wrapper covered by Braille spinner glyph fallback `[\u2800-\u28FF]`)                  |
 | New typed verb      | Add an SDK function in the relevant `src/*.ts`; add a `cmd<Verb>` to the matching `src/cli/<namespace>.ts` (or create a new namespace if the verb doesn't fit existing ones); wire one commander block in `src/cli.ts`'s `buildProgram()` (use `handle()` for the exit-code map; route through `printNextSteps` for self-documenting output) |
-| New schema migration| Bump `CURRENT_SCHEMA_VERSION` in `src/db.ts`; mirror the new shape in `CURRENT_SCHEMA`; ship a one-shot migration script (the v4→v5 transition was the canonical example; restore from git history if you need to see the shape). The loud-fail hook in `openDb` rejects pre-current DBs with `SchemaTooOldError` (exit code 4) and a migration instruction |
+| New schema migration| Bump `CURRENT_SCHEMA_VERSION` in `src/db.ts`; mirror the new shape in `CURRENT_SCHEMA`. Two of the three post-v5 bumps were script-free: v5 → v6 was purely additive (the existing CREATE-TABLE-IF-NOT-EXISTS pass picked up the new `archive_*` tables), and v6 → v7 was a destructive-but-idempotent in-place migration (a `DROP TABLE IF EXISTS approvals` block in `applySchema`). Reach for a one-shot migration script only when the change can't be expressed that way (the v4 → v5 surrogate-PK substrate switch was the canonical example; restore from git history if you need to see the shape). The loud-fail hook in `openDb` rejects pre-current DBs with `SchemaTooOldError` (exit code 4) and a migration instruction. |
 | Snapshot hook       | Add `await captureSnapshot(db, 'verb-name', workstream)` at the top of any new destructive verb (one-liner; GC + restore behaviour automatic) |
 
 ## Surrogate-PK + SDK-boundary discipline (load-bearing)
@@ -457,16 +462,19 @@ action) so `mu doctor` can surface them readably.
 
 ## Distribution
 
-Single npm package `@you/mu`:
+Single npm package `mu` (see `package.json`):
 
-- `dist/cli/mu.js` — CLI entry, executable
-- `dist/index.js` — programmatic API for SDK callers
-- `dist/pi-extension.js` — pi extension entry
-- `dist/mu.d.ts` — types for `.mu.ts` user scripts
-- `skills/mu/SKILL.md`, `agents/*.md`, `prompts/*.md` — bundled assets
+- `dist/cli.js` — CLI entry, executable (`bin: { mu: ./dist/cli.js }`; shebang preserved by `tsup`)
+- `dist/index.js` + `dist/index.d.ts` — programmatic API + types for SDK callers
+- `skills/mu/SKILL.md` — bundled skill (the only non-`dist` asset shipped)
 
-`tsup` bundles everything from `src/`. No runtime build step on the
-user's machine; `npm install` just unpacks.
+`tsup` bundles two entries (`index`, `cli`) from `src/`. No
+runtime build step on the user's machine; `npm install` just
+unpacks. There is no pi-extension entry today — pi is a peer dep,
+and the anti-feature pledge in ROADMAP.md keeps it that way.
+Likewise no bundled `agents/*.md` or `prompts/*.md` directory
+exists; per-role agent guidance lives in the user's project repo,
+not in the mu package.
 
 The dependency list lives in `package.json`; the rule for adding
 new ones is the anti-feature pledge in
