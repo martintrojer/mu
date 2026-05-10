@@ -161,6 +161,27 @@ describe("error-specific structured-step assertions", () => {
     expect(init?.command).not.toContain("mu-");
   });
 
+  it("WorkstreamNameInvalidError uses a direct intent for the mu- prefix branch (no 'best guess' hedge)", () => {
+    // workstream_init_name_rejected_mu (feedback ws): the rationale
+    // for rejecting `mu-foo` lives on stderr but the only loud action
+    // line was "Try a sanitized name (best guess)". Dogfooding agents
+    // skipped past the rationale and treated the hedge as a hint, not
+    // a fix. For the prefix branch the correction is unambiguous, so
+    // the intent must read as a direct retry.
+    const prefix = new WorkstreamNameInvalidError("mu-feedback");
+    const prefixSteps = prefix.errorNextSteps();
+    const prefixInit = prefixSteps.find((s) => s.command.startsWith("mu workstream init"));
+    expect(prefixInit?.intent).toBe("Retry without the 'mu-' prefix");
+    expect(prefixInit?.command).toBe("mu workstream init feedback");
+
+    // For the regex/mangle branch the sanitiser really is guessing
+    // (`.`, `:`, case all collapse), so the hedge is honest and stays.
+    const mangle = new WorkstreamNameInvalidError("roadmap-v0.2");
+    const mangleSteps = mangle.errorNextSteps();
+    const mangleInit = mangleSteps.find((s) => s.command.startsWith("mu workstream init"));
+    expect(mangleInit?.intent).toBe("Try a sanitized name (best guess)");
+  });
+
   it("PaneNotFoundError suggests scanning for live panes", () => {
     const err = new PaneNotFoundError("%999");
     const steps = err.errorNextSteps();

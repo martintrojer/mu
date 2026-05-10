@@ -75,11 +75,19 @@ export class WorkstreamNameInvalidError extends Error implements HasNextSteps {
       .replace(/^mu-/, "")
       .replace(/[.:]/g, "_")
       .slice(0, 32);
+    // Branch the intent label on the failure class. For the mu-prefix
+    // case the correction is unambiguous (drop the prefix), so phrase
+    // the next-step as a direct action — "Try a … (best guess)" reads
+    // as a hedge and dogfooding showed agents skip past the rationale
+    // line entirely (workstream_init_name_rejected_mu in feedback ws).
+    // For the regex/mangle branch the sanitiser really is guessing
+    // (`.`/`:`/case all collapse), so the hedge stays honest there.
+    const isPrefixCase = this.attempted.toLowerCase().startsWith(RESERVED_WORKSTREAM_PREFIX);
+    const intent = isPrefixCase
+      ? "Retry without the 'mu-' prefix"
+      : "Try a sanitized name (best guess)";
     return [
-      {
-        intent: "Try a sanitized name (best guess)",
-        command: `mu workstream init ${sanitized || "<name>"}`,
-      },
+      { intent, command: `mu workstream init ${sanitized || "<name>"}` },
       { intent: "List existing workstreams", command: "mu workstream list" },
     ];
   }

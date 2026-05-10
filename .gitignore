@@ -22,3 +22,6 @@ coverage/
 
 # mu runtime (when we get there)
 .mu/
+
+# stray watch dumps (mu state --hud > watch_*)
+watch_*

@@ -406,6 +406,19 @@ called out under "Breaking" in each entry.
   fan-out spawn dogfood when an agent name was passed against the
   wrong workstream.
 
+- **`WorkstreamNameInvalidError` now uses a direct next-step intent
+  for the `mu-` prefix branch** (`workstream_init_name_rejected_mu`,
+  feedback ws). Pre: the only loud action line on `mu workstream
+  init mu-foo` was "Try a sanitized name (best guess) : mu workstream
+  init foo" — the prefix-rejection rationale lived only in the red
+  error message above. Dogfooding showed agents skipped the rationale
+  and read the hedge as a hint, not a fix. Post: when the failure is
+  the unambiguous `mu-` prefix case, the intent reads "Retry without
+  the 'mu-' prefix". For the regex/dot/colon branch the hedge stays
+  honest (the sanitiser really is guessing). Code path + message body
+  unchanged; only the intent label branches. ~10 LOC + regression
+  test in `test/error-nextsteps.test.ts`.
+
 ### Schema
 
 - **Schema v7: drops the `approvals` table.** Destructive in-place
