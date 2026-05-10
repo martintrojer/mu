@@ -62,12 +62,20 @@ export async function runCli(argv: readonly string[], dbPath: string): Promise<C
   const originalLog = console.log;
   const originalErrLog = console.error;
   const originalExit = process.exit;
+  // isJsonMode() in src/output.ts reads process.argv directly (commander
+  // has consumed its own argv by handler-time, so threading it through
+  // every verb wrapper would be invasive). Mirror the argv we pass to
+  // parseAsync onto process.argv for the duration of this call so tests
+  // can assert --json error envelopes without per-test argv shims.
+  // Surfaced by testreview_runcli_isjsonmode_argv_seam.
+  const originalArgv = process.argv;
 
   let stdout = "";
   let stderr = "";
   let exitCode: number | null = null;
 
   process.env.MU_DB_PATH = dbPath;
+  process.argv = ["node", "mu", ...argv];
 
   // biome-ignore lint/suspicious/noExplicitAny: variadic shim signature
   console.log = (...args: any[]) => {
@@ -141,6 +149,7 @@ export async function runCli(argv: readonly string[], dbPath: string): Promise<C
     console.log = originalLog;
     console.error = originalErrLog;
     process.exit = originalExit;
+    process.argv = originalArgv;
     if (originalDbPath === undefined) {
       const key = "MU_DB_PATH";
       delete process.env[key];

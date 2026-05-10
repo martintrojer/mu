@@ -94,16 +94,27 @@ describe("mu undo", () => {
     expect(stderr).toMatch(/no such snapshot/i);
   });
 
-  it("--to <bad-id> error message names the missing id and exits 3", async () => {
-    // Note: the runCli harness can't trigger --json error mode because
-    // isJsonMode() reads process.argv (the real one), which the
-    // harness can't safely rewrite. The exit code mapping IS in scope
-    // here — verify the SnapshotNotFoundError lands on exit 3 (the
-    // "not found" code per VOCABULARY.md).
+  it("--to <bad-id> --json emits a typed error envelope and exits 3", async () => {
+    // runCli() now mirrors argv onto process.argv so isJsonMode() picks
+    // up --json. Pin the JSON-error envelope shape (error name + exit
+    // code + missing-id mention) — without this assertion a regression
+    // in emitError's JSON shape would only break in production.
     const { stderr, exitCode } = await runCli(["undo", "--to", "9999", "--json"], dbPath);
     expect(exitCode).toBe(3);
-    expect(stderr).toMatch(/no such snapshot/i);
-    expect(stderr).toContain("9999");
+    const lines = stderr.trim().split("\n").filter(Boolean);
+    expect(lines.length).toBeGreaterThan(0);
+    const lastLine = lines[lines.length - 1];
+    expect(lastLine).toBeDefined();
+    const envelope = JSON.parse(lastLine as string) as {
+      error: string;
+      message: string;
+      exitCode: number;
+      nextSteps?: { intent: string; command: string }[];
+    };
+    expect(envelope.error).toBe("SnapshotNotFoundError");
+    expect(envelope.exitCode).toBe(3);
+    expect(envelope.message).toMatch(/no such snapshot/i);
+    expect(envelope.message).toContain("9999");
   });
 
   it("without --yes is a dry-run; no rows change", async () => {

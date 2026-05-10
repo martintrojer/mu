@@ -35,8 +35,9 @@ describe("mu task add — invalid id ergonomics", () => {
   });
 
   it("invalid id exits 4 (not 1) with a typed JSON error envelope", async () => {
-    // isJsonMode() reads process.argv directly (not the argv passed to
-    // parseAsync), so shim process.argv to include --json for this run.
+    // runCli() now mirrors argv onto process.argv internally so
+    // isJsonMode() (which reads process.argv directly) works in tests.
+    // No per-test argv shim required.
     const argv = [
       "--json",
       "task",
@@ -51,15 +52,7 @@ describe("mu task add — invalid id ergonomics", () => {
       "-e",
       "1",
     ];
-    const originalArgv = process.argv;
-    process.argv = ["node", "mu", ...argv];
-    let result: Awaited<ReturnType<typeof runCli>>;
-    try {
-      result = await runCli(argv, dbPath);
-    } finally {
-      process.argv = originalArgv;
-    }
-    const { stderr, exitCode, error } = result;
+    const { stderr, exitCode, error } = await runCli(argv, dbPath);
     expect(error).toBeUndefined();
     expect(exitCode).toBe(4);
     // The CLI's emitError() writes one JSON object per error to stderr.
