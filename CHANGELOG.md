@@ -8,7 +8,7 @@ called out under "Breaking" in each entry.
 
 ---
 
-## [0.3.0] — unreleased
+## [0.3.0] — 2026-05-10
 
 ### Added
 
