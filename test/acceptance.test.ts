@@ -19,8 +19,9 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { closeAgent, insertAgent, listAgents, listLiveAgents, spawnAgent } from "../src/agents.js";
 import { type Db, openDb } from "../src/db.js";
 import { addNote, addTask, claimTask, getTask, listReady } from "../src/tasks.js";
-import { killPane, killSession, resetTmuxExecutor } from "../src/tmux.js";
+import { killPane, killSession, paneExists, resetTmuxExecutor } from "../src/tmux.js";
 import { getParallelTracks } from "../src/tracks.js";
+import { pollUntil } from "./_env.js";
 
 const TMUX_AVAILABLE = process.env.TMUX !== undefined && process.env.TMUX !== "";
 const describeIfTmux = TMUX_AVAILABLE ? describe : describe.skip;
@@ -200,7 +201,17 @@ describeIfTmux("MVP acceptance — full demo end-to-end", () => {
     expect(getTask(db, "ui", workstream)?.ownerName).toBe("revv");
 
     // ── Reconciliation: agent state visible in mission control ───────
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    // Poll until reconcile sees all 3 panes as alive with detected
+    // status — freshly spawned panes start in `spawning` and only
+    // transition once tmux scrollback is captured. Fixed sleeps here
+    // were the canonical CI-flake source per AGENTS.md § Tests.
+    await pollUntil(
+      async () => {
+        const v = await listLiveAgents(db, { workstream });
+        return v.agents.length === 3 && v.agents.every((a) => a.status === "needs_input");
+      },
+      { description: "all 3 agents detected as needs_input" },
+    );
     const view1 = await listLiveAgents(db, { workstream });
     expect(view1.agents).toHaveLength(3);
     for (const agent of view1.agents) {
@@ -209,7 +220,12 @@ describeIfTmux("MVP acceptance — full demo end-to-end", () => {
 
     // ── Recovery: bob's pane dies externally ──────────────────────────
     await killPane(bob.paneId);
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    // tmux briefly reports a killed pane as still alive; wait for it
+    // to actually disappear from the live pane set before reconcile,
+    // otherwise prunedGhosts can be 0 on a loaded runner.
+    await pollUntil(async () => !(await paneExists(bob.paneId)), {
+      description: `bob's pane ${bob.paneId} gone from tmux`,
+    });
     const view2 = await listLiveAgents(db, { workstream });
     expect(view2.report.prunedGhosts).toBe(1);
     expect(view2.agents.map((a) => a.name).sort()).toEqual(["alice", "revv"]);

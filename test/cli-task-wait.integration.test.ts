@@ -31,6 +31,7 @@ import { addTask, claimTask, getTask, setTaskStatus } from "../src/tasks.js";
 import { setWaitSleepForTests } from "../src/tasks/wait.js";
 import { killPane, killSession, paneExists, resetTmuxExecutor } from "../src/tmux.js";
 import { ensureWorkstream } from "../src/workstream.js";
+import { pollUntil } from "./_env.js";
 import { runCli } from "./_runCli.js";
 
 const TMUX_AVAILABLE = process.env.TMUX !== undefined && process.env.TMUX !== "";
@@ -79,13 +80,12 @@ describeIfTmux("mu task wait — reaper-detection integration", () => {
 
   const SH_COMMAND = "sh -c 'while true; do sleep 60; done'";
 
-  // Wait until the tmux pane id is gone from the live pane set (poll
-  // 50ms × 20). tmux briefly reports a killed pane as still alive.
+  // tmux briefly reports a killed pane as still alive; poll until the
+  // pane id has actually disappeared. Shared helper from test/_env.ts.
   async function waitForPaneGone(paneId: string): Promise<void> {
-    for (let i = 0; i < 20; i++) {
-      if (!(await paneExists(paneId))) return;
-      await new Promise((resolve) => setTimeout(resolve, 50));
-    }
+    await pollUntil(async () => !(await paneExists(paneId)), {
+      description: `pane ${paneId} gone from tmux`,
+    });
   }
 
   it("kills the worker mid-wait → exit 6 within poll-interval (NOT --timeout)", async () => {

@@ -33,6 +33,30 @@ export async function withEnv(
   }
 }
 
+// Poll a predicate until it returns truthy, or fail with a useful
+// message after exhausting attempts. Replaces ad-hoc fixed sleeps in
+// integration tests ("wait 100ms then assert") with the correct
+// pattern from AGENTS.md § Tests: "Polling loops (50ms × 10 attempts)
+// when waiting for state to propagate, not fixed sleeps."
+//
+// `attempts * intervalMs` is the upper bound; the loop returns as soon
+// as the predicate is satisfied. The default 20 × 50ms = 1s budget
+// matches the existing waitForPaneGone helper in
+// test/cli-task-wait.integration.test.ts.
+export async function pollUntil(
+  predicate: () => boolean | Promise<boolean>,
+  opts: { attempts?: number; intervalMs?: number; description?: string } = {},
+): Promise<void> {
+  const attempts = opts.attempts ?? 20;
+  const intervalMs = opts.intervalMs ?? 50;
+  for (let i = 0; i < attempts; i++) {
+    if (await predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+  const what = opts.description ?? "predicate";
+  throw new Error(`pollUntil: ${what} did not become true within ${attempts} × ${intervalMs}ms`);
+}
+
 // Identity-resolution chain (resolveActorIdentity / currentAgentName)
 // reads MU_AGENT_NAME, TMUX_PANE, and USER. Strip all three for the
 // duration of `fn` so tests can construct the exact fallback state
