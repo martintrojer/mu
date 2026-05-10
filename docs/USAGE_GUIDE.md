@@ -296,6 +296,25 @@ asking an LLM. Three sections:
   share a dependency
 - **Ready** — actionable now, sorted by ROI (impact / effort)
 
+### `mu hud` for a print-once status card (single OR multi-workstream)
+
+`mu hud` is the print-once-and-compose sibling of `mu state`: a
+dynamic table layout that fills the terminal (or tmux pane) height
++ width with as much useful data as fits. `watch -n 5 mu hud -w X`
+for a refreshing pane; `tmux display-popup -E 'mu hud -w X'` for
+an on-demand popup; `#(mu hud -w X --json) | jq ...` for tmux
+status-bar interpolation.
+
+Multi-workstream: `--workstreams a,b,c` (or `--workstreams a
+--workstreams b`, or any mix — see [CLI conventions](#cli-conventions-multi-value-flags)) renders
+N workstreams in one card, with one summary row per workstream and
+a leading `workstream` column on every section table. `--all`
+collapses to "every workstream on this machine". Single-mode
+(`mu hud -w X`, or anything that resolves to one workstream — the
+common case) is unchanged byte-for-byte; the JSON shape only
+switches to `{ workstreams: [...] }` when N≥2 so existing tmux
+status-bar pipes don't break on upgrade.
+
 ---
 
 ## 6. Spawn a crew

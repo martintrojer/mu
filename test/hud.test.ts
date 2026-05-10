@@ -253,6 +253,224 @@ describe("mu hud", () => {
   });
 });
 
+// ── Multi-workstream HUD (hud_multi_workstream, v0.3) ─────────────────
+//
+// `mu hud` accepts THREE mutually-exclusive shapes:
+//   -w X                    single (legacy default-resolution chain)
+//   --workstreams X,Y,Z     explicit list (variadic + parseCsvFlag)
+//   --all                   every workstream on this machine
+//
+// AUTO-COLLAPSE: N=1 always renders single-mode (legacy column shape
+// + flat JSON). N≥2 grows the workstream-summary table to N rows,
+// gains a leading `workstream` column on subsequent tables, and
+// switches the JSON envelope to `{workstreams:[...]}`.
+describe("mu hud — multi-workstream", () => {
+  let tempDir: string;
+  let dbPath: string;
+
+  beforeEach(async () => {
+    tempDir = mkdtempSync(join(tmpdir(), "mu-hud-multi-"));
+    dbPath = join(tempDir, "mu.db");
+    // Seed: three workstreams, each with one ready task.
+    for (const w of ["alpha", "beta", "gamma"]) {
+      await runCli(["workstream", "init", w, "--json"], dbPath);
+      await runCli(
+        ["task", "add", `t_${w}`, "-w", w, "--title", `T-${w}`, "-i", "50", "-e", "1", "--json"],
+        dbPath,
+      );
+    }
+  });
+
+  afterEach(() => {
+    try {
+      rmSync(tempDir, { recursive: true, force: true });
+    } catch {}
+    const key = "MU_HUD_FORCE_SIZE";
+    delete process.env[key];
+  });
+
+  it("--workstreams a,b renders 2 workstream-summary rows + leading workstream column on subsequent tables", async () => {
+    process.env.MU_HUD_FORCE_SIZE = "160x40";
+    const { stdout, exitCode } = await runCli(["hud", "--workstreams", "alpha,beta"], dbPath);
+    expect(exitCode).toBeNull();
+    // Both workstream rows appear in the summary table.
+    expect(stdout).toContain("mu-alpha");
+    expect(stdout).toContain("mu-beta");
+    // The third workstream is NOT pulled in.
+    expect(stdout).not.toContain("mu-gamma");
+    // Both ready rows render with their per-workstream task ids.
+    expect(stdout).toContain("ready  t_alpha");
+    expect(stdout).toContain("ready  t_beta");
+    expect(stdout).not.toContain("ready  t_gamma");
+  });
+
+  it("--workstreams accepts repeat OR comma OR mixed (parseCsvFlag canonicalisation)", async () => {
+    process.env.MU_HUD_FORCE_SIZE = "160x40";
+    // Repeat form.
+    const repeat = await runCli(
+      ["hud", "--workstreams", "alpha", "--workstreams", "beta", "--json"],
+      dbPath,
+    );
+    expect(repeat.exitCode).toBeNull();
+    const repParsed = JSON.parse(repeat.stdout);
+    expect(repParsed.workstreams.map((w: { workstreamName: string }) => w.workstreamName)).toEqual([
+      "alpha",
+      "beta",
+    ]);
+    // Mixed form.
+    const mixed = await runCli(
+      ["hud", "--workstreams", "alpha,beta", "--workstreams", "gamma", "--json"],
+      dbPath,
+    );
+    expect(mixed.exitCode).toBeNull();
+    const mixParsed = JSON.parse(mixed.stdout);
+    expect(mixParsed.workstreams.map((w: { workstreamName: string }) => w.workstreamName)).toEqual([
+      "alpha",
+      "beta",
+      "gamma",
+    ]);
+  });
+
+  it("--all picks up every DB workstream (loose: tmux mu-* sessions may add more)", async () => {
+    // listWorkstreams() unions DB names with tmux `mu-*` session names
+    // so when the test runs inside tmux additional workstreams may
+    // appear. Loose assertion: the three we seeded MUST be present.
+    process.env.MU_HUD_FORCE_SIZE = "160x40";
+    const { stdout, exitCode } = await runCli(["hud", "--all"], dbPath);
+    expect(exitCode).toBeNull();
+    expect(stdout).toContain("mu-alpha");
+    expect(stdout).toContain("mu-beta");
+    expect(stdout).toContain("mu-gamma");
+  });
+
+  it("N≥2 --workstreams + --json wraps in { workstreams: [...] } envelope", async () => {
+    // Use --workstreams (not --all) so the assertion on
+    // workstreams.length is deterministic regardless of surrounding
+    // tmux state.
+    const { stdout, exitCode } = await runCli(
+      ["hud", "--workstreams", "alpha,beta,gamma", "--json"],
+      dbPath,
+    );
+    expect(exitCode).toBeNull();
+    const parsed = JSON.parse(stdout);
+    expect(Array.isArray(parsed.workstreams)).toBe(true);
+    expect(parsed.workstreams.length).toBe(3);
+    // Each element retains the legacy single-mode shape.
+    for (const ws of parsed.workstreams) {
+      expect(typeof ws.workstreamName).toBe("string");
+      expect(typeof ws.summary).toBe("object");
+      expect(Array.isArray(ws.agents)).toBe(true);
+      expect(Array.isArray(ws.ready)).toBe(true);
+      expect(Array.isArray(ws.inProgress)).toBe(true);
+      expect(Array.isArray(ws.recent)).toBe(true);
+      expect(Array.isArray(ws.tracks)).toBe(true);
+    }
+  });
+
+  it("N=1 via --workstreams keeps legacy flat JSON shape (auto-collapse)", async () => {
+    const { stdout, exitCode } = await runCli(["hud", "--workstreams", "alpha", "--json"], dbPath);
+    expect(exitCode).toBeNull();
+    const parsed = JSON.parse(stdout);
+    // Legacy keys at top level — NOT wrapped in {workstreams:[...]}.
+    expect(parsed.workstreams).toBeUndefined();
+    expect(parsed.workstreamName).toBe("alpha");
+    expect(parsed.summary.ready).toBe(1);
+  });
+
+  it("--workstreams X,X dedups to one entry → single-mode auto-collapse", async () => {
+    const { stdout, exitCode } = await runCli(
+      ["hud", "--workstreams", "alpha,alpha", "--json"],
+      dbPath,
+    );
+    expect(exitCode).toBeNull();
+    const parsed = JSON.parse(stdout);
+    expect(parsed.workstreams).toBeUndefined();
+    expect(parsed.workstreamName).toBe("alpha");
+  });
+
+  it("single -w keeps legacy flat JSON shape exactly (no regression)", async () => {
+    const { stdout, exitCode } = await runCli(["hud", "-w", "alpha", "--json"], dbPath);
+    expect(exitCode).toBeNull();
+    const parsed = JSON.parse(stdout);
+    expect(parsed.workstreams).toBeUndefined();
+    expect(parsed.workstreamName).toBe("alpha");
+  });
+
+  it("--all + --workstreams is a UsageError (mutually exclusive)", async () => {
+    const { stderr, exitCode } = await runCli(["hud", "--all", "--workstreams", "alpha"], dbPath);
+    expect(exitCode).toBe(2);
+    expect(stderr).toContain("mutually exclusive");
+  });
+
+  it("--all + -w is a UsageError (mutually exclusive)", async () => {
+    const { stderr, exitCode } = await runCli(["hud", "--all", "-w", "alpha"], dbPath);
+    expect(exitCode).toBe(2);
+    expect(stderr).toContain("mutually exclusive");
+  });
+
+  it("--workstreams + -w is a UsageError (mutually exclusive)", async () => {
+    const { stderr, exitCode } = await runCli(
+      ["hud", "--workstreams", "alpha", "-w", "beta"],
+      dbPath,
+    );
+    expect(exitCode).toBe(2);
+    expect(stderr).toContain("mutually exclusive");
+  });
+
+  it("--workstreams resolving to empty (e.g. ',,') errors with 'no workstreams specified'", async () => {
+    const { stderr, exitCode } = await runCli(["hud", "--workstreams", ",,"], dbPath);
+    expect(exitCode).toBe(2);
+    expect(stderr.toLowerCase()).toContain("no workstreams");
+  });
+
+  it("--workstreams with one bad name errors as WorkstreamNotFoundError listing the typo", async () => {
+    const { stderr, exitCode } = await runCli(["hud", "--workstreams", "alpha,nope"], dbPath);
+    // WorkstreamNotFoundError → exit 5 (not_found).
+    expect(exitCode).not.toBe(0);
+    expect(stderr).toContain("nope");
+    expect(stderr).not.toContain("alpha"); // only the bad one is named
+  });
+
+  // The two tests below exercise --all-empty / --all-with-1 boundaries.
+  // listWorkstreams() unions DB names with tmux `mu-*` sessions, so when
+  // the test runs inside tmux these become non-deterministic. Skip them
+  // when $TMUX is set (the auto-collapse semantics are still covered by
+  // the --workstreams variants above).
+  const skipInTmux = process.env.TMUX !== undefined && process.env.TMUX.length > 0;
+  const itOutsideTmux = skipInTmux ? it.skip : it;
+
+  itOutsideTmux("--all with zero workstreams in DB renders the empty-hint cleanly", async () => {
+    const empty = mkdtempSync(join(tmpdir(), "mu-hud-empty-all-"));
+    const emptyDb = join(empty, "mu.db");
+    try {
+      const { stdout, exitCode } = await runCli(["hud", "--all"], emptyDb);
+      expect(exitCode).toBeNull();
+      expect(stdout).toContain("no workstreams");
+    } finally {
+      rmSync(empty, { recursive: true, force: true });
+    }
+  });
+
+  itOutsideTmux(
+    "--all with one workstream in DB renders single-mode (auto-collapse, no extra column)",
+    async () => {
+      const lone = mkdtempSync(join(tmpdir(), "mu-hud-one-"));
+      const loneDb = join(lone, "mu.db");
+      try {
+        await runCli(["workstream", "init", "only", "--json"], loneDb);
+        const { stdout, exitCode } = await runCli(["hud", "--all", "--json"], loneDb);
+        expect(exitCode).toBeNull();
+        const parsed = JSON.parse(stdout);
+        // Auto-collapsed → flat shape, NOT the wrapped envelope.
+        expect(parsed.workstreams).toBeUndefined();
+        expect(parsed.workstreamName).toBe("only");
+      } finally {
+        rmSync(lone, { recursive: true, force: true });
+      }
+    },
+  );
+});
+
 // ── colorEventPayload regression: every emitter verb is recognised ──
 //
 // The HUD's recent-events tail colours the leading verb token of each

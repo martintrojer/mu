@@ -294,7 +294,7 @@ mu archive delete <label> [--yes]                  # two-phase; --yes captures a
 mu sql "<query>"                     # SELECT / UPDATE / DELETE / WITH
 mu                                   # bare: quick mission control
 mu state                             # canonical state card
-mu hud [--json]                      # dynamic table HUD; fills pane h×w
+mu hud [-w X | --workstreams a,b | --all] [--json]   # dynamic table HUD; fills pane h×w; multi-workstream when N≥2
 mu doctor                            # tmux + db + schema + workstream stats
 ```
 

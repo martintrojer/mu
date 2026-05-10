@@ -15,6 +15,14 @@
 // -n N still caps recent-events length (mostly meaningful for --json,
 // but also bounds what the human view can pull from).
 //
+// MULTI-WORKSTREAM (v0.3+, hud_multi_workstream): `--workstreams` (variadic
+// + parseCsvFlag-canonicalised) and `--all` accept N workstreams. Single
+// (N=1, the common case) renders EXACTLY the legacy shape (same columns,
+// same JSON keys). N≥2 grows the workstream-summary table to N rows, gains
+// a leading `workstream` column on subsequent tables, and switches the
+// JSON envelope to `{ workstreams: [...] }`. See task notes for the full
+// contract.
+//
 // Extracted from src/cli.ts as part of refactor_split_large_src_files.
 
 import Table from "cli-table3";
@@ -23,21 +31,25 @@ import {
   UsageError,
   byRoiDesc,
   emitJson,
+  parseCsvFlag,
   relTime,
   resolveWorkstream,
   statusIcon,
   truncate,
   withRoiAll,
 } from "../cli.js";
-import type { Db } from "../db.js";
+import { type Db, WorkstreamNotFoundError, tryResolveWorkstreamId } from "../db.js";
 import { EVENT_VERB_PREFIXES, type LogRow, displayEventPayload, listLogs } from "../logs.js";
 import { pc } from "../output.js";
 import { type TaskRow, listInProgress, listReady, listTasksByOwner } from "../tasks.js";
 import { currentPaneSize } from "../tmux.js";
 import { type Track, getParallelTracks } from "../tracks.js";
+import { listWorkstreams } from "../workstream.js";
 
 interface HudOpts {
   workstream?: string;
+  workstreams?: string[];
+  all?: boolean;
   json?: boolean;
   lines?: number; // recent-events tail cap; default 10
 }
@@ -99,15 +111,34 @@ function newHudTable(): InstanceType<typeof Table> {
   return new Table({ style: { border: [] }, wordWrap: false });
 }
 
+// ─── Multi-mode plumbing ─────────────────────────────────────────────
+//
+// In multi-mode (N≥2), every per-workstream table-row needs to know
+// which workstream it came from so we can prepend a `workstream` cell
+// AND so we can sort by (workstream, intra-key) before rendering.
+// The SDK row types don't all carry workstream identity (Track has no
+// workstreamName field), so we tag each row at the data-loading seam
+// and carry the tag through to render.
+type Tagged<T> = { ws: string; row: T };
+const tag =
+  <T>(ws: string) =>
+  (row: T): Tagged<T> => ({ ws, row });
+
+// Bold-cyan workstream prefix cell for multi-mode tables. Mirrors the
+// header treatment in the workstream-summary table so the eye groups
+// rows by colour.
+const wsCell = (ws: string): string => pc.bold(pc.cyan(ws));
+
 // Each formatHud*Table returns { rendered, rowsShown, rowsTotal }.
 // rowsTotal == 0 cases are handled by renderSection's early-return
 // (`if (full === 0) return`), so these helpers can assume non-empty
 // input. The hint words baked into each cell identify the section.
 function formatHudAgentsTable(
   db: Db,
-  agents: readonly AgentRow[],
+  agents: readonly Tagged<AgentRow>[],
   width: number,
   rowCap: number,
+  multi: boolean,
 ): { rendered: string; rowsShown: number; rowsTotal: number } {
   const total = agents.length;
   const shown = agents.slice(0, rowCap);
@@ -117,9 +148,11 @@ function formatHudAgentsTable(
   // section. Saves 2 vertical lines.
   let nameW = "agent ".length;
   let agoW = "+ago".length;
+  let wsW = "workstream".length;
   const taskBits: string[] = [];
-  for (const a of shown) {
+  for (const { ws, row: a } of shown) {
     nameW = Math.max(nameW, `agent ${a.name}`.length);
+    wsW = Math.max(wsW, ws.length);
     // Scope by the agent's own workstream so a same-named worker
     // elsewhere can't pollute this row's task count.
     const owned = listTasksByOwner(db, a.workstreamName, a.name);
@@ -130,11 +163,12 @@ function formatHudAgentsTable(
     agoW = Math.max(agoW, ago.length);
   }
   const statusW = 2; // emoji + 1
-  const numCols = 4;
+  const numCols = multi ? 5 : 4;
   const padding = numCols * 3 + 1;
-  const taskBudget = Math.max(8, width - statusW - nameW - agoW - padding);
+  const leadW = multi ? wsW : 0;
+  const taskBudget = Math.max(8, width - leadW - statusW - nameW - agoW - padding);
   const table = newHudTable();
-  shown.forEach((a, i) => {
+  shown.forEach(({ ws, row: a }, i) => {
     const ago = `+${relTime(now - new Date(a.updatedAt).getTime())}`;
     const taskBit = taskBits[i] ?? "—";
     const truncated = truncate(taskBit, taskBudget);
@@ -143,12 +177,15 @@ function formatHudAgentsTable(
     // table; '—' / '⊕N' (no-task / multi) stays dim.
     const taskCell =
       taskBit === "—" || taskBit.startsWith("⊕") ? pc.dim(truncated) : pc.cyan(truncated);
-    table.push([
+    const cells: string[] = [];
+    if (multi) cells.push(wsCell(ws));
+    cells.push(
       statusIcon(a.status),
       `${pc.dim("agent")} ${pc.bold(a.name)}`,
       taskCell,
       pc.dim(ago),
-    ]);
+    );
+    table.push(cells);
   });
   return { rendered: table.toString(), rowsShown: shown.length, rowsTotal: total };
 }
@@ -158,10 +195,10 @@ function formatHudAgentsTable(
  * `title` cell absorbs slack via terminalWidth - sum(other cols).
  */
 function formatHudTasksTable(
-  tasks: readonly TaskRow[],
+  tasks: readonly Tagged<TaskRow>[],
   width: number,
   rowCap: number,
-  opts: { withOwner: boolean },
+  opts: { withOwner: boolean; multi: boolean },
 ): { rendered: string; rowsShown: number; rowsTotal: number } {
   const total = tasks.length;
   const shown = tasks.slice(0, rowCap);
@@ -175,18 +212,21 @@ function formatHudTasksTable(
   let idW = `${sectionPrefix}  `.length; // section + double-space gutter
   let roiW = "ROI 100".length; // typical ROI width with prefix
   let ownerW = opts.withOwner ? "owner".length : 0;
-  for (const t of shown) {
+  let wsW = "workstream".length;
+  for (const { ws, row: t } of shown) {
     idW = Math.max(idW, `${sectionPrefix}  ${t.name}`.length);
     const roi = t.effortDays > 0 ? (t.impact / t.effortDays).toFixed(0) : "∞";
     roiW = Math.max(roiW, `ROI ${roi}`.length);
     ownerW = Math.max(ownerW, (t.ownerName ?? "—").length);
+    wsW = Math.max(wsW, ws.length);
   }
-  const numCols = opts.withOwner ? 4 : 3;
+  const numCols = (opts.withOwner ? 4 : 3) + (opts.multi ? 1 : 0);
   const padding = numCols * 3 + 1;
-  const fixed = idW + roiW + (opts.withOwner ? ownerW : 0);
+  const leadW = opts.multi ? wsW : 0;
+  const fixed = leadW + idW + roiW + (opts.withOwner ? ownerW : 0);
   const titleBudget = Math.max(10, width - fixed - padding);
   const table = newHudTable();
-  for (const t of shown) {
+  for (const { ws, row: t } of shown) {
     const roiNum = t.effortDays > 0 ? t.impact / t.effortDays : Number.POSITIVE_INFINITY;
     const roiStr = Number.isFinite(roiNum) ? roiNum.toFixed(0) : "∞";
     // Colour: id cyan (matches the agent table's task column);
@@ -195,11 +235,9 @@ function formatHudTasksTable(
     // useful pointer in an in-progress row).
     const roiColor = roiNum >= 100 ? pc.green : roiNum >= 50 ? pc.yellow : pc.dim;
     const idCell = `${pc.dim(sectionPrefix)}  ${pc.cyan(t.name)}`;
-    const row: string[] = [
-      idCell,
-      truncate(t.title, titleBudget),
-      `${pc.dim("ROI")} ${roiColor(roiStr)}`,
-    ];
+    const row: string[] = [];
+    if (opts.multi) row.push(wsCell(ws));
+    row.push(idCell, truncate(t.title, titleBudget), `${pc.dim("ROI")} ${roiColor(roiStr)}`);
     if (opts.withOwner) row.push(t.ownerName ? pc.bold(pc.cyan(t.ownerName)) : pc.dim("—"));
     table.push(row);
   }
@@ -211,9 +249,10 @@ function formatHudTasksTable(
  * Payload absorbs slack.
  */
 function formatHudRecentTable(
-  events: readonly LogRow[],
+  events: readonly Tagged<LogRow>[],
   width: number,
   rowCap: number,
+  multi: boolean,
 ): { rendered: string; rowsShown: number; rowsTotal: number } {
   const total = events.length;
   const shown = events.slice(0, rowCap);
@@ -222,15 +261,18 @@ function formatHudRecentTable(
   // spawn ...` style payload self-identify this as the events table.
   // Saves 2 vertical lines.
   let agoW = "+ago".length;
-  for (const e of shown) {
+  let wsW = "workstream".length;
+  for (const { ws, row: e } of shown) {
     const ago = `+${relTime(now - new Date(e.createdAt).getTime())}`;
     agoW = Math.max(agoW, ago.length);
+    wsW = Math.max(wsW, ws.length);
   }
-  const numCols = 2;
+  const numCols = multi ? 3 : 2;
   const padding = numCols * 3 + 1;
-  const payloadBudget = Math.max(20, width - agoW - padding);
+  const leadW = multi ? wsW : 0;
+  const payloadBudget = Math.max(20, width - leadW - agoW - padding);
   const table = newHudTable();
-  for (const e of shown) {
+  for (const { ws, row: e } of shown) {
     const ago = `+${relTime(now - new Date(e.createdAt).getTime())}`;
     // Colour the leading verb token of the payload ('task close',
     // 'agent spawn', 'workspace create', etc.) so the eye can group
@@ -243,7 +285,10 @@ function formatHudRecentTable(
     // starts with `task claim` so the verb-prefix colourer matches
     // unchanged. See review_code_last_claim_actor_brittle.
     const display = displayEventPayload(e.payload);
-    table.push([pc.dim(ago), colorEventPayload(truncate(display, payloadBudget))]);
+    const cells: string[] = [];
+    if (multi) cells.push(wsCell(ws));
+    cells.push(pc.dim(ago), colorEventPayload(truncate(display, payloadBudget)));
+    table.push(cells);
   }
   return { rendered: table.toString(), rowsShown: shown.length, rowsTotal: total };
 }
@@ -279,9 +324,10 @@ export function colorEventPayload(payload: string): string {
  * the longest cell on a busy diamond).
  */
 function formatHudTracksTable(
-  tracks: readonly Track[],
+  tracks: readonly Tagged<Track>[],
   width: number,
   rowCap: number,
+  multi: boolean,
 ): { rendered: string; rowsShown: number; rowsTotal: number } {
   const total = tracks.length;
   const shown = tracks.slice(0, rowCap);
@@ -290,17 +336,20 @@ function formatHudTracksTable(
   let idxW = "track N".length;
   let tasksW = "N tasks".length;
   let readyW = "N ready".length;
+  let wsW = "workstream".length;
   const kindW = "merged".length;
-  shown.forEach((t, i) => {
+  shown.forEach(({ ws, row: t }, i) => {
     idxW = Math.max(idxW, `track ${i + 1}`.length);
     tasksW = Math.max(tasksW, `${t.taskIds.size} tasks`.length);
     readyW = Math.max(readyW, `${t.readyCount} ready`.length);
+    wsW = Math.max(wsW, ws.length);
   });
-  const numCols = 5;
+  const numCols = multi ? 6 : 5;
   const padding = numCols * 3 + 1;
-  const rootsBudget = Math.max(10, width - idxW - tasksW - readyW - kindW - padding);
+  const leadW = multi ? wsW : 0;
+  const rootsBudget = Math.max(10, width - leadW - idxW - tasksW - readyW - kindW - padding);
   const table = newHudTable();
-  shown.forEach((t, i) => {
+  shown.forEach(({ ws, row: t }, i) => {
     const roots = t.roots.map((r) => r.name).join(", ");
     const kind = t.roots.length > 1 ? "merged" : "track";
     // Colour: 'merged' diamond is structurally interesting (multiple
@@ -309,13 +358,16 @@ function formatHudTracksTable(
     // Ready count: green if any ready, dim if none.
     const kindCell = t.roots.length > 1 ? pc.yellow(kind) : pc.dim(kind);
     const readyCell = `${t.readyCount > 0 ? pc.green(String(t.readyCount)) : pc.dim("0")} ${pc.dim("ready")}`;
-    table.push([
+    const cells: string[] = [];
+    if (multi) cells.push(wsCell(ws));
+    cells.push(
       `${pc.dim("track")} ${pc.bold(String(i + 1))}`,
       pc.cyan(truncate(roots, rootsBudget)),
       `${t.taskIds.size} ${pc.dim("tasks")}`,
       readyCell,
       kindCell,
-    ]);
+    );
+    table.push(cells);
   });
   return { rendered: table.toString(), rowsShown: shown.length, rowsTotal: total };
 }
@@ -332,8 +384,83 @@ function agentStatusHistogram(agents: readonly AgentRow[]): string {
   return parts.join(" ");
 }
 
-export async function cmdHud(db: Db, opts: HudOpts): Promise<void> {
-  const workstream = await resolveWorkstream(opts.workstream);
+// ─── Workstream-set resolution ────────────────────────────────────────
+//
+// The hud verb accepts THREE mutually-exclusive shapes:
+//   -w X                    single workstream (legacy default-resolution
+//                           chain via env / tmux session if -w not given)
+//   --workstreams X,Y,Z     explicit list (variadic + parseCsvFlag-
+//                           canonicalised — see cli_audit_plurality_uniformity)
+//   --all                   every workstream on this machine
+//
+// When N=1 (single -w, or --workstreams resolving to one entry, or
+// --all on a single-workstream machine), we AUTO-COLLAPSE to single-
+// mode rendering. So callers who today use `mu hud -w X` see byte-for-
+// byte identical output (including the JSON shape — the back-compat
+// contract for any tmux status-bar pipes consuming `mu hud --json | jq`).
+//
+// Detection of "explicitly-passed -w" vs "auto-resolved -w" matters
+// for the mutual-exclusion error path: commander gives us undefined
+// for unset options, so we read the raw `opts.workstream` BEFORE
+// resolveWorkstream falls back to env/tmux.
+async function resolveWorkstreamSet(db: Db, opts: HudOpts): Promise<string[]> {
+  const explicitW = opts.workstream !== undefined;
+  const explicitMulti = opts.workstreams !== undefined && opts.workstreams.length > 0;
+  const explicitAll = opts.all === true;
+  // Mutual exclusion. Check on the RAW flags (NOT on the resolved
+  // value) — the env/tmux fallback only kicks in when the user hasn't
+  // asked for a multi-mode shape, so it can't conflict.
+  if (explicitAll && explicitMulti) {
+    throw new UsageError("--all and --workstreams are mutually exclusive");
+  }
+  if (explicitAll && explicitW) {
+    throw new UsageError("--all and -w/--workstream are mutually exclusive");
+  }
+  if (explicitMulti && explicitW) {
+    throw new UsageError("--workstreams and -w/--workstream are mutually exclusive");
+  }
+  if (explicitAll) {
+    const all = await listWorkstreams(db);
+    return all.map((w) => w.name);
+  }
+  if (opts.workstreams !== undefined) {
+    // parseCsvFlag canonicalises repeat / comma / mixed forms into a
+    // flat string[] (stripping whitespace + empty fragments). After
+    // canonicalisation the list may be empty (e.g. `--workstreams ,,`)
+    // — that's a usage error, not a silent empty render.
+    const names = parseCsvFlag(opts.workstreams);
+    const deduped = Array.from(new Set(names));
+    if (deduped.length === 0) {
+      throw new UsageError(
+        "no workstreams specified (--workstreams must resolve to at least one name)",
+      );
+    }
+    // Strict validation: every entry must exist. A typo'd name today
+    // would silently render half a HUD.
+    for (const n of deduped) {
+      if (tryResolveWorkstreamId(db, n) === null) throw new WorkstreamNotFoundError(n);
+    }
+    return deduped;
+  }
+  // Single legacy path: -w X explicit OR auto-resolve from env/tmux.
+  const single = await resolveWorkstream(opts.workstream);
+  return [single];
+}
+
+interface PerWsData {
+  workstreamName: string;
+  view: Awaited<ReturnType<typeof listLiveAgents>>;
+  tracks: Track[];
+  ready: TaskRow[];
+  inProgress: TaskRow[];
+  recent: LogRow[];
+}
+
+async function loadWorkstreamData(
+  db: Db,
+  workstream: string,
+  eventLimit: number,
+): Promise<PerWsData> {
   // mu hud is print-once-and-compose by design (`watch -n 5 mu hud`,
   // `tmux display-popup -E 'mu hud ...'`). status-only so the periodic
   // poll doesn't race a long-running `git worktree add` mid-spawn
@@ -346,26 +473,68 @@ export async function cmdHud(db: Db, opts: HudOpts): Promise<void> {
   const tracks = getParallelTracks(db, workstream);
   const ready = listReady(db, workstream).sort(byRoiDesc);
   const inProgress = listInProgress(db, workstream);
+  const recent = listLogs(db, { workstream, kind: "event", limit: eventLimit });
+  return { workstreamName: workstream, view, tracks, ready, inProgress, recent };
+}
+
+/** Per-workstream JSON shape — the legacy single-mode shape, computed
+ *  for one workstream. Used flat for N=1 (back-compat) and as the
+ *  array element for N≥2. */
+function jsonShape(d: PerWsData): Record<string, unknown> {
+  return {
+    workstreamName: d.workstreamName,
+    summary: {
+      ready: d.ready.length,
+      inProgress: d.inProgress.length,
+      tracks: d.tracks.length,
+      agents: d.view.agents.length,
+      orphans: d.view.orphans.length,
+    },
+    agents: d.view.agents,
+    orphans: d.view.orphans,
+    tracks: d.tracks,
+    ready: withRoiAll(d.ready),
+    inProgress: withRoiAll(d.inProgress),
+    recent: d.recent,
+  };
+}
+
+export async function cmdHud(db: Db, opts: HudOpts): Promise<void> {
+  const workstreams = await resolveWorkstreamSet(db, opts);
+
+  // Empty-DB-with-no-workstreams path under --all: render the legacy
+  // empty-hint single-mode by deferring to resolveWorkstream's normal
+  // failure semantics. For --all with 0, we have nothing to render at
+  // all — print a one-line hint and exit cleanly (mirrors `mu state`).
+  if (workstreams.length === 0) {
+    if (opts.json) {
+      emitJson({ workstreams: [] });
+      return;
+    }
+    console.log(pc.dim("(no workstreams)"));
+    return;
+  }
+
   const eventLimit = opts.lines ?? 10;
-  const recentEvents = listLogs(db, { workstream, kind: "event", limit: eventLimit });
+  const perWs: PerWsData[] = [];
+  for (const ws of workstreams) {
+    perWs.push(await loadWorkstreamData(db, ws, eventLimit));
+  }
+
+  // AUTO-COLLAPSE: N=1 always renders single-mode (no extra column,
+  // legacy JSON shape). This keeps `mu hud -w X` byte-for-byte
+  // identical AND collapses `--workstreams X,X` (dedup'd to ['X'])
+  // and `--all` on a single-workstream machine.
+  const multi = workstreams.length > 1;
 
   if (opts.json) {
-    emitJson({
-      workstreamName: workstream,
-      summary: {
-        ready: ready.length,
-        inProgress: inProgress.length,
-        tracks: tracks.length,
-        agents: view.agents.length,
-        orphans: view.orphans.length,
-      },
-      agents: view.agents,
-      orphans: view.orphans,
-      tracks,
-      ready: withRoiAll(ready),
-      inProgress: withRoiAll(inProgress),
-      recent: recentEvents,
-    });
+    if (multi) {
+      emitJson({ workstreams: perWs.map(jsonShape) });
+    } else {
+      const single = perWs[0];
+      if (single === undefined) throw new Error("invariant: workstreams non-empty");
+      emitJson(jsonShape(single));
+    }
     return;
   }
 
@@ -410,9 +579,10 @@ export async function cmdHud(db: Db, opts: HudOpts): Promise<void> {
     return rendered.split("\n").length;
   };
 
-  // 1. Workstream-summary table. Single data row, no header — each
-  // cell carries its own dim section word (`2 ready`, `0 in-progress`,
-  // ...). Cost with bottom dropped + no header = 2 lines.
+  // 1. Workstream-summary table. ONE data row per workstream, no
+  // header — each cell carries its own dim section word (`2 ready`,
+  // `0 in-progress`, ...). Cost with bottom dropped + no header =
+  // 2N+1 lines total.
   // Colour: workstream bold-cyan (it's the load-bearing identifier);
   // counts coloured by significance — ready green if any (work to
   // dispatch), in-progress yellow if any (work in flight), tracks
@@ -420,15 +590,51 @@ export async function cmdHud(db: Db, opts: HudOpts): Promise<void> {
   const colorCount = (n: number, color: (s: string) => string): string =>
     n > 0 ? color(String(n)) : pc.dim("0");
   const headerTable = newHudTable();
-  headerTable.push([
-    pc.bold(pc.cyan(`mu-${workstream}`)),
-    `${colorCount(ready.length, pc.green)} ${pc.dim("ready")}`,
-    `${colorCount(inProgress.length, pc.yellow)} ${pc.dim("in-progress")}`,
-    `${pc.bold(String(tracks.length))} ${pc.dim("tracks")}`,
-    `${pc.bold(String(view.agents.length))} ${pc.dim("agents")}`,
-    agentStatusHistogram(view.agents),
-  ]);
+  for (const d of perWs) {
+    headerTable.push([
+      pc.bold(pc.cyan(`mu-${d.workstreamName}`)),
+      `${colorCount(d.ready.length, pc.green)} ${pc.dim("ready")}`,
+      `${colorCount(d.inProgress.length, pc.yellow)} ${pc.dim("in-progress")}`,
+      `${pc.bold(String(d.tracks.length))} ${pc.dim("tracks")}`,
+      `${pc.bold(String(d.view.agents.length))} ${pc.dim("agents")}`,
+      agentStatusHistogram(d.view.agents),
+    ]);
+  }
   remaining -= printTable(headerTable.toString());
+
+  // ── Union the per-workstream collections ──────────────────────────
+  // Sort by (workstream, intra-key). The intra-key order is preserved
+  // by Array.prototype.sort being stable in modern V8: per-workstream
+  // we already have the canonical order from listReady (ROI desc) /
+  // listInProgress (insertion) / etc.; an outer stable sort by
+  // workstreamName keeps that intact within each group.
+  const allAgents: Tagged<AgentRow>[] = perWs.flatMap((d) =>
+    d.view.agents.map(tag(d.workstreamName)),
+  );
+  const allReady: Tagged<TaskRow>[] = perWs.flatMap((d) => d.ready.map(tag(d.workstreamName)));
+  const allInProgress: Tagged<TaskRow>[] = perWs.flatMap((d) =>
+    d.inProgress.map(tag(d.workstreamName)),
+  );
+  const allTracks: Tagged<Track>[] = perWs.flatMap((d) => d.tracks.map(tag(d.workstreamName)));
+  // Stable-sort each by workstream so within-ws order is preserved.
+  // (In single-mode multi=false, this is a no-op since every row has
+  // the same ws.)
+  if (multi) {
+    const byWs = (a: { ws: string }, b: { ws: string }): number => a.ws.localeCompare(b.ws);
+    allAgents.sort(byWs);
+    allReady.sort(byWs);
+    allInProgress.sort(byWs);
+    allTracks.sort(byWs);
+  }
+  // Recent events: union with DESC sort by created_at (cross-workstream
+  // timeline view — the operator sees what happened most recently
+  // across the whole machine), then take the first eventLimit.
+  // listLogs returns oldest-first per workstream; we resort the union.
+  const allRecent: Tagged<LogRow>[] = perWs.flatMap((d) => d.recent.map(tag(d.workstreamName)));
+  allRecent.sort(
+    (a, b) => new Date(b.row.createdAt).getTime() - new Date(a.row.createdAt).getTime(),
+  );
+  const recentBounded = allRecent.slice(0, eventLimit);
 
   // Helper: render a section if there's room, deducting its cost.
   // No section preamble — the table's column headers identify the
@@ -470,45 +676,44 @@ export async function cmdHud(db: Db, opts: HudOpts): Promise<void> {
     remaining -= cost;
   };
 
+  // The "more" footer hints reference a single workstream by name in
+  // single-mode; in multi-mode we drop the `-w` suffix and let the
+  // operator pick which workstream they want to drill into.
+  const moreScope = multi ? "" : ` -w ${workstreams[0]}`;
+
   // 2. Agents.
   renderSection(
-    (cap) => formatHudAgentsTable(db, view.agents, width, cap),
-    view.agents.length,
-    `mu agent list -w ${workstream}`,
+    (cap) => formatHudAgentsTable(db, allAgents, width, cap, multi),
+    allAgents.length,
+    `mu agent list${moreScope}`,
   );
 
   // 3. Ready.
   renderSection(
-    (cap) =>
-      formatHudTasksTable(ready, width, cap, {
-        withOwner: false,
-      }),
-    ready.length,
-    `mu task next -n 0 -w ${workstream}`,
+    (cap) => formatHudTasksTable(allReady, width, cap, { withOwner: false, multi }),
+    allReady.length,
+    `mu task next -n 0${moreScope}`,
   );
 
   // 4. In progress.
   renderSection(
-    (cap) =>
-      formatHudTasksTable(inProgress, width, cap, {
-        withOwner: true,
-      }),
-    inProgress.length,
-    `mu task list --status IN_PROGRESS -w ${workstream}`,
+    (cap) => formatHudTasksTable(allInProgress, width, cap, { withOwner: true, multi }),
+    allInProgress.length,
+    `mu task list --status IN_PROGRESS${moreScope}`,
   );
 
   // 5. Tracks.
   renderSection(
-    (cap) => formatHudTracksTable(tracks, width, cap),
-    tracks.length,
-    `mu state -w ${workstream}`,
+    (cap) => formatHudTracksTable(allTracks, width, cap, multi),
+    allTracks.length,
+    `mu state${moreScope}`,
   );
 
   // 6. Recent events.
   renderSection(
-    (cap) => formatHudRecentTable(recentEvents, width, cap),
-    recentEvents.length,
-    `mu log -w ${workstream} --kind event`,
+    (cap) => formatHudRecentTable(recentBounded, width, cap, multi),
+    recentBounded.length,
+    `mu log${moreScope} --kind event`,
   );
 }
 
@@ -524,7 +729,7 @@ export function wireHudCommand(program: Command): void {
   program
     .command("hud")
     .description(
-      "Print-once HUD card for a workstream. Default: dynamic table layout that fills the terminal (or tmux pane) height + width with as much useful data as fits — header + agents + ready + in-progress + tracks + recent-events, each rendered as a cli-table3 with width-aware truncation. Use --json for the structured machine view. No loop, no tmux side effects — user composes redraw via `watch -n 5 mu hud -w X` or `tmux display-popup -E 'mu hud -w X'`.",
+      "Print-once HUD card for one or more workstreams. Default: dynamic table layout that fills the terminal (or tmux pane) height + width with as much useful data as fits — header + agents + ready + in-progress + tracks + recent-events, each rendered as a cli-table3 with width-aware truncation. Use --workstreams or --all to render multiple workstreams (gains a leading `workstream` column on every section). Use --json for the structured machine view (single-workstream shape unchanged; multi wraps in `{workstreams:[...]}`). No loop, no tmux side effects — user composes redraw via `watch -n 5 mu hud -w X` or `tmux display-popup -E 'mu hud -w X'`.",
     )
     .option(
       "-n, --lines <n>",
@@ -532,10 +737,17 @@ export function wireHudCommand(program: Command): void {
       parseLines,
     )
     .option(...WORKSTREAM_OPT)
+    .option(
+      "--workstreams <names...>",
+      "workstreams to include (repeat or comma-separate; or both)",
+    )
+    .option("--all", "include every workstream on this machine")
     .option(...JSON_OPT)
     .action(function () {
       const opts = (this as Command).opts() as {
         workstream?: string;
+        workstreams?: string[];
+        all?: boolean;
         json?: boolean;
         lines?: number;
       };
