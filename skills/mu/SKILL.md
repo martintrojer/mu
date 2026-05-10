@@ -259,7 +259,8 @@ running a wave.
   `close` (`--if-ready` no-ops unless every blocker is terminal
   — the umbrella-on-wave-done pattern), `open`, `reject`, `defer`,
   `block`, `unblock`, `update`,
-  `reparent`, `wait`, `delete`. Edge direction: `block <blocked>
+  `reparent`, `wait`, `delete` (two-phase: bare = dry-run preview;
+  `--yes` commits). Edge direction: `block <blocked>
   --by <blocker>`.
 - **Self (in-pane)**: `mu me`, `mu me tasks`, `mu me next`.
 - **Workspace**: `create`, `list` (`behind` column), `free`, `path`

@@ -97,16 +97,22 @@ export async function cmdTaskReparent(
 export async function cmdTaskDelete(
   db: Db,
   rawId: string,
-  opts: { workstream?: string; json?: boolean } = {},
+  opts: { workstream?: string; json?: boolean; yes?: boolean } = {},
 ): Promise<void> {
   const { name: localId } = await resolveEntityRef(db, rawId, opts, "task");
   assertTaskInWorkstream(db, localId, opts.workstream);
   const ws = await resolveWorkstream(opts.workstream);
-  const r = deleteTask(db, localId, ws);
-  const nextSteps: NextStep[] = [
+  // Two-phase: bare = dry-run preview; --yes commits. Mirrors
+  // `mu workstream destroy` / `mu archive delete` / `mu snapshot
+  // prune`. Surfaced by feedback ws task fb_task_delete_no_yes
+  // (impact=30): the dogfood report typed `mu task delete X --yes`
+  // (mirroring workstream destroy) and got 'unknown option --yes'
+  // because the verb took no confirmation flag at all; two failed
+  // deletes left long-named tasks lingering until noticed.
+  const dryRun = opts.yes !== true;
+  const r = deleteTask(db, localId, ws, { dryRun });
+  const commitNextSteps: NextStep[] = [
     {
-      // A snapshot was taken by deleteTask itself before the cascade
-      // (snap_schema commit ab82a11). `mu undo` reverts the latest one.
       intent: "Undo (a snapshot was taken before the delete)",
       command: "mu undo --yes",
     },
@@ -115,16 +121,61 @@ export async function cmdTaskDelete(
       command: `mu task list -w ${ws}`,
     },
   ];
-  if (opts.json) {
-    emitJson({ taskName: localId, ...r, nextSteps });
+  const dryRunNextSteps: NextStep[] = [
+    {
+      intent: "Confirm and actually delete (cascades to edges + notes)",
+      command: `mu task delete ${localId} -w ${ws} --yes`,
+    },
+    {
+      intent: "After deleting, undo if you regret it (DB only)",
+      command: "mu undo --yes",
+    },
+    {
+      intent: "Inspect the task + edges before deciding",
+      command: `mu task show ${localId} -w ${ws}`,
+    },
+  ];
+
+  // Missing row — idempotent no-op (same outcome whether dry-run or
+  // --yes). The `present: false` discriminator keeps this distinct
+  // from a dry-run that found an existing task with no edges/notes.
+  if (!r.present) {
+    if (opts.json) {
+      emitJson({ taskName: localId, ...r, nextSteps: commitNextSteps });
+      return;
+    }
+    console.log(pc.dim(`no task named ${localId} (already deleted?)`));
     return;
   }
-  if (!r.deleted) {
-    console.log(pc.dim(`no task named ${localId} (already deleted?)`));
+
+  // Dry-run: print the cascade preview. The task DOES exist (present
+  // checked above); zero edges + zero notes is a real cascade-of-one.
+  if (r.dryRun) {
+    if (opts.json) {
+      emitJson({ taskName: localId, ...r, nextSteps: dryRunNextSteps });
+      return;
+    }
+    console.log(
+      r.deletedEdges === 0 && r.deletedNotes === 0
+        ? `Would delete ${pc.bold(localId)} ${pc.dim("(no edges, no notes)")}`
+        : `Would delete ${pc.bold(localId)} ${pc.dim(`(edges: ${r.deletedEdges}, notes: ${r.deletedNotes})`)}`,
+    );
+    console.log("");
+    console.log(pc.dim("(dry-run; rerun with --yes to actually delete)"));
+    console.log(
+      pc.dim("A snapshot will be taken before the delete; `mu undo --yes` reverts it (DB only)."),
+    );
+    printNextSteps(dryRunNextSteps);
+    return;
+  }
+
+  // Commit path.
+  if (opts.json) {
+    emitJson({ taskName: localId, ...r, nextSteps: commitNextSteps });
     return;
   }
   console.log(
     `Deleted ${pc.bold(localId)} ${pc.dim(`(edges: ${r.deletedEdges}, notes: ${r.deletedNotes})`)}`,
   );
-  printNextSteps(nextSteps);
+  printNextSteps(commitNextSteps);
 }

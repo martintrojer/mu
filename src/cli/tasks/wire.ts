@@ -367,12 +367,17 @@ export function wireTaskCommands(program: Command): void {
   task
     .command("delete <id>")
     .description(
-      "Delete a task. Cascades to task_edges and task_notes via FK. Idempotent on missing.",
+      "Delete a task (cascades edges + notes via FK). Two-phase: bare = dry-run preview; --yes commits. Idempotent on missing. Auto-snapshots before the commit; `mu undo --yes` reverts (DB only).",
     )
+    .option("-y, --yes", "actually delete (without --yes prints a dry-run preview)")
     .option(...WORKSTREAM_OPT)
     .option(...JSON_OPT)
     .action(function (id: string) {
-      const opts = (this as Command).opts() as { workstream?: string; json?: boolean };
+      const opts = (this as Command).opts() as {
+        workstream?: string;
+        json?: boolean;
+        yes?: boolean;
+      };
       return handle((db) => cmdTaskDelete(db, id, opts))();
     });
 

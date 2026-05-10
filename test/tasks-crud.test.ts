@@ -652,11 +652,38 @@ describe("deleteTask", () => {
     expect((db.prepare("SELECT COUNT(*) AS n FROM task_notes").get() as { n: number }).n).toBe(0);
   });
 
-  it("is idempotent on a missing task (deleted=false; counts=0)", () => {
+  it("is idempotent on a missing task (deleted=false; counts=0; present=false)", () => {
     expect(deleteTask(db, "ghost", "auth")).toEqual({
       deleted: false,
       deletedEdges: 0,
       deletedNotes: 0,
+      dryRun: false,
+      present: false,
+    });
+  });
+
+  it("dryRun: true previews the cascade without mutating (existing task)", () => {
+    const r = deleteTask(db, "b", "auth", { dryRun: true });
+    expect(r).toEqual({
+      deleted: false,
+      deletedEdges: 2,
+      deletedNotes: 2,
+      dryRun: true,
+      present: true,
+    });
+    // DB unchanged — b still there, edges still wired, notes intact.
+    expect(getTask(db, "b", "auth")).toBeDefined();
+    expect((db.prepare("SELECT COUNT(*) AS n FROM task_edges").get() as { n: number }).n).toBe(2);
+    expect((db.prepare("SELECT COUNT(*) AS n FROM task_notes").get() as { n: number }).n).toBe(2);
+  });
+
+  it("dryRun on a missing task returns present=false dryRun=true", () => {
+    expect(deleteTask(db, "ghost", "auth", { dryRun: true })).toEqual({
+      deleted: false,
+      deletedEdges: 0,
+      deletedNotes: 0,
+      dryRun: true,
+      present: false,
     });
   });
 });

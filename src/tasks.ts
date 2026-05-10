@@ -1073,12 +1073,39 @@ export function removeBlockEdge(
 // ─── deleteTask ───────────────────────────────────────────────────────────
 
 export interface DeleteTaskResult {
-  /** True iff the row existed and was deleted. */
+  /** True iff the row existed and was deleted. False on a dry-run
+   *  (preview) AND on the idempotent missing-row case. */
   deleted: boolean;
-  /** Number of `task_edges` rows cascaded out (informational). */
+  /** Number of `task_edges` rows cascaded out (informational). On a
+   *  dry-run, this is the would-be count. */
   deletedEdges: number;
-  /** Number of `task_notes` rows cascaded out (informational). */
+  /** Number of `task_notes` rows cascaded out (informational). On a
+   *  dry-run, this is the would-be count. */
   deletedNotes: number;
+  /** True iff this was a dry-run (`opts.dryRun: true`). On a
+   *  dry-run `deleted` is false and the counts are the would-be
+   *  counts; the DB is unchanged. Always false on a commit / on a
+   *  missing-row idempotent no-op. */
+  dryRun: boolean;
+  /** True iff a matching task row was found at the time of the
+   *  call. Discriminator for the CLI: a dry-run that found nothing
+   *  (`present: false`) renders differently from a dry-run that
+   *  found an existing task with zero edges and zero notes
+   *  (`present: true, deletedEdges: 0, deletedNotes: 0`). */
+  present: boolean;
+}
+
+export interface DeleteTaskOptions {
+  /** When true, return the cascade preview (would-be edge / note
+   *  counts) without mutating and without snapshotting. The CLI uses
+   *  this to power the bare `mu task delete <id>` two-phase pattern
+   *  (mirrors `mu workstream destroy` / `mu archive delete` /
+   *  `mu snapshot prune`). Surfaced by feedback ws task
+   *  fb_task_delete_no_yes (impact=30): a dogfood report typed
+   *  `mu task delete X --yes` (mirroring workstream destroy) and got
+   *  'unknown option --yes' — the verb took no confirmation flag at
+   *  all. Two failed deletes left long-named tasks lingering. */
+  dryRun?: boolean;
 }
 
 /**
@@ -1088,21 +1115,28 @@ export interface DeleteTaskResult {
  *
  * Pre-counts the cascade victims for reporting because SQLite's
  * `changes()` only reports rows directly affected by the DELETE.
+ *
+ * With `opts.dryRun: true`, returns the would-be counts without
+ * touching the DB and without taking a snapshot (no mutation = no
+ * snapshot — same reasoning that gates the closeTask snap on the
+ * idempotent no-op path). The CLI bare `mu task delete <id>` form
+ * uses this; `--yes` calls through with `dryRun: false`.
  */
-export function deleteTask(db: Db, localId: string, workstream: string): DeleteTaskResult {
+export function deleteTask(
+  db: Db,
+  localId: string,
+  workstream: string,
+  opts: DeleteTaskOptions = {},
+): DeleteTaskResult {
+  const dryRun = opts.dryRun === true;
   const before = getTask(db, localId, workstream);
-  // Pre-mutation snapshot. delete cascades into task_edges and
-  // task_notes; no per-row history can reconstruct it. Skip when the
-  // row doesn't exist (the verb is idempotent on missing).
-  if (before) {
-    captureSnapshot(db, `task delete ${localId}`, before.workstreamName);
-  }
   if (!before) {
-    return { deleted: false, deletedEdges: 0, deletedNotes: 0 };
+    // Idempotent on a missing row regardless of dryRun.
+    return { deleted: false, deletedEdges: 0, deletedNotes: 0, dryRun, present: false };
   }
   const taskId = taskIdFor(db, localId, before.workstreamName);
   if (taskId === null) {
-    return { deleted: false, deletedEdges: 0, deletedNotes: 0 };
+    return { deleted: false, deletedEdges: 0, deletedNotes: 0, dryRun, present: false };
   }
   const edgesBefore = (
     db
@@ -1114,6 +1148,19 @@ export function deleteTask(db: Db, localId: string, workstream: string): DeleteT
       n: number;
     }
   ).n;
+  if (dryRun) {
+    return {
+      deleted: false,
+      deletedEdges: edgesBefore,
+      deletedNotes: notesBefore,
+      dryRun: true,
+      present: true,
+    };
+  }
+  // Pre-mutation snapshot. delete cascades into task_edges and
+  // task_notes; no per-row history can reconstruct it. Taken AFTER
+  // the dry-run early-return so a preview never touches snapshots.
+  captureSnapshot(db, `task delete ${localId}`, before.workstreamName);
   const result = db.prepare("DELETE FROM tasks WHERE id = ?").run(taskId);
   const deleted = result.changes > 0;
   if (deleted) {
@@ -1123,7 +1170,13 @@ export function deleteTask(db: Db, localId: string, workstream: string): DeleteT
       `task delete ${localId} (cascade: ${edgesBefore} edges, ${notesBefore} notes)`,
     );
   }
-  return { deleted, deletedEdges: edgesBefore, deletedNotes: notesBefore };
+  return {
+    deleted,
+    deletedEdges: edgesBefore,
+    deletedNotes: notesBefore,
+    dryRun: false,
+    present: true,
+  };
 }
 
 // ─── updateTask ───────────────────────────────────────────────────────────

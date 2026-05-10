@@ -10,6 +10,29 @@ called out under "Breaking" in each entry.
 
 ## [Unreleased]
 
+### Changed
+
+- **`mu task delete <id>` is now two-phase: bare = dry-run preview;
+  `--yes` commits** (`fb_task_delete_no_yes`, impact=30). Pre-1.0
+  breaking change. The dogfood report: typed `mu task delete X
+  --yes` (mirroring `mu workstream destroy --yes`) and got
+  'unknown option --yes' — the verb took no confirmation flag at
+  all. Two failed deletes left long-named tasks lingering until
+  noticed. Mirrors `mu workstream destroy` / `mu archive delete`
+  / `mu snapshot prune`. Bare `mu task delete <id>` now prints
+  the cascade preview (the task + edges that would drop + notes
+  that would drop, with counts) plus a Next: hint pointing at
+  `mu task delete <id> --yes`; nothing is mutated and no snapshot
+  is taken on the dry-run. `--yes` keeps today's behaviour
+  byte-for-byte (auto-snapshot, then DELETE; FK CASCADE drops
+  task_edges + task_notes). JSON shape: dry-run carries `dryRun:
+  true` + `deletedEdges` / `deletedNotes` (would-be counts) +
+  `present: boolean`; commit carries `dryRun: false` + actual
+  counts. SDK: `deleteTask` gains `opts: { dryRun?: boolean }`
+  and the result type gains `dryRun: boolean` + `present:
+  boolean` (discriminator for the missing-row case). Idempotent
+  on a missing task in both phases.
+
 ### Added
 
 - **`mu task close --if-ready`: idempotent umbrella-on-wave-done

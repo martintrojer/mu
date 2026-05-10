@@ -766,7 +766,7 @@ mu sql "SELECT name FROM sqlite_master WHERE type IN ('table','view') ORDER BY t
 | What did I touch most recently / what's stale         | `mu task list --sort recency` / `--sort age` |
 | Visualise what blocks what                            | `mu task tree <id> [--json]`            |
 | Show row + edges + notes                              | `mu task show <id> [--json]`            |
-| Delete + cascade edges/notes                          | `mu task delete <id>`                   |
+| Delete + cascade edges/notes (two-phase: bare = dry-run; `--yes` commits) | `mu task delete <id>` / `mu task delete <id> --yes` |
 | Add / remove a single edge                            | `mu task block` / `mu task unblock`     |
 | Replace all blockers atomically                       | `mu task reparent <id> --blocked-by ...`    |
 | Modify scalar fields                                  | `mu task update <id> [--title ...]`     |
