@@ -14,6 +14,12 @@
 //   3 = not found (no such agent / task / pane)
 //   4 = conflict (name collision, double-claim, cycle, etc.)
 //   5 = substrate unavailable (tmux not running, DB locked)
+//   6 = REAPER_DETECTED — `mu task wait` aborted because the
+//       per-poll reconciler flipped a watched task IN_PROGRESS →
+//       OPEN (the owning pane was dead). Only fires when the wait
+//       target is CLOSED; with any other target the reaper-flip is
+//       not necessarily a wait-incompatible event. See
+//       task_wait_reconcile_dead_panes.
 
 import { readFileSync, realpathSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -74,6 +80,7 @@ import {
   ClaimerNotRegisteredError,
   CrossWorkstreamEdgeError,
   CycleError,
+  ReaperDetectedDuringWaitError,
   TASK_STATUS_LIST,
   TaskAlreadyOwnedError,
   TaskExistsError,
@@ -393,6 +400,12 @@ export function classifyError(err: unknown): { label: string; exitCode: number }
   }
   if (err instanceof TmuxError || err instanceof PaneNotFoundError) {
     return { label: "tmux", exitCode: 5 };
+  }
+  if (err instanceof ReaperDetectedDuringWaitError) {
+    // task_wait_reconcile_dead_panes: distinct exit code (6) so
+    // operator scripts can branch on "worker died, not a generic
+    // failure" vs the timeout (5) and the typed conflict family (4).
+    return { label: "reaper", exitCode: 6 };
   }
   if (err instanceof SnapshotFileMissingError) {
     // Substrate-level: the .db file is gone but the row still says it

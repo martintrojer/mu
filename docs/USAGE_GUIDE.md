@@ -729,6 +729,21 @@ mu sql "SELECT name FROM sqlite_master WHERE type IN ('table','view') ORDER BY t
 | Read the activity log / subscribe to events           | `mu log [--tail] [--kind event]`        |
 | Block until tasks reach a status (orchestrator wait)  | `mu task wait <id> [<id>...] [--any] [--timeout S]` |
 
+### Wait exit codes (`mu task wait`)
+
+`mu task wait` polls the watched tasks every second (cheap indexed
+SELECT + a per-poll workstream reconcile) and exits with one of:
+
+| Exit | Meaning                                                                 |
+|------|-------------------------------------------------------------------------|
+| `0`  | The wait condition was met (`--all` reached, or `--any` saw at least one). |
+| `5`  | `--timeout` expired before the condition was met.                         |
+| `6`  | **REAPER_DETECTED.** A watched task transitioned `IN_PROGRESS → OPEN` between polls because the reconciler detected the owning pane was dead and the reaper flipped the task back. Fires only when the wait target is `CLOSED` (the default) — with `--status OPEN` a reaper-flip TO open IS the success and the wait returns `0`. Re-dispatch a worker (`mu agent spawn ... && mu task claim --for ...`) and re-run the wait. (`task_wait_reconcile_dead_panes`) |
+
+The per-poll reconcile means a worker pane that died **before** you
+ran `mu task wait` is also reaped on the first tick — you'll see exit
+`6` in well under a second instead of running out the `--timeout`.
+
 ### Common ad-hoc queries
 
 ```bash

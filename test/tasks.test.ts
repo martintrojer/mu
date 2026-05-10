@@ -1788,9 +1788,9 @@ describe("waitForTasks", () => {
     expect(r.timedOut).toBe(false);
     expect(r.elapsedMs).toBeLessThan(100); // didn't sleep through any poll cycle
     expect(r.tasks).toEqual([
-      { name: "a", status: "CLOSED", reachedTarget: true, stuck: false },
-      { name: "b", status: "CLOSED", reachedTarget: true, stuck: false },
-      { name: "c", status: "CLOSED", reachedTarget: true, stuck: false },
+      { name: "a", status: "CLOSED", owner: null, reachedTarget: true, stuck: false },
+      { name: "b", status: "CLOSED", owner: null, reachedTarget: true, stuck: false },
+      { name: "c", status: "CLOSED", owner: null, reachedTarget: true, stuck: false },
     ]);
   });
 

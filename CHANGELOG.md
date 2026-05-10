@@ -39,6 +39,18 @@ called out under "Breaking" in each entry.
   LOC src/ (entire `src/cli/hud.ts` lifted into `src/cli/state.ts`
   as render helpers).
 
+- **`mu task wait` now reconciles the workstream each poll and fails
+  fast on a dead worker pane** (`task_wait_reconcile_dead_panes`).
+  Per-poll `reconcile(mode: "full")` runs the reaper, which flips an
+  IN_PROGRESS task whose owning pane is gone back to OPEN. With the
+  default `--status CLOSED` the wait then exits with new code `6`
+  (REAPER_DETECTED) and a stderr message naming the dead task + prior
+  owner — cures the silent multi-minute stall after a tmux server
+  restart kills worker panes. Suppressed when `--status` is not
+  CLOSED (a reaper-flip TO open IS the success when `--status OPEN`).
+  New `ReaperDetectedDuringWaitError`; `TaskWaitTaskState` gains an
+  `owner` field; SDK gains a `beforePoll` hook on `waitForTasks`.
+
 - **`mu workstream destroy --empty` now also surfaces unregistered
   `mu-*` tmux sessions** (`destroy_empty_match_tmux_only`). Test
   litter and partial-destroy remnants (DB row gone, tmux session

@@ -258,7 +258,11 @@ mu task update <id> [--title|--impact|--effort-days]
 mu task reparent <id> --blocked-by A,B   # atomic edge replacement
 mu task wait <id> [<id>...] [--status S] [--any] [--timeout SECONDS]
                                          # block until tasks reach status
-                                         # (default CLOSED, all-of); exit 0 / 5
+                                         # (default CLOSED, all-of). Reconciles
+                                         # each poll so a dead-pane worker fails
+                                         # fast: exit 0 met / 5 timeout / 6 the
+                                         # reaper flipped a watched task back to
+                                         # OPEN (only when target=CLOSED).
 mu task delete <id>                  # cascades to edges+notes; no undo
 
 # Self-identification (1 verb, 2 subcommands) — in-pane only

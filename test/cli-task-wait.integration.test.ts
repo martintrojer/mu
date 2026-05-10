@@ -1,0 +1,232 @@
+// Integration test for `mu task wait` per-poll reconcile + reaper-flip
+// detection (task_wait_reconcile_dead_panes).
+//
+// Real tmux + real SQLite. Skipped when not running inside tmux.
+//
+// What we cover (Option B of the design spec):
+//   1. Wait CLOSED → kill the worker pane mid-wait → exit 6 within
+//      ~poll-interval seconds (NOT --timeout).
+//   2. stderr message includes the task id, the prior owner, and the
+//      word `reaper`.
+//   3. Wait OPEN → reaper-flip → wait succeeds (target reached;
+//      no exit-6 noise; reaper-flip TO open IS the success).
+//   4. Pane stays alive + the task closes normally → exit 0; no
+//      exit-6 noise (the reconcile-each-poll path doesn't break the
+//      happy case).
+//   5. --any with multiple watched tasks: first ref to either CLOSE
+//      or DIE wins.
+//
+// Cadence: tests use a generous --timeout and a tight pollMs (via
+// MU_TEST_WAIT_POLL_MS) so a successful exit-6 lands in <1s rather
+// than running out the timeout. The fail-fast property is exactly
+// what the verb's promotion criteria require.
+
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { spawnAgent } from "../src/agents.js";
+import { type Db, openDb } from "../src/db.js";
+import { addTask, claimTask, getTask, setTaskStatus } from "../src/tasks.js";
+import { setWaitSleepForTests } from "../src/tasks/wait.js";
+import { killPane, killSession, paneExists, resetTmuxExecutor } from "../src/tmux.js";
+import { ensureWorkstream } from "../src/workstream.js";
+import { runCli } from "./_runCli.js";
+
+const TMUX_AVAILABLE = process.env.TMUX !== undefined && process.env.TMUX !== "";
+const describeIfTmux = TMUX_AVAILABLE ? describe : describe.skip;
+
+describeIfTmux("mu task wait — reaper-detection integration", () => {
+  let tempDir: string;
+  let dbPath: string;
+  let db: Db;
+  let workstream: string;
+  let session: string;
+  // Restore-the-default poll-sleep on teardown; tests below shrink it
+  // to a few ms so `wait` fails fast.
+  let restoreSleep: ((ms: number) => Promise<void>) | undefined;
+
+  beforeEach(() => {
+    resetTmuxExecutor();
+    process.env.MU_SPAWN_LIVENESS_MS = "0";
+    tempDir = mkdtempSync(join(tmpdir(), "mu-wait-i-"));
+    dbPath = join(tempDir, "mu.db");
+    db = openDb({ path: dbPath });
+    const tag = `${process.pid.toString(36)}-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`;
+    workstream = `wait-${tag}`;
+    session = `mu-${workstream}`;
+    ensureWorkstream(db, workstream);
+    // Tight poll cadence so the reconcile-each-poll path observes the
+    // dead pane well before any --timeout. 25ms keeps the suite snappy
+    // without starving the tmux helpers.
+    restoreSleep = setWaitSleepForTests(async (ms) => {
+      await new Promise((resolve) => setTimeout(resolve, Math.min(ms, 25)));
+    });
+  });
+
+  afterEach(async () => {
+    if (restoreSleep !== undefined) setWaitSleepForTests(restoreSleep);
+    const key = "MU_SPAWN_LIVENESS_MS";
+    delete process.env[key];
+    try {
+      db.close();
+    } catch {}
+    try {
+      await killSession(session);
+    } catch {}
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  const SH_COMMAND = "sh -c 'while true; do sleep 60; done'";
+
+  // Wait until the tmux pane id is gone from the live pane set (poll
+  // 50ms × 20). tmux briefly reports a killed pane as still alive.
+  async function waitForPaneGone(paneId: string): Promise<void> {
+    for (let i = 0; i < 20; i++) {
+      if (!(await paneExists(paneId))) return;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+  }
+
+  it("kills the worker mid-wait → exit 6 within poll-interval (NOT --timeout)", async () => {
+    const agent = await spawnAgent(db, {
+      name: "alice",
+      workstream,
+      cli: "sh",
+      command: SH_COMMAND,
+    });
+    addTask(db, {
+      localId: "build",
+      workstream,
+      title: "Build",
+      impact: 50,
+      effortDays: 1,
+    });
+    await claimTask(db, "build", { agentName: "alice", workstream });
+    expect(getTask(db, "build", workstream)?.status).toBe("IN_PROGRESS");
+
+    // Schedule the pane death AFTER the wait has entered its poll
+    // loop. 100ms is comfortably past the initial snapshot+sleep.
+    setTimeout(() => {
+      void killPane(agent.paneId);
+    }, 100);
+
+    const start = Date.now();
+    // Generous --timeout (60s); if exit 6 doesn't fire fast we'd
+    // notice the test taking >> a second.
+    const { exitCode, stderr, error } = await runCli(
+      ["task", "wait", "build", "-w", workstream, "--timeout", "60"],
+      dbPath,
+    );
+    const elapsedMs = Date.now() - start;
+
+    expect(error).toBeUndefined();
+    expect(exitCode).toBe(6);
+    expect(stderr).toMatch(/reaper/i);
+    expect(stderr).toContain("build");
+    expect(stderr).toContain("alice");
+    // Fail-fast property: well under any reasonable --timeout. Allow
+    // a generous 10s ceiling for slow CI; the real number is <1s.
+    expect(elapsedMs).toBeLessThan(10_000);
+    // Pane really did die (defensive — confirms the test set up the
+    // race correctly, not just that exit 6 fired for some other reason).
+    await waitForPaneGone(agent.paneId);
+  });
+
+  it("--status OPEN + reaper-flip → exit 0 (reaper flip IS the success)", async () => {
+    const agent = await spawnAgent(db, {
+      name: "bob",
+      workstream,
+      cli: "sh",
+      command: SH_COMMAND,
+    });
+    addTask(db, {
+      localId: "deploy",
+      workstream,
+      title: "Deploy",
+      impact: 50,
+      effortDays: 1,
+    });
+    await claimTask(db, "deploy", { agentName: "bob", workstream });
+
+    setTimeout(() => {
+      void killPane(agent.paneId);
+    }, 100);
+
+    const { exitCode, stderr, error } = await runCli(
+      ["task", "wait", "deploy", "-w", workstream, "--status", "OPEN", "--timeout", "60"],
+      dbPath,
+    );
+    expect(error).toBeUndefined();
+    expect(exitCode).toBeNull(); // clean return; no process.exit
+    expect(stderr).not.toMatch(/reaper/i);
+    expect(getTask(db, "deploy", workstream)?.status).toBe("OPEN");
+  });
+
+  it("pane stays alive + task closes normally → exit 0; no exit-6 noise", async () => {
+    await spawnAgent(db, {
+      name: "carol",
+      workstream,
+      cli: "sh",
+      command: SH_COMMAND,
+    });
+    addTask(db, {
+      localId: "review",
+      workstream,
+      title: "Review",
+      impact: 50,
+      effortDays: 1,
+    });
+    await claimTask(db, "review", { agentName: "carol", workstream });
+
+    // Close the task mid-wait via the SDK (normal happy path).
+    setTimeout(() => {
+      setTaskStatus(db, "review", "CLOSED", { workstream });
+    }, 100);
+
+    const { exitCode, stderr, error } = await runCli(
+      ["task", "wait", "review", "-w", workstream, "--timeout", "60"],
+      dbPath,
+    );
+    expect(error).toBeUndefined();
+    expect(exitCode).toBeNull();
+    expect(stderr).not.toMatch(/reaper/i);
+    expect(getTask(db, "review", workstream)?.status).toBe("CLOSED");
+  });
+
+  it("--any: first watched task to die wins (exit 6)", async () => {
+    const a1 = await spawnAgent(db, {
+      name: "w1",
+      workstream,
+      cli: "sh",
+      command: SH_COMMAND,
+    });
+    await spawnAgent(db, {
+      name: "w2",
+      workstream,
+      cli: "sh",
+      command: SH_COMMAND,
+    });
+    addTask(db, { localId: "t1", workstream, title: "T1", impact: 50, effortDays: 1 });
+    addTask(db, { localId: "t2", workstream, title: "T2", impact: 50, effortDays: 1 });
+    await claimTask(db, "t1", { agentName: "w1", workstream });
+    await claimTask(db, "t2", { agentName: "w2", workstream });
+
+    // Kill w1's pane mid-wait. With --any the wait normally returns 0
+    // as soon as ONE task reaches CLOSED; here, with neither closing,
+    // the reaper-flip on t1 wins and we get exit 6 (suppression rule
+    // is target=CLOSED, which is the default).
+    setTimeout(() => {
+      void killPane(a1.paneId);
+    }, 100);
+
+    const { exitCode, stderr } = await runCli(
+      ["task", "wait", "t1", "t2", "--any", "-w", workstream, "--timeout", "60"],
+      dbPath,
+    );
+    expect(exitCode).toBe(6);
+    // Should name t1 (the dead one) — not t2.
+    expect(stderr).toContain("t1");
+    expect(stderr).toMatch(/reaper/i);
+  });
+});

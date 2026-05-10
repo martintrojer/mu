@@ -249,6 +249,55 @@ export class CycleError extends Error implements HasNextSteps {
   }
 }
 
+/**
+ * Thrown by the `mu task wait` CLI wrapper when the per-poll
+ * reconciler detects that a watched task transitioned
+ * `IN_PROGRESS → OPEN` between polls (the reaper saw the owner's
+ * pane was gone and flipped the task back). With `--status CLOSED`
+ * (the default) the wait can never satisfy by progress — the worker
+ * is dead — so we abort fast instead of running out the operator's
+ * `--timeout`.
+ *
+ * Maps to exit code 6 (REAPER_DETECTED) via the cli.ts handler. The
+ * suppression rule (only fire when target=CLOSED) lives in the
+ * caller; this error type is a pure data carrier.
+ *
+ * Surfaced live by task_wait_reconcile_dead_panes (twice in one
+ * v0.3 dispatch wave: tmux restart killed worker panes; `mu task
+ * wait --timeout 1800` blocked silently for 25 min instead of
+ * failing in seconds).
+ */
+export class ReaperDetectedDuringWaitError extends Error implements HasNextSteps {
+  override readonly name = "ReaperDetectedDuringWaitError";
+  constructor(
+    public readonly taskId: string,
+    public readonly previousOwner: string | null,
+    public readonly workstream: string,
+  ) {
+    const ownerBit = previousOwner !== null ? `owner=${previousOwner}` : "owner=<unknown>";
+    super(
+      `task ${taskId} was IN_PROGRESS ${ownerBit} until just now; reaper detected dead pane and flipped to OPEN. wait abandoned. Re-dispatch a worker and retry.`,
+    );
+  }
+  errorNextSteps(): NextStep[] {
+    const ws = this.workstream;
+    return [
+      {
+        intent: "Inspect the task's current state",
+        command: `mu task show ${this.taskId} -w ${ws}`,
+      },
+      {
+        intent: "List live agents in the workstream (post-reap)",
+        command: `mu agent list -w ${ws}`,
+      },
+      {
+        intent: "Re-dispatch a fresh worker, then re-run the wait",
+        command: `mu agent spawn <name> -w ${ws}  &&  mu task claim ${this.taskId} --for <name> -w ${ws}`,
+      },
+    ];
+  }
+}
+
 export class CrossWorkstreamEdgeError extends Error implements HasNextSteps {
   override readonly name = "CrossWorkstreamEdgeError";
   constructor(

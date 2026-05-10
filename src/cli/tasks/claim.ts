@@ -21,7 +21,15 @@ import {
 } from "../../cli.js";
 import type { Db } from "../../db.js";
 import { type NextStep, pc, printNextSteps } from "../../output.js";
-import { type TaskWaitResult, claimTask, releaseTask, waitForTasks } from "../../tasks.js";
+import { reconcile } from "../../reconcile.js";
+import {
+  ReaperDetectedDuringWaitError,
+  type TaskWaitResult,
+  claimTask,
+  getTask,
+  releaseTask,
+  waitForTasks,
+} from "../../tasks.js";
 
 export async function cmdTaskRelease(
   db: Db,
@@ -177,9 +185,70 @@ export async function cmdTaskWait(
     timeoutMs: number;
     stuckAfterMs: number;
     workstream: string;
+    beforePoll?: () => Promise<void>;
   } = { timeoutMs, stuckAfterMs, workstream: ws };
   if (statusOpt !== undefined) sdkOpts.status = statusOpt;
   if (opts.any) sdkOpts.any = true;
+
+  // task_wait_reconcile_dead_panes: per-poll reconcile + reaper-flip
+  // detection. We keep a snapshot of each watched task's prior
+  // (status, owner) so that AFTER reconcile (which may have flipped
+  // IN_PROGRESS → OPEN for a dead-pane worker) we can spot the
+  // transition and abort with exit 6 instead of running out the
+  // operator's --timeout.
+  //
+  //   - Reconcile runs on EVERY poll regardless of target. The
+  //     reaper is exactly what we want to fire, and it only does so
+  //     during a `"full"` reconcile (the prune deletes the agent row
+  //     which triggers the IN_PROGRESS → OPEN flip). When the wait
+  //     target is OPEN, a dead-pane worker reaching OPEN-via-reaper
+  //     IS the success condition — the reconcile call is what makes
+  //     that succeed at all.
+  //   - Reconcile is per-workstream; cmdTaskWait already enforces
+  //     single-workstream scope via assertTaskInWorkstream above, so
+  //     one reconcile call covers every watched task.
+  //   - Exit-6 suppression: only when the wait target is CLOSED.
+  //     Other targets treat reaper-flip as a legitimate state change
+  //     (target=OPEN: it's the success; target=IN_PROGRESS: an
+  //     operator polling for the next worker to claim doesn't want
+  //     a dead predecessor to abort their wait).
+  //   - First-iteration coverage: beforePoll runs BEFORE the initial
+  //     snapshot too (waitForTasks contract), so a worker that died
+  //     BEFORE the operator typed `mu task wait` still triggers exit
+  //     6 on the first tick.
+  const target = statusOpt ?? "CLOSED";
+  const reaperExitEnabled = target === "CLOSED";
+  const priorState = new Map<string, { status: string; owner: string | null }>();
+  sdkOpts.beforePoll = async () => {
+    // Cheap (~few ms) tmux list-panes + per-survivor capture-pane.
+    // "status-only" mode would skip the prune — but the prune is
+    // exactly what fires the reaper that flips the task. Use
+    // "full" mode so dead panes get cleaned up AND the reaper runs.
+    try {
+      await reconcile(db, { workstream: ws, mode: "full" });
+    } catch {
+      // Tmux substrate hiccup mid-wait: don't crash the wait. The
+      // next iteration retries; the exit-6 path stays correct
+      // because the prior-state map only fires on a real flip we
+      // observed.
+    }
+    if (!reaperExitEnabled) return;
+    for (const id of bareIds) {
+      const row = getTask(db, id, ws);
+      const status = row?.status ?? "OPEN";
+      const owner = row?.ownerName ?? null;
+      const prior = priorState.get(id);
+      if (prior !== undefined && prior.status === "IN_PROGRESS" && status === "OPEN") {
+        // Reaper-flip detected on a watched task. The prior owner
+        // is the agent whose pane just got pruned (the FK
+        // CASCADE-SET-NULL on agents.id has already cleared the
+        // current row's owner; we use the snapshot from the
+        // previous tick).
+        throw new ReaperDetectedDuringWaitError(id, prior.owner, ws);
+      }
+      priorState.set(id, { status, owner });
+    }
+  };
 
   const result = await waitForTasks(db, bareIds, sdkOpts);
 

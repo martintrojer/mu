@@ -107,6 +107,18 @@ export interface TaskWaitOptions {
    *  (or a wrapping policy) decides whether to force-close, re-prompt,
    *  or escalate. */
   stuckAfterMs?: number;
+  /** Optional async hook run BEFORE every snapshot (initial + each
+   *  poll iteration). The CLI uses this to reconcile the workstream
+   *  each tick (reaper flips IN_PROGRESS → OPEN for dead-pane
+   *  workers) and to throw a typed error when a reaper-flip on a
+   *  watched task should abandon the wait — see
+   *  task_wait_reconcile_dead_panes. Throwing from `beforePoll`
+   *  propagates out of `waitForTasks` unchanged.
+   *
+   *  Kept as a generic seam (not a `--reconcile`-shaped option) so
+   *  the SDK module stays free of tmux/reconcile imports — that
+   *  layering belongs above the SDK in the CLI wrapper. */
+  beforePoll?: () => Promise<void>;
 }
 
 export interface TaskWaitTaskState {
@@ -114,6 +126,9 @@ export interface TaskWaitTaskState {
   name: string;
   /** Current status (at the moment we exit). */
   status: TaskStatus;
+  /** Owner at exit time (NULL when unowned, after release, or after
+   *  the reaper flipped IN_PROGRESS → OPEN due to a dead pane). */
+  owner: string | null;
   /** True when this task's status equals the target. */
   reachedTarget: boolean;
   /** True when the task is IN_PROGRESS, owned by a registered agent
@@ -227,7 +242,7 @@ export async function waitForTasks(
             `Worker likely committed but skipped \`mu task close ${id}\`.\x1b[0m\n`,
         );
       }
-      return { name: id, status, reachedTarget: status === target, stuck };
+      return { name: id, status, owner, reachedTarget: status === target, stuck };
     });
     const reachedCount = tasks.filter((t) => t.reachedTarget).length;
     return {
@@ -242,7 +257,11 @@ export async function waitForTasks(
   /** Has the wait condition been met? */
   const isDone = (snap: TaskWaitResult): boolean => (wantAny ? snap.anyReached : snap.allReached);
 
-  // Initial check: maybe we're already done.
+  // Initial check: maybe we're already done. Run beforePoll first so
+  // the CLI's per-poll reconcile (task_wait_reconcile_dead_panes) runs
+  // even on the immediate-exit path — a dead-pane worker that died
+  // BEFORE the operator typed `mu task wait` should still fail fast.
+  if (opts.beforePoll) await opts.beforePoll();
   let snap = snapshot();
   if (isDone(snap)) return snap;
 
@@ -267,6 +286,7 @@ export async function waitForTasks(
       await currentWaitSleep(sleepMs);
     }
     pollCount += 1;
+    if (opts.beforePoll) await opts.beforePoll();
     snap = snapshot();
     if (isDone(snap)) return snap;
   }

@@ -35,6 +35,7 @@ export {
   ClaimerNotRegisteredError,
   CrossWorkstreamEdgeError,
   CycleError,
+  ReaperDetectedDuringWaitError,
   TaskAlreadyOwnedError,
   TaskExistsError,
   TaskHasOpenDependentsError,
