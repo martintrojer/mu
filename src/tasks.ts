@@ -81,6 +81,11 @@ export {
 export interface TaskRow {
   /** Per-workstream-unique TEXT name. The operator-facing identifier. */
   name: string;
+  /** Alias for `name` — the per-workstream-unique TEXT id. Emitted alongside
+   *  `name` so JSON consumers can dot-access the canonical field name without
+   *  having to know that, for tasks specifically, `name` plays the localId
+   *  role. Always equal to `name`. */
+  localId: string;
   /** Foreign-name reference to the owning workstream. */
   workstreamName: string;
   title: string;
@@ -152,6 +157,7 @@ const SELECT_NOTE_COLS = `
 function rowFromDb(row: RawTaskRow): TaskRow {
   return {
     name: row.local_id,
+    localId: row.local_id,
     workstreamName: row.workstream,
     title: row.title,
     status: row.status as TaskStatus,

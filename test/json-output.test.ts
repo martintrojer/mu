@@ -147,6 +147,39 @@ describe("--json output on read verbs", () => {
     expect(parsed.notes.map((n) => n.content)).toEqual(["FILES: src/auth.ts"]);
   });
 
+  it("task list/next/show --json expose `localId` alongside `name` (same value)", async () => {
+    // Regression for task_list_show_json_omits_localid_only: prior to
+    // the fix, task JSON exposed only `name` as the per-workstream
+    // identifier. The natural inference (from agents/workstreams JSON)
+    // is `localId`, and the SKILL.md "Pick the highest-ROI" recipe
+    // even uses `.localId`. Pin both keys to the same value across
+    // every task-shaped JSON read so consumers can dot-access either.
+    {
+      const { stdout } = await runCli(["task", "list", "-w", "auth", "--json"], dbPath);
+      const parsed = JSON.parse(stdout.trim()) as Array<{ name: string; localId: string }>;
+      expect(parsed.length).toBeGreaterThan(0);
+      for (const t of parsed) {
+        expect(t.localId).toBe(t.name);
+        expect(typeof t.localId).toBe("string");
+      }
+    }
+    {
+      const { stdout } = await runCli(["task", "next", "-w", "auth", "--json"], dbPath);
+      const parsed = JSON.parse(stdout.trim()) as Array<{ name: string; localId: string }>;
+      expect(parsed.length).toBeGreaterThan(0);
+      for (const t of parsed) {
+        expect(t.localId).toBe(t.name);
+      }
+      expect(parsed[0]?.localId).toBe("a");
+    }
+    {
+      const { stdout } = await runCli(["task", "show", "a", "-w", "auth", "--json"], dbPath);
+      const parsed = JSON.parse(stdout.trim()) as { task: { name: string; localId: string } };
+      expect(parsed.task.localId).toBe(parsed.task.name);
+      expect(parsed.task.localId).toBe("a");
+    }
+  });
+
   it("task tree --json emits a recursive { direction, root: { task, children } } shape", async () => {
     const { stdout } = await runCli(["task", "tree", "c", "-w", "auth", "--json"], dbPath);
     const parsed = JSON.parse(stdout.trim()) as {

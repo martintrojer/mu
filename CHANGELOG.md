@@ -354,6 +354,16 @@ called out under "Breaking" in each entry.
 
 ### Fixed
 
+- **Task JSON now exposes `localId` alongside `name`**
+  (`task_list_show_json_omits_localid_only`). Prior to this fix,
+  `mu task list/next/show --json` only carried the per-workstream
+  identifier as `name`, so the natural inference
+  `jq -r '.[].localId'` (matching agents/workstreams JSON, and the
+  literal recipe in `skills/mu/SKILL.md` "Pick the highest-ROI"
+  block) returned `null`. `TaskRow` now carries both keys, set to
+  the same value; `name` is preserved for compat. Regression test
+  pins both keys across all three verbs in `test/json-output.test.ts`.
+
 - **SKILL.md `Next:` invariant now matches the empirical truth: it's
   emitted on MUTATING verbs only**
   (`nextsteps_audit_read_verbs_emit_no_nextsteps`). The skill claimed
