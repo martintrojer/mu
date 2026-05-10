@@ -211,6 +211,19 @@ called out under "Breaking" in each entry.
 
 ### Fixed
 
+- **`TaskNotFoundError` next-step recipe no longer references the
+  removed `tasks.workstream` column**
+  (`nextsteps_audit_task_not_found_workstream_col`). The hint a
+  user sees first on a missed-task lookup was a `mu sql "SELECT
+  workstream, ..."` recipe; v5 dropped TEXT `tasks.workstream` for
+  FK `tasks.workstream_id`, so the recipe failed at runtime with
+  `no such column: workstream`. Replaced with a `JOIN workstreams`
+  pattern matching the v5 `AgentExistsError` fix at
+  `src/agents/errors.ts:35`. Added a regression test in
+  `test/error-nextsteps.test.ts` that prepares every SELECT recipe
+  in `TaskNotFoundError.errorNextSteps()` against a freshly-opened
+  v-current DB — catches future stale-column drift before users do.
+
 - **`mu workspace create <missing-agent>` now throws a typed
   `AgentNotFoundError` (exit 3) instead of leaking SQLite's bare
   `NOT NULL constraint failed: vcs_workspaces.agent_id`**

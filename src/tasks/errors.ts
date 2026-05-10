@@ -23,8 +23,13 @@ export class TaskNotFoundError extends Error implements HasNextSteps {
     super(`no such task: ${taskId}`);
   }
   errorNextSteps(): NextStep[] {
-    const idLit = this.taskId.replace(/'/g, "''");
-    const recipe = `mu sql "SELECT workstream, local_id, status, title FROM tasks WHERE LOWER(local_id) LIKE '%${idLit.toLowerCase()}%' OR LOWER(title) LIKE '%${idLit.toLowerCase()}%'"`;
+    // v5: tasks.workstream (TEXT) was replaced by tasks.workstream_id
+    // (FK → workstreams.id). The pre-v5 recipe SELECTed a column that
+    // no longer exists and crashed at runtime — and this is THE first
+    // hint a user sees on a missed-task lookup, so the breakage was
+    // high-traffic. Mirror the join pattern used by AgentExistsError.
+    const idLit = this.taskId.replace(/'/g, "''").toLowerCase();
+    const recipe = `mu sql "SELECT ws.name AS workstream, t.local_id, t.status, t.title FROM tasks t JOIN workstreams ws ON ws.id = t.workstream_id WHERE LOWER(t.local_id) LIKE '%${idLit}%' OR LOWER(t.title) LIKE '%${idLit}%'"`;
     return [
       { intent: "List tasks in workstream", command: "mu task list -w <workstream>" },
       { intent: "Search by substring (id + title)", command: recipe },

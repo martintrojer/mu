@@ -5,7 +5,10 @@
 // HasNextSteps and returns a non-empty array of well-formed NextStep
 // records.
 
-import { describe, expect, it } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   AgentDiedOnSpawnError,
   AgentExistsError,
@@ -13,7 +16,7 @@ import {
   AgentNotInWorkstreamError,
   WorkspacePreservedError,
 } from "../src/agents.js";
-import { WorkstreamNotFoundError } from "../src/db.js";
+import { WorkstreamNotFoundError, openDb } from "../src/db.js";
 import { hasNextSteps } from "../src/output.js";
 import {
   ClaimerNotRegisteredError,
@@ -162,5 +165,49 @@ describe("error-specific structured-step assertions", () => {
     const err = new PaneNotFoundError("%999");
     const steps = err.errorNextSteps();
     expect(steps.some((s) => s.command.includes("list-panes"))).toBe(true);
+  });
+});
+
+// Regression: nextsteps_audit_task_not_found_workstream_col
+//
+// Several typed errors suggest `mu sql "..."` recipes as next steps.
+// Pre-v5 these recipes referenced the long-gone `tasks.workstream`
+// (TEXT) column; v5 replaced it with `tasks.workstream_id` (FK →
+// workstreams.id). The hint a user sees first on a missed-task lookup
+// must actually run.
+//
+// This test extracts every SELECT-style `mu sql` recipe from
+// TaskNotFoundError.errorNextSteps() and executes it against a
+// freshly-opened v-current DB. Any "no such column" error fails the
+// test loudly, instead of waiting for an end user to be the canary.
+describe("TaskNotFoundError SQL recipes execute against the live schema", () => {
+  let tempDir: string;
+  let dbPath: string;
+
+  beforeEach(() => {
+    tempDir = mkdtempSync(join(tmpdir(), "mu-test-nextsteps-"));
+    dbPath = join(tempDir, "mu.db");
+  });
+
+  afterEach(() => {
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it('every `mu sql "SELECT ..."` recipe parses and runs (no stale columns)', () => {
+    const err = new TaskNotFoundError("foo");
+    const steps = err.errorNextSteps();
+    const recipes = steps.map((s) => s.command).filter((c) => c.startsWith('mu sql "SELECT'));
+    expect(recipes.length).toBeGreaterThan(0);
+
+    const db = openDb({ path: dbPath });
+    try {
+      for (const recipe of recipes) {
+        // Strip `mu sql "..."` wrapper to get raw SQL.
+        const sql = recipe.replace(/^mu sql "(.*)"$/, "$1");
+        expect(() => db.prepare(sql).all()).not.toThrow();
+      }
+    } finally {
+      db.close();
+    }
   });
 });
