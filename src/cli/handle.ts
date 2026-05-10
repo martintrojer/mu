@@ -66,6 +66,7 @@ import {
   TaskNotInWorkstreamError,
 } from "../tasks.js";
 import { PaneNotFoundError, TmuxError } from "../tmux.js";
+import { WorkspaceConflictError, WorkspaceDirtyError, WorkspaceVcsRequiredError } from "../vcs.js";
 import {
   HomeDirAsProjectRootError,
   WorkspaceExistsError,
@@ -158,6 +159,8 @@ export function classifyError(err: unknown): { label: string; exitCode: number }
     err instanceof WorkspacePathNotEmptyError ||
     err instanceof WorkspacePreservedError ||
     err instanceof HomeDirAsProjectRootError ||
+    err instanceof WorkspaceVcsRequiredError ||
+    err instanceof WorkspaceDirtyError ||
     err instanceof ClaimerNotRegisteredError ||
     err instanceof SnapshotVersionMismatchError ||
     err instanceof SchemaTooOldError ||
@@ -175,6 +178,14 @@ export function classifyError(err: unknown): { label: string; exitCode: number }
   }
   if (err instanceof TmuxError || err instanceof PaneNotFoundError) {
     return { label: "tmux", exitCode: 5 };
+  }
+  if (err instanceof WorkspaceConflictError) {
+    // Rebase produced conflicts — the operator must `cd` and resolve.
+    // Distinct from the typed-conflict-of-state family (exit 4) which
+    // we refused before any side effect; here the side effect happened
+    // and the workspace is half-rebased. Same exit-code lane as
+    // TmuxError (substrate-level: action requires manual recovery).
+    return { label: "workspace conflict", exitCode: 5 };
   }
   if (err instanceof ReaperDetectedDuringWaitError) {
     // task_wait_reconcile_dead_panes: distinct exit code (6) so

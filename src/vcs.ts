@@ -25,10 +25,116 @@ import { existsSync, rmSync } from "node:fs";
 import { mkdir, stat } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
+import type { HasNextSteps, NextStep } from "./output.js";
 
 const exec = promisify(execFile);
 
 export type VcsBackendName = "jj" | "sl" | "git" | "none";
+
+// ─── Refresh / rebase result + typed errors ──────────────────────────
+//
+// rebaseTo is the backend-side of `mu workspace refresh`. The errors
+// live in this module (not src/workspace.ts) because they're thrown
+// from inside the backend impls; workspace.ts already imports vcs.ts,
+// so colocating avoids a circular import. handle.ts imports them by
+// name to map exit codes (4 for dirty / vcs-required, 5 for conflict).
+
+export interface RebaseResult {
+  /** The ref the workspace was actually rebased onto (resolved
+   *  symbolic-or-revset → concrete name). For git that is the
+   *  resolveGitMainRef() symbolic ref; for jj/sl it's the literal
+   *  `trunk()` revset (or whatever the operator passed via fromRef). */
+  fromRef: string;
+  /** Commit subjects (or descriptions) that got replayed, oldest-first.
+   *  Empty when the workspace was already at fromRef (no-op). */
+  replayed: string[];
+  /** Files / commits that conflicted during the rebase. Always
+   *  empty for a successful rebase — a non-empty conflicts list
+   *  means we threw WorkspaceConflictError before returning. The
+   *  field exists so the error's serialised payload can carry it. */
+  conflicts: string[];
+}
+
+/**
+ * Thrown by `rebaseTo` on the `none` backend (cp -a snapshots have
+ * no notion of a rebase target). Maps to exit code 4.
+ */
+export class WorkspaceVcsRequiredError extends Error implements HasNextSteps {
+  override readonly name = "WorkspaceVcsRequiredError";
+  constructor(
+    public readonly verb: string,
+    public readonly workspacePath: string,
+  ) {
+    super(
+      `vcs none: \`mu workspace ${verb}\` requires a real VCS (jj/sl/git); ${workspacePath} is a cp -a snapshot`,
+    );
+  }
+  errorNextSteps(): NextStep[] {
+    return [
+      {
+        intent: "Free the snapshot and re-create with a real VCS backend",
+        command: "mu workspace free <agent>  &&  mu workspace create <agent> --backend <jj|sl|git>",
+      },
+    ];
+  }
+}
+
+/**
+ * Thrown by `rebaseTo` when the workspace has uncommitted changes
+ * the rebase would clobber. Carries the dirty file list so the operator
+ * can decide between commit/stash/--force. Maps to exit code 4.
+ */
+export class WorkspaceDirtyError extends Error implements HasNextSteps {
+  override readonly name = "WorkspaceDirtyError";
+  constructor(
+    public readonly workspacePath: string,
+    public readonly files: readonly string[],
+  ) {
+    super(
+      `workspace dirty (${files.length} uncommitted file(s)): ${workspacePath}; refusing to rebase`,
+    );
+  }
+  errorNextSteps(): NextStep[] {
+    return [
+      {
+        intent: "Inspect the dirty files",
+        command: `(cd ${this.workspacePath} && git status -s)  # or jj st / sl st`,
+      },
+      {
+        intent: "Commit them first, then retry refresh",
+        command: `(cd ${this.workspacePath} && git add -A && git commit -m WIP)`,
+      },
+      {
+        intent: "Or stash them first (git only)",
+        command: `(cd ${this.workspacePath} && git stash)`,
+      },
+    ];
+  }
+}
+
+/**
+ * Thrown by `rebaseTo` when the rebase produced conflicts the
+ * operator must resolve manually. Carries the conflicting paths.
+ * Maps to exit code 5.
+ */
+export class WorkspaceConflictError extends Error implements HasNextSteps {
+  override readonly name = "WorkspaceConflictError";
+  constructor(
+    public readonly workspacePath: string,
+    public readonly fromRef: string,
+    public readonly conflicts: readonly string[],
+  ) {
+    super(`rebase onto ${fromRef} produced ${conflicts.length} conflict(s): ${workspacePath}`);
+  }
+  errorNextSteps(): NextStep[] {
+    return [
+      {
+        intent: "cd into the workspace and resolve",
+        command: `cd ${this.workspacePath}  # then resolve & commit; or: git rebase --abort / jj abandon / sl rebase --abort`,
+      },
+    ];
+  }
+}
 
 export interface CreateWorkspaceOptions {
   /** The repository being branched from. Absolute path. */
@@ -99,6 +205,32 @@ export interface VcsBackend {
    * Callers treat null as "unknown — render — — and don't warn".
    */
   commitsBehind(workspacePath: string, ref: string): Promise<number | null>;
+
+  /**
+   * Rebase the workspace onto `fromRef` (or the backend's tracked
+   * base when undefined: `origin/HEAD` for git, `trunk()` for jj/sl).
+   * Returns the resolved ref + replayed commits + conflicts list.
+   *
+   * Backend-specific behaviour:
+   *   - git: refuses on dirty WC (WorkspaceDirtyError); fetches first;
+   *     `git rebase <ref>`. On conflict, aborts the rebase and throws
+   *     WorkspaceConflictError so the operator resolves manually.
+   *   - jj:  always-snapshotted, so dirty is never an issue. After
+   *     `jj rebase -d <ref>` the conflict-set is queried via
+   *     `jj log -r 'conflict()'`. Conflicts surface as
+   *     WorkspaceConflictError without an abort (jj's conflict markers
+   *     persist as commits; the operator resolves in-place).
+   *   - sl:  similar to jj. `sl rebase -d <ref>`; conflicts via
+   *     `sl resolve -l`. On dirty WC sl errors itself; we wrap that
+   *     into WorkspaceDirtyError.
+   *   - none: throws WorkspaceVcsRequiredError unconditionally.
+   *
+   * Surfaced by fb_workspace_recycle_verb: dogfood between waves
+   * needed `close → free → spawn` to refresh a worker against new
+   * main; that killed the worker's LLM context. `refresh` updates
+   * the on-disk dir without touching the agent or pane.
+   */
+  rebaseTo(workspacePath: string, fromRef?: string): Promise<RebaseResult>;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────
@@ -169,6 +301,12 @@ export const noneBackend: VcsBackend = {
   async commitsBehind(_workspacePath, _ref) {
     return null;
   },
+
+  // none has no upstream to rebase onto. Throw a typed error so the
+  // CLI's handle() maps it to exit 4 with a clean Next: hint.
+  async rebaseTo(workspacePath, _fromRef) {
+    throw new WorkspaceVcsRequiredError("refresh", workspacePath);
+  },
 };
 
 // ─── git backend ─────────────────────────────────────────────────────
@@ -232,6 +370,78 @@ export const gitBackend: VcsBackend = {
     } catch {
       return null;
     }
+  },
+
+  // Rebase the worktree onto `fromRef` (default = origin/HEAD via
+  // resolveGitMainRef). Refuses on a dirty WC; returns the replayed
+  // commit subjects oldest-first; on conflict aborts the rebase and
+  // throws WorkspaceConflictError so the operator never inherits a
+  // half-rebased worktree from us.
+  //
+  // We DO `git fetch` first — otherwise the rebase target would only
+  // be as fresh as the local refs cache, and the operator running
+  // `mu workspace refresh` is explicitly asking for the latest. This
+  // is the one-and-only place mu fetches; commitsBehind() stays pure.
+  async rebaseTo(workspacePath, fromRef) {
+    if (!existsSync(workspacePath)) {
+      throw new Error(`vcs git: workspace path missing: ${workspacePath}`);
+    }
+    // Dirty-check first: refuse before any side effect.
+    const dirtyFiles = await listGitDirtyFiles(workspacePath);
+    if (dirtyFiles.length > 0) {
+      throw new WorkspaceDirtyError(workspacePath, dirtyFiles);
+    }
+    // Best-effort fetch so the resolved main ref is fresh. Failure is
+    // ignored (offline / no remote) — we still attempt the rebase
+    // against whatever the local refs cache holds.
+    await run("git", ["fetch", "--quiet"], workspacePath).catch(() => {});
+    let resolvedRef: string;
+    if (fromRef !== undefined) {
+      resolvedRef = fromRef;
+    } else {
+      const main = await resolveGitMainRef(workspacePath);
+      if (main === undefined) {
+        throw new Error(
+          `vcs git: cannot resolve default branch (no origin/HEAD, origin/main, or origin/master) in ${workspacePath}; pass --from <ref>`,
+        );
+      }
+      resolvedRef = main;
+    }
+    // Capture the pre-rebase HEAD so we can compute `replayed` as the
+    // commits that ended up on top of resolvedRef after the rebase.
+    const preHead = await run("git", ["rev-parse", "HEAD"], workspacePath);
+    try {
+      await run(
+        "git",
+        ["-c", "user.email=mu@local", "-c", "user.name=mu", "rebase", resolvedRef],
+        workspacePath,
+      );
+    } catch (err) {
+      // Capture the conflicting paths BEFORE aborting (the abort
+      // resets the index and the unmerged paths disappear).
+      const conflicts = await listGitUnmergedPaths(workspacePath);
+      await run("git", ["rebase", "--abort"], workspacePath).catch(() => {});
+      if (conflicts.length > 0) {
+        throw new WorkspaceConflictError(workspacePath, resolvedRef, conflicts);
+      }
+      // Non-conflict rebase failure (e.g. unknown ref). Surface it raw.
+      throw err;
+    }
+    // Replayed commits = the new HEAD..resolvedRef gap, but oldest-first
+    // and limited to what was actually replayed from preHead. We use
+    // `git log --reverse <merge-base>..HEAD` where the merge base is
+    // computed against resolvedRef, since after a successful rebase
+    // HEAD's history above the base IS the replayed set.
+    const mergeBase = await run("git", ["merge-base", "HEAD", resolvedRef], workspacePath).catch(
+      () => preHead,
+    );
+    const logOut = await run(
+      "git",
+      ["log", "--reverse", "--format=%s", `${mergeBase}..HEAD`],
+      workspacePath,
+    );
+    const replayed = logOut.length === 0 ? [] : logOut.split("\n");
+    return { fromRef: resolvedRef, replayed, conflicts: [] };
   },
 
   async freeWorkspace(opts) {
@@ -314,6 +524,37 @@ async function resolveGitMainRef(workspacePath: string): Promise<string | undefi
     }
   }
   return undefined;
+}
+
+/**
+ * Return the list of dirty paths (working-tree modifications + staged
+ * + untracked-not-ignored), one entry per file. Empty when clean.
+ * Used by `rebaseTo` to refuse with WorkspaceDirtyError carrying the
+ * file list — one error message tells the operator both that the
+ * workspace is dirty and which files to deal with.
+ */
+async function listGitDirtyFiles(workspacePath: string): Promise<string[]> {
+  // `git status --porcelain` prints one line per changed file with
+  // a 2-char status prefix; trim the prefix to get the path. Untracked
+  // files appear as `?? path` and are included by default — same
+  // strictness as isGitDirty (which used three independent commands).
+  const { stdout } = await exec("git", ["status", "--porcelain"], { cwd: workspacePath });
+  const lines = stdout.split("\n").filter((l) => l.length > 0);
+  return lines.map((l) => l.slice(3));
+}
+
+/**
+ * Return the unmerged paths after a failed `git rebase`. Used to
+ * enrich WorkspaceConflictError before we abort. Empty list means the
+ * rebase failed for a non-conflict reason (unknown ref, etc).
+ */
+async function listGitUnmergedPaths(workspacePath: string): Promise<string[]> {
+  try {
+    const out = await run("git", ["diff", "--name-only", "--diff-filter=U"], workspacePath);
+    return out.length === 0 ? [] : out.split("\n").filter((l) => l.length > 0);
+  } catch {
+    return [];
+  }
 }
 
 async function isGitDirty(workspacePath: string): Promise<boolean> {
@@ -463,6 +704,78 @@ export const jjBackend: VcsBackend = {
       return null;
     }
   },
+
+  // Rebase the workspace's @ onto `fromRef` (default = `trunk()`).
+  // jj is always-snapshotted so dirty WC is never an issue — the auto-
+  // snapshot becomes part of the rebase. After the rebase we query
+  // `conflict()` to surface any commits that ended up conflicted; jj
+  // doesn't auto-abort on conflicts (they materialise as commits with
+  // conflict markers), so the workspace is left in a state the
+  // operator can resolve in-place.
+  async rebaseTo(workspacePath, fromRef) {
+    if (!existsSync(workspacePath)) {
+      throw new Error(`vcs jj: workspace path missing: ${workspacePath}`);
+    }
+    const target = fromRef ?? "trunk()";
+    // Snapshot the pre-rebase change_id so we can compute replayed
+    // descriptions afterwards. `@` is the working-copy commit.
+    const preRev = await run(
+      "jj",
+      ["log", "-r", "@", "--no-graph", "--no-pager", "--color", "never", "--template", "change_id"],
+      workspacePath,
+    );
+    await run("jj", ["rebase", "-d", target], workspacePath);
+    // Replayed = descriptions of commits in (target..@), oldest-first.
+    // Template prints `description ++ "\n\x00"` so multi-line descs
+    // survive splitting; we keep the first non-empty line as subject.
+    const replayedRaw = await run(
+      "jj",
+      [
+        "log",
+        "-r",
+        `${target}..@`,
+        "--no-graph",
+        "--no-pager",
+        "--color",
+        "never",
+        "--reversed",
+        "--template",
+        'description.first_line() ++ "\\n"',
+      ],
+      workspacePath,
+    ).catch(() => "");
+    const replayed = replayedRaw
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0);
+    // Conflict surface: list change_ids of commits in the rebased
+    // range that are conflicted. Empty = clean rebase.
+    const conflictRaw = await run(
+      "jj",
+      [
+        "log",
+        "-r",
+        `(${target}..@) & conflict()`,
+        "--no-graph",
+        "--no-pager",
+        "--color",
+        "never",
+        "--template",
+        'change_id.short() ++ "\\n"',
+      ],
+      workspacePath,
+    ).catch(() => "");
+    const conflicts = conflictRaw
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0);
+    if (conflicts.length > 0) {
+      throw new WorkspaceConflictError(workspacePath, target, conflicts);
+    }
+    // Use preRev so future-resolution of @ at call time is irrelevant.
+    void preRev;
+    return { fromRef: target, replayed, conflicts: [] };
+  },
 };
 
 function jjWorkspaceName(workspacePath: string): string {
@@ -560,7 +873,82 @@ export const slBackend: VcsBackend = {
       return null;
     }
   },
+
+  // Rebase the active draft chain onto `fromRef` (default = `trunk()`).
+  // Sapling refuses on dirty WC by default — we pre-check and convert
+  // its error into the typed WorkspaceDirtyError. Conflict surface
+  // post-rebase via `sl resolve --list --tool=internal:dumpjson` is
+  // brittle across versions, so we use the textual `sl resolve --list`
+  // output and look for the U-prefixed lines (unresolved).
+  async rebaseTo(workspacePath, fromRef) {
+    if (!existsSync(workspacePath)) {
+      throw new Error(`vcs sl: workspace path missing: ${workspacePath}`);
+    }
+    const target = fromRef ?? "trunk()";
+    const dirtyFiles = await listSlDirtyFiles(workspacePath);
+    if (dirtyFiles.length > 0) {
+      throw new WorkspaceDirtyError(workspacePath, dirtyFiles);
+    }
+    await run(
+      "sl",
+      ["--config", "ui.username=mu <mu@local>", "rebase", "-d", target],
+      workspacePath,
+    ).catch(() => {
+      // Rebase failure is acceptable here — the conflict-listing call
+      // below will tell us what happened. Bare exception loss is OK
+      // since `sl resolve` is the source of truth on conflicts.
+    });
+    const conflicts = await listSlUnresolved(workspacePath);
+    if (conflicts.length > 0) {
+      // Best-effort abort so the workspace returns to a clean state
+      // — mirrors the git impl's never-leave-half-rebased policy.
+      await run("sl", ["rebase", "--abort"], workspacePath).catch(() => {});
+      throw new WorkspaceConflictError(workspacePath, target, conflicts);
+    }
+    // Replayed = log of `target..` post-rebase, oldest-first. Single-
+    // line subjects via `{desc|firstline}`. Empty when nothing replayed.
+    const replayedRaw = await run(
+      "sl",
+      ["log", "-r", `${target}::. - ${target}`, "--template", "{desc|firstline}\\n"],
+      workspacePath,
+    ).catch(() => "");
+    const replayed = replayedRaw
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0);
+    return { fromRef: target, replayed, conflicts: [] };
+  },
 };
+
+/**
+ * List dirty paths for a sapling workspace. `sl status` prints one
+ * line per changed file: `<status> <path>`. Empty = clean.
+ */
+async function listSlDirtyFiles(workspacePath: string): Promise<string[]> {
+  const out = await run("sl", ["status"], workspacePath);
+  if (out.length === 0) return [];
+  return out
+    .split("\n")
+    .filter((l) => l.length > 0)
+    .map((l) => l.slice(2));
+}
+
+/**
+ * List unresolved (conflicting) paths after an `sl rebase`. `sl resolve
+ * --list` prints `<U|R> <path>` per file; U = unresolved.
+ */
+async function listSlUnresolved(workspacePath: string): Promise<string[]> {
+  try {
+    const out = await run("sl", ["resolve", "--list"], workspacePath);
+    if (out.length === 0) return [];
+    return out
+      .split("\n")
+      .filter((l) => l.startsWith("U "))
+      .map((l) => l.slice(2));
+  } catch {
+    return [];
+  }
+}
 
 async function slCommitId(workspacePath: string): Promise<string> {
   return run("sl", ["log", "-r", ".", "--template", "{node}"], workspacePath);

@@ -23,7 +23,13 @@ import { type Db, defaultStateDir, tryResolveWorkstreamId } from "./db.js";
 import { emitEvent } from "./logs.js";
 import type { HasNextSteps, NextStep } from "./output.js";
 import { captureSnapshot } from "./snapshots.js";
-import { type VcsBackend, type VcsBackendName, backendByName, detectBackend } from "./vcs.js";
+import {
+  type RebaseResult,
+  type VcsBackend,
+  type VcsBackendName,
+  backendByName,
+  detectBackend,
+} from "./vcs.js";
 
 export interface WorkspaceRow {
   agentName: string;
@@ -624,6 +630,58 @@ export interface FreeWorkspaceResult {
   removed: boolean;
   /** True iff the DB row was actually deleted. */
   rowDeleted: boolean;
+}
+
+export interface RefreshWorkspaceOptions {
+  agent: string;
+  workstream: string;
+  /** Optional override of the rebase target. When undefined, the
+   *  backend resolves its own default (origin/HEAD for git,
+   *  `trunk()` for jj/sl). */
+  fromRef?: string;
+}
+
+export interface RefreshWorkspaceResult extends RebaseResult {
+  /** Backend name (mirrors the row) so a JSON consumer doesn't have
+   *  to look up the workspace separately to know what kind of rebase
+   *  it just got. */
+  vcs: VcsBackendName;
+  /** The workspace's on-disk path (so the JSON shape is self-contained
+   *  for piping to a downstream `jq` script). */
+  workspacePath: string;
+}
+
+/**
+ * Refresh an agent's workspace by rebasing it onto `fromRef` (or the
+ * backend's default base). The agent / pane are NOT touched — only
+ * the on-disk working copy moves. Bumps the row's `created_at` proxy
+ * via the emit event; the row itself is otherwise unchanged.
+ *
+ * Surfaced by fb_workspace_recycle_verb: dogfood between waves
+ * required `close → free → spawn`, which killed the worker's LLM
+ * context. `refresh` lets the worker keep its context while the
+ * dir gets fresh main.
+ *
+ * Throws (with typed errors propagated from the backend):
+ *   - WorkspaceNotFoundError    — no row for this (agent, workstream)
+ *   - WorkspaceVcsRequiredError — backend == none
+ *   - WorkspaceDirtyError       — git/sl: uncommitted changes present
+ *   - WorkspaceConflictError    — rebase produced conflicts
+ */
+export async function refreshWorkspace(
+  db: Db,
+  opts: RefreshWorkspaceOptions,
+): Promise<RefreshWorkspaceResult> {
+  const row = getWorkspaceForAgent(db, opts.agent, opts.workstream);
+  if (!row) throw new WorkspaceNotFoundError(opts.agent);
+  const backend = backendByName(row.backend);
+  const result = await backend.rebaseTo(row.path, opts.fromRef);
+  emitEvent(
+    db,
+    row.workstreamName,
+    `workspace refresh ${opts.agent} (backend=${row.backend}, fromRef=${result.fromRef}, replayed=${result.replayed.length})`,
+  );
+  return { ...result, vcs: row.backend, workspacePath: row.path };
 }
 
 /**

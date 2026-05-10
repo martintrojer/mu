@@ -10,6 +10,53 @@ called out under "Breaking" in each entry.
 
 ## [Unreleased]
 
+### Added
+
+- **`mu task close --if-ready`: idempotent umbrella-on-wave-done
+  closer** (`fb_umbrella_no_auto_close`, impact=60). Live dogfood
+  report: built `wave_w3_tests` umbrella with 18 blockers; after
+  every blocker reached CLOSED / DEFERRED the umbrella stayed OPEN
+  and had to be hand-closed. `--if-ready` is the cheap fix — the
+  bare `mu task close <id>` semantics are unchanged (still closes
+  regardless), but `--if-ready` no-ops unless every direct blocker
+  is in a terminal status (CLOSED / REJECTED / DEFERRED). On the
+  no-op path the verb prints the still-blocking ids + a Next: hint
+  pointing at `mu task wait <ids> --first --any`. JSON gains
+  `skipped: "not_ready"` and `blockingIds: [...]` so an
+  orchestrator can fire the closer eagerly after each pipeline
+  cherry-pick. Exit code 0 either way (no-op is success).
+  Option (a) auto-close on last-blocker-close was rejected because
+  it changes lifecycle semantics for umbrellas with content of
+  their own. SDK: `closeTask` gains `ifReady?: boolean` and a new
+  `CloseSkippedResult` return shape (typed-union with
+  `SetStatusResult`).
+
+- **`mu workspace refresh <agent> [--from <ref>]`**
+  (`fb_workspace_recycle_verb` /
+  `mu_workspace_refresh_rebase_agent`). Rebases an agent's workspace
+  onto a fresh base WITHOUT touching the agent or pane — the worker
+  keeps its LLM context while the on-disk dir moves. Default base =
+  the backend's tracked main: `origin/HEAD` for git (with a
+  best-effort `git fetch` first), `trunk()` for jj / sl. `--from
+  <ref>` overrides.
+  - **git**: refuses on dirty WC with `WorkspaceDirtyError` carrying
+    the dirty file list (exit 4) and Next: hints to commit/stash.
+    On rebase conflict aborts the rebase and throws
+    `WorkspaceConflictError` carrying the conflicting paths (exit 5)
+    with a `cd` hint to resolve manually.
+  - **jj / sl**: rebase onto `trunk()` (or `--from`), surface
+    conflicts via `conflict()` revset / `sl resolve --list`. jj is
+    always-snapshotted so dirty WC isn't an issue; sl pre-checks.
+  - **none**: throws `WorkspaceVcsRequiredError` (exit 4) —
+    refresh is meaningless for a `cp -a` snapshot.
+  - JSON shape: `{ vcs, fromRef, replayed: string[], conflicts:
+    string[], workspacePath }`. Card output lists each replayed
+    commit subject. Replaces the dogfood-painful
+    `close → free → spawn` recycle that killed worker context.
+  - SDK: `refreshWorkspace(db, opts)` returns the same shape.
+  - VcsBackend interface gains `rebaseTo(workspacePath, fromRef?):
+    Promise<RebaseResult>`.
+
 ### Changed
 
 - **`mu task delete <id>` is now two-phase: bare = dry-run preview;
@@ -32,27 +79,6 @@ called out under "Breaking" in each entry.
   and the result type gains `dryRun: boolean` + `present:
   boolean` (discriminator for the missing-row case). Idempotent
   on a missing task in both phases.
-
-### Added
-
-- **`mu task close --if-ready`: idempotent umbrella-on-wave-done
-  closer** (`fb_umbrella_no_auto_close`, impact=60). Live dogfood
-  report: built `wave_w3_tests` umbrella with 18 blockers; after
-  every blocker reached CLOSED / DEFERRED the umbrella stayed OPEN
-  and had to be hand-closed. `--if-ready` is the cheap fix — the
-  bare `mu task close <id>` semantics are unchanged (still closes
-  regardless), but `--if-ready` no-ops unless every direct blocker
-  is in a terminal status (CLOSED / REJECTED / DEFERRED). On the
-  no-op path the verb prints the still-blocking ids + a Next: hint
-  pointing at `mu task wait <ids> --first --any`. JSON gains
-  `skipped: "not_ready"` and `blockingIds: [...]` so an
-  orchestrator can fire the closer eagerly after each pipeline
-  cherry-pick. Exit code 0 either way (no-op is success).
-  Option (a) auto-close on last-blocker-close was rejected because
-  it changes lifecycle semantics for umbrellas with content of
-  their own. SDK: `closeTask` gains `ifReady?: boolean` and a new
-  `CloseSkippedResult` return shape (typed-union with
-  `SetStatusResult`).
 
 ---
 

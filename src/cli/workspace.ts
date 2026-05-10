@@ -24,6 +24,7 @@ import {
   listAllOrphanWorkspaces,
   listWorkspaceOrphans,
   listWorkspaces,
+  refreshWorkspace,
 } from "../workspace.js";
 
 export async function cmdWorkspaceCreate(
@@ -108,6 +109,44 @@ export async function cmdWorkspaceFree(
     ? pc.dim(` (auto-committed: ${r.committedRef.slice(0, 12)})`)
     : "";
   console.log(`Freed workspace for ${pc.bold(agent)}${committed}`);
+}
+
+export async function cmdWorkspaceRefresh(
+  db: Db,
+  rawAgent: string,
+  opts: { workstream?: string; from?: string; json?: boolean } = {},
+): Promise<void> {
+  const { name: agent } = await resolveEntityRef(db, rawAgent, opts, "workspace");
+  assertAgentInWorkstream(db, agent, opts.workstream);
+  const workstream = await resolveWorkstream(opts.workstream);
+  const refreshOpts: Parameters<typeof refreshWorkspace>[1] = { agent, workstream };
+  if (opts.from !== undefined) refreshOpts.fromRef = opts.from;
+  const r = await refreshWorkspace(db, refreshOpts);
+  const nextSteps: NextStep[] = [
+    {
+      intent: "cd into the refreshed workspace",
+      command: `cd $(mu workspace path ${agent} -w ${workstream})`,
+    },
+    {
+      intent: "List commits replayed on top of the new base",
+      command: `mu workspace commits ${agent} -w ${workstream}`,
+    },
+  ];
+  if (opts.json) {
+    emitJson({ agent, ...r, nextSteps });
+    return;
+  }
+  if (r.replayed.length === 0) {
+    console.log(`Workspace ${pc.bold(agent)} already at ${pc.dim(r.fromRef)} — nothing to replay.`);
+  } else {
+    console.log(
+      `Refreshed workspace ${pc.bold(agent)} onto ${pc.dim(r.fromRef)} ${pc.dim(`(backend=${r.vcs}, ${r.replayed.length} commit${r.replayed.length === 1 ? "" : "s"} replayed)`)}`,
+    );
+    for (const subject of r.replayed) {
+      console.log(`  ${pc.dim("•")} ${subject}`);
+    }
+  }
+  printNextSteps(nextSteps);
 }
 
 export async function cmdWorkspacePath(
@@ -257,6 +296,23 @@ export function wireWorkspaceCommands(program: Command): void {
         json?: boolean;
       };
       return handle((db) => cmdWorkspaceList(db, opts))();
+    });
+
+  workspace
+    .command("refresh <agent>")
+    .description(
+      "Rebase an agent's workspace onto a fresh base WITHOUT touching the agent or pane. Default base = the backend's tracked main (origin/HEAD for git, trunk() for jj/sl); override with --from <ref>. Refuses on dirty WC (git/sl) with the file list and a Next: hint to commit/stash. On rebase conflict, leaves the workspace in a resolvable state and exits 5 with a `cd` hint. The `none` backend errors (refresh requires a real VCS).",
+    )
+    .option("--from <ref>", "override the rebase target (default: backend's tracked main)")
+    .option(...WORKSTREAM_OPT)
+    .option(...JSON_OPT)
+    .action(function (agent: string) {
+      const opts = (this as Command).opts() as {
+        from?: string;
+        workstream?: string;
+        json?: boolean;
+      };
+      return handle((db) => cmdWorkspaceRefresh(db, agent, opts))();
     });
 
   workspace

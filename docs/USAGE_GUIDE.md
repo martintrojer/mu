@@ -813,9 +813,12 @@ while (( ${#in_flight[@]} > 0 )); do
   # 2. Verify
   npm run typecheck && npm run lint && npm run test && npm run build
 
-  # 3. Free + recreate the workspace for the next dispatch
-  mu workspace free   "$worker" -w "$ws"
-  mu workspace create "$worker" -w "$ws"
+  # 3. Refresh the workspace for the next dispatch (rebases onto
+  #    fresh main WITHOUT killing the worker's LLM context). Default
+  #    base = origin/HEAD (git) / trunk() (jj/sl); --from <ref>
+  #    overrides. Refuses on dirty WC; conflicts exit 5 with a `cd`
+  #    hint to resolve in-place.
+  mu workspace refresh "$worker" -w "$ws"
 
   # 4. Drop $closed from in_flight, dispatch the next task, repeat.
   in_flight=( "${in_flight[@]/$closed}" )

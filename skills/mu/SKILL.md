@@ -163,8 +163,14 @@ running a wave.
 
   The recipe is also in `mu task wait`'s `nextSteps` — `jq` it out.
 
-- **Refresh workspaces between waves.** `/new` → `mu workspace free`
-  → `mu workspace create`. Without it the worker ships clean code
+- **Refresh workspaces between waves.** `mu workspace refresh
+  <agent>` rebases the agent's workspace onto fresh main WITHOUT
+  killing the worker's LLM context (the agent + pane stay alive;
+  only the on-disk dir moves). Default base = the backend's tracked
+  main (`origin/HEAD` for git, `trunk()` for jj/sl); `--from <ref>`
+  overrides. Refuses on a dirty WC with the file list and a Next:
+  hint to commit/stash. Conflicts exit 5 with a `cd` hint to resolve
+  in-place. Without this between waves the worker ships clean code
   against a stale parent; you find out at cherry-pick time. The
   `behind` column in `mu workspace list` shows the cost.
 
@@ -263,8 +269,9 @@ running a wave.
   `--yes` commits). Edge direction: `block <blocked>
   --by <blocker>`.
 - **Self (in-pane)**: `mu me`, `mu me tasks`, `mu me next`.
-- **Workspace**: `create`, `list` (`behind` column), `free`, `path`
-  (`cd $(mu workspace path X)`), `orphans`.
+- **Workspace**: `create`, `list` (`behind` column), `refresh`
+  (`--from <ref>`; rebases without killing the agent), `free`,
+  `path` (`cd $(mu workspace path X)`), `orphans`.
 - **Activity log**: `mu log "text"` (write), `mu log -n N` (read),
   `mu log --tail` (subscribe). Don't pipe `--tail` for waits — use
   `mu task wait`.
