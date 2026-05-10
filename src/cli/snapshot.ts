@@ -133,15 +133,15 @@ export async function cmdUndo(
   // handle here; handle()'s finally `db?.close()` will silently fail on
   // the old (now-closed) handle, which is the documented behaviour.
   //
-  // **dryRun: true** is the load-bearing flag. Without it, the
-  // reconcile pass would prune any agent row whose pane is no
+  // **mode: "report-only"** is the load-bearing flag. Without it,
+  // the reconcile pass would prune any agent row whose pane is no
   // longer in tmux — which is EVERY agent row in a snapshot taken
   // before `mu workstream destroy --yes`, because the destroy
   // killed the panes. The contract `mu undo` advertises is "the
   // restore brings back the snapshot's rows verbatim"; a mutating
-  // post-restore reconcile silently breaks that. Dry-run reports
-  // drift but doesn't delete (the user can still do a real
-  // reconcile later via `mu agent list` once they've decided
+  // post-restore reconcile silently breaks that. report-only
+  // reports drift but doesn't delete (the user can still do a
+  // real reconcile later via `mu agent list` once they've decided
   // which would-be-pruned rows to re-spawn vs let go).
   // (snap_undo_reconcile_destroys_recovered_agents.)
   const fresh = openDb({ path: restored.restoredTo });
