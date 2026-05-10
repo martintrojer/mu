@@ -118,7 +118,11 @@ export async function cmdWorkstreamExport(
   const workstream = await resolveWorkstream(opts.workstream);
   const result = exportWorkstream(db, { workstream, outDir: opts.out });
   const nextSteps: NextStep[] = [
-    { intent: "Browse the export", command: `ls ${result.outDir}` },
+    { intent: "Browse the bucket", command: `ls ${result.outDir}` },
+    {
+      intent: "Append another workstream to the same bucket (additive)",
+      command: `mu workstream export -w <other-ws> --out ${result.outDir}`,
+    },
     {
       intent: "Track in git",
       command: `(cd ${result.outDir} && git init && git add . && git commit -m '${workstream} export')`,
@@ -128,17 +132,21 @@ export async function cmdWorkstreamExport(
     emitJson({
       workstreamName: workstream,
       outDir: result.outDir,
+      bucketLayoutVersion: result.manifest.bucketVersion,
       written: result.written,
       unchanged: result.unchanged,
       preserved: result.preserved,
       manifestPath: result.manifestPath,
-      tasks: result.manifest.tasks,
+      tasks: result.source.tasks,
+      sourceCount: Object.keys(result.manifest.sources).length,
       nextSteps,
     });
     return;
   }
   console.log(
-    `Exported ${pc.bold(workstream)} → ${pc.bold(result.outDir)} (written=${result.written}, unchanged=${result.unchanged}, preserved=${result.preserved})`,
+    `Exported ${pc.bold(workstream)} → ${pc.bold(result.outDir)} ${pc.dim(
+      `(written=${result.written}, unchanged=${result.unchanged}, preserved=${result.preserved}; bucket sources=${Object.keys(result.manifest.sources).length})`,
+    )}`,
   );
   printNextSteps(nextSteps);
 }
@@ -435,10 +443,10 @@ export function wireWorkstreamCommands(program: Command): void {
   workstream
     .command("export")
     .description(
-      "Render a workstream's task graph + notes as a directory of markdown (one .md per task + INDEX.md + README.md + manifest.json). Idempotent: re-export rewrites only changed files; deleted tasks are preserved with a banner.",
+      "Render a workstream's task graph + notes to a bucket directory of markdown. Bucket layout: <out>/README.md + INDEX.md + manifest.json (bucketVersion 2) + <ws>/{README.md,INDEX.md,tasks/<id>.md}. Idempotent + additive: re-export refreshes only changed task files; passing -w with a different workstream into the same --out appends a sibling source-ws subdir; deleted tasks are preserved with a banner. Pre-0.3 export dirs are not migrated in place.",
     )
     .option(...WORKSTREAM_OPT)
-    .option("--out <dir>", "output directory (defaults to ./<workstream>/)")
+    .option("--out <dir>", "output directory (the bucket; defaults to ./<workstream>/)")
     .option(...JSON_OPT)
     .action(function () {
       const opts = (this as Command).opts() as {

@@ -166,9 +166,7 @@ export {
   destroyWorkstream,
   type DestroyResult,
   ensureWorkstream,
-  type ExportManifest,
   type ExportResult,
-  type ExportTaskEntry,
   type ExportWorkstreamOptions,
   exportWorkstream,
   isValidWorkstreamName,
@@ -179,6 +177,21 @@ export {
   WorkstreamNameInvalidError,
   type WorkstreamSummary,
 } from "./workstream.js";
+export {
+  type ExportArchiveOptions,
+  type ExportArchiveResult,
+  type ExportManifest,
+  type ExportSource,
+  type ExportSourceManifest,
+  type ExportTaskEntry,
+  exportArchive,
+  exportSourceForWorkstream,
+  exportSourcesForArchive,
+  LegacyExportLayoutError,
+  type RenderBucketInput,
+  type RenderBucketResult,
+  renderToBucket,
+} from "./exporting.js";
 export {
   assertValidPaneId,
   capturePane,

@@ -918,22 +918,48 @@ durable record of what was decided and why. `mu workstream destroy`
 blows that away (a snapshot is taken, but it's a binary `.db` only
 readable through `mu undo`). For code review, project handoff,
 git-checked-in artifacts, or just `grep`, render the workstream as
-plain markdown first:
+plain markdown first.
 
-```bash
-mu workstream export -w auth-refactor                         # → ./auth-refactor/
-mu workstream export -w auth-refactor --out ~/notes/auth/     # explicit dir
+Exports use a **bucket** layout (`bucketVersion: 2`, mu ≥ 0.3):
+the `--out` directory is a multi-source bucket whose top-level
+contains a bucket-wide README/INDEX/manifest, and one
+subdirectory per source workstream:
+
+```
+<bucket>/
+  README.md           # bucket-level summary (every source-ws + dates + totals)
+  INDEX.md            # union of all task tables; first column = source-ws
+  manifest.json       # bucketVersion: 2 + per-source-ws sha256 + per-task sha256
+  <source-ws>/
+    README.md         # per-source-ws (counts)
+    INDEX.md          # per-source-ws (table of every task)
+    tasks/<id>.md     # one .md per task; YAML frontmatter + notes
 ```
 
-The directory contains `README.md` (counts), `INDEX.md` (table of
-every task), `tasks/<id>.md` (one file per task with frontmatter +
-full notes), and `manifest.json` (per-file sha256 + the
-`agent_logs.seq` cursor at export time). It's idempotent: re-export
-against the same `--out` rewrites only files whose markdown
-actually changed (mtime preserved on identical files); tasks added
-since the previous export get fresh files; tasks deleted from the
-DB STAY on disk with a `> **Deleted from DB on <ts>**` banner so
-you never lose context that may already be git-blamed.
+Bucket exports are **additive**: `mu workstream export -w X --out
+<bucket>` creates the bucket scaffolding plus `X/` on first use,
+and a follow-up call with `-w Y --out <same-bucket>` appends a
+sibling `Y/` subdirectory without touching `X/`. Re-running with
+the same `-w` is sha256-idempotent: only changed task files are
+rewritten (mtime preserved on identical files); tasks added since
+the previous export get fresh files; tasks deleted from the DB
+STAY on disk with a `> **Deleted from DB on <ts>**` banner so you
+never lose context that may already be git-blamed.
+
+```bash
+# One-shot dump (bucket happens to contain just one source-ws)
+mu workstream export -w auth-refactor                         # → ./auth-refactor/
+mu workstream export -w auth-refactor --out ~/notes/auth/     # explicit dir
+
+# Additive accumulation across multiple workstreams in one bucket
+mu workstream export -w mufeedback     --out exports/mu       # creates exports/mu/mufeedback/
+mu workstream export -w roadmap-v0-2   --out exports/mu       # adds exports/mu/roadmap-v0-2/
+mu workstream export -w mufeedback-v03 --out exports/mu       # adds exports/mu/mufeedback-v03/
+```
+
+The same renderer powers `mu archive export <label> --out <bucket>`,
+which (re)builds every source-ws subdirectory from the named
+archive in one shot — see `Archives` below.
 
 `mu workstream destroy --yes` auto-runs an export to
 `<state-dir>/exports/<workstream>-<timestamp>/` BEFORE killing the
@@ -941,8 +967,14 @@ tmux session and dropping the rows, so the conversation survives
 even if you forgot. Pass `--no-export` to opt out.
 
 ```bash
-(cd auth-refactor && git init && git add . && git commit -m 'auth-refactor snapshot')
+(cd ~/notes/auth && git init && git add . && git commit -m 'auth-refactor snapshot')
 ```
+
+**Pre-0.3 export layouts are not migrated in place.** If `--out`
+points at a directory whose `manifest.json` was written by an
+older mu (no `bucketVersion`, top-level `workstream` field), the
+export refuses with a helpful error: `rm -rf <dir>` and re-run, or
+pick a different `--out`.
 
 Markdown only by design — no HTML/PDF, no embedded VCS, no
 cross-workstream merge, no re-import. Operators can pandoc /
@@ -969,6 +1001,7 @@ mu archive add v0-3-wave -w roadmap-v0-3 --destroy   # cascade: archive THEN des
 mu archive list                                       # label | tasks | sources | created | last_added
 mu archive show v0-3-wave                             # detail card + per-source-workstream summary
 mu archive search 'oauth' [--label v0-3-wave]         # LIKE-search archived titles + note content (--limit N, --json)
+mu archive export v0-3-wave --out exports/v0-3-wave   # render every source-ws to a bucket directory (markdown)
 ```
 
 Key properties:

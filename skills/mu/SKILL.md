@@ -212,7 +212,7 @@ follow-up commands; agents read it, humans skim past it.
 mu workstream init <name>            # create tmux session mu-<name> + DB row
 mu workstream list                   # every workstream on this machine
 mu workstream destroy [--yes] [--no-export] [--archive <label>]  # tear down; auto-exports to <state-dir>/exports/<ws>-<ts>/; --archive snapshots into an existing archive BEFORE destroy (atomic)
-mu workstream export [--out <dir>]   # render task graph + notes as ./<ws>/ (markdown + manifest.json); idempotent
+mu workstream export [--out <dir>]   # render task graph + notes to a bucket dir (<out>/<ws>/{README,INDEX,tasks/<id>.md} + bucket-level README/INDEX/manifest.json); additive across workstreams; idempotent
 
 # Agents (8)
 mu agent spawn <name> [--workspace]  # spawn into mu-<workstream>
@@ -282,7 +282,7 @@ mu undo [--yes] [--to <id>]          # restore latest snapshot (or one chosen)
 mu snapshot list [-n N]              # newest-first: id | label | ws | size
 mu snapshot show <id>                # full metadata for one row
 
-# Archives (6) — cross-workstream preservation of task graphs
+# Archives (7) — cross-workstream preservation of task graphs
 mu archive create <label> [--description "..."]   # one-time bucket setup; labels GLOBALLY unique
 mu archive list                                    # label | tasks | sources | created | last_added
 mu archive show <label>                            # detail card + per-source-workstream summary
@@ -290,6 +290,7 @@ mu archive add <label> -w <ws> [--destroy]         # IDEMPOTENT; --destroy casca
 mu archive remove <label> -w <ws>                  # surgical un-archive of one source workstream
 mu archive delete <label> [--yes]                  # two-phase; --yes captures a snapshot first
 mu archive search <pattern> [--label <l>]          # LIKE-search archived titles + note content (--limit N, --json)
+mu archive export <label> --out <bucket-dir>       # render every source-ws to a bucket of markdown (same shape as mu workstream export; additive)
 
 # Escape hatch + state + health
 mu sql "<query>"                     # SELECT / UPDATE / DELETE / WITH

@@ -12,6 +12,20 @@ called out under "Breaking" in each entry.
 
 ## [0.3.0] — unreleased
 
+### Breaking
+
+- **Bucket export layout (`bucketVersion: 2`); old single-workstream
+  layout no longer supported.** `mu workstream export` and the new
+  `mu archive export` both write a multi-source bucket: top-level
+  `<bucket>/{README.md,INDEX.md,manifest.json}` plus one
+  `<bucket>/<source-ws>/{README.md,INDEX.md,tasks/<id>.md}`
+  subdirectory per source workstream. Re-exporting `-w X` into a
+  bucket containing `-w Y` appends `X/` without touching `Y/`.
+  Pre-0.3 export directories (top-level `tasks/`, no `bucketVersion`
+  in `manifest.json`) are NOT migrated in place; the export refuses
+  with a `LegacyExportLayoutError` (exit 2) and asks the operator
+  to `rm -rf <dir>` and re-run.
+
 ### Schema
 
 - **Schema v6: 5 new `archive_*` tables; additive only.** Backs the
@@ -75,9 +89,21 @@ called out under "Breaking" in each entry.
   is two-phase (dry-run by default, `--yes` captures a snapshot
   first). Typed errors map to exit codes: `ArchiveNotFoundError`
   → 3, `ArchiveAlreadyExistsError` → 4, `ArchiveLabelInvalidError`
-  → 2. `--json` on every verb. Phase 3 (the `mu workstream destroy
-  --archive <label>` shorthand) and Phase 4 (export renderer over
-  archive contents) follow.
+  → 2. `--json` on every verb.
+
+- **Unified bucket renderer + `mu archive export <label> --out <dir>`**
+  (Phase 4 of the archive feature; `archive_phase4_export_renderer_unified`).
+  The renderer factored out of `src/workstream.ts` into a new
+  `src/exporting.ts` module that takes N source workstreams (each
+  with its tasks/edges/notes) and writes a `bucketVersion: 2`
+  bucket on disk. Both `mu workstream export` (one source) and the
+  new `mu archive export` (every source-ws in an archive) delegate
+  to the same renderer, producing byte-identical disk shapes.
+  Bucket exports are additive across calls (sha256 short-circuit
+  per task; sibling source-ws subdirs are never touched by an
+  unrelated re-export). `mu workstream destroy --yes`'s pre-destroy
+  auto-export uses the new shape automatically. Pre-0.3 export
+  directories are no longer accepted in place — see Breaking above.
 
 - **`mu workstream destroy --archive <label>`** (Phase 3 of the v0.3
   archive feature): atomic snapshot-then-destroy. The label must

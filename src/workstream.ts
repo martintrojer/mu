@@ -14,24 +14,18 @@
 // tests (and the rare workstream whose tmux session was created with a
 // non-default name) work without env-var gymnastics.
 
-import { createHash } from "node:crypto";
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  readdirSync,
-  rmdirSync,
-  statSync,
-  writeFileSync,
-} from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { existsSync, readdirSync, rmdirSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { type Db, defaultStateDir } from "./db.js";
-import { emitEvent, latestSeq } from "./logs.js";
+import {
+  type ExportManifest,
+  type ExportSourceManifest,
+  exportSourceForWorkstream,
+  renderToBucket,
+} from "./exporting.js";
+import { emitEvent } from "./logs.js";
 import type { HasNextSteps, NextStep } from "./output.js";
 import { captureSnapshot } from "./snapshots.js";
-import { getTaskEdges, listNotes, listTasks } from "./tasks.js";
-import type { TaskNoteRow, TaskRow } from "./tasks.js";
 import { killSession, listSessions, sessionExists } from "./tmux.js";
 import { type VcsBackend, type VcsBackendName, backendByName } from "./vcs.js";
 import { listWorkspaces } from "./workspace.js";
@@ -427,334 +421,93 @@ function countEdges(db: Db, workstream: string): number {
 
 // ─── exportWorkstream ──────────────────────────────────────────────────
 //
-// Render a workstream's task graph + notes as a directory of plain
-// markdown so operators can preserve the conversation OUTSIDE mu (for
-// code review, project handoff, grep, git-checked-in artifacts) before
-// `mu workstream destroy` blows it away. Re-export against the same
-// directory is idempotent: identical files are not rewritten (sha256
-// short-circuit), changed tasks get one-line frontmatter / one-section
-// note diffs, new tasks get new files, and tasks that have since been
-// deleted from the DB STAY on disk with a banner so the operator never
-// loses context they may have already git-blamed.
+// Thin sugar over `renderToBucket` (src/exporting.ts): one live
+// workstream → one ExportSource → bucket render. The renderer holds
+// every byte of layout knowledge; this wrapper just adapts the SDK
+// reads (listTasks / getTaskEdges / listNotes / latestSeq) and
+// emits the workstream-flavoured event.
 //
-// Anti-features (per the originating design note):
-//   - re-import: out of scope; manifest.json gives a future hook
-//   - HTML/PDF: markdown-only; operators can pandoc
+// The on-disk shape is the v0.3 BUCKET layout (see src/exporting.ts):
+//
+//   <outDir>/
+//     README.md / INDEX.md / manifest.json    # bucket-level
+//     <workstream>/
+//       README.md / INDEX.md / tasks/<id>.md  # per-source-ws
+//
+// Re-export against the same outDir is additive: a different `-w`
+// adds a sibling subdir without touching the existing one. A re-run
+// with the same `-w` refreshes that subdir (sha256 short-circuit).
+// Pointing this at a directory built by mu < 0.3 throws
+// `LegacyExportLayoutError`.
+//
+// Anti-features (preserved from the originating design note):
+//   - re-import: out of scope
+//   - HTML/PDF: markdown-only
 //   - embedded VCS: caller can `git init && git add . && git commit`
-//   - cross-workstream merge: one workstream per export call
+//   - cross-workstream merge: source-ws subdirs stay separate
 
 export interface ExportWorkstreamOptions {
   workstream: string;
-  /** Output directory. Defaults to `./<workstream>/` in the cwd. */
+  /** Output directory (the bucket). Defaults to `./<workstream>/`
+   *  in the cwd — i.e. the bucket and its single source-ws subdir
+   *  share a name. */
   outDir?: string;
-}
-
-export interface ExportTaskEntry {
-  /** Task local_id == filename stem (`<id>.md`). */
-  id: string;
-  /** Path relative to outDir. */
-  path: string;
-  /** sha256 of the markdown body bytes. Lets a re-export skip
-   *  byte-identical writes. */
-  sha256: string;
-  /** ISO timestamp of the first observed export at which the task
-   *  was missing from the DB (preserved across re-exports via
-   *  manifest.json merge). Absent for tasks that still exist. */
-  deletedAt?: string;
-}
-
-export interface ExportManifest {
-  workstream: string;
-  exportedAt: string;
-  muVersion: string;
-  /** `latestSeq(db)` at export time — a re-importer (future) can
-   *  reason about what happened after this snapshot. */
-  eventsSeqAtExport: number;
-  tasks: ExportTaskEntry[];
 }
 
 export interface ExportResult {
   outDir: string;
+  /** Per-task files rewritten this call. */
   written: number;
+  /** Per-task files sha256-skipped this call. */
   unchanged: number;
-  /** Tasks present in a previous manifest that are no longer in the
-   *  DB. Their .md is preserved; a banner is added (idempotent: not
-   *  re-added on subsequent re-exports). */
+  /** Tasks present in a prior manifest that are no longer in the DB.
+   *  Their .md stays on disk; a banner is added once. */
   preserved: number;
   manifestPath: string;
   manifest: ExportManifest;
-}
-
-/** Wrap arbitrary text in a fenced code block, choosing a fence longer
- *  than any backtick run inside `body` so the body's literal ``` (or
- *  ````, etc.) survives intact. Used for note content, which routinely
- *  contains markdown / code / triple-fences. */
-function fenceForBody(body: string): string {
-  const longestRun = (body.match(/`+/g) ?? []).reduce((m, s) => Math.max(m, s.length), 0);
-  return "`".repeat(Math.max(3, longestRun + 1));
-}
-
-/** YAML-ish scalar quote: always double-quoted, with `"` and `\\`
- *  escaped. Good enough for the small string set we emit (titles,
- *  ids, status, evidence). Multi-line evidence strings are coerced
- *  to single-line by replacing newlines with ` ` so the frontmatter
- *  block stays valid YAML — full faithful evidence still appears in
- *  the per-task notes section if the operator captured it via
- *  `mu task close --evidence`. */
-function yamlScalar(value: string): string {
-  return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, " ")}"`;
-}
-
-function renderTaskMarkdown(
-  task: TaskRow,
-  edges: { blockers: string[]; dependents: string[] },
-  notes: TaskNoteRow[],
-): string {
-  const lines: string[] = [];
-  lines.push("---");
-  lines.push(`id: ${yamlScalar(task.name)}`);
-  lines.push(`workstream: ${yamlScalar(task.workstreamName)}`);
-  lines.push(`status: ${task.status}`);
-  lines.push(`impact: ${task.impact}`);
-  lines.push(`effort_days: ${task.effortDays}`);
-  // ROI is derived but a load-bearing field for operators ranking
-  // closed tasks in retrospect; emit it precomputed so consumers
-  // don't have to re-derive.
-  lines.push(`roi: ${(task.impact / task.effortDays).toFixed(2)}`);
-  lines.push(`owner: ${task.ownerName === null ? "null" : yamlScalar(task.ownerName)}`);
-  lines.push(`created_at: ${yamlScalar(task.createdAt)}`);
-  lines.push(`updated_at: ${yamlScalar(task.updatedAt)}`);
-  lines.push(`blocked_by: [${edges.blockers.map(yamlScalar).join(", ")}]`);
-  lines.push(`blocks: [${edges.dependents.map(yamlScalar).join(", ")}]`);
-  lines.push("---");
-  lines.push("");
-  lines.push(`# ${task.title}`);
-  lines.push("");
-  if (notes.length === 0) {
-    lines.push("_No notes._");
-    lines.push("");
-  } else {
-    lines.push(`## Notes (${notes.length})`);
-    lines.push("");
-    for (const [i, note] of notes.entries()) {
-      lines.push(`### #${i + 1} by ${note.author ?? "system"}, ${note.createdAt}`);
-      lines.push("");
-      const fence = fenceForBody(note.content);
-      lines.push(fence);
-      lines.push(note.content);
-      lines.push(fence);
-      lines.push("");
-    }
-  }
-  // Trailing newline so POSIX tools (and git diff) don't complain.
-  return `${lines.join("\n")}`.replace(/\n*$/, "\n");
-}
-
-function renderIndexMarkdown(workstream: string, tasks: TaskRow[]): string {
-  const lines: string[] = [];
-  lines.push(`# ${workstream} — task index`);
-  lines.push("");
-  if (tasks.length === 0) {
-    lines.push("_No tasks._");
-    lines.push("");
-    return lines.join("\n");
-  }
-  lines.push("| id | status | impact | effort | ROI | title |");
-  lines.push("| --- | --- | --- | --- | --- | --- |");
-  for (const t of tasks) {
-    const roi = (t.impact / t.effortDays).toFixed(2);
-    // Pipe-escape titles so the table stays valid markdown.
-    const title = t.title.replace(/\|/g, "\\|");
-    lines.push(
-      `| [\`${t.name}\`](tasks/${t.name}.md) | ${t.status} | ${t.impact} | ${t.effortDays} | ${roi} | ${title} |`,
-    );
-  }
-  lines.push("");
-  return lines.join("\n");
-}
-
-function renderReadmeMarkdown(workstream: string, tasks: TaskRow[], exportedAt: string): string {
-  const counts: Record<string, number> = {
-    OPEN: 0,
-    IN_PROGRESS: 0,
-    CLOSED: 0,
-    REJECTED: 0,
-    DEFERRED: 0,
-  };
-  for (const t of tasks) counts[t.status] = (counts[t.status] ?? 0) + 1;
-  const lines: string[] = [];
-  lines.push(`# Workstream: ${workstream}`);
-  lines.push("");
-  lines.push(`Exported at: ${exportedAt}`);
-  lines.push("");
-  lines.push(`- Tasks: ${tasks.length}`);
-  for (const status of ["OPEN", "IN_PROGRESS", "CLOSED", "REJECTED", "DEFERRED"] as const) {
-    lines.push(`  - ${status}: ${counts[status] ?? 0}`);
-  }
-  lines.push("");
-  lines.push("See `INDEX.md` for the task table; one `.md` per task in `tasks/`.");
-  lines.push("");
-  lines.push(
-    "_This directory was produced by `mu workstream export`. Re-run the verb to regenerate; deleted tasks are preserved with a banner. See `manifest.json` for the machine-readable index._",
-  );
-  lines.push("");
-  return lines.join("\n");
-}
-
-const DELETED_BANNER_PREFIX = "> **Deleted from DB on ";
-
-function bannerFor(timestamp: string): string {
-  return `${DELETED_BANNER_PREFIX}${timestamp}** — this task no longer exists in mu's database. The export below is the last-known state. Re-export will not regenerate it.\n\n`;
-}
-
-/** Read an existing manifest if present; tolerant of corruption (returns
- *  undefined and the export rebuilds from scratch — every per-task .md
- *  will be re-written, but no data is lost). */
-function readManifest(path: string): ExportManifest | undefined {
-  if (!existsSync(path)) return undefined;
-  try {
-    const raw = readFileSync(path, "utf8");
-    const parsed = JSON.parse(raw) as ExportManifest;
-    if (typeof parsed.workstream !== "string" || !Array.isArray(parsed.tasks)) return undefined;
-    return parsed;
-  } catch {
-    return undefined;
-  }
-}
-
-function sha256Hex(content: string): string {
-  return createHash("sha256").update(content, "utf8").digest("hex");
-}
-
-/** Read the package.json shipped next to the bundled CLI (or src/) so
- *  the manifest records the mu version that produced it. Falls back to
- *  "unknown" if the file isn't reachable (e.g. mu loaded from a tarball
- *  with no sibling package.json). */
-function readMuVersion(): string {
-  try {
-    const here = dirname(fileURLToPath(import.meta.url));
-    const raw = readFileSync(join(here, "..", "package.json"), "utf8");
-    const parsed = JSON.parse(raw) as { version?: unknown };
-    return typeof parsed.version === "string" ? parsed.version : "unknown";
-  } catch {
-    return "unknown";
-  }
+  /** Per-source-ws manifest entry for this workstream — convenience
+   *  for callers who only want one source's view. */
+  source: ExportSourceManifest;
 }
 
 /**
- * Export a workstream's task graph + notes to a directory of markdown
- * files. Idempotent against the same `outDir`: re-export rewrites only
- * tasks whose markdown changed; tasks deleted from the DB since the
- * previous export are preserved on disk with a one-time banner; new
- * tasks get new files; the manifest.json is rewritten in place.
+ * Export one live workstream to a bucket directory. Idempotent +
+ * additive: re-exporting the same workstream is sha256-skipped,
+ * exporting a different workstream into the same bucket appends a
+ * sibling subdir.
  *
- * Throws on the following NON-recoverable conditions:
- *   - `outDir` exists but is not a directory (refuses to clobber)
- *   - any per-task path inside `outDir` exists but is a directory
- *
- * Otherwise: best-effort idempotent. Safe to call repeatedly. Cheap
- * enough (sha256 short-circuit) that auto-export at destroy time
- * is constant-time per unchanged task.
+ * Throws:
+ *   - `LegacyExportLayoutError` if `outDir` already contains a
+ *     pre-0.3 (single-source) manifest.json.
  */
 export function exportWorkstream(db: Db, opts: ExportWorkstreamOptions): ExportResult {
   const outDir = resolve(opts.outDir ?? join(process.cwd(), opts.workstream));
-  if (existsSync(outDir)) {
-    const stat = statSync(outDir);
-    if (!stat.isDirectory()) {
-      throw new Error(`exportWorkstream: outDir exists and is not a directory: ${outDir}`);
-    }
-  } else {
-    mkdirSync(outDir, { recursive: true });
+  const source = exportSourceForWorkstream(db, opts.workstream);
+  const result = renderToBucket({
+    sources: [source],
+    bucketLabel: null,
+    outDir,
+  });
+  const sourceManifest = result.manifest.sources[opts.workstream];
+  if (!sourceManifest) {
+    // Defensive: renderToBucket always inserts a manifest entry per
+    // source it received. If this ever fires the renderer regressed.
+    throw new Error(
+      `exportWorkstream: renderer did not write a manifest entry for ${opts.workstream}`,
+    );
   }
-  const tasksDir = join(outDir, "tasks");
-  mkdirSync(tasksDir, { recursive: true });
-
-  const manifestPath = join(outDir, "manifest.json");
-  const previous = readManifest(manifestPath);
-  const previousById = new Map<string, ExportTaskEntry>();
-  if (previous) {
-    for (const t of previous.tasks) previousById.set(t.id, t);
-  }
-
-  const liveTasks = listTasks(db, opts.workstream);
-  const liveIds = new Set(liveTasks.map((t) => t.name));
-  const exportedAt = new Date().toISOString();
-
-  let written = 0;
-  let unchanged = 0;
-  let preserved = 0;
-  const manifestEntries: ExportTaskEntry[] = [];
-
-  for (const task of liveTasks) {
-    const edges = getTaskEdges(db, task.name, task.workstreamName);
-    const notes = listNotes(db, task.name, task.workstreamName);
-    const md = renderTaskMarkdown(task, edges, notes);
-    const sha = sha256Hex(md);
-    const relPath = join("tasks", `${task.name}.md`);
-    const absPath = join(outDir, relPath);
-
-    const prev = previousById.get(task.name);
-    const onDisk = existsSync(absPath);
-    if (onDisk && prev?.sha256 === sha && prev.deletedAt === undefined) {
-      // Identical to last export AND file still on disk — skip the
-      // write so mtime stays put (operators sometimes git-blame these).
-      unchanged += 1;
-    } else {
-      writeFileSync(absPath, md, "utf8");
-      written += 1;
-    }
-    manifestEntries.push({ id: task.name, path: relPath, sha256: sha });
-  }
-
-  // Preserve files for tasks that disappeared from the DB. We DO NOT
-  // delete the .md (the operator may have git-blamed it; that's the
-  // load-bearing invariant from the originating note). We DO add a
-  // one-time banner so re-readers know the row is gone. The banner
-  // is keyed off the manifest's `deletedAt`, not the file's content,
-  // so a later re-export against a hand-edited file is still safe.
-  for (const prev of previousById.values()) {
-    if (liveIds.has(prev.id)) continue;
-    const absPath = join(outDir, prev.path);
-    const deletedAt = prev.deletedAt ?? exportedAt;
-    if (existsSync(absPath)) {
-      const existing = readFileSync(absPath, "utf8");
-      // Idempotent banner add: only prepend if not already there.
-      if (!existing.startsWith(DELETED_BANNER_PREFIX)) {
-        writeFileSync(absPath, bannerFor(deletedAt) + existing, "utf8");
-      }
-    }
-    manifestEntries.push({ ...prev, deletedAt });
-    preserved += 1;
-  }
-
-  // Sort manifest entries by id for deterministic output (stable
-  // diffs across re-exports).
-  manifestEntries.sort((a, b) => a.id.localeCompare(b.id));
-
-  const manifest: ExportManifest = {
-    workstream: opts.workstream,
-    exportedAt,
-    muVersion: readMuVersion(),
-    eventsSeqAtExport: latestSeq(db),
-    tasks: manifestEntries,
-  };
-  writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
-
-  // Static surface files: README.md (human entry point) and INDEX.md
-  // (pretty table of every live task). Always rewritten — they're
-  // cheap and a stale README would confuse the next reader.
-  writeFileSync(
-    join(outDir, "README.md"),
-    renderReadmeMarkdown(opts.workstream, liveTasks, exportedAt),
-    "utf8",
-  );
-  writeFileSync(join(outDir, "INDEX.md"), renderIndexMarkdown(opts.workstream, liveTasks), "utf8");
-
   emitEvent(
     db,
     opts.workstream,
-    `workstream export ${opts.workstream} (out=${outDir}, tasks=${liveTasks.length}, written=${written}, unchanged=${unchanged}, preserved=${preserved})`,
+    `workstream export ${opts.workstream} (out=${result.outDir}, tasks=${source.tasks.length}, written=${result.written}, unchanged=${result.unchanged}, preserved=${result.preserved})`,
   );
-
-  return { outDir, written, unchanged, preserved, manifestPath, manifest };
+  return {
+    outDir: result.outDir,
+    written: result.written,
+    unchanged: result.unchanged,
+    preserved: result.preserved,
+    manifestPath: result.manifestPath,
+    manifest: result.manifest,
+    source: sourceManifest,
+  };
 }

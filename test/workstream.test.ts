@@ -787,18 +787,23 @@ describe("exportWorkstream", () => {
     expect(result.written).toBe(3);
     expect(result.unchanged).toBe(0);
     expect(result.preserved).toBe(0);
-    expect(result.manifest.tasks.map((t) => t.id)).toEqual(["build", "design", "ship"]);
+    expect(result.source.tasks.map((t) => t.id)).toEqual(["build", "design", "ship"]);
+    expect(result.manifest.bucketVersion).toBe(2);
+    expect(Object.keys(result.manifest.sources)).toEqual(["auth"]);
+    // Bucket layout: top-level scaffolding + per-source-ws subdir.
     expect(exportFiles(outDir)).toEqual([
       "INDEX.md",
       "README.md",
+      "auth/INDEX.md",
+      "auth/README.md",
+      "auth/tasks/build.md",
+      "auth/tasks/design.md",
+      "auth/tasks/ship.md",
       "manifest.json",
-      "tasks/build.md",
-      "tasks/design.md",
-      "tasks/ship.md",
     ]);
 
     const fs = await import("node:fs");
-    const designMd = fs.readFileSync(join(outDir, "tasks/design.md"), "utf8");
+    const designMd = fs.readFileSync(join(outDir, "auth/tasks/design.md"), "utf8");
     expect(designMd).toMatch(/^---\nid: "design"\n/);
     expect(designMd).toMatch(/status: OPEN/);
     expect(designMd).toMatch(/blocks: \["build"\]/);
@@ -807,7 +812,7 @@ describe("exportWorkstream", () => {
     expect(designMd).toMatch(/DECISION: JWT/);
     // Manifest sha matches the file we just read.
     const sha = require("node:crypto").createHash("sha256").update(designMd, "utf8").digest("hex");
-    expect(result.manifest.tasks.find((t) => t.id === "design")?.sha256).toBe(sha);
+    expect(result.source.tasks.find((t) => t.id === "design")?.sha256).toBe(sha);
   });
 
   it("is idempotent: a second export against an unchanged DB rewrites zero task files", async () => {
@@ -817,7 +822,7 @@ describe("exportWorkstream", () => {
 
     exportWorkstream(db, { workstream: "auth", outDir });
     const fs = await import("node:fs");
-    const beforeMtime = fs.statSync(join(outDir, "tasks/design.md")).mtimeMs;
+    const beforeMtime = fs.statSync(join(outDir, "auth/tasks/design.md")).mtimeMs;
     // Force a measurable mtime gap so an accidental rewrite would
     // surface even on coarse filesystems.
     await new Promise((r) => setTimeout(r, 25));
@@ -826,7 +831,7 @@ describe("exportWorkstream", () => {
     expect(second.written).toBe(0);
     expect(second.unchanged).toBe(3);
     expect(second.preserved).toBe(0);
-    const afterMtime = fs.statSync(join(outDir, "tasks/design.md")).mtimeMs;
+    const afterMtime = fs.statSync(join(outDir, "auth/tasks/design.md")).mtimeMs;
     expect(afterMtime).toBe(beforeMtime);
   });
 
@@ -842,10 +847,10 @@ describe("exportWorkstream", () => {
     expect(second.unchanged).toBe(2);
 
     const fs = await import("node:fs");
-    const buildMd = fs.readFileSync(join(outDir, "tasks/build.md"), "utf8");
+    const buildMd = fs.readFileSync(join(outDir, "auth/tasks/build.md"), "utf8");
     expect(buildMd).toMatch(/FOLLOWUP: handle edge case/);
     // Other tasks untouched.
-    const designMd = fs.readFileSync(join(outDir, "tasks/design.md"), "utf8");
+    const designMd = fs.readFileSync(join(outDir, "auth/tasks/design.md"), "utf8");
     expect(designMd).not.toMatch(/FOLLOWUP/);
   });
 
@@ -861,7 +866,7 @@ describe("exportWorkstream", () => {
     expect(second.unchanged).toBe(2);
 
     const fs = await import("node:fs");
-    const designMd = fs.readFileSync(join(outDir, "tasks/design.md"), "utf8");
+    const designMd = fs.readFileSync(join(outDir, "auth/tasks/design.md"), "utf8");
     expect(designMd).toMatch(/status: CLOSED/);
   });
 
@@ -881,8 +886,8 @@ describe("exportWorkstream", () => {
     const second = exportWorkstream(db, { workstream: "auth", outDir });
     expect(second.written).toBe(1);
     expect(second.unchanged).toBe(3);
-    expect(second.manifest.tasks.map((t) => t.id)).toEqual(["build", "deploy", "design", "ship"]);
-    expect(existsSync(join(outDir, "tasks/deploy.md"))).toBe(true);
+    expect(second.source.tasks.map((t) => t.id)).toEqual(["build", "deploy", "design", "ship"]);
+    expect(existsSync(join(outDir, "auth/tasks/deploy.md"))).toBe(true);
   });
 
   it("deleted task is preserved on disk with a banner; banner is not re-prepended on re-export", async () => {
@@ -897,13 +902,13 @@ describe("exportWorkstream", () => {
     const second = exportWorkstream(db, { workstream: "auth", outDir });
     expect(second.preserved).toBe(1);
     const fs = await import("node:fs");
-    const shipMd = fs.readFileSync(join(outDir, "tasks/ship.md"), "utf8");
+    const shipMd = fs.readFileSync(join(outDir, "auth/tasks/ship.md"), "utf8");
     expect(shipMd).toMatch(/^> \*\*Deleted from DB on /);
 
     // A third export must NOT prepend a SECOND banner.
     const third = exportWorkstream(db, { workstream: "auth", outDir });
     expect(third.preserved).toBe(1);
-    const shipMd2 = fs.readFileSync(join(outDir, "tasks/ship.md"), "utf8");
+    const shipMd2 = fs.readFileSync(join(outDir, "auth/tasks/ship.md"), "utf8");
     const bannerCount = (shipMd2.match(/Deleted from DB on/g) ?? []).length;
     expect(bannerCount).toBe(1);
   });
@@ -921,7 +926,7 @@ describe("exportWorkstream", () => {
     const outDir = join(tmpDir, "exp");
     exportWorkstream(db, { workstream: "auth", outDir });
     const fs = await import("node:fs");
-    const md = fs.readFileSync(join(outDir, "tasks/fence.md"), "utf8");
+    const md = fs.readFileSync(join(outDir, "auth/tasks/fence.md"), "utf8");
     // Outer fence must be longer than the inner triple-fence to keep
     // it intact for downstream renderers.
     expect(md).toMatch(/````\n```ts\nconst x = 1;\n```\n````/);

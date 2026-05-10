@@ -34,6 +34,7 @@ import {
 } from "../archives.js";
 import { UsageError, emitJson, relTime, resolveWorkstream, truncate } from "../cli.js";
 import type { Db } from "../db.js";
+import { exportArchive } from "../exporting.js";
 import { type NextStep, muTable, pc, printNextSteps } from "../output.js";
 import { captureSnapshot } from "../snapshots.js";
 import { destroyWorkstream } from "../workstream.js";
@@ -447,6 +448,64 @@ export async function cmdArchiveSearch(
   printNextSteps(nextSteps);
 }
 
+// ─── export ───────────────────────────────────────────────────────
+//
+// `mu archive export <label> --out <bucket>` — render every source
+// workstream in an archive to a bucket directory using the unified
+// renderer in src/exporting.ts. Same disk shape as `mu workstream
+// export`, just with N source-ws subdirs (one per archived source).
+
+export async function cmdArchiveExport(
+  db: Db,
+  label: string,
+  opts: { out?: string; json?: boolean } = {},
+): Promise<void> {
+  if (!opts.out || opts.out.trim().length === 0) {
+    throw new UsageError("--out <dir> is required for `mu archive export`");
+  }
+  // Pre-resolve so a missing label fails BEFORE we touch the disk.
+  // exportArchive does the same internally; double-checking here
+  // keeps the JSON and prose error paths identical.
+  getArchive(db, label);
+  const result = exportArchive(db, { label, outDir: opts.out });
+  const totalTasks = Object.values(result.manifest.sources).reduce(
+    (acc, s) => acc + (s as { tasks: unknown[] }).tasks.length,
+    0,
+  );
+  const nextSteps: NextStep[] = [
+    { intent: "Browse the bucket", command: `ls ${result.outDir}` },
+    {
+      intent: "Re-export to refresh (additive; existing source-ws subdirs untouched)",
+      command: `mu archive export ${label} --out ${result.outDir}`,
+    },
+    {
+      intent: "Track in git",
+      command: `(cd ${result.outDir} && git init && git add . && git commit -m '${label} export')`,
+    },
+  ];
+  if (opts.json) {
+    emitJson({
+      archiveLabel: label,
+      outDir: result.outDir,
+      sourceCount: result.sourceCount,
+      totalTasks,
+      written: result.written,
+      unchanged: result.unchanged,
+      preserved: result.preserved,
+      manifestPath: result.manifestPath,
+      manifest: result.manifest,
+      nextSteps,
+    });
+    return;
+  }
+  console.log(
+    `Exported archive ${pc.bold(label)} → ${pc.bold(result.outDir)} ${pc.dim(
+      `(sources=${result.sourceCount}, tasks=${totalTasks}, written=${result.written}, unchanged=${result.unchanged}, preserved=${result.preserved})`,
+    )}`,
+  );
+  printNextSteps(nextSteps);
+}
+
 // ─── commander wiring ────────────────────────────────────────────────
 //
 // wireArchiveCommands is called by buildProgram() in src/cli.ts. Wired
@@ -559,6 +618,18 @@ export function wireArchiveCommands(program: Command): void {
         json?: boolean;
       };
       return handle((db) => cmdArchiveSearch(db, pattern, opts))();
+    });
+
+  archive
+    .command("export <label>")
+    .description(
+      "Render every source workstream in an archive to a bucket directory of markdown (one subdir per source-ws + bucket-level README/INDEX/manifest). Idempotent + additive: re-running refreshes only changed task files.",
+    )
+    .option("--out <dir>", "output directory (the bucket); required")
+    .option(...JSON_OPT)
+    .action(function (label: string) {
+      const opts = (this as Command).opts() as { out?: string; json?: boolean };
+      return handle((db) => cmdArchiveExport(db, label, opts))();
     });
 
   archive

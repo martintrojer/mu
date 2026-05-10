@@ -54,6 +54,7 @@ import { wireTaskCommands } from "./cli/tasks.js";
 import { wireWorkspaceCommands } from "./cli/workspace.js";
 import { wireWorkstreamCommands } from "./cli/workstream.js";
 import { type Db, SchemaTooOldError, WorkstreamNotFoundError, openDb } from "./db.js";
+import { LegacyExportLayoutError } from "./exporting.js";
 import { type LogRow, displayEventPayload } from "./logs.js";
 import {
   type NextStep,
@@ -310,7 +311,8 @@ export function classifyError(err: unknown): { label: string; exitCode: number }
   if (
     err instanceof UsageError ||
     err instanceof WorkstreamNameInvalidError ||
-    err instanceof ArchiveLabelInvalidError
+    err instanceof ArchiveLabelInvalidError ||
+    err instanceof LegacyExportLayoutError
   ) {
     return { label: "error", exitCode: 2 };
   }
