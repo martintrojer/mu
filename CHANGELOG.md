@@ -356,6 +356,22 @@ called out under "Breaking" in each entry.
   in `TaskNotFoundError.errorNextSteps()` against a freshly-opened
   v-current DB — catches future stale-column drift before users do.
 
+- **`CrossWorkstreamEdgeError.errorNextSteps()` now emits v5-shaped
+  recipes** (`nextsteps_audit_cross_workstream_edge_v4_columns`). The
+  "move the blocker" hint printed `UPDATE tasks SET workstream='…'
+  WHERE local_id='…'` — v4 schema. Post-v5 there is no
+  `tasks.workstream` column (it's `workstream_id` INT FK to
+  `workstreams.id`) and `local_id` is unique only per
+  `workstream_id`, so the v4 recipe both errored at runtime ("no
+  such column: workstream") and was ambiguous across workstreams.
+  Replaced with a v5-correct form that scopes the WHERE by the
+  blocker's workstream_id and resolves the destination via
+  subselect. Also dropped the "rename one workstream to the other"
+  hint: it silently moves *every* task in the source workstream and
+  fails outright when the destination name already exists (UNIQUE
+  violation) — almost never what the operator wants. Duplicate-the-
+  blocker hint kept since that's the safest fallback.
+
 - **`mu workspace create <missing-agent>` now throws a typed
   `AgentNotFoundError` (exit 3) instead of leaking SQLite's bare
   `NOT NULL constraint failed: vcs_workspaces.agent_id`**

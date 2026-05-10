@@ -374,14 +374,24 @@ export class CrossWorkstreamEdgeError extends Error implements HasNextSteps {
     );
   }
   errorNextSteps(): NextStep[] {
+    // schema v5+: tasks.workstream_id is an INTEGER FK to
+    // workstreams.id (no tasks.workstream column), and (workstream_id,
+    // local_id) is the per-workstream unique key — so the move-blocker
+    // recipe must scope by BOTH the source workstream's id AND set the
+    // destination workstream's id via subselects. The v4-shaped
+    // `UPDATE tasks SET workstream='…' WHERE local_id='…'` recipe we
+    // used to print here errored at runtime ("no such column:
+    // workstream") and was also ambiguous across workstreams.
+    //
+    // We also dropped the "rename one workstream to the other" hint:
+    // it silently moves *every* task in the source workstream and
+    // fails outright when the destination name already exists
+    // (UNIQUE violation). Operators almost always want to move just
+    // the blocker — or duplicate it — not merge whole workstreams.
     return [
       {
         intent: "Move the blocker into the dependent's workstream",
-        command: `mu sql "UPDATE tasks SET workstream='${this.dependentWorkstream}' WHERE local_id='${this.blocker}'"`,
-      },
-      {
-        intent: "Or merge the two workstreams (rename one to the other)",
-        command: `mu sql "UPDATE workstreams SET name='${this.dependentWorkstream}' WHERE name='${this.blockerWorkstream}'"`,
+        command: `mu sql "UPDATE tasks SET workstream_id=(SELECT id FROM workstreams WHERE name='${this.dependentWorkstream}') WHERE local_id='${this.blocker}' AND workstream_id=(SELECT id FROM workstreams WHERE name='${this.blockerWorkstream}')"`,
       },
       {
         intent: "Or duplicate the blocker (typed verb deferred)",
