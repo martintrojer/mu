@@ -329,3 +329,257 @@ describe("mu snapshot show", () => {
     expect(parsed.sizeBytes).toBeGreaterThan(0);
   });
 });
+
+// ─── snapshot_gc_caps_too_lax_no_cleanup_verb: prune + delete CLI ──
+
+import { CURRENT_SCHEMA_VERSION as CSV } from "../src/db.js";
+
+/** Strip ANSI escape sequences for substring assertions. */
+function stripAnsi(s: string): string {
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: ANSI by definition
+  return s.replace(/\u001b\[[0-9;]*m/g, "");
+}
+
+describe("mu snapshot prune", () => {
+  it("bare form: dry-run summary; nothing changes", async () => {
+    db = openDb({ path: dbPath });
+    captureSnapshot(db, "a", "auth");
+    captureSnapshot(db, "b", "auth");
+    const before = listSnapshots(db).length;
+    db.close();
+    const { stdout, error } = await runCli(["snapshot", "prune"], dbPath);
+    expect(error).toBeUndefined();
+    expect(stdout).toContain("Would delete");
+    expect(stdout).toContain("dry-run");
+    db = openDb({ path: dbPath });
+    expect(listSnapshots(db).length).toBe(before);
+    db.close();
+  });
+
+  it("--keep-last N --yes deletes everything except the N newest", async () => {
+    db = openDb({ path: dbPath });
+    for (let i = 0; i < 5; i++) captureSnapshot(db, `s${i}`, "auth");
+    db.close();
+    const { stdout, error } = await runCli(
+      ["snapshot", "prune", "--keep-last", "2", "--yes"],
+      dbPath,
+    );
+    expect(error).toBeUndefined();
+    expect(stdout).toContain("Deleted");
+    db = openDb({ path: dbPath });
+    expect(listSnapshots(db).length).toBe(2);
+    db.close();
+  });
+
+  it("--keep-last --json (dry-run) emits wouldDelete shape", async () => {
+    db = openDb({ path: dbPath });
+    for (let i = 0; i < 5; i++) captureSnapshot(db, `s${i}`, "auth");
+    db.close();
+    const { stdout, error } = await runCli(
+      ["snapshot", "prune", "--keep-last", "2", "--json"],
+      dbPath,
+    );
+    expect(error).toBeUndefined();
+    const parsed = JSON.parse(stdout.trim()) as {
+      dryRun: boolean;
+      mode: string;
+      wouldDeleteRows: number;
+      wouldFreeBytes: number;
+      victims: unknown[];
+    };
+    expect(parsed.dryRun).toBe(true);
+    expect(parsed.mode).toBe("keep-last");
+    expect(parsed.wouldDeleteRows).toBe(3);
+    expect(parsed.wouldFreeBytes).toBeGreaterThan(0);
+    expect(parsed.victims.length).toBe(3);
+  });
+
+  it("--older-than 7d deletes rows older than 7 days", async () => {
+    db = openDb({ path: dbPath });
+    const fresh = new Date().toISOString();
+    const old = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const stmt = db.prepare(
+      "INSERT INTO snapshots (workstream, label, db_path, schema_version, created_at) VALUES (?, ?, ?, ?, ?)",
+    );
+    for (let i = 0; i < 3; i++) stmt.run("auth", `o${i}`, `/x/o${i}.db`, CSV, old);
+    for (let i = 0; i < 2; i++) stmt.run("auth", `f${i}`, `/x/f${i}.db`, CSV, fresh);
+    db.close();
+    const { stdout, error } = await runCli(
+      ["snapshot", "prune", "--older-than", "7d", "--yes"],
+      dbPath,
+    );
+    expect(error).toBeUndefined();
+    expect(stdout).toContain("Deleted");
+    db = openDb({ path: dbPath });
+    const labels = listSnapshots(db).map((r) => r.label);
+    expect(labels).toEqual(["f1", "f0"]);
+    db.close();
+  });
+
+  it("--older-than rejects malformed values", async () => {
+    const { exitCode } = await runCli(["snapshot", "prune", "--older-than", "garbage"], dbPath);
+    // The custom parser throws inside commander's option-handling,
+    // which produces a non-zero exit (commander's invalidArgument
+    // CommanderError). The exact code is commander-internal; we only
+    // pin that the verb did not silently succeed.
+    expect(exitCode).not.toBe(0);
+    expect(exitCode).not.toBeNull();
+  });
+
+  it("--stale-version drops only schema_version != current rows", async () => {
+    db = openDb({ path: dbPath });
+    const a = captureSnapshot(db, "fresh-1", "auth");
+    const b = captureSnapshot(db, "stale", "auth");
+    db.prepare("UPDATE snapshots SET schema_version = ? WHERE id = ?").run(CSV - 1, b.id);
+    db.close();
+    const { stdout, error } = await runCli(
+      ["snapshot", "prune", "--stale-version", "--yes", "--json"],
+      dbPath,
+    );
+    expect(error).toBeUndefined();
+    const parsed = JSON.parse(stdout.trim()) as {
+      deletedRows: number;
+      freedBytes: number;
+    };
+    expect(parsed.deletedRows).toBe(1);
+    db = openDb({ path: dbPath });
+    expect(listSnapshots(db).map((r) => r.id)).toEqual([a.id]);
+    db.close();
+  });
+
+  it("--all --yes deletes everything BUT the safety-net snapshot remains", async () => {
+    db = openDb({ path: dbPath });
+    for (let i = 0; i < 3; i++) captureSnapshot(db, `s${i}`, "auth");
+    db.close();
+    const { stdout, error } = await runCli(
+      ["snapshot", "prune", "--all", "--yes", "--json"],
+      dbPath,
+    );
+    expect(error).toBeUndefined();
+    const parsed = JSON.parse(stdout.trim()) as {
+      deletedRows: number;
+      safetyNetSnapshotId?: number;
+    };
+    expect(parsed.deletedRows).toBe(3);
+    expect(parsed.safetyNetSnapshotId).toBeDefined();
+    db = openDb({ path: dbPath });
+    const remaining = listSnapshots(db);
+    expect(remaining.length).toBe(1);
+    expect(remaining[0]?.label).toMatch(/safety-net/);
+    expect(remaining[0]?.id).toBe(parsed.safetyNetSnapshotId);
+    db.close();
+  });
+
+  it("--all (no --yes) is dry-run; safety-net is NOT taken yet", async () => {
+    db = openDb({ path: dbPath });
+    for (let i = 0; i < 3; i++) captureSnapshot(db, `s${i}`, "auth");
+    const before = listSnapshots(db).length;
+    db.close();
+    const { stdout, error } = await runCli(["snapshot", "prune", "--all"], dbPath);
+    expect(error).toBeUndefined();
+    expect(stdout).toContain("Would delete");
+    db = openDb({ path: dbPath });
+    expect(listSnapshots(db).length).toBe(before);
+    db.close();
+  });
+
+  it("rejects mutually-exclusive flags with UsageError exit 2", async () => {
+    const { exitCode, stderr } = await runCli(
+      ["snapshot", "prune", "--all", "--keep-last", "1"],
+      dbPath,
+    );
+    // UsageError maps to exit 2 (commander's usage-error code).
+    expect(exitCode).toBe(2);
+    expect(stderr.toLowerCase()).toContain("mutually exclusive");
+  });
+});
+
+describe("mu snapshot delete <id>", () => {
+  it("removes the row + the on-disk .db file; emits success message", async () => {
+    db = openDb({ path: dbPath });
+    const snap = captureSnapshot(db, "a", "auth");
+    db.close();
+    const { stdout, error } = await runCli(["snapshot", "delete", String(snap.id)], dbPath);
+    expect(error).toBeUndefined();
+    // Strip ANSI for substring assertion (pc.bold wraps the #N).
+    const plain = stripAnsi(stdout);
+    expect(plain).toContain(`Deleted snapshot #${snap.id}`);
+    db = openDb({ path: dbPath });
+    expect(listSnapshots(db).find((r) => r.id === snap.id)).toBeUndefined();
+    db.close();
+  });
+
+  it("missing id errors with SnapshotNotFoundError; exit 3", async () => {
+    const { stderr, exitCode } = await runCli(["snapshot", "delete", "9999"], dbPath);
+    expect(exitCode).toBe(3);
+    expect(stderr).toMatch(/no such snapshot/i);
+  });
+
+  it("--json shape includes snapshotId, deleted, deletedFiles, freedBytes", async () => {
+    db = openDb({ path: dbPath });
+    const snap = captureSnapshot(db, "a", "auth");
+    db.close();
+    const { stdout, error } = await runCli(
+      ["snapshot", "delete", String(snap.id), "--json"],
+      dbPath,
+    );
+    expect(error).toBeUndefined();
+    const parsed = JSON.parse(stdout.trim()) as {
+      snapshotId: number;
+      deleted: boolean;
+      deletedFiles: number;
+      freedBytes: number;
+    };
+    expect(parsed.snapshotId).toBe(snap.id);
+    expect(parsed.deleted).toBe(true);
+    expect(parsed.deletedFiles).toBe(1);
+    expect(parsed.freedBytes).toBeGreaterThan(0);
+  });
+
+  it("does NOT auto-snapshot before the delete", async () => {
+    db = openDb({ path: dbPath });
+    const a = captureSnapshot(db, "a", "auth");
+    const b = captureSnapshot(db, "b", "auth");
+    db.close();
+    await runCli(["snapshot", "delete", String(a.id)], dbPath);
+    db = openDb({ path: dbPath });
+    const after = listSnapshots(db);
+    // Was 2 (a, b); deleted a; now 1 (b only). No new auto-snap row.
+    expect(after.length).toBe(1);
+    expect(after[0]?.id).toBe(b.id);
+    db.close();
+  });
+});
+
+// ─── snapshot list: schema_version column + dimming ──────────────
+
+describe("mu snapshot list — schema_version column", () => {
+  it("renders 'ver' column header alongside id and label", async () => {
+    db = openDb({ path: dbPath });
+    captureSnapshot(db, "a", "auth");
+    db.close();
+    const { stdout, error } = await runCli(["snapshot", "list"], dbPath);
+    expect(error).toBeUndefined();
+    // Strip ANSI codes (pc.bold wraps each header cell).
+    const plain = stripAnsi(stdout);
+    expect(plain).toMatch(/\bid\b/);
+    expect(plain).toMatch(/\bver\b/);
+    expect(plain).toMatch(/\blabel\b/);
+    // Body row carries v<N> for the current schema.
+    expect(plain).toContain(`v${CSV}`);
+  });
+
+  it("stale-version rows render with a Next: hint about pruning them", async () => {
+    db = openDb({ path: dbPath });
+    captureSnapshot(db, "fresh", "auth");
+    const stale = captureSnapshot(db, "stale", "auth");
+    db.prepare("UPDATE snapshots SET schema_version = ? WHERE id = ?").run(CSV - 1, stale.id);
+    db.close();
+    const { stdout, error } = await runCli(["snapshot", "list"], dbPath);
+    expect(error).toBeUndefined();
+    // The stale row's version stamp is rendered (v<N-1>).
+    expect(stdout).toContain(`v${CSV - 1}`);
+    // The Next: block grows a "Drop ... stale-version row" suggestion.
+    expect(stdout).toMatch(/stale-version/i);
+  });
+});

@@ -977,9 +977,24 @@ mu undo                # dry-run: shows the snapshot summary, does NOT restore
 mu undo --yes          # commit the restore
 mu undo --to 12 --yes  # restore a specific snapshot id
 
-mu snapshot list       # newest-first, with id / label / workstream / size
+mu snapshot list       # newest-first: id / ver / label / workstream / size
 mu snapshot show 12    # full metadata for one snapshot
+
+# Manual cleanup (auto-GC also runs on every capture)
+mu snapshot prune                  # dry-run summary of the GC policy
+mu snapshot prune --yes            # apply the GC policy now
+mu snapshot prune --keep-last 50 --yes
+mu snapshot prune --older-than 7d --yes
+mu snapshot prune --stale-version --yes  # drop schema_version != current rows
+mu snapshot prune --all --yes      # nuke everything (auto-snapshots a safety-net first)
+mu snapshot delete 12              # surgical removal of one row + its .db file
 ```
+
+The `ver` column in `mu snapshot list` shows each snapshot's
+`schema_version`; rows whose version doesn't match the live DB
+(post-schema-bump) render dimmed and are unrestorable
+(`mu undo` raises `SnapshotVersionMismatchError`). Drop them in
+bulk with `mu snapshot prune --stale-version --yes`.
 
 Two important caveats:
 
@@ -996,8 +1011,11 @@ Two important caveats:
 
 Snapshots live next to the live DB at
 `<state-dir>/snapshots/<id>.db`. They GC opportunistically:
-older than 14 days OR more than 100 rows, whichever cap is hit
-first, on every capture.
+on every capture, drop any row past the count cap OR past the
+age cap (whichever fires first). Defaults: keep the 100 newest
++ everything from the last 14 days. Override with
+`MU_SNAPSHOT_KEEP_LAST` (default 100) / `MU_SNAPSHOT_MAX_AGE_DAYS`
+(default 14); typo'd values fall back to the default.
 
 ### Workspace orphans (dirs on disk with no DB row)
 

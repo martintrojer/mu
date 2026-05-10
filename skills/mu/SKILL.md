@@ -301,8 +301,12 @@ mu log --tail [--since SEQ]          # subscribe
 
 # Snapshots + undo — every destructive verb auto-snapshots first
 mu undo [--yes] [--to <id>]          # restore latest snapshot (or one chosen)
-mu snapshot list [-n N]              # newest-first: id | label | ws | size
+mu snapshot list [-n N]              # newest-first: id | ver | label | ws | size
 mu snapshot show <id>                # full metadata for one row
+mu snapshot prune [--keep-last N | --older-than <DAYS>d | --stale-version | --all] [--yes]
+                                     # bulk cleanup; bare form runs the GC policy now;
+                                     # --all auto-snapshots a safety-net first
+mu snapshot delete <id>              # surgical removal (row + .db file)
 
 # Archives — cross-workstream preservation of task graphs
 mu archive create <label> [--description "..."]   # one-time bucket; labels GLOBALLY unique

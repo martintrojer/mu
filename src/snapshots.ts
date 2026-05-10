@@ -194,11 +194,39 @@ export class SnapshotFileMissingError extends Error implements HasNextSteps {
 }
 
 // ─── GC caps (snap_design §CAPTURE STRATEGY > GC) ─────────────────────
+//
+// Both caps are env-tunable, mirroring the MU_SPAWN_LIVENESS_MS /
+// MU_IDLE_THRESHOLD_MS pattern in src/agents.ts: typed reader fn,
+// default on bad input rather than throwing — env-var typos shouldn't
+// crash a destructive verb's auto-GC pass.
+//
+//   MU_SNAPSHOT_KEEP_LAST       (default 100)
+//   MU_SNAPSHOT_MAX_AGE_DAYS    (default 14)
+//
+// Used by gcSnapshots(); also by `mu snapshot prune` (no-flag form).
 
-/** Snapshots older than this many days are eligible for GC. */
-const GC_MAX_AGE_DAYS = 14;
-/** Maximum number of rows to keep regardless of age. */
-const GC_MAX_COUNT = 100;
+/** Default count cap. */
+const DEFAULT_GC_MAX_COUNT = 100;
+/** Default age cap, in days. */
+const DEFAULT_GC_MAX_AGE_DAYS = 14;
+
+/** Read the operator-tunable count cap (`MU_SNAPSHOT_KEEP_LAST`). */
+export function gcMaxCount(): number {
+  const env = process.env.MU_SNAPSHOT_KEEP_LAST;
+  if (env === undefined || env === "") return DEFAULT_GC_MAX_COUNT;
+  const n = Number.parseInt(env, 10);
+  if (!Number.isFinite(n) || n < 0) return DEFAULT_GC_MAX_COUNT;
+  return n;
+}
+
+/** Read the operator-tunable age cap (`MU_SNAPSHOT_MAX_AGE_DAYS`). */
+export function gcMaxAgeDays(): number {
+  const env = process.env.MU_SNAPSHOT_MAX_AGE_DAYS;
+  if (env === undefined || env === "") return DEFAULT_GC_MAX_AGE_DAYS;
+  const n = Number.parseInt(env, 10);
+  if (!Number.isFinite(n) || n < 0) return DEFAULT_GC_MAX_AGE_DAYS;
+  return n;
+}
 
 // ─── snapshotsDir ─────────────────────────────────────────────────────
 
@@ -470,33 +498,41 @@ export function restoreSnapshot(db: Db, snapshotId: number): RestoreSnapshotResu
 // ─── Garbage collection (snap_design §CAPTURE STRATEGY > GC) ──────────
 
 /**
- * Drop snapshots that are BOTH older than GC_MAX_AGE_DAYS AND beyond
- * the GC_MAX_COUNT most-recent rows. "Whichever cap is more permissive
- * wins" (snap_design §GC) — this is the AND of both, which keeps
- * a row IF either cap would keep it.
+ * Drop snapshots that are EITHER past the count cap OR past the age
+ * cap — "whichever cap is more permissive wins" (snap_design §GC).
+ * Concretely: keep the N most recent AND keep everything <D days old;
+ * delete the rest (and their on-disk .db files).
  *
- * Concretely: keep the 100 most recent + everything <14d old. Delete
- * the rest (and their on-disk .db files).
+ * The caps come from `gcMaxCount()` / `gcMaxAgeDays()` (env-tunable
+ * via `MU_SNAPSHOT_KEEP_LAST` / `MU_SNAPSHOT_MAX_AGE_DAYS`).
+ *
+ * NOTE: prior to snapshot_gc_caps_too_lax_no_cleanup_verb the WHERE
+ * was `created_at < cutoff AND id NOT IN protected`, i.e. "delete
+ * only if BOTH old AND past the count cap". That made the count cap
+ * effectively dead under bursty use (every row was younger than the
+ * 14-day age cap, so the date filter spared everything regardless of
+ * row count). The fix flips AND→OR.
  *
  * Best-effort on file unlink: if a file is already gone, the row goes
  * anyway (the user's intent — "this snapshot is gone" — is satisfied).
  */
 export function gcSnapshots(db: Db): { deletedRows: number; deletedFiles: number } {
-  // Find candidates: rows that are BOTH old AND past the count cap.
-  const cutoffDate = new Date(Date.now() - GC_MAX_AGE_DAYS * 24 * 60 * 60 * 1000).toISOString();
-  // Get rows ordered by id DESC; the first GC_MAX_COUNT are
-  // count-cap-protected.
+  const keepLast = gcMaxCount();
+  const cutoffDate = new Date(Date.now() - gcMaxAgeDays() * 24 * 60 * 60 * 1000).toISOString();
+  // Get the count-cap-protected ids: top `keepLast` rows by id DESC.
   const protectedIds = (
-    db.prepare(`SELECT id FROM snapshots ORDER BY id DESC LIMIT ${GC_MAX_COUNT}`).all() as Array<{
+    db.prepare(`SELECT id FROM snapshots ORDER BY id DESC LIMIT ${keepLast}`).all() as Array<{
       id: number;
     }>
   ).map((r) => r.id);
   const placeholders = protectedIds.length > 0 ? protectedIds.map(() => "?").join(",") : "NULL";
+  // Drop a row if it's outside the count-protected set OR older than
+  // the age cap. (OR, not AND — see docstring.)
   const victims = db
     .prepare(
-      `SELECT id, db_path FROM snapshots WHERE created_at < ? AND id NOT IN (${placeholders})`,
+      `SELECT id, db_path FROM snapshots WHERE id NOT IN (${placeholders}) OR created_at < ?`,
     )
-    .all(cutoffDate, ...protectedIds) as Array<{ id: number; db_path: string }>;
+    .all(...protectedIds, cutoffDate) as Array<{ id: number; db_path: string }>;
 
   if (victims.length === 0) return { deletedRows: 0, deletedFiles: 0 };
 
@@ -516,6 +552,271 @@ export function gcSnapshots(db: Db): { deletedRows: number; deletedFiles: number
   const inList = ids.map(() => "?").join(",");
   const result = db.prepare(`DELETE FROM snapshots WHERE id IN (${inList})`).run(...ids);
   return { deletedRows: result.changes, deletedFiles };
+}
+
+// ─── Manual cleanup verbs ─────────────────────────────────────────────
+//
+// snapshot_gc_caps_too_lax_no_cleanup_verb: the auto-GC above runs
+// opportunistically on every captureSnapshot, but operators occasionally
+// need surgical control ("the .db files filled the disk", "a schema
+// bump made every pre-bump snapshot unrestorable, drop them"). Two
+// SDK entry points cover that:
+//
+//   pruneSnapshots(db, opts)  — bulk policy-driven cleanup
+//                               (`mu snapshot prune` CLI)
+//   deleteSnapshot(db, id)    — surgical single-row removal
+//                               (`mu snapshot delete <id>` CLI)
+
+export type PruneMode = "gc" | "keep-last" | "older-than" | "stale-version" | "all";
+
+export interface PruneOptions {
+  mode: PruneMode;
+  /** For mode='keep-last'. Required by the CLI. */
+  keepLast?: number;
+  /** For mode='older-than'. Days; required by the CLI. */
+  olderThanDays?: number;
+  /** When true, return the would-delete shape but don't touch the DB
+   *  or the on-disk .db files. */
+  dryRun?: boolean;
+}
+
+export interface PruneResult {
+  /** Rows that would be / were deleted. Always populated, even on
+   *  dry-run (the CLI's summary uses it). */
+  victims: SnapshotRow[];
+  /** Total bytes that would be / were freed (sum of victim file
+   *  sizes; missing files contribute 0). */
+  freedBytes: number;
+  /** Number of `snapshots` rows actually deleted. 0 on dry-run. */
+  deletedRows: number;
+  /** Number of on-disk .db files actually unlinked. 0 on dry-run. */
+  deletedFiles: number;
+  /** Set when mode='all' and dryRun=false: id of the safety-net
+   *  snapshot captured BEFORE the wipe. (Survives the wipe.) */
+  safetyNetSnapshotId?: number;
+}
+
+export class PruneOptionsInvalidError extends Error implements HasNextSteps {
+  override readonly name = "PruneOptionsInvalidError";
+  errorNextSteps(): NextStep[] {
+    return [
+      { intent: "Show prune options", command: "mu snapshot prune --help" },
+      { intent: "List snapshots", command: "mu snapshot list" },
+    ];
+  }
+}
+
+/** True if a snapshot row's schema_version doesn't match the live DB's
+ *  CURRENT_SCHEMA_VERSION. Stale snapshots are unrestorable (restore
+ *  raises SnapshotVersionMismatchError) — surfaced dimmed in
+ *  `mu snapshot list` and as the target set of `prune --stale-version`. */
+export function isStaleVersion(row: { schemaVersion: number }): boolean {
+  return row.schemaVersion !== CURRENT_SCHEMA_VERSION;
+}
+
+/**
+ * Bulk policy-driven cleanup. The CLI's `mu snapshot prune` verb is
+ * a thin wrapper. Modes:
+ *
+ *   gc            — apply the auto-GC policy explicitly (same as the
+ *                   opportunistic call inside captureSnapshot).
+ *   keep-last     — keep only the N newest rows.
+ *   older-than    — drop rows whose created_at is older than D days.
+ *   stale-version — drop rows whose schema_version != current.
+ *   all           — drop EVERY row. dryRun=false additionally captures
+ *                   a safety-net snapshot of the live DB FIRST, so a
+ *                   subsequent `mu undo` can recover; the safety-net
+ *                   row survives the wipe.
+ *
+ * On dryRun=true: returns the victim set + freed-bytes total without
+ * touching the DB or the filesystem.
+ */
+export function pruneSnapshots(db: Db, opts: PruneOptions): PruneResult {
+  const mode = opts.mode;
+  // ─ Mode-specific victim selection ─────────────────────────────────
+  let victims: SnapshotRow[];
+  let safetyNetSnapshotId: number | undefined;
+  switch (mode) {
+    case "gc": {
+      victims = computeGcVictims(db);
+      break;
+    }
+    case "keep-last": {
+      if (opts.keepLast === undefined || !Number.isInteger(opts.keepLast) || opts.keepLast < 0) {
+        throw new PruneOptionsInvalidError(
+          `--keep-last requires a non-negative integer; got ${JSON.stringify(opts.keepLast)}`,
+        );
+      }
+      victims = computeKeepLastVictims(db, opts.keepLast);
+      break;
+    }
+    case "older-than": {
+      if (
+        opts.olderThanDays === undefined ||
+        !Number.isFinite(opts.olderThanDays) ||
+        opts.olderThanDays < 0
+      ) {
+        throw new PruneOptionsInvalidError(
+          `--older-than requires a non-negative number of days; got ${JSON.stringify(opts.olderThanDays)}`,
+        );
+      }
+      victims = computeOlderThanVictims(db, opts.olderThanDays);
+      break;
+    }
+    case "stale-version": {
+      victims = listSnapshots(db).filter(isStaleVersion);
+      break;
+    }
+    case "all": {
+      victims = listSnapshots(db);
+      break;
+    }
+    default: {
+      // Defensive: TS keeps this exhaustive, but bad input from JS
+      // (e.g. SDK consumers) shouldn't crash.
+      throw new PruneOptionsInvalidError(`unknown prune mode: ${JSON.stringify(mode)}`);
+    }
+  }
+
+  // Pre-compute freed bytes from on-disk file sizes BEFORE we unlink.
+  // Missing files contribute 0 (they were already gone — nothing to
+  // free). statSync inside snapshotFileSize swallows ENOENT.
+  let freedBytes = 0;
+  for (const v of victims) {
+    const sz = snapshotFileSize(v);
+    if (sz !== null) freedBytes += sz;
+  }
+
+  if (opts.dryRun === true) {
+    return { victims, freedBytes, deletedRows: 0, deletedFiles: 0 };
+  }
+
+  // ─ Mode='all': capture the safety-net snapshot FIRST. Without
+  //   this, --all is the only mu verb that nukes the user's only
+  //   recovery path. Capture happens BEFORE we delete anything so
+  //   the safety-net snapshot itself survives the wipe (it gets a
+  //   fresh id, gets inserted by captureSnapshot, then we delete
+  //   `victims` which were captured before the safety-net write).
+  if (mode === "all") {
+    // captureSnapshot also runs gcSnapshots opportunistically; that's
+    // fine — the GC's victims overlap our `victims` set, and the
+    // overlap is harmless (we're about to delete the same rows).
+    const cap = captureSnapshot(db, "snapshot prune --all (safety-net)", null);
+    safetyNetSnapshotId = cap.id;
+  }
+
+  if (victims.length === 0) {
+    return {
+      victims,
+      freedBytes,
+      deletedRows: 0,
+      deletedFiles: 0,
+      ...(safetyNetSnapshotId !== undefined ? { safetyNetSnapshotId } : {}),
+    };
+  }
+
+  // Unlink files first (best-effort, same policy as gcSnapshots).
+  let deletedFiles = 0;
+  for (const v of victims) {
+    try {
+      if (existsSync(v.dbPath)) {
+        unlinkSync(v.dbPath);
+        deletedFiles += 1;
+      }
+    } catch {
+      // ignore — orphan file is preferable to a half-completed prune
+    }
+  }
+
+  const ids = victims.map((v) => v.id);
+  const inList = ids.map(() => "?").join(",");
+  const result = db.prepare(`DELETE FROM snapshots WHERE id IN (${inList})`).run(...ids);
+  return {
+    victims,
+    freedBytes,
+    deletedRows: result.changes,
+    deletedFiles,
+    ...(safetyNetSnapshotId !== undefined ? { safetyNetSnapshotId } : {}),
+  };
+}
+
+function computeGcVictims(db: Db): SnapshotRow[] {
+  const keepLast = gcMaxCount();
+  const cutoffDate = new Date(Date.now() - gcMaxAgeDays() * 24 * 60 * 60 * 1000).toISOString();
+  const protectedIds = (
+    db.prepare(`SELECT id FROM snapshots ORDER BY id DESC LIMIT ${keepLast}`).all() as Array<{
+      id: number;
+    }>
+  ).map((r) => r.id);
+  const placeholders = protectedIds.length > 0 ? protectedIds.map(() => "?").join(",") : "NULL";
+  const rows = db
+    .prepare(
+      `SELECT * FROM snapshots WHERE id NOT IN (${placeholders}) OR created_at < ? ORDER BY id DESC`,
+    )
+    .all(...protectedIds, cutoffDate) as RawSnapshotRow[];
+  return rows.map(rowFromDb);
+}
+
+function computeKeepLastVictims(db: Db, n: number): SnapshotRow[] {
+  // Victims = every row except the top-N by id DESC.
+  const rows = db
+    .prepare(
+      `SELECT * FROM snapshots
+         WHERE id NOT IN (SELECT id FROM snapshots ORDER BY id DESC LIMIT ?)
+         ORDER BY id DESC`,
+    )
+    .all(n) as RawSnapshotRow[];
+  return rows.map(rowFromDb);
+}
+
+function computeOlderThanVictims(db: Db, days: number): SnapshotRow[] {
+  const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+  const rows = db
+    .prepare("SELECT * FROM snapshots WHERE created_at < ? ORDER BY id DESC")
+    .all(cutoff) as RawSnapshotRow[];
+  return rows.map(rowFromDb);
+}
+
+export interface DeleteSnapshotResult {
+  /** Always true on success. (Misses raise SnapshotNotFoundError; the
+   *  shape mirrors `deleteTask`'s structured-result style.) */
+  deleted: true;
+  /** 1 if the .db file was on disk + unlinked; 0 if it was already
+   *  gone (orphaned row). */
+  deletedFiles: 0 | 1;
+  /** Bytes freed by unlinking the .db file. 0 when the file was
+   *  already gone. */
+  freedBytes: number;
+}
+
+/**
+ * Surgical removal of one snapshot: drop the `snapshots` row + unlink
+ * the on-disk .db file. Mirrors `mu task delete`. Errors with
+ * `SnapshotNotFoundError` on miss.
+ *
+ * No auto-snapshot before the delete: the point IS to delete one row,
+ * and removing one stepping-stone can't break `mu undo` (it still has
+ * every other snapshot). Auto-snapshotting here would be circular.
+ */
+export function deleteSnapshot(db: Db, snapshotId: number): DeleteSnapshotResult {
+  const row = db.prepare("SELECT * FROM snapshots WHERE id = ?").get(snapshotId) as
+    | RawSnapshotRow
+    | undefined;
+  if (!row) throw new SnapshotNotFoundError(snapshotId);
+  // Capture size BEFORE we unlink so freedBytes is accurate.
+  let freedBytes = 0;
+  let deletedFiles: 0 | 1 = 0;
+  try {
+    if (existsSync(row.db_path)) {
+      freedBytes = statSync(row.db_path).size;
+      unlinkSync(row.db_path);
+      deletedFiles = 1;
+    }
+  } catch {
+    // best-effort; the row goes either way
+  }
+  db.prepare("DELETE FROM snapshots WHERE id = ?").run(snapshotId);
+  return { deleted: true, deletedFiles, freedBytes };
 }
 
 // ─── stat helper (used by tests; cheap to expose) ─────────────────────

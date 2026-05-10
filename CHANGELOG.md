@@ -12,6 +12,33 @@ called out under "Breaking" in each entry.
 
 ### Added
 
+- **`mu snapshot prune` and `mu snapshot delete <id>`**
+  (`snapshot_gc_caps_too_lax_no_cleanup_verb`). Two new manual
+  cleanup verbs for the snapshots collection; both promote what
+  used to require `rm -rf <state-dir>/snapshots/*.db` + a `mu sql
+  DELETE FROM snapshots` (scary; bypasses the schema-version safety
+  check that keeps `mu undo` honest).
+  - **`mu snapshot prune`** — bulk policy-driven cleanup. Bare form
+    runs the GC policy (count + age caps) explicitly. Flags select
+    alternate modes: `--keep-last N` (top-N by id), `--older-than
+    <DAYS>d` (accepts `7d`/`30d`/bare integer), `--stale-version`
+    (drop rows whose `schema_version != CURRENT_SCHEMA_VERSION` —
+    unrestorable; pure disk weight after a schema bump), `--all`
+    (nuke everything). Two-phase: prints a dry-run summary by
+    default; `--yes` commits. `--all --yes` auto-captures a
+    safety-net snapshot of the live DB FIRST so a subsequent
+    `mu undo --to <safety-net-id> --yes` recovers. JSON shape:
+    `{deletedRows, deletedFiles, freedBytes,
+    safetyNetSnapshotId?}`. SDK: `pruneSnapshots(db, opts)` returns
+    a structured `{victims, freedBytes, deletedRows, deletedFiles}`
+    + `safetyNetSnapshotId` when `mode='all'`.
+  - **`mu snapshot delete <id>`** — surgical removal mirroring
+    `mu task delete`. Drops the row + unlinks the on-disk .db file.
+    Errors with `SnapshotNotFoundError` on miss. Does NOT auto-
+    snapshot first (the point is to delete one stepping-stone, and
+    that can't break `mu undo` — every other snapshot remains).
+    SDK: `deleteSnapshot(db, id)`.
+
 - **`mu task claim --for` accepts cross-workstream qualified refs**
   (`task_claim_for_cross_workstream`). `--for <name>` keeps today's
   same-workstream resolution; `--for <workstream>/<name>` (NEW)
@@ -383,6 +410,45 @@ called out under "Breaking" in each entry.
   `test/workspace-sdk.test.ts` cover the SDK aggregation, the
   destroyed-workstream stranded marker, the typo-`-w` exit-3 path,
   and the `--all` overrides-`-w` documented choice.
+
+- **Snapshot GC was AND-of-caps, leaking 458 rows / 731MB after
+  one day's dogfood; flipped to OR**
+  (`snapshot_gc_caps_too_lax_no_cleanup_verb`). `gcSnapshots()`'s
+  WHERE clause was `(created_at < cutoff) AND (id NOT IN top-100)`
+  — "delete only if BOTH old AND past the count cap". Under bursty
+  use every row was younger than the 14-day age cap, so the date
+  filter spared everything regardless of row count and the 100-row
+  cap NEVER fired. Operator-facing intent is the union ("keep at
+  most 100 OR things <14 days old"); the impl was the intersection.
+  Fix is one-line: WHERE flips to `(id NOT IN top-N) OR
+  (created_at < cutoff)` — "delete if past the count cap OR past
+  the age cap, whichever fires first." Matches the docstring.
+  Regression test in `test/snapshots.test.ts` creates >GC_MAX_COUNT
+  snapshots all <GC_MAX_AGE_DAYS old and asserts the count cap now
+  fires. The defaults (100 rows / 14 days) are unchanged — with
+  the OR fix they behave correctly.
+
+- **`mu snapshot list` now shows `schema_version`; stale rows render
+  dimmed** (`snapshot_gc_caps_too_lax_no_cleanup_verb`). New `ver`
+  column between `id` and `label`, rendered as `v<N>` (e.g. `v7`).
+  When a row's `schema_version != CURRENT_SCHEMA_VERSION` the entire
+  row renders dimmed via `pc.dim` (mirroring the satisfied-blockers
+  bucket in `mu task show`) so operators can see at a glance which
+  snapshots are stepping-stones to nowhere (restore raises
+  `SnapshotVersionMismatchError`). When stale rows are present the
+  Next: block grows a one-paste `mu snapshot prune --stale-version
+  --yes` suggestion. `--json` already exposed `schemaVersion` — no
+  shape change.
+
+- **GC caps are now env-tunable: `MU_SNAPSHOT_KEEP_LAST` (default
+  100) and `MU_SNAPSHOT_MAX_AGE_DAYS` (default 14)**
+  (`snapshot_gc_caps_too_lax_no_cleanup_verb`). Mirrors the
+  `MU_SPAWN_LIVENESS_MS` / `MU_IDLE_THRESHOLD_MS` precedent in
+  `src/agents.ts`: typed reader fns (`gcMaxCount()` /
+  `gcMaxAgeDays()`) that fall back to the default on bad input
+  rather than throwing — a typo'd env var must not crash auto-GC
+  in a destructive verb's hot path. Replaces the prior
+  `const GC_MAX_*` declarations.
 
 - **`AgentDiedOnSpawnError.errorNextSteps()` now leads with a per-spawn
   `--command` recipe** (`agent_spawn_liveness_check_trips_on`). The

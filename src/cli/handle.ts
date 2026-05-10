@@ -47,6 +47,7 @@ import {
 } from "../importing.js";
 import { type NextStep, hasNextSteps, isJsonMode, pc, printNextStepsTo } from "../output.js";
 import {
+  PruneOptionsInvalidError,
   SnapshotFileMissingError,
   SnapshotNotFoundError,
   SnapshotVersionMismatchError,
@@ -122,7 +123,8 @@ export function classifyError(err: unknown): { label: string; exitCode: number }
     err instanceof ImportBucketInvalidError ||
     err instanceof ImportLegacyLayoutError ||
     err instanceof ImportFrontmatterParseError ||
-    err instanceof ImportEdgeRefMissingError
+    err instanceof ImportEdgeRefMissingError ||
+    err instanceof PruneOptionsInvalidError
   ) {
     return { label: "error", exitCode: 2 };
   }
