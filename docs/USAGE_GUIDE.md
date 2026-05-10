@@ -579,6 +579,26 @@ You can also claim explicitly from outside any pane:
 mu task claim build --for worker-2
 ```
 
+`--for` accepts EITHER a bare worker name (`worker-2`, resolved in
+the task's workstream — today's behaviour) OR a qualified ref
+`<workstream>/<name>` for **cross-workstream dispatch**
+(`task_claim_for_cross_workstream`):
+
+```bash
+# Task lives in mufeedback-v03; worker-1 lives in roadmap-v0-3.
+# Per-workstream worker pools mean the orchestrator routinely has a
+# free worker in one workstream and a queued task in another.
+mu task claim some-task -w mufeedback-v03 --for roadmap-v0-3/worker-1
+```
+
+The agent stays in its own workstream — only `tasks.owner_id`
+points across the boundary (it's an INTEGER FK to `agents.id`,
+workstream-agnostic at the schema level). A bad qualifier surfaces
+typed errors: `WorkstreamNotFoundError` (exit 3) on a missing
+workstream prefix, `AgentNotFoundError` (exit 3, message names the
+workstream) when the named worker doesn't live there. Nothing is
+written on either failure.
+
 ### The orchestrator pattern: `--self`
 
 Not every action comes from a registered worker pane. Often the

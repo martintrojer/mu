@@ -154,6 +154,13 @@ Every turn:
   ref is qualified, and the per-poll reconcile loops over every
   workstream in the set (so dead-pane reaping fires across the
   whole wait surface, not just `-w`).
+- **Cross-workstream `mu task claim --for` is built in.** When
+  per-workstream worker pools leave a free worker in workstream A
+  and a queued task in workstream B, dispatch with `mu task claim X
+  -w B --for A/worker-1`. The agent stays in A; only the task's
+  `owner_id` crosses (FK is workstream-agnostic). No need to close +
+  re-spawn the worker in B (which would lose its LLM context) or
+  reach for `mu sql`.
 - **Agent showed up as idle (⚠ glyph; alive but assigned, no recent
   progress)** — see scrollback via `mu agent show <name> -n N`;
   recover via `mu agent send <name> '<retry>'` OR `mu task release
@@ -257,6 +264,10 @@ mu task tree <id> [--down]           # ASCII blockers (or dependents)
 mu task notes <id>                   # notes only, oldest first
 mu task note <id> "text"             # append (\n / \t / \\ escapes work)
 mu task claim <id> [--for <worker> | --self [--actor <name>]]
+                                     # --for accepts bare 'name'
+                                     # (resolves in task's ws) or
+                                     # qualified '<ws>/<name>' for
+                                     # cross-workstream dispatch.
 mu task release <id> [--reopen]      # clear owner; optionally flip OPEN
 mu task close <id>                   # → CLOSED (idempotent)
 mu task open <id>                    # → OPEN (idempotent)

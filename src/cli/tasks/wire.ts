@@ -303,7 +303,10 @@ export function wireTaskCommands(program: Command): void {
       "Claim a task. Default: derive agent from $TMUX_PANE's title (must be a registered worker). " +
         "Use --for <worker> to dispatch. Use --self for orchestrator-direct work (anonymous claim, owner=NULL, actor recorded in agent_logs).",
     )
-    .option("-f, --for <agent>", "claim on behalf of a registered worker (dispatch)")
+    .option(
+      "-f, --for <agent>",
+      "claim on behalf of a registered worker (dispatch); accepts bare 'name' (resolves in the task's workstream) or qualified '<workstream>/<name>' for cross-workstream dispatch (e.g. 'roadmap-v0-3/worker-1')",
+    )
     .option(
       "--self",
       "anonymous claim (orchestrator pattern): owner stays NULL; actor recorded in agent_logs.source. Mutually exclusive with --for.",

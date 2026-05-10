@@ -12,6 +12,20 @@ called out under "Breaking" in each entry.
 
 ### Added
 
+- **`mu task claim --for` accepts cross-workstream qualified refs**
+  (`task_claim_for_cross_workstream`). `--for <name>` keeps today's
+  same-workstream resolution; `--for <workstream>/<name>` (NEW)
+  dispatches across the boundary — the agent stays in its own
+  workstream, only `tasks.owner_id` crosses (FK is workstream-
+  agnostic at the schema level). Cures the per-workstream-worker-pool
+  friction where a free worker in A and a queued task in B forced
+  closing + respawning the worker (losing LLM context) or hand-edits
+  via `mu sql`. Bad qualifier surfaces typed `WorkstreamNotFoundError`
+  (missing prefix) or `AgentNotFoundError` (worker not in named ws);
+  nothing committed on failure. SDK `claimTask` gains an optional
+  `agentWorkstream` field; default = `opts.workstream`.
+
+
 - **Derived `idle` flag on `AgentRow`: alive + assigned + no recent
   progress** (`idle_assigned_agent_detection`). Surfaces the third
   agent lifecycle state (pi crashed mid-task without crashing the

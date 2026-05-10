@@ -108,6 +108,24 @@ export interface ClaimTaskOptions extends EvidenceOption {
    */
   agentName?: string;
   /**
+   * Workstream that the claimer agent lives in. When omitted, defaults
+   * to `opts.workstream` (today's same-workstream behaviour). Set by
+   * the CLI when `mu task claim X -w A --for B/worker-1` qualifies the
+   * `--for` ref with a different workstream prefix
+   * (`task_claim_for_cross_workstream`).
+   *
+   * Cross-workstream ownership is structurally allowed by the schema:
+   * `tasks.owner_id` is an INTEGER FK to `agents.id` with no
+   * workstream qualifier on the agent side. The per-workstream UNIQUE
+   * on `agents(workstream_id, name)` is what previously made the
+   * SDK's name → id lookup scope to one workstream; this option
+   * widens that lookup to a different workstream when the operator
+   * dispatches across a workstream boundary. The agent's own
+   * workstream remains unchanged — only the task's `owner_id` points
+   * out-of-workstream.
+   */
+  agentWorkstream?: string;
+  /**
    * Anonymous claim: write `owner = NULL` instead of resolving an agent
    * name and checking the FK. Use when the actor is the orchestrator
    * (or a script, or a human) doing direct work in a workstream they
@@ -200,19 +218,26 @@ export async function claimTask(
     );
   }
 
-  // Resolve the claiming agent to its surrogate id within
-  // opts.workstream. The FK from tasks.owner_id -> agents.id plus
-  // per-workstream UNIQUE on (workstream_id, name) makes cross-ws
-  // ownership structurally impossible at the schema level (v5); this
-  // SELECT exists only to surface a typed ClaimerNotRegisteredError
-  // instead of a bare 'FOREIGN KEY constraint failed' from SQLite.
+  // Resolve the claiming agent to its surrogate id within the agent's
+  // workstream — defaults to opts.workstream (today's same-ws path),
+  // or opts.agentWorkstream when the CLI dispatched across a
+  // workstream boundary via a qualified `--for <ws>/<name>` ref
+  // (task_claim_for_cross_workstream).
+  //
+  // The schema permits cross-workstream owner_id assignment (FK to
+  // agents.id only); the per-workstream UNIQUE on agents.name is the
+  // only reason this SELECT was scoped narrowly before. Bare-name
+  // dispatch keeps that scope to honour today's behaviour; qualified
+  // dispatch widens it to the named workstream so the agent resolves
+  // there.
+  const claimerWorkstream = opts.agentWorkstream ?? opts.workstream;
   const claimerRow = db
     .prepare(
       `SELECT a.id AS id
          FROM agents a JOIN workstreams ws ON ws.id = a.workstream_id
         WHERE a.name = ? AND ws.name = ?`,
     )
-    .get(agentName, opts.workstream) as { id: number } | undefined;
+    .get(agentName, claimerWorkstream) as { id: number } | undefined;
   if (!claimerRow) {
     const paneIdFromEnv = opts.agentName === undefined ? (process.env.TMUX_PANE ?? null) : null;
     throw new ClaimerNotRegisteredError(agentName, paneIdFromEnv);

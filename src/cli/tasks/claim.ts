@@ -10,6 +10,7 @@
 // to refactor_split_large_src_files.
 
 import { refreshAgentTitle } from "../../agents.js";
+import { AgentNotFoundError } from "../../agents/errors.js";
 import {
   UsageError,
   assertTaskInWorkstream,
@@ -19,7 +20,7 @@ import {
   resolveEntityRef,
   resolveWorkstream,
 } from "../../cli.js";
-import type { Db } from "../../db.js";
+import { type Db, WorkstreamNotFoundError, tryResolveWorkstreamId } from "../../db.js";
 import { type NextStep, pc, printNextSteps } from "../../output.js";
 import { reconcile } from "../../reconcile.js";
 import {
@@ -95,21 +96,59 @@ export async function cmdClaim(
   if (opts.actor !== undefined && opts.self !== true) {
     throw new UsageError("--actor only meaningful with --self (it overrides the actor name)");
   }
+  // Parse `--for` for an optional qualified ref: bare `<name>`
+  // resolves the agent in the task's workstream (today); qualified
+  // `<workstream>/<name>` resolves the agent in its own workstream
+  // and dispatches across the workstream boundary
+  // (task_claim_for_cross_workstream).
+  let forName: string | undefined;
+  let forWorkstream: string | undefined;
+  if (opts.for !== undefined) {
+    const parsed = parseQualifiedRef(opts.for);
+    forName = parsed.name;
+    if (parsed.workstream !== undefined) {
+      forWorkstream = parsed.workstream;
+      // Pre-flight: workstream must exist (typed error so the operator
+      // sees the canonical exit-3 mapping instead of a bare
+      // ClaimerNotRegisteredError pointing at the wrong cause).
+      if (tryResolveWorkstreamId(db, forWorkstream) === null) {
+        throw new WorkstreamNotFoundError(forWorkstream);
+      }
+      // Pre-flight: agent must exist in that workstream. Without this
+      // the SDK surfaces ClaimerNotRegisteredError (the bare-name
+      // shape) which doesn't carry the qualifying workstream context
+      // — AgentNotFoundError(name, workstream) is the right shape for
+      // the cross-ws path.
+      const wsId = tryResolveWorkstreamId(db, forWorkstream);
+      if (wsId !== null) {
+        const row = db
+          .prepare("SELECT 1 FROM agents WHERE name = ? AND workstream_id = ?")
+          .get(forName, wsId);
+        if (!row) throw new AgentNotFoundError(forName, forWorkstream);
+      }
+    }
+  }
   const sdkOpts: {
     agentName?: string;
+    agentWorkstream?: string;
     self?: boolean;
     actor?: string;
     evidence?: string;
     workstream: string;
   } = { workstream: ws };
-  if (opts.for) sdkOpts.agentName = opts.for;
+  if (forName !== undefined) sdkOpts.agentName = forName;
+  if (forWorkstream !== undefined) sdkOpts.agentWorkstream = forWorkstream;
   if (opts.self) sdkOpts.self = true;
   if (opts.actor !== undefined) sdkOpts.actor = opts.actor;
   if (opts.evidence !== undefined) sdkOpts.evidence = opts.evidence;
   const result = await claimTask(db, localId, sdkOpts);
   // Title push for the new owner. Anonymous claims (--self) leave
-  // owner=null — nothing to refresh.
-  if (result.ownerName) await refreshAgentTitle(db, result.ownerName, ws);
+  // owner=null — nothing to refresh. Refresh in the agent's OWN
+  // workstream (forWorkstream when the dispatch was cross-ws), not
+  // the task's — the agent row only exists in its own workstream.
+  if (result.ownerName) {
+    await refreshAgentTitle(db, result.ownerName, forWorkstream ?? ws);
+  }
   const nextSteps: NextStep[] = [
     {
       // Single-quoted example: shell metachars (`...`, $VAR, $(...))
