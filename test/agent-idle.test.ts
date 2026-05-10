@@ -22,11 +22,18 @@ import {
   getAgent,
   idleThresholdMs,
   insertAgent,
+  listLiveAgents,
 } from "../src/agents.js";
 import { IDLE_GLYPH, formatAgentsTable } from "../src/cli.js";
 import { type Db, openDb } from "../src/db.js";
 import { addTask } from "../src/tasks.js";
 import { setTaskStatus } from "../src/tasks/lifecycle.js";
+import {
+  type TmuxExecResult,
+  type TmuxExecutor,
+  resetTmuxExecutor,
+  setTmuxExecutor,
+} from "../src/tmux.js";
 
 // Force colorless output so literal-substring assertions vs ANSI escapes
 // are stable. Mirrors test/state-render.test.ts.
@@ -47,6 +54,7 @@ afterEach(() => {
   rmSync(tempDir, { recursive: true, force: true });
   const key = "MU_IDLE_THRESHOLD_MS";
   delete process.env[key];
+  resetTmuxExecutor();
 });
 
 /** Insert an agent and immediately back-date its updated_at by `ageMs`
@@ -66,6 +74,113 @@ function insertAgedAgent(
   const row = getAgent(db, name, workstream);
   if (!row) throw new Error("insertAgedAgent: row missing after insert");
   return row;
+}
+
+/** Minimal tmux mock that pretends every registered agent's pane is
+ *  alive with empty scrollback. Just enough for `reconcile` (and thus
+ *  `listLiveAgents`) to run without touching the real tmux server.
+ *
+ *  Only three verbs are exercised on the listLiveAgents → reconcile
+ *  path under our test setup (no ghosts, no orphans, empty
+ *  scrollback): `list-panes -s` (pane survival), `capture-pane`
+ *  (status detector input), and `select-pane -T` (refreshAgentTitle).
+ *  Anything else is a test-bug and should fail loudly. */
+function installFakePiPanes(
+  db: Db,
+  workstream: string,
+  panes: Array<{ paneId: string; title?: string; scrollback?: string }>,
+): void {
+  const sessionName = `mu-${workstream}`;
+  const ok = (stdout = ""): TmuxExecResult => ({ stdout, stderr: "", exitCode: 0 });
+  const fail = (stderr: string): TmuxExecResult => ({
+    stdout: "",
+    stderr,
+    exitCode: 1,
+  });
+  const byPane = new Map(panes.map((p, i) => [p.paneId, { ...p, windowId: `@${i + 1}` }]));
+
+  const executor: TmuxExecutor = async (args) => {
+    const verb = args[0];
+
+    if (verb === "list-panes" && args[1] === "-s") {
+      const tFlag = args.indexOf("-t");
+      const target = tFlag >= 0 ? args[tFlag + 1] : "";
+      if (target !== sessionName) return ok(""); // unknown session → no panes
+      const lines: string[] = [];
+      for (const p of byPane.values()) {
+        lines.push(`${p.windowId}\t${p.paneId}\t${p.title ?? ""}\tpi`);
+      }
+      return ok(lines.join("\n"));
+    }
+
+    if (verb === "capture-pane") {
+      const tFlag = args.indexOf("-t");
+      const paneId = tFlag >= 0 ? args[tFlag + 1] : "";
+      const p = byPane.get(paneId ?? "");
+      if (!p) return fail(`can't find pane: ${paneId}`);
+      return ok(p.scrollback ?? "");
+    }
+
+    if (verb === "select-pane") return ok();
+    if (verb === "display-message") {
+      const tFlag = args.indexOf("-t");
+      const paneId = tFlag >= 0 ? args[tFlag + 1] : "";
+      const p = byPane.get(paneId ?? "");
+      return p ? ok(`${paneId}\n`) : fail(`can't find pane: ${paneId}`);
+    }
+
+    throw new Error(`installFakePiPanes: unmocked tmux call: ${args.join(" ")}`);
+  };
+  setTmuxExecutor(executor);
+  // Quiet unused-param warning when caller only wants the executor side-effect.
+  void db;
+}
+
+/** End-to-end fixture: register an agent in `workstream` whose pane
+ *  is alive in our fake tmux, optionally owning a single IN_PROGRESS
+ *  task, with `updated_at` back-dated by `ageMs`. Returns the
+ *  registered paneId for assertions. */
+function setupAgentOwningTask(
+  db: Db,
+  opts: {
+    name: string;
+    workstream: string;
+    status: AgentRow["status"];
+    ageMs: number;
+    ownsTask: boolean;
+  },
+): void {
+  const paneId = `%${100 + opts.name.length}`;
+  insertAgent(db, {
+    name: opts.name,
+    workstream: opts.workstream,
+    paneId,
+    status: opts.status,
+  });
+  if (opts.ownsTask) {
+    addTask(db, {
+      localId: "t1",
+      workstream: opts.workstream,
+      title: "T1",
+      impact: 1,
+      effortDays: 1,
+    });
+    setTaskStatus(db, "t1", "IN_PROGRESS", { workstream: opts.workstream });
+    db.prepare(
+      `UPDATE tasks SET owner_id =
+         (SELECT id FROM agents WHERE name = ? AND workstream_id =
+            (SELECT id FROM workstreams WHERE name = ?))
+        WHERE local_id = ?`,
+    ).run(opts.name, opts.workstream, "t1");
+  }
+  // Back-date AFTER all task-status writes so the agent row's
+  // updated_at reflects our intended age. (setTaskStatus / addTask
+  // touch tasks.updated_at, not agents.updated_at, so this is safe
+  // — but we still want this last so insertAgent's now-stamp is
+  // overwritten.)
+  const past = new Date(Date.now() - opts.ageMs).toISOString();
+  db.prepare("UPDATE agents SET updated_at = ? WHERE name = ?").run(past, opts.name);
+  installFakePiPanes(db, opts.workstream, [{ paneId, title: opts.name }]);
 }
 
 describe("computeAgentIdle — predicate", () => {
@@ -129,6 +244,81 @@ describe("computeAgentIdle — predicate", () => {
     process.env.MU_IDLE_THRESHOLD_MS = "0";
     expect(computeAgentIdle(db, a)).toBe(false);
   });
+});
+
+describe("listLiveAgents — idle enrichment wiring", () => {
+  // These tests guard the wiring, not the predicate. A regression where
+  // listLiveAgents simply forgets to call computeAgentIdle (or only
+  // calls it under one mode) would silently pass every predicate-only
+  // test above. So we drive listLiveAgents end-to-end with a fake
+  // tmux executor and assert on the returned `idle` field.
+
+  it("enriches idle:true on a stale-needs_input + IN_PROGRESS-owning agent", async () => {
+    setupAgentOwningTask(db, {
+      name: "alice",
+      workstream: "ws",
+      status: "needs_input",
+      ageMs: 600_000,
+      ownsTask: true,
+    });
+    const view = await listLiveAgents(db, { workstream: "ws" });
+    expect(view.agents).toHaveLength(1);
+    expect(view.agents[0]?.name).toBe("alice");
+    expect(view.agents[0]?.idle).toBe(true);
+  });
+
+  it("leaves idle absent on a fresh-needs_input + IN_PROGRESS-owning agent", async () => {
+    setupAgentOwningTask(db, {
+      name: "alice",
+      workstream: "ws",
+      status: "needs_input",
+      ageMs: 1_000,
+      ownsTask: true,
+    });
+    const view = await listLiveAgents(db, { workstream: "ws" });
+    expect(view.agents).toHaveLength(1);
+    // Predicate didn't fire → the field must be absent (not `false`),
+    // so JSON consumers don't see `idle: false` noise. This is the
+    // `mu state --json` contract documented on AgentRow.
+    expect(view.agents[0]?.idle).toBeUndefined();
+    expect(JSON.stringify(view.agents[0])).not.toContain('"idle"');
+  });
+
+  it("leaves idle absent when a stale-needs_input agent owns NO task", async () => {
+    setupAgentOwningTask(db, {
+      name: "alice",
+      workstream: "ws",
+      status: "needs_input",
+      ageMs: 600_000,
+      ownsTask: false,
+    });
+    const view = await listLiveAgents(db, { workstream: "ws" });
+    expect(view.agents).toHaveLength(1);
+    expect(view.agents[0]?.idle).toBeUndefined();
+  });
+
+  // Mode propagation: status-pollers (`mu state`, `mu hud`, bare `mu`,
+  // `mu agent attach`) call listLiveAgents with mode:"status-only";
+  // read-only diagnostic verbs (`mu doctor`, `mu undo`) call it with
+  // mode:"report-only". The idle enrichment runs after `reconcile`
+  // returns and is therefore mode-independent — these tests pin that
+  // contract so a future refactor that gates enrichment on `mode ===
+  // 'full'` (or skips it on report-only because "no mutation") gets
+  // caught here.
+  for (const mode of ["full", "status-only", "report-only"] as const) {
+    it(`enriches idle on mode:'${mode}'`, async () => {
+      setupAgentOwningTask(db, {
+        name: "alice",
+        workstream: "ws",
+        status: "needs_input",
+        ageMs: 600_000,
+        ownsTask: true,
+      });
+      const view = await listLiveAgents(db, { workstream: "ws", mode });
+      expect(view.agents[0]?.idle).toBe(true);
+      expect(view.report.mode).toBe(mode);
+    });
+  }
 });
 
 describe("formatAgentsTable + JSON shape — idle surface", () => {
