@@ -145,6 +145,19 @@ resolutions you can `eval` directly. (One verb opts out:
 `mu agent attach`, which prints a `tmux attach` command for a
 human to copy.)
 
+### CLI conventions: multi-value flags
+
+Multi-value flags accept either repeated invocations
+(`--blocked-by a --blocked-by b`) or a comma-separated value
+(`--blocked-by a,b`) or any mix (`--blocked-by a,b --blocked-by c`).
+All three forms collapse to the same list internally. The
+syntactic signal is `<value...>` in the help-text metavar (the
+triple-dot); the parenthetical "repeat or comma-separate; or both"
+reinforces it. Variadic positionals (e.g. `mu task wait a b c`) keep
+their Unix-style space-separated shape — operands are not commas.
+Single-valued flags (`-w`, `--by`, `--status`, `--title`, ...) stay
+single.
+
 ---
 
 ## 3. Create a workstream

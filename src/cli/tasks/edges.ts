@@ -10,6 +10,7 @@
 import {
   assertTaskInWorkstream,
   emitJson,
+  parseCsvFlag,
   resolveEntityRef,
   resolveWorkstream,
 } from "../../cli.js";
@@ -72,15 +73,12 @@ export async function cmdTaskUnblock(
 export async function cmdTaskReparent(
   db: Db,
   rawId: string,
-  opts: { blockedBy: string; workstream?: string; json?: boolean },
+  opts: { blockedBy: string[]; workstream?: string; json?: boolean },
 ): Promise<void> {
   const { name: localId } = await resolveEntityRef(db, rawId, opts, "task");
   assertTaskInWorkstream(db, localId, opts.workstream);
   const ws = await resolveWorkstream(opts.workstream);
-  const blockers = opts.blockedBy
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
+  const blockers = parseCsvFlag(opts.blockedBy);
   const r = reparentTask(db, localId, blockers, { workstream: ws });
   const nextSteps: NextStep[] = [
     { intent: "Show the new dependency tree", command: `mu task tree ${localId} -w ${ws}` },

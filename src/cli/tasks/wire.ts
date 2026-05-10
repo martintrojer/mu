@@ -38,8 +38,8 @@ export function wireTaskCommands(program: Command): void {
     .requiredOption("-i, --impact <n>", "impact 1..100", parseImpact)
     .requiredOption("-e, --effort-days <days>", "effort in days (>0)", parsePositiveNumber)
     .option(
-      "-b, --blocked-by <ids>",
-      "comma-separated task ids that block this one (this task is blocked by them)",
+      "-b, --blocked-by <ids...>",
+      "task ids that block this one (repeat or comma-separate; or both)",
     )
     .option(...WORKSTREAM_OPT)
     .option(...JSON_OPT)
@@ -48,7 +48,7 @@ export function wireTaskCommands(program: Command): void {
         title: string;
         impact: number;
         effortDays: number;
-        blockedBy?: string;
+        blockedBy?: string[];
         workstream?: string;
         json?: boolean;
       };
@@ -385,14 +385,14 @@ export function wireTaskCommands(program: Command): void {
       "Atomically replace every incoming edge of <id> with the new --blocked-by list. Pass --blocked-by '' to clear all blockers.",
     )
     .requiredOption(
-      "-b, --blocked-by <ids>",
-      "comma-separated tasks that block <id> (empty string clears all)",
+      "-b, --blocked-by <ids...>",
+      "tasks that block <id> (repeat or comma-separate; or both; pass an empty string to clear)",
     )
     .option(...WORKSTREAM_OPT)
     .option(...JSON_OPT)
     .action(function (id: string) {
       const opts = (this as Command).opts() as {
-        blockedBy: string;
+        blockedBy: string[];
         workstream?: string;
         json?: boolean;
       };

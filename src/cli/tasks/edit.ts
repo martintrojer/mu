@@ -21,6 +21,7 @@ import {
   UsageError,
   assertTaskInWorkstream,
   emitJson,
+  parseCsvFlag,
   resolveEntityRef,
   resolveWorkstream,
   withRoiAll,
@@ -90,7 +91,7 @@ export async function cmdTaskAdd(
     title: string;
     impact: number;
     effortDays: number;
-    blockedBy?: string;
+    blockedBy?: string[];
     workstream?: string;
     json?: boolean;
   },
@@ -100,19 +101,14 @@ export async function cmdTaskAdd(
   // CLI's `<id>` positional is now optional; idFromTitle handles
   // collisions with `_2`, `_3`, … suffixes.
   const id = localId ?? idFromTitle(db, workstream, opts.title);
-  const blockedBy = opts.blockedBy
-    ? opts.blockedBy
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean)
-    : undefined;
+  const blockedBy = parseCsvFlag(opts.blockedBy);
   const task = addTask(db, {
     localId: id,
     workstream,
     title: opts.title,
     impact: opts.impact,
     effortDays: opts.effortDays,
-    ...(blockedBy ? { blockedBy } : {}),
+    ...(blockedBy.length > 0 ? { blockedBy } : {}),
   });
   const nextSteps: NextStep[] = [
     { intent: "Show this task", command: `mu task show ${task.name} -w ${workstream}` },

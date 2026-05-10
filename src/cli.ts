@@ -1091,6 +1091,33 @@ export const WORKSTREAM_OPT = [
 // document per line so output is grep/jq friendly.
 export const JSON_OPT = ["--json", "emit machine-readable JSON instead of a table"] as const;
 
+/**
+ * Canonical multi-value-flag parser. Every commander variadic flag
+ * (`--foo <vals...>`) in mu is post-processed through this helper so
+ * the operator can use repeated-flag form, comma-separated form, or
+ * any mix:
+ *
+ *   --foo a --foo b --foo c   → ["a", "b", "c"]
+ *   --foo a,b,c               → ["a", "b", "c"]
+ *   --foo a,b --foo c         → ["a", "b", "c"]
+ *
+ * Whitespace inside fragments is trimmed; empty fragments (consecutive
+ * commas, leading/trailing comma, an entirely-empty value) are
+ * dropped. Idempotent: the helper is safe to apply twice.
+ *
+ * Convention codified by cli_audit_plurality_uniformity (v0.3). See
+ * docs/USAGE_GUIDE.md "CLI conventions".
+ */
+export function parseCsvFlag(values: readonly string[] | undefined): string[] {
+  if (!values) return [];
+  return values.flatMap((v) =>
+    v
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean),
+  );
+}
+
 /** Stable JSON output: one line, no trailing newline beyond console.log's.
  *  Exported so cli/*.ts modules can use the same single-source-of-truth
  *  formatter. */

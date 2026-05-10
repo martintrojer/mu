@@ -111,6 +111,44 @@ describe("mu task add --blocked-by", () => {
     expect(edges.blockers.sort()).toEqual(["a", "b", "c"]);
   });
 
+  it("--blocked-by accepts the repeated-flag form (variadic)", async () => {
+    // Codified by cli_audit_plurality_uniformity (v0.3): every
+    // multi-value flag accepts repeated invocations OR a CSV value
+    // OR any mix; parseCsvFlag canonicalises.
+    for (const id of ["a", "b", "c"]) {
+      await runCli(
+        ["task", "add", id, "-w", "test", "-t", id.toUpperCase(), "-i", "50", "-e", "1"],
+        dbPath,
+      );
+    }
+    await runCli(
+      [
+        "task",
+        "add",
+        "build",
+        "-w",
+        "test",
+        "-t",
+        "Build",
+        "-i",
+        "70",
+        "-e",
+        "3",
+        "--blocked-by",
+        "a",
+        "--blocked-by",
+        "b",
+        "--blocked-by",
+        "c",
+      ],
+      dbPath,
+    );
+    const db = openDb({ path: dbPath });
+    const edges = getTaskEdges(db, "build", "test");
+    db.close();
+    expect(edges.blockers.sort()).toEqual(["a", "b", "c"]);
+  });
+
   it("--blocks (the old name) is rejected by commander as unknown option", async () => {
     await runCli(
       ["task", "add", "design", "-w", "test", "-t", "Design", "-i", "80", "-e", "2"],

@@ -24,6 +24,14 @@ called out under "Breaking" in each entry.
 
 ### Added
 
+- **CLI multi-value flags now accept repeat OR comma-separated forms
+  uniformly** (today's `--blocked-by a,b,c` keeps working; you can now
+  also `--blocked-by a --blocked-by b`). Codified by
+  `cli_audit_plurality_uniformity`: every variadic flag is post-processed
+  through a single `parseCsvFlag` helper; help text uses the stock phrase
+  "(repeat or comma-separate; or both)"; the `<value...>` metavar is the
+  syntactic signal.
+
 - **`src/archives.ts` SDK** (Phase 1 of the v0.3 archive feature):
   `createArchive`, `listArchives`, `getArchive`, `deleteArchive`,
   `addToArchive`, `removeFromArchive`, `listArchivedTasks`. Idempotent
