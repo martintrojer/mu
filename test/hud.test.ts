@@ -70,7 +70,10 @@ describe("mu hud", () => {
     expect(stdout).toContain("│");
 
     // Workstream-summary table: each cell carries its dim section word.
-    expect(stdout).toContain("mu-ws");
+    // The workstream name renders bare (no `mu-` prefix) — it's the
+    // canonical operator identifier; the tmux-session form `mu-X` is
+    // only used in literal tmux-attach hints.
+    expect(stdout).toMatch(/│ ws +│/);
     expect(stdout).toMatch(/2 ready/);
     expect(stdout).toMatch(/0 in-progress/);
     expect(stdout).toMatch(/2 tracks/);
@@ -115,7 +118,8 @@ describe("mu hud", () => {
     expect(exitCode).toBeNull();
 
     // Summary table still fits (cells carry their own dim section words).
-    expect(stdout).toContain("mu-ws");
+    // Workstream name renders bare in the header (no `mu-` prefix).
+    expect(stdout).toMatch(/│ ws +│/);
     expect(stdout).toContain("ready");
 
     // Ready section fits but truncated; '+N more' footer fires.
@@ -167,7 +171,8 @@ describe("mu hud", () => {
       process.env.MU_HUD_FORCE_SIZE = "100x30";
       const { stdout, exitCode } = await runCli(["hud", "-w", "empty"], emptyDb);
       expect(exitCode).toBeNull();
-      expect(stdout).toContain("mu-empty");
+      // Workstream name renders bare in the header (no `mu-` prefix).
+      expect(stdout).toMatch(/│ empty +│/);
 
       // Sections with no rows → skipped entirely (every section is
       // header-less, so the only signal is the data row itself).
@@ -296,11 +301,14 @@ describe("mu hud — multi-workstream", () => {
     process.env.MU_HUD_FORCE_SIZE = "160x40";
     const { stdout, exitCode } = await runCli(["hud", "-w", "alpha,beta"], dbPath);
     expect(exitCode).toBeNull();
-    // Both workstream rows appear in the summary table.
-    expect(stdout).toContain("mu-alpha");
-    expect(stdout).toContain("mu-beta");
-    // The third workstream is NOT pulled in.
-    expect(stdout).not.toContain("mu-gamma");
+    // Both workstream rows appear in the summary table (bare names —
+    // no `mu-` prefix; the cell pinned to the table-border `│ X +│`
+    // shape is the header summary row).
+    expect(stdout).toMatch(/│ alpha +│/);
+    expect(stdout).toMatch(/│ beta +│/);
+    // The third workstream is NOT pulled in (no header row, no data).
+    expect(stdout).not.toMatch(/│ gamma +│/);
+    expect(stdout).not.toContain("t_gamma");
     // Both ready rows render with their per-workstream task ids.
     expect(stdout).toContain("ready  t_alpha");
     expect(stdout).toContain("ready  t_beta");
@@ -341,9 +349,10 @@ describe("mu hud — multi-workstream", () => {
     process.env.MU_HUD_FORCE_SIZE = "160x40";
     const { stdout, exitCode } = await runCli(["hud", "--all"], dbPath);
     expect(exitCode).toBeNull();
-    expect(stdout).toContain("mu-alpha");
-    expect(stdout).toContain("mu-beta");
-    expect(stdout).toContain("mu-gamma");
+    // Bare workstream names in the summary table (no `mu-` prefix).
+    expect(stdout).toMatch(/│ alpha +│/);
+    expect(stdout).toMatch(/│ beta +│/);
+    expect(stdout).toMatch(/│ gamma +│/);
   });
 
   it("N≥2 -w + --json wraps in { workstreams: [...] } envelope", async () => {
@@ -389,16 +398,18 @@ describe("mu hud — multi-workstream", () => {
     const { stdout, exitCode } = await runCli(["hud", "-w", "alpha"], dbPath);
     expect(exitCode).toBeNull();
     // Single-mode: the per-row leading bold-cyan workstream cell that
-    // appears in multi-mode (e.g. `mu-alpha` next to `ready  t_alpha`)
+    // appears in multi-mode (e.g. `alpha` next to `ready  t_alpha`)
     // is absent from the agents/ready/inprogress/tracks/recent tables.
-    // The summary table still uses `mu-alpha` as its leading cell, but
-    // the ready row's first cell is `ready  t_alpha`, not `mu-alpha`.
-    expect(stdout).toContain("mu-alpha"); // header summary row
+    // The summary table still uses `alpha` as its leading cell (bare —
+    // no `mu-` prefix), but the ready row's first cell is
+    // `ready  t_alpha`, not the workstream name.
+    expect(stdout).toMatch(/│ alpha +│/); // header summary row, bare
     expect(stdout).toContain("ready  t_alpha");
-    // Absence of `mu-alpha` on the same line as the ready row is the
-    // structural signal that no leading workstream column was added.
+    // Absence of a leading `│ alpha │` cell on the same line as the
+    // ready row is the structural signal that no leading workstream
+    // column was added.
     const readyLine = stdout.split("\n").find((l) => l.includes("ready  t_alpha")) ?? "";
-    expect(readyLine).not.toContain("mu-alpha");
+    expect(readyLine).not.toMatch(/│ alpha +│/);
   });
 
   it("--all + -w is a UsageError (mutually exclusive)", async () => {

@@ -580,7 +580,7 @@ export async function cmdHud(db: Db, opts: HudOpts): Promise<void> {
   const headerTable = newHudTable();
   for (const d of perWs) {
     headerTable.push([
-      pc.bold(pc.cyan(`mu-${d.workstreamName}`)),
+      pc.bold(pc.cyan(d.workstreamName)),
       `${colorCount(d.ready.length, pc.green)} ${pc.dim("ready")}`,
       `${colorCount(d.inProgress.length, pc.yellow)} ${pc.dim("in-progress")}`,
       `${pc.bold(String(d.tracks.length))} ${pc.dim("tracks")}`,
