@@ -28,7 +28,7 @@
 import type { Db } from "../db.js";
 import { emitEvent } from "../logs.js";
 import { getTask } from "../tasks.js";
-import { TaskNotFoundError } from "./errors.js";
+import { StallDetectedDuringWaitError, TaskNotFoundError } from "./errors.js";
 import type { TaskStatus } from "./status.js";
 
 // ─── Test seams: poll-sleep + poll counter + stuck-warn writer ─────────
@@ -124,6 +124,22 @@ export interface TaskWaitOptions {
    *  (or a wrapping policy) decides whether to force-close, re-prompt,
    *  or escalate. */
   stuckAfterMs?: number;
+  /** What to do when the `--stuck-after` predicate fires on a watched
+   *  task. `'warn'` (default) = today's behaviour: yellow STUCK line
+   *  to stderr (deduped per task per wait call) + corroborating
+   *  `kind='event'` agent_logs row; wait keeps polling. `'exit'` =
+   *  same emit + persist, but THEN throw `StallDetectedDuringWaitError`
+   *  so the CLI wrapper exits 7 (STALL_DETECTED). The exit-action is
+   *  the unattended-orchestrator escape: a wrapping policy can branch
+   *  on 7 (idle, ambiguous — operator decides poke vs release) vs 6
+   *  (dead pane, unambiguous — re-dispatch).
+   *
+   *  Carve-out (lives at the call site, not here): the CLI passes
+   *  `'exit'` only when the wait target is CLOSED — mirrors exit-6's
+   *  reaper-flip suppression. With `--status OPEN` the worker reaching
+   *  needs_input might BE the success path. See
+   *  task_wait_stall_action_flag. */
+  onStall?: "warn" | "exit";
   /** Optional async hook run BEFORE every snapshot (initial + each
    *  poll iteration). The CLI uses this to reconcile the workstream
    *  each tick (reaper flips IN_PROGRESS → OPEN for dead-pane
@@ -212,6 +228,7 @@ export async function waitForTasks(
   const timeoutMs = opts.timeoutMs ?? 600_000;
   const pollMs = opts.pollMs ?? 1000;
   const stuckAfterMs = opts.stuckAfterMs ?? 300_000;
+  const onStall: "warn" | "exit" = opts.onStall ?? "warn";
   const deadline = timeoutMs > 0 ? Date.now() + timeoutMs : Number.POSITIVE_INFINITY;
   const startedAt = Date.now();
 
@@ -294,6 +311,19 @@ export async function waitForTasks(
           `agent stalled ${owner ?? "<none>"} owns ${ref.name} for ${ageSecs}s`,
           owner ?? "system",
         );
+        // task_wait_stall_action_flag: with `--on-stall exit` (the
+        // unattended-orchestrator escape), the same emit + persist
+        // happens but we then throw — the CLI's classifyError maps
+        // this to exit code 7 (STALL_DETECTED). The carve-out
+        // (target=CLOSED only) lives at the call site: the CLI
+        // wrapper passes `onStall: 'exit'` only when target=CLOSED.
+        // Precedence vs exit-6 (dead pane): the reaper-flip check
+        // throws inside `beforePoll` BEFORE snapshot() runs, so a
+        // watched task that's both reaper-flipped AND stale never
+        // reaches this branch (status would already be OPEN).
+        if (onStall === "exit") {
+          throw new StallDetectedDuringWaitError(ref.name, owner, ref.workstreamName, ageSecs);
+        }
       }
       return {
         workstreamName: ref.workstreamName,

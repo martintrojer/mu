@@ -298,6 +298,64 @@ export class ReaperDetectedDuringWaitError extends Error implements HasNextSteps
   }
 }
 
+/**
+ * Thrown by the `mu task wait` CLI wrapper when `--on-stall exit` is
+ * in effect and the existing `--stuck-after` predicate fires on a
+ * watched task — the task is IN_PROGRESS, owned by a registered
+ * agent whose detected status is `needs_input` for `>= stuckAfterMs`.
+ *
+ * Pairs with `ReaperDetectedDuringWaitError` (exit 6, dead pane).
+ * Stall is the AMBIGUOUS sibling: the worker is alive but not
+ * progressing — the operator decides whether it's transient (poke +
+ * retry) or terminal (release + reopen). Exit code 7 = STALL_DETECTED
+ * via classifyError, distinct from 6 so consumer scripts can branch.
+ *
+ * Carve-out (lives at the call site, not here): only fires when the
+ * wait target is CLOSED — same logic as exit-6's reaper-flip
+ * suppression. With `--status OPEN`/etc the worker reaching
+ * needs_input might BE the success path.
+ *
+ * Surfaced by task_wait_stall_action_flag (the warn-only behaviour
+ * pre-dates this; the typed-throw path is the new escape hatch for
+ * unattended orchestrators).
+ */
+export class StallDetectedDuringWaitError extends Error implements HasNextSteps {
+  override readonly name = "StallDetectedDuringWaitError";
+  constructor(
+    public readonly taskName: string,
+    public readonly owner: string | null,
+    public readonly workstream: string,
+    public readonly ageSecs: number,
+  ) {
+    const ownerBit = owner !== null ? owner : "<unknown>";
+    super(
+      `task ${taskName} owned by ${ownerBit} has been needs_input for ${ageSecs}s; exiting per --on-stall exit. Re-dispatch a worker or send a poke (mu agent send ${ownerBit} "...") and re-run wait.`,
+    );
+  }
+  errorNextSteps(): NextStep[] {
+    const ws = this.workstream;
+    const ownerBit = this.owner !== null ? this.owner : "<owner>";
+    return [
+      {
+        intent: "Poke the worker (often unblocks a transient stall)",
+        command: `mu agent send ${ownerBit} '<retry-instruction>' -w ${ws}`,
+      },
+      {
+        intent: "Inspect the worker's recent scrollback",
+        command: `mu agent show ${ownerBit} -w ${ws} -n 60`,
+      },
+      {
+        intent: "Release the task back to OPEN (declare the stall terminal)",
+        command: `mu task release ${this.taskName} --reopen -w ${ws}`,
+      },
+      {
+        intent: "Inspect the task's current state",
+        command: `mu task show ${this.taskName} -w ${ws}`,
+      },
+    ];
+  }
+}
+
 export class CrossWorkstreamEdgeError extends Error implements HasNextSteps {
   override readonly name = "CrossWorkstreamEdgeError";
   constructor(

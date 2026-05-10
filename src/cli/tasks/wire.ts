@@ -427,6 +427,10 @@ export function wireTaskCommands(program: Command): void {
       "emit a yellow STUCK warning to stderr when an IN_PROGRESS task's owner has been in needs_input for >= N seconds since their last status change (0 = disable, default 300). Surfaces the agent_close_discipline_gap pattern: worker finished + committed but skipped `mu task close <id>`. Wait keeps polling — the warning is observation-only.",
       parseLines,
     )
+    .option(
+      "--on-stall <action>",
+      "what to do when --stuck-after fires: 'warn' (default; today's behaviour: yellow STUCK warning + corroborating agent_logs event; wait keeps polling) or 'exit' (same emit + persist, then exit 7 = STALL_DETECTED so an unattended orchestrator can branch on the idle-vs-dead distinction). Suppressed when --status is anything other than CLOSED (mirrors exit-6's carve-out). If exit-6 (dead pane) and exit-7 (stall) would fire in the same poll, exit 6 wins (dead pane is unambiguous; stall is ambiguous).",
+    )
     .option(...WORKSTREAM_OPT)
     .option(...JSON_OPT)
     .action(function (ids: string[]) {
@@ -436,6 +440,7 @@ export function wireTaskCommands(program: Command): void {
         first?: boolean;
         timeout?: number;
         stuckAfter?: number;
+        onStall?: "warn" | "exit";
         workstream?: string;
         json?: boolean;
       };

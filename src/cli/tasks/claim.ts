@@ -236,12 +236,20 @@ export async function cmdTaskWait(
     first?: boolean;
     timeout?: number;
     stuckAfter?: number;
+    onStall?: "warn" | "exit";
     workstream?: string;
     json?: boolean;
   },
 ): Promise<void> {
   if (ids.length === 0) {
     throw new UsageError("mu task wait: at least one task id is required");
+  }
+  // task_wait_stall_action_flag: validate --on-stall up-front so a
+  // typo errors loud at the verb boundary instead of being silently
+  // ignored by the SDK. Default 'warn' (today's behaviour).
+  const onStallRaw = opts.onStall ?? "warn";
+  if (onStallRaw !== "warn" && onStallRaw !== "exit") {
+    throw new UsageError(`--on-stall: expected 'warn' or 'exit', got '${onStallRaw}'`);
   }
   // Validate status (default CLOSED). Same parser as mu task list --status.
   const statusOpt = opts.status !== undefined ? parseStatusOption(opts.status) : undefined;
@@ -278,6 +286,7 @@ export async function cmdTaskWait(
     any?: boolean;
     timeoutMs: number;
     stuckAfterMs: number;
+    onStall?: "warn" | "exit";
     beforePoll?: () => Promise<void>;
   } = { timeoutMs, stuckAfterMs };
   if (statusOpt !== undefined) sdkOpts.status = statusOpt;
@@ -312,6 +321,13 @@ export async function cmdTaskWait(
   //     6 on the first tick.
   const target = statusOpt ?? "CLOSED";
   const reaperExitEnabled = target === "CLOSED";
+  // task_wait_stall_action_flag: same target=CLOSED carve-out as
+  // exit-6's reaper-flip suppression. With --status OPEN/IN_PROGRESS
+  // the worker reaching needs_input might BE the success path —
+  // exiting on stall would race the wait-condition check. Operators
+  // who pass --on-stall exit + --status OPEN get warn-only behaviour
+  // (the SDK still emits the stderr warning + agent_logs event).
+  if (onStallRaw === "exit" && target === "CLOSED") sdkOpts.onStall = "exit";
   const priorState = new Map<string, { status: string; owner: string | null }>();
   sdkOpts.beforePoll = async () => {
     // Reconcile each unique workstream in the wait set. Each call is

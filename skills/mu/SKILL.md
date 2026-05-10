@@ -142,6 +142,16 @@ Every turn:
   literal reminder, agents commit + report success in chat without
   running the typed close, and `mu task wait` hangs until
   `--stuck-after` fires.
+- **`--on-stall exit` is the unattended-orchestrator escape.** Default
+  `mu task wait` warns on a stuck worker (yellow STUCK line + an
+  `agent stalled` event in the log) and KEEPS POLLING — fine when
+  you're at the keyboard. For wrapping policies / cron-driven sweeps
+  / long pipelines, pass `--on-stall exit` and the wait exits with
+  code 7 (`STALL_DETECTED`) the moment the predicate fires, so the
+  wrapper can branch (poke vs release vs rollover). Distinct from
+  exit 6 (`REAPER_DETECTED`, dead pane — unambiguous, re-dispatch);
+  exit 7 is the ambiguous sibling (alive but idle — operator
+  decides). If both fire in the same poll, exit 6 wins.
 - **Pipeline cherry-picks; don't barrier.** One wait, one
   cherry-pick, one verify, one workspace recycle, repeat. Don't
   block on all-N before picking the first. The verb that makes this

@@ -36,6 +36,7 @@ export {
   CrossWorkstreamEdgeError,
   CycleError,
   ReaperDetectedDuringWaitError,
+  StallDetectedDuringWaitError,
   TaskAlreadyOwnedError,
   TaskExistsError,
   TaskHasOpenDependentsError,

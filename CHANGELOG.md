@@ -25,6 +25,23 @@ called out under "Breaking" in each entry.
   nothing committed on failure. SDK `claimTask` gains an optional
   `agentWorkstream` field; default = `opts.workstream`.
 
+- **`mu task wait --on-stall <warn|exit>`: expose the stall ACTION as
+  a flag** (`task_wait_stall_action_flag`). Today's `--stuck-after`
+  defines the TRIGGER (IN_PROGRESS task whose owner sat in
+  `needs_input` for >= N seconds); `--on-stall` defines what to do
+  when it fires. `warn` (default) = today's behaviour byte-for-byte
+  (yellow STUCK to stderr + corroborating `agent stalled` event;
+  wait keeps polling). `exit` = same emit + persist, then exit 7
+  (`STALL_DETECTED`) so an unattended orchestrator can branch on the
+  ambiguous-idle (7) vs unambiguous-dead-pane (6) distinction.
+  Suppressed when `--status` is not `CLOSED` (mirrors exit-6's
+  carve-out). If both reaper-flip (6) and stall (7) would fire in
+  the same poll, exit 6 wins (the reaper-flip in `beforePoll`
+  pre-empts the snapshot's stuck-check; once status is OPEN,
+  isStuck naturally returns false). New typed
+  `StallDetectedDuringWaitError` (HasNextSteps: poke worker /
+  inspect scrollback / release --reopen / show task); SDK
+  `waitForTasks` gains `onStall?: 'warn' | 'exit'`.
 
 - **Derived `idle` flag on `AgentRow`: alive + assigned + no recent
   progress** (`idle_assigned_agent_detection`). Surfaces the third

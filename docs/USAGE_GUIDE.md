@@ -822,6 +822,7 @@ and exits with one of:
 | `0`  | The wait condition was met (`--all` reached, or `--any` / `--first` saw at least one). |
 | `5`  | `--timeout` expired before the condition was met. `--json` payload still includes `all` (refs that did reach) and `timedOut` (refs that didn't). |
 | `6`  | **REAPER_DETECTED.** A WATCHED task transitioned `IN_PROGRESS → OPEN` between polls because the reconciler detected the owning pane was dead and the reaper flipped the task back. Scoped to the wait set: a reaper-flip in some other workstream (or some other task in the same workstream) does NOT trigger exit 6. Fires only when the wait target is `CLOSED` (the default) — with `--status OPEN` a reaper-flip TO open IS the success and the wait returns `0`. Re-dispatch a worker (`mu agent spawn ... && mu task claim --for ...`) and re-run the wait. (`task_wait_reconcile_dead_panes` + `task_wait_cross_workstream`) |
+| `7`  | **STALL_DETECTED.** Only with `--on-stall exit`. The existing `--stuck-after` predicate fired on a watched task (IN_PROGRESS, owner alive but in `needs_input` for `>= --stuck-after` seconds) and the wait threw instead of polling forward. Same target=CLOSED carve-out as exit 6 (with `--status OPEN`/etc the worker reaching `needs_input` might BE the success path; `--on-stall exit` is downgraded to warn-only). Stderr names the task + owner + age. Exit 7 is the **ambiguous** sibling of exit 6: dead pane (6) is unambiguous (re-dispatch); idle agent (7) might be transient (operator decides poke vs release). If both fire in the same poll, exit 6 wins (reaper-flip moves status off `IN_PROGRESS`, so the stuck-check's predicate naturally fails). (`task_wait_stall_action_flag`) |
 
 The per-poll reconcile means a worker pane that died **before** you
 ran `mu task wait` is also reaped on the first tick — you'll see exit
@@ -829,6 +830,50 @@ ran `mu task wait` is also reaped on the first tick — you'll see exit
 For cross-workstream waits the reconcile loops over every workstream
 in the wait set (so a dead pane in workstream B is reaped while you
 wait on its task there too).
+
+### `mu task wait`: stall detection (`--stuck-after` + `--on-stall`)
+
+Two orthogonal flags govern the stall behaviour:
+
+* `--stuck-after <seconds>` — the **trigger**. An IN_PROGRESS task
+  whose owner has been in `needs_input` for `>= N` seconds is marked
+  stuck. Default `300` (5 min); pass `0` to disable detection
+  entirely (no warn AND no exit).
+* `--on-stall <action>` — the **action** when the trigger fires.
+  Two values:
+  * `warn` (default) — yellow `STUCK` warning to stderr (deduped per
+    task per wait call), corroborating `agent stalled <name> owns
+    <task> for <secs>s` event in `agent_logs`, and `wait` keeps
+    polling. The behaviour pre-`task_wait_stall_action_flag`,
+    byte-for-byte.
+  * `exit` — same emit + persist, then **exit 7**
+    (`STALL_DETECTED`). The unattended-orchestrator escape: a
+    wrapping policy can branch on 7 (idle, ambiguous — poke vs
+    release) vs 6 (dead pane, unambiguous — re-dispatch). Suppressed
+    when `--status` is anything other than `CLOSED` (mirrors
+    exit-6's carve-out: with `--status OPEN` reaching `needs_input`
+    might BE the success path).
+
+```bash
+# Default: warn at 5 min, keep polling. Today's behaviour.
+mu task wait build_a build_b -w mufeedback-v03 --timeout 1800
+
+# Tune the trigger; same warn-only action.
+mu task wait build_a -w mufeedback-v03 --stuck-after 60
+
+# Exit on stall (cron-driven wrapper):
+mu task wait build_a -w mufeedback-v03 --on-stall exit
+#   exit 0 → closed
+#   exit 5 → timeout
+#   exit 6 → dead pane (re-dispatch)
+#   exit 7 → idle agent (poke or release — inspect first)
+
+# Tune both. Exit at 60s of needs_input:
+mu task wait build_a -w mufeedback-v03 --stuck-after 60 --on-stall exit
+
+# Disable both warn AND exit (--stuck-after 0 wins):
+mu task wait build_a -w mufeedback-v03 --stuck-after 0 --on-stall exit
+```
 
 ### Common ad-hoc queries
 

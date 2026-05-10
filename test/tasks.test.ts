@@ -13,6 +13,7 @@ import {
   ClaimerNotRegisteredError,
   CrossWorkstreamEdgeError,
   CycleError,
+  StallDetectedDuringWaitError,
   TASK_STATUS_LIST,
   TaskAlreadyOwnedError,
   TaskExistsError,
@@ -2030,6 +2031,143 @@ describe("waitForTasks", () => {
       expect(warnings[0]).toContain("a stuck");
       expect(warnings[0]).toContain("worker-stuck");
       expect(warnings[0]).toContain("mu task close a");
+    } finally {
+      setWaitStuckWarnForTests(restoreWarn);
+      setWaitSleepForTests(restoreSleep);
+    }
+  });
+
+  // task_wait_stall_action_flag: --on-stall exit reuses the existing
+  // --stuck-after predicate but THROWS instead of returning to polling.
+  // Same emit + persist path; new exit code (7) is mapped at the CLI
+  // boundary by classifyError. The SDK contract is the typed throw.
+  it("--on-stall exit: throws StallDetectedDuringWaitError instead of polling forward", async () => {
+    insertAgent(db, {
+      name: "worker-onstall",
+      workstream: "test",
+      paneId: "%101",
+      status: "needs_input",
+    });
+    db.prepare(
+      `UPDATE tasks SET status = 'IN_PROGRESS',
+              owner_id = (SELECT id FROM agents WHERE name = ?),
+              updated_at = ?
+        WHERE local_id = ?`,
+    ).run("worker-onstall", new Date().toISOString(), "a");
+    db.prepare("UPDATE agents SET status = 'needs_input', updated_at = ? WHERE name = ?").run(
+      new Date(Date.now() - 10 * 60_000).toISOString(),
+      "worker-onstall",
+    );
+
+    const warnings: string[] = [];
+    const restoreWarn = setWaitStuckWarnForTests((msg) => {
+      warnings.push(msg);
+    });
+    const restoreSleep = setWaitSleepForTests(async () => {});
+    try {
+      await expect(
+        waitForTasks(db, ["a"], {
+          pollMs: 10,
+          timeoutMs: 5000,
+          stuckAfterMs: 1000,
+          onStall: "exit",
+          workstream: "test",
+        }),
+      ).rejects.toBeInstanceOf(StallDetectedDuringWaitError);
+      // Same emit + persist path: warning was still written, event row persisted.
+      expect(warnings).toHaveLength(1);
+      const stalledEvent = listLogs(db, { workstream: "test", kind: "event" }).find((r) =>
+        r.payload.includes("agent stalled worker-onstall"),
+      );
+      expect(stalledEvent).toBeDefined();
+    } finally {
+      setWaitStuckWarnForTests(restoreWarn);
+      setWaitSleepForTests(restoreSleep);
+    }
+  });
+
+  it("--on-stall exit: error carries taskName + owner + workstream + ageSecs", async () => {
+    insertAgent(db, {
+      name: "w-fields",
+      workstream: "test",
+      paneId: "%102",
+      status: "needs_input",
+    });
+    db.prepare(
+      `UPDATE tasks SET status = 'IN_PROGRESS',
+              owner_id = (SELECT id FROM agents WHERE name = ?)
+        WHERE local_id = ?`,
+    ).run("w-fields", "a");
+    db.prepare("UPDATE agents SET status = 'needs_input', updated_at = ? WHERE name = ?").run(
+      new Date(Date.now() - 600_000).toISOString(),
+      "w-fields",
+    );
+    const restoreWarn = setWaitStuckWarnForTests(() => {});
+    const restoreSleep = setWaitSleepForTests(async () => {});
+    try {
+      const err = await waitForTasks(db, ["a"], {
+        pollMs: 10,
+        timeoutMs: 5000,
+        stuckAfterMs: 2000,
+        onStall: "exit",
+        workstream: "test",
+      }).catch((e) => e);
+      expect(err).toBeInstanceOf(StallDetectedDuringWaitError);
+      const e = err as StallDetectedDuringWaitError;
+      expect(e.taskName).toBe("a");
+      expect(e.owner).toBe("w-fields");
+      expect(e.workstream).toBe("test");
+      expect(e.ageSecs).toBe(2); // round(stuckAfterMs / 1000)
+      // HasNextSteps surface: poke + release + show.
+      const steps = e.errorNextSteps();
+      expect(steps.some((s) => s.command.includes("mu agent send w-fields"))).toBe(true);
+      expect(steps.some((s) => s.command.includes("mu task release a --reopen"))).toBe(true);
+    } finally {
+      setWaitStuckWarnForTests(restoreWarn);
+      setWaitSleepForTests(restoreSleep);
+    }
+  });
+
+  // PRECEDENCE: deterministic SDK-level proof that a beforePoll throw
+  // (ReaperDetectedDuringWaitError equivalent here — we throw a
+  // sentinel from beforePoll) wins over the in-snapshot stuck-throw,
+  // because beforePoll runs FIRST in the wait loop. Mirrors the
+  // exit-6-vs-exit-7 precedence rule the CLI relies on (the CLI's
+  // beforePoll throws ReaperDetectedDuringWaitError; this test asserts
+  // the throw escapes BEFORE waitForTasks gets to snapshot's stuck-check).
+  it("--on-stall exit: a beforePoll throw pre-empts the stuck-check throw (precedence)", async () => {
+    insertAgent(db, {
+      name: "w-precedence",
+      workstream: "test",
+      paneId: "%103",
+      status: "needs_input",
+    });
+    db.prepare(
+      `UPDATE tasks SET status = 'IN_PROGRESS',
+              owner_id = (SELECT id FROM agents WHERE name = ?)
+        WHERE local_id = ?`,
+    ).run("w-precedence", "a");
+    db.prepare("UPDATE agents SET status = 'needs_input', updated_at = ? WHERE name = ?").run(
+      new Date(Date.now() - 10 * 60_000).toISOString(),
+      "w-precedence",
+    );
+    const restoreWarn = setWaitStuckWarnForTests(() => {});
+    const restoreSleep = setWaitSleepForTests(async () => {});
+    try {
+      class SentinelError extends Error {}
+      const err = await waitForTasks(db, ["a"], {
+        pollMs: 10,
+        timeoutMs: 5000,
+        stuckAfterMs: 1000,
+        onStall: "exit",
+        workstream: "test",
+        beforePoll: async () => {
+          throw new SentinelError("beforePoll-wins");
+        },
+      }).catch((e) => e);
+      // beforePoll's throw escapes; stuck-check never runs.
+      expect(err).toBeInstanceOf(SentinelError);
+      expect((err as Error).message).toBe("beforePoll-wins");
     } finally {
       setWaitStuckWarnForTests(restoreWarn);
       setWaitSleepForTests(restoreSleep);

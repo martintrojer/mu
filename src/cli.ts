@@ -20,6 +20,13 @@
 //       target is CLOSED; with any other target the reaper-flip is
 //       not necessarily a wait-incompatible event. See
 //       task_wait_reconcile_dead_panes.
+//   7 = STALL_DETECTED — `mu task wait --on-stall exit` aborted
+//       because the existing --stuck-after predicate fired on a
+//       watched task (IN_PROGRESS, owner alive but `needs_input` for
+//       >= --stuck-after seconds). Same target=CLOSED carve-out as
+//       exit 6; if both fire in the same poll iteration, exit 6
+//       wins (dead pane is unambiguous; stall is ambiguous). See
+//       task_wait_stall_action_flag.
 
 import { readFileSync, realpathSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -81,6 +88,7 @@ import {
   CrossWorkstreamEdgeError,
   CycleError,
   ReaperDetectedDuringWaitError,
+  StallDetectedDuringWaitError,
   TASK_STATUS_LIST,
   TaskAlreadyOwnedError,
   TaskExistsError,
@@ -406,6 +414,14 @@ export function classifyError(err: unknown): { label: string; exitCode: number }
     // operator scripts can branch on "worker died, not a generic
     // failure" vs the timeout (5) and the typed conflict family (4).
     return { label: "reaper", exitCode: 6 };
+  }
+  if (err instanceof StallDetectedDuringWaitError) {
+    // task_wait_stall_action_flag: distinct exit code (7) so
+    // operator scripts can branch on "worker idle, ambiguous" vs
+    // the unambiguous dead-pane (6). Same precedence rule lives at
+    // the wait call site: if both fire in one poll, the
+    // ReaperDetectedDuringWaitError throw runs first, so exit 6 wins.
+    return { label: "stall", exitCode: 7 };
   }
   if (err instanceof SnapshotFileMissingError) {
     // Substrate-level: the .db file is gone but the row still says it
