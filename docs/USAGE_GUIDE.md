@@ -1019,6 +1019,13 @@ mu workstream import exports/auth                 # → workstream `auth-refacto
 mu workstream import exports/auth --workstream auth-v2   # rename on import
 mu workstream import exports/auth --dry-run       # walk + parse + report; no DB writes
 mu workstream import exports/auth --json          # machine-readable per-source-ws result
+
+# Partial bucket import — multi-source bucket, but you only want
+# one (or a subset) restored. Two equivalent forms:
+mu workstream import exports/mu/roadmap-v0-2                  # Form 1 — per-source-ws subdir path
+mu workstream import exports/mu --source-ws roadmap-v0-2      # Form 2 — bucket + filter
+mu workstream import exports/mu --source-ws auth,ui           # Form 2 — X+Y, leave Z behind
+mu workstream import exports/mu --source-ws auth --source-ws ui  # repeat OR comma-separate; or both
 ```
 
 Key properties:
@@ -1046,6 +1053,23 @@ Key properties:
   inserted after every task in the source-ws is created.
 - **Pre-0.3 layouts refuse.** Buckets without a `bucketVersion: 2`
   manifest throw `ImportLegacyLayoutError` with a re-export hint.
+- **Partial import.** Multi-source buckets accept either a
+  per-source-ws subdir path (auto-detected via
+  `README.md` + `INDEX.md` + `tasks/` + a parent
+  `manifest.json` listing the subdir as a source) OR a
+  `--source-ws <names...>` filter on the bucket root
+  (variadic per `cli_audit_plurality_uniformity`: repeat,
+  comma-separate, or both). The two forms are equivalent for
+  single-source restores. `--workstream <new-name>` is allowed
+  whenever the resolved source-ws list has exactly one entry
+  (Form 1; or Form 2 with a single name); rejected for
+  multi-source filters. Passing `--source-ws` against a Form 1
+  per-source-ws subdir is refused (the subdir already implies one
+  source). A `--source-ws` name not in the bucket manifest raises
+  `ImportSourceNotInBucketError` (exit 4) and lists the valid
+  names. `--source-ws ',,'` (canonicalises to zero names) is a
+  `UsageError` (exit 2) so a typo doesn't silently fall back to
+  importing the entire bucket.
 
 ---
 

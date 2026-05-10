@@ -10,7 +10,13 @@
 
 import { join } from "node:path";
 import { type AddToArchiveResult, addToArchive, getArchive } from "../archives.js";
-import { UsageError, emitJson, formatWorkstreamsTable, resolveWorkstream } from "../cli.js";
+import {
+  UsageError,
+  emitJson,
+  formatWorkstreamsTable,
+  parseCsvFlag,
+  resolveWorkstream,
+} from "../cli.js";
 import { type Db, defaultStateDir } from "../db.js";
 import { type ImportBucketResult, importBucket } from "../importing.js";
 import { type NextStep, muTable, pc, printNextSteps } from "../output.js";
@@ -157,11 +163,32 @@ export async function cmdWorkstreamExport(
 export async function cmdWorkstreamImport(
   db: Db,
   bucketDir: string,
-  opts: { workstream?: string; dryRun?: boolean; json?: boolean },
+  opts: {
+    workstream?: string;
+    dryRun?: boolean;
+    json?: boolean;
+    sourceWs?: string[];
+  },
 ): Promise<void> {
+  // Canonicalise --source-ws via parseCsvFlag (repeat OR comma-separate
+  // OR both, per cli_audit_plurality_uniformity). Distinguish "flag
+  // not passed" (undefined) from "passed but every entry is empty"
+  // (e.g. --source-ws ',,'): the latter is a UsageError so a typo
+  // doesn't silently fall back to importing the entire bucket.
+  let sourceWs: string[] | undefined;
+  if (opts.sourceWs !== undefined) {
+    const canonical = parseCsvFlag(opts.sourceWs);
+    if (canonical.length === 0) {
+      throw new UsageError(
+        "--source-ws was passed but resolved to zero names (empty strings / commas only); pass at least one source-ws name or drop the flag",
+      );
+    }
+    sourceWs = canonical;
+  }
   const result: ImportBucketResult = importBucket(db, {
     bucketDir,
     workstreamOverride: opts.workstream,
+    sourceWs,
     dryRun: opts.dryRun,
   });
   const totalTasks = result.sources.reduce((acc, s) => acc + s.tasksImported, 0);
@@ -182,9 +209,11 @@ export async function cmdWorkstreamImport(
       command: `mu workstream export -w ${importedNames[0] ?? "<ws>"} --out <new-dir>`,
     });
   } else {
+    const sourceWsFlag =
+      sourceWs !== undefined && sourceWs.length > 0 ? ` --source-ws ${sourceWs.join(",")}` : "";
     nextSteps.push({
       intent: "Run the import for real",
-      command: `mu workstream import ${bucketDir}${opts.workstream ? ` --workstream ${opts.workstream}` : ""}`,
+      command: `mu workstream import ${bucketDir}${opts.workstream ? ` --workstream ${opts.workstream}` : ""}${sourceWsFlag}`,
     });
   }
   if (opts.json) {
@@ -703,11 +732,15 @@ export function wireWorkstreamCommands(program: Command): void {
   workstream
     .command("import <bucket-dir>")
     .description(
-      "Rebuild a workstream (or a multi-source bucket of workstreams) from a v0.3 markdown export. Per source-ws transactional: each source-ws is imported in its own SQLite transaction; siblings are unaffected by a sibling's failure. Refuses to merge silently into an existing workstream — pass --workstream <name> (single-source buckets only) or destroy the existing one first.",
+      "Rebuild a workstream (or a multi-source bucket of workstreams) from a v0.3 markdown export. Accepts EITHER a bucket directory (top-level manifest.json + per-source-ws subdirs) OR a single per-source-ws subdir (auto-detected via README.md + INDEX.md + tasks/, validated against the parent bucket's manifest). Per source-ws transactional: each source-ws is imported in its own SQLite transaction; siblings are unaffected by a sibling's failure. Refuses to merge silently into an existing workstream — pass --workstream <name> (single-source after any --source-ws filter only) or destroy the existing one first.",
     )
     .option(
       "--workstream <name>",
-      "override the imported workstream's name (single-source buckets only)",
+      "override the imported workstream's name (single-source after any --source-ws filter only)",
+    )
+    .option(
+      "--source-ws <names...>",
+      "restrict the import to a subset of source-ws subdirs (repeat or comma-separate; or both)",
     )
     .option("--dry-run", "walk + parse + validate; report what WOULD be created; no DB writes")
     .option(...JSON_OPT)
@@ -716,6 +749,7 @@ export function wireWorkstreamCommands(program: Command): void {
         workstream?: string;
         dryRun?: boolean;
         json?: boolean;
+        sourceWs?: string[];
       };
       return handle((db) => cmdWorkstreamImport(db, bucketDir, opts))();
     });

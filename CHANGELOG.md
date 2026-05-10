@@ -75,6 +75,18 @@ called out under "Breaking" in each entry.
   surface a typed `ImportLegacyLayoutError`. New SDK in
   `src/importing.ts` exports `importBucket()` and the typed errors.
 
+- **`mu workstream import` — partial bucket import** (per-source-ws
+  subdir path OR `--source-ws <names...>` CSV filter on a bucket).
+  Form 1 auto-detects a per-source-ws subdir via `README.md` +
+  `INDEX.md` + `tasks/` and validates against the parent bucket's
+  `manifest.json`; Form 2 keeps the bucket root and filters via the
+  variadic flag (repeat or comma-separate; or both, per
+  `cli_audit_plurality_uniformity`). `--workstream <new-name>` is
+  allowed when the resolved source list is single (Form 1, or Form 2
+  with one name); multi-source filters keep today's rejection. New
+  typed `ImportSourceNotInBucketError` (exit 4) names the bad name +
+  the valid ones.
+
 - **`mu hud` accepts multiple workstreams via `--workstreams` or
   `--all`** (`hud_multi_workstream`). N=1 (the common case, including
   legacy `mu hud -w X`) renders byte-for-byte unchanged — same

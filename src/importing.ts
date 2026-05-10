@@ -27,7 +27,7 @@
 // THAT source-ws is rolled back; siblings still import.
 
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import type { Db } from "./db.js";
 import { resolveWorkstreamId } from "./db.js";
 import { DELETED_BANNER_PREFIX, type ExportManifest, readManifest } from "./exporting.js";
@@ -52,6 +52,33 @@ export class ImportBucketInvalidError extends Error implements HasNextSteps {
       {
         intent: "Inspect the manifest (must be bucketVersion 2)",
         command: `cat ${this.bucketDir}/manifest.json`,
+      },
+    ];
+  }
+}
+
+/** Raised when `--source-ws X[,Y]` lists a name that isn't a key in
+ *  the bucket manifest's `sources` map. Exit code 4 (conflict) per
+ *  classifyError. */
+export class ImportSourceNotInBucketError extends Error implements HasNextSteps {
+  override readonly name = "ImportSourceNotInBucketError";
+  constructor(
+    public readonly bucketDir: string,
+    public readonly badName: string,
+    public readonly validNames: string[],
+  ) {
+    super(
+      `--source-ws "${badName}" is not a source-ws in bucket ${bucketDir}; valid: ${
+        validNames.length === 0 ? "<none>" : validNames.join(", ")
+      }`,
+    );
+  }
+  errorNextSteps(): NextStep[] {
+    return [
+      { intent: "List the bucket's source-ws subdirs", command: `ls ${this.bucketDir}` },
+      {
+        intent: "Inspect the bucket manifest's sources map",
+        command: `cat ${this.bucketDir}/manifest.json | head -40`,
       },
     ];
   }
@@ -368,9 +395,18 @@ function parseTaskMarkdown(path: string): ParsedFrontmatter {
 export interface ImportBucketOptions {
   bucketDir: string;
   /** Rename the (single) source workstream on import. Only valid when
-   *  the bucket has exactly one source-ws subdir; otherwise rejected
-   *  with a UsageError-style message. */
+   *  the bucket has exactly one source-ws subdir (after applying any
+   *  `sourceWs` filter); otherwise rejected with an
+   *  ImportBucketInvalidError. */
   workstreamOverride?: string;
+  /** Restrict the import to a subset of source-ws subdirs (by name).
+   *  Each name must be a key in the bucket manifest's `sources` map;
+   *  otherwise ImportSourceNotInBucketError is raised. Mutually
+   *  exclusive with the per-source-ws-subdir invocation form (Form 1):
+   *  passing this flag against a Form 1 path raises
+   *  ImportBucketInvalidError. Empty array is treated as "no filter";
+   *  the CLI rejects an explicitly-empty `--source-ws ,,`. */
+  sourceWs?: string[];
   /** Walk + parse but write nothing to the DB. */
   dryRun?: boolean;
 }
@@ -401,9 +437,49 @@ interface BucketSource {
   taskFiles: string[];
 }
 
+/** Detected on-disk shape. Auto-detected by walkBucket; the CLI
+ *  uses this to enforce the anti-feature guard against
+ *  `--source-ws` on a Form 1 (per-source-ws subdir) invocation. */
+export type BucketShape =
+  /** `<dir>/manifest.json` (bucketVersion: 2) present. The classic
+   *  shape; `--source-ws` can filter the per-source-ws subdirs. */
+  | "bucket"
+  /** `<dir>` is itself a per-source-ws subdir; the parent dir
+   *  contains the bucket manifest and resolves the source name. */
+  | "sourceWsSubdir";
+
+/** Probe a directory and tell us whether it's a bucket root, a
+ *  per-source-ws subdir of a parent bucket, or neither. Pure;
+ *  does no DB I/O. Exposed for callers (the CLI) that need to
+ *  distinguish Form 1 vs Form 2 to enforce the anti-feature guard. */
+export function detectBucketShape(bucketDir: string): BucketShape {
+  if (!existsSync(bucketDir) || !statSync(bucketDir).isDirectory()) return "bucket";
+  const manifestPath = join(bucketDir, "manifest.json");
+  const probe = readManifest(manifestPath);
+  if (probe.kind === "v2") return "bucket";
+  // The source-ws subdir signature: README.md + INDEX.md + tasks/
+  // (matches what renderBucketSourceFiles writes per source-ws).
+  if (
+    existsSync(join(bucketDir, "README.md")) &&
+    existsSync(join(bucketDir, "INDEX.md")) &&
+    existsSync(join(bucketDir, "tasks")) &&
+    statSync(join(bucketDir, "tasks")).isDirectory()
+  ) {
+    return "sourceWsSubdir";
+  }
+  return "bucket";
+}
+
 function walkBucket(bucketDir: string): {
+  /** The bucket manifest. For source-ws-subdir mode, this is the
+   *  parent bucket's manifest; bucketLabel still flows through. */
   manifest: ExportManifest;
+  /** Every source-ws subdir under the bucket. For source-ws-subdir
+   *  mode, this list has exactly one entry (the dir we were given). */
   sources: BucketSource[];
+  /** Detected on-disk shape; the CLI uses this to refuse
+   *  `--source-ws` on a Form 1 invocation. */
+  shape: BucketShape;
 } {
   if (!existsSync(bucketDir)) {
     throw new ImportBucketInvalidError(bucketDir, "directory does not exist");
@@ -413,8 +489,27 @@ function walkBucket(bucketDir: string): {
   }
   const manifestPath = join(bucketDir, "manifest.json");
   const probe = readManifest(manifestPath);
-  if (probe.kind === "absent") {
-    throw new ImportBucketInvalidError(bucketDir, "manifest.json missing");
+
+  // ── Form 2 (the classic): <dir>/manifest.json present ──
+  if (probe.kind === "v2") {
+    const manifest = probe.manifest;
+    const sources: BucketSource[] = [];
+    for (const entry of readdirSync(bucketDir, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const sourceDir = join(bucketDir, entry.name);
+      const tasksDir = join(sourceDir, "tasks");
+      if (!existsSync(tasksDir) || !statSync(tasksDir).isDirectory()) continue;
+      const taskFiles: string[] = [];
+      for (const f of readdirSync(tasksDir, { withFileTypes: true })) {
+        if (f.isFile() && f.name.endsWith(".md")) {
+          taskFiles.push(join(tasksDir, f.name));
+        }
+      }
+      taskFiles.sort();
+      sources.push({ diskName: entry.name, taskFiles });
+    }
+    sources.sort((a, b) => a.diskName.localeCompare(b.diskName));
+    return { manifest, sources, shape: "bucket" };
   }
   if (probe.kind === "corrupt") {
     throw new ImportBucketInvalidError(bucketDir, "manifest.json is unreadable / malformed");
@@ -422,25 +517,54 @@ function walkBucket(bucketDir: string): {
   if (probe.kind === "legacy") {
     throw new ImportLegacyLayoutError(bucketDir);
   }
-  const manifest = probe.manifest;
 
-  const sources: BucketSource[] = [];
-  for (const entry of readdirSync(bucketDir, { withFileTypes: true })) {
-    if (!entry.isDirectory()) continue;
-    const sourceDir = join(bucketDir, entry.name);
-    const tasksDir = join(sourceDir, "tasks");
-    if (!existsSync(tasksDir) || !statSync(tasksDir).isDirectory()) continue;
-    const taskFiles: string[] = [];
-    for (const f of readdirSync(tasksDir, { withFileTypes: true })) {
-      if (f.isFile() && f.name.endsWith(".md")) {
-        taskFiles.push(join(tasksDir, f.name));
-      }
-    }
-    taskFiles.sort();
-    sources.push({ diskName: entry.name, taskFiles });
+  // ── Form 1 (per-source-ws subdir): manifest.json absent at <dir>;
+  // expect README.md + INDEX.md + tasks/ and a parent bucket manifest. ──
+  const tasksDir = join(bucketDir, "tasks");
+  const looksLikeSourceWs =
+    existsSync(join(bucketDir, "README.md")) &&
+    existsSync(join(bucketDir, "INDEX.md")) &&
+    existsSync(tasksDir) &&
+    statSync(tasksDir).isDirectory();
+  if (!looksLikeSourceWs) {
+    throw new ImportBucketInvalidError(bucketDir, "manifest.json missing");
   }
-  sources.sort((a, b) => a.diskName.localeCompare(b.diskName));
-  return { manifest, sources };
+
+  // Walk one level up; require a v2 bucket manifest with our basename
+  // listed under sources. Refuse "orphan" source-ws subdirs (an
+  // intermediate that someone copied out of a bucket loses the
+  // bucketLabel + cross-source provenance).
+  const parentDir = dirname(bucketDir);
+  const baseName = basename(bucketDir);
+  const parentProbe = readManifest(join(parentDir, "manifest.json"));
+  if (parentProbe.kind !== "v2") {
+    throw new ImportBucketInvalidError(
+      bucketDir,
+      `${bucketDir} looks like a per-source-ws subdir (README.md + INDEX.md + tasks/), but ${parentDir}/manifest.json is missing or not a bucketVersion 2 manifest. Pass the parent bucket directory instead, or re-export.`,
+    );
+  }
+  const parentManifest = parentProbe.manifest;
+  if (!Object.prototype.hasOwnProperty.call(parentManifest.sources ?? {}, baseName)) {
+    throw new ImportBucketInvalidError(
+      bucketDir,
+      `${bucketDir} looks like a per-source-ws subdir but "${baseName}" is not in the parent bucket manifest's sources (${parentDir}/manifest.json). Re-export to refresh the bucket manifest.`,
+    );
+  }
+
+  // Synthesize a single-source BucketSource list. Reuse the parent
+  // manifest verbatim so bucketLabel + bucketVersion flow through.
+  const taskFiles: string[] = [];
+  for (const f of readdirSync(tasksDir, { withFileTypes: true })) {
+    if (f.isFile() && f.name.endsWith(".md")) {
+      taskFiles.push(join(tasksDir, f.name));
+    }
+  }
+  taskFiles.sort();
+  return {
+    manifest: parentManifest,
+    sources: [{ diskName: baseName, taskFiles }],
+    shape: "sourceWsSubdir",
+  };
 }
 
 // ─── Per-source-ws DB writer ─────────────────────────────────────────
@@ -581,19 +705,47 @@ function importOneSource(
  * counts at zero; siblings still attempt their own import.
  */
 export function importBucket(db: Db, opts: ImportBucketOptions): ImportBucketResult {
-  const { manifest, sources } = walkBucket(opts.bucketDir);
+  const { manifest, sources, shape } = walkBucket(opts.bucketDir);
 
-  if (opts.workstreamOverride !== undefined && sources.length !== 1) {
+  // Anti-feature guard: --source-ws against a per-source-ws subdir
+  // is meaningless (the subdir already implies a single source).
+  // Refuse loudly so a confused operator drops the flag rather
+  // than silently importing something they didn't expect.
+  if (shape === "sourceWsSubdir" && opts.sourceWs !== undefined && opts.sourceWs.length > 0) {
     throw new ImportBucketInvalidError(
       opts.bucketDir,
-      `--workstream override requires a single source-ws subdir; this bucket has ${sources.length}`,
+      `cannot pass --source-ws when ${opts.bucketDir} is itself a source-ws subdir; drop the flag`,
+    );
+  }
+
+  // Apply the --source-ws filter (Form 2 only). Validate every name
+  // is a key in the bucket manifest BEFORE the walker's source list,
+  // so a typo surfaces an ImportSourceNotInBucketError listing the
+  // valid names rather than a silent "nothing to import".
+  let filteredSources = sources;
+  if (opts.sourceWs !== undefined && opts.sourceWs.length > 0) {
+    const validNames = Object.keys(manifest.sources ?? {}).sort();
+    const validSet = new Set(validNames);
+    for (const wanted of opts.sourceWs) {
+      if (!validSet.has(wanted)) {
+        throw new ImportSourceNotInBucketError(opts.bucketDir, wanted, validNames);
+      }
+    }
+    const wantedSet = new Set(opts.sourceWs);
+    filteredSources = sources.filter((s) => wantedSet.has(s.diskName));
+  }
+
+  if (opts.workstreamOverride !== undefined && filteredSources.length !== 1) {
+    throw new ImportBucketInvalidError(
+      opts.bucketDir,
+      `--workstream override requires a single source-ws subdir; this bucket has ${filteredSources.length}`,
     );
   }
 
   const dryRun = opts.dryRun === true;
   const results: ImportSourceResult[] = [];
 
-  for (const source of sources) {
+  for (const source of filteredSources) {
     const targetName = opts.workstreamOverride ?? source.diskName;
     const result: ImportSourceResult = {
       workstreamName: targetName,

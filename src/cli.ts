@@ -60,6 +60,7 @@ import {
   ImportEdgeRefMissingError,
   ImportFrontmatterParseError,
   ImportLegacyLayoutError,
+  ImportSourceNotInBucketError,
   WorkstreamAlreadyExistsError,
 } from "./importing.js";
 import { type LogRow, displayEventPayload } from "./logs.js";
@@ -365,6 +366,7 @@ export function classifyError(err: unknown): { label: string; exitCode: number }
     err instanceof SchemaTooOldError ||
     err instanceof TaskIdInvalidError ||
     err instanceof ArchiveAlreadyExistsError ||
+    err instanceof ImportSourceNotInBucketError ||
     err instanceof WorkstreamAlreadyExistsError
   ) {
     return { label: "conflict", exitCode: 4 };

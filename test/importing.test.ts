@@ -15,6 +15,7 @@ import {
   ImportEdgeRefMissingError,
   ImportFrontmatterParseError,
   ImportLegacyLayoutError,
+  ImportSourceNotInBucketError,
   WorkstreamAlreadyExistsError,
   importBucket,
 } from "../src/importing.js";
@@ -288,5 +289,184 @@ describe("importBucket — preserves timestamps", () => {
     expect(after.updatedAt).toBe(before.updatedAt);
     // Owner forced to NULL.
     expect(after.ownerName).toBeNull();
+  });
+});
+
+describe("importBucket — partial import (per-source-ws subdir + --source-ws filter)", () => {
+  /** Build a 3-source bucket on disk in tmpDir/bucket and wipe the
+   *  live workstreams. Returns the bucket directory. */
+  async function buildThreeSourceBucket(): Promise<string> {
+    seed("auth", ["design", "build"]);
+    addBlockEdge(db, "auth", "build", "design");
+    addNote(db, "design", "DECISION: JWT", { author: "alice", workstream: "auth" });
+    seed("ui", ["mockup"]);
+    seed("api", ["spec", "impl"]);
+    addBlockEdge(db, "api", "impl", "spec");
+
+    const bucket = join(tmpDir, "bucket");
+    exportWorkstream(db, { workstream: "auth", outDir: bucket });
+    exportWorkstream(db, { workstream: "ui", outDir: bucket });
+    exportWorkstream(db, { workstream: "api", outDir: bucket });
+
+    await destroyWorkstream(db, { workstream: "auth" });
+    await destroyWorkstream(db, { workstream: "ui" });
+    await destroyWorkstream(db, { workstream: "api" });
+    return bucket;
+  }
+
+  it("Form 1 — per-source-ws subdir path imports just that source", async () => {
+    const bucket = await buildThreeSourceBucket();
+    const result = importBucket(db, { bucketDir: join(bucket, "auth") });
+    expect(result.bucketVersion).toBe(2);
+    expect(result.sources).toHaveLength(1);
+    expect(result.sources[0]?.workstreamName).toBe("auth");
+    expect(result.sources[0]?.tasksImported).toBe(2);
+    expect(result.sources[0]?.edgesImported).toBe(1);
+    expect(result.sources[0]?.notesImported).toBe(1);
+    expect(
+      listTasks(db, "auth")
+        .map((t) => t.name)
+        .sort(),
+    ).toEqual(["build", "design"]);
+    // Siblings stayed off-disk.
+    expect(listTasks(db, "ui")).toHaveLength(0);
+    expect(listTasks(db, "api")).toHaveLength(0);
+  });
+
+  it("Form 1 — bucketLabel flows through from the parent manifest", async () => {
+    const bucket = await buildThreeSourceBucket();
+    // exportWorkstream sets bucketLabel = null (one-shot), so just
+    // verify the field is read from the parent (matches the bucket).
+    const parentResult = importBucket(db, {
+      bucketDir: join(bucket, "auth"),
+      dryRun: true,
+    });
+    const fullDryRun = importBucket(db, { bucketDir: bucket, dryRun: true });
+    expect(parentResult.bucketLabel).toBe(fullDryRun.bucketLabel);
+    expect(parentResult.bucketVersion).toBe(fullDryRun.bucketVersion);
+  });
+
+  it("Form 2 — --source-ws filters to a single source", async () => {
+    const bucket = await buildThreeSourceBucket();
+    const result = importBucket(db, { bucketDir: bucket, sourceWs: ["ui"] });
+    expect(result.sources.map((s) => s.workstreamName)).toEqual(["ui"]);
+    expect(listTasks(db, "ui").map((t) => t.name)).toEqual(["mockup"]);
+    expect(listTasks(db, "auth")).toHaveLength(0);
+    expect(listTasks(db, "api")).toHaveLength(0);
+  });
+
+  it("Form 2 — --source-ws X,Y on a 3-source bucket imports X+Y, not Z", async () => {
+    const bucket = await buildThreeSourceBucket();
+    const result = importBucket(db, { bucketDir: bucket, sourceWs: ["auth", "ui"] });
+    expect(result.sources.map((s) => s.workstreamName).sort()).toEqual(["auth", "ui"]);
+    expect(
+      listTasks(db, "auth")
+        .map((t) => t.name)
+        .sort(),
+    ).toEqual(["build", "design"]);
+    expect(listTasks(db, "ui").map((t) => t.name)).toEqual(["mockup"]);
+    expect(listTasks(db, "api")).toHaveLength(0);
+  });
+
+  it("Form 1 + --workstream rename — restores under the new name", async () => {
+    const bucket = await buildThreeSourceBucket();
+    const result = importBucket(db, {
+      bucketDir: join(bucket, "auth"),
+      workstreamOverride: "auth-v2",
+    });
+    expect(result.sources[0]?.workstreamName).toBe("auth-v2");
+    expect(
+      listTasks(db, "auth-v2")
+        .map((t) => t.name)
+        .sort(),
+    ).toEqual(["build", "design"]);
+    expect(listTasks(db, "auth")).toHaveLength(0);
+  });
+
+  it("Form 2 + --source-ws X --workstream rename — single-source rename works", async () => {
+    const bucket = await buildThreeSourceBucket();
+    const result = importBucket(db, {
+      bucketDir: bucket,
+      sourceWs: ["ui"],
+      workstreamOverride: "ui-v2",
+    });
+    expect(result.sources[0]?.workstreamName).toBe("ui-v2");
+    expect(listTasks(db, "ui-v2").map((t) => t.name)).toEqual(["mockup"]);
+  });
+
+  it("Form 2 + multi --source-ws X,Y + --workstream — rejects (multi-source rule)", async () => {
+    const bucket = await buildThreeSourceBucket();
+    expect(() =>
+      importBucket(db, {
+        bucketDir: bucket,
+        sourceWs: ["auth", "ui"],
+        workstreamOverride: "merged",
+      }),
+    ).toThrow(ImportBucketInvalidError);
+  });
+
+  it("Form 2 — bad --source-ws name surfaces ImportSourceNotInBucketError; nothing committed", async () => {
+    const bucket = await buildThreeSourceBucket();
+    let caught: unknown;
+    try {
+      importBucket(db, { bucketDir: bucket, sourceWs: ["nope"] });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(ImportSourceNotInBucketError);
+    const err = caught as ImportSourceNotInBucketError;
+    expect(err.badName).toBe("nope");
+    expect(err.validNames.sort()).toEqual(["api", "auth", "ui"]);
+    // No partial state.
+    expect(listTasks(db, "auth")).toHaveLength(0);
+    expect(listTasks(db, "ui")).toHaveLength(0);
+    expect(listTasks(db, "api")).toHaveLength(0);
+  });
+
+  it("Form 1 against an orphan source-ws subdir (no parent bucket manifest) — ImportBucketInvalidError", async () => {
+    // Build a bucket, then COPY the per-source-ws subdir somewhere
+    // else so it loses its parent. (Using a fresh tmpdir under the
+    // existing one keeps cleanup automatic.)
+    const bucket = await buildThreeSourceBucket();
+    const orphanRoot = join(tmpDir, "orphan");
+    mkdirSync(orphanRoot);
+    const orphanWsDir = join(orphanRoot, "auth");
+    mkdirSync(orphanWsDir);
+    mkdirSync(join(orphanWsDir, "tasks"));
+    writeFileSync(join(orphanWsDir, "README.md"), "# orphan\n", "utf8");
+    writeFileSync(join(orphanWsDir, "INDEX.md"), "# index\n", "utf8");
+    // Copy one task file so the dir has the right shape.
+    writeFileSync(
+      join(orphanWsDir, "tasks", "design.md"),
+      readFileSync(join(bucket, "auth", "tasks", "design.md"), "utf8"),
+      "utf8",
+    );
+
+    let caught: unknown;
+    try {
+      importBucket(db, { bucketDir: orphanWsDir });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(ImportBucketInvalidError);
+    expect((caught as Error).message).toMatch(/per-source-ws subdir/);
+    expect((caught as Error).message).toMatch(/manifest\.json/);
+  });
+
+  it("Form 1 + --source-ws — anti-feature guard fires", async () => {
+    const bucket = await buildThreeSourceBucket();
+    let caught: unknown;
+    try {
+      importBucket(db, {
+        bucketDir: join(bucket, "auth"),
+        sourceWs: ["auth"],
+      });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(ImportBucketInvalidError);
+    expect((caught as Error).message).toMatch(/cannot pass --source-ws/);
+    // Nothing landed.
+    expect(listTasks(db, "auth")).toHaveLength(0);
   });
 });
