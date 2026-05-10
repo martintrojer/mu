@@ -80,6 +80,21 @@ called out under "Breaking" in each entry.
 
 ### Changed
 
+- **`src/cli.ts` split below the 800-LOC refactor signal**
+  (`review_cli_ts_past_refactor_signal`). cli.ts had drifted to 1339
+  LOC — well past AGENTS.md's 800-LOC refactor signal — hosting
+  ~600 LOC of pure rendering helpers (table renderers, status
+  colourers, `truncate` / `relTime`) and ~150 LOC of typed-error →
+  exit-code mapping (`classifyError` / `emitError` / `handle` /
+  `UsageError` / `NameAmbiguousError`) on top of its actual job
+  (workstream resolution + commander wiring). Extracted to two
+  cluster-mates inside `src/cli/`: `format.ts` (418 LOC; pure
+  rendering, no I/O beyond `printLogRow`'s single `console.log`) and
+  `handle.ts` (247 LOC; typed-error catalogue + the wrapping helper).
+  cli.ts shrinks to 718 LOC and re-exports every moved symbol so the
+  ~30 import sites in `src/cli/*.ts` and `test/` keep working without
+  churn. No behaviour change; ARCHITECTURE.md cluster-table updated.
+
 - **`mu task release` auto-flips `IN_PROGRESS` → `OPEN` by default;
   `--reopen` re-scoped to the un-close escape hatch**
   (`review_release_open_in_progress_inconsistency`). Bare `mu task
