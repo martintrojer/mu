@@ -16,6 +16,7 @@ import { emitJson, resolveWorkstream } from "../cli.js";
 import { CURRENT_SCHEMA_VERSION, type Db, EXPECTED_TABLES, defaultDbPath } from "../db.js";
 import { pc } from "../output.js";
 import { tmux } from "../tmux.js";
+import { summarizeWorkstream } from "../workstream.js";
 
 export async function cmdDoctor(db: Db, opts: { json?: boolean } = {}): Promise<void> {
   if (opts.json) {
@@ -112,9 +113,10 @@ export async function cmdDoctor(db: Db, opts: { json?: boolean } = {}): Promise<
   if (currentWorkstream) {
     const ws = currentWorkstream;
     console.log(pc.bold(`\nstate (workstream=${ws})`));
+    const summary = await summarizeWorkstream(db, { workstream: ws });
     const counts = {
-      agents: countAgentsByWorkstream(db, ws),
-      tasks: countTasksByWorkstream(db, ws),
+      agents: summary.agentCount,
+      tasks: summary.taskCount,
       ready: countReady(db, ws),
       blocked: countBlocked(db, ws),
       inProgress: countInProgressByWorkstream(db, ws),
@@ -229,9 +231,10 @@ export async function cmdDoctorJson(db: Db): Promise<void> {
   let workstreamStats: Record<string, unknown> | null = null;
   if (currentWorkstream) {
     const ws = currentWorkstream;
+    const summary = await summarizeWorkstream(db, { workstream: ws });
     const counts = {
-      agents: countAgentsByWorkstream(db, ws),
-      tasks: countTasksByWorkstream(db, ws),
+      agents: summary.agentCount,
+      tasks: summary.taskCount,
       ready: countReady(db, ws),
       blocked: countBlocked(db, ws),
       inProgress: countInProgressByWorkstream(db, ws),
@@ -259,28 +262,11 @@ export async function cmdDoctorJson(db: Db): Promise<void> {
   });
 }
 
-function countAgentsByWorkstream(db: Db, workstream: string): number {
-  return (
-    db
-      .prepare(
-        `SELECT COUNT(*) AS n FROM agents a
-           JOIN workstreams ws ON ws.id = a.workstream_id
-          WHERE ws.name = ?`,
-      )
-      .get(workstream) as { n: number }
-  ).n;
-}
-function countTasksByWorkstream(db: Db, workstream: string): number {
-  return (
-    db
-      .prepare(
-        `SELECT COUNT(*) AS n FROM tasks t
-           JOIN workstreams ws ON ws.id = t.workstream_id
-          WHERE ws.name = ?`,
-      )
-      .get(workstream) as { n: number }
-  ).n;
-}
+// agents/tasks counts come from summarizeWorkstream() (src/workstream.ts) —
+// it already runs the same JOIN-on-workstreams SELECTs for its summary, so
+// we don't keep a second copy of those queries here. The four helpers below
+// (in-progress / logs / ready / blocked) are doctor-only views that
+// summarizeWorkstream doesn't expose.
 function countInProgressByWorkstream(db: Db, workstream: string): number {
   return (
     db
