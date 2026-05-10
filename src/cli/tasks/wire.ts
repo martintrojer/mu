@@ -202,13 +202,20 @@ export function wireTaskCommands(program: Command): void {
 
   task
     .command("close <id>")
-    .description("Mark a task CLOSED (idempotent)")
+    .description(
+      "Mark a task CLOSED (idempotent). --if-ready no-ops unless every blocker is in a terminal status (CLOSED / REJECTED / DEFERRED) — the umbrella-on-wave-done pattern.",
+    )
+    .option(
+      "--if-ready",
+      "only close when every blocker is terminal (CLOSED / REJECTED / DEFERRED); otherwise no-op + list the still-blocking ids",
+    )
     .option(...WORKSTREAM_OPT)
     .option(...EVIDENCE_OPT)
     .option(...JSON_OPT)
     .action(function (id: string) {
       const opts = (this as Command).opts() as {
         evidence?: string;
+        ifReady?: boolean;
         workstream?: string;
         json?: boolean;
       };

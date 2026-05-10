@@ -15,7 +15,7 @@
 import type { Db } from "../db.js";
 import { emitEvent } from "../logs.js";
 import { captureSnapshot } from "../snapshots.js";
-import { getTask } from "../tasks.js";
+import { getTask, getTaskEdgesWithStatus } from "../tasks.js";
 import { TaskHasOpenDependentsError, TaskNotFoundError } from "./errors.js";
 import type { TaskStatus } from "./status.js";
 
@@ -80,16 +80,87 @@ export function setTaskStatus(
   return { previousStatus: before.status, status, changed: true };
 }
 
+/** Result of `closeTask` when called with `ifReady: true` and the
+ *  task is NOT yet ready to close (still has at least one OPEN /
+ *  IN_PROGRESS blocker). Distinguished from a regular `SetStatusResult`
+ *  by the literal `skipped` field; the CLI keys on it to switch
+ *  between the "closed" and "waiting" rendering paths.
+ *
+ *  Surfaced in `fb_umbrella_no_auto_close` (impact=60): a wave umbrella
+ *  with N blockers stayed OPEN after every blocker reached a terminal
+ *  status. `--if-ready` is the cheap fix: bare `mu task close` is
+ *  unchanged (closes regardless), `--if-ready` is a no-op unless every
+ *  blocker is in a terminal status (CLOSED / REJECTED / DEFERRED).
+ *  Reject and defer satisfy the predicate too because `--if-ready`'s
+ *  job is to fire when the umbrella has nothing left to wait for, and
+ *  a rejected/deferred blocker is no longer being waited on. */
+export interface CloseSkippedResult {
+  /** Always 'not_ready' when set; future cause-codes can extend this
+   *   without reshaping the JSON payload (the literal-union narrows
+   *   safely in the CLI rendering path). */
+  skipped: "not_ready";
+  /** Status before the call (always the current status, no change). */
+  previousStatus: TaskStatus;
+  /** Status after the call (== previousStatus, since we no-op). */
+  status: TaskStatus;
+  /** Always false on a skip (no row mutated). */
+  changed: false;
+  /** Local ids of every blocker still in OPEN or IN_PROGRESS, sorted
+   *   alphabetically for deterministic rendering. Empty list is
+   *   impossible on this branch — the no-op only fires when ≥1
+   *   blocker is non-terminal. */
+  blockingIds: string[];
+}
+
+export interface CloseTaskOptions extends EvidenceOption {
+  workstream: string;
+  /** When true, no-op the close unless every blocker is in a terminal
+   *   status (CLOSED / REJECTED / DEFERRED). Returns a
+   *   `CloseSkippedResult` carrying the still-blocking ids; the CLI
+   *   renders the skip with a Next: hint pointing at `mu task wait`.
+   *   When false / omitted, behaves as bare `closeTask` (closes
+   *   regardless of blocker status). */
+  ifReady?: boolean;
+}
+
 /** Convenience: setTaskStatus(db, id, "CLOSED"). Accepts evidence.
  *  Pre-snapshots the DB (snap_design §CAPTURE STRATEGY > WHEN). Skipped
  *  for the idempotent no-op (already CLOSED) so we don't accumulate
- *  empty-delta snapshots on retry loops. */
+ *  empty-delta snapshots on retry loops.
+ *
+ *  With `ifReady: true`, returns a `CloseSkippedResult` (no mutation,
+ *  no snapshot) when any blocker is still OPEN / IN_PROGRESS. Used by
+ *  `mu task close --if-ready` so an orchestrator can fire-and-forget
+ *  the umbrella close after every blocker resolves without first
+ *  re-querying the graph. */
 export function closeTask(
   db: Db,
   localId: string,
-  opts: EvidenceOption & { workstream: string },
-): SetStatusResult {
+  opts: CloseTaskOptions,
+): SetStatusResult | CloseSkippedResult {
   const before = getTask(db, localId, opts.workstream);
+  if (opts.ifReady && before) {
+    // Inspect direct blockers only — the umbrella convention is one
+    // hop (umbrella -[blocked-by]→ each wave task). Transitive depth
+    // doesn't matter: if any direct blocker is non-terminal, the
+    // umbrella isn't ready; if every direct blocker is terminal,
+    // their own ancestry was satisfied as a precondition for them
+    // closing/rejecting/deferring in the first place.
+    const edges = getTaskEdgesWithStatus(db, localId, before.workstreamName);
+    const blocking = edges.blockers
+      .filter((e) => e.status === "OPEN" || e.status === "IN_PROGRESS")
+      .map((e) => e.name)
+      .sort();
+    if (blocking.length > 0) {
+      return {
+        skipped: "not_ready",
+        previousStatus: before.status,
+        status: before.status,
+        changed: false,
+        blockingIds: blocking,
+      };
+    }
+  }
   if (before && before.status !== "CLOSED") {
     captureSnapshot(db, `task close ${localId}`, before.workstreamName);
   }

@@ -694,6 +694,10 @@ enforce these — they're for the agents reading them.
 
 ```bash
 mu task close design                # OPEN/IN_PROGRESS → CLOSED
+mu task close umbrella --if-ready   # close ONLY if every blocker
+                                    # is terminal (CLOSED / REJECTED
+                                    # / DEFERRED); else no-op + list
+                                    # the still-blocking ids
 mu task open design                 # CLOSED → OPEN (e.g. closed by mistake)
 ```
 
@@ -703,7 +707,18 @@ message and exits 0). Owner is intentionally left intact — use
 task mid-flight. `IN_PROGRESS` auto-flips back to `OPEN` so the
 task re-enters the ready set (the canonical "hand it back to the
 pool" workflow). `--reopen` is the escape hatch for forcing `OPEN`
-from `CLOSED` / `REJECTED` / `DEFERRED`:
+from `CLOSED` / `REJECTED` / `DEFERRED`.
+
+`--if-ready` is the umbrella-on-wave-done shape: an orchestrator
+fires `mu task close <umbrella> --if-ready` after each wave-task
+finishes (or unconditionally as a final action). It's a no-op while
+any blocker is still OPEN / IN_PROGRESS, and prints the still-
+blocking ids + a `mu task wait` Next: hint so the operator can pick
+back up. Once the last blocker reaches a terminal status (CLOSED /
+REJECTED / DEFERRED), the same command closes the umbrella.
+JSON shape on the no-op path: `{ skipped: "not_ready", changed:
+false, blockingIds: ["..."], ... }`. Exit code 0 either way — the
+no-op is success.
 
 ```bash
 mu task release design              # clear owner; IN_PROGRESS → OPEN

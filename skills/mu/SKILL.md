@@ -256,7 +256,9 @@ running a wave.
   managed agent.
 - **Tasks**: `add`, `list`, `next`, `show`, `tree`, `notes`, `note`,
   `claim` (`--for | --self`), `release` (`--reopen` to un-close),
-  `close`, `open`, `reject`, `defer`, `block`, `unblock`, `update`,
+  `close` (`--if-ready` no-ops unless every blocker is terminal
+  — the umbrella-on-wave-done pattern), `open`, `reject`, `defer`,
+  `block`, `unblock`, `update`,
   `reparent`, `wait`, `delete`. Edge direction: `block <blocked>
   --by <blocker>`.
 - **Self (in-pane)**: `mu me`, `mu me tasks`, `mu me next`.
@@ -357,6 +359,24 @@ sha=$(cd $(mu workspace path $worker -w ws) \
 git cherry-pick $sha && cargo test --lib
 # Next turn: same wait on the smaller set.
 ```
+
+### Umbrella-on-wave-done (close the umbrella when the wave finishes)
+
+Wave umbrellas (`umbrella -[blocked-by]→ t1, t2, t3, ...`) used to
+stay OPEN after every wave-task finished — you had to remember to
+`mu task close umbrella` by hand. Use `--if-ready` to make the
+closer idempotent and safe to fire eagerly:
+
+```bash
+# After each pipeline cherry-pick:
+mu task close umbrella_wave_X --if-ready -w <ws>   # no-op while any blocker
+                                                   # is still OPEN/IN_PROGRESS
+```
+
+When the last blocker terminates (CLOSED / REJECTED / DEFERRED) the
+same command closes the umbrella. JSON shape on the no-op path
+carries `skipped: "not_ready"` + `blockingIds: [...]` so an
+orchestrator can branch.
 
 ### Quote command-rich prompts (avoid `$VAR` expanding in YOUR shell)
 

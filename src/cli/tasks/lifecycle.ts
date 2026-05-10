@@ -23,18 +23,48 @@ import { closeTask, deferTask, getTask, openTask, rejectTask } from "../../tasks
 export async function cmdTaskClose(
   db: Db,
   rawId: string,
-  opts: { evidence?: string; workstream?: string; json?: boolean } = {},
+  opts: { evidence?: string; ifReady?: boolean; workstream?: string; json?: boolean } = {},
 ): Promise<void> {
   const { name: localId } = await resolveEntityRef(db, rawId, opts, "task");
   assertTaskInWorkstream(db, localId, opts.workstream);
   const ws = await resolveWorkstream(opts.workstream);
-  const sdkOpts: { evidence?: string; workstream: string } = { workstream: ws };
+  const sdkOpts: { evidence?: string; ifReady?: boolean; workstream: string } = { workstream: ws };
   if (opts.evidence !== undefined) sdkOpts.evidence = opts.evidence;
+  if (opts.ifReady) sdkOpts.ifReady = true;
   // Capture the owner BEFORE closeTask so we can refresh their title
   // even though closeTask doesn't return owner info. owner won't
   // change as a result of close (FK SET NULL only fires on delete).
   const taskRow = getTask(db, localId, ws);
   const r = closeTask(db, localId, sdkOpts);
+  // --if-ready can return a CloseSkippedResult (no mutation). Branch
+  // first so the typed `skipped` field stays in scope below.
+  if ("skipped" in r) {
+    const blockingNextSteps: NextStep[] = [
+      {
+        intent: "Watch the remaining blockers (returns when one closes)",
+        command: `mu task wait ${r.blockingIds.join(" ")} -w ${ws} --first --any`,
+      },
+      { intent: "Show the umbrella + blockers", command: `mu task show ${localId} -w ${ws}` },
+      {
+        intent: "Close anyway (override --if-ready)",
+        command: `mu task close ${localId} -w ${ws}`,
+      },
+    ];
+    if (opts.json) {
+      emitJson({ taskName: localId, ...r, nextSteps: blockingNextSteps });
+      return;
+    }
+    const total = r.blockingIds.length;
+    const shown = r.blockingIds.slice(0, 8).join(", ");
+    const tail = total > 8 ? ", \u2026" : "";
+    console.log(
+      pc.dim(
+        `Skipped ${pc.bold(localId)}: blocked by ${total} task(s) (${shown}${tail}); rerun without --if-ready to close anyway`,
+      ),
+    );
+    printNextSteps(blockingNextSteps);
+    return;
+  }
   if (r.changed && taskRow?.ownerName) await refreshAgentTitle(db, taskRow.ownerName, ws);
   const nextSteps: NextStep[] = [
     { intent: "Reopen if needed", command: `mu task open ${localId} -w ${ws}` },

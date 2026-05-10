@@ -56,6 +56,8 @@ export {
   waitForTasks,
 } from "./tasks/wait.js";
 export {
+  type CloseSkippedResult,
+  type CloseTaskOptions,
   type EvidenceOption,
   type RejectDeferOptions,
   type RejectDeferResult,
