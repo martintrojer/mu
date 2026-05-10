@@ -32,7 +32,11 @@ called out under "Breaking" in each entry.
   Pre-0.3 export directories (top-level `tasks/`, no `bucketVersion`
   in `manifest.json`) are NOT migrated in place; the export refuses
   with a `LegacyExportLayoutError` (exit 2) and asks the operator
-  to `rm -rf <dir>` and re-run.
+  to `rm -rf <dir>` and re-run. The per-source-ws subdir layout
+  preserves task `.md` paths byte-identically across export → archive
+  → re-export, so `git`'s rename detector tracks history through
+  the migration (verified on the in-repo `exports/mu/` migration
+  commit; ~150 task files renamed cleanly, no new add/delete pairs).
 
 ### Schema
 
