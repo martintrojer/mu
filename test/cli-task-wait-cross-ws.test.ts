@@ -189,7 +189,7 @@ describe("mu task wait — cross-workstream qualified refs + --first", () => {
     );
     expect(error).toBeUndefined();
     // TaskNotFoundError → exit 3 via the cli handler.
-    expect(exitCode).not.toBeNull();
+    expect(exitCode).toBe(3);
     expect(stderr).toContain("ghostws/bar");
   });
 
@@ -202,7 +202,7 @@ describe("mu task wait — cross-workstream qualified refs + --first", () => {
       dbPath,
     );
     expect(error).toBeUndefined();
-    expect(exitCode).not.toBeNull();
+    expect(exitCode).toBe(3);
     expect(stderr).toContain("wsa/missing");
   });
 
