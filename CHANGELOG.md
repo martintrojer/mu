@@ -63,6 +63,9 @@ called out under "Breaking" in each entry.
 
 ### Removed
 
+- **`docs/OUTPUT_LABELS_AUDIT.md` removed.** v0.2 single-purpose
+  audit; output-label rename work shipped; no live readers.
+
 - **`scripts/` directory + CI grep guards removed.**
   `grep-v4-references`: job done (v4 migration code removed; remaining
   v4 mentions are intentional history). `grep-name-without-workstream`:
@@ -396,7 +399,7 @@ called out under "Breaking" in each entry.
   / `workstreamName`; `TaskNoteRow` drops `id` + `taskId`. CLI text,
   exit codes, and column rendering unchanged. No `--json-shape v4`
   flag, no dual-emit. `jq` migration recipes inline in the matching
-  task notes; full table in [docs/OUTPUT_LABELS_AUDIT.md](docs/OUTPUT_LABELS_AUDIT.md).
+  task notes.
 
 - **Schema bumped to v5 — surrogate INTEGER PKs everywhere
   (`schema_surrogate_pks_for_global_uniqueness`).** Every entity table
