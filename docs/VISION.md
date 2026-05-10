@@ -137,8 +137,8 @@ earns its keep on four specific axes — not just inertia:
   `TaskNotFoundError` / `TaskNotInWorkstreamError` / `CycleError`
   hierarchy maps directly to exit codes via `handle()`. The
   `assertXInWorkstream` helper family stays type-safe across
-  three namespaces. `noUncheckedIndexedAccess` has prevented
-  several real bugs in iteration. The same code in Go would lose
+  every resource namespace. `noUncheckedIndexedAccess` has
+  prevented several real bugs in iteration. The same code in Go would lose
   the discriminated unions; in Python the type checker is too
   weak; in Rust the LOC cost would be 2–3×.
 - **JSON-first surface fits TS like a glove.** `emitJson(value)`
@@ -152,7 +152,7 @@ earns its keep on four specific axes — not just inertia:
   `db.transaction()` wrapper is exactly the right shape.
   Equivalent in Rust (rusqlite) or Go (mattn/go-sqlite3) is more
   verbose to use.
-- **Iteration speed.** ~60 typed verbs / 10 tables (schema v5) /
+- **Iteration speed.** ~60 typed verbs / 14 tables (schema v7) /
   ~880 tests in ~30k LOC src+tests, with multiple substantive
   changes per day during active work. That cadence in a Rust
   codebase of equivalent surface area would be 2–3× slower at
@@ -183,7 +183,7 @@ The product surface is:
   state` as the curated state card) for inspection.
 - **Typed verbs** that map cleanly to resource transitions for action
   (`task add`, `task claim`, `task close`, `agent spawn`, `workspace
-  create`, `approve grant`, ...).
+  create`, `workstream init`, `archive add --destroy`, ...).
 - **`--json` on every read verb** so scripts pipe through `jq`
   instead of parsing tables.
 - **`mu sql`** as the explicit escape hatch underneath.
