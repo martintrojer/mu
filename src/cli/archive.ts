@@ -463,13 +463,12 @@ export async function cmdArchiveExport(
   if (!opts.out || opts.out.trim().length === 0) {
     throw new UsageError("--out <dir> is required for `mu archive export`");
   }
-  // Pre-resolve so a missing label fails BEFORE we touch the disk.
-  // exportArchive does the same internally; double-checking here
-  // keeps the JSON and prose error paths identical.
-  getArchive(db, label);
+  // exportArchive throws ArchiveNotFoundError (via listArchivedTasks)
+  // before any disk I/O — classifyError maps it the same way for
+  // both the JSON and prose error paths.
   const result = exportArchive(db, { label, outDir: opts.out });
   const totalTasks = Object.values(result.manifest.sources).reduce(
-    (acc, s) => acc + (s as { tasks: unknown[] }).tasks.length,
+    (acc, s) => acc + s.tasks.length,
     0,
   );
   const nextSteps: NextStep[] = [
