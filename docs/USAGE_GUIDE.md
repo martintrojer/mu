@@ -871,6 +871,10 @@ mu workstream destroy --workstream auth-refactor --yes    # actually does it
 
 # Or, from inside the workstream's tmux session:
 mu workstream destroy --yes                                # workstream auto-detected
+
+# Atomic: archive THEN destroy. Refuses if the archive label
+# doesn't already exist (run `mu archive create <label>` first).
+mu workstream destroy -w auth-refactor --archive v0-3-wave --yes
 ```
 
 ```

@@ -70,6 +70,14 @@ called out under "Breaking" in each entry.
   --archive <label>` shorthand) and Phase 4 (export renderer over
   archive contents) follow.
 
+- **`mu workstream destroy --archive <label>`** (Phase 3 of the v0.3
+  archive feature): atomic snapshot-then-destroy. The label must
+  already exist (anti-feature: no auto-create — run `mu archive
+  create <label>` first). Archive add runs BEFORE destroy; if it
+  fails, the destroy is aborted. Dry-run mode (no `--yes`) reports
+  "would archive N tasks to <label>" alongside the existing
+  pre-destroy summary.
+
 ## [0.2.0] — 2026-05-09
 
 ### Breaking

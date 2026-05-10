@@ -211,7 +211,7 @@ follow-up commands; agents read it, humans skim past it.
 # Workstream (4)
 mu workstream init <name>            # create tmux session mu-<name> + DB row
 mu workstream list                   # every workstream on this machine
-mu workstream destroy [--yes] [--no-export]  # tear down; auto-exports to <state-dir>/exports/<ws>-<ts>/ first
+mu workstream destroy [--yes] [--no-export] [--archive <label>]  # tear down; auto-exports to <state-dir>/exports/<ws>-<ts>/; --archive snapshots into an existing archive BEFORE destroy (atomic)
 mu workstream export [--out <dir>]   # render task graph + notes as ./<ws>/ (markdown + manifest.json); idempotent
 
 # Agents (8)

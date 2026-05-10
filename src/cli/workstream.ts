@@ -9,6 +9,7 @@
 // Extracted from src/cli.ts as part of refactor_split_large_src_files.
 
 import { join } from "node:path";
+import { type AddToArchiveResult, addToArchive, getArchive } from "../archives.js";
 import { emitJson, formatWorkstreamsTable, resolveWorkstream } from "../cli.js";
 import { type Db, defaultStateDir } from "../db.js";
 import { type NextStep, pc, printNextSteps } from "../output.js";
@@ -153,9 +154,22 @@ function autoExportDir(workstream: string): string {
 
 export async function cmdDestroy(
   db: Db,
-  opts: { workstream?: string; yes?: boolean; json?: boolean; export?: boolean },
+  opts: {
+    workstream?: string;
+    yes?: boolean;
+    json?: boolean;
+    export?: boolean;
+    archive?: string;
+  },
 ): Promise<void> {
   const workstream = await resolveWorkstream(opts.workstream);
+  // Validate --archive label FIRST so an unknown label refuses the
+  // destroy entirely (anti-feature: no auto-create — operators run
+  // `mu archive create <label>` themselves). getArchive throws
+  // ArchiveNotFoundError on miss; classifyError maps that to exit 3.
+  if (opts.archive !== undefined) {
+    getArchive(db, opts.archive);
+  }
   const summary = await summarizeWorkstream(db, { workstream });
   // Empty-but-registered workstreams (a row in `workstreams` with no
   // agents/tasks/etc.) ARE worth destroying — otherwise the bare
@@ -192,10 +206,14 @@ export async function cmdDestroy(
         destroyed: false,
         dryRun: true,
         summary,
+        archive:
+          opts.archive !== undefined
+            ? { label: opts.archive, wouldArchiveTasks: summary.taskCount }
+            : undefined,
         nextSteps: [
           {
             intent: "Confirm and actually destroy",
-            command: `mu workstream destroy -w ${workstream} --yes`,
+            command: `mu workstream destroy -w ${workstream} --yes${opts.archive !== undefined ? ` --archive ${opts.archive}` : ""}`,
           },
           {
             intent: "After destroying, undo if you regret it (DB only; tmux NOT rolled back)",
@@ -216,6 +234,11 @@ export async function cmdDestroy(
     console.log(
       `  workspaces   : ${summary.workspaceCount}${summary.workspaceCount > 0 ? pc.dim(" (will be cleaned via per-backend remove)") : ""}`,
     );
+    if (opts.archive !== undefined) {
+      console.log(
+        `  archive      : ${pc.yellow(`would archive ${summary.taskCount} tasks to ${opts.archive}`)}`,
+      );
+    }
     console.log("");
     console.log(pc.dim("(dry-run; rerun with --yes to actually destroy)"));
     console.log(
@@ -261,12 +284,26 @@ export async function cmdDestroy(
     }
   }
 
+  // Archive BEFORE destroy: if the archive add fails, abort. We
+  // already validated the label up top so the only reasons for a
+  // throw here are transient (DB lock / disk error) — surface them
+  // and leave the workstream untouched. No rollback needed (we
+  // haven't destroyed yet).
+  let archiveResult: AddToArchiveResult | undefined;
+  if (opts.archive !== undefined) {
+    archiveResult = addToArchive(db, opts.archive, workstream);
+  }
+
   const result = await destroyWorkstream(db, { workstream });
   if (opts.json) {
     emitJson({
       workstreamName: workstream,
       destroyed: true,
       ...result,
+      archive:
+        opts.archive !== undefined && archiveResult !== undefined
+          ? { label: opts.archive, ...archiveResult }
+          : undefined,
       autoExport: autoExport
         ? { outDir: autoExportOutDir, error: autoExportError }
         : { skipped: true },
@@ -296,6 +333,13 @@ export async function cmdDestroy(
   );
   console.log(`  workspaces   : ${summary.workspaceCount}`);
   console.log("");
+  if (archiveResult !== undefined && opts.archive !== undefined) {
+    console.log(
+      `Archived ${pc.bold(workstream)} to ${pc.bold(opts.archive)} ${pc.dim(
+        `(tasks=${archiveResult.addedTasks}, edges=${archiveResult.addedEdges}, notes=${archiveResult.addedNotes}, events=${archiveResult.addedEvents}, skipped_existing=${archiveResult.skippedTasks})`,
+      )}`,
+    );
+  }
   console.log(
     `Destroyed ${pc.bold(workstream)}: killed tmux=${result.killedTmux}, agents=${result.deletedAgents}, tasks=${result.deletedTasks}, edges=${result.deletedEdges}, notes=${result.deletedNotes}, workspaces=${result.freedWorkspaces}/${summary.workspaceCount}${result.alreadyGoneWorkspaces > 0 ? ` (${result.alreadyGoneWorkspaces} already gone on disk)` : ""}`,
   );
@@ -372,6 +416,10 @@ export function wireWorkstreamCommands(program: Command): void {
     .option(...WORKSTREAM_OPT)
     .option("-y, --yes", "actually destroy (without this flag, prints a dry-run summary)")
     .option("--no-export", "skip the pre-destroy markdown export to <state-dir>/exports/<ws>-<ts>/")
+    .option(
+      "--archive <label>",
+      "in-DB archive label to add this workstream's contents to BEFORE destroy (atomic; if archive add fails, destroy aborts)",
+    )
     .option(...JSON_OPT)
     .action(function () {
       const opts = (this as Command).opts() as {
@@ -379,6 +427,7 @@ export function wireWorkstreamCommands(program: Command): void {
         yes?: boolean;
         json?: boolean;
         export?: boolean;
+        archive?: string;
       };
       return handle((db) => cmdDestroy(db, opts))();
     });
