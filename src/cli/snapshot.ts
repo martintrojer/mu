@@ -318,10 +318,14 @@ export async function cmdSnapshotShow(
   console.log(`  db_path        : ${row.dbPath}`);
   console.log(`  size           : ${formatBytes(sizeBytes)}`);
   console.log(`  created_at     : ${row.createdAt}`);
+  // The inspect-without-restoring hint shells out to raw sqlite3 on
+  // purpose: the snapshot file is a separate, frozen DB by definition,
+  // so the "use mu sql, not sqlite3" convention (which targets the live
+  // DB) does not apply. Snapshots are forensic / out-of-band; bypass mu.
   printNextSteps([
     { intent: "Restore this snapshot", command: `mu undo --to ${row.id} --yes` },
     {
-      intent: "Inspect the snapshot's data without restoring",
+      intent: "Inspect the snapshot's data without restoring (snapshot is forensic; bypass mu)",
       command: `sqlite3 ${row.dbPath} "SELECT * FROM tasks"`,
     },
   ]);
