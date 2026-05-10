@@ -280,7 +280,9 @@ anticipatory layering. Each module is concrete and consumed today.
 | `src/agents.ts`       | CRUD + spawn / send / read / list / show / close / free / adopt; spawn liveness; reaper; pane-title composition (`composeAgentTitle`) |
 | `src/tasks.ts`        | CRUD + every read/write verb on the DAG; cycle check; claim CAS; auto-event emission      |
 | `src/tracks.ts`       | Parallel-tracks union-find with diamond merge                                             |
-| `src/workstream.ts`   | ensureWorkstream / list / summarize / destroy / export (markdown rendering of task graph + notes; idempotent via per-file sha256 in `manifest.json`; deleted-task preservation) |
+| `src/workstream.ts`   | ensureWorkstream / list / summarize / destroy / export (thin wrapper around the bucket renderer) |
+| `src/exporting.ts`    | Unified bucket renderer for `mu workstream export` and `mu archive export`: per-task markdown + manifest.json (`bucketVersion: 2`); idempotent via per-file sha256; deleted-task preservation banner; refuses pre-0.3 single-source layouts |
+| `src/importing.ts`    | Inverse of `src/exporting.ts`: parses a v0.3 bucket directory and rebuilds every source-ws as live tasks + edges + notes. Markdown-only (never reads .db); per-source-ws transactional; refuses silent merges into existing workstreams |
 | `src/archives.ts`     | Cross-workstream **archives** (Phase 1 SDK; CLI in Phase 2): `createArchive` / `listArchives` / `getArchive` / `deleteArchive` / `addToArchive` (idempotent at `(archive, source_workstream)`) / `removeFromArchive` / `listArchivedTasks`. Backed by the v6 `archives` + `archived_tasks` + `archived_edges` + `archived_notes` + `archived_events` tables; archives outlive workstreams (TEXT `source_workstream` columns, no FK). |
 | `src/logs.ts`         | `agent_logs` SDK: appendLog / listLogs / latestSeq / emitEvent                            |
 | `src/vcs.ts`          | `VcsBackend` interface + jj / sl / git / none impls; detection precedence; `commitsBehind(workspacePath, ref)` for staleness signal (no auto-fetch; pure observation) |

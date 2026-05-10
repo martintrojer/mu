@@ -341,6 +341,7 @@ export const EVENT_VERB_PREFIXES: readonly string[] = [
   "workstream init",
   "workstream destroy",
   "workstream export",
+  "workstream import",
   // src/approvals.ts — note `approval`, not `approve`. The CLI verb
   // is `mu approve`, but the event payload uses the noun `approval`
   // (followed by a status word, e.g. `approval granted slug ...`).

@@ -178,6 +178,17 @@ export {
   type WorkstreamSummary,
 } from "./workstream.js";
 export {
+  ImportBucketInvalidError,
+  ImportEdgeRefMissingError,
+  ImportFrontmatterParseError,
+  ImportLegacyLayoutError,
+  type ImportBucketOptions,
+  type ImportBucketResult,
+  type ImportSourceResult,
+  WorkstreamAlreadyExistsError,
+  importBucket,
+} from "./importing.js";
+export {
   type ExportArchiveOptions,
   type ExportArchiveResult,
   type ExportManifest,

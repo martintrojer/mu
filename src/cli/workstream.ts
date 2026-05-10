@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { type AddToArchiveResult, addToArchive, getArchive } from "../archives.js";
 import { emitJson, formatWorkstreamsTable, resolveWorkstream } from "../cli.js";
 import { type Db, defaultStateDir } from "../db.js";
+import { type ImportBucketResult, importBucket } from "../importing.js";
 import { type NextStep, pc, printNextSteps } from "../output.js";
 import {
   enableMuPaneBordersForSession,
@@ -148,6 +149,68 @@ export async function cmdWorkstreamExport(
       `(written=${result.written}, unchanged=${result.unchanged}, preserved=${result.preserved}; bucket sources=${Object.keys(result.manifest.sources).length})`,
     )}`,
   );
+  printNextSteps(nextSteps);
+}
+
+export async function cmdWorkstreamImport(
+  db: Db,
+  bucketDir: string,
+  opts: { workstream?: string; dryRun?: boolean; json?: boolean },
+): Promise<void> {
+  const result: ImportBucketResult = importBucket(db, {
+    bucketDir,
+    workstreamOverride: opts.workstream,
+    dryRun: opts.dryRun,
+  });
+  const totalTasks = result.sources.reduce((acc, s) => acc + s.tasksImported, 0);
+  const totalEdges = result.sources.reduce((acc, s) => acc + s.edgesImported, 0);
+  const totalNotes = result.sources.reduce((acc, s) => acc + s.notesImported, 0);
+  const totalTombstones = result.sources.reduce((acc, s) => acc + s.tombstonesSkipped, 0);
+  const importedNames = result.sources.map((s) => s.workstreamName);
+  const nextSteps: NextStep[] = [];
+  if (!opts.dryRun) {
+    for (const name of importedNames) {
+      nextSteps.push({
+        intent: `Inspect ${name}`,
+        command: `mu task tree -w ${name}`,
+      });
+    }
+    nextSteps.push({
+      intent: "Re-export to verify the round trip is byte-stable",
+      command: `mu workstream export -w ${importedNames[0] ?? "<ws>"} --out <new-dir>`,
+    });
+  } else {
+    nextSteps.push({
+      intent: "Run the import for real",
+      command: `mu workstream import ${bucketDir}${opts.workstream ? ` --workstream ${opts.workstream}` : ""}`,
+    });
+  }
+  if (opts.json) {
+    emitJson({
+      ...result,
+      bucketDir,
+      dryRun: opts.dryRun === true,
+      totals: {
+        tasks: totalTasks,
+        edges: totalEdges,
+        notes: totalNotes,
+        tombstones: totalTombstones,
+      },
+      nextSteps,
+    });
+    return;
+  }
+  const verb = opts.dryRun ? "Would import" : "Imported";
+  console.log(
+    `${verb} ${pc.bold(String(result.sources.length))} source-ws from ${pc.bold(bucketDir)} ${pc.dim(
+      `(bucketVersion=${result.bucketVersion}${result.bucketLabel ? `, label=${result.bucketLabel}` : ""}; tasks=${totalTasks}, edges=${totalEdges}, notes=${totalNotes}, tombstones_skipped=${totalTombstones})`,
+    )}`,
+  );
+  for (const s of result.sources) {
+    console.log(
+      `  ${pc.bold(s.workstreamName)}: tasks=${s.tasksImported}, edges=${s.edgesImported}, notes=${s.notesImported}, tombstones=${s.tombstonesSkipped}`,
+    );
+  }
   printNextSteps(nextSteps);
 }
 
@@ -438,6 +501,26 @@ export function wireWorkstreamCommands(program: Command): void {
         archive?: string;
       };
       return handle((db) => cmdDestroy(db, opts))();
+    });
+
+  workstream
+    .command("import <bucket-dir>")
+    .description(
+      "Rebuild a workstream (or a multi-source bucket of workstreams) from a v0.3 markdown export. Per source-ws transactional: each source-ws is imported in its own SQLite transaction; siblings are unaffected by a sibling's failure. Refuses to merge silently into an existing workstream — pass --workstream <name> (single-source buckets only) or destroy the existing one first.",
+    )
+    .option(
+      "--workstream <name>",
+      "override the imported workstream's name (single-source buckets only)",
+    )
+    .option("--dry-run", "walk + parse + validate; report what WOULD be created; no DB writes")
+    .option(...JSON_OPT)
+    .action(function (bucketDir: string) {
+      const opts = (this as Command).opts() as {
+        workstream?: string;
+        dryRun?: boolean;
+        json?: boolean;
+      };
+      return handle((db) => cmdWorkstreamImport(db, bucketDir, opts))();
     });
 
   workstream

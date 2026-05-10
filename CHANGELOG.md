@@ -43,6 +43,17 @@ called out under "Breaking" in each entry.
   list ordering inside each verb is unchanged — those are curated
   semantically; only the Commands listings are sorted.
 
+- **`mu workstream import <bucket-dir>`** — inverse of
+  `mu workstream export`. Walks a v0.3 bucket directory (markdown +
+  manifest.json) and rebuilds every source-ws subdir as live tasks,
+  edges, and notes. Markdown-only by design (no `.db` imports;
+  cross-machine `.db` is `mu undo` + snapshots). Per-source-ws
+  transactional; refuses to merge silently into an existing
+  workstream (`--workstream <name>` for single-source rename, or
+  destroy first). Supports `--dry-run` and `--json`. Pre-0.3 layouts
+  surface a typed `ImportLegacyLayoutError`. New SDK in
+  `src/importing.ts` exports `importBucket()` and the typed errors.
+
 - **`mu hud` accepts multiple workstreams via `--workstreams` or
   `--all`** (`hud_multi_workstream`). N=1 (the common case, including
   legacy `mu hud -w X`) renders byte-for-byte unchanged — same

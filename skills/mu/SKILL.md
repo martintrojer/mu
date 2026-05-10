@@ -213,6 +213,7 @@ mu workstream init <name>            # create tmux session mu-<name> + DB row
 mu workstream list                   # every workstream on this machine
 mu workstream destroy [--yes] [--no-export] [--archive <label>]  # tear down; auto-exports to <state-dir>/exports/<ws>-<ts>/; --archive snapshots into an existing archive BEFORE destroy (atomic)
 mu workstream export [--out <dir>]   # render task graph + notes to a bucket dir (<out>/<ws>/{README,INDEX,tasks/<id>.md} + bucket-level README/INDEX/manifest.json); additive across workstreams; idempotent
+mu workstream import <bucket-dir> [--workstream <name>] [--dry-run] [--json]  # inverse of export: rebuild every source-ws in the bucket as live tasks + edges + notes; markdown-only (no .db imports); per-source-ws transactional; refuses silent merge into existing
 
 # Agents (8)
 mu agent spawn <name> [--workspace]  # spawn into mu-<workstream>

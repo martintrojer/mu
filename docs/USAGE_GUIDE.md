@@ -977,8 +977,56 @@ export refuses with a helpful error: `rm -rf <dir>` and re-run, or
 pick a different `--out`.
 
 Markdown only by design — no HTML/PDF, no embedded VCS, no
-cross-workstream merge, no re-import. Operators can pandoc /
-`git init` themselves.
+cross-workstream merge. Operators can pandoc / `git init`
+themselves.
+
+### Cross-machine + collab — `mu workstream import`
+
+The export above plus `mu workstream import <bucket-dir>` is the
+cross-machine + collaboration story. Push the bucket directory to
+git on machine A; pull it on machine B (or share it with a
+teammate); `mu workstream import` rebuilds the workstream + every
+task + edge + note locally.
+
+```bash
+# Machine A — author
+mu workstream export -w auth-refactor --out exports/auth
+(cd exports/auth && git init && git add . && git commit -m 'auth snapshot')
+git push origin main
+
+# Machine B — pull + rehydrate
+git pull
+mu workstream import exports/auth                 # → workstream `auth-refactor`
+mu workstream import exports/auth --workstream auth-v2   # rename on import
+mu workstream import exports/auth --dry-run       # walk + parse + report; no DB writes
+mu workstream import exports/auth --json          # machine-readable per-source-ws result
+```
+
+Key properties:
+
+- **Markdown-only.** `.db` files are never imported (binary +
+  machine-specific). `mu undo` + snapshot files cover the
+  same-machine case; this verb covers cross-machine + collab.
+- **Per-source-ws transactional.** Each source-ws subdirectory is
+  imported in its own SQLite transaction. A failure in source A
+  rolls back A; sibling source B is unaffected.
+- **Refuses silent merges.** If the target workstream already
+  exists in the DB with tasks, the import errors with
+  `WorkstreamAlreadyExistsError`. Recourse:
+  `--workstream <new-name>` (single-source buckets only) or
+  destroy the existing workstream first.
+- **Owners reset.** Agents aren't exported, so the imported tasks
+  are unowned. The original owner name survives in the markdown
+  frontmatter — that's the audit trail.
+- **Tombstones skipped.** Files starting with the
+  `> **Deleted from DB on …**` banner (preserved by re-export of
+  a deleted task) are counted as `tombstones_skipped` and not
+  re-inserted.
+- **Forward edge refs are deferred.** `blocked_by` / `blocks`
+  arrays are validated against the bucket's id-set up front, then
+  inserted after every task in the source-ws is created.
+- **Pre-0.3 layouts refuse.** Buckets without a `bucketVersion: 2`
+  manifest throw `ImportLegacyLayoutError` with a re-export hint.
 
 ---
 

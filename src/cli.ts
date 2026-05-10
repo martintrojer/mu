@@ -55,6 +55,13 @@ import { wireWorkspaceCommands } from "./cli/workspace.js";
 import { wireWorkstreamCommands } from "./cli/workstream.js";
 import { type Db, SchemaTooOldError, WorkstreamNotFoundError, openDb } from "./db.js";
 import { LegacyExportLayoutError } from "./exporting.js";
+import {
+  ImportBucketInvalidError,
+  ImportEdgeRefMissingError,
+  ImportFrontmatterParseError,
+  ImportLegacyLayoutError,
+  WorkstreamAlreadyExistsError,
+} from "./importing.js";
 import { type LogRow, displayEventPayload } from "./logs.js";
 import {
   type NextStep,
@@ -312,7 +319,11 @@ export function classifyError(err: unknown): { label: string; exitCode: number }
     err instanceof UsageError ||
     err instanceof WorkstreamNameInvalidError ||
     err instanceof ArchiveLabelInvalidError ||
-    err instanceof LegacyExportLayoutError
+    err instanceof LegacyExportLayoutError ||
+    err instanceof ImportBucketInvalidError ||
+    err instanceof ImportLegacyLayoutError ||
+    err instanceof ImportFrontmatterParseError ||
+    err instanceof ImportEdgeRefMissingError
   ) {
     return { label: "error", exitCode: 2 };
   }
@@ -353,7 +364,8 @@ export function classifyError(err: unknown): { label: string; exitCode: number }
     err instanceof SnapshotVersionMismatchError ||
     err instanceof SchemaTooOldError ||
     err instanceof TaskIdInvalidError ||
-    err instanceof ArchiveAlreadyExistsError
+    err instanceof ArchiveAlreadyExistsError ||
+    err instanceof WorkstreamAlreadyExistsError
   ) {
     return { label: "conflict", exitCode: 4 };
   }
