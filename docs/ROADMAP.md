@@ -165,8 +165,8 @@ SELECT t.*,
        COUNT(n.id) AS note_count,
        MAX(n.created_at) AS last_note_at
 FROM tasks t
-LEFT JOIN task_notes n ON n.task_id = t.local_id
-GROUP BY t.local_id;
+LEFT JOIN task_notes n ON n.task_id = t.id
+GROUP BY t.id;
 ```
 
 Earns when `mu sql` queries against tasks + notes start getting

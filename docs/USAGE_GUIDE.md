@@ -888,25 +888,36 @@ mu task wait build_a -w mufeedback-v03 --stuck-after 0 --on-stall exit
 
 ```bash
 # Set task to IN_PROGRESS without claiming (claim does this automatically;
-# this covers the rare manual case)
-mu sql "UPDATE tasks SET status='IN_PROGRESS' WHERE local_id='build'"
+# this covers the rare manual case). local_id is per-workstream unique,
+# so always scope by workstream_id to avoid hitting a same-named task in
+# another workstream.
+mu sql "UPDATE tasks SET status='IN_PROGRESS'
+         WHERE local_id='build'
+           AND workstream_id=(SELECT id FROM workstreams WHERE name='mufeedback-v03')"
 
 # What's blocking what (open tasks only) — same data as `mu task tree`
-# but as a flat join when you want a wider report
+# but as a flat join when you want a wider report. task_edges is keyed
+# by tasks.id, not local_id.
 mu sql "SELECT b.local_id AS blocked, t.local_id AS by_task
         FROM tasks b
-        JOIN task_edges e ON e.to_task = b.local_id
-        JOIN tasks t ON t.local_id = e.from_task
+        JOIN task_edges e ON e.to_task_id = b.id
+        JOIN tasks t ON t.id = e.from_task_id
         WHERE t.status != 'CLOSED' AND b.status = 'OPEN'"
 
-# Recursive CTE: every task that transitively blocks `launch`
-# (or use `mu task tree launch --json` for the same data structured)
-mu sql "WITH RECURSIVE prereqs(node) AS (
-          SELECT 'launch'
+# Recursive CTE: every task that transitively blocks `launch` in a
+# given workstream (or use `mu task tree launch --json` for the same
+# data structured). local_id is per-workstream, so resolve the seed
+# under a workstream filter.
+mu sql "WITH RECURSIVE prereqs(id) AS (
+          SELECT t.id FROM tasks t
+            JOIN workstreams w ON w.id = t.workstream_id
+           WHERE t.local_id='launch' AND w.name='mufeedback-v03'
           UNION
-          SELECT from_task FROM task_edges, prereqs WHERE to_task = prereqs.node
+          SELECT e.from_task_id FROM task_edges e, prereqs
+           WHERE e.to_task_id = prereqs.id
         )
-        SELECT * FROM prereqs"
+        SELECT t.local_id, t.title, t.status
+          FROM prereqs JOIN tasks t ON t.id = prereqs.id"
 ```
 
 `mu sql` accepts both reads and writes. Reads are pretty-printed as a

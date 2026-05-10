@@ -23,7 +23,7 @@ listed below does not exist; check `mu --help` if in doubt.
   a `--blocked-by` edge), `REJECTED` (terminal won't-do; still
   blocks downstream), or `DEFERRED` (parked, may revisit; still
   blocks downstream).
-- **claim** / **release** — atomic CAS take/clear of `tasks.owner`.
+- **claim** / **release** — atomic CAS take/clear of `tasks.owner_id`.
 - **free** — mark the *agent* available (`mu agent free`). Pane
   untouched. Different from release: free is about the agent,
   release is about the task.
@@ -447,22 +447,30 @@ operator-facing TEXT name is per-workstream `UNIQUE`. Inspect with
 or `mu doctor --json | jq .db.schema`.
 
 ```bash
-# Cross-agent join
+# Cross-agent join (owner_id → agents.id; agents.name is per-workstream
+# unique, not global)
 mu sql "SELECT a.name, t.local_id, t.title
-          FROM agents a JOIN tasks t ON t.owner = a.name
+          FROM agents a JOIN tasks t ON t.owner_id = a.id
          WHERE a.status IN ('busy','needs_input')"
 
-# Recursive CTE: every task that transitively blocks `launch`
-mu sql "WITH RECURSIVE prereqs(node) AS (
-          SELECT 'launch'
+# Recursive CTE: every task that transitively blocks `launch` in
+# workstream <ws>. task_edges is keyed by tasks.id; local_id is
+# per-workstream, so resolve the seed with a workstream filter.
+mu sql "WITH RECURSIVE prereqs(id) AS (
+          SELECT t.id FROM tasks t
+            JOIN workstreams w ON w.id = t.workstream_id
+           WHERE t.local_id='launch' AND w.name='<ws>'
           UNION
-          SELECT from_task FROM task_edges, prereqs WHERE to_task = prereqs.node
-        ) SELECT * FROM prereqs"
+          SELECT e.from_task_id FROM task_edges e, prereqs
+           WHERE e.to_task_id = prereqs.id
+        )
+        SELECT t.local_id, t.title, t.status
+          FROM prereqs JOIN tasks t ON t.id = prereqs.id"
 
-# Rename a workstream (typo recovery). Every FK has ON UPDATE CASCADE
-# so children (agents, tasks, agent_logs, vcs_workspaces) follow
-# the rename atomically. Run `tmux rename-session -t mu-<old>
-# mu-<new>` afterwards if the tmux session is alive.
+# Rename a workstream (typo recovery). All FKs reference
+# workstreams.id (not the name), so children follow the rename
+# automatically. Run `tmux rename-session -t mu-<old> mu-<new>`
+# afterwards if the tmux session is alive.
 mu sql "UPDATE workstreams SET name='auth-refactor' WHERE name='auth-refator'"
 ```
 
