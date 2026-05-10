@@ -8,7 +8,7 @@ called out under "Breaking" in each entry.
 
 ---
 
-## [Unreleased]
+## [0.3.0] — unreleased
 
 ### Added
 
@@ -61,6 +61,122 @@ called out under "Breaking" in each entry.
   release <id> --reopen` — mu deliberately does NOT auto-restart pi
   or auto-release the task (idle is ambiguous; the operator decides).
 
+- **`mu --help` and every subcommand `--help` now list commands
+  alphabetically** (`cli_help_alphabetical_subcommands`). Options
+  list ordering inside each verb is unchanged — those are curated
+  semantically; only the Commands listings are sorted.
+
+- **`mu workstream import <bucket-dir>`** — inverse of
+  `mu workstream export`. Walks a v0.3 bucket directory (markdown +
+  manifest.json) and rebuilds every source-ws subdir as live tasks,
+  edges, and notes. Markdown-only by design (no `.db` imports;
+  cross-machine `.db` is `mu undo` + snapshots). Per-source-ws
+  transactional; refuses to merge silently into an existing
+  workstream (`--workstream <name>` for single-source rename, or
+  destroy first). Supports `--dry-run` and `--json`. Pre-0.3 layouts
+  surface a typed `ImportLegacyLayoutError`. New SDK in
+  `src/importing.ts` exports `importBucket()` and the typed errors.
+
+- **`mu workstream import` — partial bucket import** (per-source-ws
+  subdir path OR `--source-ws <names...>` CSV filter on a bucket).
+  Form 1 auto-detects a per-source-ws subdir via `README.md` +
+  `INDEX.md` + `tasks/` and validates against the parent bucket's
+  `manifest.json`; Form 2 keeps the bucket root and filters via the
+  variadic flag (repeat or comma-separate; or both, per
+  `cli_audit_plurality_uniformity`). `--workstream <new-name>` is
+  allowed when the resolved source list is single (Form 1, or Form 2
+  with one name); multi-source filters keep today's rejection. New
+  typed `ImportSourceNotInBucketError` (exit 4) names the bad name +
+  the valid ones.
+
+- **`mu hud` accepts multiple workstreams via `-w/--workstream` (now
+  variadic) or `--all`** (`hud_multi_workstream` + `hud_unify_workstream_flag`).
+  N=1 (the common case, including legacy `mu hud -w X`) renders
+  byte-for-byte unchanged — same columns, same JSON shape — so
+  existing tmux status-bar pipes (`#(mu hud --json) | jq ...`) keep
+  working. N≥2 grows the workstream-summary table to N rows, gains
+  a leading bold-cyan `workstream` column on every section table,
+  and switches the JSON envelope to `{ workstreams: [...] }`.
+  Recent-events table becomes a cross-workstream timeline (DESC by
+  `created_at` across the union). The variadic shape uses the
+  parseCsvFlag convention from cli_audit_plurality_uniformity
+  (repeat OR comma-separate OR both); the originally-shipped
+  `--workstreams` companion flag was unified into `-w` before
+  release (see the Changed `hud_unify_workstream_flag` entry below).
+
+- **CLI multi-value flags now accept repeat OR comma-separated forms
+  uniformly** (today's `--blocked-by a,b,c` keeps working; you can now
+  also `--blocked-by a --blocked-by b`). Codified by
+  `cli_audit_plurality_uniformity`: every variadic flag is post-processed
+  through a single `parseCsvFlag` helper; help text uses the stock phrase
+  "(repeat or comma-separate; or both)"; the `<value...>` metavar is the
+  syntactic signal.
+
+- **`src/archives.ts` SDK** (Phase 1 of the v0.3 archive feature):
+  `createArchive`, `listArchives`, `getArchive`, `deleteArchive`,
+  `addToArchive`, `removeFromArchive`, `listArchivedTasks`. Idempotent
+  at (archive, source_workstream) granularity — re-running
+  `addToArchive` against the same workstream is a no-op; adding a
+  new task and re-running picks up only the delta. Typed errors:
+  `ArchiveNotFoundError`, `ArchiveAlreadyExistsError`,
+  `ArchiveLabelInvalidError`. Phases 2 (CLI), 3 (destroy hook), and
+  4 (export renderer) follow.
+
+- **`mu archive search <pattern>` — LIKE-search archived titles
+  AND archived note content** (Phase 4b). `--label <l>` scopes to one
+  archive (throws `ArchiveNotFoundError` on miss); `--limit N`
+  defaults to 50; `--json` emits the `ArchiveSearchHit[]` array.
+  The pattern is bound as a SQL parameter (never concatenated), so
+  `mu archive search "'); DROP TABLE archives; --"` is just an
+  empty result. Title matches win over note matches when the same
+  task hits both.
+
+- **`mu archive create / list / show / add / remove / delete` —
+  feature complete (6 verbs + tests + docs).** Phase 2 of the v0.3
+  archive feature: thin commander glue (`src/cli/archive.ts`) over
+  the Phase 1 SDK. `mu archive add <label> -w <ws> [--destroy]` is
+  the headline workflow — preserve a workstream's task graph in an
+  operator-named bucket, optionally cascading to `mu workstream
+  destroy --yes`. The bucket is additive: re-add new workstreams
+  under the same label as new releases finish. `mu archive delete`
+  is two-phase (dry-run by default, `--yes` captures a snapshot
+  first). Typed errors map to exit codes: `ArchiveNotFoundError`
+  → 3, `ArchiveAlreadyExistsError` → 4, `ArchiveLabelInvalidError`
+  → 2. `--json` on every verb.
+
+- **Unified bucket renderer + `mu archive export <label> --out <dir>`**
+  (Phase 4 of the archive feature; `archive_phase4_export_renderer_unified`).
+  The renderer factored out of `src/workstream.ts` into a new
+  `src/exporting.ts` module that takes N source workstreams (each
+  with its tasks/edges/notes) and writes a `bucketVersion: 2`
+  bucket on disk. Both `mu workstream export` (one source) and the
+  new `mu archive export` (every source-ws in an archive) delegate
+  to the same renderer, producing byte-identical disk shapes.
+  Bucket exports are additive across calls (sha256 short-circuit
+  per task; sibling source-ws subdirs are never touched by an
+  unrelated re-export). `mu workstream destroy --yes`'s pre-destroy
+  auto-export uses the new shape automatically. Pre-0.3 export
+  directories are no longer accepted in place — see Breaking above.
+
+- **`mu workstream destroy --archive <label>`** (Phase 3 of the v0.3
+  archive feature): atomic snapshot-then-destroy. The label must
+  already exist (anti-feature: no auto-create — run `mu archive
+  create <label>` first). Archive add runs BEFORE destroy; if it
+  fails, the destroy is aborted. Dry-run mode (no `--yes`) reports
+  "would archive N tasks to <label>" alongside the existing
+  pre-destroy summary.
+
+- **`mu workstream destroy --empty`** sweeps every empty workstream
+  (zero tasks, agents, vcs_workspaces, approvals) in one call;
+  replaces the per-name `jq` incantation over `mu workstream list
+  --json`. Tmux session presence and audit-only `agent_logs` do NOT
+  disqualify. Mutually exclusive with `-w` and `--archive`. Dry-run
+  lists candidates as a table (or array via `--json`); `--yes`
+  captures ONE whole-DB snapshot for the batch, then best-effort
+  destroys each (a per-workstream failure is collected into
+  `failed[]` and the sweep continues). Closes
+  `workstream_destroy_empty_sweep`.
+
 ### Removed
 
 - **Phantom `mu workspace adopt` hint dropped from `cmdWorkspaceOrphans`
@@ -88,6 +204,22 @@ called out under "Breaking" in each entry.
   accordingly: `tmux display-popup -E 'mu hud -w X'` becomes
   `tmux display-popup -E 'mu state --hud -w X'`. Pre-1.0; no
   deprecation shim.
+
+- **`mu approve` verbs + `approvals` schema table — REMOVED.** Zero
+  usage across the v0.2 + v0.3 dogfood waves (200+ tasks). Anti-
+  anticipatory pruning per VISION.md "no traits with zero
+  implementors". 706 LOC of SDK + CLI gone (`src/approvals.ts` +
+  `src/cli/approve.ts`); `mu approve add/list/grant/deny/wait` are
+  no longer recognised verbs. The `approvals` table, its indexes,
+  and the `approval add/granted/denied/timeout` event prefixes are
+  all gone too. v6→v7 schema migration drops the table in-place
+  via `applySchema` (DROP TABLE IF EXISTS approvals on any pre-v7
+  DB; gated on the detected pre-bump version so it's a one-shot).
+  The pre-v5 refusal floor in `openDb` stays at v5. May return in
+  v0.4+ when a real second implementor surfaces (e.g., an unattended
+  pi-orchestrator running mu). If you have approvals rows you want
+  to preserve, snapshot first via `mu undo` (or copy them out via
+  `mu sql`) before upgrading.
 
 ### Changed
 
@@ -233,44 +365,6 @@ called out under "Breaking" in each entry.
   fan-out spawn dogfood when an agent name was passed against the
   wrong workstream.
 
-## [0.3.0] — unreleased
-
-### Removed
-
-- **`mu approve` verbs + `approvals` schema table — REMOVED.** Zero
-  usage across the v0.2 + v0.3 dogfood waves (200+ tasks). Anti-
-  anticipatory pruning per VISION.md "no traits with zero
-  implementors". 706 LOC of SDK + CLI gone (`src/approvals.ts` +
-  `src/cli/approve.ts`); `mu approve add/list/grant/deny/wait` are
-  no longer recognised verbs. The `approvals` table, its indexes,
-  and the `approval add/granted/denied/timeout` event prefixes are
-  all gone too. v6→v7 schema migration drops the table in-place
-  via `applySchema` (DROP TABLE IF EXISTS approvals on any pre-v7
-  DB; gated on the detected pre-bump version so it's a one-shot).
-  The pre-v5 refusal floor in `openDb` stays at v5. May return in
-  v0.4+ when a real second implementor surfaces (e.g., an unattended
-  pi-orchestrator running mu). If you have approvals rows you want
-  to preserve, snapshot first via `mu undo` (or copy them out via
-  `mu sql`) before upgrading.
-
-### Breaking
-
-- **Bucket export layout (`bucketVersion: 2`); old single-workstream
-  layout no longer supported.** `mu workstream export` and the new
-  `mu archive export` both write a multi-source bucket: top-level
-  `<bucket>/{README.md,INDEX.md,manifest.json}` plus one
-  `<bucket>/<source-ws>/{README.md,INDEX.md,tasks/<id>.md}`
-  subdirectory per source workstream. Re-exporting `-w X` into a
-  bucket containing `-w Y` appends `X/` without touching `Y/`.
-  Pre-0.3 export directories (top-level `tasks/`, no `bucketVersion`
-  in `manifest.json`) are NOT migrated in place; the export refuses
-  with a `LegacyExportLayoutError` (exit 2) and asks the operator
-  to `rm -rf <dir>` and re-run. The per-source-ws subdir layout
-  preserves task `.md` paths byte-identically across export → archive
-  → re-export, so `git`'s rename detector tracks history through
-  the migration (verified on the in-repo `exports/mu/` migration
-  commit; ~150 task files renamed cleanly, no new add/delete pairs).
-
 ### Schema
 
 - **Schema v7: drops the `approvals` table.** Destructive in-place
@@ -289,123 +383,23 @@ called out under "Breaking" in each entry.
   script needed; the v5 → v6 transition touches no existing column,
   FK, or view). The pre-v5 refusal floor stays in place.
 
-### Added
+### Breaking
 
-- **`mu --help` and every subcommand `--help` now list commands
-  alphabetically** (`cli_help_alphabetical_subcommands`). Options
-  list ordering inside each verb is unchanged — those are curated
-  semantically; only the Commands listings are sorted.
-
-- **`mu workstream import <bucket-dir>`** — inverse of
-  `mu workstream export`. Walks a v0.3 bucket directory (markdown +
-  manifest.json) and rebuilds every source-ws subdir as live tasks,
-  edges, and notes. Markdown-only by design (no `.db` imports;
-  cross-machine `.db` is `mu undo` + snapshots). Per-source-ws
-  transactional; refuses to merge silently into an existing
-  workstream (`--workstream <name>` for single-source rename, or
-  destroy first). Supports `--dry-run` and `--json`. Pre-0.3 layouts
-  surface a typed `ImportLegacyLayoutError`. New SDK in
-  `src/importing.ts` exports `importBucket()` and the typed errors.
-
-- **`mu workstream import` — partial bucket import** (per-source-ws
-  subdir path OR `--source-ws <names...>` CSV filter on a bucket).
-  Form 1 auto-detects a per-source-ws subdir via `README.md` +
-  `INDEX.md` + `tasks/` and validates against the parent bucket's
-  `manifest.json`; Form 2 keeps the bucket root and filters via the
-  variadic flag (repeat or comma-separate; or both, per
-  `cli_audit_plurality_uniformity`). `--workstream <new-name>` is
-  allowed when the resolved source list is single (Form 1, or Form 2
-  with one name); multi-source filters keep today's rejection. New
-  typed `ImportSourceNotInBucketError` (exit 4) names the bad name +
-  the valid ones.
-
-- **`mu hud` accepts multiple workstreams via `-w/--workstream` (now
-  variadic) or `--all`** (`hud_multi_workstream` + `hud_unify_workstream_flag`).
-  N=1 (the common case, including legacy `mu hud -w X`) renders
-  byte-for-byte unchanged — same columns, same JSON shape — so
-  existing tmux status-bar pipes (`#(mu hud --json) | jq ...`) keep
-  working. N≥2 grows the workstream-summary table to N rows, gains
-  a leading bold-cyan `workstream` column on every section table,
-  and switches the JSON envelope to `{ workstreams: [...] }`.
-  Recent-events table becomes a cross-workstream timeline (DESC by
-  `created_at` across the union). The variadic shape uses the
-  parseCsvFlag convention from cli_audit_plurality_uniformity
-  (repeat OR comma-separate OR both); the originally-shipped
-  `--workstreams` companion flag was unified into `-w` before
-  release (see the Breaking entry above).
-
-- **CLI multi-value flags now accept repeat OR comma-separated forms
-  uniformly** (today's `--blocked-by a,b,c` keeps working; you can now
-  also `--blocked-by a --blocked-by b`). Codified by
-  `cli_audit_plurality_uniformity`: every variadic flag is post-processed
-  through a single `parseCsvFlag` helper; help text uses the stock phrase
-  "(repeat or comma-separate; or both)"; the `<value...>` metavar is the
-  syntactic signal.
-
-- **`src/archives.ts` SDK** (Phase 1 of the v0.3 archive feature):
-  `createArchive`, `listArchives`, `getArchive`, `deleteArchive`,
-  `addToArchive`, `removeFromArchive`, `listArchivedTasks`. Idempotent
-  at (archive, source_workstream) granularity — re-running
-  `addToArchive` against the same workstream is a no-op; adding a
-  new task and re-running picks up only the delta. Typed errors:
-  `ArchiveNotFoundError`, `ArchiveAlreadyExistsError`,
-  `ArchiveLabelInvalidError`. Phases 2 (CLI), 3 (destroy hook), and
-  4 (export renderer) follow.
-
-- **`mu archive search <pattern>` — LIKE-search archived titles
-  AND archived note content** (Phase 4b). `--label <l>` scopes to one
-  archive (throws `ArchiveNotFoundError` on miss); `--limit N`
-  defaults to 50; `--json` emits the `ArchiveSearchHit[]` array.
-  The pattern is bound as a SQL parameter (never concatenated), so
-  `mu archive search "'); DROP TABLE archives; --"` is just an
-  empty result. Title matches win over note matches when the same
-  task hits both.
-
-- **`mu archive create / list / show / add / remove / delete` —
-  feature complete (6 verbs + tests + docs).** Phase 2 of the v0.3
-  archive feature: thin commander glue (`src/cli/archive.ts`) over
-  the Phase 1 SDK. `mu archive add <label> -w <ws> [--destroy]` is
-  the headline workflow — preserve a workstream's task graph in an
-  operator-named bucket, optionally cascading to `mu workstream
-  destroy --yes`. The bucket is additive: re-add new workstreams
-  under the same label as new releases finish. `mu archive delete`
-  is two-phase (dry-run by default, `--yes` captures a snapshot
-  first). Typed errors map to exit codes: `ArchiveNotFoundError`
-  → 3, `ArchiveAlreadyExistsError` → 4, `ArchiveLabelInvalidError`
-  → 2. `--json` on every verb.
-
-- **Unified bucket renderer + `mu archive export <label> --out <dir>`**
-  (Phase 4 of the archive feature; `archive_phase4_export_renderer_unified`).
-  The renderer factored out of `src/workstream.ts` into a new
-  `src/exporting.ts` module that takes N source workstreams (each
-  with its tasks/edges/notes) and writes a `bucketVersion: 2`
-  bucket on disk. Both `mu workstream export` (one source) and the
-  new `mu archive export` (every source-ws in an archive) delegate
-  to the same renderer, producing byte-identical disk shapes.
-  Bucket exports are additive across calls (sha256 short-circuit
-  per task; sibling source-ws subdirs are never touched by an
-  unrelated re-export). `mu workstream destroy --yes`'s pre-destroy
-  auto-export uses the new shape automatically. Pre-0.3 export
-  directories are no longer accepted in place — see Breaking above.
-
-- **`mu workstream destroy --archive <label>`** (Phase 3 of the v0.3
-  archive feature): atomic snapshot-then-destroy. The label must
-  already exist (anti-feature: no auto-create — run `mu archive
-  create <label>` first). Archive add runs BEFORE destroy; if it
-  fails, the destroy is aborted. Dry-run mode (no `--yes`) reports
-  "would archive N tasks to <label>" alongside the existing
-  pre-destroy summary.
-
-- **`mu workstream destroy --empty`** sweeps every empty workstream
-  (zero tasks, agents, vcs_workspaces, approvals) in one call;
-  replaces the per-name `jq` incantation over `mu workstream list
-  --json`. Tmux session presence and audit-only `agent_logs` do NOT
-  disqualify. Mutually exclusive with `-w` and `--archive`. Dry-run
-  lists candidates as a table (or array via `--json`); `--yes`
-  captures ONE whole-DB snapshot for the batch, then best-effort
-  destroys each (a per-workstream failure is collected into
-  `failed[]` and the sweep continues). Closes
-  `workstream_destroy_empty_sweep`.
+- **Bucket export layout (`bucketVersion: 2`); old single-workstream
+  layout no longer supported.** `mu workstream export` and the new
+  `mu archive export` both write a multi-source bucket: top-level
+  `<bucket>/{README.md,INDEX.md,manifest.json}` plus one
+  `<bucket>/<source-ws>/{README.md,INDEX.md,tasks/<id>.md}`
+  subdirectory per source workstream. Re-exporting `-w X` into a
+  bucket containing `-w Y` appends `X/` without touching `Y/`.
+  Pre-0.3 export directories (top-level `tasks/`, no `bucketVersion`
+  in `manifest.json`) are NOT migrated in place; the export refuses
+  with a `LegacyExportLayoutError` (exit 2) and asks the operator
+  to `rm -rf <dir>` and re-run. The per-source-ws subdir layout
+  preserves task `.md` paths byte-identically across export → archive
+  → re-export, so `git`'s rename detector tracks history through
+  the migration (verified on the in-repo `exports/mu/` migration
+  commit; ~150 task files renamed cleanly, no new add/delete pairs).
 
 ## [0.2.0] — 2026-05-09
 

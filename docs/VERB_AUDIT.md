@@ -893,7 +893,7 @@ Audited as three rows for honesty.
 > across 200+ tasks of dogfood; `remove_approvals_dead_weight`).
 > The KEEP dispositions below describe the v0.1 audit — they're
 > preserved as audit history, not as a current verb listing. See
-> CHANGELOG.md § [Unreleased] → Removed for the rationale.
+> CHANGELOG.md § [0.3.0] → Removed for the rationale.
 
 ### `mu approve add`
 
