@@ -398,6 +398,35 @@ called out under "Breaking" in each entry.
   word-boundary cap so the operator hears about it before getting
   bitten.
 
+- **`mu task show` now groups blockers/dependents by status and dims
+  the satisfied bucket** (`task_show_blocked_by_renders_closed`).
+  Prior rendering printed every blocker in one comma-joined list
+  regardless of status, so a reader could not tell from `mu task
+  show` alone which prereqs still gated work vs which were already
+  CLOSED-and-stale. The new layout under `Edges`:
+
+  ```
+    blocked by : sil_virtual_static_class_dispatch [OPEN]
+    satisfied  : code_declenv_typed_keys [CLOSED],
+                 parity_latent_reporting_detail [CLOSED]   (dimmed)
+    blocks     : downstream_a [OPEN]
+    no longer  : downstream_b [CLOSED]                     (dimmed)
+  ```
+
+  Each entry carries `[<STATUS>]` colour-coded the same way the
+  task-list table colours statuses (`src/cli/format.ts`
+  `colorStatus`). REJECTED + DEFERRED stay in the still-gating
+  bucket because they continue to gate downstream work per
+  `src/tasks/status.ts`. Empty `satisfied` / `no longer` lines are
+  omitted (no clutter); empty `blocked by` / `blocks` keep the `—`
+  back-compat marker. New SDK helper `getTaskEdgesWithStatus()`
+  exposes `{name, status}` per edge so the renderer doesn't N+1.
+  `--json` shape extended: `blockers` and `dependents` are now
+  `Array<{name, status}>` (was `string[]`). NO new flag
+  (`--all-blockers`, `--hide-closed`) was added — the grouping IS
+  the fix; CLOSED entries are kept visible-but-recessive so DAG
+  history stays readable.
+
 - **SKILL.md `Next:` invariant now matches the empirical truth: it's
   emitted on MUTATING verbs only**
   (`nextsteps_audit_read_verbs_emit_no_nextsteps`). The skill claimed

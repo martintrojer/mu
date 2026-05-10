@@ -668,6 +668,24 @@ export interface TaskEdges {
   dependents: string[];
 }
 
+/** One end of an edge with the neighbour's current status attached.
+ *  Used by `mu task show` to group blockers/dependents into
+ *  "still gating" vs "satisfied" buckets without making the renderer
+ *  do a second round-trip to the DB per neighbour. */
+export interface TaskEdgeWithStatus {
+  name: string;
+  status: TaskStatus;
+}
+
+export interface TaskEdgesWithStatus {
+  /** Tasks that must close before this one can start (blockers),
+   *  carrying each blocker's current status. */
+  blockers: TaskEdgeWithStatus[];
+  /** Tasks that this one blocks (dependents), carrying each
+   *  dependent's current status. */
+  dependents: TaskEdgeWithStatus[];
+}
+
 /**
  * Direct (one-hop) edges for a task. For transitive prerequisites, use
  * `getPrerequisites()`; this helper is the immediate-neighbour view used
@@ -694,6 +712,41 @@ export function getTaskEdges(db: Db, taskLocalId: string, workstream: string): T
       )
       .all(taskId) as { id: string }[]
   ).map((r) => r.id);
+  return { blockers, dependents };
+}
+
+/**
+ * Same one-hop edge view as `getTaskEdges`, but each neighbour is
+ * returned as `{ name, status }` so callers can group / colour by
+ * status without an N+1 round-trip. Used by `mu task show` to split
+ * "blocked by" (still-gating) from "satisfied" (already-CLOSED)
+ * blockers, and the symmetric split on the dependents side
+ * (task_show_blocked_by_renders_closed). The status is the neighbour's
+ * full TaskStatus, not just OPEN/CLOSED — REJECTED/DEFERRED still
+ * gate downstream work, so the renderer keeps them in the
+ * still-gating bucket.
+ */
+export function getTaskEdgesWithStatus(
+  db: Db,
+  taskLocalId: string,
+  workstream: string,
+): TaskEdgesWithStatus {
+  const taskId = taskIdFor(db, taskLocalId, workstream);
+  if (taskId === null) return { blockers: [], dependents: [] };
+  const blockers = db
+    .prepare(
+      `SELECT t.local_id AS name, t.status AS status FROM task_edges e
+         JOIN tasks t ON t.id = e.from_task_id
+        WHERE e.to_task_id = ? ORDER BY t.local_id`,
+    )
+    .all(taskId) as TaskEdgeWithStatus[];
+  const dependents = db
+    .prepare(
+      `SELECT t.local_id AS name, t.status AS status FROM task_edges e
+         JOIN tasks t ON t.id = e.to_task_id
+        WHERE e.from_task_id = ? ORDER BY t.local_id`,
+    )
+    .all(taskId) as TaskEdgeWithStatus[];
   return { blockers, dependents };
 }
 

@@ -20,6 +20,7 @@
 import {
   UsageError,
   assertTaskInWorkstream,
+  colorStatus,
   emitJson,
   parseCsvFlag,
   resolveEntityRef,
@@ -30,13 +31,14 @@ import type { Db } from "../../db.js";
 import { lastClaimActor } from "../../logs.js";
 import { type NextStep, pc, printNextSteps } from "../../output.js";
 import {
+  type TaskEdgeWithStatus,
   TaskNotFoundError,
   type TaskNoteRow,
   type UpdateTaskOptions,
   addNote,
   addTask,
   getTask,
-  getTaskEdges,
+  getTaskEdgesWithStatus,
   idFromTitleVerbose,
   listNotes,
   resolveActorIdentity,
@@ -82,6 +84,39 @@ export function printNote(n: TaskNoteRow): void {
   for (const line of n.content.split("\n")) {
     console.log(`    ${line}`);
   }
+}
+
+/** Split a list of edge neighbours into (still-gating, satisfied)
+ *  buckets. CLOSED is the only status that satisfies a `blocks` edge
+ *  per src/tasks/status.ts; REJECTED/DEFERRED still gate downstream
+ *  work and stay in the still-gating bucket so the operator sees
+ *  them. (task_show_blocked_by_renders_closed.) */
+function partitionEdges(edges: readonly TaskEdgeWithStatus[]): {
+  stillGating: TaskEdgeWithStatus[];
+  satisfied: TaskEdgeWithStatus[];
+} {
+  const stillGating: TaskEdgeWithStatus[] = [];
+  const satisfied: TaskEdgeWithStatus[] = [];
+  for (const e of edges) {
+    if (e.status === "CLOSED") satisfied.push(e);
+    else stillGating.push(e);
+  }
+  return { stillGating, satisfied };
+}
+
+/** Render one edge bucket as a comma-separated `<name> [<STATUS>]`
+ *  list. The status is colour-coded the same way the task table
+ *  renders it (src/cli/format.ts colorStatus); satisfied buckets are
+ *  additionally dimmed so they recede visually. An empty bucket
+ *  renders as an em-dash (—) to match the prior "no edges" rendering
+ *  for back-compat with operator-eyed scripts. */
+function formatEdgeList(edges: readonly TaskEdgeWithStatus[], dim: boolean): string {
+  if (edges.length === 0) return pc.dim("—");
+  const parts = edges.map((e) => {
+    const piece = `${e.name} [${colorStatus(e.status)}]`;
+    return dim ? pc.dim(piece) : piece;
+  });
+  return parts.join(", ");
 }
 
 export async function cmdTaskAdd(
@@ -206,7 +241,7 @@ export async function cmdTaskShow(
   const ws = await resolveWorkstream(opts.workstream);
   const task = getTask(db, localId, ws);
   if (!task) throw new TaskNotFoundError(localId);
-  const edges = getTaskEdges(db, localId, task.workstreamName);
+  const edges = getTaskEdgesWithStatus(db, localId, task.workstreamName);
   const notes = listNotes(db, localId, task.workstreamName);
 
   // When owner IS NULL but the task is IN_PROGRESS (or recently was),
@@ -218,6 +253,10 @@ export async function cmdTaskShow(
       : null;
 
   if (opts.json) {
+    // JSON shape: blockers/dependents are arrays of {name, status}
+    // objects so scripts can filter by status without a second query.
+    // (task_show_blocked_by_renders_closed: prior shape was bare
+    // string[], which discarded the gating-vs-satisfied distinction.)
     emitJson({
       task: withRoiAll([task])[0],
       blockers: edges.blockers,
@@ -248,12 +287,26 @@ export async function cmdTaskShow(
 
   console.log("");
   console.log(pc.bold("Edges"));
-  console.log(
-    `  blocked by : ${edges.blockers.length === 0 ? pc.dim("—") : edges.blockers.join(", ")}`,
+  // Group each side of the edge set by status so the operator can
+  // tell at a glance which prerequisites still gate the task vs which
+  // have already been satisfied. CLOSED is the only status that
+  // satisfies a `blocks` edge; REJECTED/DEFERRED still gate downstream
+  // work, so they stay in the still-gating bucket alongside
+  // OPEN/IN_PROGRESS. (task_show_blocked_by_renders_closed.)
+  const { stillGating: gatingBlockers, satisfied: satisfiedBlockers } = partitionEdges(
+    edges.blockers,
   );
-  console.log(
-    `  blocks     : ${edges.dependents.length === 0 ? pc.dim("—") : edges.dependents.join(", ")}`,
+  const { stillGating: openDependents, satisfied: closedDependents } = partitionEdges(
+    edges.dependents,
   );
+  console.log(`  blocked by : ${formatEdgeList(gatingBlockers, false)}`);
+  if (satisfiedBlockers.length > 0) {
+    console.log(`  satisfied  : ${formatEdgeList(satisfiedBlockers, true)}`);
+  }
+  console.log(`  blocks     : ${formatEdgeList(openDependents, false)}`);
+  if (closedDependents.length > 0) {
+    console.log(`  no longer  : ${formatEdgeList(closedDependents, true)}`);
+  }
 
   console.log("");
   console.log(pc.bold(`Notes (${notes.length})`));

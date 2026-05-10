@@ -133,17 +133,22 @@ describe("--json output on read verbs", () => {
     expect(stdout.trim()).toBe("[]");
   });
 
-  it("task show --json emits a composite { task, blockers, dependents, notes }", async () => {
+  it("task show --json emits a composite { task, blockers, dependents, notes } with status-bearing edges", async () => {
+    // task_show_blocked_by_renders_closed: blockers/dependents are
+    // arrays of {name, status} objects so scripts can split gating
+    // vs satisfied without a second query. (Prior shape was bare
+    // string[]; that lossy shape is what the human-renderer fix is
+    // also addressing in the table view.)
     const { stdout } = await runCli(["task", "show", "a", "-w", "auth", "--json"], dbPath);
     const parsed = JSON.parse(stdout.trim()) as {
       task: { name: string };
-      blockers: string[];
-      dependents: string[];
+      blockers: Array<{ name: string; status: string }>;
+      dependents: Array<{ name: string; status: string }>;
       notes: Array<{ content: string }>;
     };
     expect(parsed.task.name).toBe("a");
     expect(parsed.blockers).toEqual([]);
-    expect(parsed.dependents).toEqual(["b"]);
+    expect(parsed.dependents).toEqual([{ name: "b", status: "OPEN" }]);
     expect(parsed.notes.map((n) => n.content)).toEqual(["FILES: src/auth.ts"]);
   });
 
