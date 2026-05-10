@@ -142,13 +142,18 @@ Every turn:
   literal reminder, agents commit + report success in chat without
   running the typed close, and `mu task wait` hangs until
   `--stuck-after` fires.
+- **Pipeline cherry-picks; don't barrier.** Cherry-pick + verify +
+  free + dispatch next as each task closes; don't wait for all N.
+  Call `mu agent list -w <ws>` per poll to keep the reaper warm.
+- **Cross-workstream `mu task wait` doesn't exist yet.** Hand-roll
+  via `mu task show <id> -w <ws> --json` per task.
 
 ### Parallelisation decision table
 
 | Situation | Action |
 |-----------|--------|
 | One ready task / one track | Reuse one existing agent |
-| Multiple independent ready tasks | Spawn one agent per ready track |
+| Multiple independent ready tasks | Spawn one agent per ready track; cherry-pick each as it closes (don't barrier) |
 | CPU-heavy benchmark in progress | Only parallelise read-only / audit tasks |
 | Two agents editing/building/testing same repo | Use `--workspace` |
 | Agent only reading docs/source | `--cli pi` (or any operator-defined alias) without `--workspace` is OK |
