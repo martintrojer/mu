@@ -49,7 +49,7 @@ const WORKSTREAM_NAME_RE = /^[a-z][a-z0-9_-]{0,31}$/;
  *  workstream named `mu-auth` would produce session `mu-mu-auth`,
  *  which the user almost certainly didn't intend. Fail loud rather
  *  than silently double-prefix. */
-const RESERVED_WORKSTREAM_PREFIX = "mu-";
+export const RESERVED_WORKSTREAM_PREFIX = "mu-";
 
 export function isValidWorkstreamName(name: string): boolean {
   if (!WORKSTREAM_NAME_RE.test(name)) return false;
@@ -209,7 +209,8 @@ export async function listWorkstreams(db: Db): Promise<WorkstreamSummary[]> {
 
   const tmuxNames = new Set<string>();
   for (const session of await listSessions()) {
-    if (session.name.startsWith("mu-")) tmuxNames.add(session.name.slice(3));
+    if (session.name.startsWith(RESERVED_WORKSTREAM_PREFIX))
+      tmuxNames.add(session.name.slice(RESERVED_WORKSTREAM_PREFIX.length));
   }
 
   const allNames = Array.from(new Set([...dbNames, ...tmuxNames])).sort();
@@ -278,7 +279,7 @@ export async function listEmptyWorkstreams(db: Db): Promise<WorkstreamSummary[]>
   const tmuxOnlyNames: string[] = [];
   for (const session of await listSessions()) {
     if (!session.name.startsWith("mu-")) continue;
-    const name = session.name.slice(3);
+    const name = session.name.slice(RESERVED_WORKSTREAM_PREFIX.length);
     if (dbNames.has(name)) continue;
     tmuxOnlyNames.push(name);
   }

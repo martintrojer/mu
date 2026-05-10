@@ -112,9 +112,13 @@ export async function cmdSql(
       "--confirm-rows is only meaningful on write statements (UPDATE / DELETE / INSERT / REPLACE)",
     );
   }
+  // Past the multi-statement branch: prepare() succeeded, so `stmt` must
+  // be set. Narrow once instead of repeating the unreachable check at
+  // every read/write fork below.
+  if (!stmt) throw new Error("unreachable: stmt should be set on the single-statement path");
+  const single = stmt;
   if (isRead) {
-    if (!stmt) throw new Error("unreachable: stmt should be set on the single-statement path");
-    const rows = stmt.all([]);
+    const rows = single.all([]);
     if (opts.json) {
       emitJson(rows);
       return;
@@ -150,10 +154,9 @@ export async function cmdSql(
     if (opts.confirmRows !== undefined) {
       const expected = opts.confirmRows;
       db.exec("BEGIN");
-      if (!stmt) throw new Error("unreachable: stmt should be set on the single-statement path");
       let result: { changes: number; lastInsertRowid: number | bigint };
       try {
-        result = stmt.run([]);
+        result = single.run([]);
       } catch (e) {
         try {
           db.exec("ROLLBACK");
@@ -179,8 +182,7 @@ export async function cmdSql(
       console.log(pc.dim(`${result.changes} row${result.changes === 1 ? "" : "s"} affected`));
       return;
     }
-    if (!stmt) throw new Error("unreachable: stmt should be set on the single-statement path");
-    const result = stmt.run([]);
+    const result = single.run([]);
     if (opts.json) {
       emitJson({
         changes: result.changes,

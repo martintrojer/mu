@@ -166,14 +166,17 @@ async function cmdLogTail(db: Db, baseOpts: ListLogsOptions, cliOpts: LogReadOpt
  *  `Number(env)` was a DOS-by-typo: an env value of '' parses as 0
  *  and any non-numeric value as NaN, both of which Node's setTimeout
  *  treats as 1ms — hammering SQLite at ~500 Hz on the next mu log
- *  --tail. 50ms floor prevents a too-low explicit setting from doing
- *  the same. */
+ *  --tail. Unparseable env → fall back to the no-env default of 1000ms;
+ *  parseable but too-low → clamp up to the 50ms floor (so a deliberate
+ *  `MU_LOG_TAIL_INTERVAL_MS=10` becomes 50, not 1000). */
+const LOG_TAIL_INTERVAL_FLOOR_MS = 50;
+const LOG_TAIL_INTERVAL_DEFAULT_MS = 1000;
 function defaultLogTailIntervalMs(): number {
   const raw = process.env.MU_LOG_TAIL_INTERVAL_MS;
-  if (raw === undefined) return 1000;
+  if (raw === undefined) return LOG_TAIL_INTERVAL_DEFAULT_MS;
   const parsed = Number.parseInt(raw, 10);
-  if (Number.isNaN(parsed) || parsed < 50) return 1000;
-  return parsed;
+  if (Number.isNaN(parsed)) return LOG_TAIL_INTERVAL_DEFAULT_MS;
+  return Math.max(LOG_TAIL_INTERVAL_FLOOR_MS, parsed);
 }
 
 // ─── commander wiring ────────────────────────────────────────────────

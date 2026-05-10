@@ -109,7 +109,11 @@ import {
   WorkspacePathNotEmptyError,
   type WorkspaceRow,
 } from "./workspace.js";
-import { WorkstreamNameInvalidError, type WorkstreamSummary } from "./workstream.js";
+import {
+  RESERVED_WORKSTREAM_PREFIX,
+  WorkstreamNameInvalidError,
+  type WorkstreamSummary,
+} from "./workstream.js";
 
 // ─── Workstream resolution ─────────────────────────────────────────────
 
@@ -127,7 +131,8 @@ export async function resolveWorkstream(explicit?: string): Promise<string> {
   if (process.env.TMUX) {
     try {
       const name = (await tmux(["display-message", "-p", "#S"])).trim();
-      if (name.startsWith("mu-")) return name.slice(3);
+      if (name.startsWith(RESERVED_WORKSTREAM_PREFIX))
+        return name.slice(RESERVED_WORKSTREAM_PREFIX.length);
     } catch {
       // fall through
     }
