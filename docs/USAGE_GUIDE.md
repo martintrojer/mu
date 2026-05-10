@@ -1,23 +1,26 @@
 # mu — Usage Guide
 
-A practical, copy-pasteable tour of mu (current main; v0.2-track).
+A practical, copy-pasteable tour of mu (current main; v0.3-track).
 Everything below works against the built CLI. Terms are canonical
 — see [VOCABULARY.md](VOCABULARY.md) for definitions; the complete
 current verb list is in `## CLI — complete verb list` of
 [skills/mu/SKILL.md](../skills/mu/SKILL.md).
 
-> **Status:** v0.2 wave (pre-1.0). ~60 typed verbs across 7
-> namespaces, every verb accepts `--json` (one allow-listed
-> exception, `mu agent attach`), per-agent VCS workspaces
-> (jj/sl/git/none), activity log with `--tail` subscription,
-> canonical state card (`mu state` — default / `--hud` /
-> `--mission` render modes), whole-DB
+> **Status:** v0.3 wave (pre-1.0). ~60 typed verbs across 8
+> namespaces (`workstream`, `agent`, `task`, `workspace`, `log`,
+> `snapshot`, `archive`, `me`) plus bare top-level verbs
+> (`state`, `doctor`, `sql`, `undo`, `adopt`). Every verb accepts
+> `--json` (one allow-listed exception, `mu agent attach`),
+> per-agent VCS workspaces (jj/sl/git/none), activity log with
+> `--tail` subscription, canonical state card (`mu state` —
+> default / `--hud` / `--mission` render modes), whole-DB
 > snapshots auto-captured before destructive verbs +
 > `mu undo` / `mu snapshot {list,show}`, evidence on lifecycle
-> verbs, schema v5 (surrogate INTEGER PKs; per-workstream UNIQUE
-> on operator-facing names). See [CHANGELOG.md](../CHANGELOG.md)
-> for the release entry, and
-> [§ Not in 0.2.0](#whats-not-in-020-and-how-to-work-around-it)
+> verbs, schema v7 (v5 surrogate INTEGER PKs + per-workstream
+> UNIQUE on operator-facing names; v6 added the `archive_*`
+> family additively; v7 dropped the dead `approvals` table).
+> See [CHANGELOG.md](../CHANGELOG.md) for the release entry,
+> and [§ Not in 0.3.0](#whats-not-in-030-and-how-to-work-around-it)
 > at the bottom for the gaps that still need workarounds.
 
 *If anything below disagrees with `mu --help`, trust `mu --help`.*
@@ -44,7 +47,7 @@ current verb list is in `## CLI — complete verb list` of
 15.5. [Archives — cross-workstream preservation](#155-archives--cross-workstream-preservation-of-task-graphs)
 16. [One-shot demo script](#16-one-shot-demo-script)
 17. [Mental model in three sentences](#mental-model-in-three-sentences)
-18. [What's NOT in 0.2.0](#whats-not-in-020-and-how-to-work-around-it)
+18. [What's NOT in 0.3.0](#whats-not-in-030-and-how-to-work-around-it)
 19. [Where to go from here](#where-to-go-from-here)
 
 ---
@@ -157,8 +160,8 @@ triple-dot); the parenthetical "repeat or comma-separate; or both"
 reinforces it. Variadic positionals (e.g. `mu task wait a b c`) keep
 their Unix-style space-separated shape — operands are not commas.
 Single-valued flags (`-w`, `--by`, `--title`, ...) stay single. The
-`--status` filter on `mu task list`, `mu task next`, and `mu approve
-list` accepts the same multi-value shape (`--status OPEN,IN_PROGRESS`,
+`--status` filter on `mu task list` and `mu task next` accepts the
+same multi-value shape (`--status OPEN,IN_PROGRESS`,
 `--status OPEN --status CLOSED`, or any mix) and returns the union.
 Missing `--status` keeps today's no-filter shape (no auto-default).
 `mu task wait --status` stays single — the verb means "wait until
@@ -728,9 +731,11 @@ Ready (1)
 Most routine operations have a typed verb — prefer those (and prefer
 `--json` for scripting). `mu sql` is for the rare cases the typed
 verbs don't cover: ad-hoc joins, manual recovery, exploring schema.
-The schema is six tables (`workstreams`, `agents`, `tasks`,
-`task_edges`, `task_notes`, `agent_logs`, `vcs_workspaces`) plus three
-views (`ready`, `blocked`, `goals`):
+The schema is 8 core tables (`workstreams`, `agents`, `tasks`,
+`task_edges`, `task_notes`, `agent_logs`, `vcs_workspaces`,
+`snapshots`), 5 archive tables (`archives`, `archived_tasks`,
+`archived_edges`, `archived_notes`, `archived_events`), 1 meta table
+(`schema_version`), plus three views (`ready`, `blocked`, `goals`):
 
 ```bash
 mu sql "SELECT name FROM sqlite_master WHERE type IN ('table','view') ORDER BY type, name"
@@ -1418,9 +1423,9 @@ service of those three.
 
 ---
 
-## What's NOT in 0.2.0 (and how to work around it)
+## What's NOT in 0.3.0 (and how to work around it)
 
-<a id="whats-not-in-020-and-how-to-work-around-it"></a>
+<a id="whats-not-in-030-and-how-to-work-around-it"></a>
 
 The full roadmap with promotion criteria lives in
 [ROADMAP.md](ROADMAP.md). The short list of gaps you might hit
