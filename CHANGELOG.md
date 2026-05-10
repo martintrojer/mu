@@ -10,6 +10,15 @@ called out under "Breaking" in each entry.
 
 ## [Unreleased]
 
+- **`mu workstream destroy --empty` now also surfaces unregistered
+  `mu-*` tmux sessions** (`destroy_empty_match_tmux_only`). Test
+  litter and partial-destroy remnants (DB row gone, tmux session
+  survived) are now matched by the same sweep verb. Predicate is
+  narrow on the `mu-` prefix; arbitrary tmux sessions are never
+  touched. Synthetic `WorkstreamSummary` for tmux-only entries has
+  `registered=false`, all counts 0, `tmuxAlive=true`; the dry-run
+  table renders an em-dash for the missing `created_at`.
+
 - **`mu hud`: `-w/--workstream` is now variadic; `--workstreams` removed**
   (`hud_unify_workstream_flag`). One flag does single + multi via
   parseCsvFlag (repeat OR comma-separate OR mix). `--all` kept as

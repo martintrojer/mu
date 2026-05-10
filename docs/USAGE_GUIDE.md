@@ -883,9 +883,15 @@ mu workstream destroy -w auth-refactor --archive v0-3-wave --yes
 
 # Sweep every empty workstream (zero tasks, agents, vcs_workspaces,
 # approvals) in one call. Tmux session presence and audit-only
-# agent_logs do NOT disqualify. Mutually exclusive with -w and
-# --archive. Dry-run lists what WOULD be destroyed; --yes captures
-# ONE snapshot for the whole batch and best-effort destroys each.
+# agent_logs do NOT disqualify. Also surfaces unregistered `mu-*`
+# tmux sessions (test litter or remnants from a partial destroy that
+# nuked the DB row but left the session behind) — the matching
+# predicate is narrow on purpose: ONLY sessions starting with `mu-`,
+# arbitrary tmux sessions the operator runs for unrelated work are
+# never touched. Mutually exclusive with -w and --archive. Dry-run
+# lists what WOULD be destroyed (created_at renders as `—` for
+# tmux-only entries); --yes captures ONE snapshot for the whole
+# batch and best-effort destroys each.
 mu workstream destroy --empty                  # dry-run: table of empties
 mu workstream destroy --empty --yes            # destroy them all
 ```

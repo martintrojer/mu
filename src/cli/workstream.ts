@@ -532,11 +532,12 @@ async function cmdDestroyEmpty(
       colWidths: [40, null, null],
     });
     for (const ws of empties) {
-      table.push([
-        ws.name,
-        pc.dim(workstreamCreatedAt(db, ws.name)),
-        ws.tmuxAlive ? pc.green("alive") : pc.dim("\u2014"),
-      ]);
+      const createdAt = workstreamCreatedAt(db, ws.name);
+      // Tmux-only entries have no DB row and so no created_at;
+      // render an em-dash placeholder so the column never goes
+      // visually empty (matches the tmux column's idiom below).
+      const createdCell = createdAt === "" ? pc.dim("\u2014") : pc.dim(createdAt);
+      table.push([ws.name, createdCell, ws.tmuxAlive ? pc.green("alive") : pc.dim("\u2014")]);
     }
     console.log(table.toString());
     console.log("");

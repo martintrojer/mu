@@ -217,24 +217,39 @@ export async function listWorkstreams(db: Db): Promise<WorkstreamSummary[]> {
 }
 
 /**
- * Discover every REGISTERED workstream (a row in `workstreams`) that
- * has no user-meaningful state attached: zero tasks, zero agents,
- * zero vcs_workspaces, zero approvals. Tmux session presence and
- * agent_logs entries do NOT disqualify — the session itself was
- * created at init time and contains no agent panes; the events are
- * audit, not state.
+ * Discover every workstream that has no user-meaningful state
+ * attached. Two flavours unioned:
+ *
+ *   1. REGISTERED-empty: a row in `workstreams` with zero tasks,
+ *      zero agents, zero vcs_workspaces, zero approvals. Tmux
+ *      session presence and agent_logs entries do NOT disqualify
+ *      — the session itself was created at init time and contains
+ *      no agent panes; the events are audit, not state.
+ *
+ *   2. TMUX-only: a tmux session named `mu-*` with no row in the
+ *      `workstreams` table. Catches test litter and remnants of a
+ *      partial destroy where the DB row was wiped but the tmux
+ *      session survived (or sessions created out-of-band via
+ *      `tmux new-session -s mu-foo`). The synthetic summary has
+ *      `registered=false`, all counts 0, and `tmuxAlive=true` (it
+ *      wouldn't have been surfaced otherwise).
+ *
+ * The predicate is intentionally narrow on the prefix: only
+ * `mu-*` sessions are eligible. Arbitrary tmux sessions the
+ * operator created for unrelated work are NEVER matched — mu only
+ * owns its own namespace.
  *
  * Used by `mu workstream destroy --empty` to sweep test-litter
  * workstreams in one command (instead of the per-name jq incantation
  * over `mu workstream list --json`).
  *
- * Returns one `WorkstreamSummary` per match, sorted by name.
- * Predicate runs as a single LEFT-JOIN-grouped query for cheapness;
- * each match then re-uses summarizeWorkstream for the canonical
- * shape (tmuxAlive lookup included).
+ * Returns one `WorkstreamSummary` per match, sorted by name (with
+ * defensive dedup — a registered-empty and a tmux-only of the same
+ * name can't both arise from the same call by construction, but
+ * belt-and-braces).
  */
 export async function listEmptyWorkstreams(db: Db): Promise<WorkstreamSummary[]> {
-  const rows = db
+  const registeredRows = db
     .prepare(
       `SELECT ws.name AS name
          FROM workstreams ws
@@ -250,7 +265,40 @@ export async function listEmptyWorkstreams(db: Db): Promise<WorkstreamSummary[]>
         ORDER BY ws.name`,
     )
     .all() as { name: string }[];
-  return Promise.all(rows.map((r) => summarizeWorkstream(db, { workstream: r.name })));
+  const registeredEmpty = await Promise.all(
+    registeredRows.map((r) => summarizeWorkstream(db, { workstream: r.name })),
+  );
+
+  // Tmux-only mu-* sessions: enumerate every running tmux session,
+  // keep the ones with the `mu-` prefix (strip it to get the
+  // would-be workstream name), then subtract names already in the
+  // `workstreams` table. The mirror of listWorkstreams above; see
+  // its comment for the prefix rationale.
+  const dbNames = new Set<string>(
+    (db.prepare("SELECT name FROM workstreams").all() as { name: string }[]).map((r) => r.name),
+  );
+  const tmuxOnlyNames: string[] = [];
+  for (const session of await listSessions()) {
+    if (!session.name.startsWith("mu-")) continue;
+    const name = session.name.slice(3);
+    if (dbNames.has(name)) continue;
+    tmuxOnlyNames.push(name);
+  }
+  const tmuxOnly = await Promise.all(
+    tmuxOnlyNames.map((name) => summarizeWorkstream(db, { workstream: name })),
+  );
+
+  // Compose + sort + dedup-by-name (defensive; no overlap is possible
+  // by construction since tmuxOnlyNames excludes every dbName).
+  const seen = new Set<string>();
+  const all: WorkstreamSummary[] = [];
+  for (const ws of [...registeredEmpty, ...tmuxOnly]) {
+    if (seen.has(ws.name)) continue;
+    seen.add(ws.name);
+    all.push(ws);
+  }
+  all.sort((a, b) => a.name.localeCompare(b.name));
+  return all;
 }
 
 export async function summarizeWorkstream(
