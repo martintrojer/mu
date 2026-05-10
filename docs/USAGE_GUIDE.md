@@ -10,8 +10,8 @@ current verb list is in `## CLI — complete verb list` of
 > namespaces, every verb accepts `--json` (one allow-listed
 > exception, `mu agent attach`), per-agent VCS workspaces
 > (jj/sl/git/none), activity log with `--tail` subscription,
-> canonical state card (`mu state`), `mu hud` (dynamic table
-> layout), whole-DB
+> canonical state card (`mu state` — default / `--hud` /
+> `--mission` render modes), whole-DB
 > snapshots auto-captured before destructive verbs +
 > `mu undo` / `mu snapshot {list,show}`, evidence on lifecycle
 > verbs, schema v5 (surrogate INTEGER PKs; per-workstream UNIQUE
@@ -301,29 +301,69 @@ asking an LLM. Three sections:
   share a dependency
 - **Ready** — actionable now, sorted by ROI (impact / effort)
 
-### `mu hud` for a print-once status card (single OR multi-workstream)
+### `mu state` render modes (default, `--hud`, `--mission`)
 
-`mu hud` is the print-once-and-compose sibling of `mu state`: a
-dynamic table layout that fills the terminal (or tmux pane) height
-+ width with as much useful data as fits. `watch -n 5 mu hud -w X`
-for a refreshing pane; `tmux display-popup -E 'mu hud -w X'` for
-an on-demand popup; `#(mu hud -w X --json) | jq ...` for tmux
-status-bar interpolation.
+`mu state` is one verb with three render modes — same data set,
+different presentation strategy. The flag picks the renderer; the
+JSON shape (`--json`) follows render mode (full vs stripped).
+
+```bash
+mu state                    # default: full top-to-bottom card
+mu state --hud              # dynamic-fit budget renderer (watch / popup / status-bar)
+mu state --mission          # stripped 5-col glance card
+mu                          # bare alias for `mu state --mission`
+```
+
+- **default (full card)** — every section: agents + orphans + tracks +
+  ready / in-progress / blocked / recent-closed + workspaces + recent
+  events. JSON-first by design (per Ilya's council critique: state
+  cards as the default attention surface; SQL/raw verbs as the
+  escape hatch underneath).
+
+- **`--hud`** — dynamic table layout that fills the terminal (or tmux
+  pane) height + width with as much useful data as fits.
+  `watch -n 5 mu state --hud -w X` for a refreshing pane;
+  `tmux display-popup -E 'mu state --hud -w X'` for an on-demand
+  popup; `#(mu state --hud -w X --json) | jq ...` for tmux
+  status-bar interpolation. Sections (priority order):
+  header / agents / ready / in-progress / tracks / recent-events.
+  Truncated tables get a `… +N more (<verb>)` footer; lower-priority
+  sections that can't fit are skipped entirely. Drops blocked /
+  recent-closed / workspaces (not glanceable); operator drops
+  `--hud` to see them.
+
+- **`--mission`** — stripped 5-col glance card (agents + orphans +
+  tracks + ready). The bare-`mu` muscle-memory orient call
+  ("what's going on?"). The full card with blocked / recent-closed /
+  workspaces is too much for that intent; `--mission` is the
+  intentional minimum-viable orient view.
+
+`--hud` and `--mission` are mutually exclusive.
 
 Multi-workstream: pass `-w` multiple values to render N workstreams
-in one card, with one summary row per workstream and a leading
-`workstream` column on every section table. `-w a,b,c`, `-w a -w b`,
-or any mix all work — see [CLI conventions](#cli-conventions-multi-value-flags).
-`--all` is sugar for "every workstream on this machine" (mutually
-exclusive with `-w`). Single-mode (`mu hud -w X`, or anything that
-resolves to one workstream — the common case) is unchanged
-byte-for-byte; the JSON shape only switches to `{ workstreams: [...] }`
-when N≥2 so existing tmux status-bar pipes don't break on upgrade.
+in one card. `-w a,b,c`, `-w a -w b`, or any mix all work — see
+[CLI conventions](#cli-conventions-multi-value-flags). `--all` is
+sugar for "every workstream on this machine" (mutually exclusive with
+`-w`). N≥2 in `--hud` mode unions the per-ws sections with a leading
+`workstream` column; in default + `--mission` modes N≥2 stacks one
+per-workstream card after another. The `--json` envelope wraps in
+`{ workstreams: [...] }` when N≥2.
 
-Note: hud is the **one** verb where `-w/--workstream` accepts multiple
-values (repeat or comma-separate). On every other verb, `-w` is
-single-valued. The metavar (`<names...>` vs `<name>`) is the
-syntactic signal.
+JSON shapes (per render mode):
+
+- `mu state --json` (single-ws): flat `{ workstreamName, agents,
+  orphans, tracks, ready, blocked, inProgress, recentClosed,
+  workspaces, recent }`.
+- `mu state --hud --json`: SAME flat shape (`--hud` is a render flag;
+  it doesn't change the machine view).
+- `mu state --mission --json`: STRIPPED — only `{ workstreamName,
+  agents, orphans, tracks, ready }`.
+- bare `mu --json`: same as `--mission --json`.
+
+> **Migrating from `mu hud`**: drop the `hud` verb and add `--hud`
+> to `mu state`. `tmux display-popup -E 'mu hud -w X'` becomes
+> `tmux display-popup -E 'mu state --hud -w X'`. The `mu hud` verb
+> was removed in v0.3 — see [CHANGELOG.md](../CHANGELOG.md).
 
 ---
 
@@ -1239,7 +1279,7 @@ in real use:
 | Want                                          | Workaround                                                              | Status        |
 | --------------------------------------------- | ----------------------------------------------------------------------- | ------------- |
 | Multi-CLI status detection (per-CLI prompts)  | Braille spinner fallback (`f68838f`) covers pi/pi-meta + every TUI wrapper using standard spinner glyphs. Per-CLI permission-prompt patterns still pi-only. | partially shipped |
-| Pi extension (typed tools, HUD, wakeups)      | `mu hud` verb covers the HUD use-case (run via `watch` / `tmux display-popup` / `status-right`). Other extension tools deferred. | partially shipped |
+| Pi extension (typed tools, HUD, wakeups)      | `mu state --hud` covers the HUD use-case (run via `watch` / `tmux display-popup` / `status-right`). Other extension tools deferred. | partially shipped |
 | Markdown agent-definition discovery           | Spawn accepts `--cli` and `--command` directly; no template registry    | dropped       |
 | `mu run script.ts` (JS DSL)                   | Use `--json` + bash + jq                                                | rejected      |
 | Sync to GitHub Issues / Linear / Asana        | Not in scope; explicitly rejected                                       | —             |

@@ -295,9 +295,12 @@ mu archive export <label> --out <bucket-dir>       # render every source-ws to a
 
 # Escape hatch + state + health
 mu sql "<query>"                     # SELECT / UPDATE / DELETE / WITH
-mu                                   # bare: quick mission control
-mu state                             # canonical state card
-mu hud [-w X[,Y]... | -w X -w Y | --all] [--json]    # dynamic table HUD; fills pane h×w; -w accepts multi (repeat/CSV); multi-workstream when N≥2
+mu                                   # bare: alias for `mu state --mission` (stripped 5-col glance card)
+mu state [-w X[,Y]... | -w X -w Y | --all] [--hud | --mission] [--json]    # canonical state card. Three render modes:
+                                     #   default      — full top-to-bottom card (agents + tracks + ready/in-progress/blocked/recent-closed + workspaces + recent events)
+                                     #   --hud        — dynamic table HUD; fills pane h×w; truncates with '… +N more' footers
+                                     #   --mission    — stripped 5-col glance (agents + orphans + tracks + ready)
+                                     # -w accepts multi (repeat/CSV); --all for every workstream on this machine
 mu doctor                            # tmux + db + schema + workstream stats
 ```
 

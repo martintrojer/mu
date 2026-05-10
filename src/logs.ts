@@ -299,7 +299,7 @@ export function lastClaimActor(db: Db, workstream: string, localId: string): str
 /**
  * Canonical list of two-token verb prefixes that `emitEvent` callers
  * use as the leading words of a payload. Single source of truth: the
- * HUD's event-tail colourer (src/cli/hud.ts colorEventPayload) reads
+ * HUD's event-tail colourer (src/cli/state.ts colorEventPayload) reads
  * this so it can never drift away from the actual emitter sites.
  *
  * Maintenance contract: when you add an `emitEvent(...)` call whose

@@ -125,7 +125,7 @@ export function printNextStepsTo(steps: readonly NextStep[], sink: "stdout" | "s
  * `truncate()` / `truncateFront()` helpers in cli.ts (the proactive
  * path); `wordWrap: false` is the safety belt for the cells they
  * miss. See HUD's `newHudTable` for the load-bearing rationale
- * (src/cli/hud.ts).
+ * (src/cli/state.ts — hud render mode).
  *
  * Surfaced live by `mu workspace list` blowing the terminal width on
  * the `path` column (tables_truncate_long_cols_audit). Don't try to

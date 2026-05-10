@@ -10,6 +10,35 @@ called out under "Breaking" in each entry.
 
 ## [Unreleased]
 
+### Removed
+
+- **`mu hud` removed; behavior moved to `mu state --hud`**
+  (`merge_state_into_hud_render_mode`). The verb was a render-strategy
+  variant of `mu state` (same data set; different presentation), so
+  it collapses to a flag on the canonical card. Update tmux configs
+  accordingly: `tmux display-popup -E 'mu hud -w X'` becomes
+  `tmux display-popup -E 'mu state --hud -w X'`. Pre-1.0; no
+  deprecation shim.
+
+### Changed
+
+- **`mu state` gains `--hud` and `--mission` render flags. Bare `mu`
+  (no verb) is now an alias for `mu state --mission`** (today's
+  stripped 5-col glance card; `merge_state_into_hud_render_mode`).
+  One verb, three render modes:
+    * default    — full top-to-bottom card (today's `mu state`)
+    * `--hud`    — dynamic-fit budget renderer (today's `mu hud`)
+    * `--mission` — stripped 5-column glance card (today's bare `mu`)
+  `--hud` and `--mission` are mutually exclusive. The flag toggles
+  rendering ONLY — the data set is identical across modes. JSON shape
+  follows the renderer: default + `--hud` emit the unified flat shape
+  `{ workstreamName, agents, orphans, tracks, ready, blocked,
+  inProgress, recentClosed, workspaces, recent }`; `--mission` emits
+  the stripped subset `{ workstreamName, agents, orphans, tracks,
+  ready }`. Bare `mu --json` matches `--mission --json`. Net `-570`
+  LOC src/ (entire `src/cli/hud.ts` lifted into `src/cli/state.ts`
+  as render helpers).
+
 - **`mu workstream destroy --empty` now also surfaces unregistered
   `mu-*` tmux sessions** (`destroy_empty_match_tmux_only`). Test
   litter and partial-destroy remnants (DB row gone, tmux session

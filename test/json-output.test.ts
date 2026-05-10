@@ -221,25 +221,30 @@ describe("--json output on read verbs", () => {
     // number of object keys) regardless of agent count. The fix
     // matches mission-control's flat shape: agents is the array,
     // orphans is its own top-level key.
+    // Per merge_state_into_hud_render_mode (v0.3): mu state --json
+    // emits the unified flat shape — { workstreamName, agents,
+    // orphans, tracks, ready, blocked, inProgress, recentClosed,
+    // workspaces, recent } (no nested `tasks` wrapper, no
+    // `workspace_orphans` / `recent_events` snake-case keys).
     const { stdout } = await runCli(["state", "-w", "auth", "--json"], dbPath);
     const parsed = JSON.parse(stdout.trim()) as {
       workstreamName: string;
       agents: unknown[];
       orphans: unknown[];
-      tasks: {
-        ready: unknown[];
-        in_progress: unknown[];
-        blocked: unknown[];
-        recent_closed: unknown[];
-      };
+      tracks: unknown[];
+      ready: unknown[];
+      inProgress: unknown[];
+      blocked: unknown[];
+      recentClosed: unknown[];
       workspaces: unknown[];
-      recent_events: unknown[];
+      recent: unknown[];
     };
     expect(parsed.workstreamName).toBe("auth");
     expect(Array.isArray(parsed.agents)).toBe(true);
     expect(Array.isArray(parsed.orphans)).toBe(true);
-    expect(Array.isArray(parsed.tasks.ready)).toBe(true);
+    expect(Array.isArray(parsed.ready)).toBe(true);
     expect(Array.isArray(parsed.workspaces)).toBe(true);
+    expect(Array.isArray(parsed.recent)).toBe(true);
   });
 
   it("agent list --json emits a { workstreamName, agents, orphans } shape", async () => {

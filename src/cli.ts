@@ -39,11 +39,10 @@ import {
 import { wireAgentCommands, wireSelfCommands } from "./cli/agents.js";
 import { wireArchiveCommands } from "./cli/archive.js";
 import { wireDoctorCommand } from "./cli/doctor.js";
-import { wireHudCommand } from "./cli/hud.js";
 import { wireLogCommand } from "./cli/log.js";
 import { wireSnapshotCommands } from "./cli/snapshot.js";
 import { wireSqlCommand } from "./cli/sql.js";
-import { cmdMission, wireStateCommands } from "./cli/state.js";
+import { cmdState, wireStateCommands } from "./cli/state.js";
 import { wireTaskCommands } from "./cli/tasks.js";
 import { wireWorkspaceCommands } from "./cli/workspace.js";
 import { wireWorkstreamCommands } from "./cli/workstream.js";
@@ -723,8 +722,8 @@ export function byRoiDesc(a: TaskRow, b: TaskRow): number {
 /** Format an elapsed duration (in ms) as a compact relative string:
  *  '12s', '3m', '1h', '2d', '3w'. Used by the task list table when
  *  `--sort recency`/`--sort age` is active so the timeframe the user
- *  is sorting by is visible. Mirrors the helper in src/cli/hud.ts;
- *  kept in sync (the hud version omits weeks because it shows tighter
+ *  is sorting by is visible. Mirrors the helper in src/cli/state.ts
+ *  (hud render mode); kept in sync (the hud version omits weeks because it shows tighter
  *  windows, but for task list a 5w-old item is real and worth a tag).
  */
 export function relTime(ms: number): string {
@@ -1215,11 +1214,19 @@ export function buildProgram(): Command {
     // current tmux session); when none of those resolve, falls back
     // to a workstreams-discovery view instead of erroring. Accepts
     // --json so scripts can drive the same picture programmatically.
-    .option(...WORKSTREAM_OPT)
+    // Bare `mu` is an alias for `mu state --mission` (the stripped
+    // 5-col glance card). Per merge_state_into_hud_render_mode (v0.3):
+    // route through cmdState with mission=true so there's exactly one
+    // implementation of the glance render. -w accepts the same
+    // variadic shape every other render mode does.
+    .option(
+      "-w, --workstream <names...>",
+      "workstream(s) to render (repeat or comma-separate; or both; defaults to $MU_SESSION or current tmux session)",
+    )
     .option(...JSON_OPT)
     .action(function () {
-      const opts = (this as Command).opts() as { workstream?: string; json?: boolean };
-      return handle((db) => cmdMission(db, opts))();
+      const opts = (this as Command).opts() as { workstream?: string[]; json?: boolean };
+      return handle((db) => cmdState(db, { ...opts, mission: true }))();
     });
 
   wireWorkstreamCommands(program);
@@ -1230,7 +1237,6 @@ export function buildProgram(): Command {
   wireTaskCommands(program);
   wireLogCommand(program);
   wireStateCommands(program);
-  wireHudCommand(program);
   wireSqlCommand(program);
   wireSnapshotCommands(program);
   wireDoctorCommand(program);

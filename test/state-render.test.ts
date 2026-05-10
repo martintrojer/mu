@@ -1,0 +1,492 @@
+// Tests for the unified `mu state` verb (three render modes).
+//
+// Per merge_state_into_hud_render_mode (v0.3) `mu state` absorbed the
+// old `mu hud` verb and the bare-`mu` glance card. There is now ONE
+// verb with THREE render modes and ONE flat data shape:
+//
+//   mu state             default: full top-to-bottom card
+//   mu state --hud       dynamic-fit budget renderer (`watch` / popup)
+//   mu state --mission   stripped 5-col glance card (bare-`mu` alias)
+//
+// `--hud` and `--mission` are mutually exclusive; the flag toggles
+// render strategy ONLY (the data set is identical). All three accept
+// variadic `-w X[,Y]...` / `-w X -w Y` and `--all`.
+//
+// Tests exercise: full render, hud render (incl. truncation +
+// MU_HUD_FORCE_SIZE plumbing), mission render, mutual-exclusion
+// error, cross-workstream handling, and JSON shapes per spec.
+
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+// Force colorless output for the whole file (literal-substring
+// assertions vs ANSI escapes). The `pc` instance is baked at
+// src/output.ts module-load time; vi.hoisted runs before imports.
+vi.hoisted(() => {
+  process.env.NO_COLOR = "1";
+});
+import { runCli } from "./_runCli.js";
+
+// ── default mode (full top-to-bottom card) ─────────────────────────
+
+describe("mu state — default (full) mode", () => {
+  let tempDir: string;
+  let dbPath: string;
+
+  beforeEach(async () => {
+    tempDir = mkdtempSync(join(tmpdir(), "mu-state-full-"));
+    dbPath = join(tempDir, "mu.db");
+    await runCli(["workstream", "init", "ws", "--json"], dbPath);
+    await runCli(
+      ["task", "add", "alpha", "-w", "ws", "--title", "A", "-i", "50", "-e", "1", "--json"],
+      dbPath,
+    );
+    await runCli(
+      ["task", "add", "beta", "-w", "ws", "--title", "B", "-i", "60", "-e", "1", "--json"],
+      dbPath,
+    );
+  });
+
+  afterEach(() => {
+    try {
+      rmSync(tempDir, { recursive: true, force: true });
+    } catch {}
+  });
+
+  it("renders every full-mode section heading top-to-bottom", async () => {
+    const { stdout, exitCode } = await runCli(["state", "-w", "ws"], dbPath);
+    expect(exitCode).toBeNull();
+    expect(stdout).toContain("State of mu-ws");
+    expect(stdout).toContain("Agents (");
+    expect(stdout).toContain("Tracks (");
+    expect(stdout).toContain("Ready (");
+    expect(stdout).toContain("In progress (");
+    expect(stdout).toContain("Blocked (");
+    expect(stdout).toContain("Recent closed (");
+    expect(stdout).toContain("Workspaces (");
+    expect(stdout).toContain("Recent events");
+  });
+
+  it("--json emits the unified flat shape (single workstream)", async () => {
+    const { stdout, exitCode } = await runCli(["state", "-w", "ws", "--json"], dbPath);
+    expect(exitCode).toBeNull();
+    const parsed = JSON.parse(stdout);
+    // Spec: { workstreamName, agents, orphans, tracks, ready, blocked,
+    //         inProgress, recentClosed, workspaces, recent } (flat).
+    expect(parsed.workstreamName).toBe("ws");
+    expect(Array.isArray(parsed.agents)).toBe(true);
+    expect(Array.isArray(parsed.orphans)).toBe(true);
+    expect(Array.isArray(parsed.tracks)).toBe(true);
+    expect(Array.isArray(parsed.ready)).toBe(true);
+    expect(parsed.ready.length).toBe(2);
+    expect(Array.isArray(parsed.blocked)).toBe(true);
+    expect(Array.isArray(parsed.inProgress)).toBe(true);
+    expect(Array.isArray(parsed.recentClosed)).toBe(true);
+    expect(Array.isArray(parsed.workspaces)).toBe(true);
+    expect(Array.isArray(parsed.recent)).toBe(true);
+  });
+
+  it("multi-ws --json wraps per-ws shapes in { workstreams: [...] }", async () => {
+    await runCli(["workstream", "init", "ws2", "--json"], dbPath);
+    await runCli(
+      ["task", "add", "gamma", "-w", "ws2", "--title", "G", "-i", "10", "-e", "1", "--json"],
+      dbPath,
+    );
+    const { stdout, exitCode } = await runCli(["state", "-w", "ws,ws2", "--json"], dbPath);
+    expect(exitCode).toBeNull();
+    const parsed = JSON.parse(stdout);
+    expect(Array.isArray(parsed.workstreams)).toBe(true);
+    expect(parsed.workstreams.length).toBe(2);
+    for (const w of parsed.workstreams) {
+      expect(typeof w.workstreamName).toBe("string");
+      expect(Array.isArray(w.ready)).toBe(true);
+      expect(Array.isArray(w.blocked)).toBe(true);
+      expect(Array.isArray(w.workspaces)).toBe(true);
+    }
+  });
+});
+
+// ── --hud (dynamic-fit) mode ───────────────────────────────────────
+
+describe("mu state --hud — dynamic-fit render", () => {
+  let tempDir: string;
+  let dbPath: string;
+
+  beforeEach(async () => {
+    tempDir = mkdtempSync(join(tmpdir(), "mu-state-hud-"));
+    dbPath = join(tempDir, "mu.db");
+    await runCli(["workstream", "init", "ws", "--json"], dbPath);
+    await runCli(
+      ["task", "add", "alpha", "-w", "ws", "--title", "A", "-i", "50", "-e", "1", "--json"],
+      dbPath,
+    );
+    await runCli(
+      ["task", "add", "beta", "-w", "ws", "--title", "B", "-i", "60", "-e", "1", "--json"],
+      dbPath,
+    );
+  });
+
+  afterEach(() => {
+    try {
+      rmSync(tempDir, { recursive: true, force: true });
+    } catch {}
+    const key = "MU_HUD_FORCE_SIZE";
+    delete process.env[key];
+  });
+
+  it("renders header-less cli-table3 sections with hint words baked into cells", async () => {
+    process.env.MU_HUD_FORCE_SIZE = "120x40";
+    const { stdout, exitCode } = await runCli(["state", "--hud", "-w", "ws"], dbPath);
+    expect(exitCode).toBeNull();
+    expect(stdout).toContain("┌");
+    expect(stdout).toContain("│");
+    expect(stdout).toMatch(/│ ws +│/);
+    expect(stdout).toMatch(/2 ready/);
+    expect(stdout).toMatch(/0 in-progress/);
+    expect(stdout).toMatch(/2 tracks/);
+    expect(stdout).toContain("ready  alpha");
+    expect(stdout).toContain("ready  beta");
+    expect(stdout).toContain("ROI ");
+    expect(stdout).not.toMatch(/in-progress {2}/);
+    expect(stdout).toContain("track 1");
+    expect(stdout).toMatch(/\+\d+s/);
+    expect(stdout).toContain("task add");
+  });
+
+  it("medium pane (60x14) drops lower sections + shows '+N more' truncation footer", async () => {
+    for (const id of ["gamma", "delta", "eps", "zeta", "eta", "theta"]) {
+      await runCli(
+        ["task", "add", id, "-w", "ws", "--title", id, "-i", "50", "-e", "1", "--json"],
+        dbPath,
+      );
+    }
+    process.env.MU_HUD_FORCE_SIZE = "60x14";
+    const { stdout, exitCode } = await runCli(["state", "--hud", "-w", "ws"], dbPath);
+    expect(exitCode).toBeNull();
+    expect(stdout).toMatch(/│ ws +│/);
+    expect(stdout).toContain("ready  alpha");
+    expect(stdout).toMatch(/… \+\d+ more \(mu task next -n 0 -w ws\)/);
+  });
+
+  it("output never exceeds the forced height (no overflow)", async () => {
+    for (const id of ["gamma", "delta", "eps", "zeta", "eta", "theta", "iota", "kappa"]) {
+      await runCli(
+        ["task", "add", id, "-w", "ws", "--title", id, "-i", "50", "-e", "1", "--json"],
+        dbPath,
+      );
+    }
+    for (const height of [10, 12, 14, 20]) {
+      process.env.MU_HUD_FORCE_SIZE = `60x${height}`;
+      const { stdout } = await runCli(["state", "--hud", "-w", "ws"], dbPath);
+      const lineCount = stdout.split("\n").filter((l) => l.length > 0).length;
+      expect(lineCount).toBeLessThanOrEqual(height);
+    }
+  });
+
+  it("MU_HUD_FORCE_SIZE rejects malformed values with a UsageError", async () => {
+    process.env.MU_HUD_FORCE_SIZE = "not-a-size";
+    const { stderr, exitCode } = await runCli(["state", "--hud", "-w", "ws"], dbPath);
+    expect(exitCode).toBe(2);
+    expect(stderr).toContain("MU_HUD_FORCE_SIZE");
+  });
+
+  it("--hud --json emits SAME flat shape as default --json (render flag doesn't change machine view)", async () => {
+    const defaultJson = JSON.parse((await runCli(["state", "-w", "ws", "--json"], dbPath)).stdout);
+    const hudJson = JSON.parse(
+      (await runCli(["state", "--hud", "-w", "ws", "--json"], dbPath)).stdout,
+    );
+    expect(Object.keys(hudJson).sort()).toEqual(Object.keys(defaultJson).sort());
+    expect(hudJson.workstreamName).toBe("ws");
+    expect(hudJson.ready.length).toBe(defaultJson.ready.length);
+    expect(Array.isArray(hudJson.blocked)).toBe(true);
+    expect(Array.isArray(hudJson.workspaces)).toBe(true);
+  });
+
+  it("-n caps recent-events tail at exactly N entries (asserted via --json)", async () => {
+    for (const id of ["gamma", "delta", "epsilon", "zeta"]) {
+      await runCli(
+        ["task", "add", id, "-w", "ws", "--title", id, "-i", "50", "-e", "1", "--json"],
+        dbPath,
+      );
+    }
+    const oneJson = JSON.parse(
+      (await runCli(["state", "--hud", "-w", "ws", "--json", "-n", "1"], dbPath)).stdout,
+    );
+    expect(oneJson.recent.length).toBe(1);
+    const threeJson = JSON.parse(
+      (await runCli(["state", "--hud", "-w", "ws", "--json", "-n", "3"], dbPath)).stdout,
+    );
+    expect(threeJson.recent.length).toBe(3);
+  });
+
+  it("multi-workstream --hud --json wraps per-ws in { workstreams: [...] }", async () => {
+    await runCli(["workstream", "init", "ws2", "--json"], dbPath);
+    await runCli(
+      ["task", "add", "g", "-w", "ws2", "--title", "G", "-i", "10", "-e", "1", "--json"],
+      dbPath,
+    );
+    const { stdout, exitCode } = await runCli(["state", "--hud", "-w", "ws,ws2", "--json"], dbPath);
+    expect(exitCode).toBeNull();
+    const parsed = JSON.parse(stdout);
+    expect(Array.isArray(parsed.workstreams)).toBe(true);
+    expect(parsed.workstreams.length).toBe(2);
+  });
+});
+
+// ── --mission (stripped 5-col glance) ──────────────────────────────
+
+describe("mu state --mission — stripped glance card", () => {
+  let tempDir: string;
+  let dbPath: string;
+
+  beforeEach(async () => {
+    tempDir = mkdtempSync(join(tmpdir(), "mu-state-mission-"));
+    dbPath = join(tempDir, "mu.db");
+    await runCli(["workstream", "init", "ws", "--json"], dbPath);
+    await runCli(
+      ["task", "add", "alpha", "-w", "ws", "--title", "A", "-i", "50", "-e", "1", "--json"],
+      dbPath,
+    );
+  });
+
+  afterEach(() => {
+    try {
+      rmSync(tempDir, { recursive: true, force: true });
+    } catch {}
+  });
+
+  it("renders only the 5-col glance sections (agents + orphans + tracks + ready)", async () => {
+    const { stdout, exitCode } = await runCli(["state", "--mission", "-w", "ws"], dbPath);
+    expect(exitCode).toBeNull();
+    expect(stdout).toContain("mu-ws");
+    expect(stdout).toContain("Agents (");
+    expect(stdout).toContain("Tracks (");
+    expect(stdout).toContain("Ready (");
+    // Stripped: NOT in mission render.
+    expect(stdout).not.toContain("In progress (");
+    expect(stdout).not.toContain("Blocked (");
+    expect(stdout).not.toContain("Recent closed (");
+    expect(stdout).not.toContain("Workspaces (");
+    expect(stdout).not.toContain("Recent events");
+  });
+
+  it("--mission --json emits the stripped subset shape ONLY", async () => {
+    const { stdout, exitCode } = await runCli(["state", "--mission", "-w", "ws", "--json"], dbPath);
+    expect(exitCode).toBeNull();
+    const parsed = JSON.parse(stdout);
+    // Spec: { workstreamName, agents, orphans, tracks, ready }. No
+    // blocked / inProgress / recentClosed / workspaces / recent.
+    expect(Object.keys(parsed).sort()).toEqual(
+      ["agents", "orphans", "ready", "tracks", "workstreamName"].sort(),
+    );
+    expect(parsed.workstreamName).toBe("ws");
+    expect(parsed.ready.length).toBe(1);
+  });
+
+  it("bare `mu` (no verb) is an alias for `mu state --mission`", async () => {
+    // Bare-mu invokes cmdState({ mission: true }) — output should
+    // match the explicit --mission invocation (modulo any timing noise
+    // in the recent-events table; mission strips that section so the
+    // human render is deterministic).
+    const bare = await runCli(["-w", "ws"], dbPath);
+    const explicit = await runCli(["state", "--mission", "-w", "ws"], dbPath);
+    expect(bare.exitCode).toBeNull();
+    expect(explicit.exitCode).toBeNull();
+    // Both contain the same stripped section headings; neither
+    // contains the full-mode sections.
+    for (const out of [bare.stdout, explicit.stdout]) {
+      expect(out).toContain("mu-ws");
+      expect(out).toContain("Agents (");
+      expect(out).toContain("Tracks (");
+      expect(out).toContain("Ready (");
+      expect(out).not.toContain("Workspaces (");
+      expect(out).not.toContain("Recent events");
+    }
+  });
+
+  it("bare `mu --json` emits the stripped --mission shape", async () => {
+    const { stdout, exitCode } = await runCli(["-w", "ws", "--json"], dbPath);
+    expect(exitCode).toBeNull();
+    const parsed = JSON.parse(stdout);
+    expect(Object.keys(parsed).sort()).toEqual(
+      ["agents", "orphans", "ready", "tracks", "workstreamName"].sort(),
+    );
+  });
+});
+
+// ── --hud + --mission mutually exclusive ───────────────────────────
+
+describe("mu state — mutual-exclusion + cross-workstream", () => {
+  let tempDir: string;
+  let dbPath: string;
+
+  beforeEach(async () => {
+    tempDir = mkdtempSync(join(tmpdir(), "mu-state-mux-"));
+    dbPath = join(tempDir, "mu.db");
+    for (const w of ["alpha", "beta", "gamma"]) {
+      await runCli(["workstream", "init", w, "--json"], dbPath);
+      await runCli(
+        ["task", "add", `t_${w}`, "-w", w, "--title", `T-${w}`, "-i", "50", "-e", "1", "--json"],
+        dbPath,
+      );
+    }
+  });
+
+  afterEach(() => {
+    try {
+      rmSync(tempDir, { recursive: true, force: true });
+    } catch {}
+    const key = "MU_HUD_FORCE_SIZE";
+    delete process.env[key];
+  });
+
+  it("--hud + --mission errors as a UsageError (mutually exclusive)", async () => {
+    const { stderr, exitCode } = await runCli(
+      ["state", "--hud", "--mission", "-w", "alpha"],
+      dbPath,
+    );
+    expect(exitCode).toBe(2);
+    expect(stderr).toContain("mutually exclusive");
+  });
+
+  it("--all + -w errors as a UsageError (mutually exclusive)", async () => {
+    const { stderr, exitCode } = await runCli(["state", "--all", "-w", "alpha"], dbPath);
+    expect(exitCode).toBe(2);
+    expect(stderr).toContain("mutually exclusive");
+  });
+
+  it("cross-workstream works in default mode (-w X,Y stacks per-ws cards)", async () => {
+    const { stdout, exitCode } = await runCli(["state", "-w", "alpha,beta"], dbPath);
+    expect(exitCode).toBeNull();
+    expect(stdout).toContain("State of mu-alpha");
+    expect(stdout).toContain("State of mu-beta");
+    expect(stdout).not.toContain("State of mu-gamma");
+  });
+
+  it("cross-workstream works in --hud mode (-w X,Y unions with leading column)", async () => {
+    process.env.MU_HUD_FORCE_SIZE = "160x40";
+    const { stdout, exitCode } = await runCli(["state", "--hud", "-w", "alpha,beta"], dbPath);
+    expect(exitCode).toBeNull();
+    expect(stdout).toMatch(/│ alpha +│/);
+    expect(stdout).toMatch(/│ beta +│/);
+    expect(stdout).not.toMatch(/│ gamma +│/);
+    expect(stdout).toContain("ready  t_alpha");
+    expect(stdout).toContain("ready  t_beta");
+    expect(stdout).not.toContain("ready  t_gamma");
+  });
+
+  it("cross-workstream works in --mission mode (-w X,Y stacks per-ws cards)", async () => {
+    const { stdout, exitCode } = await runCli(["state", "--mission", "-w", "alpha,beta"], dbPath);
+    expect(exitCode).toBeNull();
+    expect(stdout).toContain("mu-alpha");
+    expect(stdout).toContain("mu-beta");
+    expect(stdout).not.toContain("mu-gamma");
+  });
+
+  it("-w with one bad name errors as WorkstreamNotFoundError", async () => {
+    const { stderr, exitCode } = await runCli(["state", "-w", "alpha,nope"], dbPath);
+    expect(exitCode).not.toBe(0);
+    expect(stderr).toContain("nope");
+  });
+});
+
+// ── colorEventPayload regression: every emitter verb is recognised ──
+//
+// Moved from test/hud.test.ts unchanged in spirit: the hud-mode event
+// renderer (now living under cli/state.ts) colours the leading verb
+// token of each event-log payload. EVENT_VERB_PREFIXES in src/logs.ts
+// is the single source of truth; this block enforces (a) every entry
+// round-trips, (b) every emitEvent callsite under src/ uses a payload
+// prefix that is recognised.
+describe("colorEventPayload", () => {
+  let savedNoColor: string | undefined;
+  let savedForceColor: string | undefined;
+  beforeEach(() => {
+    savedNoColor = process.env.NO_COLOR;
+    savedForceColor = process.env.MU_FORCE_COLOR;
+    const noColorKey = "NO_COLOR";
+    delete process.env[noColorKey];
+    process.env.MU_FORCE_COLOR = "1";
+    vi.resetModules();
+  });
+  afterEach(() => {
+    if (savedNoColor === undefined) {
+      const noColorKey = "NO_COLOR";
+      delete process.env[noColorKey];
+    } else {
+      process.env.NO_COLOR = savedNoColor;
+    }
+    if (savedForceColor === undefined) {
+      const forceColorKey = "MU_FORCE_COLOR";
+      delete process.env[forceColorKey];
+    } else {
+      process.env.MU_FORCE_COLOR = savedForceColor;
+    }
+    vi.resetModules();
+  });
+
+  it("colours every verb in EVENT_VERB_PREFIXES", async () => {
+    const { EVENT_VERB_PREFIXES } = await import("../src/logs.js");
+    const { colorEventPayload } = await import("../src/cli/state.js");
+    expect(EVENT_VERB_PREFIXES.length).toBeGreaterThan(0);
+    for (const verb of EVENT_VERB_PREFIXES) {
+      const payload = `${verb} alpha (extra info)`;
+      const out = colorEventPayload(payload);
+      expect(out, `verb '${verb}' should be coloured`).not.toBe(payload);
+      expect(out, `verb '${verb}' tail should survive`).toContain(" alpha (extra info)");
+      expect(out, `verb '${verb}' should emit ANSI cyan`).toContain("\x1b[36m");
+    }
+  });
+
+  it("leaves unknown payloads untouched (no false-positive matches)", async () => {
+    const { colorEventPayload } = await import("../src/cli/state.js");
+    for (const payload of [
+      "random freeform message",
+      "approve granted slug",
+      "snapshot capture foo",
+      "taskaddendum sneaky",
+    ]) {
+      expect(colorEventPayload(payload)).toBe(payload);
+    }
+  });
+
+  it("every emitEvent callsite under src/ uses a payload prefix in EVENT_VERB_PREFIXES", async () => {
+    const { EVENT_VERB_PREFIXES } = await import("../src/logs.js");
+    const { readFileSync, readdirSync, statSync } = await import("node:fs");
+    const { join: pj } = await import("node:path");
+    function walk(dir: string, out: string[] = []): string[] {
+      for (const entry of readdirSync(dir)) {
+        const full = pj(dir, entry);
+        const st = statSync(full);
+        if (st.isDirectory()) walk(full, out);
+        else if (entry.endsWith(".ts") && !entry.endsWith(".test.ts")) out.push(full);
+      }
+      return out;
+    }
+    const files = walk("src");
+    const callsites: { file: string; payloadPrefix: string }[] = [];
+    for (const file of files) {
+      const src = readFileSync(file, "utf8");
+      const re = /emitEvent\s*\(\s*[^,]+,\s*[^,]+,\s*([`'"])((?:\\.|(?!\1)[\s\S])*?)\1/g;
+      let m: RegExpExecArray | null;
+      // biome-ignore lint/suspicious/noAssignInExpressions: classic regex loop
+      while ((m = re.exec(src)) !== null) {
+        const literal = m[2] ?? "";
+        const head = literal.split("${")[0] ?? "";
+        const words = head.trim().split(/\s+/).slice(0, 2);
+        if (words.length === 2) {
+          callsites.push({ file, payloadPrefix: words.join(" ") });
+        }
+      }
+    }
+    expect(callsites.length).toBeGreaterThan(0);
+    const knownPrefixes = new Set(EVENT_VERB_PREFIXES);
+    const unknown = callsites.filter((c) => !knownPrefixes.has(c.payloadPrefix));
+    expect(
+      unknown,
+      `emitEvent callsites with payload prefixes not in EVENT_VERB_PREFIXES: ${JSON.stringify(unknown, null, 2)}`,
+    ).toEqual([]);
+  });
+});
