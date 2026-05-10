@@ -48,34 +48,57 @@ mu/
 │   └── ARCHITECTURE.md
 ├── src/                   # all source (root files: SDK + shared infra; one
 │                          # level of subdirs OK for cohesive clusters — see
-│                          # `src/cli/` below)
-│   ├── db.ts              # SQLite schema + openDb
+│                          # `src/cli/`, `src/agents/`, `src/tasks/` below)
+│   ├── db.ts              # SQLite schema + openDb (single CREATE-IF-NOT-EXISTS block)
 │   ├── tmux.ts            # tmux wrapper, send protocol, pane validation
 │   ├── detect.ts          # pi-only status detector
 │   ├── reconcile.ts       # ghost prune + status detect + orphan surface
-│   ├── agents.ts          # CRUD + spawn/send/read/list/close/free + liveness + reaper
-│   ├── tasks.ts           # CRUD + every read/write verb + cycle check + claim CAS
+│   ├── agents.ts          # CRUD + send/read/list/close/free + liveness + reaper hub (re-exports src/agents/*)
+│   ├── agents/            # cohesive cluster of agent-lifecycle internals
+│   │   ├── spawn.ts       # spawnAgent + resolveCliCommand / awaitSpawnLiveness / pane create-or-reuse / prestage / rollback
+│   │   ├── adopt.ts       # adoptAgent: register an existing tmux pane as a managed agent
+│   │   └── errors.ts      # typed agent error classes (AgentNotFoundError, AgentDiedOnSpawnError, …)
+│   ├── tasks.ts           # task SDK hub (re-exports src/tasks/* + edit/edges/queries verbs)
+│   ├── tasks/             # cohesive cluster of task-graph internals
+│   │   ├── status.ts      # TaskStatus enum + helpers (single source of truth for statuses)
+│   │   ├── claim.ts       # claim/release + resolveActorIdentity (atomic CAS)
+│   │   ├── lifecycle.ts   # setTaskStatus / closeTask / openTask / rejectTask / deferTask + cascade
+│   │   ├── wait.ts        # waitForTasks: block until tasks reach a target status
+│   │   └── errors.ts      # typed task error classes (TaskAlreadyOwnedError, CycleError, …)
 │   ├── tracks.ts          # parallel-tracks union-find with diamond merge
 │   ├── workstream.ts      # ensureWorkstream / list / summarize / destroy / export
+│   ├── archives.ts        # cross-workstream archive buckets (create / add / remove / restore)
+│   ├── exporting.ts       # unified bucket renderer (workstream + archive export)
+│   ├── importing.ts       # inverse of exporting.ts: parse a v0.3 bucket dir → live DB rows
 │   ├── logs.ts            # agent_logs SDK (append, list, latestSeq, emitEvent)
 │   ├── vcs.ts             # VcsBackend interface + jj/sl/git/none impls
 │   ├── workspace.ts       # per-agent VCS workspaces (CRUD over vcs_workspaces)
 │   ├── snapshots.ts       # whole-DB snapshots (VACUUM INTO) + auto-capture hook
-│   ├── migrations.ts      # forward-only schema migrations
 │   ├── output.ts          # NextStep type + printNextSteps / errorNextSteps
-│   ├── cli.ts             # commander wiring, handle()/classifyError, shared format helpers
-│   ├── cli/               # one-file-per-verb-namespace; thin wrappers over the SDK
-│   │   ├── workstream.ts  # init / list / destroy / export
-│   │   ├── agents.ts      # spawn / send / read / list / show / close / free / adopt / attach
-│   │   ├── tasks.ts       # add / claim / release / close / open / reject / defer / note / show / tree / ...
+│   ├── cli.ts             # commander wiring (buildProgram); re-exports format/handle for back-compat
+│   ├── cli/               # one file per verb-namespace; thin wrappers over the SDK
+│   │   ├── workstream.ts  # workstream init / list / destroy / export
+│   │   ├── agents.ts      # agent spawn / send / read / list / show / close / free / adopt / attach
+│   │   ├── tasks.ts       # `mu task` hub (re-exports wireTaskCommands / cmdMyNext / cmdMyTasks / unescapeNoteText)
+│   │   ├── tasks/         # sub-cluster of the `mu task` namespace
+│   │   │   ├── queries.ts    # list / next / owned-by + cmdMyTasks / cmdMyNext (back `mu me tasks` / `mu me next`)
+│   │   │   ├── lifecycle.ts  # close / open / reject / defer + cascade preview
+│   │   │   ├── edit.ts       # add / show / notes / note / update + helpers
+│   │   │   ├── edges.ts      # block / unblock / reparent / delete
+│   │   │   ├── claim.ts      # claim / release / wait
+│   │   │   ├── tree.ts       # tree rendering
+│   │   │   └── wire.ts       # Commander glue
 │   │   ├── workspace.ts   # workspace create / list / free / path / orphans
 │   │   ├── log.ts         # log read / write / tail
-│   │   ├── hud.ts         # hud (dynamic table layout)
+│   │   ├── archive.ts     # archive create / list / show / add / remove / delete
+│   │   ├── state.ts       # `mu state` (canonical state card) + bare `mu` (mission control / hud render mode)
 │   │   ├── snapshot.ts    # undo / snapshot list / snapshot show
 │   │   ├── sql.ts         # sql escape hatch
-│   │   └── doctor.ts      # doctor diagnostic
+│   │   ├── doctor.ts      # doctor diagnostic
+│   │   ├── format.ts      # pure rendering helpers (table renderers, status colourers, truncate/relTime)
+│   │   └── handle.ts      # typed-error → exit-code map + handle() wrapper
 │   └── index.ts           # SDK entrypoint (re-exports)
-├── test/                  # 17 test files; 443 tests; many use real tmux/git/jj/sl
+├── test/                  # 60 files / 57 *.test.ts / ~996 it()/test() calls; many use real tmux/git/jj/sl
 ├── skills/mu/SKILL.md     # what the LLM running inside an agent pane sees
 ├── package.json           # bin: { mu: ./dist/cli.js }, type: module
 ├── tsconfig.json          # strict + noUncheckedIndexedAccess + verbatimModuleSyntax
