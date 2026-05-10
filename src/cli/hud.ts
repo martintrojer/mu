@@ -15,13 +15,15 @@
 // -n N still caps recent-events length (mostly meaningful for --json,
 // but also bounds what the human view can pull from).
 //
-// MULTI-WORKSTREAM (v0.3+, hud_multi_workstream): `--workstreams` (variadic
-// + parseCsvFlag-canonicalised) and `--all` accept N workstreams. Single
-// (N=1, the common case) renders EXACTLY the legacy shape (same columns,
-// same JSON keys). N≥2 grows the workstream-summary table to N rows, gains
-// a leading `workstream` column on subsequent tables, and switches the
-// JSON envelope to `{ workstreams: [...] }`. See task notes for the full
-// contract.
+// MULTI-WORKSTREAM (v0.3+, hud_multi_workstream + hud_unify_workstream_flag):
+// hud is the one verb where `-w/--workstream` is variadic (`<names...>`,
+// canonicalised through parseCsvFlag — repeat or comma-separate or both)
+// instead of single-valued. `--all` is orthogonal sugar for "every
+// workstream on this machine" and is mutually exclusive with `-w`.
+// Single (N=1, the common case) renders EXACTLY the legacy shape (same
+// columns, same JSON keys). N≥2 grows the workstream-summary table to N
+// rows, gains a leading `workstream` column on subsequent tables, and
+// switches the JSON envelope to `{ workstreams: [...] }`.
 //
 // Extracted from src/cli.ts as part of refactor_split_large_src_files.
 
@@ -47,8 +49,9 @@ import { type Track, getParallelTracks } from "../tracks.js";
 import { listWorkstreams } from "../workstream.js";
 
 interface HudOpts {
-  workstream?: string;
-  workstreams?: string[];
+  // Variadic on hud (the one carve-out). Single-valued on every other
+  // verb. parseCsvFlag canonicalises repeat / comma / mixed forms.
+  workstream?: string[];
   all?: boolean;
   json?: boolean;
   lines?: number; // recent-events tail cap; default 10
@@ -386,64 +389,49 @@ function agentStatusHistogram(agents: readonly AgentRow[]): string {
 
 // ─── Workstream-set resolution ────────────────────────────────────────
 //
-// The hud verb accepts THREE mutually-exclusive shapes:
-//   -w X                    single workstream (legacy default-resolution
-//                           chain via env / tmux session if -w not given)
-//   --workstreams X,Y,Z     explicit list (variadic + parseCsvFlag-
-//                           canonicalised — see cli_audit_plurality_uniformity)
-//   --all                   every workstream on this machine
+// The hud verb accepts TWO mutually-exclusive shapes (plus auto-resolve):
+//   -w X         | -w X,Y     | -w X -w Y      explicit set (variadic + parseCsvFlag)
+//   --all                                       every workstream on this machine
+//   (none)                                      auto-resolve from $MU_SESSION/tmux (single ws)
 //
-// When N=1 (single -w, or --workstreams resolving to one entry, or
-// --all on a single-workstream machine), we AUTO-COLLAPSE to single-
-// mode rendering. So callers who today use `mu hud -w X` see byte-for-
-// byte identical output (including the JSON shape — the back-compat
-// contract for any tmux status-bar pipes consuming `mu hud --json | jq`).
+// hud is the one verb where `-w/--workstream` is variadic — every other
+// mu verb keeps it single-valued. Codified by hud_unify_workstream_flag
+// (v0.3); the metavar `<names...>` is the syntactic signal.
 //
-// Detection of "explicitly-passed -w" vs "auto-resolved -w" matters
-// for the mutual-exclusion error path: commander gives us undefined
-// for unset options, so we read the raw `opts.workstream` BEFORE
-// resolveWorkstream falls back to env/tmux.
+// When N=1 (single -w value, or --all on a single-workstream machine,
+// or auto-resolve), we AUTO-COLLAPSE to single-mode rendering. So
+// callers who today use `mu hud -w X` see byte-for-byte identical
+// output (including the JSON shape — the back-compat contract for any
+// tmux status-bar pipes consuming `mu hud --json | jq`).
 async function resolveWorkstreamSet(db: Db, opts: HudOpts): Promise<string[]> {
-  const explicitW = opts.workstream !== undefined;
-  const explicitMulti = opts.workstreams !== undefined && opts.workstreams.length > 0;
+  const explicitW = opts.workstream !== undefined && opts.workstream.length > 0;
   const explicitAll = opts.all === true;
-  // Mutual exclusion. Check on the RAW flags (NOT on the resolved
-  // value) — the env/tmux fallback only kicks in when the user hasn't
-  // asked for a multi-mode shape, so it can't conflict.
-  if (explicitAll && explicitMulti) {
-    throw new UsageError("--all and --workstreams are mutually exclusive");
-  }
   if (explicitAll && explicitW) {
     throw new UsageError("--all and -w/--workstream are mutually exclusive");
-  }
-  if (explicitMulti && explicitW) {
-    throw new UsageError("--workstreams and -w/--workstream are mutually exclusive");
   }
   if (explicitAll) {
     const all = await listWorkstreams(db);
     return all.map((w) => w.name);
   }
-  if (opts.workstreams !== undefined) {
+  if (explicitW) {
     // parseCsvFlag canonicalises repeat / comma / mixed forms into a
-    // flat string[] (stripping whitespace + empty fragments). After
-    // canonicalisation the list may be empty (e.g. `--workstreams ,,`)
-    // — that's a usage error, not a silent empty render.
-    const names = parseCsvFlag(opts.workstreams);
+    // flat string[] (stripping whitespace + empty fragments). If the
+    // resolved list is empty (e.g. `-w ,,`), fall through to the
+    // auto-resolution chain — same as `mu hud` with no -w at all.
+    const names = parseCsvFlag(opts.workstream);
     const deduped = Array.from(new Set(names));
-    if (deduped.length === 0) {
-      throw new UsageError(
-        "no workstreams specified (--workstreams must resolve to at least one name)",
-      );
+    if (deduped.length > 0) {
+      // Strict validation: every entry must exist. A typo'd name
+      // would silently render half a HUD.
+      for (const n of deduped) {
+        if (tryResolveWorkstreamId(db, n) === null) throw new WorkstreamNotFoundError(n);
+      }
+      return deduped;
     }
-    // Strict validation: every entry must exist. A typo'd name today
-    // would silently render half a HUD.
-    for (const n of deduped) {
-      if (tryResolveWorkstreamId(db, n) === null) throw new WorkstreamNotFoundError(n);
-    }
-    return deduped;
   }
-  // Single legacy path: -w X explicit OR auto-resolve from env/tmux.
-  const single = await resolveWorkstream(opts.workstream);
+  // No explicit -w (or it canonicalised away to nothing): auto-resolve
+  // a single workstream from $MU_SESSION / tmux session.
+  const single = await resolveWorkstream(undefined);
   return [single];
 }
 
@@ -723,30 +711,30 @@ export async function cmdHud(db: Db, opts: HudOpts): Promise<void> {
 // every per-namespace builder lives next to its cmd functions.
 
 import type { Command } from "commander";
-import { JSON_OPT, WORKSTREAM_OPT, handle, parseLines } from "../cli.js";
+import { JSON_OPT, handle, parseLines } from "../cli.js";
 
 export function wireHudCommand(program: Command): void {
   program
     .command("hud")
     .description(
-      "Print-once HUD card for one or more workstreams. Default: dynamic table layout that fills the terminal (or tmux pane) height + width with as much useful data as fits — header + agents + ready + in-progress + tracks + recent-events, each rendered as a cli-table3 with width-aware truncation. Use --workstreams or --all to render multiple workstreams (gains a leading `workstream` column on every section). Use --json for the structured machine view (single-workstream shape unchanged; multi wraps in `{workstreams:[...]}`). No loop, no tmux side effects — user composes redraw via `watch -n 5 mu hud -w X` or `tmux display-popup -E 'mu hud -w X'`.",
+      "Print-once HUD card for one or more workstreams. Default: dynamic table layout that fills the terminal (or tmux pane) height + width with as much useful data as fits — header + agents + ready + in-progress + tracks + recent-events, each rendered as a cli-table3 with width-aware truncation. Pass `-w` multiple times (or comma-separate) to render multiple workstreams in one card (gains a leading `workstream` column on every section); `--all` is sugar for every workstream on this machine. Use --json for the structured machine view (single-workstream shape unchanged; multi wraps in `{workstreams:[...]}`). No loop, no tmux side effects — user composes redraw via `watch -n 5 mu hud -w X` or `tmux display-popup -E 'mu hud -w X'`.",
     )
     .option(
       "-n, --lines <n>",
       "recent-events tail cap (default 10; bounds the human view too)",
       parseLines,
     )
-    .option(...WORKSTREAM_OPT)
+    // -w on hud is variadic (the one carve-out from WORKSTREAM_OPT —
+    // hud_unify_workstream_flag). Every other verb keeps single-valued -w.
     .option(
-      "--workstreams <names...>",
-      "workstreams to include (repeat or comma-separate; or both)",
+      "-w, --workstream <names...>",
+      "workstream(s) to render (repeat or comma-separate; or both; defaults to $MU_SESSION or current tmux session)",
     )
     .option("--all", "include every workstream on this machine")
     .option(...JSON_OPT)
     .action(function () {
       const opts = (this as Command).opts() as {
-        workstream?: string;
-        workstreams?: string[];
+        workstream?: string[];
         all?: boolean;
         json?: boolean;
         lines?: number;

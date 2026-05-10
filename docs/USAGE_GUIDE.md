@@ -305,15 +305,20 @@ for a refreshing pane; `tmux display-popup -E 'mu hud -w X'` for
 an on-demand popup; `#(mu hud -w X --json) | jq ...` for tmux
 status-bar interpolation.
 
-Multi-workstream: `--workstreams a,b,c` (or `--workstreams a
---workstreams b`, or any mix — see [CLI conventions](#cli-conventions-multi-value-flags)) renders
-N workstreams in one card, with one summary row per workstream and
-a leading `workstream` column on every section table. `--all`
-collapses to "every workstream on this machine". Single-mode
-(`mu hud -w X`, or anything that resolves to one workstream — the
-common case) is unchanged byte-for-byte; the JSON shape only
-switches to `{ workstreams: [...] }` when N≥2 so existing tmux
-status-bar pipes don't break on upgrade.
+Multi-workstream: pass `-w` multiple values to render N workstreams
+in one card, with one summary row per workstream and a leading
+`workstream` column on every section table. `-w a,b,c`, `-w a -w b`,
+or any mix all work — see [CLI conventions](#cli-conventions-multi-value-flags).
+`--all` is sugar for "every workstream on this machine" (mutually
+exclusive with `-w`). Single-mode (`mu hud -w X`, or anything that
+resolves to one workstream — the common case) is unchanged
+byte-for-byte; the JSON shape only switches to `{ workstreams: [...] }`
+when N≥2 so existing tmux status-bar pipes don't break on upgrade.
+
+Note: hud is the **one** verb where `-w/--workstream` accepts multiple
+values (repeat or comma-separate). On every other verb, `-w` is
+single-valued. The metavar (`<names...>` vs `<name>`) is the
+syntactic signal.
 
 ---
 

@@ -253,12 +253,15 @@ describe("mu hud", () => {
   });
 });
 
-// ── Multi-workstream HUD (hud_multi_workstream, v0.3) ─────────────────
+// ── Multi-workstream HUD (hud_multi_workstream + hud_unify_workstream_flag, v0.3)
 //
-// `mu hud` accepts THREE mutually-exclusive shapes:
-//   -w X                    single (legacy default-resolution chain)
-//   --workstreams X,Y,Z     explicit list (variadic + parseCsvFlag)
-//   --all                   every workstream on this machine
+// `mu hud` accepts TWO mutually-exclusive shapes (plus auto-resolve):
+//   -w X | -w X,Y | -w X -w Y     explicit set (variadic + parseCsvFlag)
+//   --all                          every workstream on this machine
+//   (none)                         auto-resolve from $MU_SESSION/tmux (single ws)
+//
+// hud is the one verb where `-w/--workstream` is variadic; every other
+// verb keeps it single-valued.
 //
 // AUTO-COLLAPSE: N=1 always renders single-mode (legacy column shape
 // + flat JSON). N≥2 grows the workstream-summary table to N rows,
@@ -289,9 +292,9 @@ describe("mu hud — multi-workstream", () => {
     delete process.env[key];
   });
 
-  it("--workstreams a,b renders 2 workstream-summary rows + leading workstream column on subsequent tables", async () => {
+  it("-w a,b (CSV variadic) renders 2 workstream-summary rows + leading workstream column on subsequent tables", async () => {
     process.env.MU_HUD_FORCE_SIZE = "160x40";
-    const { stdout, exitCode } = await runCli(["hud", "--workstreams", "alpha,beta"], dbPath);
+    const { stdout, exitCode } = await runCli(["hud", "-w", "alpha,beta"], dbPath);
     expect(exitCode).toBeNull();
     // Both workstream rows appear in the summary table.
     expect(stdout).toContain("mu-alpha");
@@ -304,24 +307,24 @@ describe("mu hud — multi-workstream", () => {
     expect(stdout).not.toContain("ready  t_gamma");
   });
 
-  it("--workstreams accepts repeat OR comma OR mixed (parseCsvFlag canonicalisation)", async () => {
+  it("-w X -w Y (repeat form) renders both workstreams", async () => {
     process.env.MU_HUD_FORCE_SIZE = "160x40";
-    // Repeat form.
-    const repeat = await runCli(
-      ["hud", "--workstreams", "alpha", "--workstreams", "beta", "--json"],
+    const { stdout, exitCode } = await runCli(
+      ["hud", "-w", "alpha", "-w", "beta", "--json"],
       dbPath,
     );
-    expect(repeat.exitCode).toBeNull();
-    const repParsed = JSON.parse(repeat.stdout);
-    expect(repParsed.workstreams.map((w: { workstreamName: string }) => w.workstreamName)).toEqual([
+    expect(exitCode).toBeNull();
+    const parsed = JSON.parse(stdout);
+    expect(parsed.workstreams.map((w: { workstreamName: string }) => w.workstreamName)).toEqual([
       "alpha",
       "beta",
     ]);
-    // Mixed form.
-    const mixed = await runCli(
-      ["hud", "--workstreams", "alpha,beta", "--workstreams", "gamma", "--json"],
-      dbPath,
-    );
+  });
+
+  it("-w accepts repeat OR comma OR mixed (parseCsvFlag canonicalisation)", async () => {
+    process.env.MU_HUD_FORCE_SIZE = "160x40";
+    // Mixed form: one CSV value + one repeated single value.
+    const mixed = await runCli(["hud", "-w", "alpha,beta", "-w", "gamma", "--json"], dbPath);
     expect(mixed.exitCode).toBeNull();
     const mixParsed = JSON.parse(mixed.stdout);
     expect(mixParsed.workstreams.map((w: { workstreamName: string }) => w.workstreamName)).toEqual([
@@ -343,14 +346,10 @@ describe("mu hud — multi-workstream", () => {
     expect(stdout).toContain("mu-gamma");
   });
 
-  it("N≥2 --workstreams + --json wraps in { workstreams: [...] } envelope", async () => {
-    // Use --workstreams (not --all) so the assertion on
-    // workstreams.length is deterministic regardless of surrounding
-    // tmux state.
-    const { stdout, exitCode } = await runCli(
-      ["hud", "--workstreams", "alpha,beta,gamma", "--json"],
-      dbPath,
-    );
+  it("N≥2 -w + --json wraps in { workstreams: [...] } envelope", async () => {
+    // Use -w (not --all) so the assertion on workstreams.length is
+    // deterministic regardless of surrounding tmux state.
+    const { stdout, exitCode } = await runCli(["hud", "-w", "alpha,beta,gamma", "--json"], dbPath);
     expect(exitCode).toBeNull();
     const parsed = JSON.parse(stdout);
     expect(Array.isArray(parsed.workstreams)).toBe(true);
@@ -367,8 +366,8 @@ describe("mu hud — multi-workstream", () => {
     }
   });
 
-  it("N=1 via --workstreams keeps legacy flat JSON shape (auto-collapse)", async () => {
-    const { stdout, exitCode } = await runCli(["hud", "--workstreams", "alpha", "--json"], dbPath);
+  it("N=1 via -w keeps legacy flat JSON shape (auto-collapse)", async () => {
+    const { stdout, exitCode } = await runCli(["hud", "-w", "alpha", "--json"], dbPath);
     expect(exitCode).toBeNull();
     const parsed = JSON.parse(stdout);
     // Legacy keys at top level — NOT wrapped in {workstreams:[...]}.
@@ -377,29 +376,29 @@ describe("mu hud — multi-workstream", () => {
     expect(parsed.summary.ready).toBe(1);
   });
 
-  it("--workstreams X,X dedups to one entry → single-mode auto-collapse", async () => {
-    const { stdout, exitCode } = await runCli(
-      ["hud", "--workstreams", "alpha,alpha", "--json"],
-      dbPath,
-    );
+  it("-w X,X dedups to one entry → single-mode auto-collapse", async () => {
+    const { stdout, exitCode } = await runCli(["hud", "-w", "alpha,alpha", "--json"], dbPath);
     expect(exitCode).toBeNull();
     const parsed = JSON.parse(stdout);
     expect(parsed.workstreams).toBeUndefined();
     expect(parsed.workstreamName).toBe("alpha");
   });
 
-  it("single -w keeps legacy flat JSON shape exactly (no regression)", async () => {
-    const { stdout, exitCode } = await runCli(["hud", "-w", "alpha", "--json"], dbPath);
+  it("single -w renders today's exact shape (no extra workstream column)", async () => {
+    process.env.MU_HUD_FORCE_SIZE = "160x40";
+    const { stdout, exitCode } = await runCli(["hud", "-w", "alpha"], dbPath);
     expect(exitCode).toBeNull();
-    const parsed = JSON.parse(stdout);
-    expect(parsed.workstreams).toBeUndefined();
-    expect(parsed.workstreamName).toBe("alpha");
-  });
-
-  it("--all + --workstreams is a UsageError (mutually exclusive)", async () => {
-    const { stderr, exitCode } = await runCli(["hud", "--all", "--workstreams", "alpha"], dbPath);
-    expect(exitCode).toBe(2);
-    expect(stderr).toContain("mutually exclusive");
+    // Single-mode: the per-row leading bold-cyan workstream cell that
+    // appears in multi-mode (e.g. `mu-alpha` next to `ready  t_alpha`)
+    // is absent from the agents/ready/inprogress/tracks/recent tables.
+    // The summary table still uses `mu-alpha` as its leading cell, but
+    // the ready row's first cell is `ready  t_alpha`, not `mu-alpha`.
+    expect(stdout).toContain("mu-alpha"); // header summary row
+    expect(stdout).toContain("ready  t_alpha");
+    // Absence of `mu-alpha` on the same line as the ready row is the
+    // structural signal that no leading workstream column was added.
+    const readyLine = stdout.split("\n").find((l) => l.includes("ready  t_alpha")) ?? "";
+    expect(readyLine).not.toContain("mu-alpha");
   });
 
   it("--all + -w is a UsageError (mutually exclusive)", async () => {
@@ -408,23 +407,8 @@ describe("mu hud — multi-workstream", () => {
     expect(stderr).toContain("mutually exclusive");
   });
 
-  it("--workstreams + -w is a UsageError (mutually exclusive)", async () => {
-    const { stderr, exitCode } = await runCli(
-      ["hud", "--workstreams", "alpha", "-w", "beta"],
-      dbPath,
-    );
-    expect(exitCode).toBe(2);
-    expect(stderr).toContain("mutually exclusive");
-  });
-
-  it("--workstreams resolving to empty (e.g. ',,') errors with 'no workstreams specified'", async () => {
-    const { stderr, exitCode } = await runCli(["hud", "--workstreams", ",,"], dbPath);
-    expect(exitCode).toBe(2);
-    expect(stderr.toLowerCase()).toContain("no workstreams");
-  });
-
-  it("--workstreams with one bad name errors as WorkstreamNotFoundError listing the typo", async () => {
-    const { stderr, exitCode } = await runCli(["hud", "--workstreams", "alpha,nope"], dbPath);
+  it("-w with one bad name errors as WorkstreamNotFoundError listing the typo", async () => {
+    const { stderr, exitCode } = await runCli(["hud", "-w", "alpha,nope"], dbPath);
     // WorkstreamNotFoundError → exit 5 (not_found).
     expect(exitCode).not.toBe(0);
     expect(stderr).toContain("nope");

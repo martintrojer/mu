@@ -297,7 +297,7 @@ mu archive export <label> --out <bucket-dir>       # render every source-ws to a
 mu sql "<query>"                     # SELECT / UPDATE / DELETE / WITH
 mu                                   # bare: quick mission control
 mu state                             # canonical state card
-mu hud [-w X | --workstreams a,b | --all] [--json]   # dynamic table HUD; fills pane h×w; multi-workstream when N≥2
+mu hud [-w X[,Y]... | -w X -w Y | --all] [--json]    # dynamic table HUD; fills pane h×w; -w accepts multi (repeat/CSV); multi-workstream when N≥2
 mu doctor                            # tmux + db + schema + workstream stats
 ```
 

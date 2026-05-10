@@ -10,6 +10,14 @@ called out under "Breaking" in each entry.
 
 ## [Unreleased]
 
+- **`mu hud`: `-w/--workstream` is now variadic; `--workstreams` removed**
+  (`hud_unify_workstream_flag`). One flag does single + multi via
+  parseCsvFlag (repeat OR comma-separate OR mix). `--all` kept as
+  orthogonal sugar (mutually exclusive with `-w`). Pre-1.0, no
+  back-compat shim: the only consumer was the orchestrator's own
+  dispatch. hud is the one verb where `-w` accepts multi; every other
+  verb keeps `WORKSTREAM_OPT` (single-valued).
+
 ## [0.3.0] — unreleased
 
 ### Breaking
