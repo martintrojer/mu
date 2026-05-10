@@ -176,9 +176,6 @@ The two play well together. A pi session can install both.
   + the prior-runtime retrospective.
 - **[docs/ROADMAP.md](docs/ROADMAP.md)** — what's next + the
   anti-feature pledges + explicitly-rejected ideas.
-- **[docs/VERB_AUDIT.md](docs/VERB_AUDIT.md)** — every verb scored
-  on atomicity, side-effect, error-mapping value, and Next-step
-  value.
 - **[CHANGELOG.md](CHANGELOG.md)** — release notes.
 
 ## License

@@ -190,6 +190,17 @@ called out under "Breaking" in each entry.
 - **`docs/OUTPUT_LABELS_AUDIT.md` removed.** v0.2 single-purpose
   audit; output-label rename work shipped; no live readers.
 
+- **`docs/VERB_AUDIT.md` removed** (`remove_or_shrink_verb_audit_md`).
+  v0.2-vintage 1122-LOC verb-by-verb audit (typed-vs-`mu sql`,
+  atomicity / side-effect / error-mapping / nextstep scoring); the
+  promotion decisions it informed have shipped (`mu hud` merged into
+  `mu state --hud`; `mu approve *` removed; `whoami` / `my-tasks` /
+  `my-next` merged into `mu me`; `mu task search/blocked/goals`
+  removed; `mu adopt` re-wired). The audit was a one-shot exercise,
+  not a living spec; doc_stale_verb_audit_v01's drift was too large
+  (every audit row references the v0.2 verb surface) for in-place
+  fixes to be worthwhile. No live readers (only links: this
+  CHANGELOG entry + a README pointer); both updated.
 - **`scripts/` directory + CI grep guards removed.**
   `grep-v4-references`: job done (v4 migration code removed; remaining
   v4 mentions are intentional history). `grep-name-without-workstream`:
@@ -867,8 +878,8 @@ called out under "Breaking" in each entry.
 
 - **Three audit-flagged read-only verbs deleted: `mu task
   blocked`, `mu task goals`, `mu task search`.** Closes
-  `audit_remove_task_*`. All scored 1/4 in
-  [docs/VERB_AUDIT.md](docs/VERB_AUDIT.md); the underlying
+  `audit_remove_task_*`. All scored 1/4 in the verb audit
+  (since-removed `docs/VERB_AUDIT.md`); the underlying
   abstractions (the two SQL views + case-insensitive `LIKE`)
   are one-liners against `mu sql`. SDK helpers (`listBlocked`
   / `listGoals` / `searchTasks`) survive as reusable surface
