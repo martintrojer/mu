@@ -204,6 +204,25 @@ function taskIdFor(db: Db, localId: string, workstream: string): number | null {
   return row ? row.id : null;
 }
 
+/**
+ * Bump `tasks.updated_at` on a surrogate task id. Used by every write
+ * that mutates a child row (notes, edges) without touching the task
+ * row itself, so `mu task list --sort recency` reflects 'last write of
+ * any kind' rather than only 'last status/field change'
+ * (task_updatedat_not_bumped_by_reparent). Status changes, field
+ * updates, and claim/release already update `updated_at` directly in
+ * their own UPDATE statements; don't double-bump from here.
+ *
+ * Always called inside the same transaction as the child-row mutation
+ * so the bump rolls back together with the mutation on error.
+ */
+export function touchTask(db: Db, taskId: number, now?: string): void {
+  db.prepare("UPDATE tasks SET updated_at = ? WHERE id = ?").run(
+    now ?? new Date().toISOString(),
+    taskId,
+  );
+}
+
 // ─── ID validation ─────────────────────────────────────────────────────
 
 /** Lowercase alpha first, then alnum / underscore / hyphen, ≤64 chars. */
@@ -796,9 +815,15 @@ export function addNote(
   const taskId = taskIdFor(db, task.name, task.workstreamName);
   if (taskId === null) throw new TaskNotFoundError(taskLocalId);
   const now = new Date().toISOString();
-  const result = db
-    .prepare("INSERT INTO task_notes (task_id, author, content, created_at) VALUES (?, ?, ?, ?)")
-    .run(taskId, opts.author ?? null, content, now);
+  const result = db.transaction(() => {
+    const r = db
+      .prepare("INSERT INTO task_notes (task_id, author, content, created_at) VALUES (?, ?, ?, ?)")
+      .run(taskId, opts.author ?? null, content, now);
+    // Bump the parent task so `mu task list --sort recency` surfaces
+    // freshly-noted tasks (task_updatedat_not_bumped_by_reparent).
+    touchTask(db, taskId, now);
+    return r;
+  })();
   const noteId = Number(result.lastInsertRowid);
   emitEvent(
     db,
@@ -861,12 +886,22 @@ export function addBlockEdge(
   if (wouldCreateCycle(db, blockerId, blockedId)) {
     throw new CycleError(blocker, blocked);
   }
-  const result = db
-    .prepare(
-      "INSERT OR IGNORE INTO task_edges (from_task_id, to_task_id, created_at) VALUES (?, ?, ?)",
-    )
-    .run(blockerId, blockedId, new Date().toISOString());
-  const added = result.changes > 0;
+  const now = new Date().toISOString();
+  const added = db.transaction(() => {
+    const result = db
+      .prepare(
+        "INSERT OR IGNORE INTO task_edges (from_task_id, to_task_id, created_at) VALUES (?, ?, ?)",
+      )
+      .run(blockerId, blockedId, now);
+    if (result.changes > 0) {
+      // Bump the BLOCKED task — its blocker set changed. The blocker
+      // itself is unaffected. Aligned with reparentTask, which also
+      // bumps the FROM_TASK side (the task whose blockers shifted).
+      touchTask(db, blockedId, now);
+      return true;
+    }
+    return false;
+  })();
   if (added) emitEvent(db, blockedRow.workstreamName, `task block ${blocked} by ${blocker}`);
   return { added };
 }
@@ -895,10 +930,17 @@ export function removeBlockEdge(
   const blockedId = taskIdFor(db, blocked, blockedRow.workstreamName);
   const blockerId = taskIdFor(db, blocker, blockerRow.workstreamName);
   if (blockedId === null || blockerId === null) return { removed: false };
-  const result = db
-    .prepare("DELETE FROM task_edges WHERE from_task_id = ? AND to_task_id = ?")
-    .run(blockerId, blockedId);
-  const removed = result.changes > 0;
+  const removed = db.transaction(() => {
+    const result = db
+      .prepare("DELETE FROM task_edges WHERE from_task_id = ? AND to_task_id = ?")
+      .run(blockerId, blockedId);
+    if (result.changes > 0) {
+      // Bump the BLOCKED task — its blocker set just shrank.
+      touchTask(db, blockedId);
+      return true;
+    }
+    return false;
+  })();
   if (removed) {
     emitEvent(db, blockedRow.workstreamName, `task unblock ${blocked} by ${blocker}`);
   }
@@ -1110,6 +1152,13 @@ export function reparentTask(
     const now = new Date().toISOString();
     for (const blockerId of blockerIds) {
       insertEdge.run(blockerId, taskSurrogateId, now);
+    }
+    // Bump the reparented task itself — its blocker set just changed.
+    // No-op when both removed and added were 0 (effectively a no-op
+    // call); skip in that case so an idempotent `reparent --blocked-by
+    // <same-set>` stays a true no-op for `--sort recency`.
+    if (removed.changes > 0 || blockerIds.length > 0) {
+      touchTask(db, taskSurrogateId, now);
     }
     const blockersBit = blockers.length > 0 ? `, new=${[...blockers].join(",")}` : "";
     emitEvent(

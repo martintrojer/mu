@@ -364,6 +364,22 @@ called out under "Breaking" in each entry.
   the same value; `name` is preserved for compat. Regression test
   pins both keys across all three verbs in `test/json-output.test.ts`.
 
+- **`tasks.updated_at` now bumps on every write that mutates the task
+  row OR its child rows** (`task_updatedat_not_bumped_by_reparent`).
+  Status changes (close/open/reject/defer) and field updates
+  (--title/--impact/--effort-days) already bumped it; note inserts,
+  edge inserts/deletes (block/unblock/reparent), and claim/release
+  did not (claim/release in fact already updated `updated_at`; the
+  three child-row writes did not). `mu task list --sort recency`
+  uses `updated_at` and was silently demoting tasks that had just
+  had a note appended or their blockers reshuffled. Fix is
+  SDK-side: a single shared `touchTask(db, id)` helper called from
+  `addNote`, `addBlockEdge`, `removeBlockEdge`, `reparentTask` in
+  the same transaction as the child-row mutation. Idempotent no-ops
+  (block-already-exists, unblock-already-gone, reparent to the same
+  empty set) skip the bump so `--sort recency` stays honest about
+  what was actually written.
+
 - **SKILL.md `Next:` invariant now matches the empirical truth: it's
   emitted on MUTATING verbs only**
   (`nextsteps_audit_read_verbs_emit_no_nextsteps`). The skill claimed

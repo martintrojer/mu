@@ -382,6 +382,25 @@ describe("addNote", () => {
     addNote(db, "a", "third", { workstream: "test" });
     expect(listNotes(db, "a", "test").map((n) => n.content)).toEqual(["first", "second", "third"]);
   });
+
+  // Regression: task_updatedat_not_bumped_by_reparent. A note insert is
+  // a write that mutates a child row of the task; recency sort uses
+  // tasks.updated_at and was previously stranded on the create time.
+  it("bumps tasks.updated_at on insert (recency sort surfaces freshly-noted tasks)", () => {
+    addTask(db, { localId: "a", workstream: "test", title: "A", impact: 50, effortDays: 1 });
+    const before = getTask(db, "a", "test")?.updatedAt;
+    const start = Date.now();
+    while (Date.now() === start) {
+      /* spin so the ISO ms tick advances */
+    }
+    addNote(db, "a", "hello", { workstream: "test" });
+    const after = getTask(db, "a", "test")?.updatedAt;
+    expect(after).not.toBe(before);
+    expect(after).toBeDefined();
+    if (before !== undefined && after !== undefined) {
+      expect(new Date(after).getTime()).toBeGreaterThan(new Date(before).getTime());
+    }
+  });
 });
 
 // ─── getTaskEdges ─────────────────────────────────────────────────────────────
@@ -507,6 +526,35 @@ describe("addBlockEdge", () => {
     // blocker globally — the cross-workstream guard then fires.
     expect(() => addBlockEdge(db, "auth", "a", "x")).toThrow(CrossWorkstreamEdgeError);
   });
+
+  // Regression: task_updatedat_not_bumped_by_reparent. The BLOCKED
+  // task's blocker set just changed, so its updated_at should advance.
+  // The blocker itself is unaffected.
+  it("bumps tasks.updated_at on the BLOCKED side when an edge is added", () => {
+    const beforeBlocked = getTask(db, "b", "auth")?.updatedAt;
+    const beforeBlocker = getTask(db, "a", "auth")?.updatedAt;
+    const start = Date.now();
+    while (Date.now() === start) {
+      /* spin */
+    }
+    addBlockEdge(db, "auth", "b", "a");
+    const afterBlocked = getTask(db, "b", "auth")?.updatedAt;
+    const afterBlocker = getTask(db, "a", "auth")?.updatedAt;
+    expect(afterBlocked).not.toBe(beforeBlocked);
+    expect(afterBlocker).toBe(beforeBlocker);
+  });
+
+  it("does NOT bump tasks.updated_at on an idempotent (no-op) edge add", () => {
+    addBlockEdge(db, "auth", "b", "a");
+    const before = getTask(db, "b", "auth")?.updatedAt;
+    const start = Date.now();
+    while (Date.now() === start) {
+      /* spin */
+    }
+    expect(addBlockEdge(db, "auth", "b", "a").added).toBe(false);
+    const after = getTask(db, "b", "auth")?.updatedAt;
+    expect(after).toBe(before);
+  });
 });
 
 describe("removeBlockEdge", () => {
@@ -534,6 +582,31 @@ describe("removeBlockEdge", () => {
 
   it("is permissive about missing tasks (no throw)", () => {
     expect(removeBlockEdge(db, "auth", "ghost", "also-ghost").removed).toBe(false);
+  });
+
+  // Regression: task_updatedat_not_bumped_by_reparent. unblock is the
+  // mirror of block; same semantics on the BLOCKED side.
+  it("bumps tasks.updated_at on the BLOCKED side when an edge is removed", () => {
+    const beforeBlocked = getTask(db, "b", "auth")?.updatedAt;
+    const start = Date.now();
+    while (Date.now() === start) {
+      /* spin */
+    }
+    expect(removeBlockEdge(db, "auth", "b", "a").removed).toBe(true);
+    const afterBlocked = getTask(db, "b", "auth")?.updatedAt;
+    expect(afterBlocked).not.toBe(beforeBlocked);
+  });
+
+  it("does NOT bump tasks.updated_at on an idempotent (no-op) edge remove", () => {
+    removeBlockEdge(db, "auth", "b", "a");
+    const before = getTask(db, "b", "auth")?.updatedAt;
+    const start = Date.now();
+    while (Date.now() === start) {
+      /* spin */
+    }
+    expect(removeBlockEdge(db, "auth", "b", "a").removed).toBe(false);
+    const after = getTask(db, "b", "auth")?.updatedAt;
+    expect(after).toBe(before);
   });
 });
 
@@ -750,5 +823,22 @@ describe("reparentTask", () => {
     expect(() => reparentTask(db, "ghost", ["a"], { workstream: "billing" })).toThrow(
       /no such task: ghost/,
     );
+  });
+
+  // Regression: task_updatedat_not_bumped_by_reparent. The reparented
+  // task's blocker set changed; its updated_at should advance. The new
+  // blockers themselves should not be touched.
+  it("bumps tasks.updated_at on the reparented (FROM_TASK) side", () => {
+    const beforeTarget = getTask(db, "target", "auth")?.updatedAt;
+    const beforeC = getTask(db, "c", "auth")?.updatedAt;
+    const start = Date.now();
+    while (Date.now() === start) {
+      /* spin */
+    }
+    reparentTask(db, "target", ["c"], { workstream: "auth" });
+    const afterTarget = getTask(db, "target", "auth")?.updatedAt;
+    const afterC = getTask(db, "c", "auth")?.updatedAt;
+    expect(afterTarget).not.toBe(beforeTarget);
+    expect(afterC).toBe(beforeC);
   });
 });

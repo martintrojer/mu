@@ -481,6 +481,20 @@ describe("releaseTask", () => {
   it("throws TaskNotFoundError on missing task", () => {
     expect(() => releaseTask(db, "ghost", { workstream: "auth" })).toThrow(TaskNotFoundError);
   });
+
+  // Regression: task_updatedat_not_bumped_by_reparent. release is a
+  // mutating write on the task row (owner_id + status side-effect);
+  // updated_at must advance so `mu task list --sort recency` reflects
+  // the change.
+  it("bumps updated_at on a real release", async () => {
+    await claimTask(db, "design", { agentName: "worker-1", workstream: "auth" });
+    const before = getTask(db, "design", "auth")?.updatedAt;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    const r = releaseTask(db, "design", { workstream: "auth" });
+    expect(r.changed).toBe(true);
+    const after = getTask(db, "design", "auth")?.updatedAt;
+    expect(after).not.toBe(before);
+  });
 });
 
 // ─── evidence on lifecycle verbs ──────────────────────────────
