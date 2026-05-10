@@ -18,21 +18,31 @@ import { defaultSpawnLivenessMs } from "./spawn.js";
 export class AgentExistsError extends Error implements HasNextSteps {
   override readonly name = "AgentExistsError";
   constructor(public readonly agentName: string) {
-    super(
-      `agent already exists: ${agentName} (agent names are globally unique across workstreams)`,
-    );
+    // v5: agent names are UNIQUE per (workstream, name) — the same
+    // name can legitimately exist in two different workstreams. The
+    // pre-v5 message claimed global uniqueness, which (a) lied about
+    // the schema and (b) misled operators into closing the existing
+    // agent when the actual fix is `-w <other-ws>`.
+    super(`agent already exists in this workstream: ${agentName}`);
   }
   errorNextSteps(): NextStep[] {
     return [
       {
-        intent: "Find which workstream the existing agent is in",
-        command: `mu sql "SELECT name, workstream FROM agents WHERE name='${this.agentName}'"`,
+        // v5: agents.workstream_id → workstreams.id; there is no
+        // `agents.workstream` column. Use the join so this hint
+        // actually runs against a v5 DB.
+        intent: "List which workstream(s) already have an agent by this name",
+        command: `mu sql "SELECT a.name, ws.name AS workstream FROM agents a JOIN workstreams ws ON ws.id = a.workstream_id WHERE a.name = '${this.agentName}'"`,
       },
       {
-        intent: "Close the existing agent and re-spawn",
-        command: `mu agent close ${this.agentName}  &&  mu agent spawn ${this.agentName} -w <workstream>`,
+        intent: "Spawn it in a different workstream (per-workstream unique → no clash)",
+        command: `mu agent spawn ${this.agentName} -w <other-workstream>`,
       },
-      { intent: "Pick a different name", command: "mu agent spawn <new-name> -w <workstream>" },
+      {
+        intent: "Or close the existing agent in this workstream and re-spawn",
+        command: `mu agent close ${this.agentName}  &&  mu agent spawn ${this.agentName}`,
+      },
+      { intent: "Or pick a different name", command: "mu agent spawn <new-name>" },
     ];
   }
 }
