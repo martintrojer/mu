@@ -326,7 +326,7 @@ each are deliberately small.
 | `VcsBackend`        | Implementing `detect / createWorkspace / freeWorkspace / commitsBehind` (~80–150 LOC; jj/sl/git/none are working examples)        |
 | Per-CLI `Detector`  | Adding patterns to `detectPiStatus` (vanilla pi `to interrupt)`; pi-meta + every TUI wrapper covered by Braille spinner glyph fallback `[\u2800-\u28FF]`)                  |
 | New typed verb      | Add an SDK function in the relevant `src/*.ts`; add a `cmd<Verb>` to the matching `src/cli/<namespace>.ts` (or create a new namespace if the verb doesn't fit existing ones); wire one commander block in `src/cli.ts`'s `buildProgram()` (use `handle()` for the exit-code map; route through `printNextSteps` for self-documenting output) |
-| New schema migration| Bump `CURRENT_SCHEMA_VERSION` in `src/db.ts`; mirror the new shape in `CURRENT_SCHEMA`; ship a one-shot script under `scripts/` (the v4→v5 transition was the canonical example; restore from git history if you need to see the shape). The loud-fail hook in `openDb` rejects pre-current DBs with `SchemaTooOldError` (exit code 4) and a `npx tsx scripts/migrate-vN-to-vM.ts` instruction |
+| New schema migration| Bump `CURRENT_SCHEMA_VERSION` in `src/db.ts`; mirror the new shape in `CURRENT_SCHEMA`; ship a one-shot migration script (the v4→v5 transition was the canonical example; restore from git history if you need to see the shape). The loud-fail hook in `openDb` rejects pre-current DBs with `SchemaTooOldError` (exit code 4) and a migration instruction |
 | Snapshot hook       | Add `await captureSnapshot(db, 'verb-name', workstream)` at the top of any new destructive verb (one-liner; GC + restore behaviour automatic) |
 
 ## Surrogate-PK + SDK-boundary discipline (load-bearing)
@@ -414,11 +414,9 @@ back door (anti-feature pledge).
   takes (or threads from a parent context) the workstream; internal
   SQL filters by `(workstream_id, name)`. Test fixtures and `mu sql`
   read paths can omit the workstream and fall back to the v4
-  first-match-by-name contract; those branches are sealed by
-  `scripts/grep-name-without-workstream.sh` (a CI guard wired into
-  `npm run lint`) which scans every `db.prepare(…)` call for unscoped
-  name lookups. Allow-list lives at
-  `scripts/grep-name-without-workstream.allowlist`.
+  first-match-by-name contract. The invariant is now structurally
+  enforced by the surrogate-id schema (per-workstream UNIQUE on
+  name + INTEGER FKs); the previous CI grep guard was retired.
 - **Snapshots are insurance, not version history.** Captured only
   before destructive verbs (workstream destroy, agent close, task
   close/reject/defer/release/delete, workspace free). Status flips and additive ops do NOT snapshot.

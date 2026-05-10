@@ -63,6 +63,13 @@ called out under "Breaking" in each entry.
 
 ### Removed
 
+- **`scripts/` directory + CI grep guards removed.**
+  `grep-v4-references`: job done (v4 migration code removed; remaining
+  v4 mentions are intentional history). `grep-name-without-workstream`:
+  invariant now structurally enforced by the v5 surrogate-id schema
+  (per-workstream UNIQUE on name + INTEGER FKs). `lint` becomes
+  biome-only.
+
 - **`mu hud` removed; behavior moved to `mu state --hud`**
   (`merge_state_into_hud_render_mode`). The verb was a render-strategy
   variant of `mu state` (same data set; different presentation), so

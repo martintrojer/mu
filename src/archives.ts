@@ -258,9 +258,8 @@ function rowFromArchivedTask(r: RawArchivedTaskRow): ArchivedTaskRow {
  *  empty (listArchivedTasks). archives.label is globally unique
  *  (NOT per-workstream) by design — see schema doc in src/db.ts. */
 function tryResolveArchiveId(db: Db, label: string): number | null {
-  // Allowlisted in scripts/grep-name-without-workstream.allowlist:
   // archives is the one entity table whose TEXT name is intentionally
-  // global (archives outlive workstreams).
+  // global (archives outlive workstreams) — no per-workstream scope.
   const row = db.prepare("SELECT id FROM archives WHERE label = ?").get(label) as
     | { id: number }
     | undefined;
@@ -276,7 +275,6 @@ function resolveArchiveId(db: Db, label: string): number {
 }
 
 function archiveByLabel(db: Db, label: string): Archive | null {
-  // Allowlisted in scripts/grep-name-without-workstream.allowlist:
   // archive labels are globally unique (no workstream scope).
   const row = db
     .prepare(
