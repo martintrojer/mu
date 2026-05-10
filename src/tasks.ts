@@ -264,6 +264,44 @@ const SLUG_HARD_CAP = 64;
  * Throws if `title` yields an empty slug after stripping.
  */
 export function slugifyTitle(title: string): string {
+  return slugifyTitleVerbose(title).slug;
+}
+
+/**
+ * Result of `slugifyTitleVerbose`: the slug plus enough metadata for
+ * the CLI to decide whether to warn the user that meaning was lost.
+ *
+ *   slug           — the same string `slugifyTitle` returns.
+ *   strippedLength — length of the post-strip pre-cap slug. When this
+ *                    exceeds the SLUG_SOFT_CAP the verbose form had to
+ *                    cut at a word boundary (or hard-truncate); the
+ *                    cut clauses are gone with no in-band signal.
+ *   truncated      — true iff `slug.length < strippedLength` AFTER the
+ *                    `t_` digit-prefix correction, i.e. real bytes were
+ *                    dropped. False for any title that fits under the
+ *                    soft cap or whose only diff vs the stripped slug
+ *                    is the `t_` prefix.
+ *
+ * The CLI's `mu task add` uses `truncated` to print a one-line stderr
+ * hint pointing at the `<id>` positional override
+ * (slugifytitle_silently_drops_clauses).
+ */
+export interface SlugifyResult {
+  slug: string;
+  strippedLength: number;
+  truncated: boolean;
+}
+
+/**
+ * Verbose sibling of `slugifyTitle`: returns the slug AND a
+ * `truncated` flag so the CLI can hint to the user when the soft cap
+ * dropped clauses (the meaning-shift hazard documented in
+ * slugifytitle_silently_drops_clauses).
+ *
+ * Algorithm is byte-for-byte identical to `slugifyTitle`; this just
+ * surfaces the metadata that the plain form throws away.
+ */
+export function slugifyTitleVerbose(title: string): SlugifyResult {
   const stripped = title
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "_")
@@ -287,9 +325,18 @@ export function slugifyTitle(title: string): string {
   // First char must be a letter → prefix `t_` if it isn't. v5 has no
   // global namespace and no reserved prefix; `mu_foo` is a perfectly
   // valid local_id (per-workstream unique).
-  return /^[a-z]/.test(trimmed)
+  const slug = /^[a-z]/.test(trimmed)
     ? trimmed.slice(0, SLUG_HARD_CAP)
     : `t_${trimmed}`.slice(0, SLUG_HARD_CAP);
+  // `truncated` reflects whether real characters were dropped — the
+  // `t_` prefix doesn't count as truncation. We compare the trimmed
+  // length against the stripped length (both pre-prefix) so a digit-
+  // led title that fit under the cap still reports truncated=false.
+  return {
+    slug,
+    strippedLength: stripped.length,
+    truncated: trimmed.length < stripped.length,
+  };
 }
 
 /**
@@ -298,11 +345,32 @@ export function slugifyTitle(title: string): string {
  * workstream. On collision, appends `_2`, `_3`, … until unique.
  */
 export function idFromTitle(db: Db, workstream: string, title: string): string {
-  const base = slugifyTitle(title);
-  if (getTask(db, base, workstream) === undefined) return base;
+  return idFromTitleVerbose(db, workstream, title).id;
+}
+
+/**
+ * Result of `idFromTitleVerbose`: the unique-in-workstream id plus the
+ * truncated flag from the underlying slugify pass. Used by `mu task
+ * add` to decide whether to surface the stderr hint about lost clauses
+ * (slugifytitle_silently_drops_clauses).
+ */
+export interface IdFromTitleResult {
+  id: string;
+  truncated: boolean;
+}
+
+/**
+ * Verbose sibling of `idFromTitle`: returns both the unique id and the
+ * `truncated` flag from the slugify pass. Collision-suffixing (`_2`,
+ * `_3`, …) does not flip `truncated` — the underlying slug's lossiness
+ * is what the CLI hint cares about.
+ */
+export function idFromTitleVerbose(db: Db, workstream: string, title: string): IdFromTitleResult {
+  const { slug: base, truncated } = slugifyTitleVerbose(title);
+  if (getTask(db, base, workstream) === undefined) return { id: base, truncated };
   for (let i = 2; i < 1000; i++) {
     const candidate = `${base}_${i}`.slice(0, SLUG_HARD_CAP);
-    if (getTask(db, candidate, workstream) === undefined) return candidate;
+    if (getTask(db, candidate, workstream) === undefined) return { id: candidate, truncated };
   }
   throw new Error(`could not derive a unique id from title in workstream ${workstream}: ${title}`);
 }

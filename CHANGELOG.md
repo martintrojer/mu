@@ -380,6 +380,24 @@ called out under "Breaking" in each entry.
   empty set) skip the bump so `--sort recency` stays honest about
   what was actually written.
 
+- **`mu task add` now warns to stderr when the auto-id derivation
+  truncates the title's slug**
+  (`slugifytitle_silently_drops_clauses`). The `SLUG_SOFT_CAP=40`
+  word-boundary cut keeps ids tidy in tables, but it silently dropped
+  trailing clauses — dogfood-observed twice in one session, with one
+  cut producing an id (`task_list_show_json_omits_localid_only`)
+  whose meaning was the *opposite* of the original title. Now: when
+  the slugify pass dropped real characters, `mu task add` writes a
+  one-line stderr hint (`hint: id 'foo_bar' truncated from a longer
+  slug; pass <id> positional to override...`) before the usual
+  `Added task` line. Stderr-only, exit 0, suppressed under `--json`,
+  no slug-algorithm change — zero behaviour change for scripts; the
+  hint is the entire UX. New SDK helpers `slugifyTitleVerbose()` /
+  `idFromTitleVerbose()` return the same string the plain forms do
+  plus a `truncated: boolean`. `mu task add --help` now documents the
+  word-boundary cap so the operator hears about it before getting
+  bitten.
+
 - **SKILL.md `Next:` invariant now matches the empirical truth: it's
   emitted on MUTATING verbs only**
   (`nextsteps_audit_read_verbs_emit_no_nextsteps`). The skill claimed

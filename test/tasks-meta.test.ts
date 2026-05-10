@@ -20,6 +20,7 @@ import {
   isTaskStatus,
   isValidTaskId,
   slugifyTitle,
+  slugifyTitleVerbose,
 } from "../src/tasks.js";
 
 // ─── Setup / teardown ──────────────────────────────────────────────────
@@ -116,6 +117,45 @@ describe("slugifyTitle", () => {
   it("throws on a title that yields an empty slug", () => {
     expect(() => slugifyTitle("!!!")).toThrow(/empty slug/);
     expect(() => slugifyTitle("")).toThrow(/empty slug/);
+  });
+});
+
+// slugifyTitleVerbose surfaces the `truncated` flag the CLI uses to
+// decide whether to print the meaning-loss hint on `mu task add`
+// (slugifytitle_silently_drops_clauses).
+describe("slugifyTitleVerbose", () => {
+  it("truncated=false for a short title that fits below the soft cap", () => {
+    const r = slugifyTitleVerbose("Build auth module");
+    expect(r.slug).toBe("build_auth_module");
+    expect(r.truncated).toBe(false);
+    expect(r.strippedLength).toBe("build_auth_module".length);
+  });
+
+  it("truncated=true when the soft cap drops a trailing clause", () => {
+    // 64-char stripped slug — the dogfood repro from the originating
+    // task note. The cut at the last `_` at-or-before 40 chars drops
+    // the closing `_top_level_name_is_exposed` clause.
+    const title = "task list/show JSON omits localId; only top-level 'name' is exposed";
+    const r = slugifyTitleVerbose(title);
+    expect(r.truncated).toBe(true);
+    expect(r.slug.length).toBeLessThanOrEqual(40);
+    expect(r.strippedLength).toBeGreaterThan(r.slug.length);
+  });
+
+  it("truncated=true even on the no-underscore-in-window hard-truncate path", () => {
+    // One giant word — there's no underscore to break on, so the slug
+    // gets hard-cut at the soft cap. Still counts as truncated.
+    const r = slugifyTitleVerbose("x".repeat(100));
+    expect(r.truncated).toBe(true);
+    expect(r.slug.length).toBe(40);
+  });
+
+  it("truncated=false when the only difference vs stripped is the t_ prefix", () => {
+    // Digit-leading title gains a `t_` but isn't truncated — no real
+    // bytes were dropped. The CLI hint should not fire here.
+    const r = slugifyTitleVerbose("2024 retro");
+    expect(r.slug).toBe("t_2024_retro");
+    expect(r.truncated).toBe(false);
   });
 });
 

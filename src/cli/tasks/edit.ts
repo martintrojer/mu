@@ -37,7 +37,7 @@ import {
   addTask,
   getTask,
   getTaskEdges,
-  idFromTitle,
+  idFromTitleVerbose,
   listNotes,
   resolveActorIdentity,
   updateTask,
@@ -98,9 +98,17 @@ export async function cmdTaskAdd(
 ): Promise<void> {
   const workstream = await resolveWorkstream(opts.workstream);
   // Derive the id from the title if the user didn't provide one. The
-  // CLI's `<id>` positional is now optional; idFromTitle handles
-  // collisions with `_2`, `_3`, … suffixes.
-  const id = localId ?? idFromTitle(db, workstream, opts.title);
+  // CLI's `<id>` positional is now optional; idFromTitleVerbose handles
+  // collisions with `_2`, `_3`, … suffixes AND surfaces a `truncated`
+  // flag so we can warn the user when the SLUG_SOFT_CAP word-boundary
+  // cut dropped clauses (slugifytitle_silently_drops_clauses).
+  let derivation: { id: string; truncated: boolean };
+  if (localId !== undefined) {
+    derivation = { id: localId, truncated: false };
+  } else {
+    derivation = idFromTitleVerbose(db, workstream, opts.title);
+  }
+  const id = derivation.id;
   const blockedBy = parseCsvFlag(opts.blockedBy);
   const task = addTask(db, {
     localId: id,
@@ -130,8 +138,22 @@ export async function cmdTaskAdd(
     },
   ];
   if (opts.json) {
+    // JSON callers are scripts: stay machine-readable. The hint is a
+    // human-prose convenience and is suppressed under --json (matches
+    // every other prose surface in the CLI).
     emitJson({ task: withRoiAll([task])[0], blockers: blockedBy ?? [], nextSteps });
     return;
+  }
+  // Stderr hint when auto-id derivation truncated the slug. Stderr +
+  // exit 0 so scripts that already pipe stdout aren't disturbed; the
+  // operator sees the heads-up that the id no longer carries the full
+  // title's meaning, with a one-paste fix (pass <id> positional).
+  // Suppressed when the operator passed an explicit id (truncated is
+  // false in that branch) since they already chose the id by hand.
+  if (derivation.truncated) {
+    process.stderr.write(
+      `hint: id '${task.name}' truncated from a longer slug; pass <id> positional to override (mu task add <id> --title ... ).\n`,
+    );
   }
   const idHint = localId === undefined ? pc.dim(" (id derived from title)") : "";
   console.log(

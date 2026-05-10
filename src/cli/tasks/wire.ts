@@ -32,7 +32,7 @@ export function wireTaskCommands(program: Command): void {
   task
     .command("add [id]")
     .description(
-      "Add a task to the graph. The id positional is optional — if omitted, derived from --title via slugify (collisions get _2, _3, … suffixes).",
+      "Add a task to the graph. The id positional is optional — if omitted, derived from --title via slugify (collisions get _2, _3, … suffixes). Auto-derived ids are capped at ~40 chars with a word-boundary cut, so long titles drop trailing clauses; pass the <id> positional explicitly to override.",
     )
     .requiredOption("-t, --title <title>", "task title")
     .requiredOption("-i, --impact <n>", "impact 1..100", parseImpact)
