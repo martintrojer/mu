@@ -164,6 +164,12 @@ Every turn:
   ref is qualified, and the per-poll reconcile loops over every
   workstream in the set (so dead-pane reaping fires across the
   whole wait surface, not just `-w`).
+- **Keep dispatch prompts terse.** Workers have the same skills
+  as the orchestrator and can `mu task notes <id>` for the full
+  spec. The prompt only needs: who they are, the task id, the
+  workspace path, the validate command, and the loud final-action
+  block. Long re-stating of design notes from the prompt is wasted
+  context window.
 - **Cross-workstream `mu task claim --for` is built in.** When
   per-workstream worker pools leave a free worker in workstream A
   and a queued task in workstream B, dispatch with `mu task claim X
