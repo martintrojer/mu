@@ -109,6 +109,22 @@ called out under "Breaking" in each entry.
 
 ### Added
 
+- **Stderr lint hint when `mu agent spawn <name>` violates the
+  smallest-unused-suffix convention** (`agent_spawn_stderr_hint_when_name_does`,
+  source ws task `fb_agent_naming_convention`). Names that don't match
+  `^[a-z][a-z0-9]*(?:-[0-9]+)$` (e.g. `worker-tests`, `alice`,
+  `db-leader`, `x-y-1`) still spawn successfully — this is a lint, not
+  a rule — but mu now writes a one-line hint to stderr after the spawn:
+  `hint: agent name "X" does not match the smallest-unused-suffix
+  convention (<role>-<n>; e.g. worker-1, reviewer-2). Accepted; consider
+  renaming if you spawn additional workers.` Suppressed under `--json`
+  so script callers stay clean. Mirrors the slugify-truncation hint in
+  `cmdTaskAdd` (`slugifytitle_silently_drops_clauses`): stderr-only,
+  exit 0, no schema or behaviour change for scripts that ignore stderr.
+  Surfaced by the dogfood report where the operator named
+  `reviewer-1/2/3`, `worker-1/2/3`, then drifted to `worker-tests` and
+  mu accepted it silently.
+
 - **`mu snapshot prune` and `mu snapshot delete <id>`**
   (`snapshot_gc_caps_too_lax_no_cleanup_verb`). Two new manual
   cleanup verbs for the snapshots collection; both promote what

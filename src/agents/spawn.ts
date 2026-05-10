@@ -19,6 +19,7 @@ import {
 } from "../agents.js";
 import type { Db } from "../db.js";
 import { emitEvent } from "../logs.js";
+import { isJsonMode } from "../output.js";
 import {
   capturePane,
   enableMuPaneBordersForPane,
@@ -35,6 +36,36 @@ import {
 import type { VcsBackendName } from "../vcs.js";
 import { createWorkspace, freeWorkspace } from "../workspace.js";
 import { AgentDiedOnSpawnError, AgentExistsError } from "./errors.js";
+
+/**
+ * Smallest-unused-suffix naming convention for agent names: a role
+ * (lowercase alpha + digits) followed by `-<n>` where `<n>` is one or
+ * more digits. Examples that pass: `worker-1`, `reviewer-2`, `scout-12`.
+ * Examples that warn: `worker-tests`, `alice`, `db-leader`, `x-y-1`.
+ *
+ * Source: feedback ws task fb_agent_naming_convention. The dogfood report
+ * was operators (LLMs included) drifting to descriptive names like
+ * `worker-tests` after a few spawns, breaking the convention silently.
+ * The hint surfaced by `maybeWarnNonConventionalAgentName` is a lint, not
+ * a rule — `isValidAgentName` still accepts the broader
+ * `^[a-z][a-z0-9_-]{0,31}$` shape.
+ */
+const AGENT_NAME_CONVENTION_RE = /^[a-z][a-z0-9]*(?:-[0-9]+)$/;
+
+/**
+ * Stderr lint when an agent name doesn't match the smallest-unused-suffix
+ * convention. Mirrors the slugify-truncation stderr hint in cmdTaskAdd
+ * (commit 28a13af): stderr-only, exit 0, suppressed under --json so
+ * machine consumers stay clean. The spawn already succeeded by the time
+ * this runs — we're just nudging the operator toward `<role>-<n>`.
+ */
+function maybeWarnNonConventionalAgentName(name: string): void {
+  if (AGENT_NAME_CONVENTION_RE.test(name)) return;
+  if (isJsonMode()) return;
+  process.stderr.write(
+    `hint: agent name "${name}" does not match the smallest-unused-suffix convention (<role>-<n>; e.g. worker-1, reviewer-2). Accepted; consider renaming if you spawn additional workers.\n`,
+  );
+}
 
 /**
  * Resolve the actual executable to launch in an agent's pane for a given
@@ -189,6 +220,12 @@ export async function spawnAgent(db: Db, opts: SpawnAgentOptions): Promise<Agent
   // until the first detect cycle). Reconcile will re-push as soon as
   // the operator runs any status-reading verb.
   await refreshAgentTitle(db, opts.name, opts.workstream);
+  // Lint-grade stderr nudge when the operator picked a name that
+  // doesn't fit the <role>-<n> smallest-unused-suffix convention. The
+  // spawn already succeeded; this is advice, not an error. Done LAST
+  // so the hint trails the spawn's own stdout output and so a partial
+  // failure (rolled back above) never emits it.
+  maybeWarnNonConventionalAgentName(opts.name);
   return agent;
 }
 

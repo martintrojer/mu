@@ -402,6 +402,22 @@ If the DB insert fails after the pane was created, mu kills the pane
 to avoid leaking. If the same name was already taken, mu rejects
 **before** calling tmux.
 
+### Naming convention (lint, not a rule)
+
+mu accepts any name matching `/^[a-z][a-z0-9_-]{0,31}$/`, but the
+recommended shape is **`<role>-<n>`** — a lowercase role plus the
+smallest unused integer suffix (e.g. `worker-1`, `reviewer-2`,
+`scout-12`). Names that diverge (`worker-tests`, `alice`, `db-leader`,
+`x-y-1`) still spawn successfully but trigger a one-line stderr hint:
+
+```
+hint: agent name "worker-tests" does not match the smallest-unused-suffix
+convention (<role>-<n>; e.g. worker-1, reviewer-2). Accepted; consider
+renaming if you spawn additional workers.
+```
+
+The hint is suppressed under `--json` so script callers stay clean.
+
 ### Multiple agents in one window (split panes)
 
 Give them a shared `--tab`:
