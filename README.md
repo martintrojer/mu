@@ -97,7 +97,8 @@ ln -s "$PWD/skills/mu" ~/.agents/skills/mu
 the symlink in sync.)
 
 **Requirements:**
-- Node ≥ 20
+- Node 20, 22, or 23 (LTS recommended; see `.nvmrc`). Node 24+ is
+  currently blocked by a `better-sqlite3` native-build incompatibility.
 - tmux ≥ 3.0 (`mu doctor` checks)
 - pi (the agent CLI mu orchestrates)
 - For `--workspace`: jj, sl, or git on PATH (or `--backend none`)
