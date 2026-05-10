@@ -87,18 +87,20 @@ called out under "Breaking" in each entry.
   typed `ImportSourceNotInBucketError` (exit 4) names the bad name +
   the valid ones.
 
-- **`mu hud` accepts multiple workstreams via `--workstreams` or
-  `--all`** (`hud_multi_workstream`). N=1 (the common case, including
-  legacy `mu hud -w X`) renders byte-for-byte unchanged — same
-  columns, same JSON shape — so existing tmux status-bar pipes
-  (`#(mu hud --json) | jq ...`) keep working. N≥2 grows the
-  workstream-summary table to N rows, gains a leading bold-cyan
-  `workstream` column on every section table, and switches the JSON
-  envelope to `{ workstreams: [...] }`. Recent-events table becomes
-  a cross-workstream timeline (DESC by `created_at` across the
-  union). `--workstreams` uses the variadic + parseCsvFlag
-  convention from cli_audit_plurality_uniformity (repeat OR
-  comma-separate OR both).
+- **`mu hud` accepts multiple workstreams via `-w/--workstream` (now
+  variadic) or `--all`** (`hud_multi_workstream` + `hud_unify_workstream_flag`).
+  N=1 (the common case, including legacy `mu hud -w X`) renders
+  byte-for-byte unchanged — same columns, same JSON shape — so
+  existing tmux status-bar pipes (`#(mu hud --json) | jq ...`) keep
+  working. N≥2 grows the workstream-summary table to N rows, gains
+  a leading bold-cyan `workstream` column on every section table,
+  and switches the JSON envelope to `{ workstreams: [...] }`.
+  Recent-events table becomes a cross-workstream timeline (DESC by
+  `created_at` across the union). The variadic shape uses the
+  parseCsvFlag convention from cli_audit_plurality_uniformity
+  (repeat OR comma-separate OR both); the originally-shipped
+  `--workstreams` companion flag was unified into `-w` before
+  release (see the Breaking entry above).
 
 - **CLI multi-value flags now accept repeat OR comma-separated forms
   uniformly** (today's `--blocked-by a,b,c` keeps working; you can now

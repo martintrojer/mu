@@ -511,8 +511,8 @@ export async function cmdHud(db: Db, opts: HudOpts): Promise<void> {
 
   // AUTO-COLLAPSE: N=1 always renders single-mode (no extra column,
   // legacy JSON shape). This keeps `mu hud -w X` byte-for-byte
-  // identical AND collapses `--workstreams X,X` (dedup'd to ['X'])
-  // and `--all` on a single-workstream machine.
+  // identical AND collapses `-w X,X` (dedup'd to ['X']) and `--all`
+  // on a single-workstream machine.
   const multi = workstreams.length > 1;
 
   if (opts.json) {
