@@ -880,6 +880,14 @@ mu workstream destroy --yes                                # workstream auto-det
 # Atomic: archive THEN destroy. Refuses if the archive label
 # doesn't already exist (run `mu archive create <label>` first).
 mu workstream destroy -w auth-refactor --archive v0-3-wave --yes
+
+# Sweep every empty workstream (zero tasks, agents, vcs_workspaces,
+# approvals) in one call. Tmux session presence and audit-only
+# agent_logs do NOT disqualify. Mutually exclusive with -w and
+# --archive. Dry-run lists what WOULD be destroyed; --yes captures
+# ONE snapshot for the whole batch and best-effort destroys each.
+mu workstream destroy --empty                  # dry-run: table of empties
+mu workstream destroy --empty --yes            # destroy them all
 ```
 
 ```

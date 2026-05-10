@@ -137,6 +137,17 @@ called out under "Breaking" in each entry.
   "would archive N tasks to <label>" alongside the existing
   pre-destroy summary.
 
+- **`mu workstream destroy --empty`** sweeps every empty workstream
+  (zero tasks, agents, vcs_workspaces, approvals) in one call;
+  replaces the per-name `jq` incantation over `mu workstream list
+  --json`. Tmux session presence and audit-only `agent_logs` do NOT
+  disqualify. Mutually exclusive with `-w` and `--archive`. Dry-run
+  lists candidates as a table (or array via `--json`); `--yes`
+  captures ONE whole-DB snapshot for the batch, then best-effort
+  destroys each (a per-workstream failure is collected into
+  `failed[]` and the sweep continues). Closes
+  `workstream_destroy_empty_sweep`.
+
 ## [0.2.0] — 2026-05-09
 
 ### Breaking

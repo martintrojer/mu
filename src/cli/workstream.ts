@@ -10,10 +10,11 @@
 
 import { join } from "node:path";
 import { type AddToArchiveResult, addToArchive, getArchive } from "../archives.js";
-import { emitJson, formatWorkstreamsTable, resolveWorkstream } from "../cli.js";
+import { UsageError, emitJson, formatWorkstreamsTable, resolveWorkstream } from "../cli.js";
 import { type Db, defaultStateDir } from "../db.js";
 import { type ImportBucketResult, importBucket } from "../importing.js";
-import { type NextStep, pc, printNextSteps } from "../output.js";
+import { type NextStep, muTable, pc, printNextSteps } from "../output.js";
+import { captureSnapshot } from "../snapshots.js";
 import {
   enableMuPaneBordersForSession,
   listWindows,
@@ -25,6 +26,7 @@ import {
   destroyWorkstream,
   ensureWorkstream,
   exportWorkstream,
+  listEmptyWorkstreams,
   listWorkstreams,
   summarizeWorkstream,
 } from "../workstream.js";
@@ -231,8 +233,13 @@ export async function cmdDestroy(
     json?: boolean;
     export?: boolean;
     archive?: string;
+    empty?: boolean;
   },
 ): Promise<void> {
+  if (opts.empty) {
+    await cmdDestroyEmpty(db, opts);
+    return;
+  }
   const workstream = await resolveWorkstream(opts.workstream);
   // Validate --archive label FIRST so an unknown label refuses the
   // destroy entirely (anti-feature: no auto-create — operators run
@@ -450,6 +457,190 @@ export async function cmdDestroy(
   }
 }
 
+// ─── cmdDestroyEmpty ─────────────────────────────────────────────────
+//
+// `mu workstream destroy --empty` sweeps every workstream with no
+// user-meaningful state (zero tasks, agents, vcs_workspaces, approvals).
+// One snapshot covers the whole sweep; per-workstream destroy errors
+// are accumulated into a `failed` array so a single bad pane doesn't
+// abort the rest of the cleanup. See workstream_destroy_empty_sweep.
+
+interface EmptyDestroyResult {
+  workstreamName: string;
+  killedTmux: boolean;
+  deletedAgents: number;
+  deletedTasks: number;
+  deletedNotes: number;
+  deletedEdges: number;
+  freedWorkspaces: number;
+  alreadyGoneWorkspaces: number;
+}
+
+interface EmptyDestroyFailure {
+  workstreamName: string;
+  error: string;
+}
+
+/** Read created_at for a registered workstream. Returns the empty
+ *  string for tmux-only rows that listEmptyWorkstreams won't surface
+ *  anyway (the predicate requires a workstreams row), keeping the
+ *  signature total. */
+function workstreamCreatedAt(db: Db, name: string): string {
+  const row = db.prepare("SELECT created_at FROM workstreams WHERE name = ?").get(name) as
+    | { created_at: string }
+    | undefined;
+  return row?.created_at ?? "";
+}
+
+async function cmdDestroyEmpty(
+  db: Db,
+  opts: {
+    workstream?: string;
+    yes?: boolean;
+    json?: boolean;
+    archive?: string;
+  },
+): Promise<void> {
+  // --empty is a sweep verb; -w (target a single workstream) and
+  // --archive (snapshot one workstream INTO an archive) both contradict
+  // it. Fail loud with exit 2 (UsageError) so a typo (`--empty -w foo`)
+  // doesn't silently sweep instead of targeting `foo`.
+  if (opts.workstream !== undefined) {
+    throw new UsageError(
+      "--empty is mutually exclusive with -w/--workstream (the sweep targets every empty workstream; -w would contradict that)",
+    );
+  }
+  if (opts.archive !== undefined) {
+    throw new UsageError(
+      "--empty is mutually exclusive with --archive (an empty workstream has nothing to archive; if you wanted to archive a single workstream's contents, drop --empty and use -w <name> --archive <label>)",
+    );
+  }
+
+  const empties = await listEmptyWorkstreams(db);
+
+  if (!opts.yes) {
+    if (opts.json) {
+      emitJson(empties);
+      return;
+    }
+    if (empties.length === 0) {
+      console.log(pc.dim("no empty workstreams found"));
+      return;
+    }
+    const table = muTable({
+      head: ["workstream", "created_at", "tmux"].map((h) => pc.bold(h)),
+      colWidths: [40, null, null],
+    });
+    for (const ws of empties) {
+      table.push([
+        ws.name,
+        pc.dim(workstreamCreatedAt(db, ws.name)),
+        ws.tmuxAlive ? pc.green("alive") : pc.dim("\u2014"),
+      ]);
+    }
+    console.log(table.toString());
+    console.log("");
+    console.log(
+      pc.dim(
+        `${empties.length} empty workstream${empties.length === 1 ? "" : "s"} would be destroyed (dry-run; rerun with --yes to actually destroy).`,
+      ),
+    );
+    console.log(
+      pc.dim(
+        "A single whole-DB snapshot covers the whole sweep; `mu undo --yes` reverts it (DB only \u2014 tmux NOT rolled back).",
+      ),
+    );
+    printNextSteps([
+      {
+        intent: "Confirm and actually destroy every empty workstream",
+        command: "mu workstream destroy --empty --yes",
+      },
+    ]);
+    return;
+  }
+
+  // --yes path. No-op early if there's nothing to do; do NOT take a
+  // snapshot for a zero-row sweep (would clutter the snapshot log
+  // with empty entries on every CI cleanup).
+  if (empties.length === 0) {
+    if (opts.json) {
+      emitJson({ destroyed: 0, results: [], failed: [] });
+      return;
+    }
+    console.log(pc.dim("no empty workstreams found; nothing to destroy"));
+    return;
+  }
+
+  // ONE snapshot covers the whole sweep. Per-call destroyWorkstream
+  // would otherwise capture N snapshots (one per workstream), which is
+  // both noisier and N× more disk for an operation the operator
+  // logically thinks of as a single batch.
+  captureSnapshot(
+    db,
+    `workstream destroy --empty sweep (${empties.length} workstream${empties.length === 1 ? "" : "s"})`,
+    null,
+  );
+
+  const results: EmptyDestroyResult[] = [];
+  const failed: EmptyDestroyFailure[] = [];
+  for (const ws of empties) {
+    try {
+      const result = await destroyWorkstream(db, { workstream: ws.name });
+      results.push({
+        workstreamName: ws.name,
+        killedTmux: result.killedTmux,
+        deletedAgents: result.deletedAgents,
+        deletedTasks: result.deletedTasks,
+        deletedNotes: result.deletedNotes,
+        deletedEdges: result.deletedEdges,
+        freedWorkspaces: result.freedWorkspaces,
+        alreadyGoneWorkspaces: result.alreadyGoneWorkspaces,
+      });
+    } catch (err) {
+      // Best-effort sweep: log the failure and keep going. The snapshot
+      // captured above is the recovery anchor for the whole batch, so
+      // even a half-completed sweep is undoable.
+      failed.push({
+        workstreamName: ws.name,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  if (opts.json) {
+    emitJson({ destroyed: results.length, results, failed });
+    return;
+  }
+  for (const r of results) {
+    console.log(
+      `Destroyed ${pc.bold(r.workstreamName)} ${pc.dim(
+        `(killedTmux=${r.killedTmux}, agents=${r.deletedAgents}, tasks=${r.deletedTasks}, notes=${r.deletedNotes}, edges=${r.deletedEdges})`,
+      )}`,
+    );
+  }
+  if (failed.length > 0) {
+    console.log("");
+    console.log(
+      pc.yellow(
+        `WARNING: ${failed.length} workstream${failed.length === 1 ? "" : "s"} could not be destroyed cleanly:`,
+      ),
+    );
+    for (const f of failed) {
+      console.log(`  - ${f.workstreamName}: ${f.error}`);
+    }
+  }
+  console.log("");
+  console.log(pc.dim(`Sweep complete: destroyed=${results.length}, failed=${failed.length}.`));
+  if (failed.length === 0) {
+    printNextSteps([
+      {
+        intent: "Undo (a snapshot was taken before the sweep; DB only, tmux not rolled back)",
+        command: "mu undo --yes",
+      },
+    ]);
+  }
+}
+
 // ─── commander wiring ────────────────────────────────────────────────
 //
 // wireWorkstreamCommands is called by buildProgram() in src/cli.ts. Wired here so
@@ -482,7 +673,7 @@ export function wireWorkstreamCommands(program: Command): void {
   workstream
     .command("destroy")
     .description(
-      "Tear down a workstream: kill its tmux session and cascade-delete every DB row tagged with its name. Pass --yes to actually destroy; otherwise prints a dry-run summary.",
+      "Tear down a workstream: kill its tmux session and cascade-delete every DB row tagged with its name. Pass --yes to actually destroy; otherwise prints a dry-run summary. With --empty, sweeps every empty workstream (zero tasks/agents/workspaces/approvals) in one call.",
     )
     .option(...WORKSTREAM_OPT)
     .option("-y, --yes", "actually destroy (without this flag, prints a dry-run summary)")
@@ -490,6 +681,10 @@ export function wireWorkstreamCommands(program: Command): void {
     .option(
       "--archive <label>",
       "in-DB archive label to add this workstream's contents to BEFORE destroy (atomic; if archive add fails, destroy aborts)",
+    )
+    .option(
+      "--empty",
+      "sweep every empty workstream (zero tasks, agents, vcs_workspaces, approvals); mutually exclusive with -w and --archive",
     )
     .option(...JSON_OPT)
     .action(function () {
@@ -499,6 +694,7 @@ export function wireWorkstreamCommands(program: Command): void {
         json?: boolean;
         export?: boolean;
         archive?: string;
+        empty?: boolean;
       };
       return handle((db) => cmdDestroy(db, opts))();
     });

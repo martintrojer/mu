@@ -216,6 +216,43 @@ export async function listWorkstreams(db: Db): Promise<WorkstreamSummary[]> {
   return Promise.all(allNames.map((name) => summarizeWorkstream(db, { workstream: name })));
 }
 
+/**
+ * Discover every REGISTERED workstream (a row in `workstreams`) that
+ * has no user-meaningful state attached: zero tasks, zero agents,
+ * zero vcs_workspaces, zero approvals. Tmux session presence and
+ * agent_logs entries do NOT disqualify — the session itself was
+ * created at init time and contains no agent panes; the events are
+ * audit, not state.
+ *
+ * Used by `mu workstream destroy --empty` to sweep test-litter
+ * workstreams in one command (instead of the per-name jq incantation
+ * over `mu workstream list --json`).
+ *
+ * Returns one `WorkstreamSummary` per match, sorted by name.
+ * Predicate runs as a single LEFT-JOIN-grouped query for cheapness;
+ * each match then re-uses summarizeWorkstream for the canonical
+ * shape (tmuxAlive lookup included).
+ */
+export async function listEmptyWorkstreams(db: Db): Promise<WorkstreamSummary[]> {
+  const rows = db
+    .prepare(
+      `SELECT ws.name AS name
+         FROM workstreams ws
+         LEFT JOIN tasks          t  ON t.workstream_id  = ws.id
+         LEFT JOIN agents         a  ON a.workstream_id  = ws.id
+         LEFT JOIN vcs_workspaces v  ON v.workstream_id  = ws.id
+         LEFT JOIN approvals      ap ON ap.workstream_id = ws.id
+        GROUP BY ws.id, ws.name
+       HAVING COUNT(DISTINCT t.id)  = 0
+          AND COUNT(DISTINCT a.id)  = 0
+          AND COUNT(DISTINCT v.id)  = 0
+          AND COUNT(DISTINCT ap.id) = 0
+        ORDER BY ws.name`,
+    )
+    .all() as { name: string }[];
+  return Promise.all(rows.map((r) => summarizeWorkstream(db, { workstream: r.name })));
+}
+
 export async function summarizeWorkstream(
   db: Db,
   opts: WorkstreamOptions,
