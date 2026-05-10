@@ -39,8 +39,21 @@ export class AgentExistsError extends Error implements HasNextSteps {
 
 export class AgentNotFoundError extends Error implements HasNextSteps {
   override readonly name = "AgentNotFoundError";
-  constructor(public readonly agentName: string) {
-    super(`no such agent: ${agentName}`);
+  constructor(
+    public readonly agentName: string,
+    /** Optional workstream context. When set, the message is enriched
+     *  with `(in workstream <ws>)` so the verb that hit the miss
+     *  (e.g. `mu workspace create <agent> -w <ws>`) doesn't leave the
+     *  operator guessing which scope was searched. Optional so existing
+     *  call sites that only know the agent name keep their original
+     *  one-line message. */
+    public readonly workstream?: string,
+  ) {
+    super(
+      workstream === undefined
+        ? `no such agent: ${agentName}`
+        : `no such agent: ${agentName} (in workstream ${workstream})`,
+    );
   }
   errorNextSteps(): NextStep[] {
     return [

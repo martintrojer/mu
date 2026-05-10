@@ -9,7 +9,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { insertAgent } from "../src/agents.js";
+import { AgentNotFoundError, insertAgent } from "../src/agents.js";
 import { type Db, openDb } from "../src/db.js";
 import { detectBackend, gitBackend, jjBackend, noneBackend, slBackend } from "../src/vcs.js";
 import {
@@ -26,6 +26,7 @@ import {
   workspacePath,
 } from "../src/workspace.js";
 import { ensureWorkstream } from "../src/workstream.js";
+import { runCli } from "./_runCli.js";
 
 let stateRoot: string;
 let projectRoot: string;
@@ -417,6 +418,54 @@ describe("workspace SDK (with noneBackend)", () => {
     // pre-fix, the dir survived the failed INSERT, leaving the operator
     // with an orphan dir blocking subsequent spawns.
     expect(() => execFileSync("ls", [futurePath], { stdio: "pipe" })).toThrow();
+  });
+
+  // Regression: workspace_create_typed_no_agent_error. Pre-fix, a
+  // `mu workspace create <name>` for an agent that doesn't exist in the
+  // target workstream leaked SQLite's bare
+  // `NOT NULL constraint failed: vcs_workspaces.agent_id` error to the
+  // operator. The fix throws a typed AgentNotFoundError before the
+  // INSERT (mapped to exit 3 by classifyError).
+  it("createWorkspace throws AgentNotFoundError when the agent doesn't exist in the workstream", async () => {
+    ensureWorkstream(db, "empty"); // no agent rows
+    const before = db.prepare("SELECT COUNT(*) AS c FROM vcs_workspaces").get() as { c: number };
+
+    let caught: unknown;
+    try {
+      await createWorkspace(db, {
+        agent: "ghost",
+        workstream: "empty",
+        projectRoot,
+        backend: "none",
+      });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(AgentNotFoundError);
+    const msg = (caught as Error).message;
+    expect(msg).toContain("ghost");
+    expect(msg).toContain("empty"); // workstream context surfaces
+    expect(msg).not.toMatch(/NOT NULL constraint/i);
+    expect(msg).not.toMatch(/FOREIGN KEY/i);
+
+    // No row was inserted.
+    const after = db.prepare("SELECT COUNT(*) AS c FROM vcs_workspaces").get() as { c: number };
+    expect(after.c).toBe(before.c);
+  });
+
+  it("mu workspace create <missing-agent> exits 3 with a human-friendly message (CLI)", async () => {
+    ensureWorkstream(db, "empty2");
+    const result = await runCli(
+      ["workspace", "create", "ghost", "-w", "empty2", "--project-root", projectRoot],
+      join(dbDir, "mu.db"),
+    );
+    expect(result.error).toBeUndefined();
+    expect(result.exitCode).toBe(3);
+    const combined = `${result.stdout}\n${result.stderr}`;
+    expect(combined).toContain("ghost");
+    expect(combined).toContain("empty2");
+    expect(combined).not.toMatch(/NOT NULL constraint/i);
+    expect(combined).not.toMatch(/FOREIGN KEY/i);
   });
 
   it("listWorkspaces filters by workstream", async () => {

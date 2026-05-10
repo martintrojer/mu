@@ -18,6 +18,7 @@
 import { existsSync, readdirSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
+import { AgentNotFoundError } from "./agents/errors.js";
 import { type Db, defaultStateDir, tryResolveWorkstreamId } from "./db.js";
 import { emitEvent } from "./logs.js";
 import type { HasNextSteps, NextStep } from "./output.js";
@@ -373,17 +374,21 @@ export async function createWorkspace(db: Db, opts: CreateWorkspaceOptions): Pro
     const agentRow = db
       .prepare("SELECT id FROM agents WHERE name = ? AND workstream_id = ? LIMIT 1")
       .get(opts.agent, wsId) as { id: number } | undefined;
-    // Surface the path-UNIQUE failure (the regression test below
-    // asserts on /UNIQUE/) by issuing the INSERT even when agent_id
-    // resolves to NULL — SQLite raises FK / UNIQUE in the same INSERT,
-    // and the caller's catch covers both. We bias toward letting
-    // SQLite's constraint engine speak so the typed error path stays
-    // honest about which constraint actually fired.
-    const agentIdOrNull = agentRow ? agentRow.id : null;
+    // Throw a typed AgentNotFoundError BEFORE the INSERT so the
+    // operator sees `no such agent: worker-1 (in workstream X)`
+    // instead of a leaked `NOT NULL constraint failed:
+    // vcs_workspaces.agent_id` (or, in WAL mode, a FK violation).
+    // The CLI's classifyError maps this to exit 3. Surfaced by the
+    // parallel-fan-out spawn — see workspace_create_typed_no_agent_error.
+    // The catch below reuses the same backend rollback path the
+    // SQLite errors used.
+    if (!agentRow) {
+      throw new AgentNotFoundError(opts.agent, opts.workstream);
+    }
     db.prepare(
       `INSERT INTO vcs_workspaces (agent_id, workstream_id, backend, path, parent_ref, created_at)
        VALUES (?, ?, ?, ?, ?, ?)`,
-    ).run(agentIdOrNull, wsId, backend.name, path, created.parentRef, now);
+    ).run(agentRow.id, wsId, backend.name, path, created.parentRef, now);
   } catch (err) {
     // Best-effort backend-level cleanup. If the backend's free fails
     // (e.g. git worktree remove --force errors), the on-disk state
