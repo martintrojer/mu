@@ -2031,6 +2031,31 @@ describe("waitForTasks", () => {
       expect(warnings[0]).toContain("a stuck");
       expect(warnings[0]).toContain("worker-stuck");
       expect(warnings[0]).toContain("mu task close a");
+      // idle_assigned_agent_detection: the stderr warn is one-shot
+      // and dies with the wait process; the kind='event' row is the
+      // durable corroborating signal that mu state, mu log, and
+      // downstream tools surface. Assert the persist actually
+      // happened (FK intact, prefix matches EVENT_VERB_PREFIXES,
+      // workstream id resolved) and obeys the same one-per-wait
+      // dedupe as the warning.
+      const stalledEvents = listLogs(db, { workstream: "test", kind: "event" }).filter((r) =>
+        r.payload.startsWith("agent stalled"),
+      );
+      expect(stalledEvents).toHaveLength(1);
+      expect(stalledEvents[0]?.payload).toMatch(/^agent stalled worker-stuck owns a for \d+s$/);
+      // Dedupe-across-calls property: a second wait call emits its own
+      // single event (count → 2), not one per poll cycle.
+      const r2 = await waitForTasks(db, ["a", "b"], {
+        pollMs: 10,
+        timeoutMs: 80,
+        stuckAfterMs: 1000,
+        workstream: "test",
+      });
+      expect(r2.timedOut).toBe(true);
+      const stalledEvents2 = listLogs(db, { workstream: "test", kind: "event" }).filter((r) =>
+        r.payload.startsWith("agent stalled"),
+      );
+      expect(stalledEvents2).toHaveLength(2);
     } finally {
       setWaitStuckWarnForTests(restoreWarn);
       setWaitSleepForTests(restoreSleep);
