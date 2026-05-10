@@ -42,6 +42,21 @@ called out under "Breaking" in each entry.
   `ArchiveLabelInvalidError`. Phases 2 (CLI), 3 (destroy hook), and
   4 (export renderer) follow.
 
+- **`mu archive create / list / show / add / remove / delete` —
+  feature complete (6 verbs + tests + docs).** Phase 2 of the v0.3
+  archive feature: thin commander glue (`src/cli/archive.ts`) over
+  the Phase 1 SDK. `mu archive add <label> -w <ws> [--destroy]` is
+  the headline workflow — preserve a workstream's task graph in an
+  operator-named bucket, optionally cascading to `mu workstream
+  destroy --yes`. The bucket is additive: re-add new workstreams
+  under the same label as new releases finish. `mu archive delete`
+  is two-phase (dry-run by default, `--yes` captures a snapshot
+  first). Typed errors map to exit codes: `ArchiveNotFoundError`
+  → 3, `ArchiveAlreadyExistsError` → 4, `ArchiveLabelInvalidError`
+  → 2. `--json` on every verb. Phase 3 (the `mu workstream destroy
+  --archive <label>` shorthand) and Phase 4 (export renderer over
+  archive contents) follow.
+
 ## [0.2.0] — 2026-05-09
 
 ### Breaking

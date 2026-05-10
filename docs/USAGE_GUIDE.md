@@ -41,6 +41,7 @@ current verb list is in `## CLI — complete verb list` of
 13. [The SQL escape hatch (`mu sql`)](#13-the-sql-escape-hatch-is-your-friend)
 14. [Recovery scenarios](#14-recovery-scenarios)
 15. [Cleanup](#15-cleanup)
+15.5. [Archives — cross-workstream preservation](#155-archives--cross-workstream-preservation-of-task-graphs)
 16. [One-shot demo script](#16-one-shot-demo-script)
 17. [Mental model in three sentences](#mental-model-in-three-sentences)
 18. [What's NOT in 0.2.0](#whats-not-in-020-and-how-to-work-around-it)
@@ -923,6 +924,96 @@ even if you forgot. Pass `--no-export` to opt out.
 Markdown only by design — no HTML/PDF, no embedded VCS, no
 cross-workstream merge, no re-import. Operators can pandoc /
 `git init` themselves.
+
+---
+
+## 15.5 Archives — cross-workstream preservation of task graphs
+
+A `mu workstream destroy` blows away the live task graph (a
+snapshot is taken, but it's a binary `.db` only readable through
+`mu undo`). The markdown export above keeps the conversation
+human-readable on disk, but it's not queryable in-DB. The
+**archive** verb is the third option: a structured, queryable
+snapshot of a workstream's task graph (tasks + edges + notes +
+events) that lives in the same `mu.db` indefinitely and can
+accumulate snapshots from MANY workstreams under the same
+operator-named label.
+
+```bash
+mu archive create v0-3-wave --description "v0.3 release wave"
+mu archive add v0-3-wave -w mufeedback-v03
+mu archive add v0-3-wave -w roadmap-v0-3 --destroy   # cascade: archive THEN destroy
+mu archive list                                       # label | tasks | sources | created | last_added
+mu archive show v0-3-wave                             # detail card + per-source-workstream summary
+```
+
+Key properties:
+
+- **Globally-unique labels.** Archive labels live in their own
+  namespace (separate from workstream names). Pick once, reuse
+  across years.
+- **Additive accumulation.** `mu archive add <label> -w <ws>` is
+  idempotent at the (archive, source workstream) granularity.
+  Re-running on the same workstream is a no-op; adding a new task
+  to the source workstream and re-running picks up only the
+  delta. Two different workstreams under the same label coexist
+  as separate `(source_workstream, original_local_id)` rows.
+- **Outlives the source.** `archived_tasks.source_workstream` is
+  TEXT (not an FK), so the source workstream can be destroyed and
+  the archive's snapshot of it stays queryable forever.
+- **Reversible.** `mu archive delete <label> --yes` captures a
+  snapshot first; `mu undo --yes` brings the whole archive back.
+  `mu archive remove <label> -w <ws>` is the surgical version
+  (one source workstream's contribution, without touching
+  siblings).
+
+### Three lifecycle patterns
+
+The verb shape supports all three; pick per-call.
+
+**Pattern A — single bucket per project family** (single growing
+archive, easy cross-time queries):
+
+```bash
+mu archive create mu --description "every mu-self-development workstream"
+mu archive add mu -w mufeedback --destroy           # initial v0.2 wave
+mu archive add mu -w roadmap-v0-2 --destroy
+# weeks later, after v0.3 ships:
+mu archive add mu -w mufeedback-v03 --destroy
+mu archive add mu -w roadmap-v0-3 --destroy
+# months later: same single 'mu' bucket grows.
+```
+
+**Pattern B — per-release buckets** (easier to compare "what
+shipped in v0.2 vs v0.3"):
+
+```bash
+mu archive create mu-v0-2 ; mu archive add mu-v0-2 -w mufeedback --destroy
+mu archive create mu-v0-3 ; mu archive add mu-v0-3 -w mufeedback-v03 --destroy
+```
+
+**Pattern C — hybrid** (a workstream lives in BOTH archives;
+independent rows under each label):
+
+```bash
+mu archive add mu      -w mufeedback-v03
+mu archive add mu-v0-3 -w mufeedback-v03 --destroy
+```
+
+### Anti-features (intentional)
+
+- **No "default" / auto-archive.** `mu workstream destroy` does
+  NOT auto-add to a fallback bucket. Either you picked a label
+  deliberately or you didn't want one.
+- **No re-import.** The archive IS the workstream's afterlife.
+  If you need an archived task back as live work, copy it via
+  `mu sql` into a fresh workstream + `mu task add`.
+- **No archive→archive merge / rename.** Operator-managed via
+  `mu sql` if it ever matters.
+- **Snapshots vs archives are separate concerns.** Snapshots are
+  whole-DB binary backups for one-shot recovery (`mu undo`).
+  Archives are first-class queryable structured data with their
+  own lifecycle. Don't confuse them.
 
 ---
 

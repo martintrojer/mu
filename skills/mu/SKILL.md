@@ -282,6 +282,14 @@ mu undo [--yes] [--to <id>]          # restore latest snapshot (or one chosen)
 mu snapshot list [-n N]              # newest-first: id | label | ws | size
 mu snapshot show <id>                # full metadata for one row
 
+# Archives (6) — cross-workstream preservation of task graphs
+mu archive create <label> [--description "..."]   # one-time bucket setup; labels GLOBALLY unique
+mu archive list                                    # label | tasks | sources | created | last_added
+mu archive show <label>                            # detail card + per-source-workstream summary
+mu archive add <label> -w <ws> [--destroy]         # IDEMPOTENT; --destroy cascades to mu workstream destroy --yes
+mu archive remove <label> -w <ws>                  # surgical un-archive of one source workstream
+mu archive delete <label> [--yes]                  # two-phase; --yes captures a snapshot first
+
 # Escape hatch + state + health
 mu sql "<query>"                     # SELECT / UPDATE / DELETE / WITH
 mu                                   # bare: quick mission control

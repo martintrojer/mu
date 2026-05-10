@@ -36,8 +36,14 @@ import {
   ApprovalNotFoundError,
   ApprovalNotInWorkstreamError,
 } from "./approvals.js";
+import {
+  ArchiveAlreadyExistsError,
+  ArchiveLabelInvalidError,
+  ArchiveNotFoundError,
+} from "./archives.js";
 import { wireAgentCommands, wireSelfCommands } from "./cli/agents.js";
 import { wireApproveCommands } from "./cli/approve.js";
+import { wireArchiveCommands } from "./cli/archive.js";
 import { wireDoctorCommand } from "./cli/doctor.js";
 import { wireHudCommand } from "./cli/hud.js";
 import { wireLogCommand } from "./cli/log.js";
@@ -301,7 +307,11 @@ export function parseStatusOption(raw: string, flag = "--status"): TaskStatus {
  * end is the generic exit-1 catch-all.
  */
 export function classifyError(err: unknown): { label: string; exitCode: number } {
-  if (err instanceof UsageError || err instanceof WorkstreamNameInvalidError) {
+  if (
+    err instanceof UsageError ||
+    err instanceof WorkstreamNameInvalidError ||
+    err instanceof ArchiveLabelInvalidError
+  ) {
     return { label: "error", exitCode: 2 };
   }
   if (
@@ -310,7 +320,8 @@ export function classifyError(err: unknown): { label: string; exitCode: number }
     err instanceof WorkstreamNotFoundError ||
     err instanceof WorkspaceNotFoundError ||
     err instanceof ApprovalNotFoundError ||
-    err instanceof SnapshotNotFoundError
+    err instanceof SnapshotNotFoundError ||
+    err instanceof ArchiveNotFoundError
   ) {
     // WorkstreamNotFoundError originates inside resolveWorkstreamId
     // (src/db.ts) — it's the canonical resolve-time miss for the
@@ -339,7 +350,8 @@ export function classifyError(err: unknown): { label: string; exitCode: number }
     err instanceof ClaimerNotRegisteredError ||
     err instanceof SnapshotVersionMismatchError ||
     err instanceof SchemaTooOldError ||
-    err instanceof TaskIdInvalidError
+    err instanceof TaskIdInvalidError ||
+    err instanceof ArchiveAlreadyExistsError
   ) {
     return { label: "conflict", exitCode: 4 };
   }
@@ -1173,6 +1185,7 @@ export function buildProgram(): Command {
     });
 
   wireWorkstreamCommands(program);
+  wireArchiveCommands(program);
   wireAgentCommands(program);
   wireSelfCommands(program);
   wireWorkspaceCommands(program);
