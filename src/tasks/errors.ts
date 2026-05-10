@@ -166,7 +166,7 @@ export class TaskHasOpenDependentsError extends Error implements HasNextSteps {
       },
       {
         intent: "Drop the blocking edge from a dependent first",
-        command: `mu task unblock <dep> --not-blocked-by ${this.taskId}`,
+        command: `mu task unblock <dep> --by ${this.taskId}`,
       },
       {
         intent: "Address dependents individually first",
