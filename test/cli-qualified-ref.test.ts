@@ -1,7 +1,7 @@
 // CLI tests for the `<workstream>/<name>` qualified entity-arg form.
 //
 // verb_arg_qualified_workstream_name (Phase 3 of the OUTPUT_LABELS_AUDIT):
-// every verb that takes a task / agent / approval / workspace name now
+// every verb that takes a task / agent / workspace name now
 // accepts EITHER:
 //   - bare `<name>`           → resolves via current workstream context
 //   - qualified `<ws>/<name>` → no -w needed; resolves directly

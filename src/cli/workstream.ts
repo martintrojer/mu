@@ -1,8 +1,8 @@
 // mu — `mu workstream` verbs (init / list / destroy).
 //
 // A workstream = one tmux session (`mu-<name>`) + every DB row tagged
-// with that name (agents / tasks / edges / notes / workspaces / logs /
-// approvals). `init` creates the session + DB row pair; `list` shows
+// with that name (agents / tasks / edges / notes / workspaces / logs).
+// `init` creates the session + DB row pair; `list` shows
 // every workstream on the machine; `destroy` is the symmetric inverse,
 // two-phase by default (dry-run; `--yes` commits).
 //
@@ -489,7 +489,7 @@ export async function cmdDestroy(
 // ─── cmdDestroyEmpty ─────────────────────────────────────────────────
 //
 // `mu workstream destroy --empty` sweeps every workstream with no
-// user-meaningful state (zero tasks, agents, vcs_workspaces, approvals).
+// user-meaningful state (zero tasks, agents, vcs_workspaces).
 // One snapshot covers the whole sweep; per-workstream destroy errors
 // are accumulated into a `failed` array so a single bad pane doesn't
 // abort the rest of the cleanup. See workstream_destroy_empty_sweep.
@@ -703,7 +703,7 @@ export function wireWorkstreamCommands(program: Command): void {
   workstream
     .command("destroy")
     .description(
-      "Tear down a workstream: kill its tmux session and cascade-delete every DB row tagged with its name. Pass --yes to actually destroy; otherwise prints a dry-run summary. With --empty, sweeps every empty workstream (zero tasks/agents/workspaces/approvals) in one call.",
+      "Tear down a workstream: kill its tmux session and cascade-delete every DB row tagged with its name. Pass --yes to actually destroy; otherwise prints a dry-run summary. With --empty, sweeps every empty workstream (zero tasks/agents/workspaces) in one call.",
     )
     .option(...WORKSTREAM_OPT)
     .option("-y, --yes", "actually destroy (without this flag, prints a dry-run summary)")
@@ -714,7 +714,7 @@ export function wireWorkstreamCommands(program: Command): void {
     )
     .option(
       "--empty",
-      "sweep every empty workstream (zero tasks, agents, vcs_workspaces, approvals); mutually exclusive with -w and --archive",
+      "sweep every empty workstream (zero tasks, agents, vcs_workspaces); mutually exclusive with -w and --archive",
     )
     .option(...JSON_OPT)
     .action(function () {

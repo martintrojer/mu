@@ -1,5 +1,5 @@
 // Tests for `mu workstream destroy --empty` — sweep every empty
-// workstream (zero tasks, agents, vcs_workspaces, approvals).
+// workstream (zero tasks, agents, vcs_workspaces).
 //
 // Coverage map (mirrors workstream_destroy_empty_sweep design note):
 //
@@ -20,7 +20,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { insertAgent } from "../src/agents.js";
-import { addApproval } from "../src/approvals.js";
 import { type Db, openDb } from "../src/db.js";
 import { addTask } from "../src/tasks.js";
 import {
@@ -108,9 +107,9 @@ afterEach(() => {
  * non-empty ones:
  *   - `with-tasks`  has one task
  *   - `with-agent`  has one agent
- * `empty-a` also has an approval-free, agent-free, task-free
- * registry row whose tmux session is alive (drives the
- * "kill-session on the empty ws" assertion).
+ * `empty-a` also has an agent-free, task-free registry row whose
+ * tmux session is alive (drives the "kill-session on the empty
+ * ws" assertion).
  */
 function seed(state: MockState): void {
   ensureWorkstream(db, "empty-a");
@@ -256,29 +255,6 @@ describe("mu workstream destroy --empty", () => {
     expect(r.error).toBeUndefined();
     const arr = JSON.parse(r.stdout.trim()) as Array<{ name: string }>;
     expect(arr.map((w) => w.name)).toEqual(["audit-only"]);
-  });
-
-  it("excludes a workstream that has only an approval (approvals count as state)", async () => {
-    const state: MockState = {
-      sessions: new Set(),
-      killed: [],
-      killShouldFail: new Set(),
-    };
-    setTmuxExecutor(mockTmux(state));
-    ensureWorkstream(db, "approval-only");
-    addApproval(db, {
-      slug: "ship-it",
-      workstream: "approval-only",
-      reason: "ship",
-      requestedBy: "user",
-    });
-    ensureWorkstream(db, "actually-empty");
-    db.close();
-
-    const r = await runCli(["workstream", "destroy", "--empty", "--json"], dbPath);
-    expect(r.error).toBeUndefined();
-    const arr = JSON.parse(r.stdout.trim()) as Array<{ name: string }>;
-    expect(arr.map((w) => w.name)).toEqual(["actually-empty"]);
   });
 
   it("--empty + -w errors with exit 2 (mutually exclusive)", async () => {

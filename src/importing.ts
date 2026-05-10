@@ -18,7 +18,7 @@
 // What does NOT survive (anti-features per the design note):
 //   - owner_id (agents aren't exported; we keep the original owner
 //     name in the markdown and set owner_id to NULL in the DB).
-//   - agents / workspaces / approvals / agent_logs (out of scope).
+//   - agents / workspaces / agent_logs (out of scope).
 //   - archive labels (separate follow-up if needed).
 //
 // Per source-ws transactionality: every task + edge + note for one

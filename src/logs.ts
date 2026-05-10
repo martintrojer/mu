@@ -342,13 +342,6 @@ export const EVENT_VERB_PREFIXES: readonly string[] = [
   "workstream destroy",
   "workstream export",
   "workstream import",
-  // src/approvals.ts — note `approval`, not `approve`. The CLI verb
-  // is `mu approve`, but the event payload uses the noun `approval`
-  // (followed by a status word, e.g. `approval granted slug ...`).
-  "approval add",
-  "approval granted",
-  "approval denied",
-  "approval timeout",
   // src/archives.ts — v6 archive verbs. Machine-wide events
   // (workstream=null) because archives outlive workstreams.
   "archive create",

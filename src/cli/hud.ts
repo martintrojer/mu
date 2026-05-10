@@ -301,17 +301,17 @@ function formatHudRecentTable(
  *  EVENT_VERB_PREFIXES in src/logs.ts — the same list the SDK uses to
  *  document its emitter contract — so the HUD can't silently drift
  *  away from the verbs callers actually emit (the original ad-hoc
- *  regex did, missing `task block` / `approval granted` / `task
- *  reparent`; see review_code_hud_event_color_regex_drift). Falls back
+ *  regex did, missing `task block` / `task reparent`; see
+ *  review_code_hud_event_color_regex_drift). Falls back
  *  to the original string when nothing matches so we never lose
  *  information just because we couldn't classify. Exported for tests.
  */
 export function colorEventPayload(payload: string): string {
   for (const verb of EVENT_VERB_PREFIXES) {
     // Match the prefix only at a word boundary: the next char must be
-    // end-of-string or whitespace. Prevents `approval addendum` (if
+    // end-of-string or whitespace. Prevents `archive addendum` (if
     // such a payload ever appears) from being mis-coloured as
-    // `approval add`.
+    // `archive add`.
     if (!payload.startsWith(verb)) continue;
     const next = payload.charCodeAt(verb.length);
     if (!Number.isNaN(next) && next !== 0x20 && next !== 0x09) continue;

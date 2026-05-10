@@ -14,20 +14,20 @@
 # survives in src/.
 
 # openDb file header: docstring explains the migration entry point.
-src/db.ts:20
 src/db.ts:21
-src/db.ts:23
+src/db.ts:22
+src/db.ts:24
 
 # SchemaTooOldError docstring (recovery instructions).
-src/db.ts:124
 src/db.ts:125
+src/db.ts:126
 
 # SchemaTooOldError message + nextSteps.
-src/db.ts:225
-src/db.ts:231
+src/db.ts:226
 src/db.ts:232
-src/db.ts:237
+src/db.ts:233
+src/db.ts:238
 
 # EXPECTED_TABLES docstring referencing the v4→v5 transition as the
 # canonical example.
-src/db.ts:339
+src/db.ts:360

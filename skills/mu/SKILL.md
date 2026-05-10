@@ -216,7 +216,7 @@ follow-up commands; agents read it, humans skim past it.
 # Workstream (4)
 mu workstream init <name>            # create tmux session mu-<name> + DB row
 mu workstream list                   # every workstream on this machine
-mu workstream destroy [--yes] [--no-export] [--archive <label>] [--empty]  # tear down; auto-exports to <state-dir>/exports/<ws>-<ts>/; --archive snapshots into an existing archive BEFORE destroy (atomic); --empty sweeps every workstream with zero tasks/agents/workspaces/approvals AND every unregistered mu-* tmux session (test litter / partial-destroy remnants; mu-* prefix only, never arbitrary tmux sessions; mutually exclusive with -w and --archive; one snapshot per sweep; best-effort)
+mu workstream destroy [--yes] [--no-export] [--archive <label>] [--empty]  # tear down; auto-exports to <state-dir>/exports/<ws>-<ts>/; --archive snapshots into an existing archive BEFORE destroy (atomic); --empty sweeps every workstream with zero tasks/agents/workspaces AND every unregistered mu-* tmux session (test litter / partial-destroy remnants; mu-* prefix only, never arbitrary tmux sessions; mutually exclusive with -w and --archive; one snapshot per sweep; best-effort)
 mu workstream export [--out <dir>]   # render task graph + notes to a bucket dir (<out>/<ws>/{README,INDEX,tasks/<id>.md} + bucket-level README/INDEX/manifest.json); additive across workstreams; idempotent
 mu workstream import <bucket-dir> [--workstream <name>] [--dry-run] [--json]  # inverse of export: rebuild every source-ws in the bucket as live tasks + edges + notes; markdown-only (no .db imports); per-source-ws transactional; refuses silent merge into existing
 
@@ -278,13 +278,6 @@ mu log "text" [--as N] [--kind K]    # write
 mu log [-n N] [--source X] [--kind X] [--since SEQ] [--all]
 mu log --tail [--since SEQ]          # subscribe
 
-# Approvals (5) — human-in-the-loop
-mu approve add --reason "..." [--slug X]   # returns slug
-mu approve list [--status S...]      # --status: pending|granted|denied|timeout (multi-value, union)
-mu approve grant <slug>
-mu approve deny  <slug>
-mu approve wait  <slug> [--timeout SECONDS]   # exit 0 / 4 / 5
-
 # Snapshots + undo (3) — every destructive verb auto-snapshots first
 mu undo [--yes] [--to <id>]          # restore latest snapshot (or one chosen)
 mu snapshot list [-n N]              # newest-first: id | label | ws | size
@@ -316,7 +309,7 @@ Universal flags worth knowing without `--help`:
   `*NotInWorkstreamError`); on verbs that pick which entity
   (`mu task next`, `mu agent list`), it picks WHICH.
 - **Qualified entity refs** — every verb that takes a task /
-  agent / approval / workspace name accepts `<workstream>/<name>`
+  agent / workspace name accepts `<workstream>/<name>`
   in addition to bare `<name>`. The qualified form skips `-w`
   resolution: `mu task show roadmap-v0-2/snap_dogfood` works from
   any shell. Mixing qualified ref with a non-matching `-w` errors
@@ -380,11 +373,12 @@ You don't have to manually `task release --reopen` after a crash.
 
 ## SQL escape hatch
 
-`mu sql "<query>"` for anything not yet typed. Schema (v5): 10
-tables (`workstreams`, `agents`, `tasks`, `task_edges`,
-`task_notes`, `agent_logs`, `vcs_workspaces`, `approvals`,
-`snapshots`, `schema_version`) + 3 views (`ready`, `blocked`,
-`goals`). Every entity table has an INTEGER `id` PK; the
+`mu sql "<query>"` for anything not yet typed. Schema (v7):
+9 core tables (`workstreams`, `agents`, `tasks`, `task_edges`,
+`task_notes`, `agent_logs`, `vcs_workspaces`, `snapshots`,
+`schema_version`) + 5 archive tables (`archives`, `archived_tasks`,
+`archived_edges`, `archived_notes`, `archived_events`) + 3 views
+(`ready`, `blocked`, `goals`). Every entity table has an INTEGER `id` PK; the
 operator-facing TEXT name is per-workstream `UNIQUE`. Inspect with
 `mu sql "SELECT name FROM sqlite_master WHERE type IN ('table','view')"`
 or `mu doctor --json | jq .db.schema`.
@@ -403,8 +397,8 @@ mu sql "WITH RECURSIVE prereqs(node) AS (
         ) SELECT * FROM prereqs"
 
 # Rename a workstream (typo recovery). Every FK has ON UPDATE CASCADE
-# so children (agents, tasks, agent_logs, vcs_workspaces, approvals)
-# follow the rename atomically. Run `tmux rename-session -t mu-<old>
+# so children (agents, tasks, agent_logs, vcs_workspaces) follow
+# the rename atomically. Run `tmux rename-session -t mu-<old>
 # mu-<new>` afterwards if the tmux session is alive.
 mu sql "UPDATE workstreams SET name='auth-refactor' WHERE name='auth-refator'"
 ```
@@ -575,19 +569,6 @@ mu task close <id> --evidence "tests pass: ..."        # close
 
 - **Close as the LAST action.** Skipping `mu task close` makes the
   orchestrator's `mu task wait` hang.
-
-### When you need to do something irreversible
-
-Gate on a human approval. Don't `mu workstream destroy` or
-`mu task delete` autonomously — the DB is undoable but the tmux
-side effects (pane kills, workspace dirs freed) are not.
-
-```bash
-slug=$(mu approve add --reason "..." --json | jq -r .slug)
-if mu approve wait "$slug" --timeout 600; then mu task delete X; else exit 1; fi
-```
-
-`mu approve wait` exits 0/4/5 for granted/denied/timeout.
 
 ### Recover from a destructive verb
 

@@ -886,7 +886,14 @@ Audited as three rows for honesty.
 
 ---
 
-## `mu approve`
+## `mu approve` — REMOVED post-v0.3 wave
+
+> **Historical record.** The five `mu approve` verbs and the
+> `approvals` schema table were REMOVED post-v0.3 (zero usage
+> across 200+ tasks of dogfood; `remove_approvals_dead_weight`).
+> The KEEP dispositions below describe the v0.1 audit — they're
+> preserved as audit history, not as a current verb listing. See
+> CHANGELOG.md § [Unreleased] → Removed for the rationale.
 
 ### `mu approve add`
 

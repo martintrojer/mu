@@ -4,8 +4,9 @@
 // applies the schema idempotently, and exposes the live Database handle.
 //
 // Schema (see CHANGELOG.md §"Schema"):
-//   - 9 tables: workstreams, agents, tasks, task_edges, task_notes,
-//               agent_logs, vcs_workspaces, approvals, snapshots
+//   - 8 tables: workstreams, agents, tasks, task_edges, task_notes,
+//               agent_logs, vcs_workspaces, snapshots
+//     (+5 v6 archive_* tables; -1 approvals dropped in v7)
 //   - 1 meta table: schema_version (single row, integer)
 //   - 3 views:  ready, blocked, goals
 //
@@ -294,40 +295,60 @@ export function ensureWorkstreamStateDir(workstream: string): string {
  * views. Pre-v5 DBs never reach this function — openDb's loud-fail
  * hook rejects them with SchemaTooOldError first.
  *
- * v5 → v6 in-place bump: v6 is purely additive (5 new archive_*
+ * v5 → v6 in-place bump: v6 was purely additive (5 new archive_*
  * tables; no existing column / FK / view touched). The CREATE TABLE
- * IF NOT EXISTS blocks above already create the new tables on a v5
- * DB; the UPDATE below stamps schema_version to 6 so subsequent
- * opens see the post-bump version. Forward-only and idempotent.
+ * IF NOT EXISTS blocks above create the new tables on a v5 DB.
+ *
+ * v6 → v7 in-place bump: v7 is destructive — drops the `approvals`
+ * table (zero usage in 200+ task dogfood; anti-anticipatory pruning
+ * per VISION.md "no traits with zero implementors"). The DROP runs
+ * BEFORE the version stamp so a partial migration doesn't leave a
+ * v7-stamped DB with the v6 table still present. Gated on the
+ * detected pre-bump version so it's a one-shot for v6 DBs and a
+ * harmless `IF EXISTS` no-op for fresh v7 DBs.
  */
 function applySchema(db: Db): void {
+  // Sniff the recorded version BEFORE the schema CREATEs land — needed
+  // to decide whether the v6 → v7 destructive migration runs (only on
+  // a DB that's at v6 or older but ≥ v5, the openDb floor).
+  const preBumpVersion = detectExistingSchemaVersion(db);
   db.exec(CURRENT_SCHEMA);
+  // v6 → v7 destructive migration: drop the approvals table on any
+  // pre-v7 DB. IF EXISTS so a fresh v7 DB (no approvals table ever
+  // created) is a no-op too. The DROP must precede the version
+  // stamp below: a partial migration that crashed mid-DROP would
+  // re-run on next open instead of silently leaving the table.
+  if (preBumpVersion !== null && preBumpVersion < 7) {
+    db.exec("DROP INDEX IF EXISTS idx_approvals_status");
+    db.exec("DROP INDEX IF EXISTS idx_approvals_workstream");
+    db.exec("DROP TABLE IF EXISTS approvals");
+  }
   // Stamp the version on a fresh DB. INSERT OR IGNORE so we don't
   // overwrite the version on an existing v5+ DB.
   db.prepare("INSERT OR IGNORE INTO schema_version (id, version) VALUES (1, ?)").run(
     CURRENT_SCHEMA_VERSION,
   );
-  // v5 → v6 forward-additive bump: archive_* tables landed in v6;
-  // a v5 DB that just had them CREATE-IF-NOT-EXISTSed above is now
-  // structurally a v6 DB. Bump the recorded version. Guarded by
-  // `version < ?` so a future v7 open against a v6 DB doesn't
-  // accidentally downgrade.
+  // Forward-additive bump for in-place transitions (v5 → v6 archive
+  // tables, v6 → v7 approvals removal). Guarded by `version < ?` so a
+  // future open against a same-or-newer DB doesn't accidentally
+  // downgrade.
   db.prepare("UPDATE schema_version SET version = ? WHERE id = 1 AND version < ?").run(
     CURRENT_SCHEMA_VERSION,
     CURRENT_SCHEMA_VERSION,
   );
 }
 
-/** The schema version a fresh DB starts at. v6 is the v5 substrate
- *  (surrogate-PK shape; docs/ARCHITECTURE.md § Surrogate-PK + SDK-
- *  boundary discipline) plus 5 additive archive_* tables. The
- *  refusal floor is v5 — pre-v5 DBs throw `SchemaTooOldError`; v5
- *  DBs are forward-bumped to v6 in place by `applySchema`. */
-export const CURRENT_SCHEMA_VERSION = 6;
+/** The schema version a fresh DB starts at. v7 drops the
+ *  `approvals` table on top of v6 (which added 5 archive_* tables
+ *  on top of v5's surrogate-PK substrate; docs/ARCHITECTURE.md §
+ *  Surrogate-PK + SDK-boundary discipline). The refusal floor is
+ *  v5 — pre-v5 DBs throw `SchemaTooOldError`; v5 → v6 → v7 DBs
+ *  are forward-bumped in place by `applySchema`. */
+export const CURRENT_SCHEMA_VERSION = 7;
 
-/** The lowest schema version `openDb` will accept. v5 DBs are
- *  forward-bumped to v6 in place (the v5 → v6 transition is purely
- *  additive — 5 new tables, no existing column changed). Pre-v5
+/** The lowest schema version `openDb` will accept. v5 / v6 DBs are
+ *  forward-bumped to the current version in place (v5 → v6 added
+ *  archive tables; v6 → v7 dropped the approvals table). Pre-v5
  *  DBs throw `SchemaTooOldError`. */
 const MIN_ACCEPTED_SCHEMA_VERSION = 5;
 
@@ -341,7 +362,6 @@ const MIN_ACCEPTED_SCHEMA_VERSION = 5;
 export const EXPECTED_TABLES: readonly string[] = [
   "agent_logs",
   "agents",
-  "approvals",
   "archived_edges",
   "archived_events",
   "archived_notes",
@@ -555,26 +575,6 @@ CREATE TABLE IF NOT EXISTS vcs_workspaces (
 );
 
 CREATE INDEX IF NOT EXISTS idx_vcs_workspaces_workstream ON vcs_workspaces (workstream_id);
-
--- approvals: human-in-the-loop gate. slug is per-workstream unique.
--- workstream_id is NOT NULL (every emitter sets it; the schema
--- enforces the invariant).
-CREATE TABLE IF NOT EXISTS approvals (
-  id            INTEGER PRIMARY KEY AUTOINCREMENT,
-  workstream_id INTEGER NOT NULL REFERENCES workstreams (id) ON DELETE CASCADE,
-  slug          TEXT NOT NULL,
-  reason        TEXT NOT NULL,
-  requested_by  TEXT NOT NULL,
-  status        TEXT NOT NULL DEFAULT 'pending'
-                 CHECK (status IN ('pending','granted','denied','timeout')),
-  decided_by    TEXT,
-  decided_at    TEXT,
-  created_at    TEXT NOT NULL,
-  UNIQUE (workstream_id, slug)
-);
-
-CREATE INDEX IF NOT EXISTS idx_approvals_status ON approvals (status);
-CREATE INDEX IF NOT EXISTS idx_approvals_workstream ON approvals (workstream_id);
 
 -- snapshots: documented exception. NO FK on workstream — a destroy
 -- snapshot must outlive its workstream. workstream column stays TEXT

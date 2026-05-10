@@ -3,7 +3,7 @@
 #
 # CI guard for bug_v5_name_clash_silent_misroute.
 #
-# Post-v5 every entity table (tasks / agents / approvals) has TEXT
+# Post-v5 every entity table (tasks / agents) has TEXT
 # names that are unique only within a workstream. A bare
 # `WHERE local_id = ?` / `WHERE name = ?` / `WHERE slug = ?` SELECT
 # can silently pick the wrong workstream's row when the same name
@@ -147,7 +147,7 @@ function isOffender(sql) {
   // workstreams (with no other entity table in the FROM list).
   const targetsWorkstreamsTableOnly =
     /\b(from|update|into|delete\s+from)\s+workstreams\b/.test(lower) &&
-    !/\b(from|join)\s+(tasks|agents|approvals|task_edges|task_notes|agent_logs|vcs_workspaces|snapshots)\b/.test(
+    !/\b(from|join)\s+(tasks|agents|task_edges|task_notes|agent_logs|vcs_workspaces|snapshots)\b/.test(
       lower,
     );
   if (targetsWorkstreamsTableOnly) return false;

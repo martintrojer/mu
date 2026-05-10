@@ -472,7 +472,7 @@ describe("mu hud — multi-workstream", () => {
 // event-log payload so the eye can group events at a glance. Before
 // review_code_hud_event_color_regex_drift the colourer used a hand-
 // maintained regex that drifted: `task block`, `task reparent`, and
-// `approval granted` were emitted by the SDK but missed by the regex,
+// `task block` were emitted by the SDK but missed by the regex,
 // rendering as plain dim text. The fix moved the verb list to a
 // single source of truth (EVENT_VERB_PREFIXES in src/logs.ts) and the
 // HUD reads from it.
@@ -537,7 +537,6 @@ describe("colorEventPayload", () => {
     const { colorEventPayload } = await import("../src/cli/hud.js");
     for (const payload of [
       "random freeform message",
-      "approve granted slug", // wrong noun (`approve` vs `approval`) — must NOT match
       "snapshot capture foo", // not in the canonical list (snapshots.ts emits no events)
       "taskaddendum sneaky", // word-boundary check
     ]) {
@@ -596,11 +595,6 @@ describe("colorEventPayload", () => {
     }
     expect(callsites.length).toBeGreaterThan(0);
     const knownPrefixes = new Set(EVENT_VERB_PREFIXES);
-    // Special case: src/approvals.ts emits `approval ${newStatus} slug`
-    // where newStatus is one of granted|denied|timeout. The regex
-    // above will see the word `approval` followed by `${` and slice
-    // off only one token — skip those (we have explicit list entries
-    // approval granted/denied/timeout to cover them).
     const unknown = callsites.filter((c) => !knownPrefixes.has(c.payloadPrefix));
     expect(
       unknown,

@@ -280,25 +280,6 @@ export {
   slBackend,
 } from "./vcs.js";
 export {
-  type AddApprovalOptions,
-  ApprovalAlreadyDecidedError,
-  ApprovalNotFoundError,
-  ApprovalNotInWorkstreamError,
-  type ApprovalRow,
-  type ApprovalStatus,
-  type DecideApprovalOptions,
-  type ListApprovalsOptions,
-  type WaitApprovalOptions,
-  addApproval,
-  denyApproval,
-  generateApprovalSlug,
-  getApproval,
-  grantApproval,
-  listApprovals,
-  timeoutApproval,
-  waitApproval,
-} from "./approvals.js";
-export {
   appendLog,
   type AppendLogOptions,
   emitEvent,

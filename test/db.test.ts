@@ -28,7 +28,7 @@ describe("openDb", () => {
     // No throw = parent dirs created.
   });
 
-  it("applies the expected tables (v6: 5 archive_* tables added)", () => {
+  it("applies the expected tables (v7: approvals dropped vs v6)", () => {
     const db = openDb({ path: dbPath });
     const tables = (
       db
@@ -40,7 +40,6 @@ describe("openDb", () => {
     expect(tables).toEqual([
       "agent_logs",
       "agents",
-      "approvals",
       "archived_edges",
       "archived_events",
       "archived_notes",
@@ -54,7 +53,51 @@ describe("openDb", () => {
       "vcs_workspaces",
       "workstreams",
     ]);
+    // schema_version stamped to current (v7).
+    const v = (
+      db.prepare("SELECT version FROM schema_version WHERE id = 1").get() as { version: number }
+    ).version;
+    expect(v).toBe(7);
     db.close();
+  });
+
+  it("v6 → v7 in-place migration drops the approvals table", () => {
+    // Simulate a v6 DB by opening, then manually re-creating an
+    // approvals table + setting schema_version=6, then re-opening.
+    const db1 = openDb({ path: dbPath });
+    db1.exec(
+      `CREATE TABLE approvals (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        workstream_id INTEGER NOT NULL,
+        slug          TEXT NOT NULL,
+        reason        TEXT NOT NULL,
+        requested_by  TEXT NOT NULL,
+        status        TEXT NOT NULL DEFAULT 'pending',
+        decided_by    TEXT,
+        decided_at    TEXT,
+        created_at    TEXT NOT NULL,
+        UNIQUE (workstream_id, slug)
+      )`,
+    );
+    db1.prepare("UPDATE schema_version SET version = 6 WHERE id = 1").run();
+    // Sanity: the table exists at v6.
+    const beforeRow = db1
+      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='approvals'")
+      .get() as { name: string } | undefined;
+    expect(beforeRow?.name).toBe("approvals");
+    db1.close();
+
+    // Re-open: v6 → v7 migration runs, dropping approvals + bumping version.
+    const db2 = openDb({ path: dbPath });
+    const afterRow = db2
+      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='approvals'")
+      .get() as { name: string } | undefined;
+    expect(afterRow).toBeUndefined();
+    const v = (
+      db2.prepare("SELECT version FROM schema_version WHERE id = 1").get() as { version: number }
+    ).version;
+    expect(v).toBe(7);
+    db2.close();
   });
 
   it("creates the ready/blocked/goals views", () => {
@@ -96,7 +139,6 @@ describe("openDb", () => {
     expect(tables).toEqual([
       "agent_logs",
       "agents",
-      "approvals",
       "archived_edges",
       "archived_events",
       "archived_notes",

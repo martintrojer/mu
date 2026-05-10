@@ -13,11 +13,6 @@ import {
   AgentNotInWorkstreamError,
   WorkspacePreservedError,
 } from "../src/agents.js";
-import {
-  ApprovalAlreadyDecidedError,
-  ApprovalNotFoundError,
-  ApprovalNotInWorkstreamError,
-} from "../src/approvals.js";
 import { WorkstreamNotFoundError } from "../src/db.js";
 import { hasNextSteps } from "../src/output.js";
 import {
@@ -96,25 +91,6 @@ describe("typed errors all carry actionable errorNextSteps()", () => {
     ],
     [new WorkspacePreservedError("alice", "/path/to/ws"), "WorkspacePreservedError", ["alice"]],
     [new WorkspaceNotFoundError("alice"), "WorkspaceNotFoundError", ["alice"]],
-    // ApprovalNotFoundError: slugs are short + the approve list is
-    // small, so the recovery is intentionally generic ('mu approve
-    // list'). No entity-token assertion.
-    [new ApprovalNotFoundError("abc12345"), "ApprovalNotFoundError", []],
-    [
-      new ApprovalAlreadyDecidedError("abc12345", "granted"),
-      "ApprovalAlreadyDecidedError",
-      ["abc12345"],
-    ],
-    [
-      new ApprovalNotInWorkstreamError("abc12345", "wsA", "wsB"),
-      "ApprovalNotInWorkstreamError",
-      ["abc12345", "wsB"],
-    ],
-    [
-      new ApprovalNotInWorkstreamError("abc12345", "wsA", null),
-      "ApprovalNotInWorkstreamError (global)",
-      ["abc12345"],
-    ],
     [new WorkstreamNameInvalidError("mu-foo"), "WorkstreamNameInvalidError", ["foo"]],
     // WorkstreamNotFoundError is the resolve-time miss raised by
     // src/db.ts:resolveWorkstreamId — the first leg of the SDK

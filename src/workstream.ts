@@ -221,7 +221,7 @@ export async function listWorkstreams(db: Db): Promise<WorkstreamSummary[]> {
  * attached. Two flavours unioned:
  *
  *   1. REGISTERED-empty: a row in `workstreams` with zero tasks,
- *      zero agents, zero vcs_workspaces, zero approvals. Tmux
+ *      zero agents, zero vcs_workspaces. Tmux
  *      session presence and agent_logs entries do NOT disqualify
  *      — the session itself was created at init time and contains
  *      no agent panes; the events are audit, not state.
@@ -256,12 +256,10 @@ export async function listEmptyWorkstreams(db: Db): Promise<WorkstreamSummary[]>
          LEFT JOIN tasks          t  ON t.workstream_id  = ws.id
          LEFT JOIN agents         a  ON a.workstream_id  = ws.id
          LEFT JOIN vcs_workspaces v  ON v.workstream_id  = ws.id
-         LEFT JOIN approvals      ap ON ap.workstream_id = ws.id
         GROUP BY ws.id, ws.name
        HAVING COUNT(DISTINCT t.id)  = 0
           AND COUNT(DISTINCT a.id)  = 0
           AND COUNT(DISTINCT v.id)  = 0
-          AND COUNT(DISTINCT ap.id) = 0
         ORDER BY ws.name`,
     )
     .all() as { name: string }[];

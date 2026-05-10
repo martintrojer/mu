@@ -63,7 +63,6 @@ mu/
 │   ├── snapshots.ts       # whole-DB snapshots (VACUUM INTO) + auto-capture hook
 │   ├── migrations.ts      # forward-only schema migrations
 │   ├── output.ts          # NextStep type + printNextSteps / errorNextSteps
-│   ├── approvals.ts       # human-in-the-loop gate (add/grant/deny/wait)
 │   ├── cli.ts             # commander wiring, handle()/classifyError, shared format helpers
 │   ├── cli/               # one-file-per-verb-namespace; thin wrappers over the SDK
 │   │   ├── workstream.ts  # init / list / destroy / export
@@ -71,7 +70,6 @@ mu/
 │   │   ├── tasks.ts       # add / claim / release / close / open / reject / defer / note / show / tree / ...
 │   │   ├── workspace.ts   # workspace create / list / free / path / orphans
 │   │   ├── log.ts         # log read / write / tail
-│   │   ├── approve.ts     # approve add / list / grant / deny / wait
 │   │   ├── hud.ts         # hud (dynamic table layout)
 │   │   ├── snapshot.ts    # undo / snapshot list / snapshot show
 │   │   ├── sql.ts         # sql escape hatch

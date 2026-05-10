@@ -11,7 +11,7 @@ current verb list is in `## CLI — complete verb list` of
 > exception, `mu agent attach`), per-agent VCS workspaces
 > (jj/sl/git/none), activity log with `--tail` subscription,
 > canonical state card (`mu state`), `mu hud` (dynamic table
-> layout), human-in-the-loop approvals (`mu approve`), whole-DB
+> layout), whole-DB
 > snapshots auto-captured before destructive verbs +
 > `mu undo` / `mu snapshot {list,show}`, evidence on lifecycle
 > verbs, schema v5 (surrogate INTEGER PKs; per-workstream UNIQUE
@@ -67,7 +67,7 @@ the new dist/.
 
 Mu ships a skill at `skills/mu/SKILL.md` that teaches the LLM
 running inside an agent pane how to use mu (the in-pane working
-loop, the approve-before-destructive pattern, the subscribe-vs-poll
+loop, the subscribe-vs-poll
 pattern, the verb-list reference). Pi auto-loads skills from
 `~/.agents/skills/<name>/SKILL.md` (cross-tool global location)
 and `~/.pi/agent/skills/<name>/SKILL.md` (pi-specific). Either
@@ -762,7 +762,7 @@ rm ~/.local/state/mu/mu.db                  # nuke (last resort; loses task grap
 
 Every destructive verb (`mu task delete`, `mu workstream destroy
 --yes`, `mu task close/reject/defer/release`, `mu agent close`,
-`mu workspace free`, `mu approve grant/deny`) auto-captures a
+`mu workspace free`) auto-captures a
 whole-DB snapshot before it mutates. Restore the latest with
 `mu undo`:
 
@@ -824,7 +824,7 @@ actual paths so you can copy-paste.
 The `workstreams.name` column has `ON UPDATE CASCADE` on every
 child-table foreign key, so renaming a workstream is a single SQL
 statement that propagates atomically through `agents`, `tasks`,
-`agent_logs`, `vcs_workspaces`, and `approvals`:
+`agent_logs`, and `vcs_workspaces`:
 
 ```bash
 # 1. Validate the new name fits the rules (or mu will reject it on
@@ -886,8 +886,8 @@ mu workstream destroy --yes                                # workstream auto-det
 # doesn't already exist (run `mu archive create <label>` first).
 mu workstream destroy -w auth-refactor --archive v0-3-wave --yes
 
-# Sweep every empty workstream (zero tasks, agents, vcs_workspaces,
-# approvals) in one call. Tmux session presence and audit-only
+# Sweep every empty workstream (zero tasks, agents, vcs_workspaces)
+# in one call. Tmux session presence and audit-only
 # agent_logs do NOT disqualify. Also surfaces unregistered `mu-*`
 # tmux sessions (test litter or remnants from a partial destroy that
 # nuked the DB row but left the session behind) — the matching

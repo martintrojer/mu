@@ -15,7 +15,7 @@
 // caught immediately at the unit level.
 //
 // Why a unit test rather than a CLI smoke test: the auto-ensure
-// ergonomic in addTask / addApproval / insertAgent (each calls
+// ergonomic in addTask / insertAgent (each calls
 // `ensureWorkstream` before `resolveWorkstreamId`) means no current
 // CLI verb consistently triggers WorkstreamNotFoundError — so the
 // only way to assert the error→exit mapping is to call the classifier
@@ -24,11 +24,6 @@
 
 import { describe, expect, it } from "vitest";
 import { AgentNotFoundError } from "../src/agents.js";
-import {
-  ApprovalAlreadyDecidedError,
-  ApprovalNotFoundError,
-  ApprovalNotInWorkstreamError,
-} from "../src/approvals.js";
 import { UsageError, classifyError } from "../src/cli.js";
 import { SchemaTooOldError, WorkstreamNotFoundError } from "../src/db.js";
 import { SnapshotNotFoundError } from "../src/snapshots.js";
@@ -61,7 +56,6 @@ describe("classifyError exit-code map", () => {
     // boundary's first leg (operator-name → workstreams.id).
     [new WorkstreamNotFoundError("ghost"), 3, "not found"],
     [new WorkspaceNotFoundError("alice"), 3, "not found"],
-    [new ApprovalNotFoundError("app_xyz"), 3, "not found"],
     [new SnapshotNotFoundError(9999), 3, "not found"],
 
     // exit 4: conflict / state mismatch
@@ -71,8 +65,6 @@ describe("classifyError exit-code map", () => {
     [new CycleError("a", "b"), 4, "conflict"],
     [new WorkspaceExistsError("alice"), 4, "conflict"],
     [new WorkspacePathNotEmptyError("alice", "ws", "/p"), 4, "conflict"],
-    [new ApprovalAlreadyDecidedError("app_xyz", "granted"), 4, "conflict"],
-    [new ApprovalNotInWorkstreamError("app_xyz", "wsA", "wsB"), 4, "conflict"],
     [new SchemaTooOldError(0, 5), 4, "conflict"],
 
     // exit 5: substrate unavailable

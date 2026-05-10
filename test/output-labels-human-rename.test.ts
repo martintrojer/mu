@@ -8,7 +8,6 @@
 //     into `task next -n 0` in the same wave; `my-tasks` / `my-next`
 //     became `mu me tasks` / `mu me next`. The SQL escape hatches
 //     for the removed verbs live in docs/USAGE_GUIDE.md.)
-//   - `mu approve list` table header `slug` → `name`.
 //
 // JSON shape is intentionally NOT touched here (the JSON rename is
 // `output_json_keys_rename_v5`, a separate breaking commit). Tests
@@ -23,7 +22,6 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { addApproval } from "../src/approvals.js";
 import { type Db, openDb } from "../src/db.js";
 import { addBlockEdge, addTask } from "../src/tasks.js";
 import { ensureWorkstream } from "../src/workstream.js";
@@ -96,47 +94,5 @@ describe("output_labels_human_rename: cli-table3 column headers", () => {
     if (!first) throw new Error("expected at least one task row");
     expect(first).toHaveProperty("name");
     expect(first).not.toHaveProperty("localId");
-  });
-});
-
-describe("output_labels_human_rename: approve list column header", () => {
-  let tempDir: string;
-  let dbPath: string;
-  let db: Db;
-
-  beforeEach(() => {
-    tempDir = mkdtempSync(join(tmpdir(), "mu-labels-app-"));
-    dbPath = join(tempDir, "mu.db");
-    db = openDb({ path: dbPath });
-    ensureWorkstream(db, "auth");
-    addApproval(db, {
-      slug: "deploy-prod",
-      workstream: "auth",
-      reason: "ship the v5 cleanup",
-      requestedBy: "alice",
-    });
-  });
-
-  afterEach(() => {
-    db.close();
-    rmSync(tempDir, { recursive: true, force: true });
-  });
-
-  it("`mu approve list` renders a `name` column header (not `slug`)", async () => {
-    const { stdout } = await runCli(["approve", "list", "-w", "auth"], dbPath);
-    const visible = stripAnsi(stdout);
-    expect(visible).toContain("name");
-    expect(visible).not.toMatch(/[│\s]slug[│\s]/);
-  });
-
-  // POST output_json_keys_rename_v5: --json emits the v5 `name` key.
-  it("`mu approve list --json` emits `name` (post v5 JSON rename)", async () => {
-    const { stdout } = await runCli(["approve", "list", "-w", "auth", "--json"], dbPath);
-    const parsed = JSON.parse(stdout.trim()) as Array<Record<string, unknown>>;
-    expect(parsed.length).toBeGreaterThan(0);
-    const first = parsed[0];
-    if (!first) throw new Error("expected at least one approval row");
-    expect(first).toHaveProperty("name");
-    expect(first).not.toHaveProperty("slug");
   });
 });

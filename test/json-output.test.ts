@@ -277,36 +277,6 @@ describe("--json output on read verbs", () => {
     expect(bad.stderr).toMatch(/infra/);
   });
 
-  it("approve verbs accept -w as a scope check; mismatch errors with ApprovalNotInWorkstreamError", async () => {
-    // Add an approval scoped to 'auth', then try to grant it via -w infra.
-    // Direct DB write to avoid pulling in the full approve namespace SDK
-    // here; the helper's behaviour is what we want to assert.
-    const db2 = openDb({ path: dbPath });
-    const wsId = (
-      db2.prepare("SELECT id FROM workstreams WHERE name = 'auth'").get() as { id: number }
-    ).id;
-    db2
-      .prepare(
-        `INSERT INTO approvals (slug, workstream_id, reason, status, requested_by, created_at)
-           VALUES (?, ?, ?, ?, ?, ?)`,
-      )
-      .run("app_test1234", wsId, "test", "pending", "user", new Date().toISOString());
-    db2.close();
-
-    const ok = await runCli(["approve", "deny", "app_test1234", "-w", "auth"], dbPath);
-    expect(ok.stderr).not.toMatch(/unknown option/);
-    expect(ok.stderr).not.toMatch(/conflict:/);
-
-    // After deny, the approval is decided; re-running via wrong -w hits
-    // the scope check BEFORE the already-decided check (assertion runs
-    // first in the handler), so we get "conflict: approval ... is in
-    // workstream auth, not infra".
-    const bad = await runCli(["approve", "grant", "app_test1234", "-w", "infra"], dbPath);
-    expect(bad.stderr).toMatch(/conflict:/);
-    expect(bad.stderr).toMatch(/auth/);
-    expect(bad.stderr).toMatch(/infra/);
-  });
-
   it("task verbs accept -w as a scope check; mismatch errors with TaskNotInWorkstreamError", async () => {
     // Real bug found in real use: `mu task note <id> -w <name> ...`
     // was rejected with "unknown option '-w'". The fix adds

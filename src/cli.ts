@@ -32,17 +32,11 @@ import {
   getAgentByPane,
 } from "./agents.js";
 import {
-  ApprovalAlreadyDecidedError,
-  ApprovalNotFoundError,
-  ApprovalNotInWorkstreamError,
-} from "./approvals.js";
-import {
   ArchiveAlreadyExistsError,
   ArchiveLabelInvalidError,
   ArchiveNotFoundError,
 } from "./archives.js";
 import { wireAgentCommands, wireSelfCommands } from "./cli/agents.js";
-import { wireApproveCommands } from "./cli/approve.js";
 import { wireArchiveCommands } from "./cli/archive.js";
 import { wireDoctorCommand } from "./cli/doctor.js";
 import { wireHudCommand } from "./cli/hud.js";
@@ -130,8 +124,8 @@ export async function resolveWorkstream(explicit?: string): Promise<string> {
 }
 
 /** Like resolveWorkstream but returns null instead of throwing on miss.
- *  Used by the read-permissive verbs (mu log, mu approve list, mu state,
- *  bare mu) where 'no workstream' is a legitimate state to render. */
+ *  Used by the read-permissive verbs (mu log, mu state, bare mu)
+ *  where 'no workstream' is a legitimate state to render. */
 export async function resolveOptionalWorkstream(): Promise<string | null> {
   try {
     return await resolveWorkstream(undefined);
@@ -160,7 +154,7 @@ export class NameAmbiguousError extends Error {
   constructor(
     public readonly entityName: string,
     public readonly candidates: readonly string[],
-    public readonly kind: "task" | "agent" | "approval" | "workspace",
+    public readonly kind: "task" | "agent" | "workspace",
   ) {
     super(
       `${kind} name "${entityName}" exists in ${candidates.length} workstreams (${candidates.join(", ")}); pass -w <workstream> or use the qualified form <workstream>/${entityName}`,
@@ -177,8 +171,7 @@ export class NameAmbiguousError extends Error {
 // ─── Qualified entity refs (cross-workstream verb args) ────────────────
 //
 // Every verb that takes an entity name (mu task show <id>, mu agent
-// send <name>, mu approve grant <slug>, mu workspace path <agent>)
-// accepts EITHER:
+// send <name>, mu workspace path <agent>) accepts EITHER:
 //   - bare `<name>`           → resolves via current workstream context
 //   - qualified `<ws>/<name>` → resolves directly, no -w needed
 // Implemented as a parse-at-CLI-entry helper so the SDK signatures
@@ -224,7 +217,6 @@ export function applyQualifiedRef(raw: string, opts: { workstream?: string }): s
 const ENTITY_TABLES = {
   task: { table: "tasks", keyCol: "local_id" },
   agent: { table: "agents", keyCol: "name" },
-  approval: { table: "approvals", keyCol: "slug" },
   // workspace: lookup is by agent name (vcs_workspaces has agent_id
   // FK; the operator-facing key is the agent name in `agents`).
   workspace: { table: "agents", keyCol: "name" },
@@ -360,7 +352,6 @@ export function classifyError(err: unknown): { label: string; exitCode: number }
     err instanceof TaskNotFoundError ||
     err instanceof WorkstreamNotFoundError ||
     err instanceof WorkspaceNotFoundError ||
-    err instanceof ApprovalNotFoundError ||
     err instanceof SnapshotNotFoundError ||
     err instanceof ArchiveNotFoundError
   ) {
@@ -379,7 +370,6 @@ export function classifyError(err: unknown): { label: string; exitCode: number }
     err instanceof TaskAlreadyOwnedError ||
     err instanceof TaskNotInWorkstreamError ||
     err instanceof AgentNotInWorkstreamError ||
-    err instanceof ApprovalNotInWorkstreamError ||
     err instanceof CycleError ||
     err instanceof TaskHasOpenDependentsError ||
     err instanceof CrossWorkstreamEdgeError ||
@@ -387,7 +377,6 @@ export function classifyError(err: unknown): { label: string; exitCode: number }
     err instanceof WorkspacePathNotEmptyError ||
     err instanceof WorkspacePreservedError ||
     err instanceof HomeDirAsProjectRootError ||
-    err instanceof ApprovalAlreadyDecidedError ||
     err instanceof ClaimerNotRegisteredError ||
     err instanceof SnapshotVersionMismatchError ||
     err instanceof SchemaTooOldError ||
@@ -682,9 +671,10 @@ export function formatWorkstreamsTable(rows: WorkstreamSummary[]): string {
  * Resolve "the agent running this process" by reading `$TMUX_PANE` and
  * looking up the matching agent row. Returns null when `$TMUX_PANE` is
  * unset or the pane isn't a managed agent — the lenient variant used
- * by verbs that have a sensible fallback (e.g. `mu approve add` falls
- * back to 'user'). `resolveSelf` wraps this with the strict throwing
- * variant for verbs that genuinely require a managed-pane caller.
+ * by verbs that have a sensible fallback (the calling agent name when
+ * resolvable, else a generic 'user' / 'orchestrator'). `resolveSelf`
+ * wraps this with the strict throwing variant for verbs that genuinely
+ * require a managed-pane caller.
  */
 export function resolveSelfOptional(db: Db): AgentRow | null {
   const paneId = process.env.TMUX_PANE;
@@ -963,20 +953,19 @@ export function colorStatus(status: TaskRow["status"]): string {
 }
 
 /**
- * Generic workstream-scope assertion. The three typed wrappers
- * (`assertAgentInWorkstream`, `assertTaskInWorkstream`,
- * `assertApprovalInWorkstream`) all share this shape: SELECT the
- * `workstream` column from `<table>` WHERE `<keyCol>` = key, and if
- * the row exists with a non-matching workstream throw a typed
- * `*NotInWorkstreamError`. No-op when `expectedWs` is undefined or
- * the row doesn't exist (downstream handlers raise the matching
- * `*NotFoundError`).
+ * Generic workstream-scope assertion. The two typed wrappers
+ * (`assertAgentInWorkstream`, `assertTaskInWorkstream`) share this
+ * shape: SELECT the `workstream` column from `<table>` WHERE
+ * `<keyCol>` = key, and if the row exists with a non-matching
+ * workstream throw a typed `*NotInWorkstreamError`. No-op when
+ * `expectedWs` is undefined or the row doesn't exist (downstream
+ * handlers raise the matching `*NotFoundError`).
  *
  * Doing the lookup directly via raw SQL (rather than through the
- * typed `getAgent` / `getTask` / `getApproval`) keeps the helper
- * decoupled from each row's full schema — it only ever needs the
- * one column. The typed errors are constructed by `errFactory` so
- * each caller keeps its specific error class and exit-code mapping.
+ * typed `getAgent` / `getTask`) keeps the helper decoupled from
+ * each row's full schema — it only ever needs the one column. The
+ * typed errors are constructed by `errFactory` so each caller keeps
+ * its specific error class and exit-code mapping.
  */
 export function assertEntityInWorkstream<E extends Error>(
   db: Db,
@@ -1240,7 +1229,6 @@ export function buildProgram(): Command {
   wireWorkspaceCommands(program);
   wireTaskCommands(program);
   wireLogCommand(program);
-  wireApproveCommands(program);
   wireStateCommands(program);
   wireHudCommand(program);
   wireSqlCommand(program);

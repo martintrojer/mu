@@ -414,7 +414,7 @@ describe("schema v5 → v6 in-place migration", () => {
     rmSync(tempDir, { recursive: true, force: true });
   });
 
-  it("opens a v5-stamped DB and bumps it to v6 in-place; existing data intact (case 10)", () => {
+  it("opens a v5-stamped DB and bumps it to current (v7) in-place; existing data intact (case 10)", () => {
     // Build a minimally v5-shaped DB with version=5 and one workstream
     // + one task. We don't replicate the full v5 schema — just enough
     // for openDb's pre-flight detector to read schema_version=5 (the
@@ -434,7 +434,7 @@ describe("schema v5 → v6 in-place migration", () => {
       raw.close();
     }
 
-    // Open via mu — the v5→v6 migration runs as part of applySchema.
+    // Open via mu — the v5→v6→v7 migrations run as part of applySchema.
     const db = openDb({ path: dbPath });
     try {
       const version = (
@@ -443,7 +443,6 @@ describe("schema v5 → v6 in-place migration", () => {
         }
       ).version;
       expect(version).toBe(CURRENT_SCHEMA_VERSION);
-      expect(version).toBe(6);
 
       // archive_* tables now exist.
       const tables = (
@@ -465,7 +464,7 @@ describe("schema v5 → v6 in-place migration", () => {
       const ws = db.prepare("SELECT name FROM workstreams").all() as { name: string }[];
       expect(ws.map((r) => r.name)).toEqual(["legacy"]);
 
-      // Re-opening is a no-op (version stays 6, not bumped further).
+      // Re-opening is a no-op (version stays at the current schema, not bumped further).
       db.close();
       const db2 = openDb({ path: dbPath });
       try {
@@ -474,7 +473,7 @@ describe("schema v5 → v6 in-place migration", () => {
             version: number;
           }
         ).version;
-        expect(v2).toBe(6);
+        expect(v2).toBe(CURRENT_SCHEMA_VERSION);
       } finally {
         db2.close();
       }

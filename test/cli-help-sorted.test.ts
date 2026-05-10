@@ -95,16 +95,7 @@ describe("--help Commands list is sorted alphabetically", () => {
   // Every subcommand group shipped today. Adding/removing groups is
   // expected; the test asserts the group's listing is sorted, not
   // any specific membership.
-  const groups = [
-    "workstream",
-    "archive",
-    "agent",
-    "workspace",
-    "task",
-    "approve",
-    "snapshot",
-    "me",
-  ];
+  const groups = ["workstream", "archive", "agent", "workspace", "task", "snapshot", "me"];
 
   for (const group of groups) {
     it(`\`mu ${group} --help\` lists commands alphabetically`, async () => {

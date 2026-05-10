@@ -8,10 +8,8 @@
 //   awk pipe over `mu log --tail`: works for ONE event but the
 //     awk script becomes stateful (tracking 'which of N have closed?')
 //     for multi-task waits. Bad shape for SKILL examples.
-//   mu approve wait: same pattern but for approvals; this is the
-//     symmetric verb for the task graph.
 //
-// Implementation mirrors waitApproval (in src/approvals.ts):
+// Implementation:
 //
 //   1. Initial check — if the wait condition is already satisfied,
 //      exit immediately. No subscription needed.
@@ -23,7 +21,7 @@
 //      one indexed SELECT every second — cheaper than parsing the
 //      log stream.
 //   3. Exit on success (all/any reached) OR timeout. Caller maps
-//      timeout to exit code 5 (mirrors mu approve wait).
+//      timeout to exit code 5.
 //
 // Extracted from src/tasks.ts as part of refactor_split_large_src_files.
 

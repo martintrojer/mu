@@ -289,9 +289,8 @@ anticipatory layering. Each module is concrete and consumed today.
 | `src/workspace.ts`    | Per-agent VCS workspaces (registry layer on top of vcs.ts); CRUD + cascade; orphan-dir detection (`listWorkspaceOrphans`); staleness decoration (`decorateWithStaleness` populates `commitsBehindMain` per row) |
 | `src/snapshots.ts`    | Whole-DB snapshots (`VACUUM INTO`); auto-captured before destructive verbs (schema v4); SDK for `mu undo` |
 | `src/output.ts`       | NextStep type + `printNextSteps` + `errorNextSteps` plumbing for self-documenting output |
-| `src/approvals.ts`    | Human-in-the-loop gate: add/grant/deny/wait verbs                                         |
 | `src/cli.ts`          | commander entry; `buildProgram()` + `handle()` (exit-code map); shared format helpers (`formatTaskListTable` / `formatAgentsTable` / `formatReadyTable` / `formatTracks`); `pc.dim`/`pc.cyan` colour palette helpers |
-| `src/cli/*.ts`        | one file per verb-namespace; thin wrappers over the SDK; `--json` rendering for every read verb. Currently: `workstream.ts`, `agents.ts`, `tasks.ts`, `workspace.ts`, `log.ts`, `approve.ts`, `hud.ts`, `snapshot.ts`, `sql.ts`, `doctor.ts`. Imports flow cluster → root (never the other way). |
+| `src/cli/*.ts`        | one file per verb-namespace; thin wrappers over the SDK; `--json` rendering for every read verb. Currently: `workstream.ts`, `agents.ts`, `tasks.ts`, `workspace.ts`, `log.ts`, `archive.ts`, `hud.ts`, `snapshot.ts`, `sql.ts`, `doctor.ts`, `state.ts`. Imports flow cluster → root (never the other way). |
 | `src/cli/tasks/*.ts`  | sub-cluster of the `mu task` namespace; `tasks.ts` at the root re-exports only what callers outside the cluster import (`wireTaskCommands`, `cmdMyNext`/`cmdMyTasks`, `unescapeNoteText`). One file per concern: `queries.ts` (list/next/owned-by + the `cmdMyTasks` / `cmdMyNext` helpers that back `mu me tasks` / `mu me next`), `lifecycle.ts` (close/open/reject/defer + cascade preview), `edit.ts` (add/show/notes/note/update + helpers), `edges.ts` (block/unblock/reparent/delete), `claim.ts` (claim/release/wait), `tree.ts` (tree rendering), `wire.ts` (Commander glue). Each file < 500 LOC; the hub is < 30. |
 | `src/index.ts`        | SDK entrypoint (re-exports)                                                               |
 | `skills/mu/`          | Bundled skill teaching the LLM the model + verb list + jq pipelines                       |
@@ -409,7 +408,7 @@ back door (anti-feature pledge).
   `src/tasks.ts`, etc.) which validate, transact, snapshot (for
   destructive verbs), and reconcile.
 - **Workstream scoping is mandatory at the CLI boundary.** Post-v5,
-  TEXT names (`tasks.local_id`, `agents.name`, `approvals.slug`) are
+  TEXT names (`tasks.local_id`, `agents.name`) are
   per-workstream unique — the same name may legitimately exist in two
   workstreams. Every public SDK function that takes such a name also
   takes (or threads from a parent context) the workstream; internal
@@ -422,8 +421,7 @@ back door (anti-feature pledge).
   `scripts/grep-name-without-workstream.allowlist`.
 - **Snapshots are insurance, not version history.** Captured only
   before destructive verbs (workstream destroy, agent close, task
-  close/reject/defer/release/delete, workspace free, approve
-  grant/deny). Status flips and additive ops do NOT snapshot.
+  close/reject/defer/release/delete, workspace free). Status flips and additive ops do NOT snapshot.
 - **In-memory state is short-lived** — the CLI's per-command
   connection. Gone on process exit.
 - **Cross-process coordination** is via SQLite WAL — multiple `mu`

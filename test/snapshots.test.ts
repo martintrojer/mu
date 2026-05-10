@@ -15,7 +15,6 @@ import { join } from "node:path";
 import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { closeAgent, getAgent, insertAgent } from "../src/agents.js";
-import { addApproval, denyApproval, grantApproval } from "../src/approvals.js";
 import { CURRENT_SCHEMA_VERSION, type Db, defaultStateDir, openDb } from "../src/db.js";
 import { reconcile } from "../src/reconcile.js";
 import {
@@ -450,30 +449,6 @@ describe("destructive verbs: snapshot is captured before mutation", () => {
   it("deleteTask is a snapshot-no-op for a missing task (idempotent)", () => {
     deleteTask(db, "nonexistent", "auth");
     expect(listSnapshots(db).length).toBe(0);
-  });
-
-  it("freeWorkspace path is exercised via destroyWorkstream below; here we test grantApproval", () => {
-    seedAuth();
-    addApproval(db, {
-      slug: "deploy",
-      reason: "ship to prod",
-      requestedBy: "worker-1",
-      workstream: "auth",
-    });
-    grantApproval(db, "deploy", { decidedBy: "user", workstream: "auth" });
-    expect(listSnapshots(db).map((r) => r.label)).toContain("approval granted deploy");
-  });
-
-  it("denyApproval snapshots before the decision lands", () => {
-    seedAuth();
-    addApproval(db, {
-      slug: "deploy2",
-      reason: "ship to prod",
-      requestedBy: "worker-1",
-      workstream: "auth",
-    });
-    denyApproval(db, "deploy2", { decidedBy: "user", workstream: "auth" });
-    expect(listSnapshots(db).map((r) => r.label)).toContain("approval denied deploy2");
   });
 
   it("destroyWorkstream snapshots whole-DB (workstream=null) before the FK cascade", async () => {

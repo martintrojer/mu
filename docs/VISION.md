@@ -283,9 +283,6 @@ speaking for another.
 - **Async coordination via `mu log`** — Every state-changing verb
   auto-emits a `kind='event'` row. Subscribers `mu log --tail`
   instead of polling. Real-time wakeups without a daemon.
-- **Human-in-the-loop approvals** — `mu approve add/wait` lets agent
-  scripts gate destructive actions on human sign-off. `wait` exits
-  0 (granted) / 4 (denied) / 5 (timeout) for clean shell control flow.
 - **Audit trail with grounding** — `--evidence` on lifecycle verbs
   records what the caller observed. Searchable via `mu log --kind
   event`.
@@ -351,11 +348,11 @@ speaking for another.
    "you are not the orchestrator." Hierarchical orchestration is
    intentional, not accidental.
 
-6. **Subscriptions are polling-based.** `mu log --tail` and
-   `mu approve wait` poll SQLite once per second. SQLite handles the
-   concurrency; latency is bounded by the poll interval. Real
-   subscription mechanisms (SQLite hooks, fs.watch) are a future ask
-   if anyone hits the latency cliff.
+6. **Subscriptions are polling-based.** `mu log --tail` polls
+   SQLite once per second. SQLite handles the concurrency; latency
+   is bounded by the poll interval. Real subscription mechanisms
+   (SQLite hooks, fs.watch) are a future ask if anyone hits the
+   latency cliff.
 
 ---
 
@@ -400,7 +397,7 @@ something mu explicitly does not have.
 | "CLI verbs as a primary model surface vs. typed mutations"    | mu's verbs *are* the typed mutations. CLI is a thin wrapper over a typed SDK with idempotency, validation, exit-code-mapped errors. |
 | "Raw SQL as the only inspection surface is too low-level"     | `mu state` is the canonical state card. `--json` everywhere. `mu sql` is the escape hatch beneath, not the cockpit. |
 | "Distinguish observed from claimed state"                     | `--evidence` on lifecycle verbs (first inch). The verb still trusts the caller; the audit trail records grounding. |
-| "Approval primitives belong in the core"                      | `mu approve add/list/grant/deny/wait` shipped. wait exits 0/4/5 for shell control flow. |
+| "Approval primitives belong in the core"                      | **REMOVED post-v0.3 wave.** Shipped as `mu approve add/list/grant/deny/wait` in v0.1; zero usage across 200+ tasks of dogfood through v0.2 + v0.3. Anti-anticipatory pruning per VISION.md "no traits with zero implementors". May return when a real second implementor surfaces (e.g., an unattended pi-orchestrator running mu). |
 | "Reads must distinguish provenance (process telemetry vs agent self-report)" | event `source` field attributes events to actor (claiming agent / decider / 'system'). |
 | "State must be authoritative and recoverable, not just durable" | Reconciliation runs on read paths; reaper recovers stuck IN_PROGRESS automatically. |
 

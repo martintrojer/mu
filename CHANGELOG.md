@@ -51,6 +51,24 @@ called out under "Breaking" in each entry.
 
 ## [0.3.0] — unreleased
 
+### Removed
+
+- **`mu approve` verbs + `approvals` schema table — REMOVED.** Zero
+  usage across the v0.2 + v0.3 dogfood waves (200+ tasks). Anti-
+  anticipatory pruning per VISION.md "no traits with zero
+  implementors". 706 LOC of SDK + CLI gone (`src/approvals.ts` +
+  `src/cli/approve.ts`); `mu approve add/list/grant/deny/wait` are
+  no longer recognised verbs. The `approvals` table, its indexes,
+  and the `approval add/granted/denied/timeout` event prefixes are
+  all gone too. v6→v7 schema migration drops the table in-place
+  via `applySchema` (DROP TABLE IF EXISTS approvals on any pre-v7
+  DB; gated on the detected pre-bump version so it's a one-shot).
+  The pre-v5 refusal floor in `openDb` stays at v5. May return in
+  v0.4+ when a real second implementor surfaces (e.g., an unattended
+  pi-orchestrator running mu). If you have approvals rows you want
+  to preserve, snapshot first via `mu undo` (or copy them out via
+  `mu sql`) before upgrading.
+
 ### Breaking
 
 - **Bucket export layout (`bucketVersion: 2`); old single-workstream
@@ -70,6 +88,14 @@ called out under "Breaking" in each entry.
   commit; ~150 task files renamed cleanly, no new add/delete pairs).
 
 ### Schema
+
+- **Schema v7: drops the `approvals` table.** Destructive in-place
+  migration via `applySchema` (DROP INDEX + DROP TABLE IF EXISTS,
+  gated on the detected pre-bump version so it runs once on a v6
+  DB and is a no-op on a fresh v7). The pre-v5 refusal floor in
+  `openDb` stays in place; v5 DBs still get the v5→v6 archive
+  tables added before the v6→v7 approvals drop. See the Removed
+  entry above for the rationale.
 
 - **Schema v6: 5 new `archive_*` tables; additive only.** Backs the
   in-progress `mu archive` verb (cross-workstream preservation of

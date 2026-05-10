@@ -1,7 +1,7 @@
 // Regression test for bug_v5_name_clash_silent_misroute.
 //
 // Post-v5 the schema allows the SAME entity name (tasks.local_id,
-// agents.name, approvals.slug) to live in two different workstreams
+// agents.name) to live in two different workstreams
 // at once. Before the fix landed, many SDK paths SELECT'd by bare
 // name with `LIMIT 1` and silently picked an arbitrary workstream's
 // row. The fix threads workstream context through every reachable
@@ -27,13 +27,6 @@ import {
   refreshAgentTitle,
   updateAgentStatus,
 } from "../src/agents.js";
-import {
-  addApproval,
-  denyApproval,
-  getApproval,
-  grantApproval,
-  listApprovals,
-} from "../src/approvals.js";
 import { type Db, openDb } from "../src/db.js";
 import {
   addNote,
@@ -89,19 +82,6 @@ beforeEach(() => {
     impact: 50,
     effortDays: 1,
   });
-  // Same approval slug in both.
-  addApproval(db, {
-    slug: "ship-it",
-    workstream: "wsa",
-    reason: "wsa reason",
-    requestedBy: "userA",
-  });
-  addApproval(db, {
-    slug: "ship-it",
-    workstream: "wsb",
-    reason: "wsb reason",
-    requestedBy: "userB",
-  });
 });
 
 afterEach(() => {
@@ -110,7 +90,7 @@ afterEach(() => {
   resetTmuxExecutor();
 });
 
-describe("v5 name-clash regression: getTask / getAgent / getApproval honour workstream", () => {
+describe("v5 name-clash regression: getTask / getAgent honour workstream", () => {
   it("getTask(db, id, ws) picks the right workstream's row", () => {
     const a = getTask(db, "design", "wsa");
     const b = getTask(db, "design", "wsb");
@@ -127,15 +107,6 @@ describe("v5 name-clash regression: getTask / getAgent / getApproval honour work
     expect(a?.paneId).toBe("%A1");
     expect(b?.workstreamName).toBe("wsb");
     expect(b?.paneId).toBe("%B1");
-  });
-
-  it("getApproval(db, slug, ws) picks the right workstream's row", () => {
-    const a = getApproval(db, "ship-it", "wsa");
-    const b = getApproval(db, "ship-it", "wsb");
-    expect(a?.workstreamName).toBe("wsa");
-    expect(a?.reason).toBe("wsa reason");
-    expect(b?.workstreamName).toBe("wsb");
-    expect(b?.reason).toBe("wsb reason");
   });
 
   it("listTasksByOwner(db, ws, name) returns only that workstream's tasks", () => {
@@ -305,25 +276,6 @@ describe("v5 name-clash regression: agent verbs scope correctly", () => {
     await refreshAgentTitle(db, "worker-1", "wsb");
     expect(getAgent(db, "worker-1", "wsa")?.workstreamName).toBe("wsa");
     expect(getAgent(db, "worker-1", "wsb")?.workstreamName).toBe("wsb");
-  });
-});
-
-describe("v5 name-clash regression: approval verbs scope correctly", () => {
-  it("grantApproval({ workstream }) only grants the right row", () => {
-    grantApproval(db, "ship-it", { decidedBy: "user", workstream: "wsa" });
-    expect(getApproval(db, "ship-it", "wsa")?.status).toBe("granted");
-    expect(getApproval(db, "ship-it", "wsb")?.status).toBe("pending");
-  });
-
-  it("denyApproval({ workstream }) only denies the right row", () => {
-    denyApproval(db, "ship-it", { decidedBy: "user", workstream: "wsb" });
-    expect(getApproval(db, "ship-it", "wsa")?.status).toBe("pending");
-    expect(getApproval(db, "ship-it", "wsb")?.status).toBe("denied");
-  });
-
-  it("listApprovals({ workstream }) only returns that workstream's approvals", () => {
-    expect(listApprovals(db, { workstream: "wsa" })).toHaveLength(1);
-    expect(listApprovals(db, { workstream: "wsb" })).toHaveLength(1);
   });
 });
 

@@ -37,11 +37,6 @@ src/agents.ts::UPDATE agents SET status = ?, updated_at = ? WHERE name = ?
 # (idempotent re-delete of an already-gone agent).
 src/agents.ts::DELETE FROM agents WHERE name = ?
 
-# v4 fall-back: getApproval(db, slug) without workstream. Approval
-# slugs are app_<8hex>, collision-rare; the CLI's wait/grant/deny
-# now pass workstream when known.
-src/approvals.ts::SELECT ${SELECT_APPROVAL_COLS} ${APPROVAL_FROM_JOIN} WHERE ap.slug = ? LIMIT 1
-
 # v4 fall-back: claim's claimerRow lookup when no workstream context
 # is provided (e.g. SDK consumer calls claimTask without opts.workstream).
 # The scoped variant in the same prepare-pair handles the CLI path.

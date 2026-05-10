@@ -2,9 +2,8 @@
 
 **A small, opinionated control plane for a crew of AI coding agents
 working in parallel.** One tmux session, a typed task DAG, isolated
-VCS workspaces per agent, an audit log, human-in-the-loop
-approvals — and a hard refusal to grow into another bloated agent
-framework.
+VCS workspaces per agent, an audit log — and a hard refusal to
+grow into another bloated agent framework.
 
 ```bash
 mu workstream init auth-refactor
@@ -167,7 +166,7 @@ The two play well together. A pi session can install both.
   of every verb. **Start here.**
 - **[skills/mu/SKILL.md](skills/mu/SKILL.md)** — what an LLM
   running inside an agent pane sees: the in-pane working loop,
-  approve-before-destructive pattern, subscribe-vs-poll pattern.
+  subscribe-vs-poll pattern.
 - **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** — module map,
   reconciliation algorithm, schema seam (surrogate INTEGER PKs +
   the SDK boundary discipline).

@@ -182,7 +182,7 @@ Theme: every destructive action becomes recoverable.
 
 `captureSnapshot()` runs at the top of every destructive verb
 (workstream destroy, agent close, task close/reject/defer/release/
-delete, workspace free, approve grant/deny). Whole-DB copy via
+delete, workspace free). Whole-DB copy via
 `VACUUM INTO` (synchronous, FK-page-level atomic). Files land in
 `<dirname(db-path)>/snapshots/<id>.db`; one row per capture in:
 
@@ -259,11 +259,10 @@ task show` and a future `tasks_v` enriched view.
 
 | Item | Source / origin |
 | --- | --- |
-| Approval / policy rules engine — `Allow / Deny / Ask` per pattern-matched action; v2: `~/.local/state/mu/policy.json` | prior-art pattern (approvals) |
 | `CancelScope` for long-running ops — Ctrl-C handling that cooperatively cancels in-flight tmux/exec calls | prior-art pattern (workflows) |
 | `mu.step()` replay cache for `mu run` — re-running a partially-failed script skips already-completed steps | prior-art pattern (workflows; `SqliteWorkflowStore` shape) |
 | `init_tracing(config)` + RAII guard — NDJSON to `<state-dir>/logs/`, MINUTELY rotation, last 100 files | prior-art pattern (tracing) |
-| Subscription-based wakeups — `mu log --tail` and `mu approve wait` poll SQLite once per second; SQLite update hooks (via better-sqlite3) or fs.watch on the WAL would drop latency. | internal critique gap |
+| Subscription-based wakeups — `mu log --tail` polls SQLite once per second; SQLite update hooks (via better-sqlite3) or fs.watch on the WAL would drop latency. | internal critique gap |
 
 ### Schema normalization — SHIPPED in v0.2 (schema v5)
 
@@ -271,7 +270,7 @@ task show` and a future `tasks_v` enriched view.
 as the universal substrate-wide pattern, not just on tasks. See
 [docs/ARCHITECTURE.md § Surrogate-PK + SDK-boundary discipline](ARCHITECTURE.md#surrogate-pk--sdk-boundary-discipline-load-bearing).
 Two operators both running `mu task add design` in different
-workstreams just works; same for agents and approvals.
+workstreams just works; same for agents.
 
 ---
 
@@ -454,11 +453,11 @@ Listed so we don't pretend they're settled.
   "This workstream uses one pi binary, that one uses another" is
   a real gap that env vars don't solve cleanly. Revisit when the
   second user hits it.
-- **Subscription-based wakeups.** `mu log --tail` and `mu approve
-  wait` poll SQLite once per second. Real subscriptions (SQLite
-  update hooks via better-sqlite3, or fs.watch on the WAL) would
-  drop latency at the cost of more machinery. Not worth it until
-  someone hits the cliff.
+- **Subscription-based wakeups.** `mu log --tail` polls SQLite
+  once per second. Real subscriptions (SQLite update hooks via
+  better-sqlite3, or fs.watch on the WAL) would drop latency at
+  the cost of more machinery. Not worth it until someone hits
+  the cliff.
 
 ---
 
