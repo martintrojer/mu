@@ -27,6 +27,7 @@ import {
   createWorkspace,
   freeWorkspace,
   getWorkspaceForAgent,
+  listAllOrphanWorkspaces,
   listWorkspaceOrphans,
   listWorkspaces,
   workspacePath,
@@ -566,5 +567,170 @@ describe("listWorkspaceOrphans", () => {
     ).run();
     const orphans = listWorkspaceOrphans(db, "auth");
     expect(orphans.map((o) => o.agentName)).toEqual(["orphaned"]);
+  });
+});
+
+// ─── listAllOrphanWorkspaces + `mu workspace orphans --all` /
+//     -w <unknown> (regression for
+//     workspace_orphans_misses_destroyed_workstreams) ───
+
+describe("listAllOrphanWorkspaces", () => {
+  let tempDir: string;
+  let db: Db;
+  let dbPath: string;
+
+  beforeEach(() => {
+    tempDir = mkdtempSync(join(tmpdir(), "mu-orphans-all-"));
+    process.env.MU_STATE_DIR = tempDir;
+    dbPath = join(tempDir, "mu.db");
+    db = openDb({ path: dbPath });
+  });
+
+  afterEach(() => {
+    db.close();
+    const key = "MU_STATE_DIR";
+    delete process.env[key];
+    try {
+      rmSync(tempDir, { recursive: true, force: true });
+    } catch {
+      // best effort
+    }
+  });
+
+  it("returns [] when no workspaces dir exists at all", () => {
+    expect(listAllOrphanWorkspaces(db)).toEqual([]);
+  });
+
+  it("flags dirs in destroyed-ws subdirs as `stranded: true`", () => {
+    // The shape from the bug report: a workstream subdir on disk with
+    // an orphan inside, but no row in `workstreams` for the parent.
+    const ghostDir = join(tempDir, "workspaces", "dogfood-snap", "_quarantine_1778249973");
+    mkdirSync(ghostDir, { recursive: true });
+    writeFileSync(join(ghostDir, "README"), "orphan\n");
+    const orphans = listAllOrphanWorkspaces(db);
+    expect(orphans.length).toBe(1);
+    expect(orphans[0]?.workstreamName).toBe("dogfood-snap");
+    expect(orphans[0]?.agentName).toBe("_quarantine_1778249973");
+    expect(orphans[0]?.stranded).toBe(true);
+    expect(orphans[0]?.path).toBe(ghostDir);
+  });
+
+  it("aggregates orphans across multiple workstreams; mixes stranded + live", async () => {
+    // Live workstream `auth` with one orphan dir AND one registered
+    // workspace; plus a fully-stranded workstream `ghost` with one
+    // orphan dir.
+    ensureWorkstream(db, "auth");
+    insertAgent(db, { name: "live", workstream: "auth", paneId: "%1", status: "busy" });
+    insertAgent(db, { name: "orphaned", workstream: "auth", paneId: "%2", status: "busy" });
+    await createWorkspace(db, {
+      agent: "live",
+      workstream: "auth",
+      projectRoot: tempDir,
+      backend: "none",
+    });
+    await createWorkspace(db, {
+      agent: "orphaned",
+      workstream: "auth",
+      projectRoot: tempDir,
+      backend: "none",
+    });
+    db.prepare(
+      `DELETE FROM vcs_workspaces WHERE agent_id = (SELECT id FROM agents WHERE name = 'orphaned')`,
+    ).run();
+
+    const ghostDir = join(tempDir, "workspaces", "ghost", "reviewer-1");
+    mkdirSync(ghostDir, { recursive: true });
+
+    const orphans = listAllOrphanWorkspaces(db);
+    // Two orphans total — 'live' is registered so it must NOT show up.
+    expect(orphans.length).toBe(2);
+    const byWs = new Map(orphans.map((o) => [o.workstreamName, o]));
+    expect(byWs.get("auth")?.agentName).toBe("orphaned");
+    expect(byWs.get("auth")?.stranded).toBe(false);
+    expect(byWs.get("ghost")?.agentName).toBe("reviewer-1");
+    expect(byWs.get("ghost")?.stranded).toBe(true);
+  });
+});
+
+describe("`mu workspace orphans` CLI", () => {
+  let tempDir: string;
+  let db: Db;
+  let dbPath: string;
+
+  beforeEach(() => {
+    tempDir = mkdtempSync(join(tmpdir(), "mu-orphans-cli-"));
+    process.env.MU_STATE_DIR = tempDir;
+    dbPath = join(tempDir, "mu.db");
+    db = openDb({ path: dbPath });
+  });
+
+  afterEach(() => {
+    db.close();
+    const key = "MU_STATE_DIR";
+    delete process.env[key];
+    try {
+      rmSync(tempDir, { recursive: true, force: true });
+    } catch {
+      // best effort
+    }
+  });
+
+  it("-w <unknown> exits 3 with WorkstreamNotFoundError (was: silent 'no orphans')", async () => {
+    ensureWorkstream(db, "auth");
+    db.close();
+    const r = await runCli(["workspace", "orphans", "-w", "totally-nonexistent"], dbPath);
+    expect(r.error).toBeUndefined();
+    expect(r.exitCode).toBe(3);
+    expect(r.stderr).toContain("no such workstream: totally-nonexistent");
+    // Re-open for the afterEach close().
+    db = openDb({ path: dbPath });
+  });
+
+  it("--all aggregates orphans across multiple workstreams (incl. destroyed)", async () => {
+    ensureWorkstream(db, "auth");
+    insertAgent(db, { name: "orphaned", workstream: "auth", paneId: "%1", status: "busy" });
+    await createWorkspace(db, {
+      agent: "orphaned",
+      workstream: "auth",
+      projectRoot: tempDir,
+      backend: "none",
+    });
+    db.prepare(
+      `DELETE FROM vcs_workspaces WHERE agent_id = (SELECT id FROM agents WHERE name = 'orphaned')`,
+    ).run();
+    const ghostDir = join(tempDir, "workspaces", "ghost", "reviewer-1");
+    mkdirSync(ghostDir, { recursive: true });
+    db.close();
+
+    const r = await runCli(["workspace", "orphans", "--all", "--json"], dbPath);
+    expect(r.error).toBeUndefined();
+    expect(r.exitCode).toBeNull();
+    const parsed = JSON.parse(r.stdout) as Array<{
+      workstreamName: string;
+      agentName: string;
+      path: string;
+      stranded: boolean;
+    }>;
+    expect(parsed.length).toBe(2);
+    const byWs = new Map(parsed.map((o) => [o.workstreamName, o]));
+    expect(byWs.get("auth")?.stranded).toBe(false);
+    expect(byWs.get("ghost")?.stranded).toBe(true);
+    db = openDb({ path: dbPath });
+  });
+
+  it("--all overrides -w (an unknown -w with --all does NOT error)", async () => {
+    // Document the choice: --all wins. -w is ignored, including a
+    // typo'd value that would otherwise exit 3 via the tightened
+    // single-ws path.
+    ensureWorkstream(db, "auth");
+    db.close();
+    const r = await runCli(
+      ["workspace", "orphans", "--all", "-w", "totally-nonexistent", "--json"],
+      dbPath,
+    );
+    expect(r.error).toBeUndefined();
+    expect(r.exitCode).toBeNull();
+    expect(JSON.parse(r.stdout)).toEqual([]);
+    db = openDb({ path: dbPath });
   });
 });

@@ -11,15 +11,17 @@ import {
   resolveEntityRef,
   resolveWorkstream,
 } from "../cli.js";
-import type { Db } from "../db.js";
+import { type Db, WorkstreamNotFoundError, tryResolveWorkstreamId } from "../db.js";
 import { type NextStep, pc, printNextSteps } from "../output.js";
 import type { VcsBackendName } from "../vcs.js";
 import {
+  type StrandedWorkspaceOrphan,
   WorkspaceNotFoundError,
   createWorkspace,
   decorateWithStaleness,
   freeWorkspace,
   getWorkspaceForAgent,
+  listAllOrphanWorkspaces,
   listWorkspaceOrphans,
   listWorkspaces,
 } from "../workspace.js";
@@ -128,9 +130,61 @@ export async function cmdWorkspacePath(
 
 export async function cmdWorkspaceOrphans(
   db: Db,
-  opts: { workstream?: string; json?: boolean } = {},
+  opts: { workstream?: string; all?: boolean; json?: boolean } = {},
 ): Promise<void> {
+  // --all overrides scope: ignore -w and scan every workstream subdir
+  // under <state-dir>/workspaces/, INCLUDING workstreams whose row is
+  // gone (those orphans get `stranded: true`). See
+  // workspace_orphans_misses_destroyed_workstreams.
+  if (opts.all === true) {
+    const orphans = listAllOrphanWorkspaces(db);
+    const sample = orphans[0];
+    const nextSteps: NextStep[] =
+      sample === undefined
+        ? []
+        : [
+            {
+              intent: "Remove a specific orphan dir (git: also prunes worktree registry)",
+              command: `(cd <project-root> && git worktree remove --force ${sample.path}) || rm -rf ${sample.path}`,
+            },
+          ];
+    if (opts.json) {
+      emitJson(orphans);
+      return;
+    }
+    if (orphans.length === 0) {
+      console.log(pc.dim("(no orphan workspace dirs across all workstreams)"));
+      return;
+    }
+    console.log(pc.yellow(`${orphans.length} orphan workspace dir(s) across all workstreams:`));
+    const grouped = new Map<string, StrandedWorkspaceOrphan[]>();
+    for (const o of orphans) {
+      const list = grouped.get(o.workstreamName) ?? [];
+      list.push(o);
+      grouped.set(o.workstreamName, list);
+    }
+    for (const [wsName, list] of grouped) {
+      const sampleEntry = list[0];
+      const strandedTag =
+        sampleEntry?.stranded === true ? pc.red(" (stranded: workstream destroyed)") : "";
+      console.log(`  ${pc.bold(wsName)}${strandedTag}`);
+      for (const o of list) {
+        console.log(`    ${pc.bold(o.agentName)}  ${pc.dim(o.path)}`);
+      }
+    }
+    printNextSteps(nextSteps);
+    return;
+  }
+
   const workstream = await resolveWorkstream(opts.workstream);
+  // Tighten resolution: a typo'd or destroyed workstream name used to
+  // happy-path to "no orphans" because listWorkspaceOrphans returns []
+  // when the dir doesn't exist. Match the mutating verbs and surface
+  // WorkstreamNotFoundError (exit 3) instead. See
+  // workspace_orphans_misses_destroyed_workstreams option C.
+  if (tryResolveWorkstreamId(db, workstream) === null) {
+    throw new WorkstreamNotFoundError(workstream);
+  }
   const orphans = listWorkspaceOrphans(db, workstream);
   const nextSteps: NextStep[] =
     orphans.length === 0
@@ -237,12 +291,20 @@ export function wireWorkspaceCommands(program: Command): void {
   workspace
     .command("orphans")
     .description(
-      "List on-disk workspace dirs in <state-dir>/workspaces/<workstream>/ that have no DB row. These block subsequent `--workspace` spawns; surfaced by bug_workspace_orphan_not_in_state. Cleanup recipe shown in Next: hints.",
+      "List on-disk workspace dirs in <state-dir>/workspaces/<workstream>/ that have no DB row. These block subsequent `--workspace` spawns; surfaced by bug_workspace_orphan_not_in_state. With --all, scans every workstream subdir under <state-dir>/workspaces/ INCLUDING workstreams whose row is gone (those rows are tagged `stranded: workstream destroyed`); --all overrides -w. With -w <unknown>, errors via WorkstreamNotFoundError (exit 3) instead of silently printing 'no orphans'. Cleanup recipe shown in Next: hints.",
+    )
+    .option(
+      "--all",
+      "scan every workstream subdir on disk (overrides -w; surfaces dirs whose workstream row is gone as `stranded`)",
     )
     .option(...WORKSTREAM_OPT)
     .option(...JSON_OPT)
     .action(function () {
-      const opts = (this as Command).opts() as { workstream?: string; json?: boolean };
+      const opts = (this as Command).opts() as {
+        workstream?: string;
+        all?: boolean;
+        json?: boolean;
+      };
       return handle((db) => cmdWorkspaceOrphans(db, opts))();
     });
 }

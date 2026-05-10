@@ -231,6 +231,19 @@ export interface WorkspaceOrphan {
 }
 
 /**
+ * Like WorkspaceOrphan but additionally flags whether the parent
+ * workstream itself is gone (no row in `workstreams`). Returned by
+ * listAllOrphanWorkspaces; the per-workstream listWorkspaceOrphans
+ * doesn't carry this since by construction it only runs against an
+ * existing workstream.
+ */
+export interface StrandedWorkspaceOrphan extends WorkspaceOrphan {
+  /** True iff the parent workstream has no DB row (the dir was left
+   *  behind by a `mu workstream destroy` or a manual DELETE). */
+  stranded: boolean;
+}
+
+/**
  * Scan `<state-dir>/workspaces/<workstream>/` for directories that
  * have no row in `vcs_workspaces`. These are the result of:
  *   - pre-cccba88 agents closed without --discard-workspace
@@ -263,6 +276,66 @@ export function listWorkspaceOrphans(db: Db, workstream: string): WorkspaceOrpha
     const fullPath = join(root, agentDir);
     if (!registered.has(fullPath)) {
       orphans.push({ agentName: agentDir, workstreamName: workstream, path: fullPath });
+    }
+  }
+  return orphans;
+}
+
+/**
+ * Cross-workstream variant of listWorkspaceOrphans. Reads
+ * `<state-dir>/workspaces/`, recurses one level (per-ws subdir →
+ * per-agent subdir), and surfaces every dir with no row in
+ * `vcs_workspaces`.
+ *
+ * Each entry is additionally tagged with `stranded: boolean`: true
+ * when the parent workstream has no row in `workstreams`. Stranded
+ * orphans are the failure mode this verb was added for — workstreams
+ * destroyed before the close-refuses-with-workspace fix landed (or
+ * via `mu sql DELETE FROM workstreams ...`) would leave their entire
+ * workspace subtree invisible to `mu workspace orphans -w <ws>`,
+ * because the user couldn't know to ask for the right name.
+ *
+ * Surfaced by workspace_orphans_misses_destroyed_workstreams. Returns
+ * `[]` when the workspaces root itself doesn't exist; otherwise scans
+ * best-effort and skips any subdir that fails to read.
+ */
+export function listAllOrphanWorkspaces(db: Db): StrandedWorkspaceOrphan[] {
+  const root = join(defaultStateDir(), "workspaces");
+  let wsDirs: string[];
+  try {
+    wsDirs = readdirSync(root, { withFileTypes: true })
+      .filter((d) => d.isDirectory())
+      .map((d) => d.name);
+  } catch {
+    return [];
+  }
+  // One pass over every registered workspace path, regardless of
+  // workstream. listWorkspaces(db) joins to workstreams, so any rows
+  // for destroyed workstreams (FK CASCADE-deleted) are already gone —
+  // their on-disk dirs all fall through as stranded.
+  const registered = new Set(listWorkspaces(db).map((w) => w.path));
+  const orphans: StrandedWorkspaceOrphan[] = [];
+  for (const wsName of wsDirs) {
+    const wsRoot = join(root, wsName);
+    let agentDirs: string[];
+    try {
+      agentDirs = readdirSync(wsRoot, { withFileTypes: true })
+        .filter((d) => d.isDirectory())
+        .map((d) => d.name);
+    } catch {
+      continue;
+    }
+    const stranded = tryResolveWorkstreamId(db, wsName) === null;
+    for (const agentDir of agentDirs) {
+      const fullPath = join(wsRoot, agentDir);
+      if (!registered.has(fullPath)) {
+        orphans.push({
+          agentName: agentDir,
+          workstreamName: wsName,
+          path: fullPath,
+          stranded,
+        });
+      }
     }
   }
   return orphans;

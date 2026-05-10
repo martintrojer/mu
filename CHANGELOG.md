@@ -354,6 +354,36 @@ called out under "Breaking" in each entry.
 
 ### Fixed
 
+- **`mu workspace orphans` no longer hides dirs from destroyed
+  workstreams; `--all` flag added; `-w <unknown>` now errors**
+  (`workspace_orphans_misses_destroyed_workstreams`). Three failure
+  modes were folded into one nit: the verb required `-w <ws>`, had
+  no scan-everything mode, and silently returned "no orphans" when
+  the workstream itself didn't exist (so a typo, OR a workstream
+  that had been destroyed without its on-disk dir cleared, hid
+  permanent garbage). Fix is two-part:
+  (1) New `mu workspace orphans --all` enumerates every workstream
+  subdir under `<state-dir>/workspaces/`, recurses one level, and
+  reports orphans across ALL workstreams INCLUDING workstreams
+  whose row is gone. Each entry carries `stranded: boolean` — true
+  when the parent workstream has no DB row, surfacing the destroyed-
+  workstream case. JSON output is a flat array of
+  `{workstreamName, agentName, path, stranded}`. `--all` overrides
+  `-w` (a typo'd `-w` with `--all` is ignored, not an error).
+  (2) `mu workspace orphans -w <unknown>` now throws
+  `WorkstreamNotFoundError` (exit 3) via the same path the mutating
+  verbs use, instead of silently happy-pathing to "(no orphan
+  workspace dirs in <typo>)". The single-ws path now resolves the
+  workstream tightly via `tryResolveWorkstreamId` before scanning.
+  SDK side: new `listAllOrphanWorkspaces(db)` in `src/workspace.ts`
+  and a new `StrandedWorkspaceOrphan` row shape, both re-exported
+  from `src/index.ts`. No env vars, no new layout assumptions, no
+  prune flag (the existing rm/`git worktree remove --force` recipe
+  in Next: hints stays). Regression tests in
+  `test/workspace-sdk.test.ts` cover the SDK aggregation, the
+  destroyed-workstream stranded marker, the typo-`-w` exit-3 path,
+  and the `--all` overrides-`-w` documented choice.
+
 - **`AgentDiedOnSpawnError.errorNextSteps()` now leads with a per-spawn
   `--command` recipe** (`agent_spawn_liveness_check_trips_on`). The
   prior Next: block jumped straight to `export MU_<UPPER_CLI>_COMMAND`,
