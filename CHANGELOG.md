@@ -38,6 +38,11 @@ called out under "Breaking" in each entry.
 
 ### Added
 
+- **`mu --help` and every subcommand `--help` now list commands
+  alphabetically** (`cli_help_alphabetical_subcommands`). Options
+  list ordering inside each verb is unchanged — those are curated
+  semantically; only the Commands listings are sorted.
+
 - **`mu hud` accepts multiple workstreams via `--workstreams` or
   `--all`** (`hud_multi_workstream`). N=1 (the common case, including
   legacy `mu hud -w X`) renders byte-for-byte unchanged — same

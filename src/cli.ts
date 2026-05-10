@@ -1168,6 +1168,12 @@ export function buildProgram(): Command {
     .version(readPackageVersion())
     .helpOption("-h, --help")
     .showHelpAfterError()
+    // Sort the Commands list (NOT the Options list) alphabetically in
+    // every --help screen. Commander v14 inherits configureHelp via
+    // copyInheritedSettings() when subcommands are created with
+    // .command(), but we also walk the tree below for certainty —
+    // future subcommand groups added via .addCommand() do not inherit.
+    .configureHelp({ sortSubcommands: true })
     // Without this, `mu task list --json` would bind --json to the
     // program (where we declare it for the bare `mu --json` mission-
     // control case) instead of the `list` subcommand. With it,
@@ -1199,7 +1205,21 @@ export function buildProgram(): Command {
   wireSqlCommand(program);
   wireSnapshotCommands(program);
   wireDoctorCommand(program);
+  applyAlphabeticalHelpSort(program);
   return program;
+}
+
+// Recursively set sortSubcommands on every command in the tree. Belt
+// and braces over the root .configureHelp() call: guarantees the sort
+// holds regardless of how a subcommand was attached (.command() vs
+// .addCommand()) and regardless of inheritance behaviour across
+// commander versions. Preserves any other help-configuration keys
+// already set on a subcommand.
+function applyAlphabeticalHelpSort(cmd: Command): void {
+  cmd.configureHelp({ ...cmd.configureHelp(), sortSubcommands: true });
+  for (const sub of cmd.commands) {
+    applyAlphabeticalHelpSort(sub);
+  }
 }
 
 // ─── Entry point ───────────────────────────────────────────────────────
