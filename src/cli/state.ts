@@ -269,19 +269,14 @@ export async function cmdState(db: Db, opts: StateOpts): Promise<void> {
   // legacy static card is the default for `mu state` so it stays
   // visible to LLMs, screenshots, docs, and muscle-memory users.
   // See feat_resurrect_state_card (workstream `tui-impl`) for the
-  // rationale on demoting the prior TTY auto-route. Multi-ws TUI is
-  // its own follow-up (feat_tui_multi_workstream). Mutual-exclusion
+  // rationale on demoting the prior TTY auto-route. Mutual-exclusion
   // with --json / --mission is enforced earlier (above the JSON
-  // branch); only the multi-ws guard is left here because it depends
-  // on resolveWorkstreamSet() output.
+  // branch). Multi-workstream TUI is supported via tabs as of
+  // feat_tui_multi_workstream (workstream `tui-impl`): the resolved
+  // ws set is forwarded to <App>; Tab / Shift-Tab cycles tabs.
   if (opts.tui === true) {
-    if (multi) {
-      throw new UsageError("--tui currently supports a single workstream; pass exactly one -w");
-    }
     const { runTui } = await import("./tui/index.js");
-    const single = perWs[0];
-    if (single === undefined) throw new Error("invariant: workstreams non-empty");
-    await runTui(db, { workstream: single.workstreamName });
+    await runTui(db, { workstreams: perWs.map((d) => d.workstreamName) });
     return;
   }
 
@@ -470,7 +465,7 @@ export function wireStateCommands(program: Command): void {
     .option("--mission", "stripped 5-column glance card (agents + orphans + tracks + ready)")
     .option(
       "--tui",
-      "interactive TUI (rounded-border dashboard with cards + popups; single-ws only)",
+      "interactive TUI (rounded-border dashboard with cards + popups; multi-ws via Tab/Shift-Tab tabs)",
     )
     .option(
       "--events <n>",

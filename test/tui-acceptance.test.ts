@@ -134,7 +134,10 @@ describe("TUI end-to-end acceptance", () => {
     // the static card stays the default for `mu state`.)
     expect(src).toMatch(/opts\.tui === true/);
     expect(src).toMatch(/await import\("\.\/tui\/index\.js"\)/);
-    expect(src).toMatch(/runTui\(db,\s*\{ workstream:/);
+    // Multi-ws TUI shipped as feat_tui_multi_workstream: runTui
+    // now takes an array of workstream names (Tab/Shift-Tab cycles
+    // the active tab). Single-ws is the N=1 degenerate case.
+    expect(src).toMatch(/runTui\(db,\s*\{ workstreams:/);
   });
 
   it("runTui enters and exits the alt-screen so the dashboard is flush with the top of the pane", async () => {

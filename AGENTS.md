@@ -104,6 +104,7 @@ mu/
 │   │   │   ├── columns.ts  # column-aligned row layout with protect/clip clipping
 │   │   │   ├── help.tsx    # ?/F1 keymap overlay
 │   │   │   ├── use-popup-filter.tsx  # shared '/' substring filter (hook + reducer + applyFilter + FilterPrompt)
+│   │   │   ├── tab-strip.tsx  # multi-workstream tab switcher (rendered above cards when N≥2)
 │   │   │   ├── cards/{agents,tracks,ready,log,workspaces,inprogress,blocked,recent,doctor}.tsx  # 9 dashboard glance cards
 │   │   │   └── popups/{agents,tracks,ready,log,workspaces,inprogress,blocked,recent,doctor}.tsx  # 9 fullscreen drill-down popups
 │   │   ├── snapshot.ts    # undo / snapshot list / snapshot show

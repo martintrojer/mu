@@ -104,6 +104,20 @@ describe("dispatchGlobalKey: refresh / quit / help / footer-clear", () => {
   });
 });
 
+describe("dispatchGlobalKey: workstream tab navigation (multi-ws TUI)", () => {
+  // Per feat_tui_multi_workstream (workstream `tui-impl`): Tab
+  // cycles to the next workstream tab, Shift-Tab to the previous.
+  // The dispatcher emits the action unconditionally; the App
+  // suppresses the action while a popup is open and degenerates
+  // to a noop when only one workstream is loaded.
+  it("Tab nextTab", () => {
+    expect(dispatchGlobalKey("", { tab: true })).toEqual({ kind: "nextTab" });
+  });
+  it("Shift-Tab prevTab", () => {
+    expect(dispatchGlobalKey("", { tab: true, shift: true })).toEqual({ kind: "prevTab" });
+  });
+});
+
 describe("dispatchGlobalKey: unknown input", () => {
   it("returns noop for unrecognised characters", () => {
     for (const c of ["x", "z", "/", ".", " ", "\n"]) {

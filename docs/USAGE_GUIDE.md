@@ -455,16 +455,23 @@ mu                          # bare alias for `mu state --mission`
   workspaces is too much for that intent; `--mission` is the
   intentional minimum-viable orient view.
 
-`--tui` is mutually exclusive with `--json`, `--mission`, and multi-ws
-(currently single-workstream only).
+`--tui` is mutually exclusive with `--json` and `--mission`.
+Multi-workstream `--tui` IS supported: tabs (Tab / Shift-Tab) cycle
+through the resolved set, one workstream visible at a time. Per-card
+rows always belong to the active tab; cards/popups never gain a
+per-row workstream column (the active tab encodes ws identity).
 
 Multi-workstream: pass `-w` multiple values to render N workstreams
 in one card. `-w a,b,c`, `-w a -w b`, or any mix all work — see
 [CLI conventions](#cli-conventions-multi-value-flags). `--all` is
 sugar for "every workstream on this machine" (mutually exclusive with
 `-w`). In default + `--mission` modes N≥2 stacks one per-workstream
-card after another. The `--json` envelope wraps in
-`{ workstreams: [...] }` when N≥2.
+card after another. In `--tui` mode N≥2 surfaces a one-row tab strip
+above the cards (`workstreams: ▸ active · next · …`); `Tab` /
+`Shift-Tab` cycles, the active tab name appears in the status bar's
+right zone next to the tick rate, and popups always operate on the
+active tab. The `--json` envelope wraps in `{ workstreams: [...] }`
+when N≥2.
 
 JSON shapes (per render mode):
 

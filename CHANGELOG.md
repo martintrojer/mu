@@ -18,6 +18,31 @@ is opt-in via the new `--tui` flag.
 
 ### Added
 
+- **TUI multi-workstream tabs (`mu state --tui -w A,B,C`)** — the
+  TUI now accepts the same multi-value `-w` set the static card
+  has always supported (and `--all`). N≥2 surfaces a one-row tab
+  strip above the cards (`workstreams: ▸ active · next · …`)
+  with the active tab in bold/cyan + a colour-blind-safe `▸ `
+  marker; `Tab` cycles forward, `Shift-Tab` backward (suppressed
+  while a popup is open so the same key still navigates inside
+  popups that bind it locally). Cards / popups remain single-ws
+  (they read the active tab's snapshot); per the design note in
+  feat_tui_multi_workstream the Agents card does NOT grow a per-
+  row workstream column — the active tab encodes ws identity, and
+  a column would steal real estate from the actual signal columns.
+  The status bar's right zone gains a `[<active-ws>]` prefix next
+  to the tick rate so the active tab is visible without looking up
+  at the strip. Single-ws TUI (N=1) is byte-identical to the
+  pre-multi-ws frame: the strip renders nothing, the status-bar
+  prefix is omitted. New `<TabStrip>` component in
+  `src/cli/tui/tab-strip.tsx` (the only new file); `<App>` takes
+  `workstreams: string[]` instead of `workstream: string`;
+  `RunTuiOptions.workstream` becomes `RunTuiOptions.workstreams[]`;
+  the legacy `--tui currently supports a single workstream`
+  UsageError is removed from `cmdState`. Tab / Shift-Tab actions
+  added to `dispatchGlobalKey` (`{ kind: "nextTab" }` /
+  `{ kind: "prevTab" }`). Per the v0.4 anti-feature pledge,
+  ink/react remain confined to `src/cli/tui/*`.
 - **`mu state --tui`** — interactive ink-based dashboard. v0 ships:
   - 4 cards on the dashboard (Agents, Tracks, Ready, Activity log)
     toggleable with `1`-`4`. Each card uses `<TitledBox>`: rounded

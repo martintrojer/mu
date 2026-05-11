@@ -2,7 +2,9 @@
 //
 // Original TTY auto-route was reverted by feat_resurrect_state_card
 // (workstream `tui-impl`): the static card is the always-on default
-// and the TUI is opt-in via --tui. New matrix:
+// and the TUI is opt-in via --tui. New matrix (multi-ws TUI shipped
+// in feat_tui_multi_workstream so the v0 single-ws-only guard is
+// gone):
 //
 //   --tui  --json  --mission  multi-ws  →  what runs
 //   -----  ------  ---------  --------    ----------
@@ -11,9 +13,9 @@
 //   no     no      yes        any         → static mission card
 //   no     no      any        yes         → stacked static per-ws cards
 //   yes    no      no         no          → ink TUI (lazy import)
+//   yes    no      no         yes         → ink TUI with tabs
 //   yes    yes     any        any         → UsageError
 //   yes    no      yes        any         → UsageError
-//   yes    no      no         yes         → UsageError (single-ws only in v0)
 //
 // The static fallback is exercised by test/state-render.test.ts (the
 // existing suite). Here we ONLY verify the dispatch decisions.
@@ -107,12 +109,27 @@ describe("cmdState dispatch", () => {
     expect(stderr.toLowerCase()).toContain("--mission");
   });
 
-  it("--tui + multi-workstream is a UsageError (single-ws only in v0)", async () => {
-    await runCli(["workstream", "init", "ws2"], dbPath);
-    const { stderr, exitCode } = await runCli(["state", "--tui", "-w", "ws,ws2"], dbPath);
-    expect(exitCode).not.toBe(0);
-    expect(exitCode).not.toBeNull();
-    expect(stderr.toLowerCase()).toContain("--tui");
+  it("--tui + multi-workstream is no longer guarded as a UsageError (per feat_tui_multi_workstream)", async () => {
+    // Pre-feat_tui_multi_workstream this combination raised a
+    // UsageError ("--tui currently supports a single workstream").
+    // The TUI now supports tabs (Tab/Shift-Tab cycles); cmdState
+    // forwards the full resolved ws set to runTui.
+    //
+    // We can't actually invoke runCli(["state","--tui",...]) here
+    // because runTui boots ink + waitUntilExit, which would block
+    // the test forever (no TTY in vitest, no q to press). Assert
+    // structurally on the source of cmdState instead: the legacy
+    // multi-ws guard is gone, and the dispatch hands the full
+    // workstreams[] array to runTui. The src/cli/tui/* unit tests
+    // cover the actual <App> tab behaviour.
+    const { readFileSync } = await import("node:fs");
+    const src = readFileSync("./src/cli/state.ts", "utf-8");
+    // The legacy guard ('--tui currently supports a single workstream')
+    // must be removed.
+    expect(src).not.toMatch(/--tui currently supports a single workstream/);
+    // The dispatch must hand runTui the whole workstreams array,
+    // not a single workstream string.
+    expect(src).toMatch(/runTui\(db,\s*\{\s*workstreams:/);
   });
 
   it("--hud option no longer exists (removed in this refactor)", async () => {

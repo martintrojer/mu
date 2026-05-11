@@ -24,6 +24,8 @@
 //   Ctrl-C      quit (handled by ink's exitOnCtrlC)
 //   c           clear footer (most-recent-yank line)
 //   w           workstream picker (v0.next; emits a noop-with-toast)
+//   Tab         next workstream tab (multi-ws TUI; noop when N=1)
+//   Shift-Tab   previous workstream tab
 //
 // This module is pure TS: takes a keystroke (input + key flags from
 // ink's useInput) and returns a structured GlobalAction. The caller
@@ -40,6 +42,8 @@ export type GlobalAction =
   | { kind: "quit" }
   | { kind: "clearFooter" }
   | { kind: "workstreamPicker" }
+  | { kind: "nextTab" }
+  | { kind: "prevTab" }
   | { kind: "noop" };
 
 /**
@@ -87,6 +91,16 @@ export function dispatchGlobalKey(input: string, key: KeyFlags): GlobalAction {
 
   // Workstream picker (reserved; v0.next)
   if (input === "w") return { kind: "workstreamPicker" };
+
+  // Multi-workstream tab navigation. Tab cycles forward;
+  // Shift-Tab cycles backward. Per feat_tui_multi_workstream
+  // (workstream `tui-impl`): the dispatcher returns the action
+  // unconditionally; the App suppresses it (via the popup-open
+  // guard) when a popup is mounted, and degenerates to a noop
+  // when only one workstream is loaded.
+  if (key.tab === true) {
+    return { kind: key.shift === true ? "prevTab" : "nextTab" };
+  }
 
   // Tick rate adjust. `+` arrives as `+` (Shift+= on US); `=` is the
   // unshifted alias for users who don't bother shifting; `-` is the

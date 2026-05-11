@@ -9,7 +9,12 @@
 //            - dashboard mode → global keys
 //            - popup mode     → popup-local keys
 //            - help mode      → "Esc/?/q close help"
-//   RIGHT  : tick rate (always visible).
+//   RIGHT  : active workstream label (multi-ws only) + tick rate.
+//
+// Per feat_tui_multi_workstream (workstream `tui-impl`): when the
+// TUI is launched with multiple workstreams, the right zone gains
+// a `[ws]` prefix so the operator sees which tab is active without
+// having to look at the top tab strip. Single-ws TUI is unchanged.
 //
 // Single line, no border, dim by default; bright colour for the
 // single-key glyphs so the eye picks them out at a glance.
@@ -36,6 +41,12 @@ export interface StatusBarProps {
   /** Sub-mode inside a popup: "list" (default) or "drill". Drives
    *  the per-popup hint cluster (Enter drills vs Esc backs out). */
   popupMode?: PopupMode;
+  /** Active workstream label (multi-ws TUI only). When set, the
+   *  RIGHT zone renders `[<name>]  <tick>` so the operator never
+   *  loses sight of which tab they are looking at. Undefined for
+   *  the single-ws TUI keeps the right zone byte-identical to the
+   *  pre-multi-ws layout. */
+  activeWorkstream?: string;
 }
 
 export function StatusBar({
@@ -45,18 +56,21 @@ export function StatusBar({
   cols,
   popupName,
   popupMode,
+  activeWorkstream,
 }: StatusBarProps): JSX.Element {
   const tickLabel = `${(tickMs / 1000).toFixed(2)}s ⏱`;
+  const wsLabel = activeWorkstream !== undefined ? `[${activeWorkstream}]` : "";
+  const rightPlain = wsLabel === "" ? tickLabel : `${wsLabel}  ${tickLabel}`;
   const left = footer ? formatFooter(footer) : "";
-  // Budget for the LEFT zone: total cols - tick rate - hint cluster
+  // Budget for the LEFT zone: total cols - right zone - hint cluster
   // - 4 chars of inter-zone padding. Hint cluster width is its
   // *plain* (non-coloured) length which we approximate via the
   // string returned from hintsPlain().
   const hintsPlainText = hintsPlain(mode, popupName, popupMode);
-  const tickWidth = tickLabel.length;
+  const rightWidth = rightPlain.length;
   const hintsWidth = hintsPlainText.length;
   const padding = 4;
-  const leftBudget = Math.max(0, cols - tickWidth - hintsWidth - padding);
+  const leftBudget = Math.max(0, cols - rightWidth - hintsWidth - padding);
   const leftClipped = leftBudget > 0 ? truncateCell(left, leftBudget) : "";
 
   return (
@@ -66,6 +80,11 @@ export function StatusBar({
       </Box>
       <Box>{renderHints(mode, popupName, popupMode)}</Box>
       <Box>
+        {wsLabel !== "" && (
+          <Text bold color="cyan">
+            {`${wsLabel}  `}
+          </Text>
+        )}
         <Text dimColor>{tickLabel}</Text>
       </Box>
     </Box>

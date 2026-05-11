@@ -48,11 +48,16 @@ import {
   useDashboardSnapshot,
 } from "./state.js";
 import { StatusBar } from "./status-bar.js";
+import { TabStrip } from "./tab-strip.js";
 import { type ClipboardBackend, probeClipboardBackend } from "./yank.js";
 
 export interface AppProps {
   db: Db;
-  workstream: string;
+  /** Resolved workstream set (≥1). Per feat_tui_multi_workstream
+   *  (workstream `tui-impl`): the TUI shows one ws at a time;
+   *  Tab/Shift-Tab cycles. Length 1 is the original single-ws TUI
+   *  with no tab strip rendered. */
+  workstreams: string[];
 }
 
 export interface FooterState {
@@ -63,11 +68,14 @@ export interface FooterState {
 type PopupId = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | null;
 export type PopupMode = "list" | "drill";
 
-export function App({ db, workstream }: AppProps): JSX.Element {
+export function App({ db, workstreams }: AppProps): JSX.Element {
   const { exit } = useApp();
 
   const [visibility, setVisibility] = useState<CardVisibility>(DEFAULT_CARD_VISIBILITY);
   const [tickMs, setTickMs] = useState<number>(TICK_DEFAULT_MS);
+  // Index of the active workstream tab. Tab / Shift-Tab cycles
+  // through `workstreams`. Always in [0, workstreams.length).
+  const [activeWs, setActiveWs] = useState<number>(0);
   const [popup, setPopup] = useState<PopupId>(null);
   // Per-popup-instance mode ("list" → list of rows; "drill" →
   // inline detail view inside the popup body). Owned by <App>
@@ -90,6 +98,11 @@ export function App({ db, workstream }: AppProps): JSX.Element {
       clipboardRef.current = b;
     });
   }, []);
+
+  // Bounds-clamp activeWs in case workstreams[] shrinks (defensive;
+  // the TUI is launched with a fixed list today). Falls back to 0.
+  const safeActive = Math.max(0, Math.min(activeWs, workstreams.length - 1));
+  const workstream = workstreams[safeActive] ?? "";
 
   const snap = useDashboardSnapshot(db, workstream, tickMs, popup === null);
 
@@ -227,6 +240,16 @@ export function App({ db, workstream }: AppProps): JSX.Element {
             copied: false,
           });
           return;
+        case "nextTab":
+          if (popup !== null) return; // suppress while popup is open
+          if (workstreams.length <= 1) return;
+          setActiveWs((i) => (i + 1) % workstreams.length);
+          return;
+        case "prevTab":
+          if (popup !== null) return;
+          if (workstreams.length <= 1) return;
+          setActiveWs((i) => (i - 1 + workstreams.length) % workstreams.length);
+          return;
         case "noop":
           return;
       }
@@ -261,7 +284,13 @@ export function App({ db, workstream }: AppProps): JSX.Element {
       <Box flexDirection="column" height={rows}>
         <Help />
         <Box flexGrow={1} />
-        <StatusBar mode="help" tickMs={tickMs} footer={footer} cols={cols} />
+        <StatusBar
+          mode="help"
+          tickMs={tickMs}
+          footer={footer}
+          cols={cols}
+          activeWorkstream={workstreams.length > 1 ? workstream : undefined}
+        />
       </Box>
     );
   }
@@ -285,6 +314,7 @@ export function App({ db, workstream }: AppProps): JSX.Element {
           cols={cols}
           popupName={popupNameForId(popup)}
           popupMode={popupMode}
+          activeWorkstream={workstreams.length > 1 ? workstream : undefined}
         />
       </Box>
     );
@@ -293,6 +323,10 @@ export function App({ db, workstream }: AppProps): JSX.Element {
   // Dashboard.
   return (
     <Box flexDirection="column" height={rows}>
+      {/* Tab strip — null when workstreams.length === 1, so the
+          single-ws layout is byte-identical to the pre-multi-ws
+          frame. */}
+      <TabStrip workstreams={workstreams} active={safeActive} />
       {snap.error !== null && (
         <Box borderStyle="round" borderColor="red" paddingX={1}>
           <Text color="red">snapshot error: {snap.error}</Text>
@@ -308,7 +342,13 @@ export function App({ db, workstream }: AppProps): JSX.Element {
       {visibility.recent && <RecentCard snapshot={snap.data} />}
       {visibility.doctor && <DoctorCard snapshot={snap.data} />}
       <Box flexGrow={1} />
-      <StatusBar mode="dashboard" tickMs={tickMs} footer={footer} cols={cols} />
+      <StatusBar
+        mode="dashboard"
+        tickMs={tickMs}
+        footer={footer}
+        cols={cols}
+        activeWorkstream={workstreams.length > 1 ? workstream : undefined}
+      />
     </Box>
   );
 
