@@ -37,6 +37,7 @@ import {
   slowerTick,
   useDashboardSnapshot,
 } from "./state.js";
+import { StatusBar } from "./status-bar.js";
 import { type ClipboardBackend, probeClipboardBackend } from "./yank.js";
 
 export interface AppProps {
@@ -214,14 +215,32 @@ export function App({ db, workstream }: AppProps): JSX.Element {
     void refreshNonce;
   }, [refreshNonce]);
 
-  // Help overlay covers everything else.
+  // Help overlay covers everything else (still gets the global
+  // status bar at the bottom for consistent navigation hints).
   if (helpOpen) {
-    return <Help />;
+    return (
+      <Box flexDirection="column">
+        <Help />
+        <StatusBar mode="help" tickMs={tickMs} footer={footer} cols={cols} />
+      </Box>
+    );
   }
 
-  // Popup mounted: render full-screen instead of dashboard.
+  // Popup mounted: render full-screen instead of dashboard, with
+  // the popup-mode status bar pinned at the bottom.
   if (popup !== null) {
-    return renderPopup(popup);
+    return (
+      <Box flexDirection="column">
+        {renderPopup(popup)}
+        <StatusBar
+          mode="popup"
+          tickMs={tickMs}
+          footer={footer}
+          cols={cols}
+          popupName={popupNameForId(popup)}
+        />
+      </Box>
+    );
   }
 
   // Dashboard.
@@ -236,10 +255,7 @@ export function App({ db, workstream }: AppProps): JSX.Element {
       {visibility.tracks && <TracksCard snapshot={snap.data} />}
       {visibility.ready && <ReadyCard snapshot={snap.data} />}
       {visibility.log && <LogCard snapshot={snap.data} />}
-      <Box marginTop={1} justifyContent="space-between">
-        <Text dimColor>{footer ? formatFooter(footer) : ""}</Text>
-        <Text dimColor>tick: {(tickMs / 1000).toFixed(2)}s</Text>
-      </Box>
+      <StatusBar mode="dashboard" tickMs={tickMs} footer={footer} cols={cols} />
     </Box>
   );
 
@@ -275,7 +291,15 @@ function cardKeyFromId(id: 1 | 2 | 3 | 4): keyof CardVisibility {
   }
 }
 
-function formatFooter(f: FooterState): string {
-  const tag = f.copied ? "[copied]" : "[no clipboard]";
-  return `last: ${f.command}  ${tag}`;
+function popupNameForId(id: 1 | 2 | 3 | 4): string {
+  switch (id) {
+    case 1:
+      return "Agents";
+    case 2:
+      return "Tracks";
+    case 3:
+      return "Tasks";
+    case 4:
+      return "Log";
+  }
 }

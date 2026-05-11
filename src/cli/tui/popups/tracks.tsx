@@ -77,7 +77,6 @@ export function TracksPopup({ yank, onClose, snapshot }: PopupProps): JSX.Elemen
     return (
       <Shell title="Tracks · popup">
         <Text dimColor>(no goals — `mu task add ... --impact ...`)</Text>
-        <Text dimColor>j/k g/G y Esc</Text>
       </Shell>
     );
   }
@@ -113,7 +112,8 @@ export function TracksPopup({ yank, onClose, snapshot }: PopupProps): JSX.Elemen
         );
       })}
       <Box marginTop={1}>
-        <Text dimColor>j/k · y yank `mu task tree &lt;goal&gt;` · Esc/q close</Text>
+        {/* Popup-specific yank target only; navigation hints live in the global status bar. */}
+        <Text dimColor>y yanks `mu task tree &lt;goal&gt;`</Text>
       </Box>
     </Shell>
   );

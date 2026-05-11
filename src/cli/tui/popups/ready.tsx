@@ -85,7 +85,6 @@ export function ReadyPopup({ yank, onClose, snapshot }: PopupProps): JSX.Element
     return (
       <PopupShell title="Tasks · popup">
         <Text dimColor>(no open / in-progress tasks)</Text>
-        <Text dimColor>j/k g/G y Esc</Text>
       </PopupShell>
     );
   }
@@ -115,9 +114,8 @@ export function ReadyPopup({ yank, onClose, snapshot }: PopupProps): JSX.Element
           </Box>
         );
       })}
-      <Box marginTop={1}>
-        <Text dimColor>j/k navigate · y yank · Esc/q close</Text>
-      </Box>
+      {/* Generic j/k/y/Esc/? hints live in the global status bar; no
+          per-popup verbs to surface here. */}
     </PopupShell>
   );
 }

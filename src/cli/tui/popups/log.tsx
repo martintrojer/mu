@@ -143,7 +143,8 @@ export function LogPopup({ yank, onClose, snapshot }: PopupProps): JSX.Element {
         );
       })}
       <Box marginTop={1}>
-        <Text dimColor>j/k · y yank related show command · Esc/q close</Text>
+        {/* Popup-specific yank target only; navigation hints live in the global status bar. */}
+        <Text dimColor>y yanks the related `mu task/agent show` command</Text>
       </Box>
     </Shell>
   );

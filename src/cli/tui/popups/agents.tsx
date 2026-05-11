@@ -97,7 +97,6 @@ export function AgentsPopup({ yank, onClose, snapshot }: PopupProps): JSX.Elemen
     return (
       <Shell title="Agents · popup">
         <Text dimColor>(no agents)</Text>
-        <Text dimColor>j/k g/G y/f/x Esc</Text>
       </Shell>
     );
   }
@@ -128,7 +127,8 @@ export function AgentsPopup({ yank, onClose, snapshot }: PopupProps): JSX.Elemen
         );
       })}
       <Box marginTop={1}>
-        <Text dimColor>j/k · y send · f free · x close · Esc/q close popup</Text>
+        {/* Popup-specific verbs only; generic j/k/y/Esc/? live in the global status bar. */}
+        <Text dimColor>f free · x close</Text>
       </Box>
     </Shell>
   );
