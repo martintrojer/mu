@@ -44,6 +44,16 @@ is opt-in via the new `--tui` flag.
     the popup back to the dashboard. The status bar surfaces the
     drill sub-mode (`drill · j/k scroll · Esc back`) so the
     multi-level state is unambiguous.
+  - **Drill rows that ARE entities chain into a deeper drill**
+    (per popup-drill recursion contract). Today: pressing `Enter`
+    on a task row inside the Tracks-popup drill opens the SAME
+    notes/details view the Tasks-popup drill renders — the shared
+    `TaskDetailDrill` leaf in `src/cli/tui/popups/task-detail.tsx`.
+    One `Esc`/`q` backs out per recursion level (task-detail →
+    Tracks-drill task list → list of tracks → popup closed). When
+    Card 6/7/8 popups (in-progress / blocked / recent) ship under
+    `feat_more_cards_umbrella`, they pick up the same chain
+    automatically by importing `TaskDetailDrill`.
   - **Tick adjust live**: `+`/`=` faster, `-` slower, `0` reset (1s
     default; 100ms floor; 10s ceiling).
   - **Help overlay**: `?` / `F1` shows the global + in-popup keymap.

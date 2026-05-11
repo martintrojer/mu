@@ -429,6 +429,15 @@ mu                          # bare alias for `mu state --mission`
   shell. `?` / `F1` shows the keymap. `q` / `Ctrl-C` quits and
   restores the main scrollback. Replaces the previous `--hud`.
 
+  **Popup-drill recursion**: `Enter` in any popup drills into the
+  focused row. Where the row is itself an entity (a task), a
+  further `Enter` chains into the SAME read-only task-detail leaf
+  (notes timeline). Concretely: Tracks popup (`@`) → `Enter` opens
+  the track's task list → `Enter` opens that task's notes timeline
+  — identical to the Tasks popup (`#`) drill on the same task.
+  One `Esc` / `q` backs out per recursion level (notes → task
+  list → list of tracks → popup closed).
+
 - **`--mission`** — stripped 5-col glance card (agents + orphans +
   tracks + ready). The bare-`mu` muscle-memory orient call
   ("what's going on?"). The full card with blocked / recent-closed /

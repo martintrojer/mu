@@ -24,10 +24,10 @@ import { Box, Text, useInput } from "ink";
 import { useMemo, useState } from "react";
 import type { Db } from "../../../db.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
-import { listNotes } from "../../../tasks.js";
 import { type ColumnSpec, layoutColumns, renderRow } from "../columns.js";
 import { dispatchPopupKey } from "../keys.js";
-import { DrillScrollView, clampScrollTop } from "./drill.js";
+import { clampScrollTop } from "./drill.js";
+import { TaskDetailDrill, renderNotes } from "./task-detail.js";
 
 export interface PopupProps {
   yank: (command: string) => Promise<void>;
@@ -64,17 +64,13 @@ export function ReadyPopup({
 
   // Resolve notes for the focused task on demand. Memoised on
   // (taskId, mode); we only hit SQLite when actually drilled in.
+  // Identical to the TaskDetailDrill render path — we duplicate the
+  // call here only because the keymap needs `totalLines` to clamp
+  // scroll. The shared formatter (renderNotes) is the single source
+  // of truth.
   const notesText = useMemo<string>(() => {
     if (mode !== "drill" || !focused) return "";
-    const notes = listNotes(db, focused.name, workstream);
-    if (notes.length === 0) return "";
-    return notes
-      .map((n) => {
-        const ts = n.createdAt.replace("T", " ").slice(0, 19);
-        const author = n.author ?? "?";
-        return `── ${ts}  ${author} ──\n${n.content}`;
-      })
-      .join("\n\n");
+    return renderNotes(db, focused.name, workstream);
   }, [mode, focused, db, workstream]);
 
   useInput((input, key) => {
@@ -177,12 +173,12 @@ export function ReadyPopup({
   if (mode === "drill" && focused) {
     return (
       <PopupShell title={`Tasks · ${focused.name} (notes)`}>
-        <DrillScrollView
-          title={`mu task notes ${focused.name}`}
-          body={notesText}
-          viewport={VIEWPORT}
+        <TaskDetailDrill
+          task={focused}
+          db={db}
+          workstream={workstream}
           scrollTop={scrollTop}
-          emptyText="(no notes)"
+          viewport={VIEWPORT}
         />
         <Box marginTop={1}>
           <Text dimColor>

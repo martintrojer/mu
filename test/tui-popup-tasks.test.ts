@@ -22,11 +22,15 @@ describe("ReadyPopup (Tasks popup)", () => {
     // And it covers the IN_PROGRESS branch
     expect(src).toContain('"IN_PROGRESS"');
   });
-  it("source drills into task notes (listNotes + DrillScrollView + onModeChange)", async () => {
+  it("source drills into task notes via the shared TaskDetailDrill leaf", async () => {
     const { readFileSync } = await import("node:fs");
     const src = readFileSync("./src/cli/tui/popups/ready.tsx", "utf-8");
-    expect(src).toContain("listNotes");
-    expect(src).toContain("DrillScrollView");
+    // Post-feat_track_drill_chains_to_task_drill: the inline notes
+    // render moved into popups/task-detail.tsx (TaskDetailDrill).
+    // ready.tsx consumes it (consumer #1) so any future popup that
+    // adopts the chain pattern stays in lockstep.
+    expect(src).toContain("TaskDetailDrill");
+    expect(src).toContain("renderNotes");
     expect(src).toContain('onModeChange("drill")');
     expect(src).toContain('onModeChange("list")');
   });

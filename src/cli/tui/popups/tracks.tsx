@@ -1,25 +1,41 @@
-// Tracks popup (Shift+2 → `@`). Per design_popup_tracks.
+// Tracks popup (Shift+2 → `@`). Per design_popup_tracks +
+// feat_track_drill_chains_to_task_drill.
 //
-// Enter on a track drills into a read-only inline list of every
-// task in the track's prerequisite subgraph, rendered as
-// `<id>  <STATUS>  <title>` with j/k navigation. Esc / q back to
-// the list; a second Esc / q closes the popup.
+// Recursion ladder (per popup-drill recursion contract):
+//   list        → list of tracks                 (Enter drills)
+//   drill       → list of tasks for focused track (Enter chains)
+//   task-detail → notes timeline for focused task (LEAF; no chain)
 //
-// Read-only: drilling reads from the snapshot.tracks[i].taskIds set
-// and resolves each id to a TaskRow via getTask. Never executes.
+// Esc/q transitions: task-detail → drill → list → close popup.
+//
+// The top-level `mode` prop (owned by <App>) is still a 2-state
+// union ("list" | "drill") because app.tsx is currently being
+// edited by another agent (sibling task bug_tui_render_ghosting_v2);
+// task-detail is therefore an INTERNAL sub-state of the Tracks
+// popup, kept as a local useState. From <App>'s perspective Tracks
+// is in "drill" mode the entire time the user is below the list of
+// tracks, which is exactly what the status-bar drill hint cluster
+// already advertises (j/k scroll · Esc back). When the union is
+// widened to include "task-detail" (follow-up integration), this
+// local state collapses into the prop without changing semantics.
+//
+// Read-only: drilling reads from snapshot.tracks[i].taskIds and
+// resolves each id to a TaskRow via getTask; the leaf consumes
+// TaskDetailDrill which SELECTs notes via listNotes. Never executes.
 //
 // Rows are column-aligned via src/cli/tui/columns.ts. Per
 // feat_column_aligned_lists clipping policy: track number, ⋈ glyph,
 // counts are PROTECTED; the goal-name list is CLIPPABLE.
 
 import { Box, Text, useInput } from "ink";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Db } from "../../../db.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
 import { type TaskRow, getTask } from "../../../tasks.js";
 import { type ColumnSpec, layoutColumns, renderRow } from "../columns.js";
 import { dispatchPopupKey } from "../keys.js";
 import { clampScrollTop } from "./drill.js";
+import { TaskDetailDrill, renderNotes } from "./task-detail.js";
 
 export interface PopupProps {
   yank: (command: string) => Promise<void>;
@@ -46,6 +62,12 @@ const DRILL_COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
 
 const VIEWPORT = 20;
 
+// Internal sub-state of the drill view. "task-list" = the visible
+// list of tasks for the focused track (where the prop `mode` is
+// `"drill"`); "task-detail" = the deeper leaf view. See the file
+// header for why this isn't a third value on the prop union.
+type DrillSubMode = "task-list" | "task-detail";
+
 export function TracksPopup({
   yank,
   onClose,
@@ -57,8 +79,22 @@ export function TracksPopup({
 }: PopupProps): JSX.Element {
   const [cursor, setCursor] = useState(0);
   const [drillCursor, setDrillCursor] = useState(0);
+  const [drillSubMode, setDrillSubMode] = useState<DrillSubMode>("task-list");
+  const [taskDetailScrollTop, setTaskDetailScrollTop] = useState(0);
   const tracks = snapshot?.tracks ?? [];
   const focusedTrack = tracks[cursor];
+
+  // Reset sub-mode + leaf scroll whenever the popup itself flips
+  // out of drill mode (e.g. user pressed Esc in the task-list view
+  // and we're transitioning back to the list-of-tracks). The
+  // entry-into-task-detail scroll reset lives at the keymap site
+  // where setDrillSubMode("task-detail") is dispatched.
+  useEffect(() => {
+    if (mode !== "drill") {
+      setDrillSubMode("task-list");
+      setTaskDetailScrollTop(0);
+    }
+  }, [mode]);
 
   // Resolve every task id in the focused track to a TaskRow when
   // we're in drill mode. Memoised on (track, db) so flipping
@@ -91,6 +127,51 @@ export function TracksPopup({
       pageUp: key.pageUp,
       pageDown: key.pageDown,
     });
+    if (mode === "drill" && drillSubMode === "task-detail") {
+      // Leaf: notes timeline. j/k/Ctrl-D/U scroll; y yanks `mu task
+      // notes`; Esc/q backs out one level (→ task-list). Enter is
+      // intentionally inert here — notes aren't entities.
+      const focusedTask = drillTasks[drillCursor];
+      // Re-derive line count for clamp on every keystroke. Cheap:
+      // listNotes is a SQLite SELECT, and notes are small.
+      const notesBody = focusedTask ? renderNotes(db, focusedTask.name, workstream) : "";
+      const totalLines = notesBody === "" ? 0 : notesBody.split("\n").length;
+      switch (action.kind) {
+        case "close":
+          setDrillSubMode("task-list");
+          setTaskDetailScrollTop(0);
+          return;
+        case "moveDown":
+          setTaskDetailScrollTop((s) => clampScrollTop(s + 1, totalLines, VIEWPORT));
+          return;
+        case "moveUp":
+          setTaskDetailScrollTop((s) => clampScrollTop(s - 1, totalLines, VIEWPORT));
+          return;
+        case "jumpTop":
+          setTaskDetailScrollTop(0);
+          return;
+        case "jumpBottom":
+          setTaskDetailScrollTop(clampScrollTop(totalLines, totalLines, VIEWPORT));
+          return;
+        case "pageDown":
+          setTaskDetailScrollTop((s) =>
+            clampScrollTop(s + Math.floor(VIEWPORT / (action.half ? 2 : 1)), totalLines, VIEWPORT),
+          );
+          return;
+        case "pageUp":
+          setTaskDetailScrollTop((s) =>
+            clampScrollTop(s - Math.floor(VIEWPORT / (action.half ? 2 : 1)), totalLines, VIEWPORT),
+          );
+          return;
+        case "yank": {
+          if (!focusedTask || !snapshot) return;
+          void yank(`mu task notes ${focusedTask.name} -w ${snapshot.workstreamName}`);
+          return;
+        }
+        default:
+          return;
+      }
+    }
     if (mode === "drill") {
       const last = Math.max(0, drillTasks.length - 1);
       switch (action.kind) {
@@ -98,6 +179,16 @@ export function TracksPopup({
           onModeChange("list");
           setDrillCursor(0);
           return;
+        case "drill": {
+          // Chain into the task-detail leaf. This is the recursion
+          // step the task asks for: Enter on a Tracks-drill row
+          // opens the same notes view the Tasks popup drill renders.
+          const t = drillTasks[drillCursor];
+          if (!t) return;
+          setTaskDetailScrollTop(0);
+          setDrillSubMode("task-detail");
+          return;
+        }
         case "moveDown":
           setDrillCursor((c) => Math.min(last, c + 1));
           return;
@@ -175,6 +266,37 @@ export function TracksPopup({
     );
   }
 
+  if (mode === "drill" && drillSubMode === "task-detail" && focusedTrack) {
+    const t = drillTasks[drillCursor];
+    if (t === undefined) {
+      // Defensive: drillTasks shape changed under us; back to drill.
+      // Render a benign placeholder; the next render will show the
+      // task-list once setDrillSubMode runs.
+      setDrillSubMode("task-list");
+      return (
+        <Shell title={`Track ${cursor + 1} · (resyncing)`}>
+          <Text dimColor>(refocusing…)</Text>
+        </Shell>
+      );
+    }
+    return (
+      <Shell title={`Track ${cursor + 1} · task: ${t.name} (notes)`}>
+        <TaskDetailDrill
+          task={t}
+          db={db}
+          workstream={workstream}
+          scrollTop={taskDetailScrollTop}
+          viewport={VIEWPORT}
+        />
+        <Box marginTop={1}>
+          <Text dimColor>
+            j/k scroll · Ctrl-D/U half page · y yanks `mu task notes` · Esc/q back to drill
+          </Text>
+        </Box>
+      </Shell>
+    );
+  }
+
   if (mode === "drill" && focusedTrack) {
     const trackLabel = `Track ${cursor + 1}`;
     const goalSummary = focusedTrack.roots.map((r) => r.name).join(", ");
@@ -216,7 +338,9 @@ export function TracksPopup({
           );
         })}
         <Box marginTop={1}>
-          <Text dimColor>j/k nav · y yanks `mu task show` · Esc/q back to list</Text>
+          <Text dimColor>
+            j/k nav · Enter task notes · y yanks `mu task show` · Esc/q back to list
+          </Text>
         </Box>
       </Shell>
     );
