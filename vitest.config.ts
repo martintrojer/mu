@@ -23,6 +23,15 @@ export default defineConfig({
         singleFork: true,
       },
     },
+    // Layer 2 of bug_test_suite_flake_leaks_isolation: a hook that
+    // runs ONCE after the full suite finishes, sweeping any leaked
+    // tmux sessions whose names match the integration-fixture
+    // prefixes. Per-test afterEach hooks already kill the session
+    // they own, but a kill -9 / SIGINT / OOM mid-suite skips them.
+    // The teardown is the safety net until Layer 3 (dedicated
+    // `tmux -L <socket>` per integration suite) lands and renders
+    // it obsolete.
+    globalSetup: ["./test/_global-teardown.ts"],
     // Belt-and-suspenders for tmux-fan-out integration tests:
     // many tests in test/*.integration.test.ts spawn real tmux
     // panes + sh subprocesses and then poll/wait for state to
