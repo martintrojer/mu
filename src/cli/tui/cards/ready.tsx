@@ -32,7 +32,7 @@ const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
 export function ReadyCard({ snapshot }: ReadyCardProps): JSX.Element {
   if (snapshot === null) {
     return (
-      <TitledBox title="Ready">
+      <TitledBox title="Ready" cardId={3}>
         <Text dimColor>loading…</Text>
       </TitledBox>
     );
@@ -42,7 +42,7 @@ export function ReadyCard({ snapshot }: ReadyCardProps): JSX.Element {
 
   if (ready.length === 0) {
     return (
-      <TitledBox title="Ready">
+      <TitledBox title="Ready" cardId={3}>
         <Text dimColor>
           (no ready tasks) every blocker is OPEN/IN_PROGRESS or every task is closed
         </Text>
@@ -66,7 +66,7 @@ export function ReadyCard({ snapshot }: ReadyCardProps): JSX.Element {
   const widths = layoutColumns(rows, COLUMN_SPECS);
 
   return (
-    <TitledBox title="Ready" subtitle={String(ready.length)}>
+    <TitledBox title="Ready" subtitle={String(ready.length)} cardId={3}>
       {shown.map((t, i) => {
         const row = rows[i];
         const m = meta[i];

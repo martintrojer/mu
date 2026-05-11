@@ -32,7 +32,7 @@ const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
 export function TracksCard({ snapshot }: TracksCardProps): JSX.Element {
   if (snapshot === null) {
     return (
-      <TitledBox title="Tracks">
+      <TitledBox title="Tracks" cardId={2}>
         <Text dimColor>loading…</Text>
       </TitledBox>
     );
@@ -43,7 +43,7 @@ export function TracksCard({ snapshot }: TracksCardProps): JSX.Element {
 
   if (tracks.length === 0) {
     return (
-      <TitledBox title="Tracks">
+      <TitledBox title="Tracks" cardId={2}>
         <Text dimColor>
           (no goals) try `mu task add -w {snapshot.workstreamName} --title "..."`
         </Text>
@@ -64,7 +64,7 @@ export function TracksCard({ snapshot }: TracksCardProps): JSX.Element {
   const widths = layoutColumns(rows, COLUMN_SPECS);
 
   return (
-    <TitledBox title="Tracks" subtitle={`${tracks.length} · ${totalReady} ready`}>
+    <TitledBox title="Tracks" subtitle={`${tracks.length} · ${totalReady} ready`} cardId={2}>
       {shown.map((t, i) => {
         const row = rows[i];
         if (row === undefined) return null;

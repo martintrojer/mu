@@ -33,7 +33,7 @@ const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
 export function LogCard({ snapshot }: LogCardProps): JSX.Element {
   if (snapshot === null) {
     return (
-      <TitledBox title="Activity log">
+      <TitledBox title="Activity log" cardId={4}>
         <Text dimColor>loading…</Text>
       </TitledBox>
     );
@@ -43,7 +43,7 @@ export function LogCard({ snapshot }: LogCardProps): JSX.Element {
 
   if (recent.length === 0) {
     return (
-      <TitledBox title="Activity log">
+      <TitledBox title="Activity log" cardId={4}>
         <Text dimColor>(no events yet)</Text>
       </TitledBox>
     );
@@ -64,7 +64,11 @@ export function LogCard({ snapshot }: LogCardProps): JSX.Element {
   const widths = layoutColumns(cellRows, COLUMN_SPECS);
 
   return (
-    <TitledBox title="Activity log" subtitle={`last ↑${Math.min(recent.length, ROW_LIMIT)}`}>
+    <TitledBox
+      title="Activity log"
+      subtitle={`last ↑${Math.min(recent.length, ROW_LIMIT)}`}
+      cardId={4}
+    >
       {tail.map((row, i) => {
         const cells = cellRows[i];
         if (cells === undefined) return null;

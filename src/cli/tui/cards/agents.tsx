@@ -37,7 +37,7 @@ const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
 export function AgentsCard({ snapshot }: AgentsCardProps): JSX.Element {
   if (snapshot === null) {
     return (
-      <TitledBox title="Agents">
+      <TitledBox title="Agents" cardId={1}>
         <Text dimColor>loading…</Text>
       </TitledBox>
     );
@@ -49,7 +49,7 @@ export function AgentsCard({ snapshot }: AgentsCardProps): JSX.Element {
 
   if (agents.length === 0) {
     return (
-      <TitledBox title="Agents">
+      <TitledBox title="Agents" cardId={1}>
         <Text dimColor>(no agents) try `mu agent spawn worker-1 -w {snapshot.workstreamName}`</Text>
       </TitledBox>
     );
@@ -65,7 +65,7 @@ export function AgentsCard({ snapshot }: AgentsCardProps): JSX.Element {
   const widths = layoutColumns(rows, COLUMN_SPECS);
 
   return (
-    <TitledBox title="Agents" subtitle={histLabel}>
+    <TitledBox title="Agents" subtitle={histLabel} cardId={1}>
       {agents.map((a, i) => {
         const row = rows[i];
         if (row === undefined) return null;

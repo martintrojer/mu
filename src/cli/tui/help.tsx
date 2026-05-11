@@ -10,6 +10,12 @@
 // is a v0.next refinement.
 
 import { Box, Text } from "ink";
+import { superscriptDigit } from "./glyphs.js";
+
+// Cards 1..4 visualised the same way they appear in each card's top
+// border line (per feat_card_header_digit_prefix). When more cards
+// land (cards 5..9) extend the slice without changing the call site.
+const CARD_DIGITS = `${superscriptDigit(1)}${superscriptDigit(2)}${superscriptDigit(3)}${superscriptDigit(4)}`;
 
 export function Help(): JSX.Element {
   return (
@@ -18,7 +24,7 @@ export function Help(): JSX.Element {
         <Text bold color="cyan">
           keys · dashboard
         </Text>
-        <HelpRow keys="1-4" effect="toggle Agents/Tracks/Ready/Log card" />
+        <HelpRow keys={CARD_DIGITS} effect="toggle Agents/Tracks/Ready/Log card (1-4)" />
         <HelpRow keys="!@#$" effect="open card popup (Shift+1..Shift+4 on US)" />
         <HelpRow keys="+/=" effect="tick faster (floor 100ms)" />
         <HelpRow keys="-" effect="tick slower (ceiling 10s)" />

@@ -37,6 +37,26 @@ describe("computeTopRowDashes", () => {
   });
 });
 
+describe("computeTopRowDashes — cardId prefix", () => {
+  it("reserves 2 cols for the digit + separator", () => {
+    // cols=20, title="Agents" (6), cardId=1 (¹)
+    // base = 20 - 5 - 6 = 9; prefix steals 2 → 7
+    expect(computeTopRowDashes(20, "Agents", undefined, 1)).toBe(7);
+  });
+
+  it("composes with subtitle (digit + ' ' + title + ' · ' + subtitle)", () => {
+    // cols=40, title="Agents" (6), subtitle="3 free" (6), cardId=1
+    // 40 - 8 - 6 - 6 - 2 = 18
+    expect(computeTopRowDashes(40, "Agents", "3 free", 1)).toBe(18);
+  });
+
+  it("undefined cardId == 0 prefix cost", () => {
+    expect(computeTopRowDashes(40, "Agents", "3 free")).toBe(
+      computeTopRowDashes(40, "Agents", "3 free", undefined),
+    );
+  });
+});
+
 describe("TitledBox", () => {
   it("is a function we can call as an FC", () => {
     expect(typeof TitledBox).toBe("function");
