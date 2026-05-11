@@ -83,6 +83,8 @@ export function WorkspacesCard({ snapshot }: WorkspacesCardProps): JSX.Element {
   }
 
   const shown = workspaces.slice(0, ROW_LIMIT);
+  const more = workspaces.length - ROW_LIMIT;
+  const bottomLabel = more > 0 ? `+${more} more · Shift+5` : undefined;
   const rows = shown.map((w) => [
     glyphFor(w),
     w.agentName,
@@ -93,7 +95,7 @@ export function WorkspacesCard({ snapshot }: WorkspacesCardProps): JSX.Element {
   const widths = layoutColumns(rows, COLUMN_SPECS, contentWidth);
 
   return (
-    <TitledBox title="Workspaces" subtitle={subtitle} cardId={5}>
+    <TitledBox title="Workspaces" subtitle={subtitle} cardId={5} bottomLabel={bottomLabel}>
       {shown.map((w, i) => {
         const row = rows[i];
         if (row === undefined) return null;
@@ -115,11 +117,6 @@ export function WorkspacesCard({ snapshot }: WorkspacesCardProps): JSX.Element {
           </Box>
         );
       })}
-      {workspaces.length > ROW_LIMIT && (
-        <Text dimColor>
-          … +{workspaces.length - ROW_LIMIT} more · run `mu workspace list -w {workstreamName}`
-        </Text>
-      )}
     </TitledBox>
   );
 }

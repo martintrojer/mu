@@ -90,7 +90,7 @@ export function InProgressCard({ snapshot }: InProgressCardProps): JSX.Element {
     );
   }
 
-  const { inProgress, workstreamName } = snapshot;
+  const { inProgress } = snapshot;
 
   if (inProgress.length === 0) {
     return (
@@ -106,6 +106,8 @@ export function InProgressCard({ snapshot }: InProgressCardProps): JSX.Element {
   const subtitle = formatSubtitle(inProgress.length, stale);
 
   const shown = inProgress.slice(0, ROW_LIMIT);
+  const more = inProgress.length - ROW_LIMIT;
+  const bottomLabel = more > 0 ? `+${more} more · Shift+6` : undefined;
   const rows = shown.map((t, i) => [
     glyphFor(t),
     t.name,
@@ -116,7 +118,7 @@ export function InProgressCard({ snapshot }: InProgressCardProps): JSX.Element {
   const widths = layoutColumns(rows, COLUMN_SPECS, contentWidth);
 
   return (
-    <TitledBox title="In-progress" subtitle={subtitle} cardId={6}>
+    <TitledBox title="In-progress" subtitle={subtitle} cardId={6} bottomLabel={bottomLabel}>
       {shown.map((t, i) => {
         const row = rows[i];
         if (row === undefined) return null;
@@ -142,12 +144,6 @@ export function InProgressCard({ snapshot }: InProgressCardProps): JSX.Element {
           </Box>
         );
       })}
-      {inProgress.length > ROW_LIMIT && (
-        <Text dimColor>
-          … +{inProgress.length - ROW_LIMIT} more · run `mu task list -w {workstreamName} --status
-          IN_PROGRESS`
-        </Text>
-      )}
     </TitledBox>
   );
 }

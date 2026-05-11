@@ -122,3 +122,21 @@ describe("RecentCard pure helpers", () => {
     expect(formatSubtitle(7, 5 * 60 * 60_000)).toBe("7 · last 5h ago");
   });
 });
+
+// feat_card_footer_inset: bottom-border inset replaces the in-body
+// "+M more · …" line. Crude regex on the source is enough.
+import { readFileSync as _readFileSync_recent } from "node:fs";
+import { fileURLToPath as _fileURLToPath_recent } from "node:url";
+const _SRC_recent = _readFileSync_recent(
+  _fileURLToPath_recent(new URL("../src/cli/tui/cards/recent.tsx", import.meta.url)),
+  "utf8",
+);
+describe("recent.tsx source: no in-body '+M more' line", () => {
+  it("does not render '+{...} more' as a body Text node", () => {
+    expect(_SRC_recent).not.toMatch(/<Text[^>]*>\s*\u2026\s*\+/);
+    expect(_SRC_recent).not.toMatch(/<Text[^>]*>[^<]*\+\${[^}]+\}\s*more/);
+  });
+  it("wires bottomLabel into TitledBox", () => {
+    expect(_SRC_recent).toMatch(/bottomLabel=\{bottomLabel\}/);
+  });
+});

@@ -5,7 +5,11 @@
 // have to render-and-snapshot ink output to catch off-by-one drift.
 
 import { describe, expect, it } from "vitest";
-import { TitledBox, computeTopRowDashes } from "../src/cli/tui/titled-box.js";
+import {
+  TitledBox,
+  computeBorderRowDashes,
+  computeTopRowDashes,
+} from "../src/cli/tui/titled-box.js";
 
 describe("computeTopRowDashes", () => {
   it("title only — '╭─ T ───...───╮' is exactly cols wide", () => {
@@ -57,8 +61,41 @@ describe("computeTopRowDashes — cardId prefix", () => {
   });
 });
 
+describe("computeBorderRowDashes", () => {
+  it("label-only — '╰─ L ───...╯' is exactly cols wide", () => {
+    // cols=20, label="+11 more · Shift+3" (W=18) → 20 - 5 - 18 = -3
+    // floors at 1
+    expect(computeBorderRowDashes(20, "+11 more · Shift+3")).toBe(1);
+  });
+
+  it("shorter label leaves room for dash-fill", () => {
+    // cols=40, label="+2 more · Shift+3" (W=17) → 40 - 5 - 17 = 18
+    expect(computeBorderRowDashes(40, "+2 more · Shift+3")).toBe(18);
+  });
+
+  it("empty-string label still floors at the 5-fixed budget", () => {
+    // cols=10, label="" (W=0) → 10 - 5 - 0 = 5
+    expect(computeBorderRowDashes(10, "")).toBe(5);
+  });
+
+  it("floors at 1 when the label would overflow the terminal", () => {
+    expect(computeBorderRowDashes(8, "VeryLongBottomLabel")).toBe(1);
+  });
+
+  it("matches computeTopRowDashes when the label has no subtitle/digit", () => {
+    // computeTopRowDashes(40, 'Agents') == computeBorderRowDashes(40, 'Agents')
+    // — the title-only top row is exactly the generic shape.
+    expect(computeBorderRowDashes(40, "Agents")).toBe(computeTopRowDashes(40, "Agents"));
+  });
+});
+
 describe("TitledBox", () => {
   it("is a function we can call as an FC", () => {
+    // Direct invocation goes deeper than this (hits useStdout, which
+    // needs an ink render context); the existence check is enough
+    // to catch import-graph drift. The bottom-row geometry is
+    // pinned by computeBorderRowDashes above; the bottomLabel
+    // wire-up is verified by the per-card source regex tests.
     expect(typeof TitledBox).toBe("function");
   });
 });

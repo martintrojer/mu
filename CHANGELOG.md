@@ -337,6 +337,31 @@ is opt-in via the new `--tui` flag.
   stable workstream the dashboard is now visually static between
   ticks; only the dim tick-rate indicator in the bottom-right may
   refresh, and ink diffs that down to ~3 cells of repaint.
+- **TUI cards: `+M more` truncation hint inset into the bottom
+  border** (feat_card_footer_inset). Previously each of the nine
+  glance cards rendered the truncation hint as an extra body row
+  inside the rounded box (e.g. `… +2 more · open Tracks popup
+  (Shift+2)`), costing a full content row of the card's vertical
+  budget AND still drawing the bottom border below it as a plain
+  `─` fill. The hint now mirrors the top-border title: rendered
+  INSIDE the bottom border line itself as `╰─ +2 more · Shift+2 ───╯`.
+  TitledBox grows an optional `bottomLabel?: string` prop; when
+  set, the inner Box's bottom border is suppressed and a single
+  hand-rendered `<Text>` row is stacked below it. The geometry is
+  shared with the top-border render path via the new pure helper
+  `computeBorderRowDashes(cols, label)`. Per the design correction
+  in the task notes, NO superscript/digit prefix on the bottom
+  row — the label says "Shift+N" in plain text and the superscript
+  is a top-edge convention only. All nine cards (agents, tracks,
+  ready, log, workspaces, in-progress, blocked, recent, doctor)
+  drop their in-body more-line render branches and pass
+  `bottomLabel={truncated ? \`+${more} more · Shift+${cardId}\` :
+  undefined}` instead. Coverage:
+  test/tui-titled-box.test.ts grows `computeBorderRowDashes` cases
+  (label-only, short-label dash-fill, empty-label, overflow floor,
+  parity with `computeTopRowDashes`); each card test asserts the
+  source no longer contains the in-body `\u2026 … + ... more` literal
+  AND wires `bottomLabel` into the TitledBox call.
 - **Test infrastructure: `openDb` refuses the user's real DB under
   VITEST** (Layer "db" of bug_test_flake_round_2). A new hard
   guard at the top of `openDb()` throws when called with a path

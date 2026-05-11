@@ -97,11 +97,13 @@ export function DoctorCard({ snapshot }: DoctorCardProps): JSX.Element {
 
   const problems = checks.filter((c) => c.status !== "ok");
   const shown = problems.slice(0, ROW_LIMIT);
+  const more = problems.length - ROW_LIMIT;
+  const bottomLabel = more > 0 ? `+${more} more · Shift+9` : undefined;
   const rows = shown.map((c) => [glyphFor(c), c.name, c.status, c.detail]);
   const widths = layoutColumns(rows, COLUMN_SPECS, contentWidth);
 
   return (
-    <TitledBox title="Doctor" subtitle={subtitle} cardId={9}>
+    <TitledBox title="Doctor" subtitle={subtitle} cardId={9} bottomLabel={bottomLabel}>
       {shown.map((c, i) => {
         const row = rows[i];
         if (row === undefined) return null;
@@ -121,9 +123,6 @@ export function DoctorCard({ snapshot }: DoctorCardProps): JSX.Element {
           </Box>
         );
       })}
-      {problems.length > ROW_LIMIT && (
-        <Text dimColor>… +{problems.length - ROW_LIMIT} more · run `mu doctor`</Text>
-      )}
     </TitledBox>
   );
 }

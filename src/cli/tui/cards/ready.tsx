@@ -58,6 +58,8 @@ export function ReadyCard({ snapshot }: ReadyCardProps): JSX.Element {
   }
 
   const shown = ready.slice(0, ROW_LIMIT);
+  const more = ready.length - ROW_LIMIT;
+  const bottomLabel = more > 0 ? `+${more} more · Shift+3` : undefined;
   const meta = shown.map((t) => {
     const bucket = roiBucket(t.impact, t.effortDays);
     const roi = t.effortDays > 0 ? Math.round(t.impact / t.effortDays) : Number.POSITIVE_INFINITY;
@@ -73,7 +75,7 @@ export function ReadyCard({ snapshot }: ReadyCardProps): JSX.Element {
   const widths = layoutColumns(rows, COLUMN_SPECS, contentWidth);
 
   return (
-    <TitledBox title="Ready" subtitle={String(ready.length)} cardId={3}>
+    <TitledBox title="Ready" subtitle={String(ready.length)} cardId={3} bottomLabel={bottomLabel}>
       {shown.map((t, i) => {
         const row = rows[i];
         const m = meta[i];
@@ -94,9 +96,6 @@ export function ReadyCard({ snapshot }: ReadyCardProps): JSX.Element {
           </Box>
         );
       })}
-      {ready.length > ROW_LIMIT && (
-        <Text dimColor>… +{ready.length - ROW_LIMIT} more · open Tasks popup (Shift+3)</Text>
-      )}
     </TitledBox>
   );
 }

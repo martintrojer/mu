@@ -132,3 +132,21 @@ describe("DoctorCard pure helpers", () => {
     expect(c.name).toBe("schema");
   });
 });
+
+// feat_card_footer_inset: bottom-border inset replaces the in-body
+// "+M more · …" line. Crude regex on the source is enough.
+import { readFileSync as _readFileSync_doctor } from "node:fs";
+import { fileURLToPath as _fileURLToPath_doctor } from "node:url";
+const _SRC_doctor = _readFileSync_doctor(
+  _fileURLToPath_doctor(new URL("../src/cli/tui/cards/doctor.tsx", import.meta.url)),
+  "utf8",
+);
+describe("doctor.tsx source: no in-body '+M more' line", () => {
+  it("does not render '+{...} more' as a body Text node", () => {
+    expect(_SRC_doctor).not.toMatch(/<Text[^>]*>\s*\u2026\s*\+/);
+    expect(_SRC_doctor).not.toMatch(/<Text[^>]*>[^<]*\+\${[^}]+\}\s*more/);
+  });
+  it("wires bottomLabel into TitledBox", () => {
+    expect(_SRC_doctor).toMatch(/bottomLabel=\{bottomLabel\}/);
+  });
+});

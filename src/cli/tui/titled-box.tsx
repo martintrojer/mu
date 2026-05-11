@@ -30,11 +30,25 @@
 // btop / htop, where the leading digit IS the toggle key. The help
 // overlay uses the same glyphs so the visual language matches.
 //
-// FOLLOW-UPS (deliberate seam, NOT shipped here):
-//   - feat_card_footer_inset : add an optional `bottomLabel` that
-//     renders inside the bottom border line. We do NOT add the prop
-//     speculatively (anti-feature pledge: no abstractions for
-//     hypothetical future flexibility) — the future task adds it.
+// BOTTOM-BORDER INSET (feat_card_footer_inset)
+//
+// Cards optionally pass `bottomLabel` to render the truncation hint
+// ("+11 more · Shift+3") INSIDE the bottom border line, mirroring the
+// top-border title:
+//
+//   ╭─ ³ Ready · 14 ─────────────────────────╮
+//   │  build_x         ROI 100               │
+//   │  review_x        ROI  60               │
+//   │  ship_x          ROI  50               │
+//   ╰─ +11 more · Shift+3 ───────────────────╯
+//
+// Per the design correction in the task notes: NO superscript /
+// digit prefix on the bottom row — the label already says "Shift+N"
+// in plain text, and the superscript is a top-edge convention
+// (toggle-key affordance). When set, the inner Box's bottom border
+// is suppressed (`borderBottom={false}`) and a hand-rendered Text
+// row is stacked below it, exactly mirroring the top-row code path.
+// Geometry is shared via the pure helper `computeBorderRowDashes`.
 
 import { Box, Text, useStdout } from "ink";
 import type { ReactNode } from "react";
@@ -44,6 +58,8 @@ import { superscriptDigit } from "./glyphs.js";
 const ROUND = {
   topLeft: "╭",
   topRight: "╮",
+  bottomLeft: "╰",
+  bottomRight: "╯",
   horizontal: "─",
 } as const;
 
@@ -59,32 +75,54 @@ export interface TitledBoxProps {
   borderColor?: string;
   /** Title colour (the bold part). Defaults to "cyan". */
   titleColor?: string;
+  /** Optional inset label rendered inside the BOTTOM border line
+   *  (feat_card_footer_inset). Cards pass it only when the body is
+   *  truncated; otherwise omit and the bottom border renders as
+   *  plain dashes. NO superscript prefix here per the design
+   *  correction — the bottom-edge convention is a literal keystroke
+   *  hint ("Shift+3"), not a toggle affordance. */
+  bottomLabel?: string;
   children?: ReactNode;
 }
 
 /**
- * Compute how many `─` fill characters the top border row needs so
- * the line is exactly `cols` wide. Pure function so a unit test can
- * pin the geometry without spinning up ink.
+ * Generic geometry helper for ANY border row that insets a single
+ * label between the corner+dash prefix and the dash-fill+corner
+ * suffix. Used by both the top-border (where the "label" is the
+ * effective width of title + subtitle + cardId composed) and the
+ * bottom-border (where the label is the raw bottomLabel string).
  *
- * Anatomy of the top row (with all optional pieces present):
- *   ╭ ─ ' ' [digit ' '] title [' · ' subtitle] ' ' [dashes] ╮
+ * Anatomy: `╭─ <label> <dashes>╮`  (top)
+ *          `╰─ <label> <dashes>╯`  (bottom)
  *
- * Per-piece column cost:
- *   ╭             1
+ * Per-piece column cost (5 fixed + label + dashes):
+ *   corner        1
  *   ─             1
  *   ' '           1
+ *   label         L
+ *   ' '           1
+ *   dashes        D
+ *   corner        1
+ *
+ * Floors at 1 — if the terminal is too narrow, we let the line
+ * overflow rather than producing an empty/negative-width fill.
+ */
+export function computeBorderRowDashes(cols: number, label: string): number {
+  return Math.max(1, cols - 5 - stringWidth(label));
+}
+
+/**
+ * Top-border specialization: composes title + ' · ' + subtitle and
+ * an optional leading digit prefix into the effective label width,
+ * then delegates to `computeBorderRowDashes`. Pure function so a
+ * unit test can pin the geometry without spinning up ink.
+ *
+ * Per-piece column cost (relative to the generic 5-fixed base):
  *   digit         1 (when cardId set; superscript glyphs are 1 col)
  *   ' ' (sep)     1 (when cardId set)
  *   title         T
  *   ' · '         3 (when subtitle set)
  *   subtitle      S
- *   ' ' (pad)     1
- *   dashes        D
- *   ╮             1
- *
- * Floors at 1 — if the terminal is too narrow, we let the line
- * overflow rather than producing an empty/negative-width fill.
  */
 export function computeTopRowDashes(
   cols: number,
@@ -96,7 +134,6 @@ export function computeTopRowDashes(
   const subW = subtitle === undefined || subtitle.length === 0 ? 0 : stringWidth(subtitle);
   const subCost = subW === 0 ? 0 : 3 + subW; // ' · ' + S
   const digitCost = cardId === undefined ? 0 : 2; // digit + ' '
-  // ╭ + ─ + ' ' + digitCost + T + subCost + ' ' + ╮ = 5 + …
   return Math.max(1, cols - 5 - titleW - subCost - digitCost);
 }
 
@@ -106,6 +143,7 @@ export function TitledBox({
   cardId,
   borderColor = "gray",
   titleColor = "cyan",
+  bottomLabel,
   children,
 }: TitledBoxProps): JSX.Element {
   const { stdout } = useStdout();
@@ -114,6 +152,9 @@ export function TitledBox({
   const fill = ROUND.horizontal.repeat(dashes);
   const hasSubtitle = subtitle !== undefined && subtitle.length > 0;
   const digitGlyph = cardId === undefined ? null : superscriptDigit(cardId);
+  const hasBottomLabel = bottomLabel !== undefined && bottomLabel.length > 0;
+  const bottomDashes = hasBottomLabel ? computeBorderRowDashes(cols, bottomLabel) : 0;
+  const bottomFill = ROUND.horizontal.repeat(bottomDashes);
 
   return (
     <Box flexDirection="column" width={cols}>
@@ -143,11 +184,19 @@ export function TitledBox({
         borderStyle="round"
         borderColor={borderColor}
         borderTop={false}
+        borderBottom={!hasBottomLabel}
         paddingX={1}
         flexDirection="column"
       >
         {children}
       </Box>
+      {hasBottomLabel ? (
+        <Text color={borderColor}>
+          {ROUND.bottomLeft}
+          {ROUND.horizontal} <Text dimColor>{bottomLabel}</Text> {bottomFill}
+          {ROUND.bottomRight}
+        </Text>
+      ) : null}
     </Box>
   );
 }

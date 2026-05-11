@@ -90,7 +90,7 @@ export function RecentCard({ snapshot }: RecentCardProps): JSX.Element {
     );
   }
 
-  const { recentClosed, workstreamName } = snapshot;
+  const { recentClosed } = snapshot;
 
   if (recentClosed.length === 0) {
     return (
@@ -105,6 +105,8 @@ export function RecentCard({ snapshot }: RecentCardProps): JSX.Element {
   const subtitle = formatSubtitle(recentClosed.length, ages[0] ?? null);
 
   const shown = recentClosed.slice(0, ROW_LIMIT);
+  const more = recentClosed.length - ROW_LIMIT;
+  const bottomLabel = more > 0 ? `+${more} more · Shift+8` : undefined;
   const rows = shown.map((t, i) => [
     glyphFor(t),
     t.name,
@@ -115,7 +117,7 @@ export function RecentCard({ snapshot }: RecentCardProps): JSX.Element {
   const widths = layoutColumns(rows, COLUMN_SPECS, contentWidth);
 
   return (
-    <TitledBox title="Recent" subtitle={subtitle} cardId={8}>
+    <TitledBox title="Recent" subtitle={subtitle} cardId={8} bottomLabel={bottomLabel}>
       {shown.map((t, i) => {
         const row = rows[i];
         if (row === undefined) return null;
@@ -137,12 +139,6 @@ export function RecentCard({ snapshot }: RecentCardProps): JSX.Element {
           </Box>
         );
       })}
-      {recentClosed.length > ROW_LIMIT && (
-        <Text dimColor>
-          … +{recentClosed.length - ROW_LIMIT} more · run `mu task list -w {workstreamName} --status
-          CLOSED`
-        </Text>
-      )}
     </TitledBox>
   );
 }

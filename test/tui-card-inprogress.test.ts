@@ -134,3 +134,21 @@ describe("InProgressCard pure helpers", () => {
     expect(formatSubtitle(7, 4)).toBe("7 · 4 stale");
   });
 });
+
+// feat_card_footer_inset: bottom-border inset replaces the in-body
+// "+M more · …" line. Crude regex on the source is enough.
+import { readFileSync as _readFileSync_inprogress } from "node:fs";
+import { fileURLToPath as _fileURLToPath_inprogress } from "node:url";
+const _SRC_inprogress = _readFileSync_inprogress(
+  _fileURLToPath_inprogress(new URL("../src/cli/tui/cards/inprogress.tsx", import.meta.url)),
+  "utf8",
+);
+describe("inprogress.tsx source: no in-body '+M more' line", () => {
+  it("does not render '+{...} more' as a body Text node", () => {
+    expect(_SRC_inprogress).not.toMatch(/<Text[^>]*>\s*\u2026\s*\+/);
+    expect(_SRC_inprogress).not.toMatch(/<Text[^>]*>[^<]*\+\${[^}]+\}\s*more/);
+  });
+  it("wires bottomLabel into TitledBox", () => {
+    expect(_SRC_inprogress).toMatch(/bottomLabel=\{bottomLabel\}/);
+  });
+});

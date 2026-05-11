@@ -100,7 +100,7 @@ export function BlockedCard({ snapshot, db, workstream }: BlockedCardProps): JSX
     );
   }
 
-  const { blocked, workstreamName } = snapshot;
+  const { blocked } = snapshot;
 
   if (blocked.length === 0) {
     return (
@@ -111,6 +111,8 @@ export function BlockedCard({ snapshot, db, workstream }: BlockedCardProps): JSX
   }
 
   const shown = blocked.slice(0, ROW_LIMIT);
+  const more = blocked.length - ROW_LIMIT;
+  const bottomLabel = more > 0 ? `+${more} more · Shift+7` : undefined;
   // One getTaskEdgesWithStatus call per visible row. Cap at 8 →
   // synchronous better-sqlite3 reads on a join, vastly cheaper than
   // the per-row shellouts the Workspaces card does.
@@ -137,7 +139,7 @@ export function BlockedCard({ snapshot, db, workstream }: BlockedCardProps): JSX
   const widths = layoutColumns(rows, COLUMN_SPECS, contentWidth);
 
   return (
-    <TitledBox title="Blocked" subtitle={subtitle} cardId={7}>
+    <TitledBox title="Blocked" subtitle={subtitle} cardId={7} bottomLabel={bottomLabel}>
       {shown.map((t, i) => {
         const row = rows[i];
         const m = meta[i];
@@ -162,12 +164,6 @@ export function BlockedCard({ snapshot, db, workstream }: BlockedCardProps): JSX
           </Box>
         );
       })}
-      {blocked.length > ROW_LIMIT && (
-        <Text dimColor>
-          … +{blocked.length - ROW_LIMIT} more · run `mu task list -w {workstreamName}
-          --status OPEN`
-        </Text>
-      )}
     </TitledBox>
   );
 }

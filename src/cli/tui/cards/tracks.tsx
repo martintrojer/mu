@@ -59,6 +59,8 @@ export function TracksCard({ snapshot }: TracksCardProps): JSX.Element {
   }
 
   const shown = tracks.slice(0, ROW_LIMIT);
+  const more = tracks.length - ROW_LIMIT;
+  const bottomLabel = more > 0 ? `+${more} more · Shift+2` : undefined;
   const rows = shown.map((t, i) => {
     const goalNames = t.roots
       .slice(0, 2)
@@ -71,7 +73,12 @@ export function TracksCard({ snapshot }: TracksCardProps): JSX.Element {
   const widths = layoutColumns(rows, COLUMN_SPECS, contentWidth);
 
   return (
-    <TitledBox title="Tracks" subtitle={`${tracks.length} · ${totalReady} ready`} cardId={2}>
+    <TitledBox
+      title="Tracks"
+      subtitle={`${tracks.length} · ${totalReady} ready`}
+      cardId={2}
+      bottomLabel={bottomLabel}
+    >
       {shown.map((t, i) => {
         const row = rows[i];
         if (row === undefined) return null;
@@ -95,9 +102,6 @@ export function TracksCard({ snapshot }: TracksCardProps): JSX.Element {
           </Box>
         );
       })}
-      {tracks.length > ROW_LIMIT && (
-        <Text dimColor>… +{tracks.length - ROW_LIMIT} more · open Tracks popup (Shift+2)</Text>
-      )}
     </TitledBox>
   );
 }

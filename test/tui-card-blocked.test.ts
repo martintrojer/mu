@@ -142,3 +142,21 @@ describe("BlockedCard pure helpers", () => {
     expect(formatSubtitle(7, "spec_x")).toBe("7 · top blocker: spec_x");
   });
 });
+
+// feat_card_footer_inset: bottom-border inset replaces the in-body
+// "+M more · …" line. Crude regex on the source is enough.
+import { readFileSync as _readFileSync_blocked } from "node:fs";
+import { fileURLToPath as _fileURLToPath_blocked } from "node:url";
+const _SRC_blocked = _readFileSync_blocked(
+  _fileURLToPath_blocked(new URL("../src/cli/tui/cards/blocked.tsx", import.meta.url)),
+  "utf8",
+);
+describe("blocked.tsx source: no in-body '+M more' line", () => {
+  it("does not render '+{...} more' as a body Text node", () => {
+    expect(_SRC_blocked).not.toMatch(/<Text[^>]*>\s*\u2026\s*\+/);
+    expect(_SRC_blocked).not.toMatch(/<Text[^>]*>[^<]*\+\${[^}]+\}\s*more/);
+  });
+  it("wires bottomLabel into TitledBox", () => {
+    expect(_SRC_blocked).toMatch(/bottomLabel=\{bottomLabel\}/);
+  });
+});
