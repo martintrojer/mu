@@ -163,7 +163,7 @@ export class SnapshotVersionMismatchError extends Error implements HasNextSteps 
       : [
           {
             intent: "Run mu with a newer binary that knows this schema",
-            command: "npm install -g mu-agent@latest",
+            command: "npm install -g @martintrojer/mu@latest",
           },
         ];
   }

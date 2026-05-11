@@ -54,41 +54,66 @@ current verb list is in `## CLI — complete verb list` of
 
 ## 1. Setup
 
-mu isn't published to npm yet. From inside your local checkout of
-the repo:
+From npm (the common path):
+
+```bash
+npm install -g @martintrojer/mu
+mu --version             # → the current version
+```
+
+Update later via `npm install -g @martintrojer/mu@latest`.
+
+From a local checkout (when hacking on mu itself):
 
 ```bash
 npm install -g .         # `prepare` script auto-builds; `mu` lands on $PATH
 mu --version             # → the current version (see package.json)
 ```
 
-To update later: pull from upstream, then `npm install -g .` from
-inside the checkout. The `prepare` script rebuilds before linking
-the new dist/.
+To update the source-installed copy: pull from upstream, then
+`npm install -g .` from inside the checkout. The `prepare` script
+rebuilds before linking the new dist/.
 
 ### Install the bundled skill
 
 Mu ships a skill at `skills/mu/SKILL.md` that teaches the LLM
 running inside an agent pane how to use mu (the in-pane working
-loop, the subscribe-vs-poll
-pattern, the verb-list reference). Pi auto-loads skills from
-`~/.agents/skills/<name>/SKILL.md` (cross-tool global location)
-and `~/.pi/agent/skills/<name>/SKILL.md` (pi-specific). Either
-works.
-
-From inside the checkout:
+loop, the subscribe-vs-poll pattern, the verb-list reference).
+The canonical install path is the
+[skills CLI](https://github.com/vercel-labs/skills) — it auto-
+detects every supported agent on your system (pi, claude-code,
+codex, opencode, cursor, ...) and installs into the right per-agent
+location:
 
 ```bash
-mkdir -p ~/.agents/skills
-ln -s "$PWD/skills/mu" ~/.agents/skills/mu
-# Resolves to ~/.agents/skills/mu/SKILL.md — exactly the layout
-# pi expects. `git pull` keeps it in sync.
+npx skills add martintrojer/mu          # interactive: pick scope + agents
+npx skills add martintrojer/mu -g -y    # global, no prompts (pi: ~/.pi/agent/skills/mu/)
+npx skills update mu                    # later, to refresh
 ```
 
-If you'd rather copy than symlink (e.g. you don't want the
-checkout on a long-lived path), `cp -r skills/mu
-~/.agents/skills/` produces the same final layout — you'll
-just need to re-copy after each update.
+If you installed mu from a local checkout (hacking on the skill
+itself), point the skills CLI at the checkout instead so edits flow
+straight through:
+
+```bash
+npx skills add ./skills/mu              # local-path source format (symlinks)
+```
+
+If you'd rather not use the skills CLI, mu's skill is just a
+directory with a `SKILL.md` — symlink or copy it into the agent's
+skills dir directly. For pi, that's `~/.pi/agent/skills/mu/` (per-
+user global) or `.pi/skills/mu/` (per-project). The convention
+`~/.agents/skills/mu/` (cross-tool location) is also picked up by
+pi and several other agents:
+
+```bash
+# From an npm-global install
+mkdir -p ~/.agents/skills
+ln -sf "$(npm root -g)/@martintrojer/mu/skills/mu" ~/.agents/skills/mu
+
+# Or from a checkout
+ln -sf "$PWD/skills/mu" ~/.agents/skills/mu
+```
 
 ### For mu hackers: alias to the build output
 

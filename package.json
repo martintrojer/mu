@@ -1,7 +1,10 @@
 {
-  "name": "mu-agent",
-  "version": "0.3.0",
+  "name": "@martintrojer/mu",
+  "version": "0.3.1",
   "description": "A persistent, observable crew of pi agents running in one tmux session per workstream, coordinated through a built-in task DAG.",
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "license": "MIT",
   "author": "Martin Trojer <martin.trojer@gmail.com>",

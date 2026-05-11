@@ -80,21 +80,15 @@ orchestrator's first decision is whether to reach for mu at all.
 
 ## Install
 
-mu is **not on npm yet** — install from a local checkout.
-
 ```bash
-git clone https://github.com/martintrojer/mu
-cd mu
-npm install -g .         # `prepare` script auto-builds; `mu` lands on $PATH
+# 1. The CLI.
+npm install -g @martintrojer/mu
 mu --version
 
-# Install the bundled skill so pi loads it automatically.
-mkdir -p ~/.agents/skills
-ln -s "$PWD/skills/mu" ~/.agents/skills/mu
+# 2. The skill (teaches your coding agent how to drive mu).
+npx skills add martintrojer/mu          # auto-detects pi / claude-code / codex / etc.
+# Add -g to install globally (~/.<agent>/skills/), -y to skip prompts.
 ```
-
-(`cp -r skills/mu ~/.agents/skills/` works too; `git pull` keeps
-the symlink in sync.)
 
 **Requirements:**
 - Node 20, 22, or 23 (LTS recommended; see `.nvmrc`). Node 24+ is
@@ -103,8 +97,19 @@ the symlink in sync.)
 - pi (the agent CLI mu orchestrates)
 - For `--workspace`: jj, sl, or git on PATH (or `--backend none`)
 
-**Update:** `git pull && npm install -g .`. Other install patterns
-(alias-to-dist for fastest dev iteration) are in
+**Update:** `npm install -g @martintrojer/mu@latest` for the CLI;
+`npx skills update mu` for the skill.
+
+**Install from source** (hacking on mu itself):
+
+```bash
+git clone https://github.com/martintrojer/mu
+cd mu
+npm install -g .                        # `prepare` script auto-builds; `mu` lands on $PATH
+npx skills add ./skills/mu              # local-path source format
+```
+
+More install patterns (alias-to-dist for fastest dev iteration) in
 [docs/USAGE_GUIDE.md § 1 Setup](docs/USAGE_GUIDE.md#1-setup).
 
 ---

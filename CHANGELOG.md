@@ -8,7 +8,18 @@ called out under "Breaking" in each entry.
 
 ---
 
-## [Unreleased]
+## [0.3.1] — 2026-05-11
+
+**First npm release.** Published as `@martintrojer/mu`. The skill
+ships in the same repo and installs via the
+[skills CLI](https://github.com/vercel-labs/skills):
+`npx skills add martintrojer/mu`.
+
+Feature theme: contract uniformity. Two `--json` audits make every
+operator-error path and every collection-read verb structurally
+identical, so a script can `jq` any verb's output / error envelope
+without per-verb special-casing. Plus four small typed-verb wins
+from the v0.3 dogfood feedback wave.
 
 ### Added
 
