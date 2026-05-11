@@ -141,7 +141,7 @@ describe("mu task wait — cross-workstream qualified refs + --first", () => {
     // nextSteps include the verify hint on success.
     expect(out.nextSteps).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ command: expect.stringContaining("typecheck") }),
+        expect.objectContaining({ intent: expect.stringContaining("Verify") }),
       ]),
     );
   });

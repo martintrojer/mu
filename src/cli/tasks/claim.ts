@@ -402,7 +402,7 @@ export async function cmdTaskWait(
     }
     nextSteps.push({
       intent: "Verify the cherry-pick",
-      command: "npm run typecheck && npm run lint && npm run test && npm run build",
+      command: "<your project verify command — e.g. npm run test, cargo test, uv run pytest>",
     });
     if (owner !== null) {
       nextSteps.push({
@@ -416,7 +416,7 @@ export async function cmdTaskWait(
     // picked along the way (or runs a single verify here).
     nextSteps.push({
       intent: "Verify the merged work",
-      command: "npm run typecheck && npm run lint && npm run test && npm run build",
+      command: "<your project verify command — e.g. npm run test, cargo test, uv run pytest>",
     });
   }
   for (const t of unmetRefs) {
