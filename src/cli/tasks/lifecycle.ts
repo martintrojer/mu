@@ -18,7 +18,14 @@ import {
 } from "../../cli.js";
 import type { Db } from "../../db.js";
 import { type NextStep, pc, printNextSteps } from "../../output.js";
-import { closeTask, deferTask, getTask, openTask, rejectTask } from "../../tasks.js";
+import {
+  closeTask,
+  deferTask,
+  getTask,
+  openTask,
+  rejectTask,
+  resolveActorIdentity,
+} from "../../tasks.js";
 
 export async function cmdTaskClose(
   db: Db,
@@ -28,9 +35,24 @@ export async function cmdTaskClose(
   const { name: localId } = await resolveEntityRef(db, rawId, opts, "task");
   assertTaskInWorkstream(db, localId, opts.workstream);
   const ws = await resolveWorkstream(opts.workstream);
-  const sdkOpts: { evidence?: string; ifReady?: boolean; workstream: string } = { workstream: ws };
+  const sdkOpts: {
+    evidence?: string;
+    ifReady?: boolean;
+    workstream: string;
+    author?: string;
+  } = { workstream: ws };
   if (opts.evidence !== undefined) sdkOpts.evidence = opts.evidence;
   if (opts.ifReady) sdkOpts.ifReady = true;
+  // mufeedback task_close_evidence_does_not_append_the: closeTask
+  // auto-inserts a `CLOSE: <evidence>` note when --evidence is
+  // non-empty. Resolve the actor identity here so the note is
+  // attributed to the closing worker (mu-spawned worker via
+  // MU_AGENT_NAME, adopted pane via title, otherwise $USER /
+  // 'orchestrator'). Skip the resolve when evidence is missing /
+  // empty since closeTask won't insert a note in that case anyway.
+  if (opts.evidence !== undefined && opts.evidence !== "") {
+    sdkOpts.author = await resolveActorIdentity();
+  }
   // Capture the owner BEFORE closeTask so we can refresh their title
   // even though closeTask doesn't return owner info. owner won't
   // change as a result of close (FK SET NULL only fires on delete).

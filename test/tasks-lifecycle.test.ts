@@ -23,6 +23,7 @@ import {
   claimTask,
   closeTask,
   getTask,
+  listNotes,
   openTask,
   releaseTask,
   resolveActorIdentity,
@@ -515,16 +516,25 @@ describe("evidence on lifecycle verbs", () => {
     db.prepare("DELETE FROM agent_logs").run();
   });
 
-  function lastEventPayload(): string {
-    const row = db
-      .prepare("SELECT payload FROM agent_logs WHERE kind = 'event' ORDER BY seq DESC LIMIT 1")
-      .get() as { payload: string } | undefined;
+  // Returns the latest `kind='event'` payload, optionally filtered to
+  // events whose payload contains `match`. The match arg is needed
+  // because closeTask now emits TWO events when --evidence is set:
+  // the `task status ...` flip event AND the `task note ...` event
+  // for the auto-inserted CLOSE: synthetic note (mufeedback
+  // task_close_evidence_does_not_append_the). Tests that want the
+  // status payload must scope to it explicitly.
+  function lastEventPayload(match?: string): string {
+    const sql = match
+      ? "SELECT payload FROM agent_logs WHERE kind = 'event' AND payload LIKE ? ORDER BY seq DESC LIMIT 1"
+      : "SELECT payload FROM agent_logs WHERE kind = 'event' ORDER BY seq DESC LIMIT 1";
+    const stmt = db.prepare(sql);
+    const row = (match ? stmt.get(`%${match}%`) : stmt.get()) as { payload: string } | undefined;
     return row?.payload ?? "";
   }
 
   it('closeTask --evidence appends evidence="…" to the event payload', () => {
     closeTask(db, "design", { evidence: "tests pass: npm test exit 0", workstream: "auth" });
-    const p = lastEventPayload();
+    const p = lastEventPayload("task status");
     expect(p).toContain("task status design");
     expect(p).toContain('evidence="tests pass: npm test exit 0"');
   });
@@ -576,9 +586,57 @@ describe("evidence on lifecycle verbs", () => {
 
   it("evidence is JSON-quoted so multi-word + special chars stay legible", () => {
     closeTask(db, "design", { evidence: 'has "quotes" and a \\backslash', workstream: "auth" });
-    const p = lastEventPayload();
+    const p = lastEventPayload("task status");
     // JSON.stringify preserves the inner quotes and backslash via escaping
     expect(p).toContain('evidence="has \\"quotes\\" and a \\\\backslash"');
+  });
+
+  // mufeedback task_close_evidence_does_not_append_the: when
+  // `mu task close --evidence "..."` runs, the evidence string used to
+  // land only in the agent_logs event payload, not in `mu task notes`.
+  // Workers were skipping the "drop a final note" contract on the
+  // assumption that --evidence was sufficient. closeTask now auto-
+  // inserts a synthetic `CLOSE: <evidence>` note so the evidence joins
+  // the note timeline.
+  it("closeTask --evidence inserts a synthetic CLOSE note into task_notes", () => {
+    closeTask(db, "design", {
+      evidence: "npm test exit 0",
+      author: "worker-1",
+      workstream: "auth",
+    });
+    const notes = listNotes(db, "design", "auth");
+    expect(notes).toHaveLength(1);
+    expect(notes[0]?.content).toBe("CLOSE: npm test exit 0");
+    expect(notes[0]?.author).toBe("worker-1");
+  });
+
+  it("closeTask without --evidence does NOT insert a synthetic note", () => {
+    closeTask(db, "design", { workstream: "auth" });
+    expect(listNotes(db, "design", "auth")).toHaveLength(0);
+  });
+
+  it("closeTask with empty-string --evidence does NOT insert a synthetic note", () => {
+    closeTask(db, "design", { evidence: "", workstream: "auth" });
+    expect(listNotes(db, "design", "auth")).toHaveLength(0);
+  });
+
+  it("closeTask is idempotent on the synthetic note (re-close on already-CLOSED skips it)", () => {
+    closeTask(db, "design", {
+      evidence: "shipped via PR #42",
+      author: "worker-1",
+      workstream: "auth",
+    });
+    // Second close with different evidence on an already-CLOSED task
+    // is a no-op (changed=false); no second synthetic note should
+    // accumulate, otherwise retries would spam the timeline.
+    closeTask(db, "design", {
+      evidence: "second attempt",
+      author: "worker-1",
+      workstream: "auth",
+    });
+    const notes = listNotes(db, "design", "auth");
+    expect(notes).toHaveLength(1);
+    expect(notes[0]?.content).toBe("CLOSE: shipped via PR #42");
   });
 });
 

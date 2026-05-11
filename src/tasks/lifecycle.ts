@@ -15,7 +15,7 @@
 import type { Db } from "../db.js";
 import { emitEvent } from "../logs.js";
 import { captureSnapshot } from "../snapshots.js";
-import { getTask, getTaskEdgesWithStatus } from "../tasks.js";
+import { addNote, getTask, getTaskEdgesWithStatus } from "../tasks.js";
 import { TaskHasOpenDependentsError, TaskNotFoundError } from "./errors.js";
 import type { TaskStatus } from "./status.js";
 
@@ -121,6 +121,14 @@ export interface CloseTaskOptions extends EvidenceOption {
    *   When false / omitted, behaves as bare `closeTask` (closes
    *   regardless of blocker status). */
   ifReady?: boolean;
+  /** Optional actor identity attributed to the synthetic `CLOSE: …`
+   *  note auto-inserted when `evidence` is non-empty (see closeTask
+   *  body). The CLI resolves this via `resolveActorIdentity()` so the
+   *  note carries the closing worker's name; SDK callers (tests,
+   *  internal use) may omit it (the note then carries no author, same
+   *  as a bare `addNote` without `--author`). Surfaced in mufeedback
+   *  task_close_evidence_does_not_append_the. */
+  author?: string;
 }
 
 /** Convenience: setTaskStatus(db, id, "CLOSED"). Accepts evidence.
@@ -164,7 +172,25 @@ export function closeTask(
   if (before && before.status !== "CLOSED") {
     captureSnapshot(db, `task close ${localId}`, before.workstreamName);
   }
-  return setTaskStatus(db, localId, "CLOSED", opts);
+  const r = setTaskStatus(db, localId, "CLOSED", opts);
+  // mufeedback task_close_evidence_does_not_append_the: when the
+  // operator passes `--evidence "..."`, the string lands in the
+  // agent_logs event payload but was invisible to `mu task notes <id>`
+  // / `mu task show <id>`. Workers were skipping the "drop a final
+  // note before close" contract on the (reasonable) assumption that
+  // --evidence was sufficient. Auto-insert a synthetic note so the
+  // evidence joins the note timeline. Only fires when evidence is a
+  // non-empty string AND the close actually mutated something
+  // (idempotent re-close on an already-CLOSED task: skip; nothing
+  // newly attested). Empty-string evidence is treated as none.
+  if (r.changed && before && opts.evidence !== undefined && opts.evidence !== "") {
+    const noteOpts: { author?: string; workstream: string } = {
+      workstream: before.workstreamName,
+    };
+    if (opts.author !== undefined && opts.author !== "") noteOpts.author = opts.author;
+    addNote(db, localId, `CLOSE: ${opts.evidence}`, noteOpts);
+  }
+  return r;
 }
 
 /** Convenience: setTaskStatus(db, id, "OPEN"). Owner intentionally NOT
