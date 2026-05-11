@@ -104,6 +104,32 @@ is opt-in via the new `--tui` flag.
   feat_track_drill_chains_to_task_drill (rows aren't tasks). After
   this card lands, all reserved digit slots (1–9) are filled; slot
   0 stays reserved by convention.
+- **TUI Workspaces popup (Shift+5 / `%`)** — the matching popup
+  for Card 5. Fullscreen drill-down of every per-agent workspace in
+  the workstream. Renders the same five Card 5 columns (status
+  glyph, agent name, backend, commits-behind, parent_ref short)
+  plus two extras the card couldn't fit (dirty? and the on-disk
+  path). Re-uses the card's pure colour/glyph helpers (`glyphFor`,
+  `colorForGlyph`, `colorForBehind`, `formatBehind`) so the popup
+  stays visually in sync with the card. j/k navigation; `/` filter
+  via the shared `usePopupFilter` primitive (per
+  feat_popup_search_filter — blob is
+  `agent backend parent_ref [dirty]`); `y` yanks
+  `cd $(mu workspace path <agent> -w <ws>)` (the canonical entry
+  to a workspace per skills/mu's cherry-pick / inspection-workflow
+  recipe). Read-only: no mutating verbs (no `mu workspace free` /
+  `recreate` / `refresh` yank — surfaced as out-of-scope by the
+  task brief). `Enter` drills into the per-workspace
+  commits-since-fork list (`listCommitsForWorkspace` — the same
+  data `mu workspace commits <agent>` surfaces). The drill is its
+  OWN read-only list (NOT `TaskDetailDrill` — workspaces aren't
+  tasks); columns are `<sha-short>  <subject>` newest-first; the
+  drill ALSO consumes `usePopupFilter` so '/' substring search
+  across (sha + subject) works in 30+-commit workspaces; `y` in
+  drill mode yanks `git show <sha>` (cherry-pick discovery).
+  Esc/q backs out one level (drill → list, then list → popup
+  closed). Slot-6/7/8 popups remain reserved and tracked by
+  `feat_more_cards_umbrella`.
 - **TUI Recent card (slot 8)** — toggleable with `8`. One
   glanceable list of the most-recently CLOSED tasks in the
   workstream, newest first: heavy-check glyph (✓, green), task

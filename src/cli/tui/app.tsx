@@ -34,6 +34,7 @@ import { AgentsPopup } from "./popups/agents.js";
 import { LogPopup } from "./popups/log.js";
 import { ReadyPopup } from "./popups/ready.js";
 import { TracksPopup } from "./popups/tracks.js";
+import { WorkspacesPopup } from "./popups/workspaces.js";
 import {
   type CardVisibility,
   DEFAULT_CARD_VISIBILITY,
@@ -55,7 +56,7 @@ export interface FooterState {
   copied: boolean;
 }
 
-type PopupId = 1 | 2 | 3 | 4 | null;
+type PopupId = 1 | 2 | 3 | 4 | 5 | null;
 export type PopupMode = "list" | "drill";
 
 export function App({ db, workstream }: AppProps): JSX.Element {
@@ -210,7 +211,7 @@ export function App({ db, workstream }: AppProps): JSX.Element {
             [cardKeyFromId(action.cardId)]: !v[cardKeyFromId(action.cardId)],
           }));
           return;
-        // (slot 5 has no popup yet — see feat_more_cards_umbrella)
+        // (slot 6/7/8 have no popup yet — see feat_more_cards_umbrella)
         case "openPopup":
           if (popup !== null) return; // single-popup invariant
           setPopupMode("list");
@@ -307,7 +308,7 @@ export function App({ db, workstream }: AppProps): JSX.Element {
     </Box>
   );
 
-  function renderPopup(id: 1 | 2 | 3 | 4): JSX.Element {
+  function renderPopup(id: 1 | 2 | 3 | 4 | 5): JSX.Element {
     const props = {
       yank: yankFn,
       onClose: () => {
@@ -331,6 +332,8 @@ export function App({ db, workstream }: AppProps): JSX.Element {
         return <ReadyPopup {...props} />;
       case 4:
         return <LogPopup {...props} />;
+      case 5:
+        return <WorkspacesPopup {...props} />;
     }
   }
 }
@@ -358,7 +361,7 @@ function cardKeyFromId(id: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9): keyof CardVisibil
   }
 }
 
-function popupNameForId(id: 1 | 2 | 3 | 4): string {
+function popupNameForId(id: 1 | 2 | 3 | 4 | 5): string {
   switch (id) {
     case 1:
       return "Agents";
@@ -368,5 +371,7 @@ function popupNameForId(id: 1 | 2 | 3 | 4): string {
       return "Tasks";
     case 4:
       return "Log";
+    case 5:
+      return "Workspaces";
   }
 }
