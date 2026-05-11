@@ -28,23 +28,24 @@ describe("dispatchGlobalKey: card toggles 1-9", () => {
   // below; not re-asserted here.)
 });
 
-describe("dispatchGlobalKey: popup openers (Shift+1..Shift+5 → ! @ # $ %)", () => {
+describe("dispatchGlobalKey: popup openers (Shift+1..Shift+6 → ! @ # $ % ^)", () => {
   it.each([
     ["!", 1],
     ["@", 2],
     ["#", 3],
     ["$", 4],
     ["%", 5],
+    ["^", 6],
   ] as const)("%s opens popup %d", (input, cardId) => {
     expect(dispatchGlobalKey(input, NO_KEY)).toEqual({ kind: "openPopup", cardId });
   });
 
-  it("the other shifted-digit glyphs (^ & * () are noops in v0", () => {
+  it("the remaining shifted-digit glyphs (& * () are noops in v0", () => {
     // Slot-5 (`%`) was promoted by feat_popup_5_workspaces; slot-6
-    // (`^`), slot-7 (`&`), slot-8 (`*`), and slot-9 (`(`) popups
-    // are tracked by feat_more_cards_umbrella and stay reserved
-    // noops until their popup tasks land.
-    for (const g of ["^", "&", "*", "(", ")"]) {
+    // (`^`) by feat_popup_6_inprogress; slot-7 (`&`), slot-8 (`*`),
+    // and slot-9 (`(`) popups are tracked by feat_more_cards_umbrella
+    // and stay reserved noops until their popup tasks land.
+    for (const g of ["&", "*", "(", ")"]) {
       expect(dispatchGlobalKey(g, NO_KEY)).toEqual({ kind: "noop" });
     }
   });

@@ -178,12 +178,23 @@ is opt-in via the new `--tui` flag.
   directly — no SDK extension. Empty-state body is `(none in
   progress)`. Fills the cross-ref pain that previously forced
   the operator to read the Agents card AND the Ready card to
-  figure out "what's actually running right now". Slot-6 popup
-  (Shift+6 / `^`) is not shipped yet; tracked by
-  feat_more_cards_umbrella, and when it lands it MUST follow
-  feat_popup_search_filter (`/`) and
-  feat_track_drill_chains_to_task_drill (Enter chains rows into
-  TaskDetailDrill, since rows ARE tasks).
+  figure out "what's actually running right now".
+- **TUI In-progress popup (Shift+6 / `^`)** — the matching
+  fullscreen drill-down for Card 6 (per feat_popup_6_inprogress).
+  Mirrors the card's columns (`glyph id STATUS owner since-claim
+  title`) and adds an ROI column the card was too narrow to fit.
+  `j/k` nav, `/` filter (incremental case-insensitive substring
+  over `id title owner` via the shared `usePopupFilter` primitive),
+  `y` yanks `mu task close <id> -w <ws> --evidence "..."` (the
+  most likely act-intent for an IN_PROGRESS row; matches the Tasks
+  popup yank matrix), `Enter` chains into the shared
+  `TaskDetailDrill` leaf rendering the focused task's notes
+  timeline (per the recursion contract from
+  feat_track_drill_chains_to_task_drill — rows ARE tasks). Drill-mode
+  `y` yanks `mu task notes <id>`. Read-only: never executes a
+  mutation. Re-uses Card 6's pure helpers (`glyphFor`,
+  `formatSinceClaim`, `ageMs`, `isStale`) so the popup stays in
+  visual lockstep with the card.
 - **TUI Workspaces card (slot 5)** — toggleable with `5`. Shows
   per-agent rows: status glyph (★ dirty / ⓘ stale / ✓ clean),
   agent name, backend, commits-behind-main (green ≤2 / yellow 3-9 /

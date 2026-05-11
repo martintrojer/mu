@@ -105,7 +105,7 @@ mu/
 │   │   │   ├── help.tsx    # ?/F1 keymap overlay
 │   │   │   ├── use-popup-filter.tsx  # shared '/' substring filter (hook + reducer + applyFilter + FilterPrompt)
 │   │   │   ├── cards/{agents,tracks,ready,log,workspaces,inprogress,blocked,recent,doctor}.tsx  # 9 dashboard glance cards
-│   │   │   └── popups/{agents,tracks,ready,log,workspaces}.tsx  # 5 fullscreen drill-down popups
+│   │   │   └── popups/{agents,tracks,ready,log,workspaces,inprogress}.tsx  # 6 fullscreen drill-down popups
 │   │   ├── snapshot.ts    # undo / snapshot list / snapshot show
 │   │   ├── sql.ts         # sql escape hatch
 │   │   ├── doctor.ts      # doctor diagnostic

@@ -10,10 +10,11 @@
 //   ! @ # $     open fullscreen popup for that card  (Shift+1..Shift+4
 //               on US keyboards; bound by glyph because ink reports
 //               the post-shift character, not the modifier).
-//               Slot-5 (`%`), slot-6 (`^`), slot-7 (`&`), slot-8
-//               (`*`), and slot-9 (`(`) popups are OUT OF SCOPE for
-//               the matching card tasks; all stay noops until their
-//               popup tasks land (umbrella feat_more_cards_umbrella).
+//   ^           open In-progress popup (Shift+6 / slot 6; promoted by
+//               feat_popup_6_inprogress).
+//               Slot-5 (`%`), slot-7 (`&`), slot-8 (`*`), and slot-9
+//               (`(`) popups stay noops until their popup tasks land
+//               (umbrella feat_more_cards_umbrella).
 //   + / =       tick faster (floor 100ms); = is the unshifted alias
 //   -           tick slower (ceiling 10s)
 //   0           reset tick to default 1s
@@ -30,7 +31,7 @@
 
 export type GlobalAction =
   | { kind: "toggleCard"; cardId: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 }
-  | { kind: "openPopup"; cardId: 1 | 2 | 3 | 4 | 5 }
+  | { kind: "openPopup"; cardId: 1 | 2 | 3 | 4 | 5 | 6 }
   | { kind: "tickFaster" }
   | { kind: "tickSlower" }
   | { kind: "tickReset" }
@@ -106,19 +107,20 @@ export function dispatchGlobalKey(input: string, key: KeyFlags): GlobalAction {
     return { kind: "toggleCard", cardId };
   }
 
-  // Popup openers !-% on US keyboards. Bound by glyph because ink
-  // reports the post-shift character; key.shift is false. Layout-
-  // dependent — see design_global_keymap ODDITY for non-US keymaps.
-  // Slot 5 (`%`) was promoted by feat_popup_5_workspaces (workstream
-  // `tui-impl`); slot-6 (`^`), slot-7 (`&`), and slot-8 (`*`) popups
-  // remain reserved noops until their popup tasks land (umbrella
-  // feat_more_cards_umbrella).
-  const glyphMap: Record<string, 1 | 2 | 3 | 4 | 5> = {
+  // Popup openers !-% + ^ on US keyboards. Bound by glyph because
+  // ink reports the post-shift character; key.shift is false.
+  // Layout-dependent — see design_global_keymap ODDITY for non-US
+  // keymaps. Slot-5 (`%`) is promoted by feat_popup_5_workspaces;
+  // slot-6 (`^`) by feat_popup_6_inprogress (workstream `tui-impl`);
+  // slots 7/8/9 stay reserved noops until their popup tasks land
+  // (umbrella feat_more_cards_umbrella).
+  const glyphMap: Record<string, 1 | 2 | 3 | 4 | 5 | 6> = {
     "!": 1,
     "@": 2,
     "#": 3,
     $: 4,
     "%": 5,
+    "^": 6,
   };
   const popupId = glyphMap[input];
   if (popupId !== undefined) return { kind: "openPopup", cardId: popupId };
