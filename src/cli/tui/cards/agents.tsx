@@ -66,7 +66,7 @@ export function AgentsCard({ snapshot }: AgentsCardProps): JSX.Element {
   const rows = agents.map((a) => {
     const owned = snapshot.inProgress.filter((t) => t.ownerName === a.name);
     const taskBit = summarizeOwnedTasks(owned).bit;
-    const idle = a.idle ? "⚠ idle" : "—";
+    const idle = a.idle ? "⚠ idle" : "";
     return [STATUS_EMOJI[a.status] ?? "?", a.name, taskBit, idle];
   });
   const widths = layoutColumns(rows, COLUMN_SPECS, contentWidth);
