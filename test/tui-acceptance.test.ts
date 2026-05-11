@@ -139,14 +139,23 @@ describe("TUI end-to-end acceptance", () => {
 
   it("runTui enters and exits the alt-screen so the dashboard is flush with the top of the pane", async () => {
     // Alt-screen sequences are TTY-only side effects; the most
-    // reliable gate is a static assertion that runTui writes both
-    // the enter (`\x1b[?1049h`) and exit (`\x1b[?1049l`) escapes,
-    // and that the exit path is in a `finally` so any throw still
-    // restores the user's shell scrollback.
+    // reliable gate is a static assertion that the constants exist in
+    // the dedicated `escapes.ts` module (split out so they're unit-
+    // testable without booting ink) and that runTui writes them in a
+    // try/finally so any throw still restores the user's shell
+    // scrollback. The enter sequence MUST also home the cursor
+    // (`\x1b[H`) so the dashboard renders flush with row 1 — the
+    // alt-screen swap alone inherits the cursor row from the prior
+    // buffer on iTerm2/Apple Terminal/tmux's inner terminal.
     const { readFileSync } = await import("node:fs");
+    const escapes = readFileSync("./src/cli/tui/escapes.ts", "utf-8");
+    expect(escapes).toMatch(/\\x1b\[\?1049h/);
+    expect(escapes).toMatch(/\\x1b\[\?1049l/);
+    expect(escapes).toMatch(/\\x1b\[H/);
+    expect(escapes).toMatch(/\\x1b\[\?25l/);
+    expect(escapes).toMatch(/\\x1b\[\?25h/);
     const src = readFileSync("./src/cli/tui/index.ts", "utf-8");
-    expect(src).toMatch(/\\x1b\[\?1049h/);
-    expect(src).toMatch(/\\x1b\[\?1049l/);
+    expect(src).toMatch(/ALT_SCREEN_ENTER/);
     expect(src).toMatch(/finally\s*\{[\s\S]*?ALT_SCREEN_EXIT/);
   });
 });

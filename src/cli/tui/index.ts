@@ -7,18 +7,11 @@ import { render } from "ink";
 import { createElement } from "react";
 import type { Db } from "../../db.js";
 import { App } from "./app.js";
+import { ALT_SCREEN_ENTER, ALT_SCREEN_EXIT } from "./escapes.js";
 
 export interface RunTuiOptions {
   workstream: string;
 }
-
-// Alt-screen escape sequences (lazygit/htop/btop convention).
-// `\x1b[?1049h` swaps to the alternate screen buffer; `\x1b[?1049l`
-// restores the prior buffer (and therefore the user's shell scrollback)
-// on exit. Without these, ink renders inline at the cursor position
-// and the dashboard is not flush with the top of the pane.
-const ALT_SCREEN_ENTER = "\x1b[?1049h";
-const ALT_SCREEN_EXIT = "\x1b[?1049l";
 
 export async function runTui(db: Db, opts: RunTuiOptions): Promise<void> {
   process.stdout.write(ALT_SCREEN_ENTER);

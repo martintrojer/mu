@@ -93,7 +93,8 @@ mu/
 │   │   ├── archive.ts     # archive create / list / show / add / remove / delete
 │   │   ├── state.ts       # `mu state` (canonical state card) + bare `mu` (mission control); --tui dispatches to src/cli/tui/
 │   │   ├── tui/           # interactive ink-based TUI cluster (mu state --tui); ONLY place ink/react are imported
-│   │   │   ├── index.ts    # runTui entrypoint + alt-screen escape sequences
+│   │   │   ├── index.ts    # runTui entrypoint; writes alt-screen enter/exit around ink render
+│   │   │   ├── escapes.ts  # pure ANSI escape constants (ALT_SCREEN_ENTER/EXIT) — no ink imports
 │   │   │   ├── app.tsx     # <App> root (popup state machine + global keymap + footer + tick)
 │   │   │   ├── state.ts    # poll-loop hook (useDashboardSnapshot) + tick constants
 │   │   │   ├── keys.ts     # pure dispatchGlobalKey + dispatchPopupKey

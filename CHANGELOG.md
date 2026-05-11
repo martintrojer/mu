@@ -118,6 +118,19 @@ is opt-in via the new `--tui` flag.
   ANSI in parallel — if ink ever fails, REPLACE the stack and
   amend the pledge; don't stack stacks).
 
+### Fixed
+
+- **TUI dashboard renders flush with row 1 again** (bug_tui_topalign_v2).
+  The alt-screen swap (`\x1b[?1049h`) inherits the cursor row from
+  the prior buffer on iTerm2, Apple Terminal, and tmux's inner
+  terminal, so the dashboard appeared mid-pane wherever the shell
+  prompt happened to be. `ALT_SCREEN_ENTER` now extends to
+  `\x1b[?1049h\x1b[2J\x1b[H\x1b[?25l` (swap, clear, home, hide
+  cursor) and `ALT_SCREEN_EXIT` to `\x1b[?25h\x1b[?1049l` (show
+  cursor, restore prior buffer) — the lazygit/btop/htop convention.
+  Constants moved to `src/cli/tui/escapes.ts` so they're unit-testable
+  without booting ink.
+
 ### Deps added
 
 - `ink ^5.0.0` (interactive TUI render layer; lazy-imported)
