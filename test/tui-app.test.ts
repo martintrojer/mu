@@ -50,8 +50,9 @@ describe("App popup-lifecycle state-restore (structural)", () => {
   it("App.tsx popups receive ONLY yank + onClose callbacks", async () => {
     const { readFileSync } = await import("node:fs");
     const src = readFileSync("./src/cli/tui/app.tsx", "utf-8");
-    // The props bag passed to popups.
-    const m = src.match(/const props = \{ ([^}]*) \}/);
+    // The props bag passed to popups (now multi-line since `snapshot`
+    // was added in Wave 6 — match across newlines).
+    const m = src.match(/const props = \{([\s\S]*?)\};/);
     expect(m, "props bag should be a single literal in renderPopup").not.toBeNull();
     const propsContent = m?.[1] ?? "";
     // Must contain yank and onClose; must not contain anything else.
@@ -59,7 +60,16 @@ describe("App popup-lifecycle state-restore (structural)", () => {
     expect(propsContent).toContain("onClose");
     // Allow whitespace + commas + colons; no other identifier names.
     const identifiers = propsContent.match(/\b[a-zA-Z_$][a-zA-Z0-9_$]*\b/g) ?? [];
-    const allowed = new Set(["yank", "onClose", "yankFn", "setPopup", "null"]);
+    const allowed = new Set([
+      "yank",
+      "onClose",
+      "yankFn",
+      "setPopup",
+      "snapshot",
+      "snap",
+      "data",
+      "null",
+    ]);
     for (const id of identifiers) {
       expect(allowed.has(id), `unexpected popup prop: ${id}`).toBe(true);
     }

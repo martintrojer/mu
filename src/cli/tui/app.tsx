@@ -206,7 +206,11 @@ export function App({ db, workstream }: AppProps): JSX.Element {
   );
 
   function renderPopup(id: 1 | 2 | 3 | 4): JSX.Element {
-    const props = { yank: yankFn, onClose: () => setPopup(null) };
+    const props = {
+      yank: yankFn,
+      onClose: () => setPopup(null),
+      snapshot: snap.data,
+    };
     switch (id) {
       case 1:
         return <AgentsPopup {...props} />;

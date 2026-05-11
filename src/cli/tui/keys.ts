@@ -106,3 +106,67 @@ export function dispatchGlobalKey(input: string, key: KeyFlags): GlobalAction {
 
   return { kind: "noop" };
 }
+
+// ─── In-popup keymap convention ────────────────────────────────────
+//
+// Per design_global_keymap, every popup honours:
+//   j / ↓        moveDown
+//   k / ↑        moveUp
+//   g            jumpTop
+//   G            jumpBottom
+//   Ctrl-D       pageDown (half)
+//   Ctrl-U       pageUp (half)
+//   PgDn / PgUp  pageDown / pageUp (full)
+//   /            enterFilter
+//   n            nextMatch
+//   N            prevMatch
+//   Esc          close
+//   q            close (alias)
+//   y            yank
+//   ?            toggleHelp
+//
+// Tick-rate keys (+/-/=/0), refresh (r/F5), and Ctrl-C remain live in
+// popups (they're global). Card toggles (1-4) and popup openers (!-$)
+// are SUPPRESSED by <App>.
+
+export type PopupAction =
+  | { kind: "moveDown" }
+  | { kind: "moveUp" }
+  | { kind: "jumpTop" }
+  | { kind: "jumpBottom" }
+  | { kind: "pageDown"; half: boolean }
+  | { kind: "pageUp"; half: boolean }
+  | { kind: "enterFilter" }
+  | { kind: "nextMatch" }
+  | { kind: "prevMatch" }
+  | { kind: "close" }
+  | { kind: "yank" }
+  | { kind: "verb"; key: string }
+  | { kind: "noop" };
+
+/**
+ * Map a keystroke inside a popup to the popup-local action it
+ * represents. Per-popup verbs (letter keys not in the reserved set
+ * {j k g G n N q y c r w}) bubble up as `{kind: "verb", key}` so the
+ * caller can switch on the literal letter.
+ */
+export function dispatchPopupKey(input: string, key: KeyFlags): PopupAction {
+  if (key.escape || input === "q" || input === "Q") return { kind: "close" };
+  if (input === "j" || key.downArrow) return { kind: "moveDown" };
+  if (input === "k" || key.upArrow) return { kind: "moveUp" };
+  if (input === "g") return { kind: "jumpTop" };
+  if (input === "G") return { kind: "jumpBottom" };
+  if (key.ctrl && input === "d") return { kind: "pageDown", half: true };
+  if (key.ctrl && input === "u") return { kind: "pageUp", half: true };
+  if (key.pageDown) return { kind: "pageDown", half: false };
+  if (key.pageUp) return { kind: "pageUp", half: false };
+  if (input === "/") return { kind: "enterFilter" };
+  if (input === "n") return { kind: "nextMatch" };
+  if (input === "N") return { kind: "prevMatch" };
+  if (input === "y") return { kind: "yank" };
+  // Per-popup verbs: any letter NOT in the reserved set above is a
+  // candidate for a popup-specific verb. The caller decides whether
+  // to act.
+  if (/^[a-zA-Z]$/.test(input)) return { kind: "verb", key: input };
+  return { kind: "noop" };
+}

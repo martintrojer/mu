@@ -98,3 +98,55 @@ describe("dispatchGlobalKey: unknown input", () => {
     expect(dispatchGlobalKey("", NO_KEY)).toEqual({ kind: "noop" });
   });
 });
+
+import { dispatchPopupKey } from "../src/cli/tui/keys.js";
+
+describe("dispatchPopupKey: in-popup convention", () => {
+  it("Esc closes", () => {
+    expect(dispatchPopupKey("", { escape: true })).toEqual({ kind: "close" });
+  });
+  it("q/Q closes", () => {
+    expect(dispatchPopupKey("q", NO_KEY)).toEqual({ kind: "close" });
+    expect(dispatchPopupKey("Q", NO_KEY)).toEqual({ kind: "close" });
+  });
+  it("j/down moveDown", () => {
+    expect(dispatchPopupKey("j", NO_KEY)).toEqual({ kind: "moveDown" });
+    expect(dispatchPopupKey("", { downArrow: true })).toEqual({ kind: "moveDown" });
+  });
+  it("k/up moveUp", () => {
+    expect(dispatchPopupKey("k", NO_KEY)).toEqual({ kind: "moveUp" });
+    expect(dispatchPopupKey("", { upArrow: true })).toEqual({ kind: "moveUp" });
+  });
+  it("g/G top/bottom", () => {
+    expect(dispatchPopupKey("g", NO_KEY)).toEqual({ kind: "jumpTop" });
+    expect(dispatchPopupKey("G", NO_KEY)).toEqual({ kind: "jumpBottom" });
+  });
+  it("/ enters filter", () => {
+    expect(dispatchPopupKey("/", NO_KEY)).toEqual({ kind: "enterFilter" });
+  });
+  it("n/N next/prev match", () => {
+    expect(dispatchPopupKey("n", NO_KEY)).toEqual({ kind: "nextMatch" });
+    expect(dispatchPopupKey("N", NO_KEY)).toEqual({ kind: "prevMatch" });
+  });
+  it("y yanks", () => {
+    expect(dispatchPopupKey("y", NO_KEY)).toEqual({ kind: "yank" });
+  });
+  it("Ctrl-D pageDown half, Ctrl-U pageUp half", () => {
+    expect(dispatchPopupKey("d", { ctrl: true })).toEqual({ kind: "pageDown", half: true });
+    expect(dispatchPopupKey("u", { ctrl: true })).toEqual({ kind: "pageUp", half: true });
+  });
+  it("PgDn/PgUp full pageDown/pageUp", () => {
+    expect(dispatchPopupKey("", { pageDown: true })).toEqual({ kind: "pageDown", half: false });
+    expect(dispatchPopupKey("", { pageUp: true })).toEqual({ kind: "pageUp", half: false });
+  });
+  it("other letters bubble up as verbs", () => {
+    expect(dispatchPopupKey("f", NO_KEY)).toEqual({ kind: "verb", key: "f" });
+    expect(dispatchPopupKey("x", NO_KEY)).toEqual({ kind: "verb", key: "x" });
+    expect(dispatchPopupKey("t", NO_KEY)).toEqual({ kind: "verb", key: "t" });
+  });
+  it("digits and punctuation are noops in popup convention", () => {
+    expect(dispatchPopupKey("1", NO_KEY)).toEqual({ kind: "noop" });
+    expect(dispatchPopupKey("!", NO_KEY)).toEqual({ kind: "noop" });
+    expect(dispatchPopupKey("+", NO_KEY)).toEqual({ kind: "noop" });
+  });
+});
