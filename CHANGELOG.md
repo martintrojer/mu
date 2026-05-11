@@ -353,6 +353,37 @@ is opt-in via the new `--tui` flag.
   complete no-op outside the test runner. Coverage:
   test/db-test-guard.test.ts (3 cases: HOME-rooted forbidden,
   arbitrary temp permitted, XDG_STATE_HOME-rooted forbidden).
+- **Test infrastructure: `MU_TMUX_SOCKET` published at module load**
+  (round-3 Part A of bug_test_flake_round_3). Previously the env
+  publish lived inside `setup()` of `test/_global-teardown.ts`.
+  vitest's globalSetup contract makes that work today (setup runs
+  before fork), but the contract is fragile to pool changes and
+  the failure mode is silent (sessions land on the user's default
+  socket instead of the private `mu-test-<...>` one). The fix
+  hoists `process.env.MU_TMUX_SOCKET = TEST_SOCKET` to the module
+  body, which unambiguously runs before vitest spawns anything.
+  `setup()` then bootstraps the actual tmux server and reverts the
+  env publish on bootstrap failure for graceful fallback. Verified:
+  3 back-to-back `npx vitest run` invocations leave zero `mu-*`
+  residue on the default socket.
+- **Test infrastructure: allowlist-based default-socket sweep**
+  (round-3 Part B of bug_test_flake_round_3). The previous regex
+  sweep `^mu-(acc|claim|kick|...)-` only matched sessions whose
+  name started with a known fixture prefix followed by a dash, so
+  bare-name leftovers like `mu-alpha`, `mu-demo`, `mu-ws`, `mu-ws2`,
+  `mu-scratch`, `mu-beta`, `mu-gamma` (created by tests that hardcode
+  short workstream names instead of using `freshWorkstream()`) lingered
+  on the user's default socket forever. Replaced with an allowlist
+  approach: the sweep computes the union of (1) `mu-*` sessions
+  present at module-load time (the user's pre-existing tmux state)
+  and (2) `mu-<name>` for every workstream in the user's REAL DB
+  (read-only via better-sqlite3, bypassing the `openDb()` test
+  guard). Anything starting with `mu-` and NOT in the union is
+  killed by elimination. Verified by injecting a fake mid-suite
+  `tmux new-session -s mu-injected-leak`: pre-existing `mu-alpha`
+  survived; `mu-injected-leak` killed at teardown. Pure policy
+  helper `sessionsToKill(allMuSessions, allowlist)` covered by
+  test/global-teardown-allowlist.test.ts (6 cases).
 - **Test infrastructure: `MU_*` env-var baseline scrub** (Layer
   "test" of bug_test_flake_round_2). vitest forks inherit the
   parent shell's environment; when a developer (or the

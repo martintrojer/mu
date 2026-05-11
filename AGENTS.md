@@ -209,9 +209,23 @@ those tests skip themselves; CI runs inside tmux.
   of each fork, so SDK-level overrides (`MU_PI_COMMAND`,
   `MU_IDLE_THRESHOLD_MS`, `MU_SEND_DELAY_MS`, …) can't silently
   change behaviour underneath tests. Allowlist: `MU_TMUX_SOCKET`
-  (set by `_global-teardown.ts` BEFORE fork spawn for Layer-3
-  isolation). Tests that need a specific value opt IN per-test via
+  (set by `_global-teardown.ts` at MODULE LOAD time — BEFORE vitest
+  spawns the worker pool — for Layer-3 isolation; see round-3
+  Part A in the file's header comment for why module-load not
+  setup()). Tests that need a specific value opt IN per-test via
   `process.env.X = "..."` or `withEnv()` from `test/_env.ts`.
+- **Default-socket sweep philosophy**: `_global-teardown.ts` runs
+  an ALLOWLIST sweep of `mu-*` sessions on the user's default tmux
+  socket at suite setup AND teardown. The allowlist is the union
+  of (1) `mu-*` sessions present at module-load time (the user's
+  pre-existing tmux state) and (2) `mu-<name>` for every workstream
+  in the user's REAL DB (read-only via better-sqlite3, bypassing
+  the `openDb()` test guard). Anything not in the union is, by
+  elimination, test residue and is killed. Replaces the old
+  regex-prefix sweep that missed bare-name leftovers like
+  `mu-alpha` / `mu-demo` / `mu-ws`. New tests can hardcode any
+  workstream name they want — if they accidentally bypass the
+  private socket the sweep catches them by default.
 
 ### When you change behaviour, update VOCABULARY first
 
