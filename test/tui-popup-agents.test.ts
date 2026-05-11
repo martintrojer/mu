@@ -12,4 +12,13 @@ describe("AgentsPopup", () => {
     expect(src).toContain("mu agent free");
     expect(src).toContain("mu agent close");
   });
+  it("source drills into a read-only scrollback view (readAgent + DrillScrollView)", async () => {
+    const { readFileSync } = await import("node:fs");
+    const src = readFileSync("./src/cli/tui/popups/agents.tsx", "utf-8");
+    expect(src).toContain("readAgent");
+    expect(src).toContain("DrillScrollView");
+    // "drill" branch must call onModeChange ("list" ↔ "drill").
+    expect(src).toContain('onModeChange("drill")');
+    expect(src).toContain('onModeChange("list")');
+  });
 });

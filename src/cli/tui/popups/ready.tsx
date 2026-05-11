@@ -9,20 +9,34 @@
 //   CLOSED                    → mu task open <id> -w <ws>
 // Other states yield no yank (toast says so).
 //
+// Enter on a task drills into a read-only inline view of every note
+// on the task (the equivalent of `mu task notes <id>`). j/k scroll;
+// Esc / q backs out to the list; second Esc / q closes the popup.
+//
+// Read-only: drilling never executes anything. listNotes is a SQLite
+// SELECT.
+//
 // Rows are column-aligned via src/cli/tui/columns.ts. Per
 // feat_column_aligned_lists clipping policy: task name, status, owner
 // are PROTECTED (yank-bearing tokens); the title is CLIPPABLE.
 
 import { Box, Text, useInput } from "ink";
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import type { Db } from "../../../db.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
+import { listNotes } from "../../../tasks.js";
 import { type ColumnSpec, layoutColumns, renderRow } from "../columns.js";
 import { dispatchPopupKey } from "../keys.js";
+import { DrillScrollView, clampScrollTop } from "./drill.js";
 
 export interface PopupProps {
   yank: (command: string) => Promise<void>;
   onClose: () => void;
   snapshot: WorkstreamSnapshot | null;
+  mode: "list" | "drill";
+  onModeChange: (mode: "list" | "drill") => void;
+  db: Db;
+  workstream: string;
 }
 
 const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
@@ -32,9 +46,36 @@ const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
   { kind: "clip", min: 1 }, // title
 ];
 
-export function ReadyPopup({ yank, onClose, snapshot }: PopupProps): JSX.Element {
+const VIEWPORT = 20;
+
+export function ReadyPopup({
+  yank,
+  onClose,
+  snapshot,
+  mode,
+  onModeChange,
+  db,
+  workstream,
+}: PopupProps): JSX.Element {
   const [cursor, setCursor] = useState(0);
+  const [scrollTop, setScrollTop] = useState(0);
   const tasks = snapshot ? [...snapshot.ready, ...snapshot.inProgress] : [];
+  const focused = tasks[cursor];
+
+  // Resolve notes for the focused task on demand. Memoised on
+  // (taskId, mode); we only hit SQLite when actually drilled in.
+  const notesText = useMemo<string>(() => {
+    if (mode !== "drill" || !focused) return "";
+    const notes = listNotes(db, focused.name, workstream);
+    if (notes.length === 0) return "";
+    return notes
+      .map((n) => {
+        const ts = n.createdAt.replace("T", " ").slice(0, 19);
+        const author = n.author ?? "?";
+        return `── ${ts}  ${author} ──\n${n.content}`;
+      })
+      .join("\n\n");
+  }, [mode, focused, db, workstream]);
 
   useInput((input, key) => {
     const action = dispatchPopupKey(input, {
@@ -51,9 +92,53 @@ export function ReadyPopup({ yank, onClose, snapshot }: PopupProps): JSX.Element
       pageUp: key.pageUp,
       pageDown: key.pageDown,
     });
+    if (mode === "drill") {
+      const totalLines = notesText === "" ? 0 : notesText.split("\n").length;
+      switch (action.kind) {
+        case "close":
+          onModeChange("list");
+          setScrollTop(0);
+          return;
+        case "moveDown":
+          setScrollTop((s) => clampScrollTop(s + 1, totalLines, VIEWPORT));
+          return;
+        case "moveUp":
+          setScrollTop((s) => clampScrollTop(s - 1, totalLines, VIEWPORT));
+          return;
+        case "jumpTop":
+          setScrollTop(0);
+          return;
+        case "jumpBottom":
+          setScrollTop(clampScrollTop(totalLines, totalLines, VIEWPORT));
+          return;
+        case "pageDown":
+          setScrollTop((s) =>
+            clampScrollTop(s + Math.floor(VIEWPORT / (action.half ? 2 : 1)), totalLines, VIEWPORT),
+          );
+          return;
+        case "pageUp":
+          setScrollTop((s) =>
+            clampScrollTop(s - Math.floor(VIEWPORT / (action.half ? 2 : 1)), totalLines, VIEWPORT),
+          );
+          return;
+        case "yank": {
+          if (!focused || !snapshot) return;
+          void yank(`mu task notes ${focused.name} -w ${snapshot.workstreamName}`);
+          return;
+        }
+        default:
+          return;
+      }
+    }
     switch (action.kind) {
       case "close":
         onClose();
+        return;
+      case "drill":
+        if (focused) {
+          setScrollTop(0);
+          onModeChange("drill");
+        }
         return;
       case "moveDown":
         setCursor((c) => Math.min(tasks.length - 1, c + 1));
@@ -89,6 +174,25 @@ export function ReadyPopup({ yank, onClose, snapshot }: PopupProps): JSX.Element
     );
   }
 
+  if (mode === "drill" && focused) {
+    return (
+      <PopupShell title={`Tasks · ${focused.name} (notes)`}>
+        <DrillScrollView
+          title={`mu task notes ${focused.name}`}
+          body={notesText}
+          viewport={VIEWPORT}
+          scrollTop={scrollTop}
+          emptyText="(no notes)"
+        />
+        <Box marginTop={1}>
+          <Text dimColor>
+            j/k scroll · Ctrl-D/U half page · y yanks `mu task notes` · Esc/q back to list
+          </Text>
+        </Box>
+      </PopupShell>
+    );
+  }
+
   const rows = tasks.map((t) => [t.name, t.status, t.ownerName ?? "—", t.title]);
   const widths = layoutColumns(rows, COLUMN_SPECS);
 
@@ -114,8 +218,9 @@ export function ReadyPopup({ yank, onClose, snapshot }: PopupProps): JSX.Element
           </Box>
         );
       })}
-      {/* Generic j/k/y/Esc/? hints live in the global status bar; no
-          per-popup verbs to surface here. */}
+      <Box marginTop={1}>
+        <Text dimColor>Enter notes · y yanks the per-status `mu task …`</Text>
+      </Box>
     </PopupShell>
   );
 }

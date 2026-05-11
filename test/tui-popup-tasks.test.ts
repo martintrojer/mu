@@ -22,4 +22,12 @@ describe("ReadyPopup (Tasks popup)", () => {
     // And it covers the IN_PROGRESS branch
     expect(src).toContain('"IN_PROGRESS"');
   });
+  it("source drills into task notes (listNotes + DrillScrollView + onModeChange)", async () => {
+    const { readFileSync } = await import("node:fs");
+    const src = readFileSync("./src/cli/tui/popups/ready.tsx", "utf-8");
+    expect(src).toContain("listNotes");
+    expect(src).toContain("DrillScrollView");
+    expect(src).toContain('onModeChange("drill")');
+    expect(src).toContain('onModeChange("list")');
+  });
 });

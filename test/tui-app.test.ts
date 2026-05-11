@@ -69,6 +69,18 @@ describe("App popup-lifecycle state-restore (structural)", () => {
       "snap",
       "data",
       "null",
+      // popup-mode wiring: <App> owns popupMode so the StatusBar's
+      // drill hint cluster works; popups call setPopupMode when
+      // Enter / Esc transitions list ↔ drill.
+      "mode",
+      "popupMode",
+      "onModeChange",
+      "setPopupMode",
+      "list",
+      // db + workstream: drill views fetch their own data (agent
+      // scrollback via mu agent read; task notes via listNotes).
+      "db",
+      "workstream",
     ]);
     for (const id of identifiers) {
       expect(allowed.has(id), `unexpected popup prop: ${id}`).toBe(true);

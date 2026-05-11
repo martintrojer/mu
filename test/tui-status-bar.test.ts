@@ -88,7 +88,7 @@ describe("StatusBar", () => {
     expect(text).toContain("quit");
   });
 
-  it("renders popup hints with the popup name when mode=popup", () => {
+  it("renders popup hints with the popup name when mode=popup (default = list)", () => {
     const node = StatusBar({
       mode: "popup",
       tickMs: 1000,
@@ -101,6 +101,34 @@ describe("StatusBar", () => {
     expect(text).toContain("nav");
     expect(text).toContain("yank");
     expect(text).toContain("close");
+  });
+
+  it("popup list-mode hint cluster advertises `Enter drill`", () => {
+    const node = StatusBar({
+      mode: "popup",
+      tickMs: 1000,
+      footer: null,
+      cols: 200,
+      popupName: "Agents",
+      popupMode: "list",
+    });
+    expect(renderToString(node)).toContain("Enter");
+    expect(renderToString(node)).toContain("drill");
+  });
+
+  it("popup drill-mode hint cluster advertises scroll + back instead of nav + close", () => {
+    const node = StatusBar({
+      mode: "popup",
+      tickMs: 1000,
+      footer: null,
+      cols: 200,
+      popupName: "Tasks",
+      popupMode: "drill",
+    });
+    const text = renderToString(node);
+    expect(text).toContain("drill");
+    expect(text).toContain("scroll");
+    expect(text).toContain("back");
   });
 
   it("renders the dismiss hint when mode=help", () => {

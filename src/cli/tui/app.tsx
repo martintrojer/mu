@@ -52,6 +52,7 @@ export interface FooterState {
 }
 
 type PopupId = 1 | 2 | 3 | 4 | null;
+export type PopupMode = "list" | "drill";
 
 export function App({ db, workstream }: AppProps): JSX.Element {
   const { exit } = useApp();
@@ -59,6 +60,11 @@ export function App({ db, workstream }: AppProps): JSX.Element {
   const [visibility, setVisibility] = useState<CardVisibility>(DEFAULT_CARD_VISIBILITY);
   const [tickMs, setTickMs] = useState<number>(TICK_DEFAULT_MS);
   const [popup, setPopup] = useState<PopupId>(null);
+  // Per-popup-instance mode ("list" → list of rows; "drill" →
+  // inline detail view inside the popup body). Owned by <App>
+  // because the StatusBar's hint cluster needs to know which mode
+  // we're in. Reset to "list" every time a new popup opens.
+  const [popupMode, setPopupMode] = useState<PopupMode>("list");
   const [helpOpen, setHelpOpen] = useState<boolean>(false);
   const [footer, setFooter] = useState<FooterState | null>(null);
   const [refreshNonce, setRefreshNonce] = useState<number>(0);
@@ -122,8 +128,13 @@ export function App({ db, workstream }: AppProps): JSX.Element {
       if (popup !== null) {
         if (key.escape || input === "q" || input === "Q") {
           // Safety net: if the popup somehow doesn't handle close
-          // (regression), close it from here too.
-          setPopup(null);
+          // (regression), close it from here too. We respect the
+          // current popupMode so a stuck-in-drill popup doesn't get
+          // collapsed all the way back to the dashboard — q/Esc
+          // from drill should pop one level (back to list); only a
+          // second q/Esc closes the popup. Popups call setPopupMode
+          // themselves; we only act if they're already in list mode.
+          if (popupMode === "list") setPopup(null);
           return;
         }
         // Suppress card toggles / popup openers inside a popup; let
@@ -189,6 +200,7 @@ export function App({ db, workstream }: AppProps): JSX.Element {
         // (slot 5 has no popup yet — see feat_more_cards_umbrella)
         case "openPopup":
           if (popup !== null) return; // single-popup invariant
+          setPopupMode("list");
           setPopup(action.cardId);
           return;
         case "workstreamPicker":
@@ -240,6 +252,7 @@ export function App({ db, workstream }: AppProps): JSX.Element {
           footer={footer}
           cols={cols}
           popupName={popupNameForId(popup)}
+          popupMode={popupMode}
         />
       </Box>
     );
@@ -265,8 +278,15 @@ export function App({ db, workstream }: AppProps): JSX.Element {
   function renderPopup(id: 1 | 2 | 3 | 4): JSX.Element {
     const props = {
       yank: yankFn,
-      onClose: () => setPopup(null),
+      onClose: () => {
+        setPopup(null);
+        setPopupMode("list");
+      },
       snapshot: snap.data,
+      mode: popupMode,
+      onModeChange: setPopupMode,
+      db,
+      workstream,
     };
     switch (id) {
       case 1:

@@ -132,6 +132,19 @@ describe("dispatchPopupKey: in-popup convention", () => {
   it("y yanks", () => {
     expect(dispatchPopupKey("y", NO_KEY)).toEqual({ kind: "yank" });
   });
+  it("Enter drills (Return key flag)", () => {
+    expect(dispatchPopupKey("", { return: true })).toEqual({ kind: "drill" });
+  });
+  it("Esc / q from drill mode is just `close` — callers route based on their mode", () => {
+    // dispatchPopupKey is pure: it doesn't know whether the popup
+    // is in list or drill mode. Both Esc and q always emit `close`,
+    // and the popup's switch decides whether that means
+    // "back-to-list" or "close-popup". Verifies the contract: the
+    // dispatcher must NOT mint a separate `closeDrill` kind — the
+    // popup is the source of truth for its sub-mode.
+    expect(dispatchPopupKey("", { escape: true })).toEqual({ kind: "close" });
+    expect(dispatchPopupKey("q", NO_KEY)).toEqual({ kind: "close" });
+  });
   it("Ctrl-D pageDown half, Ctrl-U pageUp half", () => {
     expect(dispatchPopupKey("d", { ctrl: true })).toEqual({ kind: "pageDown", half: true });
     expect(dispatchPopupKey("u", { ctrl: true })).toEqual({ kind: "pageUp", half: true });

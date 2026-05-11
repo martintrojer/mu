@@ -34,6 +34,16 @@ is opt-in via the new `--tui` flag.
     → `mu task claim`, OPEN+owned → `mu task release`,
     IN_PROGRESS → `mu task close --evidence`, CLOSED/REJECTED/DEFERRED
     → `mu task open`.
+  - **Enter drills into the focused row** in every popup (read-only):
+    Agents popup → inline scrollback view (`mu agent read -n 80`
+    rendered with j/k scroll). Tracks popup → inline list of every
+    task in that track's prerequisite subgraph. Tasks popup →
+    inline rendering of all task notes. Log popup → intentional
+    no-op (rows are already atomic). Esc / q from the drill view
+    pops one level back to the popup list; a second Esc / q closes
+    the popup back to the dashboard. The status bar surfaces the
+    drill sub-mode (`drill · j/k scroll · Esc back`) so the
+    multi-level state is unambiguous.
   - **Tick adjust live**: `+`/`=` faster, `-` slower, `0` reset (1s
     default; 100ms floor; 10s ceiling).
   - **Help overlay**: `?` / `F1` shows the global + in-popup keymap.

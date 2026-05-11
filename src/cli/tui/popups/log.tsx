@@ -3,6 +3,13 @@
 // v0: list all snapshot.recent (newest at top), with j/k navigation.
 // Auto-tail with scroll-pause + filters are deferred to v0.next.
 //
+// Enter is intentionally UNBOUND on this popup. Log entries are
+// already a single line each — there's no "detail view" to drill
+// into. The dispatchPopupKey returns {kind:"drill"}; we silently
+// drop it so the user gets a no-op (no mode flip, no toast). All
+// other popups treat Enter as drill; document the divergence here
+// rather than carrying it as a special case in the dispatcher.
+//
 // Rows are column-aligned via src/cli/tui/columns.ts. Per
 // feat_column_aligned_lists clipping policy: seq, ts, source, verb
 // are PROTECTED (identity / numeric / short tokens); the payload rest
@@ -10,6 +17,7 @@
 
 import { Box, Text, useInput } from "ink";
 import { useState } from "react";
+import type { Db } from "../../../db.js";
 import { classifyEventVerb } from "../../../logs.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
 import { type ColumnSpec, layoutColumns, renderRow } from "../columns.js";
@@ -19,6 +27,13 @@ export interface PopupProps {
   yank: (command: string) => Promise<void>;
   onClose: () => void;
   snapshot: WorkstreamSnapshot | null;
+  // Log popup never enters drill mode (see header). The fields are
+  // accepted to satisfy the uniform popup-props contract <App>
+  // hands every popup; we don't read them.
+  mode: "list" | "drill";
+  onModeChange: (mode: "list" | "drill") => void;
+  db: Db;
+  workstream: string;
 }
 
 const VIEWPORT = 20; // rows visible at once
@@ -34,6 +49,8 @@ const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
 export function LogPopup({ yank, onClose, snapshot }: PopupProps): JSX.Element {
   const [cursor, setCursor] = useState(0);
   const events = snapshot?.recent ?? [];
+  // mode/onModeChange/db/workstream are part of the uniform popup
+  // contract; LogPopup never drills. See header comment.
 
   useInput((input, key) => {
     const action = dispatchPopupKey(input, {
@@ -53,6 +70,9 @@ export function LogPopup({ yank, onClose, snapshot }: PopupProps): JSX.Element {
     switch (action.kind) {
       case "close":
         onClose();
+        return;
+      case "drill":
+        // Intentional no-op (see header). Log rows are atomic.
         return;
       case "moveDown":
         setCursor((c) => Math.min(events.length - 1, c + 1));

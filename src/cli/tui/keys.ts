@@ -125,9 +125,10 @@ export function dispatchGlobalKey(input: string, key: KeyFlags): GlobalAction {
 //   /            enterFilter
 //   n            nextMatch
 //   N            prevMatch
-//   Esc          close
+//   Esc          close (or exit drill, when in drill mode)
 //   q            close (alias)
 //   y            yank
+//   Enter        drill into the focused row (popup decides what to render)
 //   ?            toggleHelp
 //
 // Tick-rate keys (+/-/=/0), refresh (r/F5), and Ctrl-C remain live in
@@ -146,6 +147,7 @@ export type PopupAction =
   | { kind: "prevMatch" }
   | { kind: "close" }
   | { kind: "yank" }
+  | { kind: "drill" }
   | { kind: "verb"; key: string }
   | { kind: "noop" };
 
@@ -169,6 +171,10 @@ export function dispatchPopupKey(input: string, key: KeyFlags): PopupAction {
   if (input === "n") return { kind: "nextMatch" };
   if (input === "N") return { kind: "prevMatch" };
   if (input === "y") return { kind: "yank" };
+  // Enter drills into the focused row. The popup chooses what
+  // "drill" renders (scrollback / sub-list / notes / no-op for
+  // log). The dispatcher stays purely structural — read-only.
+  if (key.return) return { kind: "drill" };
   // Per-popup verbs: any letter NOT in the reserved set above is a
   // candidate for a popup-specific verb. The caller decides whether
   // to act.
