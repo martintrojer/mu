@@ -110,16 +110,36 @@ export function App({ db, workstream }: AppProps): JSX.Element {
         setHelpOpen(false);
         return;
       }
-      // Esc closes popup (the in-popup convention; popups MAY
-      // also handle Esc themselves but the App-level handler is
-      // the safety net).
-      if (popup !== null && key.escape) {
-        setPopup(null);
-        return;
+      // While a popup is open, the popup owns navigation/yank/close.
+      // App MUST NOT also handle q/Q (would quit the whole app —
+      // confusing footgun) or Esc (would race with the popup's own
+      // Esc handler). The popup's onClose callback flips popup back
+      // to null; App resumes ownership on the next render.
+      // Tick keys (+/-/=/0), refresh (r), and help (?) still bubble
+      // up so they remain global even inside a popup.
+      if (popup !== null) {
+        if (key.escape || input === "q" || input === "Q") {
+          // Safety net: if the popup somehow doesn't handle close
+          // (regression), close it from here too.
+          setPopup(null);
+          return;
+        }
+        // Suppress card toggles / popup openers inside a popup; let
+        // tick/help/refresh fall through.
+        if (
+          (input >= "1" && input <= "9") ||
+          "!@#$%^&*()".includes(input) ||
+          input === "c" ||
+          input === "w"
+        ) {
+          return;
+        }
+        // Ctrl-C still quits (universal escape).
+        if (key.ctrl && input === "c") {
+          exit();
+          return;
+        }
       }
-      // Inside a popup, suppress card-toggle / popup-open keys
-      // (single-popup invariant). Tick adjust + quit + help stay
-      // live.
       const action = dispatchGlobalKey(input, {
         ctrl: key.ctrl,
         shift: key.shift,
