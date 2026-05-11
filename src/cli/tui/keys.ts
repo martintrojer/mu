@@ -147,7 +147,7 @@ export type PopupAction =
   | { kind: "jumpBottom" }
   | { kind: "pageDown"; half: boolean }
   | { kind: "pageUp"; half: boolean }
-  | { kind: "enterFilter" }
+  | { kind: "filter" }
   | { kind: "nextMatch" }
   | { kind: "prevMatch" }
   | { kind: "close" }
@@ -172,7 +172,7 @@ export function dispatchPopupKey(input: string, key: KeyFlags): PopupAction {
   if (key.ctrl && input === "u") return { kind: "pageUp", half: true };
   if (key.pageDown) return { kind: "pageDown", half: false };
   if (key.pageUp) return { kind: "pageUp", half: false };
-  if (input === "/") return { kind: "enterFilter" };
+  if (input === "/") return { kind: "filter" };
   if (input === "n") return { kind: "nextMatch" };
   if (input === "N") return { kind: "prevMatch" };
   if (input === "y") return { kind: "yank" };

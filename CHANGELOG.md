@@ -56,6 +56,21 @@ is opt-in via the new `--tui` flag.
     automatically by importing `TaskDetailDrill`.
   - **Tick adjust live**: `+`/`=` faster, `-` slower, `0` reset (1s
     default; 100ms floor; 10s ceiling).
+  - **Popup `/` search/filter** (lazygit / k9s convention): every
+    list popup (Agents/Tracks/Tasks/Log) accepts `/` to enter an
+    incremental case-insensitive substring filter that narrows the
+    visible rows in real time. `Esc` cancels (clears the query),
+    `Enter` commits (keeps the filter applied while letting `j/k`
+    resume normal navigation), `Backspace` edits, printable chars
+    append. Press `/` again to refine a committed filter. The
+    filter blob is per-popup: agent name + status + cli + role;
+    track head id + title; task name + title + status + owner; log
+    verb + payload + source. Filter state is per-popup and dies
+    with the popup. Implemented as a shared primitive in
+    `src/cli/tui/use-popup-filter.tsx` (`usePopupFilter` hook +
+    pure `popupFilterReducer` + `applyFilter<T>` + `<FilterPrompt>`)
+    so the cards 5-9 popups under `feat_more_cards_umbrella` consume
+    it in ~5 LOC each.
   - **Help overlay**: `?` / `F1` shows the global + in-popup keymap.
   - **Alt-screen**: enters `\x1b[?1049h` on launch, restores on
     quit. Dashboard is flush with row 0; main scrollback is preserved.

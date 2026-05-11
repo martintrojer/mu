@@ -304,8 +304,11 @@ running a wave.
   `remove`, `delete`, `search`, `export`. Labels globally unique.
 - **Escape hatch + state**: `mu sql "<query>"` for anything not yet
   typed. `mu` alone = `mu state --mission`. `mu state` has `--tui`
-  (interactive ink dashboard; read-only, yanks `mu` commands),
-  `--mission`, `--all`, `--json`. `mu doctor` for health.
+  (interactive ink dashboard; read-only, yanks `mu` commands;
+  `1`-`5` toggle cards, `!`/`@`/`#`/`$` open list popups, `Enter`
+  drills, `/` filters list popups incrementally, `?`/`F1` keymap,
+  `q`/`Ctrl-C` quits), `--mission`, `--all`, `--json`. `mu doctor`
+  for health.
 
 ## `mu task wait` exits
 

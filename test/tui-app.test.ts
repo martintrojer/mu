@@ -81,6 +81,13 @@ describe("App popup-lifecycle state-restore (structural)", () => {
       // scrollback via mu agent read; task notes via listNotes).
       "db",
       "workstream",
+      // filter-prompt edit-state plumbing: <App> tracks whether
+      // any popup's '/' filter prompt is in edit mode so the
+      // StatusBar can flip its hint cluster to popup-filter mode
+      // (per feat_popup_search_filter).
+      "onFilterEditingChange",
+      "setPopupFilterEditing",
+      "false",
     ]);
     for (const id of identifiers) {
       expect(allowed.has(id), `unexpected popup prop: ${id}`).toBe(true);

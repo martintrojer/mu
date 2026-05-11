@@ -23,7 +23,7 @@ import { Box, Text } from "ink";
 import type { FooterState, PopupMode } from "./app.js";
 import { truncateCell } from "./columns.js";
 
-export type StatusMode = "dashboard" | "popup" | "help";
+export type StatusMode = "dashboard" | "popup" | "popup-filter" | "help";
 
 export interface StatusBarProps {
   mode: StatusMode;
@@ -87,7 +87,11 @@ function hintsPlain(
       if (popupMode === "drill") {
         return `${label}drill · j/k scroll · Esc back · ? help · q back`;
       }
-      return `${label}j/k nav · Enter drill · y yank · Esc close · ? help · q quit`;
+      return `${label}j/k nav · / filter · Enter drill · y yank · Esc close · ? help · q quit`;
+    }
+    case "popup-filter": {
+      const label = popupName ? `${popupName} · filter · ` : "filter · ";
+      return `${label}Esc cancel · Enter commit · Bksp edit`;
     }
     case "help":
       return "Esc/?/q close help";
@@ -134,9 +138,30 @@ function renderHints(
       return (
         <Text>
           {label}
-          <Key>j/k</Key> <Text dimColor>nav ·</Text> <Key>Enter</Key> <Text dimColor>drill ·</Text>{" "}
-          <Key>y</Key> <Text dimColor>yank ·</Text> <Key>Esc</Key> <Text dimColor>close ·</Text>{" "}
-          <Key>?</Key> <Text dimColor>help ·</Text> <Key>q</Key> <Text dimColor>quit</Text>
+          <Key>j/k</Key> <Text dimColor>nav ·</Text> <Key>/</Key> <Text dimColor>filter ·</Text>{" "}
+          <Key>Enter</Key> <Text dimColor>drill ·</Text> <Key>y</Key> <Text dimColor>yank ·</Text>{" "}
+          <Key>Esc</Key> <Text dimColor>close ·</Text> <Key>?</Key> <Text dimColor>help ·</Text>{" "}
+          <Key>q</Key> <Text dimColor>quit</Text>
+        </Text>
+      );
+    }
+    case "popup-filter": {
+      const label = popupName ? (
+        <>
+          <Text bold color="cyan">
+            {popupName}
+          </Text>{" "}
+          <Text dimColor>·</Text>{" "}
+        </>
+      ) : null;
+      return (
+        <Text>
+          {label}
+          <Text bold color="yellow">
+            filter
+          </Text>{" "}
+          <Text dimColor>·</Text> <Key>Esc</Key> <Text dimColor>cancel ·</Text> <Key>Enter</Key>{" "}
+          <Text dimColor>commit ·</Text> <Key>Bksp</Key> <Text dimColor>edit</Text>
         </Text>
       );
     }

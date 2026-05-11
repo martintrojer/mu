@@ -16,12 +16,13 @@
 // is CLIPPABLE.
 
 import { Box, Text, useInput, useStdout } from "ink";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Db } from "../../../db.js";
 import { classifyEventVerb } from "../../../logs.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
 import { type ColumnSpec, layoutColumns, renderRow } from "../columns.js";
 import { dispatchPopupKey } from "../keys.js";
+import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
 
 export interface PopupProps {
   yank: (command: string) => Promise<void>;
@@ -32,6 +33,8 @@ export interface PopupProps {
   // hands every popup; we don't read them.
   mode: "list" | "drill";
   onModeChange: (mode: "list" | "drill") => void;
+  /** Bubbles the filter-prompt edit state up to <App> for StatusBar mode. */
+  onFilterEditingChange?: (editing: boolean) => void;
   db: Db;
   workstream: string;
 }
@@ -46,13 +49,33 @@ const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
   { kind: "clip", min: 1 }, // rest / payload
 ];
 
-export function LogPopup({ yank, onClose, snapshot }: PopupProps): JSX.Element {
+export function LogPopup({
+  yank,
+  onClose,
+  snapshot,
+  onFilterEditingChange,
+}: PopupProps): JSX.Element {
   const [cursor, setCursor] = useState(0);
-  const events = snapshot?.recent ?? [];
+  const flt = usePopupFilter();
+  const sourceEvents = snapshot?.recent ?? [];
+  // Per spec: blob = `${verb} ${rest} ${source}` — we classify the
+  // event payload to extract the same verb/rest the row renders, so
+  // searching for e.g. "task close" matches what the user sees.
+  const events = applyFilter(sourceEvents, flt.query, (e) => {
+    const cls = classifyEventVerb(e.payload);
+    const verb = cls?.verb ?? "";
+    const rest = cls?.rest ?? e.payload;
+    return `${verb} ${rest} ${e.source}`;
+  });
+  const safeCursor = events.length === 0 ? 0 : Math.min(cursor, events.length - 1);
   // mode/onModeChange/db/workstream are part of the uniform popup
   // contract; LogPopup never drills. See header comment.
+  useEffect(() => {
+    onFilterEditingChange?.(flt.editing);
+  }, [flt.editing, onFilterEditingChange]);
 
   useInput((input, key) => {
+    if (flt.onKey(input, key) === "consumed") return;
     const action = dispatchPopupKey(input, {
       ctrl: key.ctrl,
       shift: key.shift,
@@ -71,6 +94,9 @@ export function LogPopup({ yank, onClose, snapshot }: PopupProps): JSX.Element {
       case "close":
         onClose();
         return;
+      case "filter":
+        flt.startEdit();
+        return;
       case "drill":
         // Intentional no-op (see header). Log rows are atomic.
         return;
@@ -87,7 +113,7 @@ export function LogPopup({ yank, onClose, snapshot }: PopupProps): JSX.Element {
         setCursor(Math.max(0, events.length - 1));
         return;
       case "yank": {
-        const e = events[cursor];
+        const e = events[safeCursor];
         if (!e || !snapshot) return;
         // Yank the show-related-task / show-related-agent if we
         // can classify; else just yank the raw payload as a
@@ -116,16 +142,29 @@ export function LogPopup({ yank, onClose, snapshot }: PopupProps): JSX.Element {
   if (snapshot === null) {
     return <Shell title="Activity log · popup">{<Text dimColor>loading…</Text>}</Shell>;
   }
-  if (events.length === 0) {
+  if (sourceEvents.length === 0) {
     return (
       <Shell title="Activity log · popup">
         <Text dimColor>(no events yet)</Text>
       </Shell>
     );
   }
+  if (events.length === 0) {
+    return (
+      <Shell title="Activity log · popup">
+        <Box flexDirection="column" flexGrow={1}>
+          <Text dimColor>(no matches for "{flt.query}")</Text>
+        </Box>
+        <FilterPrompt state={flt} />
+      </Shell>
+    );
+  }
 
   // Centre the cursor in the viewport.
-  const start = Math.max(0, Math.min(events.length - VIEWPORT, cursor - Math.floor(VIEWPORT / 2)));
+  const start = Math.max(
+    0,
+    Math.min(events.length - VIEWPORT, safeCursor - Math.floor(VIEWPORT / 2)),
+  );
   const visible = events.slice(start, start + VIEWPORT);
 
   const rows = visible.map((e) => {
@@ -138,10 +177,10 @@ export function LogPopup({ yank, onClose, snapshot }: PopupProps): JSX.Element {
   const widths = layoutColumns(rows, COLUMN_SPECS);
 
   return (
-    <Shell title={`Activity log · popup (${cursor + 1}/${events.length})`}>
+    <Shell title={`Activity log · popup (${safeCursor + 1}/${events.length})`}>
       <Box flexDirection="column" flexGrow={1}>
         {visible.map((e, i) => {
-          const sel = events.indexOf(e) === cursor;
+          const sel = events.indexOf(e) === safeCursor;
           const cls = classifyEventVerb(e.payload);
           const row = rows[i];
           if (row === undefined) return null;
@@ -168,6 +207,7 @@ export function LogPopup({ yank, onClose, snapshot }: PopupProps): JSX.Element {
         {/* Popup-specific yank target only; navigation hints live in the global status bar. */}
         <Text dimColor>y yanks the related `mu task/agent show` command</Text>
       </Box>
+      <FilterPrompt state={flt} />
     </Shell>
   );
 }

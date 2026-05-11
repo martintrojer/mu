@@ -128,7 +128,7 @@ describe("dispatchPopupKey: in-popup convention", () => {
     expect(dispatchPopupKey("G", NO_KEY)).toEqual({ kind: "jumpBottom" });
   });
   it("/ enters filter", () => {
-    expect(dispatchPopupKey("/", NO_KEY)).toEqual({ kind: "enterFilter" });
+    expect(dispatchPopupKey("/", NO_KEY)).toEqual({ kind: "filter" });
   });
   it("n/N next/prev match", () => {
     expect(dispatchPopupKey("n", NO_KEY)).toEqual({ kind: "nextMatch" });

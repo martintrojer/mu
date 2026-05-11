@@ -438,6 +438,17 @@ mu                          # bare alias for `mu state --mission`
   One `Esc` / `q` backs out per recursion level (notes → task
   list → list of tracks → popup closed).
 
+  **Popup search/filter**: `/` inside any list popup enters an
+  incremental case-insensitive substring filter (lazygit / k9s
+  convention). The filter blob is per-popup: agent name + status +
+  cli + role; track head id + title; task name + title + status +
+  owner; log verb + payload + source. While editing, every
+  printable character appends to the query and `Backspace` pops
+  one; `Esc` cancels (clears the query); `Enter` commits (keeps
+  the filter applied while letting `j/k` resume normal
+  navigation). Press `/` again on a committed filter to refine
+  it. Filter state is per-popup and dies with the popup.
+
 - **`--mission`** — stripped 5-col glance card (agents + orphans +
   tracks + ready). The bare-`mu` muscle-memory orient call
   ("what's going on?"). The full card with blocked / recent-closed /

@@ -24,6 +24,7 @@ import type { Db } from "../../../db.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
 import { type ColumnSpec, layoutColumns, renderRow } from "../columns.js";
 import { dispatchPopupKey } from "../keys.js";
+import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
 import { DrillScrollView, clampScrollTop } from "./drill.js";
 
 export interface PopupProps {
@@ -32,6 +33,8 @@ export interface PopupProps {
   snapshot: WorkstreamSnapshot | null;
   mode: "list" | "drill";
   onModeChange: (mode: "list" | "drill") => void;
+  /** Bubbles the filter-prompt edit state up to <App> for StatusBar mode. */
+  onFilterEditingChange?: (editing: boolean) => void;
   db: Db;
   workstream: string;
 }
@@ -52,6 +55,7 @@ export function AgentsPopup({
   snapshot,
   mode,
   onModeChange,
+  onFilterEditingChange,
   db,
   workstream,
 }: PopupProps): JSX.Element {
@@ -60,8 +64,19 @@ export function AgentsPopup({
   const [scrollback, setScrollback] = useState<string>("");
   const [scrollbackErr, setScrollbackErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const agents = snapshot?.view.agents ?? [];
-  const focused = agents[cursor];
+  const flt = usePopupFilter();
+  // Filter is suppressed in drill mode (drill view is not a list).
+  const sourceAgents = snapshot?.view.agents ?? [];
+  const agents =
+    mode === "drill"
+      ? sourceAgents
+      : applyFilter(sourceAgents, flt.query, (a) => `${a.name} ${a.status} ${a.cli} ${a.role}`);
+  const safeCursor = agents.length === 0 ? 0 : Math.min(cursor, agents.length - 1);
+  const focused = agents[safeCursor];
+  // Push the filter editing state up so StatusBar can flip its hint cluster.
+  useEffect(() => {
+    onFilterEditingChange?.(flt.editing);
+  }, [flt.editing, onFilterEditingChange]);
 
   // Load scrollback when entering drill mode (or when the focused
   // row changes while in drill mode). Read-only: capturePane is a
@@ -94,6 +109,10 @@ export function AgentsPopup({
   }, [mode, focused, loadScrollback]);
 
   useInput((input, key) => {
+    // Filter-mode keystrokes (when the prompt is editing) consume
+    // every printable + Esc/Enter/Bksp; the popup's own dispatchPopupKey
+    // is bypassed for the duration of the edit.
+    if (mode !== "drill" && flt.onKey(input, key) === "consumed") return;
     const action = dispatchPopupKey(input, {
       ctrl: key.ctrl,
       shift: key.shift,
@@ -147,6 +166,9 @@ export function AgentsPopup({
       case "close":
         onClose();
         return;
+      case "filter":
+        flt.startEdit();
+        return;
       case "drill":
         if (focused) onModeChange("drill");
         return;
@@ -163,7 +185,7 @@ export function AgentsPopup({
         setCursor(Math.max(0, agents.length - 1));
         return;
       case "yank": {
-        const a = agents[cursor];
+        const a = agents[safeCursor];
         if (!a || !snapshot) return;
         const ws = snapshot.workstreamName;
         // Default yank: a `mu agent send` template the user can
@@ -172,7 +194,7 @@ export function AgentsPopup({
         return;
       }
       case "verb": {
-        const a = agents[cursor];
+        const a = agents[safeCursor];
         if (!a || !snapshot) return;
         const ws = snapshot.workstreamName;
         if (action.key === "f") {
@@ -191,10 +213,20 @@ export function AgentsPopup({
   if (snapshot === null) {
     return <Shell title="Agents · popup">{<Text dimColor>loading…</Text>}</Shell>;
   }
-  if (agents.length === 0) {
+  if (sourceAgents.length === 0) {
     return (
       <Shell title="Agents · popup">
         <Text dimColor>(no agents)</Text>
+      </Shell>
+    );
+  }
+  if (agents.length === 0) {
+    return (
+      <Shell title="Agents · popup">
+        <Box flexDirection="column" flexGrow={1}>
+          <Text dimColor>(no matches for "{flt.query}")</Text>
+        </Box>
+        <FilterPrompt state={flt} />
       </Shell>
     );
   }
@@ -225,10 +257,10 @@ export function AgentsPopup({
   const widths = layoutColumns(rows, COLUMN_SPECS);
 
   return (
-    <Shell title={`Agents · popup (${cursor + 1}/${agents.length})`}>
+    <Shell title={`Agents · popup (${safeCursor + 1}/${agents.length})`}>
       <Box flexDirection="column" flexGrow={1}>
         {agents.map((a, i) => {
-          const sel = i === cursor;
+          const sel = i === safeCursor;
           const row = rows[i];
           if (row === undefined) return null;
           const padded = renderRow(row, widths, COLUMN_SPECS);
@@ -252,6 +284,7 @@ export function AgentsPopup({
         {/* Popup-specific verbs only; generic j/k/y/Esc/? live in the global status bar. */}
         <Text dimColor>Enter scrollback · f free · x close</Text>
       </Box>
+      <FilterPrompt state={flt} />
     </Shell>
   );
 }

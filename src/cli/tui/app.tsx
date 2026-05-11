@@ -67,6 +67,11 @@ export function App({ db, workstream }: AppProps): JSX.Element {
   // because the StatusBar's hint cluster needs to know which mode
   // we're in. Reset to "list" every time a new popup opens.
   const [popupMode, setPopupMode] = useState<PopupMode>("list");
+  // True while ANY open popup has its '/' filter prompt in edit
+  // mode. The popup pushes the flag up via onFilterEditingChange
+  // (per feat_popup_search_filter); we use it solely to flip the
+  // StatusBar hint cluster to the filter-mode hint.
+  const [popupFilterEditing, setPopupFilterEditing] = useState<boolean>(false);
   const [helpOpen, setHelpOpen] = useState<boolean>(false);
   const [footer, setFooter] = useState<FooterState | null>(null);
   const [refreshNonce, setRefreshNonce] = useState<number>(0);
@@ -128,19 +133,23 @@ export function App({ db, workstream }: AppProps): JSX.Element {
       // Tick keys (+/-/=/0), refresh (r), and help (?) still bubble
       // up so they remain global even inside a popup.
       if (popup !== null) {
+        // Popups now own their own close (Esc/q routed through
+        // dispatchPopupKey → case "close"). Per
+        // feat_popup_search_filter spec step 6, the App-level
+        // q/Esc safety net was removed because it would race with
+        // the filter prompt's own Esc-cancel handler. If a popup
+        // regresses and stops handling close, the user can still
+        // exit via Ctrl-C (handled below).
         if (key.escape || input === "q" || input === "Q") {
-          // Safety net: if the popup somehow doesn't handle close
-          // (regression), close it from here too. We respect the
-          // current popupMode so a stuck-in-drill popup doesn't get
-          // collapsed all the way back to the dashboard — q/Esc
-          // from drill should pop one level (back to list); only a
-          // second q/Esc closes the popup. Popups call setPopupMode
-          // themselves; we only act if they're already in list mode.
-          if (popupMode === "list") setPopup(null);
+          // Let the popup handle it; do nothing here.
           return;
         }
         // Suppress card toggles / popup openers inside a popup; let
-        // tick/help/refresh fall through.
+        // tick/help/refresh fall through. While the filter prompt
+        // is editing, ALSO suppress every other globally-reactive
+        // key (+/-/r/?/c/w) so they don't compete with the user's
+        // filter typing.
+        if (popupFilterEditing) return;
         if (
           (input >= "1" && input <= "9") ||
           "!@#$%^&*()".includes(input) ||
@@ -263,7 +272,7 @@ export function App({ db, workstream }: AppProps): JSX.Element {
       <Box flexDirection="column" height={rows}>
         {renderPopup(popup)}
         <StatusBar
-          mode="popup"
+          mode={popupFilterEditing ? "popup-filter" : "popup"}
           tickMs={tickMs}
           footer={footer}
           cols={cols}
@@ -300,10 +309,12 @@ export function App({ db, workstream }: AppProps): JSX.Element {
       onClose: () => {
         setPopup(null);
         setPopupMode("list");
+        setPopupFilterEditing(false);
       },
       snapshot: snap.data,
       mode: popupMode,
       onModeChange: setPopupMode,
+      onFilterEditingChange: setPopupFilterEditing,
       db,
       workstream,
     };

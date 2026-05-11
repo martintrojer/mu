@@ -21,11 +21,12 @@
 // are PROTECTED (yank-bearing tokens); the title is CLIPPABLE.
 
 import { Box, Text, useInput, useStdout } from "ink";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Db } from "../../../db.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
 import { type ColumnSpec, layoutColumns, renderRow } from "../columns.js";
 import { dispatchPopupKey } from "../keys.js";
+import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
 import { clampScrollTop } from "./drill.js";
 import { TaskDetailDrill, renderNotes } from "./task-detail.js";
 
@@ -35,6 +36,8 @@ export interface PopupProps {
   snapshot: WorkstreamSnapshot | null;
   mode: "list" | "drill";
   onModeChange: (mode: "list" | "drill") => void;
+  /** Bubbles the filter-prompt edit state up to <App> for StatusBar mode. */
+  onFilterEditingChange?: (editing: boolean) => void;
   db: Db;
   workstream: string;
 }
@@ -54,13 +57,27 @@ export function ReadyPopup({
   snapshot,
   mode,
   onModeChange,
+  onFilterEditingChange,
   db,
   workstream,
 }: PopupProps): JSX.Element {
   const [cursor, setCursor] = useState(0);
   const [scrollTop, setScrollTop] = useState(0);
-  const tasks = snapshot ? [...snapshot.ready, ...snapshot.inProgress] : [];
-  const focused = tasks[cursor];
+  const flt = usePopupFilter();
+  const sourceTasks = snapshot ? [...snapshot.ready, ...snapshot.inProgress] : [];
+  const tasks =
+    mode === "drill"
+      ? sourceTasks
+      : applyFilter(
+          sourceTasks,
+          flt.query,
+          (t) => `${t.name} ${t.title} ${t.status} ${t.ownerName ?? ""}`,
+        );
+  const safeCursor = tasks.length === 0 ? 0 : Math.min(cursor, tasks.length - 1);
+  const focused = tasks[safeCursor];
+  useEffect(() => {
+    onFilterEditingChange?.(flt.editing);
+  }, [flt.editing, onFilterEditingChange]);
 
   // Resolve notes for the focused task on demand. Memoised on
   // (taskId, mode); we only hit SQLite when actually drilled in.
@@ -74,6 +91,7 @@ export function ReadyPopup({
   }, [mode, focused, db, workstream]);
 
   useInput((input, key) => {
+    if (mode !== "drill" && flt.onKey(input, key) === "consumed") return;
     const action = dispatchPopupKey(input, {
       ctrl: key.ctrl,
       shift: key.shift,
@@ -130,6 +148,9 @@ export function ReadyPopup({
       case "close":
         onClose();
         return;
+      case "filter":
+        flt.startEdit();
+        return;
       case "drill":
         if (focused) {
           setScrollTop(0);
@@ -149,7 +170,7 @@ export function ReadyPopup({
         setCursor(Math.max(0, tasks.length - 1));
         return;
       case "yank": {
-        const t = tasks[cursor];
+        const t = tasks[safeCursor];
         if (!t || !snapshot) return;
         const ws = snapshot.workstreamName;
         const cmd = yankCommandForTask(t, ws);
@@ -162,10 +183,20 @@ export function ReadyPopup({
   if (snapshot === null) {
     return <PopupShell title="Tasks · popup">{<Text dimColor>loading…</Text>}</PopupShell>;
   }
-  if (tasks.length === 0) {
+  if (sourceTasks.length === 0) {
     return (
       <PopupShell title="Tasks · popup">
         <Text dimColor>(no open / in-progress tasks)</Text>
+      </PopupShell>
+    );
+  }
+  if (tasks.length === 0) {
+    return (
+      <PopupShell title="Tasks · popup">
+        <Box flexDirection="column" flexGrow={1}>
+          <Text dimColor>(no matches for "{flt.query}")</Text>
+        </Box>
+        <FilterPrompt state={flt} />
       </PopupShell>
     );
   }
@@ -195,10 +226,10 @@ export function ReadyPopup({
   const widths = layoutColumns(rows, COLUMN_SPECS);
 
   return (
-    <PopupShell title={`Tasks · popup (${cursor + 1}/${tasks.length})`}>
+    <PopupShell title={`Tasks · popup (${safeCursor + 1}/${tasks.length})`}>
       <Box flexDirection="column" flexGrow={1}>
         {tasks.map((t, i) => {
-          const selected = i === cursor;
+          const selected = i === safeCursor;
           const row = rows[i];
           if (row === undefined) return null;
           const padded = renderRow(row, widths, COLUMN_SPECS);
@@ -221,6 +252,7 @@ export function ReadyPopup({
       <Box marginTop={1}>
         <Text dimColor>Enter notes · y yanks the per-status `mu task …`</Text>
       </Box>
+      <FilterPrompt state={flt} />
     </PopupShell>
   );
 }

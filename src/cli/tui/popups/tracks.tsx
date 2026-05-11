@@ -34,6 +34,7 @@ import type { WorkstreamSnapshot } from "../../../state.js";
 import { type TaskRow, getTask } from "../../../tasks.js";
 import { type ColumnSpec, layoutColumns, renderRow } from "../columns.js";
 import { dispatchPopupKey } from "../keys.js";
+import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
 import { clampScrollTop } from "./drill.js";
 import { TaskDetailDrill, renderNotes } from "./task-detail.js";
 
@@ -43,6 +44,8 @@ export interface PopupProps {
   snapshot: WorkstreamSnapshot | null;
   mode: "list" | "drill";
   onModeChange: (mode: "list" | "drill") => void;
+  /** Bubbles the filter-prompt edit state up to <App> for StatusBar mode. */
+  onFilterEditingChange?: (editing: boolean) => void;
   db: Db;
   workstream: string;
 }
@@ -74,6 +77,7 @@ export function TracksPopup({
   snapshot,
   mode,
   onModeChange,
+  onFilterEditingChange,
   db,
   workstream,
 }: PopupProps): JSX.Element {
@@ -81,8 +85,24 @@ export function TracksPopup({
   const [drillCursor, setDrillCursor] = useState(0);
   const [drillSubMode, setDrillSubMode] = useState<DrillSubMode>("task-list");
   const [taskDetailScrollTop, setTaskDetailScrollTop] = useState(0);
-  const tracks = snapshot?.tracks ?? [];
-  const focusedTrack = tracks[cursor];
+  // Filter is only active at the top-level (list-of-tracks) view
+  // per spec MATCHING RULES (Tracks blob = head_id + head_title).
+  // Drill sub-views own their own navigation; widening the filter
+  // to the task-list drill is a follow-up.
+  const flt = usePopupFilter();
+  const sourceTracks = snapshot?.tracks ?? [];
+  const tracks =
+    mode === "list"
+      ? applyFilter(sourceTracks, flt.query, (t) => {
+          const head = t.roots[0];
+          return `${head?.name ?? ""} ${head?.title ?? ""}`;
+        })
+      : sourceTracks;
+  const safeCursor = tracks.length === 0 ? 0 : Math.min(cursor, tracks.length - 1);
+  const focusedTrack = tracks[safeCursor];
+  useEffect(() => {
+    onFilterEditingChange?.(flt.editing);
+  }, [flt.editing, onFilterEditingChange]);
 
   // Reset sub-mode + leaf scroll whenever the popup itself flips
   // out of drill mode (e.g. user pressed Esc in the task-list view
@@ -113,6 +133,7 @@ export function TracksPopup({
   }, [mode, focusedTrack, db, workstream]);
 
   useInput((input, key) => {
+    if (mode === "list" && flt.onKey(input, key) === "consumed") return;
     const action = dispatchPopupKey(input, {
       ctrl: key.ctrl,
       shift: key.shift,
@@ -225,6 +246,9 @@ export function TracksPopup({
       case "close":
         onClose();
         return;
+      case "filter":
+        flt.startEdit();
+        return;
       case "drill":
         if (focusedTrack) {
           setDrillCursor(0);
@@ -244,7 +268,7 @@ export function TracksPopup({
         setCursor(Math.max(0, tracks.length - 1));
         return;
       case "yank": {
-        const t = tracks[cursor];
+        const t = tracks[safeCursor];
         if (!t || !snapshot) return;
         const goal = t.roots[0]?.name;
         if (!goal) return;
@@ -258,10 +282,20 @@ export function TracksPopup({
   if (snapshot === null) {
     return <Shell title="Tracks · popup">{<Text dimColor>loading…</Text>}</Shell>;
   }
-  if (tracks.length === 0) {
+  if (sourceTracks.length === 0) {
     return (
       <Shell title="Tracks · popup">
         <Text dimColor>(no goals — `mu task add ... --impact ...`)</Text>
+      </Shell>
+    );
+  }
+  if (mode === "list" && tracks.length === 0) {
+    return (
+      <Shell title="Tracks · popup">
+        <Box flexDirection="column" flexGrow={1}>
+          <Text dimColor>(no matches for "{flt.query}")</Text>
+        </Box>
+        <FilterPrompt state={flt} />
       </Shell>
     );
   }
@@ -359,10 +393,10 @@ export function TracksPopup({
   const widths = layoutColumns(rows, COLUMN_SPECS);
 
   return (
-    <Shell title={`Tracks · popup (${cursor + 1}/${tracks.length})`}>
+    <Shell title={`Tracks · popup (${safeCursor + 1}/${tracks.length})`}>
       <Box flexDirection="column" flexGrow={1}>
         {tracks.map((t, i) => {
-          const sel = i === cursor;
+          const sel = i === safeCursor;
           const row = rows[i];
           if (row === undefined) return null;
           const padded = renderRow(row, widths, COLUMN_SPECS);
@@ -385,6 +419,7 @@ export function TracksPopup({
       <Box marginTop={1}>
         <Text dimColor>Enter task list · y yanks `mu task tree &lt;goal&gt;`</Text>
       </Box>
+      <FilterPrompt state={flt} />
     </Shell>
   );
 }

@@ -49,8 +49,8 @@ export function Help(): JSX.Element {
         <HelpRow keys="g / G" effect="first / last row" />
         <HelpRow keys="Ctrl-D / Ctrl-U" effect="half-page down / up" />
         <HelpRow keys="PgDn / PgUp" effect="full-page down / up" />
-        <HelpRow keys="/" effect="enter filter mode (v0.next)" />
-        <HelpRow keys="n / N" effect="next / prev match" />
+        <HelpRow keys="/" effect="filter (incremental substring; Esc cancel, Enter commit)" />
+        <HelpRow keys="n / N" effect="next / prev match (v0.next)" />
         <HelpRow keys="y" effect="yank action for focused row" />
         <HelpRow keys="Esc / q" effect="close popup → return to dashboard" />
         <HelpRow keys="?" effect="toggle this overlay" />

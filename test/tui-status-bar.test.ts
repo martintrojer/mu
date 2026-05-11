@@ -37,7 +37,7 @@ describe("StatusBar", () => {
     expect(typeof StatusBar).toBe("function");
   });
 
-  it.each<StatusMode>(["dashboard", "popup", "help"])(
+  it.each<StatusMode>(["dashboard", "popup", "popup-filter", "help"])(
     "renders without crashing in %s mode",
     (mode) => {
       const node = StatusBar({ mode, tickMs: 1000, footer: null, cols: 80 });
@@ -129,6 +129,57 @@ describe("StatusBar", () => {
     expect(text).toContain("drill");
     expect(text).toContain("scroll");
     expect(text).toContain("back");
+  });
+
+  it("popup-list-mode hint cluster advertises `/ filter`", () => {
+    // Per feat_popup_search_filter spec: the popup-mode hint must
+    // surface `/` so users discover the keybinding without opening
+    // the help overlay.
+    const node = StatusBar({
+      mode: "popup",
+      tickMs: 1000,
+      footer: null,
+      cols: 200,
+      popupName: "Agents",
+      popupMode: "list",
+    });
+    const text = renderToString(node);
+    expect(text).toContain("/");
+    expect(text).toContain("filter");
+  });
+
+  it("popup-filter mode renders the edit-time hint cluster", () => {
+    const node = StatusBar({
+      mode: "popup-filter",
+      tickMs: 1000,
+      footer: null,
+      cols: 200,
+      popupName: "Tasks",
+    });
+    const text = renderToString(node);
+    // Per spec: `Esc cancel · Enter commit · Bksp edit`.
+    expect(text).toContain("Esc");
+    expect(text).toContain("cancel");
+    expect(text).toContain("Enter");
+    expect(text).toContain("commit");
+    expect(text).toContain("Bksp");
+    expect(text).toContain("edit");
+    // The popup name stays in the cluster so the user sees which
+    // popup they're filtering inside.
+    expect(text).toContain("Tasks");
+    expect(text).toContain("filter");
+  });
+
+  it("popup-filter mode renders without a popupName too (defensive)", () => {
+    const node = StatusBar({
+      mode: "popup-filter",
+      tickMs: 1000,
+      footer: null,
+      cols: 200,
+    });
+    const text = renderToString(node);
+    expect(text).toContain("filter");
+    expect(text).toContain("cancel");
   });
 
   it("renders the dismiss hint when mode=help", () => {
