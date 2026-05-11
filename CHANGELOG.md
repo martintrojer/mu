@@ -121,6 +121,32 @@ called out under "Breaking" in each entry.
   LIKE-with-escape pattern so a same-prefix id (`foo` vs `foo_2`)
   can't cross-match.
 
+- **`mu workspace recreate <agent>`: free + create in one shot**
+  (`add_mu_workspace_recreate_free_create`). Live dogfood report:
+  between waves the operator was running `mu workspace free worker-N`
+  + `mu workspace create worker-N -w X` for every agent in the wave;
+  the `mu task wait --json` `nextSteps` already suggested `free && create`
+  as one combined intent. The new verb does both atomically:
+      mu workspace recreate worker-1 [-w <ws>] \
+        [--backend <jj|sl|git|none>] [--from <ref>] \
+        [--project-root <path>] [--force] [--json]
+  Reuses the previous backend unless `--backend` overrides; bases on
+  the project's current main unless `--from` overrides. Refuses on a
+  dirty workspace (uncommitted changes, git/sl) the same way `free`
+  does — throws `WorkspaceDirtyError` (exit 4) listing the dirty
+  files, with a `--force` `nextStep` for the lossy escape. `--force`
+  discards the dirty edits and rebuilds; jj is always-snapshotted so
+  it never refuses; `none` has no VCS to consult so the dirty check
+  is a no-op. Audit trail: ONE `workspace recreate <agent>` event
+  (with both old + new `parent_ref` in the payload) instead of
+  separate free + create entries; ONE pre-mutation snapshot under
+  the same label. Sibling of `mu workspace refresh`: refresh
+  PRESERVES the worker's local commits (rebases them onto fresh
+  main); recreate THROWS THEM AWAY. Use refresh when you've already
+  cherry-picked the worker's HEAD; use recreate when you want a
+  pristine dir for the next dispatch. SDK: `recreateWorkspace(db,
+  agent, opts) → { workspace, previousParentRef }`.
+
 - **`mu task add --json` surfaces auto-id truncation telemetry**
   (`task_add_slugify_silently_truncates_ids`). Sibling fix to the
   human stderr hint in `slugifytitle_silently_drops_clauses`:

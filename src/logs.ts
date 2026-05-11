@@ -373,6 +373,7 @@ export const EVENT_VERB_PREFIXES: readonly string[] = [
   "workspace create",
   "workspace free",
   "workspace refresh",
+  "workspace recreate",
   // src/workstream.ts
   "workstream init",
   "workstream destroy",

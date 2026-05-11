@@ -98,22 +98,29 @@ export class WorkspaceVcsRequiredError extends Error implements HasNextSteps {
  */
 export class WorkspaceDirtyError extends Error implements HasNextSteps {
   override readonly name = "WorkspaceDirtyError";
+  /** The verb that refused ("rebase", "recreate", ...). Used to make
+   *  the error message + nextSteps point the operator at the right
+   *  escape hatch (e.g. recreate's `--force`). Default "rebase" for
+   *  backward compatibility with the original rebaseTo call sites. */
+  public readonly verb: string;
   constructor(
     public readonly workspacePath: string,
     public readonly files: readonly string[],
+    verb = "rebase",
   ) {
     super(
-      `workspace dirty (${files.length} uncommitted file(s)): ${workspacePath}; refusing to rebase`,
+      `workspace dirty (${files.length} uncommitted file(s)): ${workspacePath}; refusing to ${verb}`,
     );
+    this.verb = verb;
   }
   errorNextSteps(): NextStep[] {
-    return [
+    const steps: NextStep[] = [
       {
         intent: "Inspect the dirty files",
         command: `(cd ${this.workspacePath} && git status -s)  # or jj st / sl st`,
       },
       {
-        intent: "Commit them first, then retry refresh",
+        intent: `Commit them first, then retry ${this.verb}`,
         command: `(cd ${this.workspacePath} && git add -A && git commit -m WIP)`,
       },
       {
@@ -121,6 +128,13 @@ export class WorkspaceDirtyError extends Error implements HasNextSteps {
         command: `(cd ${this.workspacePath} && git stash)`,
       },
     ];
+    if (this.verb === "recreate") {
+      steps.push({
+        intent: "Or DISCARD all uncommitted changes (the lossy escape)",
+        command: "mu workspace recreate <agent> --force",
+      });
+    }
+    return steps;
   }
 }
 
@@ -284,6 +298,28 @@ export interface VcsBackend {
    * on backend command failure (unknown ref, missing repo).
    */
   commitsSinceBase(workspacePath: string, baseRef: string): Promise<CommitSummary[]>;
+
+  /**
+   * Return the list of dirty (uncommitted / unstaged / untracked-not-
+   * ignored) paths in the workspace. Empty array = clean.
+   *
+   * Used by `mu workspace recreate` to refuse a free+create cycle on
+   * a dirty workspace unless the operator passes `--force` (the lossy
+   * escape hatch). Mirrors the dirty-check `rebaseTo` does internally.
+   *
+   * Backend semantics:
+   *   - git: `git status --porcelain` (working-tree + staged +
+   *     untracked-not-ignored, mirroring the rebaseTo path).
+   *   - sl:  `sl status` parsed for non-empty output.
+   *   - jj:  always-snapshotted, so no concept of "dirty" — returns [].
+   *   - none: cp -a snapshots have no VCS, so we can't decide "dirty";
+   *     returns [] so the caller doesn't refuse for an unanswerable
+   *     question.
+   *
+   * Throws on backend command failure (the operator should see a
+   * real error, not a silent "clean").
+   */
+  listDirtyFiles(workspacePath: string): Promise<string[]>;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────
@@ -373,6 +409,12 @@ export const noneBackend: VcsBackend = {
   // doesn't track history. Same typed error as rebaseTo.
   async commitsSinceBase(workspacePath, _baseRef) {
     throw new WorkspaceVcsRequiredError("commits", workspacePath);
+  },
+
+  // No VCS → nothing to compare against; "dirty" is unanswerable.
+  // Caller (`recreateWorkspace`) treats [] as "clean" and proceeds.
+  async listDirtyFiles(_workspacePath) {
+    return [];
   },
 };
 
@@ -615,6 +657,11 @@ export const gitBackend: VcsBackend = {
     const result: FreeWorkspaceResult = { removed: true };
     if (committedRef !== undefined) result.committedRef = committedRef;
     return result;
+  },
+
+  async listDirtyFiles(workspacePath) {
+    if (!existsSync(workspacePath)) return [];
+    return listGitDirtyFiles(workspacePath);
   },
 };
 
@@ -946,6 +993,14 @@ export const jjBackend: VcsBackend = {
     );
     return parseNulRecords(out);
   },
+
+  // jj is always-snapshotted: there is no "uncommitted" state. The
+  // working copy is itself a commit; the next snapshot folds any
+  // edits in. Surface that by returning [] so `recreateWorkspace`
+  // never refuses a jj workspace as "dirty".
+  async listDirtyFiles(_workspacePath) {
+    return [];
+  },
 };
 
 /**
@@ -1148,6 +1203,11 @@ export const slBackend: VcsBackend = {
     // sl emits oldest-last by default; reverse to oldest-first to match
     // the git/jj contract.
     return parseNulRecords(out).reverse();
+  },
+
+  async listDirtyFiles(workspacePath) {
+    if (!existsSync(workspacePath)) return [];
+    return listSlDirtyFiles(workspacePath);
   },
 };
 

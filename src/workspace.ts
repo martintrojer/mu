@@ -28,6 +28,7 @@ import {
   type RebaseResult,
   type VcsBackend,
   type VcsBackendName,
+  WorkspaceDirtyError,
   backendByName,
   detectBackend,
 } from "./vcs.js";
@@ -362,6 +363,11 @@ export interface CreateWorkspaceOptions {
   backend?: VcsBackendName | VcsBackend;
   /** Optional ref to base the workspace on. Backend-specific. */
   parentRef?: string;
+  /** INTERNAL. When false, suppress the `workspace create` system
+   *  event. Used by `recreateWorkspace` so the audit trail records
+   *  ONE atomic `workspace recreate` line instead of separate
+   *  free + create entries. Defaults to true. */
+  _suppressEvent?: boolean;
 }
 
 /**
@@ -479,11 +485,13 @@ export async function createWorkspace(db: Db, opts: CreateWorkspaceOptions): Pro
     throw err;
   }
 
-  emitEvent(
-    db,
-    opts.workstream,
-    `workspace create ${opts.agent} (backend=${backend.name}, path=${path}${created.parentRef ? `, parent=${created.parentRef.slice(0, 12)}` : ""})`,
-  );
+  if (opts._suppressEvent !== true) {
+    emitEvent(
+      db,
+      opts.workstream,
+      `workspace create ${opts.agent} (backend=${backend.name}, path=${path}${created.parentRef ? `, parent=${created.parentRef.slice(0, 12)}` : ""})`,
+    );
+  }
 
   return {
     agentName: opts.agent,
@@ -621,6 +629,12 @@ export interface FreeWorkspaceOptions {
   /** If true, attempt to commit pending changes before tearing down.
    *  Backend-specific; see VcsBackend.freeWorkspace. */
   commit?: boolean;
+  /** INTERNAL. When false, suppress the `workspace free` system
+   *  event AND skip the pre-mutation snapshot capture. Used by
+   *  `recreateWorkspace` so the audit trail records ONE atomic
+   *  `workspace recreate` line and one snapshot for the whole
+   *  free+create cycle. Defaults to true. */
+  _suppressEvent?: boolean;
 }
 
 export interface FreeWorkspaceResult {
@@ -806,7 +820,11 @@ export async function freeWorkspace(
   // Pre-mutation snapshot — the row deletion + on-disk teardown is
   // not recoverable from history. Snapshot is DB-only (the worktree
   // is not rolled back; that's the design's tmux/disk honesty point).
-  captureSnapshot(db, `workspace free ${agent}`, row.workstreamName);
+  // recreateWorkspace owns its own snapshot label so the undo trail
+  // shows one `workspace recreate` step, not free + create.
+  if (opts._suppressEvent !== true) {
+    captureSnapshot(db, `workspace free ${agent}`, row.workstreamName);
+  }
 
   const backend = backendByName(row.backend);
   const result = await backend.freeWorkspace({
@@ -826,15 +844,134 @@ export async function freeWorkspace(
                AND workstream_id = ?`,
           )
           .run(agent, wsIdForDel, wsIdForDel);
-  emitEvent(
-    db,
-    row.workstreamName,
-    `workspace free ${agent} (backend=${row.backend}, path=${row.path}${result.committedRef ? `, committed=${result.committedRef.slice(0, 12)}` : ""})`,
-  );
+  if (opts._suppressEvent !== true) {
+    emitEvent(
+      db,
+      row.workstreamName,
+      `workspace free ${agent} (backend=${row.backend}, path=${row.path}${result.committedRef ? `, committed=${result.committedRef.slice(0, 12)}` : ""})`,
+    );
+  }
 
   return {
     removed: result.removed,
     rowDeleted: del.changes > 0,
     ...(result.committedRef !== undefined ? { committedRef: result.committedRef } : {}),
   };
+}
+
+export interface RecreateWorkspaceOptions {
+  /** Same as createWorkspace; defaults to cwd. */
+  projectRoot?: string;
+  /** Same as createWorkspace; if undefined the previous backend is
+   *  reused (auto-detection re-runs only when --backend was passed). */
+  backend?: VcsBackendName | VcsBackend;
+  /** Same as createWorkspace; if undefined the new workspace bases on
+   *  the backend's current head (for git/jj/sl: the project's main),
+   *  which is the whole point of the verb. */
+  parentRef?: string;
+  /** When true, skip the dirty-check refusal and discard any
+   *  uncommitted changes in the existing workspace. The lossy escape
+   *  hatch — mirrors the implicit semantics of `mu workspace free`
+   *  without --commit. */
+  force?: boolean;
+}
+
+export interface RecreateWorkspaceResult {
+  /** The freshly-created workspace row (the previous row is already
+   *  gone by the time we return). */
+  workspace: WorkspaceRow;
+  /** parent_ref of the WORKSPACE BEFORE recreate, so callers (and the
+   *  CLI's success message) can show "bumped from <old> -> <new>". */
+  previousParentRef: string | null;
+}
+
+/**
+ * Free + create in one atomic-ish verb. The whole point: between
+ * waves the operator wants the SAME agent name with a fresh workspace
+ * pinned to current main; doing `free` then `create` manually was the
+ * dogfood-painful pattern (mufeedback note add_mu_workspace_recreate_free_create).
+ *
+ * Behaviour:
+ *   - Refuses with WorkspaceDirtyError if the existing workspace has
+ *     uncommitted changes (git/sl), UNLESS `force: true` is passed
+ *     (lossy escape hatch). jj is always-snapshotted so dirty is never
+ *     an issue; `none` has no VCS to consult so it never refuses.
+ *   - Reuses the SAME backend the previous workspace had unless
+ *     `backend` is explicitly overridden — a between-wave refresh
+ *     should not silently swap from git to none because the operator
+ *     happened to cd into a non-VCS dir. The override path matches
+ *     `mu workspace create --backend ...` semantics.
+ *   - Emits ONE `workspace recreate <agent>` event (with both old and
+ *     new parent_ref in the payload) instead of separate free + create
+ *     events. One pre-mutation snapshot is captured under the same
+ *     label so the undo trail shows one step.
+ *
+ * Throws:
+ *   - WorkspaceNotFoundError    — no row for this (agent, workstream).
+ *   - AgentNotFoundError        — propagated from createWorkspace's
+ *                                 typed agent check (the agent row
+ *                                 was deleted between the lookup and
+ *                                 the re-INSERT; vanishingly rare).
+ *   - WorkspaceDirtyError       — dirty + !force.
+ *   - any backend-level Error   — free or create failed.
+ *
+ * On a free-side failure the row + on-disk dir are best-effort gone;
+ * on a create-side failure we surface the create error and the row is
+ * already deleted (the operator can re-run `mu workspace create`).
+ */
+export async function recreateWorkspace(
+  db: Db,
+  agent: string,
+  opts: RecreateWorkspaceOptions & { workstream: string },
+): Promise<RecreateWorkspaceResult> {
+  const row = getWorkspaceForAgent(db, agent, opts.workstream);
+  if (!row) throw new WorkspaceNotFoundError(agent);
+
+  // Dirty-check the OLD workspace before we destroy it. Same
+  // safety semantics as `free` (without --commit): refuse rather
+  // than silently lose uncommitted edits. `--force` is the lossy
+  // escape hatch.
+  if (opts.force !== true) {
+    const oldBackend = backendByName(row.backend);
+    const dirty = await oldBackend.listDirtyFiles(row.path);
+    if (dirty.length > 0) {
+      throw new WorkspaceDirtyError(row.path, dirty, "recreate");
+    }
+  }
+
+  // One snapshot for the whole free+create cycle; one event line at
+  // the end. The internal `_suppressEvent` flag on free/create is
+  // private to this module — not part of the SDK contract.
+  captureSnapshot(db, `workspace recreate ${agent}`, row.workstreamName);
+
+  await freeWorkspace(db, agent, {
+    workstream: opts.workstream,
+    commit: false,
+    _suppressEvent: true,
+  });
+
+  const createOpts: CreateWorkspaceOptions = {
+    agent,
+    workstream: opts.workstream,
+    _suppressEvent: true,
+  };
+  if (opts.projectRoot !== undefined) createOpts.projectRoot = opts.projectRoot;
+  // Default to the prior backend so a between-wave refresh stays on
+  // the same VCS regardless of cwd. Explicit override wins.
+  if (opts.backend !== undefined) {
+    createOpts.backend = opts.backend;
+  } else {
+    createOpts.backend = row.backend;
+  }
+  if (opts.parentRef !== undefined) createOpts.parentRef = opts.parentRef;
+
+  const fresh = await createWorkspace(db, createOpts);
+
+  emitEvent(
+    db,
+    opts.workstream,
+    `workspace recreate ${agent} (backend=${fresh.backend}, path=${fresh.path}, old_parent=${row.parentRef ? row.parentRef.slice(0, 12) : "—"}, new_parent=${fresh.parentRef ? fresh.parentRef.slice(0, 12) : "—"})`,
+  );
+
+  return { workspace: fresh, previousParentRef: row.parentRef };
 }

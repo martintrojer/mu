@@ -289,9 +289,11 @@ running a wave.
   Edge direction: `block <blocked> --by <blocker>`.
 - **Self (in-pane)**: `mu me`, `mu me tasks`, `mu me next`.
 - **Workspace**: `create`, `list` (`behind` column), `refresh`
-  (rebase onto fresh base, agent stays alive), `commits` (since-fork
-  `<sha> <subject>`; `--json` for piping), `free`, `path`
-  (`cd $(mu workspace path X)`), `orphans`.
+  (rebase onto fresh base, agent stays alive), `recreate` (free +
+  create in one shot for between-wave prep; `--force` to discard
+  dirty edits), `commits` (since-fork `<sha> <subject>`; `--json`
+  for piping), `free`, `path` (`cd $(mu workspace path X)`),
+  `orphans`.
 - **Activity log**: `mu log "text"` (write), `mu log -n N` (read),
   `mu log --tail` (subscribe). Don't pipe `--tail` for waits — use
   `mu task wait`.

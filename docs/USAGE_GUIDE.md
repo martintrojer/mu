@@ -959,6 +959,10 @@ while (( ${#in_flight[@]} > 0 )); do
   #    overrides. Refuses on dirty WC; conflicts exit 5 with a `cd`
   #    hint to resolve in-place.
   mu workspace refresh "$worker" -w "$ws"
+  # Alt: `mu workspace recreate "$worker" -w "$ws"` does free + create
+  #      atomically — same shortcut, but throws away the worker's local
+  #      changes (the lossy escape: requires --force on a dirty WC).
+  #      Use when you don't care about replaying the worker's commits.
 
   # 4. Drop $closed from in_flight, dispatch the next task, repeat.
   in_flight=( "${in_flight[@]/$closed}" )
