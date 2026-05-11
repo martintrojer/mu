@@ -1,6 +1,87 @@
-import { Text } from "ink";
+// Ready card — top-N OPEN tasks with no unsatisfied blockers, sorted
+// by ROI desc.
+//
+// Per design_card_ready (workstream `tui`).
+//
+// Aesthetic: rounded border, dim border, section header inset; ROI
+// bucket colours via roiBucket() — high=green, mid=yellow, low=dim.
 
-// Placeholder; real implementation in Task 27 (Wave 5).
-export function ReadyCard(): JSX.Element {
-  return <Text>ready card placeholder</Text>;
+import { Box, Text } from "ink";
+import { type RoiBucket, type WorkstreamSnapshot, roiBucket } from "../../../state.js";
+
+export interface ReadyCardProps {
+  snapshot: WorkstreamSnapshot | null;
+}
+
+const ROW_LIMIT = 10;
+
+export function ReadyCard({ snapshot }: ReadyCardProps): JSX.Element {
+  if (snapshot === null) {
+    return (
+      <Box borderStyle="round" borderColor="gray" paddingX={1}>
+        <Text dimColor>Ready — loading…</Text>
+      </Box>
+    );
+  }
+
+  const { ready } = snapshot;
+
+  if (ready.length === 0) {
+    return (
+      <Box borderStyle="round" borderColor="gray" paddingX={1} flexDirection="column">
+        <Text bold color="cyan">
+          Ready
+        </Text>
+        <Text dimColor>
+          (no ready tasks) every blocker is OPEN/IN_PROGRESS or every task is closed
+        </Text>
+      </Box>
+    );
+  }
+
+  const shown = ready.slice(0, ROW_LIMIT);
+
+  return (
+    <Box borderStyle="round" borderColor="gray" paddingX={1} flexDirection="column">
+      <Text bold color="cyan">
+        Ready <Text dimColor>· {ready.length}</Text>
+      </Text>
+      {shown.map((t) => {
+        const bucket = roiBucket(t.impact, t.effortDays);
+        const roi =
+          t.effortDays > 0 ? Math.round(t.impact / t.effortDays) : Number.POSITIVE_INFINITY;
+        const roiText = Number.isFinite(roi) ? String(roi) : "∞";
+        const roiColor = colorForBucket(bucket);
+        const ownerBit = t.ownerName ? <Text dimColor> · {t.ownerName}</Text> : null;
+        return (
+          <Box key={t.name}>
+            <Text>
+              <Text bold>{t.name}</Text> <Text color={roiColor}>ROI {roiText}</Text>
+              <Text dimColor> · {truncate(t.title, 60)}</Text>
+              {ownerBit}
+            </Text>
+          </Box>
+        );
+      })}
+      {ready.length > ROW_LIMIT && (
+        <Text dimColor>… +{ready.length - ROW_LIMIT} more · open Tasks popup (Shift+3)</Text>
+      )}
+    </Box>
+  );
+}
+
+function colorForBucket(b: RoiBucket): string | undefined {
+  switch (b) {
+    case "high":
+    case "infinite":
+      return "green";
+    case "mid":
+      return "yellow";
+    case "low":
+      return undefined;
+  }
+}
+
+function truncate(s: string, n: number): string {
+  return s.length <= n ? s : `${s.slice(0, n - 1)}…`;
 }

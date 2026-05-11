@@ -194,10 +194,10 @@ export function App({ db, workstream }: AppProps): JSX.Element {
           <Text color="red">snapshot error: {snap.error}</Text>
         </Box>
       )}
-      {visibility.agents && <AgentsCard />}
-      {visibility.tracks && <TracksCard />}
-      {visibility.ready && <ReadyCard />}
-      {visibility.log && <LogCard />}
+      {visibility.agents && <AgentsCard snapshot={snap.data} />}
+      {visibility.tracks && <TracksCard snapshot={snap.data} />}
+      {visibility.ready && <ReadyCard snapshot={snap.data} />}
+      {visibility.log && <LogCard snapshot={snap.data} />}
       <Box marginTop={1} justifyContent="space-between">
         <Text dimColor>{footer ? formatFooter(footer) : ""}</Text>
         <Text dimColor>tick: {(tickMs / 1000).toFixed(2)}s</Text>
