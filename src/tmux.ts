@@ -127,8 +127,42 @@ export interface TmuxExecResult {
 
 export type TmuxExecutor = (args: readonly string[]) => Promise<TmuxExecResult>;
 
+/**
+ * Optional global-flag prefix to splice in front of every tmux args
+ * vector. When `MU_TMUX_SOCKET=<name>` is set, this returns
+ * `["-L", name, "-f", "/dev/null"]`:
+ *
+ *   `-L <name>` routes every call through a private tmux server with
+ *   the given socket name (Linux: `/tmp/tmux-<uid>/<name>`,
+ *   macOS: `$TMPDIR/tmux-<uid>/<name>`) instead of the user's default
+ *   `/tmp/tmux-<uid>/default`. Set by the test harness in Layer 3 of
+ *   bug_test_suite_flake_leaks_isolation so the integration suite
+ *   can never observe — or contaminate — the user's interactive
+ *   tmux server.
+ *
+ *   `-f /dev/null` skips the user's `~/.tmux.conf`. This matters
+ *   because tmux auto-starts the server on the first client call if
+ *   none is running (e.g. after a test’s last `kill-session`
+ *   shuts the server down). A typical user config uses `run-shell`
+ *   for status-bar plugins (TPM, hostname/network probes), and each
+ *   such hook adds ~1–4s to that auto-start. Without `-f /dev/null`
+ *   a single integration test grows from 3s to 48s on a configured
+ *   dev box. The suite drives tmux through the documented protocol,
+ *   not through bound keys, so the user's config is irrelevant.
+ *
+ * Read fresh on every call so a setupFiles hook that mutates
+ * `process.env.MU_TMUX_SOCKET` mid-run takes effect immediately.
+ *
+ * Production code never sets this; it's a test-isolation seam.
+ */
+function tmuxGlobalFlags(): readonly string[] {
+  const socket = process.env.MU_TMUX_SOCKET;
+  if (socket === undefined || socket.length === 0) return [];
+  return ["-L", socket, "-f", "/dev/null"];
+}
+
 const realExecutor: TmuxExecutor = async (args) => {
-  const result = await execa("tmux", [...args], { reject: false });
+  const result = await execa("tmux", [...tmuxGlobalFlags(), ...args], { reject: false });
   return {
     stdout: result.stdout ?? "",
     stderr: result.stderr ?? "",
@@ -294,10 +328,25 @@ export async function newSessionWithPane(
   return out;
 }
 
-/** Idempotent: succeeds even if the session is already gone. */
+/**
+ * Idempotent: succeeds even if the session is already gone.
+ *
+ * Three swallowed shapes:
+ *   - "can't find session: <name>"  — session never existed.
+ *   - "session not found"           — alternate phrasing on some tmux builds.
+ *   - "no server running on <path>" — the tmux server itself has exited
+ *     (typical when the test suite runs against a private `tmux -L
+ *     <socket>` server and the just-killed session was its last; tmux
+ *     quietly shuts the server down). Without this, killSession would
+ *     throw on the very next idempotent call — only visible under
+ *     Layer 3 of bug_test_suite_flake_leaks_isolation.
+ */
 export async function killSession(name: string): Promise<void> {
   const result = await currentExecutor(["kill-session", "-t", name]);
-  if (result.exitCode !== 0 && !/can't find session|session not found/i.test(result.stderr)) {
+  if (
+    result.exitCode !== 0 &&
+    !/can't find session|session not found|no server running/i.test(result.stderr)
+  ) {
     throw new TmuxError(
       ["kill-session", "-t", name],
       result.stderr,
