@@ -47,7 +47,13 @@
 import { Box, Text } from "ink";
 import type { DoctorCheck } from "../../../doctor-summary.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
-import { type ColumnSpec, layoutColumns, renderRow } from "../columns.js";
+import {
+  type ColumnSpec,
+  contentWidthFromCols,
+  layoutColumns,
+  renderRow,
+  termColsForLayout,
+} from "../columns.js";
 import { TitledBox } from "../titled-box.js";
 
 export interface DoctorCardProps {
@@ -64,6 +70,7 @@ const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
 ];
 
 export function DoctorCard({ snapshot }: DoctorCardProps): JSX.Element {
+  const contentWidth = contentWidthFromCols(termColsForLayout());
   if (snapshot === null || snapshot.doctor === null) {
     return (
       <TitledBox title="Doctor" cardId={9}>
@@ -91,7 +98,7 @@ export function DoctorCard({ snapshot }: DoctorCardProps): JSX.Element {
   const problems = checks.filter((c) => c.status !== "ok");
   const shown = problems.slice(0, ROW_LIMIT);
   const rows = shown.map((c) => [glyphFor(c), c.name, c.status, c.detail]);
-  const widths = layoutColumns(rows, COLUMN_SPECS);
+  const widths = layoutColumns(rows, COLUMN_SPECS, contentWidth);
 
   return (
     <TitledBox title="Doctor" subtitle={subtitle} cardId={9}>

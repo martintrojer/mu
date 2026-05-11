@@ -117,12 +117,17 @@ describe("popups/inprogress.tsx ↔ App / keys wiring", () => {
 
   it("App.tsx PopupId union now includes 6", () => {
     const app = readFileSync("./src/cli/tui/app.tsx", "utf-8");
-    expect(app).toMatch(/type PopupId = 1 \| 2 \| 3 \| 4 \| 6 \| null/);
+    // After Popup 5/6/7 all landed, the union widened to
+    // `1 | 2 | 3 | 4 | 5 | 6 | 7 | null`. Just assert that 6 is in
+    // the union and the suffix is `| null`.
+    expect(app).toMatch(/type PopupId = [\d \|]*\b6\b[\d \|]*\| null/);
   });
 
   it("keys.ts maps Shift+6 (^) to openPopup(6)", () => {
     const keys = readFileSync("./src/cli/tui/keys.ts", "utf-8");
     expect(keys).toMatch(/"\^": 6/);
-    expect(keys).toMatch(/openPopup"; cardId: 1 \| 2 \| 3 \| 4 \| 6/);
+    // Same widen-tolerance as PopupId: just require 6 to be in the
+    // union; the rest of the union is checked by tui-keys.test.ts.
+    expect(keys).toMatch(/openPopup"; cardId: [\d \|]*\b6\b/);
   });
 });

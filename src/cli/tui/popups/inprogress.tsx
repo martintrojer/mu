@@ -26,7 +26,13 @@ import { useEffect, useMemo, useState } from "react";
 import type { Db } from "../../../db.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
 import { ageMs, formatSinceClaim, glyphFor, isStale } from "../cards/inprogress.js";
-import { type ColumnSpec, layoutColumns, renderRow } from "../columns.js";
+import {
+  type ColumnSpec,
+  contentWidthFromCols,
+  layoutColumns,
+  renderRow,
+  termColsForLayout,
+} from "../columns.js";
 import { dispatchPopupKey } from "../keys.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
 import { clampScrollTop } from "./drill.js";
@@ -66,6 +72,7 @@ export function InProgressPopup({
   db,
   workstream,
 }: PopupProps): JSX.Element {
+  const contentWidth = contentWidthFromCols(termColsForLayout());
   const [cursor, setCursor] = useState(0);
   const [scrollTop, setScrollTop] = useState(0);
   const flt = usePopupFilter();
@@ -233,7 +240,7 @@ export function InProgressPopup({
     formatRoi(t.impact, t.effortDays),
     t.title,
   ]);
-  const widths = layoutColumns(rows, COLUMN_SPECS);
+  const widths = layoutColumns(rows, COLUMN_SPECS, contentWidth);
 
   return (
     <Shell title={`In-progress · popup (${safeCursor + 1}/${tasks.length})`}>
