@@ -315,13 +315,26 @@ export {
 export {
   appendLog,
   type AppendLogOptions,
+  type ClassifiedEvent,
+  classifyEventVerb,
   emitEvent,
+  EVENT_VERB_PREFIXES,
   latestSeq,
   listLogs,
   type ListLogsOptions,
   type LogKind,
   type LogRow,
 } from "./logs.js";
+export {
+  agentStatusHistogram,
+  loadWorkstreamSnapshot,
+  type LoadWorkstreamSnapshotOptions,
+  type OwnedTasksSummary,
+  type RoiBucket,
+  roiBucket,
+  summarizeOwnedTasks,
+  type WorkstreamSnapshot,
+} from "./state.js";
 export {
   captureSnapshot,
   type CaptureSnapshotResult,

@@ -390,3 +390,30 @@ export const EVENT_VERB_PREFIXES: readonly string[] = [
   // source-ws in the archive).
   "archive export",
 ];
+
+// ─── Verb classification (for renderers that colour by verb) ──────
+
+export interface ClassifiedEvent {
+  /** One of EVENT_VERB_PREFIXES. */
+  verb: string;
+  /** Payload past the verb token; preserves leading separator (" " or "\t"). */
+  rest: string;
+}
+
+/**
+ * Match `payload` against EVENT_VERB_PREFIXES. Returns {verb, rest} on
+ * match; null otherwise. The verb-boundary check is `next is space, tab,
+ * or end-of-string` so we don't false-match e.g. `task addnote`.
+ *
+ * Pure parser. Consumers (the static HUD, the ink Activity-log card)
+ * apply their own colour to `verb` after matching.
+ */
+export function classifyEventVerb(payload: string): ClassifiedEvent | null {
+  for (const verb of EVENT_VERB_PREFIXES) {
+    if (!payload.startsWith(verb)) continue;
+    const next = payload.charCodeAt(verb.length);
+    if (!Number.isNaN(next) && next !== 0x20 && next !== 0x09) continue;
+    return { verb, rest: payload.slice(verb.length) };
+  }
+  return null;
+}
