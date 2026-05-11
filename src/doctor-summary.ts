@@ -221,3 +221,22 @@ export function countProblems(checks: readonly DoctorCheck[]): number {
   for (const c of checks) if (c.status !== "ok") n++;
   return n;
 }
+
+/**
+ * Return the full check array (OK + warn + fail) in stable display
+ * order. Used by the TUI's slot-9 Doctor popup
+ * (feat_popup_9_doctor, workstream `tui-impl`) which renders every
+ * row — not just the non-OK subset Card 9 surfaces.
+ *
+ * Thin wrapper over `loadDoctorSummary` so the SDK seam stays
+ * single: `loadDoctorSummary` is the source of truth for the
+ * check vocabulary, and the popup's `loadDoctorChecks` view is
+ * just `.checks`. Pure-ish (same cheap synchronous DB reads as
+ * `loadDoctorSummary`).
+ */
+export function loadDoctorChecks(
+  db: Db,
+  snapshot: WorkstreamSnapshot | null,
+): readonly DoctorCheck[] {
+  return loadDoctorSummary(db, snapshot).checks;
+}

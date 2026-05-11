@@ -78,6 +78,28 @@ is opt-in via the new `--tui` flag.
     IDs / agent names / status tokens never truncate; titles /
     payloads / paths clip with `…`. Uses `string-width` for
     emoji + ANSI awareness.
+- **TUI Doctor popup (Shift+9 / `(`)** — the matching popup for
+  Card 9. Fullscreen drill-down of EVERY doctor check (OK + warn +
+  fail), not just the non-OK subset Card 9 surfaces. Renders the
+  Card 9 columns (glyph + check name + STATUS + detail) so the
+  popup stays visually in sync; re-uses Card 9's pure helpers
+  (`glyphFor`, `colorForStatus`). j/k navigation; `/` filter via
+  the shared `usePopupFilter` primitive (blob =
+  `${name} ${status} ${detail}`); `y` yanks an INFORMATIONAL
+  remediation hint (e.g. `mu agent list`, `mu workspace orphans`,
+  or a `# ...` no-op for schema-shape checks that have no
+  actionable mutation an operator should yank) — read-only by
+  construction, no mutating verb surfaces in the yank matrix.
+  `Enter` drills into a small ad-hoc detail view of the focused
+  check (name, status, detail, multi-line remediation paragraph)
+  rendered via the shared `DrillScrollView` leaf — NOT
+  `TaskDetailDrill` (rows are doctor checks, not tasks; the
+  popup-recursion contract from
+  feat_track_drill_chains_to_task_drill does not apply). New SDK
+  seam `loadDoctorChecks(db, snapshot)` in `src/doctor-summary.ts`
+  is a thin wrapper over `loadDoctorSummary` that returns the full
+  check array — the popup needs every row, the card needs the
+  warn+fail subset.
 - **TUI Doctor card (slot 9)** — toggleable with `9`. One
   glanceable health-check summary so the operator notices a broken
   state without remembering to run `mu doctor`. Filters to non-OK

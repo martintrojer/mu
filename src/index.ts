@@ -341,6 +341,7 @@ export {
   type DoctorCheck,
   type DoctorStatus,
   type DoctorSummary,
+  loadDoctorChecks,
   loadDoctorSummary,
 } from "./doctor-summary.js";
 export {

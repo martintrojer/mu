@@ -28,7 +28,7 @@ describe("dispatchGlobalKey: card toggles 1-9", () => {
   // below; not re-asserted here.)
 });
 
-describe("dispatchGlobalKey: popup openers (Shift+1..Shift+8 → ! @ # $ % ^ & *)", () => {
+describe("dispatchGlobalKey: popup openers (Shift+1..Shift+9 → ! @ # $ % ^ & * ()", () => {
   it.each([
     ["!", 1],
     ["@", 2],
@@ -38,17 +38,18 @@ describe("dispatchGlobalKey: popup openers (Shift+1..Shift+8 → ! @ # $ % ^ & *
     ["^", 6],
     ["&", 7],
     ["*", 8],
+    ["(", 9],
   ] as const)("%s opens popup %d", (input, cardId) => {
     expect(dispatchGlobalKey(input, NO_KEY)).toEqual({ kind: "openPopup", cardId });
   });
 
-  it("the remaining shifted-digit glyph ( ( ) is a noop in v0", () => {
-    // Slot-5 (`%`) promoted by feat_popup_5_workspaces; slot-6
-    // (`^`) by feat_popup_6_inprogress; slot-7 (`&`) by
-    // feat_popup_7_blocked; slot-8 (`*`) by feat_popup_8_recent.
-    // Slot-9 (`(`) popup is tracked by feat_more_cards_umbrella
-    // and stays a reserved noop until its popup task lands.
-    for (const g of ["(", ")"]) {
+  it("the remaining shifted-digit glyph ( ) ) is a noop in v0", () => {
+    // ALL nine slots promoted: slot-5 (`%`) by feat_popup_5_workspaces;
+    // slot-6 (`^`) by feat_popup_6_inprogress; slot-7 (`&`) by
+    // feat_popup_7_blocked; slot-8 (`*`) by feat_popup_8_recent;
+    // slot-9 (`(`) by feat_popup_9_doctor. Only `)` (a stray glyph
+    // outside the digit set) remains as a regression guard.
+    for (const g of [")"]) {
       expect(dispatchGlobalKey(g, NO_KEY)).toEqual({ kind: "noop" });
     }
   });

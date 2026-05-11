@@ -36,6 +36,7 @@ const WORKSPACES = load("workspaces.tsx");
 const INPROGRESS = load("inprogress.tsx");
 const BLOCKED = load("blocked.tsx");
 const RECENT = load("recent.tsx");
+const DOCTOR = load("doctor.tsx");
 
 // Each shell function definition starts with `function Shell(` or
 // `function PopupShell(`. We slice from that header to the closing
@@ -60,6 +61,7 @@ describe("popup Shell / PopupShell fills the pane (anti-narrow-strip)", () => {
     { name: "inprogress.tsx", src: INPROGRESS, fn: "Shell" },
     { name: "blocked.tsx", src: BLOCKED, fn: "Shell" },
     { name: "recent.tsx", src: RECENT, fn: "Shell" },
+    { name: "doctor.tsx", src: DOCTOR, fn: "Shell" },
   ];
 
   for (const { name, src, fn } of cases) {
@@ -104,6 +106,7 @@ describe("popup body region wraps content in flexGrow={1} (sticky bottom hint)",
     { name: "inprogress.tsx", src: INPROGRESS },
     { name: "blocked.tsx", src: BLOCKED },
     { name: "recent.tsx", src: RECENT },
+    { name: "doctor.tsx", src: DOCTOR },
   ];
 
   for (const { name, src } of cases) {

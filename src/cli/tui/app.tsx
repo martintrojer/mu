@@ -32,6 +32,7 @@ import { Help } from "./help.js";
 import { dispatchGlobalKey } from "./keys.js";
 import { AgentsPopup } from "./popups/agents.js";
 import { BlockedPopup } from "./popups/blocked.js";
+import { DoctorPopup } from "./popups/doctor.js";
 import { InProgressPopup } from "./popups/inprogress.js";
 import { LogPopup } from "./popups/log.js";
 import { ReadyPopup } from "./popups/ready.js";
@@ -59,7 +60,7 @@ export interface FooterState {
   copied: boolean;
 }
 
-type PopupId = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | null;
+type PopupId = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | null;
 export type PopupMode = "list" | "drill";
 
 export function App({ db, workstream }: AppProps): JSX.Element {
@@ -311,7 +312,7 @@ export function App({ db, workstream }: AppProps): JSX.Element {
     </Box>
   );
 
-  function renderPopup(id: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8): JSX.Element {
+  function renderPopup(id: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9): JSX.Element {
     const props = {
       yank: yankFn,
       onClose: () => {
@@ -343,6 +344,8 @@ export function App({ db, workstream }: AppProps): JSX.Element {
         return <BlockedPopup {...props} />;
       case 8:
         return <RecentPopup {...props} />;
+      case 9:
+        return <DoctorPopup {...props} />;
     }
   }
 }
@@ -370,7 +373,7 @@ function cardKeyFromId(id: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9): keyof CardVisibil
   }
 }
 
-function popupNameForId(id: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8): string {
+function popupNameForId(id: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9): string {
   switch (id) {
     case 1:
       return "Agents";
@@ -388,5 +391,7 @@ function popupNameForId(id: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8): string {
       return "Blocked";
     case 8:
       return "Recent";
+    case 9:
+      return "Doctor";
   }
 }

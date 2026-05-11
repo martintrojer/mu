@@ -145,6 +145,7 @@ describe("App import graph", () => {
     const { WorkspacesPopup } = await import("../src/cli/tui/popups/workspaces.js");
     const { InProgressPopup } = await import("../src/cli/tui/popups/inprogress.js");
     const { BlockedPopup } = await import("../src/cli/tui/popups/blocked.js");
+    const { DoctorPopup } = await import("../src/cli/tui/popups/doctor.js");
     expect(typeof AgentsCard).toBe("function");
     expect(typeof TracksCard).toBe("function");
     expect(typeof ReadyCard).toBe("function");
@@ -161,6 +162,7 @@ describe("App import graph", () => {
     expect(typeof WorkspacesPopup).toBe("function");
     expect(typeof InProgressPopup).toBe("function");
     expect(typeof BlockedPopup).toBe("function");
+    expect(typeof DoctorPopup).toBe("function");
   });
 });
 
