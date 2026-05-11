@@ -83,7 +83,10 @@ For two agents editing the same project, use `--workspace` on spawn.
 Each gets an isolated working copy under
 `<state-dir>/workspaces/<workstream>/<agent>/`. Auto-detects
 jj/sl/git; `cp -a` for non-VCS. Workspaces are NOT freed when you
-close an agent — run `mu workspace free <agent>` explicitly.
+close an agent — run `mu workspace free <agent>` explicitly. Between
+waves, `mu workspace refresh <agent>` rebases the dir onto fresh
+main without killing the agent's LLM context; `mu workspace commits
+<agent>` lists since-fork commits for cherry-picking.
 
 **Default rule:** if an agent may edit/build/test/generate
 artifacts while another agent is active in the same repo, spawn
@@ -164,15 +167,10 @@ running a wave.
   The recipe is also in `mu task wait`'s `nextSteps` — `jq` it out.
 
 - **Refresh workspaces between waves.** `mu workspace refresh
-  <agent>` rebases the agent's workspace onto fresh main WITHOUT
-  killing the worker's LLM context (the agent + pane stay alive;
-  only the on-disk dir moves). Default base = the backend's tracked
-  main (`origin/HEAD` for git, `trunk()` for jj/sl); `--from <ref>`
-  overrides. Refuses on a dirty WC with the file list and a Next:
-  hint to commit/stash. Conflicts exit 5 with a `cd` hint to resolve
-  in-place. Without this between waves the worker ships clean code
-  against a stale parent; you find out at cherry-pick time. The
-  `behind` column in `mu workspace list` shows the cost.
+  <agent>` rebases the agent's dir onto fresh main without killing
+  the LLM context. The `behind` column in `mu workspace list` shows
+  the cost of skipping it. Worker ships clean code against a stale
+  parent otherwise; you find out at cherry-pick time.
 
 - **Cherry-pick worker commits onto main, don't merge.** Stale-parent
   worker branches drag in re-reverts of everything they missed.
@@ -262,17 +260,14 @@ running a wave.
   managed agent.
 - **Tasks**: `add`, `list`, `next`, `show`, `tree`, `notes`, `note`,
   `claim` (`--for | --self`), `release` (`--reopen` to un-close),
-  `close` (`--if-ready` no-ops unless every blocker is terminal
-  — the umbrella-on-wave-done pattern), `open`, `reject`, `defer`,
-  `block`, `unblock`, `update`,
-  `reparent`, `wait`, `delete` (two-phase: bare = dry-run preview;
-  `--yes` commits). Edge direction: `block <blocked>
-  --by <blocker>`.
+  `close` (`--if-ready` = no-op unless every blocker terminal),
+  `open`, `reject`, `defer`, `block`, `unblock`, `update`,
+  `reparent`, `wait`, `delete` (two-phase; `--yes` commits).
+  Edge direction: `block <blocked> --by <blocker>`.
 - **Self (in-pane)**: `mu me`, `mu me tasks`, `mu me next`.
 - **Workspace**: `create`, `list` (`behind` column), `refresh`
-  (`--from <ref>`; rebases without killing the agent), `commits`
-  (`--since <ref>`; oldest-first `<sha> <subject>` or full `--json`
-  `[{sha,subject,body,authorDate}]`), `free`, `path`
+  (rebase onto fresh base, agent stays alive), `commits` (since-fork
+  `<sha> <subject>`; `--json` for piping), `free`, `path`
   (`cd $(mu workspace path X)`), `orphans`.
 - **Activity log**: `mu log "text"` (write), `mu log -n N` (read),
   `mu log --tail` (subscribe). Don't pipe `--tail` for waits — use
@@ -363,10 +358,6 @@ IDs auto-derive from titles via slugify.
 res=$(mu task wait t1 t2 t3 -w ws --any --first --json \
         --timeout 600 --on-stall exit)
 firing=$(jq -r .firing.qualifiedId <<<"$res")
-# `mu workspace commits` knows the workspace's recorded parent_ref,
-# so no `cd $(mu workspace path) && git log <base>..HEAD` incantation.
-# --json gives [{sha, subject, body, authorDate}]; pick the worker's
-# task-prefixed commit by id.
 sha=$(mu workspace commits $worker -w ws --json \
         | jq -r --arg id "${firing#*/}" \
             '.[] | select(.subject | startswith($id+":")) | .sha' | head -1)
@@ -374,23 +365,12 @@ git cherry-pick $sha && cargo test --lib
 # Next turn: same wait on the smaller set.
 ```
 
-### Umbrella-on-wave-done (close the umbrella when the wave finishes)
+### Umbrella-on-wave-done
 
-Wave umbrellas (`umbrella -[blocked-by]→ t1, t2, t3, ...`) used to
-stay OPEN after every wave-task finished — you had to remember to
-`mu task close umbrella` by hand. Use `--if-ready` to make the
-closer idempotent and safe to fire eagerly:
-
-```bash
-# After each pipeline cherry-pick:
-mu task close umbrella_wave_X --if-ready -w <ws>   # no-op while any blocker
-                                                   # is still OPEN/IN_PROGRESS
-```
-
-When the last blocker terminates (CLOSED / REJECTED / DEFERRED) the
-same command closes the umbrella. JSON shape on the no-op path
-carries `skipped: "not_ready"` + `blockingIds: [...]` so an
-orchestrator can branch.
+Fire `mu task close umbrella_wave_X --if-ready -w <ws>` after every
+cherry-pick in the pipeline loop. No-op while any blocker is
+OPEN/IN_PROGRESS; closes when the last terminates. JSON no-op shape
+carries `skipped: "not_ready"` + `blockingIds: [...]`.
 
 ### Quote command-rich prompts (avoid `$VAR` expanding in YOUR shell)
 
