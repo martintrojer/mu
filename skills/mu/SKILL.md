@@ -361,10 +361,12 @@ IDs auto-derive from titles via slugify.
 # Wait for any-of N to close, cherry-pick that one, return.
 res=$(mu task wait t1 t2 t3 -w ws --any --first --json \
         --timeout 600 --on-stall exit)
-firing=$(jq -r .firing.qualifiedId <<<"$res")
-sha=$(mu workspace commits $worker -w ws --json \
-        | jq -r --arg id "${firing#*/}" \
-            '.items[] | select(.subject | startswith($id+":")) | .sha' | head -1)
+worker=$(jq -r .firing.owner <<<"$res")
+# Workers run in fresh single-purpose workspaces, so HEAD is the
+# task's commit. Don't filter on subject — workers don't prefix
+# subjects with the task-id, and any such filter silently returns
+# empty (then `git cherry-pick` fails with "empty commit set").
+sha=$(mu workspace commits $worker -w ws --json | jq -r '.items[0].sha')
 git cherry-pick $sha && cargo test --lib
 # Next turn: same wait on the smaller set.
 ```
