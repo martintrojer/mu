@@ -8,6 +8,7 @@
 
 import { type AgentRow, type AgentStatus, type LiveAgentsView, listLiveAgents } from "./agents.js";
 import type { Db } from "./db.js";
+import { type DoctorSummary, loadDoctorSummary } from "./doctor-summary.js";
 import { type LogRow, listLogs } from "./logs.js";
 import {
   type TaskRow,
@@ -40,6 +41,13 @@ export interface WorkstreamSnapshot {
   workspaces: WorkspaceRow[];
   workspaceOrphans: WorkspaceOrphan[];
   recent: LogRow[];
+  /** Populated when `loadWorkstreamSnapshot` is called with
+   *  `withDoctor: true`. Used by the TUI's slot-9 Doctor card to
+   *  render a glanceable health badge on the dashboard
+   *  (feat_card_9_doctor, workstream `tui-impl`). The static `mu
+   *  state` card and `mu doctor` itself don't consume it — they
+   *  read the textual doctor card directly. Null when not requested. */
+  doctor: DoctorSummary | null;
 }
 
 export interface LoadWorkstreamSnapshotOptions {
@@ -52,6 +60,13 @@ export interface LoadWorkstreamSnapshotOptions {
    *  Workspaces card (feat_card_5_workspaces, workstream `tui-impl`)
    *  does. Defaults to false to keep the existing call sites cheap. */
   withDirty?: boolean;
+  /** When true, also populate `WorkstreamSnapshot.doctor` via
+   *  `loadDoctorSummary` (a handful of synchronous DB pragmas +
+   *  COUNT-shape SELECTs; reads ghosts / orphans / workspace-orphans
+   *  out of the just-built snapshot). The TUI's slot-9 Doctor card
+   *  (feat_card_9_doctor, workstream `tui-impl`) sets this; static
+   *  callers leave it false. Mirrors the `withDirty` opt-in pattern. */
+  withDoctor?: boolean;
 }
 
 /**
@@ -78,7 +93,9 @@ export async function loadWorkstreamSnapshot(
   if (opts.withDirty === true) workspaces = await decorateWithDirty(workspaces);
   const workspaceOrphans = listWorkspaceOrphans(db, workstream);
   const recent = listLogs(db, { workstream, kind: "event", limit: eventLimit });
-  return {
+  // Build the snapshot first (without doctor) so loadDoctorSummary
+  // can read the just-computed view + workspaceOrphans straight off it.
+  const snapshot: WorkstreamSnapshot = {
     workstreamName: workstream,
     view,
     tracks,
@@ -89,7 +106,12 @@ export async function loadWorkstreamSnapshot(
     workspaces,
     workspaceOrphans,
     recent,
+    doctor: null,
   };
+  if (opts.withDoctor === true) {
+    snapshot.doctor = loadDoctorSummary(db, snapshot);
+  }
+  return snapshot;
 }
 
 // ─── ROI helpers ───────────────────────────────────────────────────

@@ -6,13 +6,14 @@
 //   6           toggle In-progress card (feat_card_6_inprogress)
 //   7           toggle Blocked card (feat_card_7_blocked)
 //   8           toggle Recent card (feat_card_8_recent)
+//   9           toggle Doctor card (feat_card_9_doctor)
 //   ! @ # $     open fullscreen popup for that card  (Shift+1..Shift+4
 //               on US keyboards; bound by glyph because ink reports
 //               the post-shift character, not the modifier).
-//               Slot-5 (`%`), slot-6 (`^`), slot-7 (`&`), and slot-8
-//               (`*`) popups are OUT OF SCOPE for the matching card
-//               tasks; all stay noops until their popup tasks land
-//               (umbrella feat_more_cards_umbrella).
+//               Slot-5 (`%`), slot-6 (`^`), slot-7 (`&`), slot-8
+//               (`*`), and slot-9 (`(`) popups are OUT OF SCOPE for
+//               the matching card tasks; all stay noops until their
+//               popup tasks land (umbrella feat_more_cards_umbrella).
 //   + / =       tick faster (floor 100ms); = is the unshifted alias
 //   -           tick slower (ceiling 10s)
 //   0           reset tick to default 1s
@@ -28,7 +29,7 @@
 // (the <App> component in app.tsx) maps actions to state mutations.
 
 export type GlobalAction =
-  | { kind: "toggleCard"; cardId: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 }
+  | { kind: "toggleCard"; cardId: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 }
   | { kind: "openPopup"; cardId: 1 | 2 | 3 | 4 }
   | { kind: "tickFaster" }
   | { kind: "tickSlower" }
@@ -94,12 +95,14 @@ export function dispatchGlobalKey(input: string, key: KeyFlags): GlobalAction {
   if (input === "-") return { kind: "tickSlower" };
   if (input === "0") return { kind: "tickReset" };
 
-  // Card toggles 1-8. Slot 9 is reserved per design_global_keymap;
-  // slot 5 was promoted by feat_card_5_workspaces, slot 6 by
-  // feat_card_6_inprogress, slot 7 by feat_card_7_blocked, and
-  // slot 8 by feat_card_8_recent (all workstream `tui-impl`).
-  if (input >= "1" && input <= "8") {
-    const cardId = (input.charCodeAt(0) - "0".charCodeAt(0)) as 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
+  // Card toggles 1-9. All reserved slots from design_global_keymap
+  // are now filled: slot 5 by feat_card_5_workspaces, slot 6 by
+  // feat_card_6_inprogress, slot 7 by feat_card_7_blocked, slot 8
+  // by feat_card_8_recent, slot 9 by feat_card_9_doctor (all
+  // workstream `tui-impl`). Slot 0 stays reserved by convention
+  // (no promotion task today).
+  if (input >= "1" && input <= "9") {
+    const cardId = (input.charCodeAt(0) - "0".charCodeAt(0)) as 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
     return { kind: "toggleCard", cardId };
   }
 

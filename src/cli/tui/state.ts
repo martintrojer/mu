@@ -34,6 +34,11 @@ export interface CardVisibility {
   /** Card 8 — recently-CLOSED tasks (feat_card_8_recent, workstream
    *  `tui-impl`). Reads snapshot.recentClosed directly; no SDK extension. */
   recent: boolean;
+  /** Card 9 — doctor health-check summary (feat_card_9_doctor,
+   *  workstream `tui-impl`). Reads `snapshot.doctor` (populated by
+   *  loadWorkstreamSnapshot when called with `withDoctor: true`).
+   *  See src/doctor-summary.ts for the SDK seam. */
+  doctor: boolean;
 }
 
 export const DEFAULT_CARD_VISIBILITY: CardVisibility = {
@@ -45,6 +50,7 @@ export const DEFAULT_CARD_VISIBILITY: CardVisibility = {
   inProgress: true,
   blocked: true,
   recent: true,
+  doctor: true,
 };
 
 export interface DashboardSnapshot {
@@ -82,6 +88,11 @@ export function useDashboardSnapshot(
           // marker; the cost is one `git status --porcelain` per row,
           // capped at DECORATE_CONCURRENCY in workspace.ts.
           withDirty: true,
+          // Doctor card (feat_card_9_doctor) needs the health-check
+          // summary. loadDoctorSummary is cheap (synchronous DB
+          // pragmas + COUNT-shape SELECTs; ghosts/orphans come
+          // straight from the snapshot we already built).
+          withDoctor: true,
         });
         if (cancelled) return;
         const dur = performance.now() - t0;

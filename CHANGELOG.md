@@ -78,6 +78,32 @@ is opt-in via the new `--tui` flag.
     IDs / agent names / status tokens never truncate; titles /
     payloads / paths clip with `…`. Uses `string-width` for
     emoji + ANSI awareness.
+- **TUI Doctor card (slot 9)** — toggleable with `9`. One
+  glanceable health-check summary so the operator notices a broken
+  state without remembering to run `mu doctor`. Filters to non-OK
+  rows for the body: glyph (✗ red fail / ⚠ yellow warn / ✓ green
+  ok), check name, status, and a short remediation detail (e.g.
+  `2 ghost panes; run \`mu agent list\``,
+  `1 orphan dir; run \`mu workspace orphans\``). Subtitle is
+  `all healthy` when every check passes (and a quiet "✓ K checks"
+  body line confirms the card ran), or the warn+fail count
+  otherwise. Reads `snapshot.doctor` populated by
+  `loadWorkstreamSnapshot(db, ws, { withDoctor: true })`; the new
+  `withDoctor` flag mirrors the `withDirty` opt-in pattern. New SDK
+  helper `loadDoctorSummary(db, snapshot)` in
+  `src/doctor-summary.ts` runs the cheap subset of `mu doctor`'s
+  checks (synchronous DB pragmas + COUNT-shape SELECTs; reads
+  ghosts/orphans/workspace-orphans straight off the snapshot).
+  Tmux-binary presence is intentionally omitted from the per-tick
+  card (the dashboard is already running inside a terminal so
+  tmux's binary presence is implicit, and a per-tick subprocess
+  fork on a polled dashboard is the wrong tradeoff). Slot-9 popup
+  (Shift+9 / `(`) is not shipped yet; tracked by
+  feat_more_cards_umbrella, and when it lands it MAY consume
+  feat_popup_search_filter (`/` filtering check names) but NOT
+  feat_track_drill_chains_to_task_drill (rows aren't tasks). After
+  this card lands, all reserved digit slots (1–9) are filled; slot
+  0 stays reserved by convention.
 - **TUI Recent card (slot 8)** — toggleable with `8`. One
   glanceable list of the most-recently CLOSED tasks in the
   workstream, newest first: heavy-check glyph (✓, green), task

@@ -337,6 +337,13 @@ export {
   type WorkstreamSnapshot,
 } from "./state.js";
 export {
+  countProblems,
+  type DoctorCheck,
+  type DoctorStatus,
+  type DoctorSummary,
+  loadDoctorSummary,
+} from "./doctor-summary.js";
+export {
   captureSnapshot,
   type CaptureSnapshotResult,
   type DeleteSnapshotResult,
