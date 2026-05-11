@@ -29,6 +29,35 @@ called out under "Breaking" in each entry.
 
 ### Added
 
+- **`mu agent kick <name>`: signal a wedged worker pane's foreground
+  process group from outside the pane**
+  (`workers_commonly_attempt_unbounded_find`). Live dogfood report:
+  workers running `find / -maxdepth 6 ...` or unbounded busy-wait
+  loops blocked their pi event loop for tens of minutes; `mu agent
+  send` queued steering messages until the tool returned, and
+  `tmux send-keys C-c` did NOT propagate (the wrapping CLI catches
+  it as TUI input). Recovery story was: drop out of mu, `pgrep -af
+  "find /"`, `kill <pid>` — fiddly and breaks the orchestrator's
+  mental model.
+
+  `mu agent kick <name>` looks up the pane's TTY (`tmux
+  display-message -p '#{pane_tty}'`), asks `ps -t <tty>` for the
+  foreground process group (the row whose `stat` field contains
+  `+`), and `kill -<signal> -<pgid>` signals the whole pgrp
+  directly. Default `--signal SIGINT` (graceful, matches Ctrl-C);
+  `--signal SIGTERM` / `--signal SIGKILL` escalate. Refuses with
+  a typed `NoForegroundProcessError` when the foreground IS the
+  wrapping CLI itself (`pi`/`claude`/`codex`/`bash`/...) — use
+  `mu agent close` for that. Emits an `agent kick <name>
+  (signal=..., pgid=..., comm=...)` event so the activity log
+  records the intervention.
+
+  SDK: `kickAgent(db, name, { workstream, signal? })` returns
+  `{ agentName, paneId, tty, signaledPgid, signal, foregroundComm
+  }`. New tmux helper `paneTTY(paneId)`. Process executor is
+  swappable via `setKickProcessExecutor` (mirror of
+  `setTmuxExecutor`) so unit tests don't touch real `ps` / `kill`.
+
 - **`mu task add --json` surfaces auto-id truncation telemetry**
   (`task_add_slugify_silently_truncates_ids`). Sibling fix to the
   human stderr hint in `slugifytitle_silently_drops_clauses`:

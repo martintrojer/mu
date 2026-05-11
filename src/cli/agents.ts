@@ -14,10 +14,13 @@ import {
   type AdoptAgentOptions,
   type AdoptAgentResult,
   AgentNotFoundError,
+  type KickSignal,
   adoptAgent,
   closeAgent,
   freeAgent,
   getAgent,
+  isKickSignal,
+  kickAgent,
   listLiveAgents,
   readAgent,
   refreshAgentTitle,
@@ -433,6 +436,46 @@ export async function cmdAdopt(db: Db, paneOrTitle: string, opts: AdoptCliOpts):
   printNextSteps(nextSteps);
 }
 
+export async function cmdKick(
+  db: Db,
+  rawName: string,
+  opts: { workstream?: string; signal?: string; json?: boolean } = {},
+): Promise<void> {
+  const { name } = await resolveEntityRef(db, rawName, opts, "agent");
+  assertAgentInWorkstream(db, name, opts.workstream);
+  const ws = await resolveWorkstream(opts.workstream);
+  const sigRaw = opts.signal ?? "SIGINT";
+  if (!isKickSignal(sigRaw)) {
+    throw new UsageError(
+      `--signal must be one of SIGINT, SIGTERM, SIGKILL (got ${JSON.stringify(sigRaw)})`,
+    );
+  }
+  const signal: KickSignal = sigRaw;
+  const result = await kickAgent(db, name, { workstream: ws, signal });
+  const nextSteps: NextStep[] = [
+    {
+      intent: "Read the pane to confirm the tool aborted",
+      command: `mu agent read ${name} -n 30 -w ${ws}`,
+    },
+    {
+      intent: "Send follow-up steering once the prompt returns",
+      command: `mu agent send ${name} '...' -w ${ws}`,
+    },
+    {
+      intent: "Escalate (graceful → polite → hammer)",
+      command: `mu agent kick ${name} --signal SIGTERM -w ${ws}`,
+    },
+  ];
+  if (opts.json) {
+    emitJson({ ...result, nextSteps });
+    return;
+  }
+  console.log(
+    `Kicked ${pc.bold(name)} ${pc.dim(`(signal=${result.signal}, pgid=${result.signaledPgid}, comm=${result.foregroundComm}, tty=${result.tty})`)}`,
+  );
+  printNextSteps(nextSteps);
+}
+
 export async function cmdFree(
   db: Db,
   rawName: string,
@@ -624,6 +667,27 @@ export function wireAgentCommands(program: Command): void {
         discardWorkspace?: boolean;
       };
       return handle((db) => cmdClose(db, name, opts), this as Command)();
+    });
+
+  agent
+    .command("kick <name>")
+    .description(
+      "Signal the foreground process group of an agent's pane TTY (escape hatch for a worker wedged on an unbounded `find` / busy-wait loop). Default --signal SIGINT (graceful, matches Ctrl-C). Refuses when the foreground is the wrapping CLI itself — use `mu agent close` to close the agent.",
+    )
+    .option(
+      "--signal <sig>",
+      "signal to send: SIGINT (default; graceful), SIGTERM (polite), SIGKILL (hammer)",
+      "SIGINT",
+    )
+    .option(...WORKSTREAM_OPT)
+    .option(...JSON_OPT)
+    .action(function (name: string) {
+      const opts = (this as Command).opts() as {
+        workstream?: string;
+        signal?: string;
+        json?: boolean;
+      };
+      return handle((db) => cmdKick(db, name, opts), this as Command)();
     });
 
   agent

@@ -1081,6 +1081,31 @@ Reconciliation runs on every `mu agent list` / `mu`. Three steps:
    that aren't in the registry. **Not** auto-adopted; mu shows them
    under "Orphan panes" and tells you `mu agent adopt <pane-id>` to register
 
+### A worker is wedged on an unbounded tool subprocess
+
+A worker ran `find / -maxdepth 6 ...` (30-60 minutes on a populated
+home directory) or a busy-wait loop. `mu agent send` queues steering
+messages until the tool returns; `tmux send-keys C-c` against the
+pane doesn't propagate (the wrapping pi/claude/codex CLI catches it
+as TUI input). The escape hatch:
+
+```bash
+mu agent kick worker-1                       # SIGINT (graceful, default)
+mu agent kick worker-1 --signal SIGTERM      # polite escalation
+mu agent kick worker-1 --signal SIGKILL      # hammer
+```
+
+`mu agent kick` looks up the pane's TTY via `tmux display-message
+-p '#{pane_tty}'`, asks `ps -t <tty>` for the foreground process
+group (the row whose `stat` field contains `+`), and signals the
+whole pgrp directly. Refuses with `NoForegroundProcessError` when
+the foreground IS the wrapping CLI itself — use `mu agent close`
+to close the agent.
+
+Prevention: don't prompt workers to run filesystem-wide `find`,
+broad `grep -r /`, or unbounded busy-wait loops. Pass paths
+explicitly or scope to `$WORKSPACE`.
+
 ### You closed your terminal session
 
 The workstream's tmux session keeps running detached. Reconnect with

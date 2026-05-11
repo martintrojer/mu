@@ -40,6 +40,19 @@ export {
   type AdoptAgentResult,
   adoptAgent,
 } from "./agents/adopt.js";
+export {
+  type KickAgentOptions,
+  type KickAgentResult,
+  type KickSignal,
+  type KickProcessExecutor,
+  NoForegroundProcessError,
+  foregroundPgid,
+  isKickSignal,
+  kickAgent,
+  parsePsTtyOutput,
+  resetKickProcessExecutor,
+  setKickProcessExecutor,
+} from "./agents/kick.js";
 import { AgentNotFoundError, WorkspacePreservedError } from "./agents/errors.js";
 import {
   type CaptureOptions,

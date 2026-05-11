@@ -222,6 +222,16 @@ running a wave.
   un-closing CLOSED/REJECTED/DEFERRED). Tunable via
   `MU_IDLE_THRESHOLD_MS` (default 5 min).
 
+- **Wedged on an unbounded tool subprocess (`find /`, busy-wait
+  loop)** — `mu agent send` queues until the tool returns;
+  `tmux send-keys C-c` doesn't propagate (the wrapping CLI eats
+  it as TUI input). Use `mu agent kick <name>` to SIGINT the
+  foreground process group of the pane's TTY directly from
+  outside. Default `--signal SIGINT` is graceful; escalate to
+  `--signal SIGTERM` then `--signal SIGKILL` if the tool
+  ignores it. Refuses when the foreground IS the wrapping CLI
+  itself — use `mu agent close` for that.
+
 ## Parallelisation decision table
 
 | Situation | Action |
@@ -259,9 +269,11 @@ running a wave.
   `--archive <label>` to preserve graph atomically), `export`,
   `import`.
 - **Agents**: `spawn` (`--workspace`, `--role read-only`,
-  `--command`), `send`, `read`, `show`, `list`, `close`, `free`.
-  **`mu agent adopt <pane-id|title>`** registers an orphan pane as a
-  managed agent. (`mu adopt` is a deprecated alias kept until v0.5.)
+  `--command`), `send`, `read`, `show`, `list`, `close`, `free`,
+  `kick` (signal a wedged foreground tool subprocess from outside
+  the pane). **`mu agent adopt <pane-id|title>`** registers an
+  orphan pane as a managed agent. (`mu adopt` is a deprecated
+  alias kept until v0.5.)
 - **Tasks**: `add`, `list`, `next`, `show`, `tree`, `notes`, `note`,
   `claim` (`--for | --self`), `release` (`--reopen` to un-close),
   `close` (`--if-ready` = no-op unless every blocker terminal),
@@ -506,6 +518,11 @@ orchestrator's `mu task wait` hang.
 - **Don't use the `mu_` task-id prefix.** Reserved.
 - **Don't message agents directly.** Coordinate via task notes and
   the activity log.
+- **Don't prompt workers to run filesystem-wide `find`, broad
+  `grep -r /`, or unbounded busy-wait loops.** Pass paths
+  explicitly or scope to `$WORKSPACE`. If a worker wedges on one,
+  use `mu agent kick <name>` to SIGINT the foreground tool
+  from outside the pane.
 
 ## What mu is NOT
 

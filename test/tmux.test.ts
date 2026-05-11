@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { STATUS_EMOJI } from "../src/agents.js";
 import {
   PANE_ID_RE,
+  PaneNotFoundError,
   TmuxError,
   type TmuxExecResult,
   type TmuxExecutor,
@@ -26,6 +27,7 @@ import {
   newSessionWithPane,
   newWindow,
   paneExists,
+  paneTTY,
   parseAgentNameFromTitle,
   resetSleep,
   resetTmuxExecutor,
@@ -642,6 +644,43 @@ describe("paneExists", () => {
     const { executor, calls } = harness(() => ok());
     setTmuxExecutor(executor);
     expect(await paneExists("garbage")).toBe(false);
+    expect(calls).toEqual([]);
+  });
+});
+
+describe("paneTTY", () => {
+  it("returns the trimmed tty path on success", async () => {
+    const { executor, calls } = harness(() => ok("/dev/ttys012\n"));
+    setTmuxExecutor(executor);
+    expect(await paneTTY("%15")).toBe("/dev/ttys012");
+    expect(calls[0]?.args).toEqual(["display-message", "-t", "%15", "-p", "#{pane_tty}"]);
+  });
+
+  it("throws PaneNotFoundError when tmux says the pane is gone", async () => {
+    const { executor } = harness(() => fail("can't find pane: %15"));
+    setTmuxExecutor(executor);
+    await expect(paneTTY("%15")).rejects.toBeInstanceOf(PaneNotFoundError);
+  });
+
+  it("throws PaneNotFoundError when display-message returns empty stdout", async () => {
+    // tmux's display-message can exit 0 with empty output for some
+    // bogus targets — paneTTY shouldn't return an empty string and
+    // let downstream `ps -t ''` blow up.
+    const { executor } = harness(() => ok("\n"));
+    setTmuxExecutor(executor);
+    await expect(paneTTY("%15")).rejects.toBeInstanceOf(PaneNotFoundError);
+  });
+
+  it("propagates other tmux failures as TmuxError", async () => {
+    const { executor } = harness(() => fail("server unreachable"));
+    setTmuxExecutor(executor);
+    await expect(paneTTY("%15")).rejects.toBeInstanceOf(TmuxError);
+  });
+
+  it("rejects invalid pane ids before calling tmux", async () => {
+    const { executor, calls } = harness(() => ok("/dev/ttys012\n"));
+    setTmuxExecutor(executor);
+    await expect(paneTTY("garbage")).rejects.toThrow(/invalid tmux pane id/);
     expect(calls).toEqual([]);
   });
 });

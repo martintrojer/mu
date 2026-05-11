@@ -138,6 +138,7 @@ cache; `mu agent list` reconciles on every call.
 | `mu agent free alice`       | Sets `alice.status = 'free'`. Agent stays alive. Means "I'm done with you for now; you're available."  |
 | `mu release feature_a`| Clears `tasks.owner` for `feature_a`. The agent who claimed it is unaffected.  |
 | `mu agent close alice`      | Terminates alice's pane and removes from registry. Destructive.             |
+| `mu agent kick alice`       | Signals (default SIGINT) the foreground process group of alice's pane TTY. For wedged tool subprocesses (`find /`, busy-wait); the wrapping CLI itself is untouched. Refuses when the foreground IS the wrapping CLI. |
 | `mu detach alice`     | (Future) Tmux-detaches alice's pane without killing the process. Not in v1. |
 
 **Don't conflate `free` and `release`.** Free is about the *agent*;

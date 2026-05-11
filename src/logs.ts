@@ -334,6 +334,7 @@ export const EVENT_VERB_PREFIXES: readonly string[] = [
   "agent close",
   "agent free",
   "agent adopt",
+  "agent kick",
   // src/tasks/wait.ts — emitted when --stuck-after fires (alive +
   // assigned + no recent progress; idle_assigned_agent_detection).
   "agent stalled",

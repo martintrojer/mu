@@ -638,6 +638,37 @@ export async function enableMuPaneBorders(target: string): Promise<void> {
   await tmux(["set-option", "-w", "-t", target, "pane-border-style", "fg=brightblack"]);
 }
 
+/**
+ * Look up the TTY device path for a pane (e.g. `/dev/ttys012` on macOS,
+ * `/dev/pts/3` on Linux). Used by `mu agent kick` to find the
+ * foreground process group on the pane's TTY so it can be signalled
+ * directly — `tmux send-keys C-c` does NOT propagate to wrapped
+ * subprocesses inside a CLI like pi/claude/codex (the CLI catches it
+ * itself and treats it as a UI input). The escape hatch is signalling
+ * the foreground pgid of the underlying TTY from outside the pane.
+ *
+ * Throws `PaneNotFoundError` when the pane id is invalid or the pane
+ * has vanished. Throws `TmuxError` on any other tmux failure.
+ */
+export async function paneTTY(paneId: string): Promise<string> {
+  assertValidPaneId(paneId);
+  const result = await currentExecutor(["display-message", "-t", paneId, "-p", "#{pane_tty}"]);
+  if (result.exitCode !== 0) {
+    if (/can't find pane|pane not found/i.test(result.stderr)) {
+      throw new PaneNotFoundError(paneId);
+    }
+    throw new TmuxError(
+      ["display-message", "-t", paneId, "-p", "#{pane_tty}"],
+      result.stderr,
+      result.stdout,
+      result.exitCode,
+    );
+  }
+  const tty = result.stdout.trim();
+  if (tty === "") throw new PaneNotFoundError(paneId);
+  return tty;
+}
+
 export async function getPaneTitle(paneId: string): Promise<string | undefined> {
   if (!isValidPaneId(paneId)) return undefined;
   const result = await currentExecutor(["display-message", "-t", paneId, "-p", "#{pane_title}"]);
