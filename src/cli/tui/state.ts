@@ -26,6 +26,11 @@ export interface CardVisibility {
   /** Card 6 — IN_PROGRESS tasks (feat_card_6_inprogress, workstream
    *  `tui-impl`). Reads snapshot.inProgress directly; no SDK extension. */
   inProgress: boolean;
+  /** Card 7 — OPEN tasks with still-gating blockers (feat_card_7_blocked,
+   *  workstream `tui-impl`). Reads snapshot.blocked directly; the per-row
+   *  blocker counts come from getTaskEdgesWithStatus (≤8 cheap sync reads
+   *  per tick). No SDK extension. */
+  blocked: boolean;
 }
 
 export const DEFAULT_CARD_VISIBILITY: CardVisibility = {
@@ -35,6 +40,7 @@ export const DEFAULT_CARD_VISIBILITY: CardVisibility = {
   log: true,
   workspaces: true,
   inProgress: true,
+  blocked: true,
 };
 
 export interface DashboardSnapshot {

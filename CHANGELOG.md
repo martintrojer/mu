@@ -63,6 +63,25 @@ is opt-in via the new `--tui` flag.
     IDs / agent names / status tokens never truncate; titles /
     payloads / paths clip with `…`. Uses `string-width` for
     emoji + ANSI awareness.
+- **TUI Blocked card (slot 7)** — toggleable with `7`. One
+  glanceable list of every OPEN task with at least one still-gating
+  blocker (status ≠ CLOSED): chain-link glyph, task id, status,
+  #blockers, ROI, title. Subtitle inlines `<N>` or `<N> · top
+  blocker: <id>` where the top blocker is the still-gating prereq
+  shared by the most visible rows (alphabetic tie-break) — the
+  single task that, if closed, would unblock the most downstream
+  work. Reads `snapshot.blocked` directly; per-row blocker counts
+  come from `getTaskEdgesWithStatus` (≤8 cheap synchronous
+  better-sqlite3 reads per tick — orders of magnitude cheaper than
+  the per-row `git status` shellouts the Workspaces card already
+  does). No SDK extension. Empty-state body is `(none blocked)`.
+  Fills the diagnostic gap that previously forced the operator to
+  walk the dependency tree manually via `mu task tree <id>`.
+  Slot-7 popup (Shift+7 / `&`) is not shipped yet; tracked by
+  feat_more_cards_umbrella, and when it lands it MUST follow
+  feat_popup_search_filter (`/`) and
+  feat_track_drill_chains_to_task_drill (Enter chains rows into
+  TaskDetailDrill, since rows ARE tasks).
 - **TUI In-progress card (slot 6)** — toggleable with `6`. One
   glanceable list of every IN_PROGRESS task with id, owner,
   time-since-claim (relative-time token), and title. Glyph is the

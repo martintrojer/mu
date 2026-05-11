@@ -4,12 +4,14 @@
 //   1-4         toggle Agents/Tracks/Ready/Log card
 //   5           toggle Workspaces card (feat_card_5_workspaces)
 //   6           toggle In-progress card (feat_card_6_inprogress)
+//   7           toggle Blocked card (feat_card_7_blocked)
 //   ! @ # $     open fullscreen popup for that card  (Shift+1..Shift+4
 //               on US keyboards; bound by glyph because ink reports
 //               the post-shift character, not the modifier).
-//               Slot-5 (`%`) and slot-6 (`^`) popups are OUT OF SCOPE
-//               for the matching card tasks; both stay noops until
-//               their popup tasks land (umbrella feat_more_cards_umbrella).
+//               Slot-5 (`%`), slot-6 (`^`), and slot-7 (`&`) popups
+//               are OUT OF SCOPE for the matching card tasks; all
+//               stay noops until their popup tasks land (umbrella
+//               feat_more_cards_umbrella).
 //   + / =       tick faster (floor 100ms); = is the unshifted alias
 //   -           tick slower (ceiling 10s)
 //   0           reset tick to default 1s
@@ -25,7 +27,7 @@
 // (the <App> component in app.tsx) maps actions to state mutations.
 
 export type GlobalAction =
-  | { kind: "toggleCard"; cardId: 1 | 2 | 3 | 4 | 5 | 6 }
+  | { kind: "toggleCard"; cardId: 1 | 2 | 3 | 4 | 5 | 6 | 7 }
   | { kind: "openPopup"; cardId: 1 | 2 | 3 | 4 }
   | { kind: "tickFaster" }
   | { kind: "tickSlower" }
@@ -91,11 +93,12 @@ export function dispatchGlobalKey(input: string, key: KeyFlags): GlobalAction {
   if (input === "-") return { kind: "tickSlower" };
   if (input === "0") return { kind: "tickReset" };
 
-  // Card toggles 1-6. Slots 7-9 are reserved per design_global_keymap;
-  // slot 5 was promoted by feat_card_5_workspaces and slot 6 by
-  // feat_card_6_inprogress (both workstream `tui-impl`).
-  if (input >= "1" && input <= "6") {
-    const cardId = (input.charCodeAt(0) - "0".charCodeAt(0)) as 1 | 2 | 3 | 4 | 5 | 6;
+  // Card toggles 1-7. Slots 8-9 are reserved per design_global_keymap;
+  // slot 5 was promoted by feat_card_5_workspaces, slot 6 by
+  // feat_card_6_inprogress, and slot 7 by feat_card_7_blocked
+  // (all workstream `tui-impl`).
+  if (input >= "1" && input <= "7") {
+    const cardId = (input.charCodeAt(0) - "0".charCodeAt(0)) as 1 | 2 | 3 | 4 | 5 | 6 | 7;
     return { kind: "toggleCard", cardId };
   }
 

@@ -20,6 +20,7 @@ import { Box, Text, useApp, useInput, useStdout } from "ink";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Db } from "../../db.js";
 import { AgentsCard } from "./cards/agents.js";
+import { BlockedCard } from "./cards/blocked.js";
 import { InProgressCard } from "./cards/inprogress.js";
 import { LogCard } from "./cards/log.js";
 import { ReadyCard } from "./cards/ready.js";
@@ -287,6 +288,7 @@ export function App({ db, workstream }: AppProps): JSX.Element {
       {visibility.log && <LogCard snapshot={snap.data} />}
       {visibility.workspaces && <WorkspacesCard snapshot={snap.data} />}
       {visibility.inProgress && <InProgressCard snapshot={snap.data} />}
+      {visibility.blocked && <BlockedCard snapshot={snap.data} db={db} workstream={workstream} />}
       <Box flexGrow={1} />
       <StatusBar mode="dashboard" tickMs={tickMs} footer={footer} cols={cols} />
     </Box>
@@ -318,7 +320,7 @@ export function App({ db, workstream }: AppProps): JSX.Element {
   }
 }
 
-function cardKeyFromId(id: 1 | 2 | 3 | 4 | 5 | 6): keyof CardVisibility {
+function cardKeyFromId(id: 1 | 2 | 3 | 4 | 5 | 6 | 7): keyof CardVisibility {
   switch (id) {
     case 1:
       return "agents";
@@ -332,6 +334,8 @@ function cardKeyFromId(id: 1 | 2 | 3 | 4 | 5 | 6): keyof CardVisibility {
       return "workspaces";
     case 6:
       return "inProgress";
+    case 7:
+      return "blocked";
   }
 }
 
