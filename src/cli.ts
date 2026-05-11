@@ -49,12 +49,11 @@ import {
 import { tmux } from "./tmux.js";
 import { RESERVED_WORKSTREAM_PREFIX } from "./workstream.js";
 
-// ─── Re-exports for back-compat (cli/* + test imports) ────────────────
+// ─── Re-exports for downstream cli/* modules ──────────────────────────
 //
 // Pure rendering helpers and the typed-error catalogue live in
-// `src/cli/format.ts` and `src/cli/handle.ts` respectively. cli.ts is
-// the canonical import path for every other module — re-export so the
-// 30-ish import sites keep working without churn.
+// `src/cli/format.ts` and `src/cli/handle.ts`; cli/* modules import
+// them through `cli.ts` for ergonomic single-import lines.
 
 export {
   IDLE_GLYPH,
