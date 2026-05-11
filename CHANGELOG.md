@@ -104,6 +104,27 @@ is opt-in via the new `--tui` flag.
   feat_track_drill_chains_to_task_drill (rows aren't tasks). After
   this card lands, all reserved digit slots (1–9) are filled; slot
   0 stays reserved by convention.
+- **TUI Blocked popup (Shift+7 / `&`)** — the matching popup
+  for Card 7. Fullscreen drill-down of every blocked task (OPEN
+  with at least one still-gating blocker). Renders the Card 7
+  glyph + id + STATUS + #blockers + ROI columns, plus a
+  top-blocker id column the card is too narrow to fit. Re-uses
+  Card 7's pure helpers (`glyphFor`, `stillGating`) so the popup
+  stays visually in sync. j/k navigation; `/` filter via the
+  shared `usePopupFilter` primitive (per feat_popup_search_filter;
+  blob is `${id} ${title} ${blockerIds.join(" ")}` so search
+  matches both the blocked task itself AND its still-gating
+  prereqs); `y` yanks `mu task tree <id> -w <ws>` — the most
+  actionable diagnostic for a blocked row ("show me what's
+  blocking this"). `Enter` chains into the shared
+  `TaskDetailDrill` leaf (rows ARE tasks, so the drill-recursion
+  contract from feat_track_drill_chains_to_task_drill applies
+  unchanged); `y` in drill mode yanks `mu task notes <id>` to
+  match the leaf the user is reading. Read-only: no mutating
+  verbs (no `mu task close / open / claim / release / reject /
+  defer / block / unblock / delete` yank). Esc/q backs out one
+  level (drill → list, then list → popup closed). Slot-6/8
+  popups remain reserved and tracked by `feat_more_cards_umbrella`.
 - **TUI Workspaces popup (Shift+5 / `%`)** — the matching popup
   for Card 5. Fullscreen drill-down of every per-agent workspace in
   the workstream. Renders the same five Card 5 columns (status

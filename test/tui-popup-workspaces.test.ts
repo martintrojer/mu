@@ -158,7 +158,9 @@ describe("App ↔ keys wiring for popup 5", () => {
   });
 
   it("app.tsx PopupId union includes 5", () => {
-    expect(APP_SRC).toContain("type PopupId = 1 | 2 | 3 | 4 | 5 | null");
+    // Match a regex so additional slot promotions (slot-7 popup,
+    // slot-6 popup, ...) don't false-fire on the literal union.
+    expect(APP_SRC).toMatch(/type PopupId = [^\n]*\b5\b[^\n]*null/);
   });
 
   it("keys.ts maps '%' → openPopup(5)", () => {

@@ -31,6 +31,7 @@ import { WorkspacesCard } from "./cards/workspaces.js";
 import { Help } from "./help.js";
 import { dispatchGlobalKey } from "./keys.js";
 import { AgentsPopup } from "./popups/agents.js";
+import { BlockedPopup } from "./popups/blocked.js";
 import { InProgressPopup } from "./popups/inprogress.js";
 import { LogPopup } from "./popups/log.js";
 import { ReadyPopup } from "./popups/ready.js";
@@ -57,7 +58,7 @@ export interface FooterState {
   copied: boolean;
 }
 
-type PopupId = 1 | 2 | 3 | 4 | 5 | 6 | null;
+type PopupId = 1 | 2 | 3 | 4 | 5 | 6 | 7 | null;
 export type PopupMode = "list" | "drill";
 
 export function App({ db, workstream }: AppProps): JSX.Element {
@@ -309,7 +310,7 @@ export function App({ db, workstream }: AppProps): JSX.Element {
     </Box>
   );
 
-  function renderPopup(id: 1 | 2 | 3 | 4 | 5 | 6): JSX.Element {
+  function renderPopup(id: 1 | 2 | 3 | 4 | 5 | 6 | 7): JSX.Element {
     const props = {
       yank: yankFn,
       onClose: () => {
@@ -337,6 +338,8 @@ export function App({ db, workstream }: AppProps): JSX.Element {
         return <WorkspacesPopup {...props} />;
       case 6:
         return <InProgressPopup {...props} />;
+      case 7:
+        return <BlockedPopup {...props} />;
     }
   }
 }
@@ -364,7 +367,7 @@ function cardKeyFromId(id: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9): keyof CardVisibil
   }
 }
 
-function popupNameForId(id: 1 | 2 | 3 | 4 | 5 | 6): string {
+function popupNameForId(id: 1 | 2 | 3 | 4 | 5 | 6 | 7): string {
   switch (id) {
     case 1:
       return "Agents";
@@ -378,5 +381,7 @@ function popupNameForId(id: 1 | 2 | 3 | 4 | 5 | 6): string {
       return "Workspaces";
     case 6:
       return "In-progress";
+    case 7:
+      return "Blocked";
   }
 }
