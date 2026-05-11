@@ -283,6 +283,27 @@ is opt-in via the new `--tui` flag.
 
 ### Fixed
 
+- **TUI popup body data fills the whole popup, not the first 20 rows**
+  (bug_tui_popup_data_doesnt_fill). After bug_tui_popups_fill_pane
+  added `flexGrow={1}` + `width={cols}` so the popup Shell occupies
+  the full pane edge-to-edge, the row data INSIDE the Shell was
+  still capped at a hardcoded `const VIEWPORT = 20` in every popup
+  file, leaving a band of empty space inside the popup border on
+  panes taller than ~25 rows. New pure helper `popupViewport(rows,
+  chromeOverride?)` in `src/cli/tui/popups/viewport.ts` (no ink/react
+  imports) computes the body slice from `useStdout().rows` minus a
+  6-row chrome budget (Shell border + title + hint margin + hint +
+  filter prompt), with a floor of 8 rows so very-small terminals stay
+  usable. Each popup (`agents`, `blocked`, `log`, `ready`, `tracks`,
+  `workspaces`) now reads `useStdout().stdout?.rows` at render time,
+  calls `popupViewport`, and threads the result through every slice /
+  scroll-clamp / cursor-centring expression. Two per-popup nuances:
+  Workspaces drill subtracts an extra row (the in-body title +
+  indicator pair); Log popup uses the per-render viewport in BOTH the
+  slice size AND the cursor-centring half-window. Tests:
+  `test/tui-popup-viewport.test.ts` covers boundaries (default
+  chrome, override, floor) plus a static-source regression guard
+  asserting no popup file still contains `const VIEWPORT = 20`.
 - **TUI long titles no longer overflow + wrap to a second line**
   (bug_tui_long_lines_overflow). `layoutColumns(rows, specs,
   totalWidth?)` short-circuits to natural widths when `totalWidth`

@@ -32,6 +32,7 @@ import {
 import { dispatchPopupKey } from "../keys.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
 import { DrillScrollView, clampScrollTop } from "./drill.js";
+import { popupViewport } from "./viewport.js";
 
 export interface PopupProps {
   yank: (command: string) => Promise<void>;
@@ -53,7 +54,6 @@ const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
 ];
 
 const SCROLLBACK_LINES = 80;
-const VIEWPORT = 20;
 
 export function AgentsPopup({
   yank,
@@ -66,6 +66,10 @@ export function AgentsPopup({
   workstream,
 }: PopupProps): JSX.Element {
   const contentWidth = contentWidthFromCols(termColsForLayout());
+  // Per-render viewport from stdout.rows minus the popup chrome budget;
+  // see popups/viewport.ts. Replaces the prior hardcoded VIEWPORT = 20.
+  const { stdout } = useStdout();
+  const viewport = popupViewport(stdout?.rows ?? 24);
   const [cursor, setCursor] = useState(0);
   const [scrollTop, setScrollTop] = useState(0);
   const [scrollback, setScrollback] = useState<string>("");
@@ -144,25 +148,25 @@ export function AgentsPopup({
           onModeChange("list");
           return;
         case "moveDown":
-          setScrollTop((s) => clampScrollTop(s + 1, totalLines, VIEWPORT));
+          setScrollTop((s) => clampScrollTop(s + 1, totalLines, viewport));
           return;
         case "moveUp":
-          setScrollTop((s) => clampScrollTop(s - 1, totalLines, VIEWPORT));
+          setScrollTop((s) => clampScrollTop(s - 1, totalLines, viewport));
           return;
         case "jumpTop":
           setScrollTop(0);
           return;
         case "jumpBottom":
-          setScrollTop(clampScrollTop(totalLines, totalLines, VIEWPORT));
+          setScrollTop(clampScrollTop(totalLines, totalLines, viewport));
           return;
         case "pageDown":
           setScrollTop((s) =>
-            clampScrollTop(s + Math.floor(VIEWPORT / (action.half ? 2 : 1)), totalLines, VIEWPORT),
+            clampScrollTop(s + Math.floor(viewport / (action.half ? 2 : 1)), totalLines, viewport),
           );
           return;
         case "pageUp":
           setScrollTop((s) =>
-            clampScrollTop(s - Math.floor(VIEWPORT / (action.half ? 2 : 1)), totalLines, VIEWPORT),
+            clampScrollTop(s - Math.floor(viewport / (action.half ? 2 : 1)), totalLines, viewport),
           );
           return;
         default:
@@ -245,7 +249,7 @@ export function AgentsPopup({
           <DrillScrollView
             title={`mu agent read ${focused.name} -n ${SCROLLBACK_LINES}`}
             body={scrollbackErr !== null ? `error: ${scrollbackErr}` : scrollback}
-            viewport={VIEWPORT}
+            viewport={viewport}
             scrollTop={scrollTop}
             hint={loading ? "loading…" : undefined}
             emptyText="(no scrollback yet)"

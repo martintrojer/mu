@@ -43,6 +43,7 @@ import { dispatchPopupKey } from "../keys.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
 import { clampScrollTop } from "./drill.js";
 import { TaskDetailDrill, renderNotes } from "./task-detail.js";
+import { popupViewport } from "./viewport.js";
 
 export interface PopupProps {
   yank: (command: string) => Promise<void>;
@@ -69,8 +70,6 @@ const DRILL_COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
   { kind: "clip", min: 1 }, // title
 ];
 
-const VIEWPORT = 20;
-
 // Internal sub-state of the drill view. "task-list" = the visible
 // list of tasks for the focused track (where the prop `mode` is
 // `"drill"`); "task-detail" = the deeper leaf view. See the file
@@ -88,6 +87,12 @@ export function TracksPopup({
   workstream,
 }: PopupProps): JSX.Element {
   const contentWidth = contentWidthFromCols(termColsForLayout());
+  // Per-render viewport from stdout.rows minus the popup chrome budget;
+  // see popups/viewport.ts. Replaces the prior hardcoded VIEWPORT = 20.
+  // Same `viewport` powers list, drill (task-list), AND task-detail
+  // sub-views — their chrome budgets are all the default 6 rows.
+  const { stdout } = useStdout();
+  const viewport = popupViewport(stdout?.rows ?? 24);
   const [cursor, setCursor] = useState(0);
   const [drillCursor, setDrillCursor] = useState(0);
   const [drillSubMode, setDrillSubMode] = useState<DrillSubMode>("task-list");
@@ -170,25 +175,25 @@ export function TracksPopup({
           setTaskDetailScrollTop(0);
           return;
         case "moveDown":
-          setTaskDetailScrollTop((s) => clampScrollTop(s + 1, totalLines, VIEWPORT));
+          setTaskDetailScrollTop((s) => clampScrollTop(s + 1, totalLines, viewport));
           return;
         case "moveUp":
-          setTaskDetailScrollTop((s) => clampScrollTop(s - 1, totalLines, VIEWPORT));
+          setTaskDetailScrollTop((s) => clampScrollTop(s - 1, totalLines, viewport));
           return;
         case "jumpTop":
           setTaskDetailScrollTop(0);
           return;
         case "jumpBottom":
-          setTaskDetailScrollTop(clampScrollTop(totalLines, totalLines, VIEWPORT));
+          setTaskDetailScrollTop(clampScrollTop(totalLines, totalLines, viewport));
           return;
         case "pageDown":
           setTaskDetailScrollTop((s) =>
-            clampScrollTop(s + Math.floor(VIEWPORT / (action.half ? 2 : 1)), totalLines, VIEWPORT),
+            clampScrollTop(s + Math.floor(viewport / (action.half ? 2 : 1)), totalLines, viewport),
           );
           return;
         case "pageUp":
           setTaskDetailScrollTop((s) =>
-            clampScrollTop(s - Math.floor(VIEWPORT / (action.half ? 2 : 1)), totalLines, VIEWPORT),
+            clampScrollTop(s - Math.floor(viewport / (action.half ? 2 : 1)), totalLines, viewport),
           );
           return;
         case "yank": {
@@ -231,12 +236,12 @@ export function TracksPopup({
           return;
         case "pageDown":
           setDrillCursor((c) =>
-            clampScrollTop(c + Math.floor(VIEWPORT / (action.half ? 2 : 1)), last + 1, 1),
+            clampScrollTop(c + Math.floor(viewport / (action.half ? 2 : 1)), last + 1, 1),
           );
           return;
         case "pageUp":
           setDrillCursor((c) =>
-            clampScrollTop(c - Math.floor(VIEWPORT / (action.half ? 2 : 1)), last + 1, 1),
+            clampScrollTop(c - Math.floor(viewport / (action.half ? 2 : 1)), last + 1, 1),
           );
           return;
         case "yank": {
@@ -328,7 +333,7 @@ export function TracksPopup({
             db={db}
             workstream={workstream}
             scrollTop={taskDetailScrollTop}
-            viewport={VIEWPORT}
+            viewport={viewport}
           />
         </Box>
         <Box marginTop={1}>
@@ -355,9 +360,9 @@ export function TracksPopup({
     }
     const start = Math.max(
       0,
-      Math.min(drillTasks.length - VIEWPORT, drillCursor - Math.floor(VIEWPORT / 2)),
+      Math.min(drillTasks.length - viewport, drillCursor - Math.floor(viewport / 2)),
     );
-    const visible = drillTasks.slice(start, start + VIEWPORT);
+    const visible = drillTasks.slice(start, start + viewport);
     const rows = visible.map((t) => [t.name, t.status, t.title]);
     const widths = layoutColumns(rows, DRILL_COLUMN_SPECS, contentWidth);
     return (

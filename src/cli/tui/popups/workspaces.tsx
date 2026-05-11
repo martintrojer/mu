@@ -51,6 +51,7 @@ import {
 } from "../columns.js";
 import { dispatchPopupKey } from "../keys.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
+import { popupViewport } from "./viewport.js";
 
 export interface PopupProps {
   yank: (command: string) => Promise<void>;
@@ -79,7 +80,10 @@ const DRILL_COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
   { kind: "clip", min: 1 }, // subject
 ];
 
-const VIEWPORT = 20;
+// Drill view renders an EXTRA in-body title + dim "(L-T/T)" indicator
+// pair on top of the default popup chrome — subtract 7 (default 6 + 1)
+// for that branch. List view uses the default 6.
+const WORKSPACES_DRILL_CHROME = 7;
 
 export function WorkspacesPopup({
   yank,
@@ -92,6 +96,15 @@ export function WorkspacesPopup({
   workstream,
 }: PopupProps): JSX.Element {
   const contentWidth = contentWidthFromCols(termColsForLayout());
+  // Per-render viewport from stdout.rows minus the popup chrome budget;
+  // see popups/viewport.ts. Replaces the prior hardcoded VIEWPORT = 20.
+  // Workspaces popup only uses the viewport in the DRILL view
+  // (centring + page nav for the commits-since-fork list); the list
+  // view paginates by single-row cursor moves and never consults the
+  // viewport size. Drill subtracts an extra row for its in-body title
+  // indicator (see WORKSPACES_DRILL_CHROME above).
+  const { stdout } = useStdout();
+  const drillViewport = popupViewport(stdout?.rows ?? 24, WORKSPACES_DRILL_CHROME);
   const [cursor, setCursor] = useState(0);
   // Drill-mode state. Owned here (not in <App>) because it's
   // popup-local: <App> only tracks the list/drill mode flag for
@@ -212,11 +225,14 @@ export function WorkspacesPopup({
           return;
         case "pageDown":
           setDrillCursor((c) =>
-            Math.min(filteredCommits.length - 1, c + Math.floor(VIEWPORT / (action.half ? 2 : 1))),
+            Math.min(
+              filteredCommits.length - 1,
+              c + Math.floor(drillViewport / (action.half ? 2 : 1)),
+            ),
           );
           return;
         case "pageUp":
-          setDrillCursor((c) => Math.max(0, c - Math.floor(VIEWPORT / (action.half ? 2 : 1))));
+          setDrillCursor((c) => Math.max(0, c - Math.floor(drillViewport / (action.half ? 2 : 1))));
           return;
         case "yank": {
           const c = filteredCommits[safeDrillCursor];
@@ -301,6 +317,7 @@ export function WorkspacesPopup({
             drillErr,
             focused,
             contentWidth,
+            drillViewport,
           )}
         </Box>
         <Box marginTop={1}>
@@ -399,6 +416,7 @@ function renderDrillBody(
   err: string | null,
   focused: WorkspaceRow,
   contentWidth: number,
+  viewport: number,
 ): JSX.Element {
   if (loading) {
     return <Text dimColor>▸ loading commits for {focused.agentName} …</Text>;
@@ -439,9 +457,9 @@ function renderDrillBody(
 
   const start = Math.max(
     0,
-    Math.min(filtered.length - VIEWPORT, cursor - Math.floor(VIEWPORT / 2)),
+    Math.min(filtered.length - viewport, cursor - Math.floor(viewport / 2)),
   );
-  const visible = filtered.slice(start, start + VIEWPORT);
+  const visible = filtered.slice(start, start + viewport);
   const rows = visible.map((c) => [c.sha.slice(0, 12), c.subject]);
   const widths = layoutColumns(rows, DRILL_COLUMN_SPECS, contentWidth);
   return (

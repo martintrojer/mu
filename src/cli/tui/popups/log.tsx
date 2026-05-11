@@ -29,6 +29,7 @@ import {
 } from "../columns.js";
 import { dispatchPopupKey } from "../keys.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
+import { popupViewport } from "./viewport.js";
 
 export interface PopupProps {
   yank: (command: string) => Promise<void>;
@@ -45,8 +46,6 @@ export interface PopupProps {
   workstream: string;
 }
 
-const VIEWPORT = 20; // rows visible at once
-
 const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
   { kind: "protect", align: "right" }, // seq (#N)
   { kind: "protect" }, // ts
@@ -62,6 +61,11 @@ export function LogPopup({
   onFilterEditingChange,
 }: PopupProps): JSX.Element {
   const contentWidth = contentWidthFromCols(termColsForLayout());
+  // Per-render viewport from stdout.rows minus the popup chrome budget;
+  // see popups/viewport.ts. Replaces the prior hardcoded VIEWPORT = 20
+  // — used for BOTH the slice size AND the cursor-centring half-window.
+  const { stdout } = useStdout();
+  const viewport = popupViewport(stdout?.rows ?? 24);
   const [cursor, setCursor] = useState(0);
   const flt = usePopupFilter();
   const sourceEvents = snapshot?.recent ?? [];
@@ -167,12 +171,14 @@ export function LogPopup({
     );
   }
 
-  // Centre the cursor in the viewport.
+  // Centre the cursor in the viewport. `viewport` is BOTH the slice
+  // size and the half-window for centring — must use the per-render
+  // value consistently (see CAVEAT in bug_tui_popup_data_doesnt_fill).
   const start = Math.max(
     0,
-    Math.min(events.length - VIEWPORT, safeCursor - Math.floor(VIEWPORT / 2)),
+    Math.min(events.length - viewport, safeCursor - Math.floor(viewport / 2)),
   );
-  const visible = events.slice(start, start + VIEWPORT);
+  const visible = events.slice(start, start + viewport);
 
   const rows = visible.map((e) => {
     const cls = classifyEventVerb(e.payload);
