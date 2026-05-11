@@ -128,8 +128,11 @@ describe("TUI end-to-end acceptance", () => {
   it("the dispatch branch in cmdState exists and points at runTui", async () => {
     const { readFileSync } = await import("node:fs");
     const src = readFileSync("./src/cli/state.ts", "utf-8");
-    // The TTY-and-not-piped branch must exist and dynamic-import.
-    expect(src).toMatch(/process\.stdout\.isTTY/);
+    // The opt-in --tui branch must exist and dynamic-import. (The
+    // prior `process.stdout.isTTY` auto-route was reverted by
+    // feat_resurrect_state_card; the TUI is now opt-in via --tui so
+    // the static card stays the default for `mu state`.)
+    expect(src).toMatch(/opts\.tui === true/);
     expect(src).toMatch(/await import\("\.\/tui\/index\.js"\)/);
     expect(src).toMatch(/runTui\(db,\s*\{ workstream:/);
   });

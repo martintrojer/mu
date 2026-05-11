@@ -92,6 +92,7 @@ export interface StateOpts {
   all?: boolean;
   json?: boolean;
   mission?: boolean;
+  tui?: boolean;
   events?: number; // recent-events cap (default 20)
 }
 
@@ -176,6 +177,20 @@ export async function cmdState(db: Db, opts: StateOpts): Promise<void> {
     }
   }
 
+  // --tui mutual-exclusion checks: enforce BEFORE the JSON / render
+  // branches so combining --tui with another render flag errors
+  // loudly instead of silently winning whichever branch ran first.
+  if (opts.tui === true) {
+    if (opts.json === true) {
+      throw new UsageError("--tui and --json are mutually exclusive (TUI is render-only)");
+    }
+    if (opts.mission === true) {
+      throw new UsageError(
+        "--tui and --mission are mutually exclusive (mission is a static glance card)",
+      );
+    }
+  }
+
   const workstreams = await resolveWorkstreamSet(db, opts);
 
   // --all on an empty machine: render empty hint cleanly.
@@ -215,13 +230,20 @@ export async function cmdState(db: Db, opts: StateOpts): Promise<void> {
     return;
   }
 
-  // ── Interactive TUI branch (TTY, not mission, not multi) ──
-  // The TUI replaces the old --hud render mode. Bare `mu` (which
-  // routes here with mission=true) intentionally skips this branch
-  // — muscle-memory glance, not interactive surface. Multi-ws view
-  // stays static for now; TUI is single-workstream in v0. See
-  // design_non_tty_fallback (workstream `tui`) for the matrix.
-  if (process.stdout.isTTY && process.stdin.isTTY && opts.mission !== true && !multi) {
+  // ── Interactive TUI branch (opt-in via --tui) ──
+  // The TUI replaces the old --hud render mode. It is OPT-IN: the
+  // legacy static card is the default for `mu state` so it stays
+  // visible to LLMs, screenshots, docs, and muscle-memory users.
+  // See feat_resurrect_state_card (workstream `tui-impl`) for the
+  // rationale on demoting the prior TTY auto-route. Multi-ws TUI is
+  // its own follow-up (feat_tui_multi_workstream). Mutual-exclusion
+  // with --json / --mission is enforced earlier (above the JSON
+  // branch); only the multi-ws guard is left here because it depends
+  // on resolveWorkstreamSet() output.
+  if (opts.tui === true) {
+    if (multi) {
+      throw new UsageError("--tui currently supports a single workstream; pass exactly one -w");
+    }
     const { runTui } = await import("./tui/index.js");
     const single = perWs[0];
     if (single === undefined) throw new Error("invariant: workstreams non-empty");
@@ -404,7 +426,7 @@ export function wireStateCommands(program: Command): void {
   program
     .command("state")
     .description(
-      "Canonical state card: agents + orphans + tracks + ready/in-progress/blocked/recent-closed tasks + workspaces + recent events. The 'what does an LLM look at first?' verb. JSON-first. On an interactive TTY (with no --json/--mission and a single -w workstream), enters the interactive ink-based TUI; otherwise prints the static card. --mission emits the stripped 5-col glance card (agents + orphans + tracks + ready) — bare `mu` is an alias. -w accepts repeat or comma-separate (or both); --all is sugar for every workstream on this machine. N≥2 stacks per-workstream cards (full / mission).",
+      "Canonical state card: agents + orphans + tracks + ready/in-progress/blocked/recent-closed tasks + workspaces + recent events. The 'what does an LLM look at first?' verb. JSON-first. Default prints the static card; pass --tui to enter the interactive ink-based dashboard (replaces the old --hud). --mission emits the stripped 5-col glance card (agents + orphans + tracks + ready) — bare `mu` is an alias. -w accepts repeat or comma-separate (or both); --all is sugar for every workstream on this machine. N≥2 stacks per-workstream cards (full / mission).",
     )
     .option(
       "-w, --workstream <names...>",
@@ -412,6 +434,10 @@ export function wireStateCommands(program: Command): void {
     )
     .option("--all", "include every workstream on this machine")
     .option("--mission", "stripped 5-column glance card (agents + orphans + tracks + ready)")
+    .option(
+      "--tui",
+      "interactive TUI (rounded-border dashboard with cards + popups; single-ws only)",
+    )
     .option(
       "--events <n>",
       "how many recent kind=event log entries to include (default 20)",

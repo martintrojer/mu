@@ -1,15 +1,19 @@
-// Tests for cmdState's TTY/JSON/mission dispatch matrix introduced in
-// the TUI refactor (Wave 3 Task 15 of docs/plans/2026-05-11-interactive-tui.md).
+// Tests for cmdState's --tui/--json/--mission dispatch matrix.
 //
-// The branching matrix:
+// Original TTY auto-route was reverted by feat_resurrect_state_card
+// (workstream `tui-impl`): the static card is the always-on default
+// and the TUI is opt-in via --tui. New matrix:
 //
-//   isTTY  --json  --mission  multi-ws  →  what runs
+//   --tui  --json  --mission  multi-ws  →  what runs
 //   -----  ------  ---------  --------    ----------
-//   any    yes     any        any         → static JSON
+//   no     yes     any        any         → static JSON
+//   no     no      no         no          → static full card
+//   no     no      yes        any         → static mission card
+//   no     no      any        yes         → stacked static per-ws cards
 //   yes    no      no         no          → ink TUI (lazy import)
-//   yes    no      yes        any         → static mission card
-//   no     no      any        any         → static full/mission card
-//   any    any     any        yes         → static (TUI is single-ws today)
+//   yes    yes     any        any         → UsageError
+//   yes    no      yes        any         → UsageError
+//   yes    no      no         yes         → UsageError (single-ws only in v0)
 //
 // The static fallback is exercised by test/state-render.test.ts (the
 // existing suite). Here we ONLY verify the dispatch decisions.
@@ -73,18 +77,42 @@ describe("cmdState dispatch", () => {
     expect(stdout).toContain("mu-ws");
   });
 
-  it("non-TTY default hits the static full card (the L1-total fallback)", async () => {
+  it("default (no --tui) hits the static full card", async () => {
     const { stdout, exitCode } = await runCli(["state", "-w", "ws"], dbPath);
     expect(exitCode).toBeNull();
     expect(stdout).toContain("State of mu-ws");
   });
 
-  it("multi-workstream stays static even on a TTY (TUI is single-ws today)", async () => {
+  it("multi-workstream renders stacked static cards (TUI is single-ws today)", async () => {
     await runCli(["workstream", "init", "ws2"], dbPath);
     const { stdout, exitCode } = await runCli(["state", "-w", "ws,ws2"], dbPath);
     expect(exitCode).toBeNull();
     expect(stdout).toContain("State of mu-ws");
     expect(stdout).toContain("State of mu-ws2");
+  });
+
+  it("--tui + --json is a UsageError (TUI is render-only)", async () => {
+    const { stderr, exitCode } = await runCli(["state", "--tui", "--json", "-w", "ws"], dbPath);
+    expect(exitCode).not.toBe(0);
+    expect(exitCode).not.toBeNull();
+    expect(stderr.toLowerCase()).toContain("--tui");
+    expect(stderr.toLowerCase()).toContain("--json");
+  });
+
+  it("--tui + --mission is a UsageError (mission is a static glance card)", async () => {
+    const { stderr, exitCode } = await runCli(["state", "--tui", "--mission", "-w", "ws"], dbPath);
+    expect(exitCode).not.toBe(0);
+    expect(exitCode).not.toBeNull();
+    expect(stderr.toLowerCase()).toContain("--tui");
+    expect(stderr.toLowerCase()).toContain("--mission");
+  });
+
+  it("--tui + multi-workstream is a UsageError (single-ws only in v0)", async () => {
+    await runCli(["workstream", "init", "ws2"], dbPath);
+    const { stderr, exitCode } = await runCli(["state", "--tui", "-w", "ws,ws2"], dbPath);
+    expect(exitCode).not.toBe(0);
+    expect(exitCode).not.toBeNull();
+    expect(stderr.toLowerCase()).toContain("--tui");
   });
 
   it("--hud option no longer exists (removed in this refactor)", async () => {
