@@ -14,6 +14,7 @@
 import { Box, Text } from "ink";
 import { type RoiBucket, type WorkstreamSnapshot, roiBucket } from "../../../state.js";
 import { type ColumnSpec, layoutColumns, renderRow } from "../columns.js";
+import { TitledBox } from "../titled-box.js";
 
 export interface ReadyCardProps {
   snapshot: WorkstreamSnapshot | null;
@@ -31,9 +32,9 @@ const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
 export function ReadyCard({ snapshot }: ReadyCardProps): JSX.Element {
   if (snapshot === null) {
     return (
-      <Box borderStyle="round" borderColor="gray" paddingX={1}>
-        <Text dimColor>Ready — loading…</Text>
-      </Box>
+      <TitledBox title="Ready">
+        <Text dimColor>loading…</Text>
+      </TitledBox>
     );
   }
 
@@ -41,14 +42,11 @@ export function ReadyCard({ snapshot }: ReadyCardProps): JSX.Element {
 
   if (ready.length === 0) {
     return (
-      <Box borderStyle="round" borderColor="gray" paddingX={1} flexDirection="column">
-        <Text bold color="cyan">
-          Ready
-        </Text>
+      <TitledBox title="Ready">
         <Text dimColor>
           (no ready tasks) every blocker is OPEN/IN_PROGRESS or every task is closed
         </Text>
-      </Box>
+      </TitledBox>
     );
   }
 
@@ -68,10 +66,7 @@ export function ReadyCard({ snapshot }: ReadyCardProps): JSX.Element {
   const widths = layoutColumns(rows, COLUMN_SPECS);
 
   return (
-    <Box borderStyle="round" borderColor="gray" paddingX={1} flexDirection="column">
-      <Text bold color="cyan">
-        Ready <Text dimColor>· {ready.length}</Text>
-      </Text>
+    <TitledBox title="Ready" subtitle={String(ready.length)}>
       {shown.map((t, i) => {
         const row = rows[i];
         const m = meta[i];
@@ -95,7 +90,7 @@ export function ReadyCard({ snapshot }: ReadyCardProps): JSX.Element {
       {ready.length > ROW_LIMIT && (
         <Text dimColor>… +{ready.length - ROW_LIMIT} more · open Tasks popup (Shift+3)</Text>
       )}
-    </Box>
+    </TitledBox>
   );
 }
 

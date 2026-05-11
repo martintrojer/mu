@@ -21,6 +21,7 @@ import {
   summarizeOwnedTasks,
 } from "../../../state.js";
 import { type ColumnSpec, layoutColumns, renderRow } from "../columns.js";
+import { TitledBox } from "../titled-box.js";
 
 export interface AgentsCardProps {
   snapshot: WorkstreamSnapshot | null;
@@ -36,9 +37,9 @@ const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
 export function AgentsCard({ snapshot }: AgentsCardProps): JSX.Element {
   if (snapshot === null) {
     return (
-      <Box borderStyle="round" borderColor="gray" paddingX={1}>
-        <Text dimColor>Agents — loading…</Text>
-      </Box>
+      <TitledBox title="Agents">
+        <Text dimColor>loading…</Text>
+      </TitledBox>
     );
   }
 
@@ -48,12 +49,9 @@ export function AgentsCard({ snapshot }: AgentsCardProps): JSX.Element {
 
   if (agents.length === 0) {
     return (
-      <Box borderStyle="round" borderColor="gray" paddingX={1} flexDirection="column">
-        <Text bold color="cyan">
-          Agents
-        </Text>
+      <TitledBox title="Agents">
         <Text dimColor>(no agents) try `mu agent spawn worker-1 -w {snapshot.workstreamName}`</Text>
-      </Box>
+      </TitledBox>
     );
   }
 
@@ -67,10 +65,7 @@ export function AgentsCard({ snapshot }: AgentsCardProps): JSX.Element {
   const widths = layoutColumns(rows, COLUMN_SPECS);
 
   return (
-    <Box borderStyle="round" borderColor="gray" paddingX={1} flexDirection="column">
-      <Text bold color="cyan">
-        Agents <Text dimColor>· {histLabel}</Text>
-      </Text>
+    <TitledBox title="Agents" subtitle={histLabel}>
       {agents.map((a, i) => {
         const row = rows[i];
         if (row === undefined) return null;
@@ -92,7 +87,7 @@ export function AgentsCard({ snapshot }: AgentsCardProps): JSX.Element {
           </Box>
         );
       })}
-    </Box>
+    </TitledBox>
   );
 }
 

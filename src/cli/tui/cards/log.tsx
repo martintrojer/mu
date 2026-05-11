@@ -15,6 +15,7 @@ import { Box, Text } from "ink";
 import { classifyEventVerb } from "../../../logs.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
 import { type ColumnSpec, layoutColumns, renderRow } from "../columns.js";
+import { TitledBox } from "../titled-box.js";
 
 export interface LogCardProps {
   snapshot: WorkstreamSnapshot | null;
@@ -32,9 +33,9 @@ const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
 export function LogCard({ snapshot }: LogCardProps): JSX.Element {
   if (snapshot === null) {
     return (
-      <Box borderStyle="round" borderColor="gray" paddingX={1}>
-        <Text dimColor>Activity log — loading…</Text>
-      </Box>
+      <TitledBox title="Activity log">
+        <Text dimColor>loading…</Text>
+      </TitledBox>
     );
   }
 
@@ -42,12 +43,9 @@ export function LogCard({ snapshot }: LogCardProps): JSX.Element {
 
   if (recent.length === 0) {
     return (
-      <Box borderStyle="round" borderColor="gray" paddingX={1} flexDirection="column">
-        <Text bold color="cyan">
-          Activity log
-        </Text>
+      <TitledBox title="Activity log">
         <Text dimColor>(no events yet)</Text>
-      </Box>
+      </TitledBox>
     );
   }
 
@@ -66,10 +64,7 @@ export function LogCard({ snapshot }: LogCardProps): JSX.Element {
   const widths = layoutColumns(cellRows, COLUMN_SPECS);
 
   return (
-    <Box borderStyle="round" borderColor="gray" paddingX={1} flexDirection="column">
-      <Text bold color="cyan">
-        Activity log <Text dimColor>· last ↑{Math.min(recent.length, ROW_LIMIT)}</Text>
-      </Text>
+    <TitledBox title="Activity log" subtitle={`last ↑${Math.min(recent.length, ROW_LIMIT)}`}>
       {tail.map((row, i) => {
         const cells = cellRows[i];
         if (cells === undefined) return null;
@@ -90,6 +85,6 @@ export function LogCard({ snapshot }: LogCardProps): JSX.Element {
           </Box>
         );
       })}
-    </Box>
+    </TitledBox>
   );
 }

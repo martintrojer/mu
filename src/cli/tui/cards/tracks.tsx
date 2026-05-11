@@ -4,7 +4,7 @@
 //
 // Per design_card_tracks (workstream `tui`).
 //
-// Aesthetic: rounded border, dim border, section header inset.
+// Aesthetic: section header inset into the top border (TitledBox).
 //
 // Rows are column-aligned via src/cli/tui/columns.ts. Per
 // feat_column_aligned_lists clipping policy: track number, ⋈ glyph,
@@ -14,6 +14,7 @@
 import { Box, Text } from "ink";
 import type { WorkstreamSnapshot } from "../../../state.js";
 import { type ColumnSpec, layoutColumns, renderRow } from "../columns.js";
+import { TitledBox } from "../titled-box.js";
 
 export interface TracksCardProps {
   snapshot: WorkstreamSnapshot | null;
@@ -31,9 +32,9 @@ const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
 export function TracksCard({ snapshot }: TracksCardProps): JSX.Element {
   if (snapshot === null) {
     return (
-      <Box borderStyle="round" borderColor="gray" paddingX={1}>
-        <Text dimColor>Tracks — loading…</Text>
-      </Box>
+      <TitledBox title="Tracks">
+        <Text dimColor>loading…</Text>
+      </TitledBox>
     );
   }
 
@@ -42,14 +43,11 @@ export function TracksCard({ snapshot }: TracksCardProps): JSX.Element {
 
   if (tracks.length === 0) {
     return (
-      <Box borderStyle="round" borderColor="gray" paddingX={1} flexDirection="column">
-        <Text bold color="cyan">
-          Tracks
-        </Text>
+      <TitledBox title="Tracks">
         <Text dimColor>
           (no goals) try `mu task add -w {snapshot.workstreamName} --title "..."`
         </Text>
-      </Box>
+      </TitledBox>
     );
   }
 
@@ -66,13 +64,7 @@ export function TracksCard({ snapshot }: TracksCardProps): JSX.Element {
   const widths = layoutColumns(rows, COLUMN_SPECS);
 
   return (
-    <Box borderStyle="round" borderColor="gray" paddingX={1} flexDirection="column">
-      <Text bold color="cyan">
-        Tracks{" "}
-        <Text dimColor>
-          · {tracks.length} · {totalReady} ready
-        </Text>
-      </Text>
+    <TitledBox title="Tracks" subtitle={`${tracks.length} · ${totalReady} ready`}>
       {shown.map((t, i) => {
         const row = rows[i];
         if (row === undefined) return null;
@@ -99,6 +91,6 @@ export function TracksCard({ snapshot }: TracksCardProps): JSX.Element {
       {tracks.length > ROW_LIMIT && (
         <Text dimColor>… +{tracks.length - ROW_LIMIT} more · open Tracks popup (Shift+2)</Text>
       )}
-    </Box>
+    </TitledBox>
   );
 }
