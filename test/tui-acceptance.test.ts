@@ -133,4 +133,17 @@ describe("TUI end-to-end acceptance", () => {
     expect(src).toMatch(/await import\("\.\/tui\/index\.js"\)/);
     expect(src).toMatch(/runTui\(db,\s*\{ workstream:/);
   });
+
+  it("runTui enters and exits the alt-screen so the dashboard is flush with the top of the pane", async () => {
+    // Alt-screen sequences are TTY-only side effects; the most
+    // reliable gate is a static assertion that runTui writes both
+    // the enter (`\x1b[?1049h`) and exit (`\x1b[?1049l`) escapes,
+    // and that the exit path is in a `finally` so any throw still
+    // restores the user's shell scrollback.
+    const { readFileSync } = await import("node:fs");
+    const src = readFileSync("./src/cli/tui/index.ts", "utf-8");
+    expect(src).toMatch(/\\x1b\[\?1049h/);
+    expect(src).toMatch(/\\x1b\[\?1049l/);
+    expect(src).toMatch(/finally\s*\{[\s\S]*?ALT_SCREEN_EXIT/);
+  });
 });
