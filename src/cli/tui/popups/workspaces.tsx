@@ -42,7 +42,13 @@ import type { WorkstreamSnapshot } from "../../../state.js";
 import type { CommitSummary } from "../../../vcs.js";
 import { type WorkspaceRow, listCommitsForWorkspace } from "../../../workspace.js";
 import { colorForBehind, colorForGlyph, formatBehind, glyphFor } from "../cards/workspaces.js";
-import { type ColumnSpec, layoutColumns, renderRow } from "../columns.js";
+import {
+  type ColumnSpec,
+  contentWidthFromCols,
+  layoutColumns,
+  renderRow,
+  termColsForLayout,
+} from "../columns.js";
 import { dispatchPopupKey } from "../keys.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
 
@@ -85,6 +91,7 @@ export function WorkspacesPopup({
   db,
   workstream,
 }: PopupProps): JSX.Element {
+  const contentWidth = contentWidthFromCols(termColsForLayout());
   const [cursor, setCursor] = useState(0);
   // Drill-mode state. Owned here (not in <App>) because it's
   // popup-local: <App> only tracks the list/drill mode flag for
@@ -286,7 +293,15 @@ export function WorkspacesPopup({
     return (
       <Shell title={`Workspaces · ${focused.agentName} (commits since fork)`}>
         <Box flexDirection="column" flexGrow={1}>
-          {renderDrillBody(commits, filteredCommits, safeDrillCursor, loading, drillErr, focused)}
+          {renderDrillBody(
+            commits,
+            filteredCommits,
+            safeDrillCursor,
+            loading,
+            drillErr,
+            focused,
+            contentWidth,
+          )}
         </Box>
         <Box marginTop={1}>
           <Text dimColor>
@@ -307,7 +322,7 @@ export function WorkspacesPopup({
     w.parentRef ? w.parentRef.slice(0, 12) : "—",
     w.path,
   ]);
-  const widths = layoutColumns(rows, COLUMN_SPECS);
+  const widths = layoutColumns(rows, COLUMN_SPECS, contentWidth);
 
   return (
     <Shell title={`Workspaces · popup (${safeCursor + 1}/${workspaces.length})`}>
@@ -383,6 +398,7 @@ function renderDrillBody(
   loading: boolean,
   err: string | null,
   focused: WorkspaceRow,
+  contentWidth: number,
 ): JSX.Element {
   if (loading) {
     return <Text dimColor>▸ loading commits for {focused.agentName} …</Text>;
@@ -427,7 +443,7 @@ function renderDrillBody(
   );
   const visible = filtered.slice(start, start + VIEWPORT);
   const rows = visible.map((c) => [c.sha.slice(0, 12), c.subject]);
-  const widths = layoutColumns(rows, DRILL_COLUMN_SPECS);
+  const widths = layoutColumns(rows, DRILL_COLUMN_SPECS, contentWidth);
   return (
     <Box flexDirection="column">
       <Box>

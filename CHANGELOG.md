@@ -283,6 +283,25 @@ is opt-in via the new `--tui` flag.
 
 ### Fixed
 
+- **TUI long titles no longer overflow + wrap to a second line**
+  (bug_tui_long_lines_overflow). `layoutColumns(rows, specs,
+  totalWidth?)` short-circuits to natural widths when `totalWidth`
+  is undefined; every card and popup body was calling it with two
+  args, so the protect/clip remainder-distribution never ran and
+  long titles in `Ready` / `Tasks` / `Blocked` / `In-progress` /
+  `Recent` rows pushed past the rounded-border right edge and
+  wrapped the trailing cells (owner, ROI, etc.) to a second
+  terminal line. New `contentWidthFromCols(cols)` helper in
+  `src/cli/tui/columns.ts` (subtracts the 4 cols of TitledBox /
+  popup Shell chrome — 1 border + 1 padX per side) plus a sibling
+  `termColsForLayout()` reading `process.stdout.columns` directly
+  (bare property read instead of the `useStdout()` hook so card
+  FCs called as plain functions in unit tests still work; ink
+  re-renders the whole tree on SIGWINCH so the value is current).
+  Threaded through every one of the 16 `layoutColumns` call sites
+  in `src/cli/tui/{cards,popups}/*.tsx`. Static-source regression
+  guard in `test/tui-columns.test.ts` asserts every caller passes
+  a non-empty 3rd argument.
 - **TUI dashboard no longer flickers on every tick**
   (bug_tui_flicker_on_every_tick). The `useDashboardSnapshot` hook
   was unconditionally calling `setSnap({ data, lastTickMs, error })`

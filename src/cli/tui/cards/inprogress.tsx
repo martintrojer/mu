@@ -51,7 +51,13 @@ import { Box, Text } from "ink";
 import { STATUS_EMOJI } from "../../../agents.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
 import type { TaskRow } from "../../../tasks.js";
-import { type ColumnSpec, layoutColumns, renderRow } from "../columns.js";
+import {
+  type ColumnSpec,
+  contentWidthFromCols,
+  layoutColumns,
+  renderRow,
+  termColsForLayout,
+} from "../columns.js";
 import { TitledBox } from "../titled-box.js";
 
 export interface InProgressCardProps {
@@ -75,6 +81,7 @@ const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
 ];
 
 export function InProgressCard({ snapshot }: InProgressCardProps): JSX.Element {
+  const contentWidth = contentWidthFromCols(termColsForLayout());
   if (snapshot === null) {
     return (
       <TitledBox title="In-progress" cardId={6}>
@@ -106,7 +113,7 @@ export function InProgressCard({ snapshot }: InProgressCardProps): JSX.Element {
     formatSinceClaim(ages[i] ?? null),
     t.title,
   ]);
-  const widths = layoutColumns(rows, COLUMN_SPECS);
+  const widths = layoutColumns(rows, COLUMN_SPECS, contentWidth);
 
   return (
     <TitledBox title="In-progress" subtitle={subtitle} cardId={6}>

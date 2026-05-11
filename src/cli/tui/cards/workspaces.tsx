@@ -34,7 +34,13 @@
 import { Box, Text } from "ink";
 import type { WorkstreamSnapshot } from "../../../state.js";
 import type { WorkspaceRow } from "../../../workspace.js";
-import { type ColumnSpec, layoutColumns, renderRow } from "../columns.js";
+import {
+  type ColumnSpec,
+  contentWidthFromCols,
+  layoutColumns,
+  renderRow,
+  termColsForLayout,
+} from "../columns.js";
 import { TitledBox } from "../titled-box.js";
 
 export interface WorkspacesCardProps {
@@ -52,6 +58,7 @@ const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
 ];
 
 export function WorkspacesCard({ snapshot }: WorkspacesCardProps): JSX.Element {
+  const contentWidth = contentWidthFromCols(termColsForLayout());
   if (snapshot === null) {
     return (
       <TitledBox title="Workspaces" cardId={5}>
@@ -83,7 +90,7 @@ export function WorkspacesCard({ snapshot }: WorkspacesCardProps): JSX.Element {
     formatBehind(w.commitsBehindMain),
     w.parentRef ? w.parentRef.slice(0, 12) : "—",
   ]);
-  const widths = layoutColumns(rows, COLUMN_SPECS);
+  const widths = layoutColumns(rows, COLUMN_SPECS, contentWidth);
 
   return (
     <TitledBox title="Workspaces" subtitle={subtitle} cardId={5}>

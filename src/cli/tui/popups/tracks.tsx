@@ -32,7 +32,13 @@ import { useEffect, useMemo, useState } from "react";
 import type { Db } from "../../../db.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
 import { type TaskRow, getTask } from "../../../tasks.js";
-import { type ColumnSpec, layoutColumns, renderRow } from "../columns.js";
+import {
+  type ColumnSpec,
+  contentWidthFromCols,
+  layoutColumns,
+  renderRow,
+  termColsForLayout,
+} from "../columns.js";
 import { dispatchPopupKey } from "../keys.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
 import { clampScrollTop } from "./drill.js";
@@ -81,6 +87,7 @@ export function TracksPopup({
   db,
   workstream,
 }: PopupProps): JSX.Element {
+  const contentWidth = contentWidthFromCols(termColsForLayout());
   const [cursor, setCursor] = useState(0);
   const [drillCursor, setDrillCursor] = useState(0);
   const [drillSubMode, setDrillSubMode] = useState<DrillSubMode>("task-list");
@@ -352,7 +359,7 @@ export function TracksPopup({
     );
     const visible = drillTasks.slice(start, start + VIEWPORT);
     const rows = visible.map((t) => [t.name, t.status, t.title]);
-    const widths = layoutColumns(rows, DRILL_COLUMN_SPECS);
+    const widths = layoutColumns(rows, DRILL_COLUMN_SPECS, contentWidth);
     return (
       <Shell title={`${trackLabel} · ${goalSummary} (${drillCursor + 1}/${drillTasks.length})`}>
         <Box flexDirection="column" flexGrow={1}>
@@ -390,7 +397,7 @@ export function TracksPopup({
     const counts = `(${t.taskIds.size} tasks · ${t.readyCount} ready)`;
     return [`Track ${i + 1}`, diamond, goalNames, counts];
   });
-  const widths = layoutColumns(rows, COLUMN_SPECS);
+  const widths = layoutColumns(rows, COLUMN_SPECS, contentWidth);
 
   return (
     <Shell title={`Tracks · popup (${safeCursor + 1}/${tracks.length})`}>

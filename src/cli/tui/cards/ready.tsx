@@ -13,7 +13,13 @@
 
 import { Box, Text } from "ink";
 import { type RoiBucket, type WorkstreamSnapshot, roiBucket } from "../../../state.js";
-import { type ColumnSpec, layoutColumns, renderRow } from "../columns.js";
+import {
+  type ColumnSpec,
+  contentWidthFromCols,
+  layoutColumns,
+  renderRow,
+  termColsForLayout,
+} from "../columns.js";
 import { TitledBox } from "../titled-box.js";
 
 export interface ReadyCardProps {
@@ -30,6 +36,7 @@ const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
 ];
 
 export function ReadyCard({ snapshot }: ReadyCardProps): JSX.Element {
+  const contentWidth = contentWidthFromCols(termColsForLayout());
   if (snapshot === null) {
     return (
       <TitledBox title="Ready" cardId={3}>
@@ -63,7 +70,7 @@ export function ReadyCard({ snapshot }: ReadyCardProps): JSX.Element {
     t.title,
     t.ownerName ?? "—",
   ]);
-  const widths = layoutColumns(rows, COLUMN_SPECS);
+  const widths = layoutColumns(rows, COLUMN_SPECS, contentWidth);
 
   return (
     <TitledBox title="Ready" subtitle={String(ready.length)} cardId={3}>

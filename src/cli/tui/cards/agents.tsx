@@ -20,7 +20,13 @@ import {
   agentStatusHistogram,
   summarizeOwnedTasks,
 } from "../../../state.js";
-import { type ColumnSpec, layoutColumns, renderRow } from "../columns.js";
+import {
+  type ColumnSpec,
+  contentWidthFromCols,
+  layoutColumns,
+  renderRow,
+  termColsForLayout,
+} from "../columns.js";
 import { TitledBox } from "../titled-box.js";
 
 export interface AgentsCardProps {
@@ -35,6 +41,7 @@ const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
 ];
 
 export function AgentsCard({ snapshot }: AgentsCardProps): JSX.Element {
+  const contentWidth = contentWidthFromCols(termColsForLayout());
   if (snapshot === null) {
     return (
       <TitledBox title="Agents" cardId={1}>
@@ -62,7 +69,7 @@ export function AgentsCard({ snapshot }: AgentsCardProps): JSX.Element {
     const idle = a.idle ? "⚠ idle" : "—";
     return [STATUS_EMOJI[a.status] ?? "?", a.name, taskBit, idle];
   });
-  const widths = layoutColumns(rows, COLUMN_SPECS);
+  const widths = layoutColumns(rows, COLUMN_SPECS, contentWidth);
 
   return (
     <TitledBox title="Agents" subtitle={histLabel} cardId={1}>

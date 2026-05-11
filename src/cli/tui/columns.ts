@@ -96,6 +96,35 @@ export function naturalWidths(rows: ReadonlyArray<ReadonlyArray<string>>): numbe
  *  (cli-table3 uses one + a vertical bar; we drop the bar). */
 export const COL_GUTTER = 2;
 
+/** Convert a terminal-column count (`process.stdout.columns`) into the
+ *  content-area width inside a TitledBox / popup Shell.
+ *
+ *  Both containers stack the same chrome on each side:
+ *    - 1 col rounded border
+ *    - 1 col paddingX
+ *  → 2 cols per side, 4 cols total — subtract from the outer width.
+ *
+ *  Floored at 0 so very narrow terminals (cols < 4) don't drive a
+ *  negative budget into layoutColumns; the App.tsx terminal-too-small
+ *  guard (cols < 40) is the visible last resort.
+ *
+ *  Per bug_tui_long_lines_overflow: every card/popup needs to pass
+ *  the resulting contentWidth to layoutColumns so clip columns
+ *  actually clip instead of overflowing the row to a second line.
+ *
+ *  Why `process.stdout.columns` and not the `useStdout()` hook:
+ *  card/popup FCs are also called as plain functions in unit tests
+ *  (no ink renderer mounted, so React hook context is null), and
+ *  ink already re-renders the entire tree on SIGWINCH so the bare
+ *  property read is current at render time. */
+export function termColsForLayout(): number {
+  return process.stdout.columns ?? 80;
+}
+
+export function contentWidthFromCols(cols: number): number {
+  return Math.max(0, cols - 4);
+}
+
 /**
  * Compute the final width allocated to each column, given:
  *   - rows         the cell matrix (post-string conversion)

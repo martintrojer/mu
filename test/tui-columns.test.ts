@@ -5,10 +5,13 @@
 // list` did before, with cells that carry yank-bearing identity
 // (task ids, agent names, status tokens) protected from truncation.
 
+import { readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   type ColumnSpec,
   cellWidth,
+  contentWidthFromCols,
   layoutColumns,
   naturalWidths,
   padCell,
@@ -119,6 +122,77 @@ describe("layoutColumns", () => {
     const widths = layoutColumns(rows, specs, 100);
     expect(widths).toEqual([3, 2]);
   });
+});
+
+describe("contentWidthFromCols", () => {
+  // Per bug_tui_long_lines_overflow: TitledBox + popup Shells stack
+  // 1 col rounded border + 1 col paddingX on each side = 4 cols of
+  // chrome total. The helper subtracts that from the outer width so
+  // every card/popup can pass the right budget into layoutColumns.
+  it("subtracts 4 cols of chrome (1 border + 1 padX per side)", () => {
+    expect(contentWidthFromCols(80)).toBe(76);
+    expect(contentWidthFromCols(120)).toBe(116);
+  });
+  it("floors at 0 for very narrow terminals", () => {
+    expect(contentWidthFromCols(4)).toBe(0);
+    expect(contentWidthFromCols(3)).toBe(0);
+    expect(contentWidthFromCols(0)).toBe(0);
+  });
+  it("feeds layoutColumns: clip cols actually clip when contentWidth is passed", () => {
+    const rows = [["task_id", "a very long title that would overflow"]];
+    const specs: ColumnSpec[] = [{ kind: "protect" }, { kind: "clip", min: 1 }];
+    // Without contentWidth: natural widths (clip column wins overflow).
+    const natural = layoutColumns(rows, specs);
+    expect(natural[1]).toBe("a very long title that would overflow".length);
+    // With contentWidth: clip column shrinks to the leftover budget.
+    const budget = contentWidthFromCols(40); // 36
+    const clipped = layoutColumns(rows, specs, budget);
+    expect(clipped[1]).toBeLessThan(natural[1] ?? Number.POSITIVE_INFINITY);
+  });
+});
+
+// Regression guard for bug_tui_long_lines_overflow. Every card and
+// popup that calls layoutColumns must pass a third argument so the
+// clip-column budget actually applies — without it, layoutColumns
+// short-circuits to natural widths and long titles wrap to a second
+// terminal line. Crude string-scan, but cheap and catches the exact
+// regression.
+describe("every card/popup passes contentWidth to layoutColumns", () => {
+  const TUI_DIR = join(import.meta.dirname, "..", "src", "cli", "tui");
+  const dirs = ["cards", "popups"];
+  const files: { path: string; name: string; src: string }[] = [];
+  for (const dir of dirs) {
+    const full = join(TUI_DIR, dir);
+    for (const f of readdirSync(full)) {
+      if (!f.endsWith(".tsx")) continue;
+      const path = join(full, f);
+      const src = readFileSync(path, "utf8");
+      if (!/\blayoutColumns\(/.test(src)) continue;
+      files.push({ path, name: `${dir}/${f}`, src });
+    }
+  }
+
+  it("discovers at least the known callers", () => {
+    // Sanity: the brief lists 16 callers across 14 files (cards x8 +
+    // popups x6, with workspaces / tracks each calling twice).
+    expect(files.length).toBeGreaterThanOrEqual(14);
+  });
+
+  for (const { name, src } of files) {
+    it(`${name} calls layoutColumns(rows, COLUMN_SPECS, <contentWidth>) with 3 args`, () => {
+      // Match `layoutColumns(<a>, <b>, <c>)` allowing whitespace +
+      // newlines + nested commas. The pattern requires exactly two
+      // top-level commas before a closing paren — a 2-arg call has
+      // one comma and would not match.
+      const calls = [...src.matchAll(/\blayoutColumns\(([^()]*)\)/g)];
+      expect(calls.length).toBeGreaterThan(0);
+      for (const m of calls) {
+        const args = (m[1] ?? "").split(",").map((s) => s.trim());
+        expect(args.length, `${name}: ${m[0]}`).toBeGreaterThanOrEqual(3);
+        expect(args[2]?.length ?? 0, `${name}: ${m[0]} third arg empty`).toBeGreaterThan(0);
+      }
+    });
+  }
 });
 
 describe("renderRow", () => {

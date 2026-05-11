@@ -20,7 +20,13 @@ import { useEffect, useState } from "react";
 import type { Db } from "../../../db.js";
 import { classifyEventVerb } from "../../../logs.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
-import { type ColumnSpec, layoutColumns, renderRow } from "../columns.js";
+import {
+  type ColumnSpec,
+  contentWidthFromCols,
+  layoutColumns,
+  renderRow,
+  termColsForLayout,
+} from "../columns.js";
 import { dispatchPopupKey } from "../keys.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
 
@@ -55,6 +61,7 @@ export function LogPopup({
   snapshot,
   onFilterEditingChange,
 }: PopupProps): JSX.Element {
+  const contentWidth = contentWidthFromCols(termColsForLayout());
   const [cursor, setCursor] = useState(0);
   const flt = usePopupFilter();
   const sourceEvents = snapshot?.recent ?? [];
@@ -174,7 +181,7 @@ export function LogPopup({
     const rest = cls?.rest ?? e.payload;
     return [`#${e.seq}`, ts, e.source, verb, rest];
   });
-  const widths = layoutColumns(rows, COLUMN_SPECS);
+  const widths = layoutColumns(rows, COLUMN_SPECS, contentWidth);
 
   return (
     <Shell title={`Activity log · popup (${safeCursor + 1}/${events.length})`}>

@@ -64,7 +64,13 @@ import { Box, Text } from "ink";
 import type { Db } from "../../../db.js";
 import { type RoiBucket, type WorkstreamSnapshot, roiBucket } from "../../../state.js";
 import { type TaskEdgeWithStatus, type TaskRow, getTaskEdgesWithStatus } from "../../../tasks.js";
-import { type ColumnSpec, layoutColumns, renderRow } from "../columns.js";
+import {
+  type ColumnSpec,
+  contentWidthFromCols,
+  layoutColumns,
+  renderRow,
+  termColsForLayout,
+} from "../columns.js";
 import { TitledBox } from "../titled-box.js";
 
 export interface BlockedCardProps {
@@ -85,6 +91,7 @@ const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
 ];
 
 export function BlockedCard({ snapshot, db, workstream }: BlockedCardProps): JSX.Element {
+  const contentWidth = contentWidthFromCols(termColsForLayout());
   if (snapshot === null) {
     return (
       <TitledBox title="Blocked" cardId={7}>
@@ -127,7 +134,7 @@ export function BlockedCard({ snapshot, db, workstream }: BlockedCardProps): JSX
     meta[i]?.roiText ?? "",
     t.title,
   ]);
-  const widths = layoutColumns(rows, COLUMN_SPECS);
+  const widths = layoutColumns(rows, COLUMN_SPECS, contentWidth);
 
   return (
     <TitledBox title="Blocked" subtitle={subtitle} cardId={7}>

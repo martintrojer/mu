@@ -39,7 +39,13 @@ import type { Db } from "../../../db.js";
 import { type WorkstreamSnapshot, roiBucket } from "../../../state.js";
 import { getTaskEdgesWithStatus } from "../../../tasks.js";
 import { glyphFor, stillGating } from "../cards/blocked.js";
-import { type ColumnSpec, layoutColumns, renderRow } from "../columns.js";
+import {
+  type ColumnSpec,
+  contentWidthFromCols,
+  layoutColumns,
+  renderRow,
+  termColsForLayout,
+} from "../columns.js";
 import { dispatchPopupKey } from "../keys.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
 import { clampScrollTop } from "./drill.js";
@@ -79,6 +85,7 @@ export function BlockedPopup({
   db,
   workstream,
 }: PopupProps): JSX.Element {
+  const contentWidth = contentWidthFromCols(termColsForLayout());
   const [cursor, setCursor] = useState(0);
   const [scrollTop, setScrollTop] = useState(0);
   const flt = usePopupFilter();
@@ -268,7 +275,7 @@ export function BlockedPopup({
     const roiText = Number.isFinite(roi) ? String(roi) : "∞";
     return [glyphFor(t), t.name, t.status, String(blockers.length), top, roiText, t.title];
   });
-  const widths = layoutColumns(rows, COLUMN_SPECS);
+  const widths = layoutColumns(rows, COLUMN_SPECS, contentWidth);
 
   return (
     <Shell title={`Blocked · popup (${safeCursor + 1}/${tasks.length})`}>

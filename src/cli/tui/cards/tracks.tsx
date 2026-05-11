@@ -13,7 +13,13 @@
 
 import { Box, Text } from "ink";
 import type { WorkstreamSnapshot } from "../../../state.js";
-import { type ColumnSpec, layoutColumns, renderRow } from "../columns.js";
+import {
+  type ColumnSpec,
+  contentWidthFromCols,
+  layoutColumns,
+  renderRow,
+  termColsForLayout,
+} from "../columns.js";
 import { TitledBox } from "../titled-box.js";
 
 export interface TracksCardProps {
@@ -30,6 +36,7 @@ const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
 ];
 
 export function TracksCard({ snapshot }: TracksCardProps): JSX.Element {
+  const contentWidth = contentWidthFromCols(termColsForLayout());
   if (snapshot === null) {
     return (
       <TitledBox title="Tracks" cardId={2}>
@@ -61,7 +68,7 @@ export function TracksCard({ snapshot }: TracksCardProps): JSX.Element {
     const counts = `(${t.taskIds.size} tasks · ${t.readyCount} ready)`;
     return [`Track ${i + 1}`, diamond, goalNames, counts];
   });
-  const widths = layoutColumns(rows, COLUMN_SPECS);
+  const widths = layoutColumns(rows, COLUMN_SPECS, contentWidth);
 
   return (
     <TitledBox title="Tracks" subtitle={`${tracks.length} · ${totalReady} ready`} cardId={2}>
