@@ -21,6 +21,7 @@ import { type Track, getParallelTracks } from "./tracks.js";
 import {
   type WorkspaceOrphan,
   type WorkspaceRow,
+  decorateWithDirty,
   decorateWithStaleness,
   listWorkspaceOrphans,
   listWorkspaces,
@@ -44,6 +45,13 @@ export interface WorkstreamSnapshot {
 export interface LoadWorkstreamSnapshotOptions {
   /** Recent-events cap (default 200). */
   eventLimit?: number;
+  /** When true, also populate `WorkspaceRow.dirty` via
+   *  decorateWithDirty (one `git status --porcelain` shellout per row,
+   *  capped at DECORATE_CONCURRENCY). The static `mu state` card and
+   *  `mu workspace list` don't need this column today; the TUI's
+   *  Workspaces card (feat_card_5_workspaces, workstream `tui-impl`)
+   *  does. Defaults to false to keep the existing call sites cheap. */
+  withDirty?: boolean;
 }
 
 /**
@@ -66,7 +74,8 @@ export async function loadWorkstreamSnapshot(
   const inProgress = listInProgress(db, workstream);
   const blocked = listBlocked(db, workstream);
   const recentClosed = listRecentClosed(db, workstream);
-  const workspaces = await decorateWithStaleness(listWorkspaces(db, workstream));
+  let workspaces = await decorateWithStaleness(listWorkspaces(db, workstream));
+  if (opts.withDirty === true) workspaces = await decorateWithDirty(workspaces);
   const workspaceOrphans = listWorkspaceOrphans(db, workstream);
   const recent = listLogs(db, { workstream, kind: "event", limit: eventLimit });
   return {

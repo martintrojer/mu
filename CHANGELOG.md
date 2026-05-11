@@ -43,6 +43,22 @@ is opt-in via the new `--tui` flag.
     IDs / agent names / status tokens never truncate; titles /
     payloads / paths clip with `…`. Uses `string-width` for
     emoji + ANSI awareness.
+- **TUI Workspaces card (slot 5)** — toggleable with `5`. Shows
+  per-agent rows: status glyph (★ dirty / ⓘ stale / ✓ clean),
+  agent name, backend, commits-behind-main (green ≤2 / yellow 3-9 /
+  red ≥10), parent_ref short. Subtitle inlines `N stale` /
+  `M dirty` counts when non-zero. The card surfaces the
+  cherry-pick / refresh-between-waves signals previously only
+  visible via `mu workspace list`. Slot-5 popup (Shift+5 / `%`) is
+  not shipped yet; tracked by feat_more_cards_umbrella.
+  - New SDK helper `decorateWithDirty(rows)` in `src/workspace.ts`
+    populates `WorkspaceRow.dirty` via `backend.listDirtyFiles`
+    (capped at DECORATE_CONCURRENCY = 4 in flight, mirroring
+    `decorateWithStaleness`). jj / none backends short-circuit to
+    `false` (no operator-visible "dirty" concept).
+  - `loadWorkstreamSnapshot(db, ws, { withDirty: true })` opts in
+    to the extra shellouts; the static `mu state` card and `mu
+    workspace list` keep the cheap fast path.
 - New SDK surface (`src/state.ts`):
   - `loadWorkstreamSnapshot(db, ws, opts?)` — the data contract
     both the static renderer and the TUI consume.

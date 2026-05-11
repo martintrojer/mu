@@ -47,6 +47,14 @@ export interface WorkspaceRow {
    *  Null when staleness was queried but cannot be computed (no main found,
    *  none-backend, missing parent_ref, command failure). */
   commitsBehindMain?: number | null;
+  /** True when the workspace has uncommitted / unstaged / untracked-not-
+   *  ignored files, as observed by the backend's `listDirtyFiles`.
+   *  Undefined when not yet computed (the listWorkspaces fast path leaves
+   *  it unset; call decorateWithDirty to populate). Null when the dirty
+   *  check could not be performed (backend command failure). For jj /
+   *  none backends — which have no operator-visible "dirty" concept —
+   *  this is always false (their listDirtyFiles returns []). */
+  dirty?: boolean | null;
 }
 
 interface RawWorkspaceRow {
@@ -596,6 +604,36 @@ export async function decorateWithStaleness(
     ...r,
     commitsBehindMain: await fetchBehind(r),
   }));
+}
+
+/**
+ * Decorate every row with a `dirty` marker — true when the backend's
+ * `listDirtyFiles` reports any uncommitted / unstaged / untracked-not-
+ * ignored files; false when clean; null on backend-command failure.
+ *
+ * Cheap, pure observation: NO automatic snapshot/refresh. Cost is one
+ * `git status --porcelain` (or sl equivalent) per row, capped at
+ * DECORATE_CONCURRENCY in flight. jj / none backends short-circuit to
+ * an empty list (always-snapshotted / no-VCS), so dirty=false there.
+ *
+ * Surfaced by feat_card_5_workspaces (workstream `tui-impl`): the TUI
+ * Workspaces card needs a per-row dirty flag so operators can spot
+ * pending edits without a manual `mu workspace list` shellout.
+ *
+ * Returns a NEW array; does not mutate the input.
+ */
+export async function decorateWithDirty(rows: readonly WorkspaceRow[]): Promise<WorkspaceRow[]> {
+  return mapWithConcurrency(rows, DECORATE_CONCURRENCY, async (r) => {
+    let dirty: boolean | null;
+    try {
+      const backend = backendByName(r.backend);
+      const files = await backend.listDirtyFiles(r.path);
+      dirty = files.length > 0;
+    } catch {
+      dirty = null;
+    }
+    return { ...r, dirty };
+  });
 }
 
 /**

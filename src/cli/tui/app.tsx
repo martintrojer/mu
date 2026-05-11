@@ -23,6 +23,7 @@ import { AgentsCard } from "./cards/agents.js";
 import { LogCard } from "./cards/log.js";
 import { ReadyCard } from "./cards/ready.js";
 import { TracksCard } from "./cards/tracks.js";
+import { WorkspacesCard } from "./cards/workspaces.js";
 import { Help } from "./help.js";
 import { dispatchGlobalKey } from "./keys.js";
 import { AgentsPopup } from "./popups/agents.js";
@@ -185,6 +186,7 @@ export function App({ db, workstream }: AppProps): JSX.Element {
             [cardKeyFromId(action.cardId)]: !v[cardKeyFromId(action.cardId)],
           }));
           return;
+        // (slot 5 has no popup yet — see feat_more_cards_umbrella)
         case "openPopup":
           if (popup !== null) return; // single-popup invariant
           setPopup(action.cardId);
@@ -255,6 +257,7 @@ export function App({ db, workstream }: AppProps): JSX.Element {
       {visibility.tracks && <TracksCard snapshot={snap.data} />}
       {visibility.ready && <ReadyCard snapshot={snap.data} />}
       {visibility.log && <LogCard snapshot={snap.data} />}
+      {visibility.workspaces && <WorkspacesCard snapshot={snap.data} />}
       <StatusBar mode="dashboard" tickMs={tickMs} footer={footer} cols={cols} />
     </Box>
   );
@@ -278,7 +281,7 @@ export function App({ db, workstream }: AppProps): JSX.Element {
   }
 }
 
-function cardKeyFromId(id: 1 | 2 | 3 | 4): keyof CardVisibility {
+function cardKeyFromId(id: 1 | 2 | 3 | 4 | 5): keyof CardVisibility {
   switch (id) {
     case 1:
       return "agents";
@@ -288,6 +291,8 @@ function cardKeyFromId(id: 1 | 2 | 3 | 4): keyof CardVisibility {
       return "ready";
     case 4:
       return "log";
+    case 5:
+      return "workspaces";
   }
 }
 

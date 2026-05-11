@@ -9,18 +9,19 @@ import { dispatchGlobalKey } from "../src/cli/tui/keys.js";
 
 const NO_KEY = {};
 
-describe("dispatchGlobalKey: card toggles 1-4", () => {
+describe("dispatchGlobalKey: card toggles 1-5", () => {
   it.each([
     ["1", 1],
     ["2", 2],
     ["3", 3],
     ["4", 4],
+    ["5", 5],
   ] as const)("%s toggles card %d", (input, cardId) => {
     expect(dispatchGlobalKey(input, NO_KEY)).toEqual({ kind: "toggleCard", cardId });
   });
 
-  it("digits 5-9 do not toggle (reserved slots)", () => {
-    for (const d of ["5", "6", "7", "8", "9"]) {
+  it("digits 6-9 do not toggle (still-reserved slots)", () => {
+    for (const d of ["6", "7", "8", "9"]) {
       expect(dispatchGlobalKey(d, NO_KEY)).toEqual({ kind: "noop" });
     }
   });

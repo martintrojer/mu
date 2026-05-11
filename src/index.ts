@@ -286,6 +286,7 @@ export {
   WorkspacePathNotEmptyError,
   WorkspaceNotFoundError,
   createWorkspace,
+  decorateWithDirty,
   decorateWithStaleness,
   freeWorkspace,
   getWorkspaceForAgent,

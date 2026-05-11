@@ -2,9 +2,13 @@
 // design_global_keymap (workstream `tui`):
 //
 //   1-4         toggle Agents/Tracks/Ready/Log card
+//   5           toggle Workspaces card (feat_card_5_workspaces)
 //   ! @ # $     open fullscreen popup for that card  (Shift+1..Shift+4
 //               on US keyboards; bound by glyph because ink reports
-//               the post-shift character, not the modifier)
+//               the post-shift character, not the modifier).
+//               Slot-5 popup is OUT OF SCOPE for feat_card_5_workspaces;
+//               `%` (Shift+5) stays a noop until the matching popup task
+//               lands.
 //   + / =       tick faster (floor 100ms); = is the unshifted alias
 //   -           tick slower (ceiling 10s)
 //   0           reset tick to default 1s
@@ -20,7 +24,7 @@
 // (the <App> component in app.tsx) maps actions to state mutations.
 
 export type GlobalAction =
-  | { kind: "toggleCard"; cardId: 1 | 2 | 3 | 4 }
+  | { kind: "toggleCard"; cardId: 1 | 2 | 3 | 4 | 5 }
   | { kind: "openPopup"; cardId: 1 | 2 | 3 | 4 }
   | { kind: "tickFaster" }
   | { kind: "tickSlower" }
@@ -86,9 +90,10 @@ export function dispatchGlobalKey(input: string, key: KeyFlags): GlobalAction {
   if (input === "-") return { kind: "tickSlower" };
   if (input === "0") return { kind: "tickReset" };
 
-  // Card toggles 1-4. Slots 5-9 are reserved per design_global_keymap.
-  if (input >= "1" && input <= "4") {
-    const cardId = (input.charCodeAt(0) - "0".charCodeAt(0)) as 1 | 2 | 3 | 4;
+  // Card toggles 1-5. Slots 6-9 are reserved per design_global_keymap;
+  // 5 was promoted by feat_card_5_workspaces (workstream `tui-impl`).
+  if (input >= "1" && input <= "5") {
+    const cardId = (input.charCodeAt(0) - "0".charCodeAt(0)) as 1 | 2 | 3 | 4 | 5;
     return { kind: "toggleCard", cardId };
   }
 

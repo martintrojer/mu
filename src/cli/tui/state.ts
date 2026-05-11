@@ -22,6 +22,7 @@ export interface CardVisibility {
   tracks: boolean;
   ready: boolean;
   log: boolean;
+  workspaces: boolean;
 }
 
 export const DEFAULT_CARD_VISIBILITY: CardVisibility = {
@@ -29,6 +30,7 @@ export const DEFAULT_CARD_VISIBILITY: CardVisibility = {
   tracks: true,
   ready: true,
   log: true,
+  workspaces: true,
 };
 
 export interface DashboardSnapshot {
@@ -60,7 +62,13 @@ export function useDashboardSnapshot(
       if (cancelled) return;
       const t0 = performance.now();
       try {
-        const data = await loadWorkstreamSnapshot(db, workstream, { eventLimit: 200 });
+        const data = await loadWorkstreamSnapshot(db, workstream, {
+          eventLimit: 200,
+          // Workspaces card (feat_card_5_workspaces) needs the dirty
+          // marker; the cost is one `git status --porcelain` per row,
+          // capped at DECORATE_CONCURRENCY in workspace.ts.
+          withDirty: true,
+        });
         if (cancelled) return;
         const dur = performance.now() - t0;
         setSnap({ data, lastTickMs: dur, error: null });
