@@ -13,7 +13,7 @@ current verb list is in `## CLI — complete verb list` of
 > `--json` (one allow-listed exception, `mu agent attach`),
 > per-agent VCS workspaces (jj/sl/git/none), activity log with
 > `--tail` subscription, canonical state card (`mu state` —
-> default / `--hud` / `--mission` render modes), whole-DB
+> default / `--tui` / `--mission` render modes), whole-DB
 > snapshots auto-captured before destructive verbs +
 > `mu undo` / `mu snapshot {list,show}`, evidence on lifecycle
 > verbs, schema v7 (v5 surrogate INTEGER PKs + per-workstream
@@ -400,15 +400,15 @@ asking an LLM. Three sections:
   share a dependency
 - **Ready** — actionable now, sorted by ROI (impact / effort)
 
-### `mu state` render modes (default, `--hud`, `--mission`)
+### `mu state` render modes (default, `--tui`, `--mission`)
 
 `mu state` is one verb with three render modes — same data set,
 different presentation strategy. The flag picks the renderer; the
 JSON shape (`--json`) follows render mode (full vs stripped).
 
 ```bash
-mu state                    # default: full top-to-bottom card
-mu state --hud              # dynamic-fit budget renderer (watch / popup / status-bar)
+mu state                    # default: full top-to-bottom static card
+mu state --tui              # interactive ink-based dashboard (read-only; yanks commands)
 mu state --mission          # stripped 5-col glance card
 mu                          # bare alias for `mu state --mission`
 ```
@@ -419,17 +419,15 @@ mu                          # bare alias for `mu state --mission`
   cards as the default attention surface; SQL/raw verbs as the
   escape hatch underneath).
 
-- **`--hud`** — dynamic table layout that fills the terminal (or tmux
-  pane) height + width with as much useful data as fits.
-  `watch -n 5 mu state --hud -w X` for a refreshing pane;
-  `tmux display-popup -E 'mu state --hud -w X'` for an on-demand
-  popup; `#(mu state --hud -w X --json) | jq ...` for tmux
-  status-bar interpolation. Sections (priority order):
-  header / agents / ready / in-progress / tracks / recent-events.
-  Truncated tables get a `… +N more (<verb>)` footer; lower-priority
-  sections that can't fit are skipped entirely. Drops blocked /
-  recent-closed / workspaces (not glanceable); operator drops
-  `--hud` to see them.
+- **`--tui`** — interactive ink-based dashboard: 4 toggleable cards
+  (Agents, Tracks, Ready, Activity log) with rounded borders and
+  inset section headers (lazygit / btop / k9s convention), 4
+  fullscreen popups (Shift+1..Shift+4), live-updating every 1s
+  (adjustable with `+/-/=/0`). **Read-only**: act-intents `y`-yank
+  the canonical `mu` command to the clipboard — the TUI never
+  executes a mutation; the user runs the yanked command in their
+  shell. `?` / `F1` shows the keymap. `q` / `Ctrl-C` quits and
+  restores the main scrollback. Replaces the previous `--hud`.
 
 - **`--mission`** — stripped 5-col glance card (agents + orphans +
   tracks + ready). The bare-`mu` muscle-memory orient call
@@ -437,15 +435,15 @@ mu                          # bare alias for `mu state --mission`
   workspaces is too much for that intent; `--mission` is the
   intentional minimum-viable orient view.
 
-`--hud` and `--mission` are mutually exclusive.
+`--tui` is mutually exclusive with `--json`, `--mission`, and multi-ws
+(currently single-workstream only).
 
 Multi-workstream: pass `-w` multiple values to render N workstreams
 in one card. `-w a,b,c`, `-w a -w b`, or any mix all work — see
 [CLI conventions](#cli-conventions-multi-value-flags). `--all` is
 sugar for "every workstream on this machine" (mutually exclusive with
-`-w`). N≥2 in `--hud` mode unions the per-ws sections with a leading
-`workstream` column; in default + `--mission` modes N≥2 stacks one
-per-workstream card after another. The `--json` envelope wraps in
+`-w`). In default + `--mission` modes N≥2 stacks one per-workstream
+card after another. The `--json` envelope wraps in
 `{ workstreams: [...] }` when N≥2.
 
 JSON shapes (per render mode):
@@ -453,16 +451,19 @@ JSON shapes (per render mode):
 - `mu state --json` (single-ws): flat `{ workstreamName, agents,
   orphans, tracks, ready, blocked, inProgress, recentClosed,
   workspaces, recent }`.
-- `mu state --hud --json`: SAME flat shape (`--hud` is a render flag;
-  it doesn't change the machine view).
 - `mu state --mission --json`: STRIPPED — only `{ workstreamName,
   agents, orphans, tracks, ready }`.
 - bare `mu --json`: same as `--mission --json`.
+- `--tui` is render-only and incompatible with `--json` (the TUI
+  has no JSON shape; pass `--json` without `--tui` for the static
+  shape).
 
-> **Migrating from `mu hud`**: drop the `hud` verb and add `--hud`
-> to `mu state`. `tmux display-popup -E 'mu hud -w X'` becomes
-> `tmux display-popup -E 'mu state --hud -w X'`. The `mu hud` verb
-> was removed in v0.3 — see [CHANGELOG.md](../CHANGELOG.md).
+> **Migrating from `mu state --hud`**: removed in v0.4. Use
+> `mu state --tui` for the interactive replacement, or plain
+> `mu state` for the static card you used to use under `watch`.
+> `tmux display-popup -E 'mu state -w X'` keeps working unchanged
+> for popup-card use; the previous `mu hud` verb was removed in
+> v0.3.
 
 ---
 
@@ -1660,7 +1661,7 @@ in real use:
 | Want                                          | Workaround                                                              | Status        |
 | --------------------------------------------- | ----------------------------------------------------------------------- | ------------- |
 | Multi-CLI status detection (per-CLI prompts)  | Braille spinner fallback (`f68838f`) covers pi/pi-meta + every TUI wrapper using standard spinner glyphs. Per-CLI permission-prompt patterns still pi-only. | partially shipped |
-| Pi extension (typed tools, HUD, wakeups)      | `mu state --hud` covers the HUD use-case (run via `watch` / `tmux display-popup` / `status-right`). Other extension tools deferred. | partially shipped |
+| Pi extension (typed tools, HUD, wakeups)      | `mu state --tui` (interactive) covers the dashboard use-case; plain `mu state` (static) is the `watch` / `tmux display-popup` / `status-right` substrate. Other extension tools deferred. | partially shipped |
 | Markdown agent-definition discovery           | Spawn accepts `--cli` and `--command` directly; no template registry    | dropped       |
 | `mu run script.ts` (JS DSL)                   | Use `--json` + bash + jq                                                | rejected      |
 | Sync to GitHub Issues / Linear / Asana        | Not in scope; explicitly rejected                                       | —             |

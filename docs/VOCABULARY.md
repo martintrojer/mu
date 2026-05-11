@@ -72,6 +72,19 @@ defined here, fix the doc. If you need a new term, add it here first.
 | **reconcile**         | Verb: re-derive registry rows from substrate reality (tmux). Always runs in `mu agent list` and `mu doctor`. | "sync", "refresh"                              |
 | **adopt**             | Verb (`mu agent adopt`): register an existing tmux pane as a managed **agent**. The inverse of `mu agent list`'s 'orphan' state. Pane must be in the workstream's tmux session. | "import", "absorb"                       |
 | **pi-subagents**      | A different package by Nico Bailon for in-pi focused delegation. Mu and pi-subagents are complementary, not competing. | conflating with mu                                 |
+| **TUI**               | The interactive ink-based dashboard launched by `mu state --tui`. Lives in `src/cli/tui/`. Read-only against SQLite (yanks, never executes). | "GUI", "interactive mode"                         |
+| **dashboard**         | The TUI's main screen — the grid of cards above the status bar. | "home screen", "main view"                         |
+| **card**              | A glanceable summary tile on the dashboard, identified by its toggle digit (1-9). Wrapped in a TitledBox. | "panel", "section" (overloaded)                    |
+| **popup**             | A fullscreen drill-down opened with `Shift+1`-`Shift+9`; single-popup invariant. Closed with `Esc`/`q`. | "modal", "dialog", "detail view"                   |
+| **TitledBox**         | The `<TitledBox>` component (`src/cli/tui/titled-box.tsx`) that renders a rounded border with the section header inset into the top border line. The visual primitive used by every card / popup / help overlay. | "header box", "box" (alone)                       |
+| **tick**              | The TUI's periodic data refresh (default 1s; `+/-/=/0` adjusts). Owned by a single `setInterval` in `<App>`. | "poll", "refresh" (verb sense), "frame"            |
+| **yank**              | Copy the canonical `mu` command for the focused row to the clipboard. Bound to `y` in every popup. | "copy", "export command"                           |
+| **footer**            | The persistent bottom line on the dashboard showing the last yank. Cleared with `c`. | "status line" (reserved for status bar), "toast"   |
+| **toast**             | Transient in-popup message (e.g. "tick floor 100ms" when `+` hits floor). | "notification", "banner"                           |
+| **act-intent**        | The conceptual action a `y` keypress would trigger. **Never executed by the TUI** — the user runs the yanked command in their shell. The R1 read-only contract: model drives the CLI. | "command intent", "action proposal"                |
+| **help overlay**      | The `?` / `F1` modal showing the global + per-popup keymap. Same TitledBox family as cards/popups. | "keys", "cheat sheet"                              |
+| **glanceable**        | Design property of cards: readable at a glance, no cursor, no row interaction. The contract is "never exhaustive" — long lists clip with `+M more` hint pointing at the popup. | "compact", "summary" (use the noun form for the data, the adjective for the property) |
+| **drill-down**        | Design property of popups: full-screen, focused, scrollable, filterable. The exhaustive view a card promises in its `+M more` hint. | "detail view", "expansion"                         |
 
 ---
 

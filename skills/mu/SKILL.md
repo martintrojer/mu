@@ -303,7 +303,8 @@ running a wave.
   <ws> [--destroy]` (idempotent; preserves task graph atomically),
   `remove`, `delete`, `search`, `export`. Labels globally unique.
 - **Escape hatch + state**: `mu sql "<query>"` for anything not yet
-  typed. `mu` alone = `mu state --mission`. `mu state` has `--hud`,
+  typed. `mu` alone = `mu state --mission`. `mu state` has `--tui`
+  (interactive ink dashboard; read-only, yanks `mu` commands),
   `--mission`, `--all`, `--json`. `mu doctor` for health.
 
 ## `mu task wait` exits

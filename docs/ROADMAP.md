@@ -69,7 +69,24 @@ model-facing tool entropy).
   becomes 'programming the runtime' is a liability.")
 - Ship a template/definition system for agent roles. Spawn flags +
   the orchestrator's first message are the only "definition."
-- Add a render layer beyond `cli-table3` + `picocolors`.
+- Add a render layer beyond `cli-table3` + `picocolors`, EXCEPT
+  `ink` confined to the interactive TUI subtree (`src/cli/tui/`),
+  lazy-imported by `mu state` only when the user passes the
+  opt-in `--tui` flag. The static `mu state` (default), `mu state
+  --mission`, `mu state --json`, `mu task list`, `mu agent show`,
+  and every other verb keep rendering with `cli-table3` +
+  `picocolors`. `ink` (and its transitive `react` /
+  `react-reconciler` / `yoga-layout-prebuilt`) MUST NOT be imported
+  from any module outside `src/cli/tui/`. The TUI is the only
+  long-lived process mu ships; everything else stays short-lived.
+- Add a SECOND render layer inside the TUI subtree. One stack,
+  period: no `blessed` / `neo-blessed` / `reblessed` /
+  `terminal-kit` alongside `ink`, no second React-for-CLI library,
+  no hand-rolled ANSI renderer running in parallel. If a future
+  need outgrows `ink`, REPLACE the stack and amend this pledge —
+  don't stack stacks. (The "well, ink for some popups, blessed for
+  others" creep is exactly the kind of accumulation this list
+  exists to refuse.)
 - Bundle pi. The pi extension is the only anticipated future
   caller; even that is required to be a thin facade over the SDK
   (see [§ Pi extension and the three rules](#pi-extension-and-the-three-rules)

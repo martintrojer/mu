@@ -91,7 +91,18 @@ mu/
 │   │   ├── workspace.ts   # workspace create / list / free / path / orphans
 │   │   ├── log.ts         # log read / write / tail
 │   │   ├── archive.ts     # archive create / list / show / add / remove / delete
-│   │   ├── state.ts       # `mu state` (canonical state card) + bare `mu` (mission control / hud render mode)
+│   │   ├── state.ts       # `mu state` (canonical state card) + bare `mu` (mission control); --tui dispatches to src/cli/tui/
+│   │   ├── tui/           # interactive ink-based TUI cluster (mu state --tui); ONLY place ink/react are imported
+│   │   │   ├── index.ts    # runTui entrypoint + alt-screen escape sequences
+│   │   │   ├── app.tsx     # <App> root (popup state machine + global keymap + footer + tick)
+│   │   │   ├── state.ts    # poll-loop hook (useDashboardSnapshot) + tick constants
+│   │   │   ├── keys.ts     # pure dispatchGlobalKey + dispatchPopupKey
+│   │   │   ├── yank.ts     # clipboard probe + write (pbcopy/wl-copy/xclip/xsel/clip.exe + OSC-52)
+│   │   │   ├── titled-box.tsx  # rounded border with section header inset into top border
+│   │   │   ├── columns.ts  # column-aligned row layout with protect/clip clipping
+│   │   │   ├── help.tsx    # ?/F1 keymap overlay
+│   │   │   ├── cards/{agents,tracks,ready,log}.tsx   # 4 dashboard glance cards
+│   │   │   └── popups/{agents,tracks,ready,log}.tsx  # 4 fullscreen drill-down popups
 │   │   ├── snapshot.ts    # undo / snapshot list / snapshot show
 │   │   ├── sql.ts         # sql escape hatch
 │   │   ├── doctor.ts      # doctor diagnostic

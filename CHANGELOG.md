@@ -8,6 +8,106 @@ called out under "Breaking" in each entry.
 
 ---
 
+## [0.4.0] — unreleased
+
+Feature theme: **interactive TUI**. `mu state --tui` opens an
+ink-based dashboard (rounded-border cards, fullscreen popups,
+live-updating, keyboard-driven, read-only). Default `mu state`
+behaviour is unchanged — the static card stays the default; the TUI
+is opt-in via the new `--tui` flag.
+
+### Added
+
+- **`mu state --tui`** — interactive ink-based dashboard. v0 ships:
+  - 4 cards on the dashboard (Agents, Tracks, Ready, Activity log)
+    toggleable with `1`-`4`. Each card uses `<TitledBox>`: rounded
+    border with the section header inset into the top border line
+    (lazygit/btop convention).
+  - 4 fullscreen popups opened with `Shift+1`-`Shift+4` (US-glyph-row
+    bound: `!`/`@`/`#`/`$`). Single-popup invariant; `Esc`/`q`
+    closes and restores prior dashboard state (toggles + tick rate).
+  - **Read-only**: act-intents `y`-yank the canonical `mu` command
+    to the clipboard via `pbcopy`/`wl-copy`/`xclip`/`xsel`/`clip.exe`,
+    falling back to OSC-52. The TUI never executes a mutation; the
+    user runs the yanked command in their shell.
+  - **Yank matrix** in the Tasks popup: state-aware. OPEN+ready
+    → `mu task claim`, OPEN+owned → `mu task release`,
+    IN_PROGRESS → `mu task close --evidence`, CLOSED/REJECTED/DEFERRED
+    → `mu task open`.
+  - **Tick adjust live**: `+`/`=` faster, `-` slower, `0` reset (1s
+    default; 100ms floor; 10s ceiling).
+  - **Help overlay**: `?` / `F1` shows the global + in-popup keymap.
+  - **Alt-screen**: enters `\x1b[?1049h` on launch, restores on
+    quit. Dashboard is flush with row 0; main scrollback is preserved.
+  - **Column-aligned rows** with protect/clip clipping policy: task
+    IDs / agent names / status tokens never truncate; titles /
+    payloads / paths clip with `…`. Uses `string-width` for
+    emoji + ANSI awareness.
+- New SDK surface (`src/state.ts`):
+  - `loadWorkstreamSnapshot(db, ws, opts?)` — the data contract
+    both the static renderer and the TUI consume.
+  - `agentStatusHistogram(agents)`, `summarizeOwnedTasks(owned)`,
+    `roiBucket(impact, effortDays)` — small derivation helpers
+    used by both surfaces.
+- `classifyEventVerb(payload)` in `src/logs.ts` — the parsing
+  half of the previous HUD-mode `colorEventPayload`, now reused
+  by the static renderer's static event row + the TUI's log card.
+
+### Removed
+
+- **`mu state --hud`** and supporting infrastructure (≈417 LOC):
+  `hudPaneSize`, `formatHud{Agents,Tasks,Recent,Tracks}Table`,
+  `renderHudMode`, the dynamic-fit greedy budget layout, the
+  `MU_HUD_FORCE_SIZE` env override, the `--hud` and `-n/--lines`
+  options, the private `colorEventPayload` colour wrapper. The TUI
+  is the conceptual replacement; users wanting the old HUD shape
+  can pin to 0.3.x.
+- The previous private `loadWorkstreamData` + `PerWsData` in
+  `src/cli/state.ts` — now `loadWorkstreamSnapshot` +
+  `WorkstreamSnapshot` in `src/state.ts`.
+
+### Changed
+
+- Bare `mu state` outside a tmux session no longer prints the
+  silent `(no workstreams)` line. With workstreams on the machine
+  it now errors with the workstream list and three suggested fixes
+  (`mu state -w <name>`, `mu state --all`, `mu --help`), exit 2.
+  `--all` on a truly empty machine still prints a helpful hint.
+  `--json` callers continue to get `{workstreams: []}` for back-compat.
+
+### Pillar amendments
+
+- **VISION.md Constraint #7 (new)**: "Every invocation is
+  short-lived — except for two named interactive readers." Names
+  the previously-implicit pillar and carves a bounded exception
+  for `mu log --tail` (existing) and `mu state --tui` (new).
+  The exception is gated by four properties: interactive (not a
+  daemon), read-only (against SQLite), no resources beyond stdio +
+  a poll timer, opt-in (via `--tui` flag) with a static fallback.
+- **ROADMAP.md anti-feature pledge updates**: the "no render
+  layer beyond cli-table3 + picocolors" pledge is replaced with a
+  TIGHTER form that permits `ink` ONLY in the `src/cli/tui/`
+  subtree. New companion pledge: no second render layer alongside
+  ink (no blessed/neo-blessed/reblessed/terminal-kit/hand-rolled
+  ANSI in parallel — if ink ever fails, REPLACE the stack and
+  amend the pledge; don't stack stacks).
+
+### Deps added
+
+- `ink ^5.0.0` (interactive TUI render layer; lazy-imported)
+- `react ^18.0.0` (peer of ink)
+- `@types/react ^18.0.0` (devDep)
+- `string-width` (transitive via ink) — used by `columns.ts` for
+  emoji + ANSI-aware cell width measurement.
+
+Non-TUI cold-start unchanged (every other verb avoids the lazy import).
+
+### Schema
+
+Unchanged.
+
+---
+
 ## [0.3.2] — 2026-05-11
 
 Feature theme: aggressive cleanup + dogfood-driven verbs. The 0.3.1 wave

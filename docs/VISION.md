@@ -354,6 +354,47 @@ speaking for another.
    (SQLite hooks, fs.watch) are a future ask if anyone hits the
    latency cliff.
 
+7. **Every invocation is short-lived — except for two named
+   interactive readers.** mu is a CLI: each verb starts, mutates
+   or reads, prints, and exits. There is no daemon, no resident
+   state outside SQLite, no background process. Two verbs are
+   deliberately and narrowly exempt because they are interactive
+   *readers*, not background workers:
+
+   - `mu log --tail` — polls SQLite once per second; emits NDJSON
+     until SIGINT or the parent closes stdin.
+   - `mu state --tui` — renders an ink-based dashboard until the
+     user quits with `q`/`Ctrl-C`. Opt-in via the `--tui` flag;
+     plain `mu state` keeps the static-card behaviour.
+
+   Both share the same shape, and the shape is the predicate that
+   bounds the exception:
+
+   - **Interactive, not a daemon.** The process is owned by a
+     human (or a parent script) and dies the moment that owner
+     ends it. Nothing keeps it alive across sessions; nothing
+     restarts it.
+   - **Read-only against SQLite.** Neither verb writes. The TUI's
+     act-intents (claim, close, send, ...) yank the canonical
+     `mu <verb>` command into the clipboard and exit the
+     dashboard; every mutation still lands through a fresh
+     short-lived CLI invocation.
+   - **No resources beyond stdout, stdin, and a poll timer.** No
+     sockets, no file watches, no subscriptions to external
+     services, no spawned subprocesses, no inter-process state
+     beyond the SQLite reads any other CLI invocation already
+     does.
+   - **Opt-in via flag, with a static fallback.** The TUI mode
+     only activates when `--tui` is passed; default `mu state`
+     prints the static card. Non-interactive callers (pipes, CI,
+     `--json`, `--mission`) never enter the TUI.
+
+   This is not a precedent for any other long-lived process. The
+   anti-feature pledges in [ROADMAP.md](ROADMAP.md) ("no daemon,
+   watcher, or background process beyond what tmux / SQLite give
+   us") remain in force; a third member of this exception class
+   would need its own promotion.
+
 ---
 
 ## What looking at a prior multi-agent runtime taught us
