@@ -1,0 +1,334 @@
+// Recent popup (Shift+8 → `*`). The drill-down for the Recent card.
+//
+// Per feat_popup_8_recent (workstream `tui-impl`). Sibling of
+// popups/inprogress.tsx and popups/ready.tsx — list of recently
+// CLOSED tasks with j/k nav, '/' substring filter, y to yank
+// `mu task open <id> -w <ws>` (re-open is the typical act-intent
+// for a recently-closed task per the popups/ready.tsx CLOSED
+// branch of the yank matrix), and Enter to chain into the shared
+// TaskDetailDrill leaf (the recursion contract from
+// feat_track_drill_chains_to_task_drill — rows ARE tasks).
+//
+// Column shape mirrors Card 8 (cards/recent.tsx) but adds two
+// columns the card was too narrow to fit:
+//   glyph   id   STATUS   closed-at   impact   effort   ROI   title
+// Per feat_column_aligned_lists clipping policy: every cell except
+// `title` is identity-bearing and PROTECTED; only `title` is
+// CLIPPABLE. Wider title column than the card (more pixels here).
+//
+// Read-only (per ROADMAP pledge): the only act-intents are yanks.
+// Drilling into TaskDetailDrill SELECTs notes via listNotes; never
+// executes mutations.
+//
+// Per ROADMAP pledge: ink/react import limited to src/cli/tui/*.
+
+import { Box, Text, useInput, useStdout } from "ink";
+import { useEffect, useMemo, useState } from "react";
+import type { Db } from "../../../db.js";
+import type { WorkstreamSnapshot } from "../../../state.js";
+import { ageMs, formatWhen, glyphFor } from "../cards/recent.js";
+import { type ColumnSpec, layoutColumns, renderRow } from "../columns.js";
+import { dispatchPopupKey } from "../keys.js";
+import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
+import { clampScrollTop } from "./drill.js";
+import { TaskDetailDrill, renderNotes } from "./task-detail.js";
+
+export interface PopupProps {
+  yank: (command: string) => Promise<void>;
+  onClose: () => void;
+  snapshot: WorkstreamSnapshot | null;
+  mode: "list" | "drill";
+  onModeChange: (mode: "list" | "drill") => void;
+  /** Bubbles the filter-prompt edit state up to <App> for StatusBar mode. */
+  onFilterEditingChange?: (editing: boolean) => void;
+  db: Db;
+  workstream: string;
+}
+
+const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
+  { kind: "protect" }, // glyph
+  { kind: "protect" }, // task id
+  { kind: "protect" }, // status (always CLOSED; constant for now)
+  { kind: "protect", align: "right" }, // closed-at (relative-time token)
+  { kind: "protect", align: "right" }, // impact
+  { kind: "protect", align: "right" }, // effort
+  { kind: "protect", align: "right" }, // ROI label
+  { kind: "clip", min: 1 }, // title
+];
+
+const VIEWPORT = 20;
+
+export function RecentPopup({
+  yank,
+  onClose,
+  snapshot,
+  mode,
+  onModeChange,
+  onFilterEditingChange,
+  db,
+  workstream,
+}: PopupProps): JSX.Element {
+  const [cursor, setCursor] = useState(0);
+  const [scrollTop, setScrollTop] = useState(0);
+  const flt = usePopupFilter();
+  const sourceTasks = snapshot ? snapshot.recentClosed : [];
+  // Per spec MATCHING RULES: search blob is `${id} ${title} ${owner ?? ""}`.
+  const tasks =
+    mode === "drill"
+      ? sourceTasks
+      : applyFilter(sourceTasks, flt.query, (t) => `${t.name} ${t.title} ${t.ownerName ?? ""}`);
+  const safeCursor = tasks.length === 0 ? 0 : Math.min(cursor, tasks.length - 1);
+  const focused = tasks[safeCursor];
+  useEffect(() => {
+    onFilterEditingChange?.(flt.editing);
+  }, [flt.editing, onFilterEditingChange]);
+
+  // Resolve notes for the focused task on demand. Memoised on
+  // (taskId, mode); we only hit SQLite when actually drilled in.
+  // Mirrors popups/inprogress.tsx — duplicated here only because the
+  // keymap needs `totalLines` to clamp scroll. The shared formatter
+  // (renderNotes) is the single source of truth.
+  const notesText = useMemo<string>(() => {
+    if (mode !== "drill" || !focused) return "";
+    return renderNotes(db, focused.name, workstream);
+  }, [mode, focused, db, workstream]);
+
+  useInput((input, key) => {
+    if (mode !== "drill" && flt.onKey(input, key) === "consumed") return;
+    const action = dispatchPopupKey(input, {
+      ctrl: key.ctrl,
+      shift: key.shift,
+      meta: key.meta,
+      escape: key.escape,
+      return: key.return,
+      upArrow: key.upArrow,
+      downArrow: key.downArrow,
+      leftArrow: key.leftArrow,
+      rightArrow: key.rightArrow,
+      tab: key.tab,
+      pageUp: key.pageUp,
+      pageDown: key.pageDown,
+    });
+    if (mode === "drill") {
+      const totalLines = notesText === "" ? 0 : notesText.split("\n").length;
+      switch (action.kind) {
+        case "close":
+          onModeChange("list");
+          setScrollTop(0);
+          return;
+        case "moveDown":
+          setScrollTop((s) => clampScrollTop(s + 1, totalLines, VIEWPORT));
+          return;
+        case "moveUp":
+          setScrollTop((s) => clampScrollTop(s - 1, totalLines, VIEWPORT));
+          return;
+        case "jumpTop":
+          setScrollTop(0);
+          return;
+        case "jumpBottom":
+          setScrollTop(clampScrollTop(totalLines, totalLines, VIEWPORT));
+          return;
+        case "pageDown":
+          setScrollTop((s) =>
+            clampScrollTop(s + Math.floor(VIEWPORT / (action.half ? 2 : 1)), totalLines, VIEWPORT),
+          );
+          return;
+        case "pageUp":
+          setScrollTop((s) =>
+            clampScrollTop(s - Math.floor(VIEWPORT / (action.half ? 2 : 1)), totalLines, VIEWPORT),
+          );
+          return;
+        case "yank": {
+          if (!focused || !snapshot) return;
+          void yank(`mu task notes ${focused.name} -w ${snapshot.workstreamName}`);
+          return;
+        }
+        default:
+          return;
+      }
+    }
+    switch (action.kind) {
+      case "close":
+        onClose();
+        return;
+      case "filter":
+        flt.startEdit();
+        return;
+      case "drill":
+        if (focused) {
+          setScrollTop(0);
+          onModeChange("drill");
+        }
+        return;
+      case "moveDown":
+        setCursor((c) => Math.min(tasks.length - 1, c + 1));
+        return;
+      case "moveUp":
+        setCursor((c) => Math.max(0, c - 1));
+        return;
+      case "jumpTop":
+        setCursor(0);
+        return;
+      case "jumpBottom":
+        setCursor(Math.max(0, tasks.length - 1));
+        return;
+      case "yank": {
+        const t = tasks[safeCursor];
+        if (!t || !snapshot) return;
+        const ws = snapshot.workstreamName;
+        void yank(yankCommandForTask(t.name, ws));
+        return;
+      }
+    }
+  });
+
+  if (snapshot === null) {
+    return <Shell title="Recent · popup">{<Text dimColor>loading…</Text>}</Shell>;
+  }
+  if (sourceTasks.length === 0) {
+    return (
+      <Shell title="Recent · popup">
+        <Text dimColor>(none recently closed)</Text>
+      </Shell>
+    );
+  }
+  if (tasks.length === 0) {
+    return (
+      <Shell title="Recent · popup">
+        <Box flexDirection="column" flexGrow={1}>
+          <Text dimColor>(no matches for "{flt.query}")</Text>
+        </Box>
+        <FilterPrompt state={flt} />
+      </Shell>
+    );
+  }
+
+  if (mode === "drill" && focused) {
+    return (
+      <Shell title={`Recent · ${focused.name} (notes)`}>
+        <Box flexDirection="column" flexGrow={1}>
+          <TaskDetailDrill
+            task={focused}
+            db={db}
+            workstream={workstream}
+            scrollTop={scrollTop}
+            viewport={VIEWPORT}
+          />
+        </Box>
+        <Box marginTop={1}>
+          <Text dimColor>
+            j/k scroll · Ctrl-D/U half page · y yanks `mu task notes` · Esc/q back to list
+          </Text>
+        </Box>
+      </Shell>
+    );
+  }
+
+  const now = Date.now();
+  const ages = tasks.map((t) => ageMs(t, now));
+  const rows = tasks.map((t, i) => [
+    glyphFor(t),
+    t.name,
+    t.status,
+    formatWhen(ages[i] ?? null),
+    String(t.impact),
+    String(t.effortDays),
+    formatRoi(t.impact, t.effortDays),
+    t.title,
+  ]);
+  const widths = layoutColumns(rows, COLUMN_SPECS);
+
+  return (
+    <Shell title={`Recent · popup (${safeCursor + 1}/${tasks.length})`}>
+      <Box flexDirection="column" flexGrow={1}>
+        {tasks.map((t, i) => {
+          const selected = i === safeCursor;
+          const row = rows[i];
+          if (row === undefined) return null;
+          const padded = renderRow(row, widths, COLUMN_SPECS);
+          const [
+            glyph = "",
+            id = "",
+            status = "",
+            when = "",
+            impact = "",
+            effort = "",
+            roi = "",
+            title = "",
+          ] = padded;
+          return (
+            <Box key={t.name}>
+              <Text inverse={selected}>
+                <Text color="green">{glyph}</Text>
+                {"  "}
+                <Text bold>{id}</Text>
+                {"  "}
+                <Text dimColor>{status}</Text>
+                {"  "}
+                <Text dimColor>{when}</Text>
+                {"  "}
+                <Text dimColor>{impact}</Text>
+                {"  "}
+                <Text dimColor>{effort}</Text>
+                {"  "}
+                <Text dimColor>{roi}</Text>
+                {"  "}
+                <Text>{title}</Text>
+              </Text>
+            </Box>
+          );
+        })}
+      </Box>
+      <Box marginTop={1}>
+        <Text dimColor>Enter notes · y yanks `mu task open` · / filter · Esc/q close</Text>
+      </Box>
+      <FilterPrompt state={flt} />
+    </Shell>
+  );
+}
+
+/**
+ * Yank command for a recently-CLOSED task row. The most likely
+ * act-intent on the Recent popup is re-opening the task (per the
+ * popups/ready.tsx CLOSED branch of the yank matrix: `mu task open
+ * <id> -w <ws>`). Stays consistent so the operator's muscle memory
+ * transfers across popups. Pure; exported for unit tests.
+ */
+export function yankCommandForTask(taskName: string, workstream: string): string {
+  return `mu task open ${taskName} -w ${workstream}`;
+}
+
+/**
+ * Pure helper: render the ROI cell as a short integer, or "∞" when
+ * effortDays is zero (matches the convention used by Card 7 —
+ * cards/blocked.tsx — and popups/inprogress.tsx). Exported for
+ * unit tests so the format stays pinned without booting ink.
+ */
+export function formatRoi(impact: number, effortDays: number): string {
+  if (effortDays <= 0) return "∞";
+  const r = Math.round(impact / effortDays);
+  return Number.isFinite(r) ? String(r) : "∞";
+}
+
+function Shell({ title, children }: { title: string; children: React.ReactNode }): JSX.Element {
+  // width={cols} + flexGrow={1} ensure the popup fills the pane edge-to-edge
+  // (see bug_tui_popups_fill_pane). Without these, ink's Yoga layout sizes
+  // this Box to its content and the popup renders as a narrow strip.
+  const { stdout } = useStdout();
+  const cols = stdout.columns ?? 80;
+  return (
+    <Box
+      borderStyle="round"
+      borderColor="cyan"
+      paddingX={1}
+      flexDirection="column"
+      flexGrow={1}
+      width={cols}
+    >
+      <Text bold color="cyan">
+        {title}
+      </Text>
+      {children}
+    </Box>
+  );
+}

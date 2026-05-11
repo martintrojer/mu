@@ -31,7 +31,7 @@
 
 export type GlobalAction =
   | { kind: "toggleCard"; cardId: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 }
-  | { kind: "openPopup"; cardId: 1 | 2 | 3 | 4 | 5 | 6 | 7 }
+  | { kind: "openPopup"; cardId: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 }
   | { kind: "tickFaster" }
   | { kind: "tickSlower" }
   | { kind: "tickReset" }
@@ -106,15 +106,15 @@ export function dispatchGlobalKey(input: string, key: KeyFlags): GlobalAction {
     return { kind: "toggleCard", cardId };
   }
 
-  // Popup openers !-^ + & on US keyboards. Bound by glyph because
-  // ink reports the post-shift character; key.shift is false.
+  // Popup openers !-* on US keyboards. Bound by glyph because ink
+  // reports the post-shift character; key.shift is false.
   // Layout-dependent — see design_global_keymap ODDITY for non-US
   // keymaps. Slot-5 (`%`) promoted by feat_popup_5_workspaces;
   // slot-6 (`^`) by feat_popup_6_inprogress; slot-7 (`&`) by
-  // feat_popup_7_blocked (all workstream `tui-impl`); slot-8 (`*`)
-  // and slot-9 (`(`) popups remain reserved noops until their popup
-  // tasks land (umbrella feat_more_cards_umbrella).
-  const glyphMap: Record<string, 1 | 2 | 3 | 4 | 5 | 6 | 7> = {
+  // feat_popup_7_blocked; slot-8 (`*`) by feat_popup_8_recent
+  // (all workstream `tui-impl`); slot-9 (`(`) remains a reserved
+  // noop until its popup task lands (umbrella feat_more_cards_umbrella).
+  const glyphMap: Record<string, 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8> = {
     "!": 1,
     "@": 2,
     "#": 3,
@@ -122,6 +122,7 @@ export function dispatchGlobalKey(input: string, key: KeyFlags): GlobalAction {
     "%": 5,
     "^": 6,
     "&": 7,
+    "*": 8,
   };
   const popupId = glyphMap[input];
   if (popupId !== undefined) return { kind: "openPopup", cardId: popupId };

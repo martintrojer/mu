@@ -200,6 +200,24 @@ is opt-in via the new `--tui` flag.
   progress)`. Fills the cross-ref pain that previously forced
   the operator to read the Agents card AND the Ready card to
   figure out "what's actually running right now".
+- **TUI Recent popup (Shift+8 / `*`)** — the matching
+  fullscreen drill-down for Card 8 (per feat_popup_8_recent).
+  Mirrors the card's columns (`glyph id STATUS closed-at title`)
+  and adds `impact`, `effort`, and `ROI` columns the card was too
+  narrow to fit. `j/k` nav, `/` filter (incremental
+  case-insensitive substring over `id title owner` via the shared
+  `usePopupFilter` primitive), `y` yanks `mu task open <id> -w
+  <ws>` (the most likely act-intent for a recently-CLOSED row;
+  matches the popups/ready.tsx CLOSED branch of the yank matrix —
+  re-open is the typical "revisit a just-shipped task" flow),
+  `Enter` chains into the shared `TaskDetailDrill` leaf rendering
+  the focused task's notes timeline (per the recursion contract
+  from feat_track_drill_chains_to_task_drill — rows ARE tasks).
+  Drill-mode `y` yanks `mu task notes <id>`. Read-only: never
+  executes a mutation. Re-uses Card 8's pure helpers (`glyphFor`,
+  `formatWhen`, `ageMs`) so the popup stays in visual lockstep
+  with the card. After this popup lands, only slots 5/7/9 remain
+  unwired under feat_more_cards_umbrella.
 - **TUI In-progress popup (Shift+6 / `^`)** — the matching
   fullscreen drill-down for Card 6 (per feat_popup_6_inprogress).
   Mirrors the card's columns (`glyph id STATUS owner since-claim
