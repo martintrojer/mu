@@ -16,7 +16,7 @@
 // visibility + tick rate + footer are preserved as a side effect of
 // living in <App> state, not the popup.
 
-import { Box, Text, useApp, useInput } from "ink";
+import { Box, Text, useApp, useInput, useStdout } from "ink";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Db } from "../../db.js";
 import { AgentsCard } from "./cards/agents.js";
@@ -70,6 +70,24 @@ export function App({ db, workstream }: AppProps): JSX.Element {
   }, []);
 
   const snap = useDashboardSnapshot(db, workstream, tickMs, popup === null);
+
+  // Terminal-resize handling per design_resize. ink's stdout exposes
+  // columns/rows; we only use them to render a 'too small' guard.
+  // Cards self-shrink within the dashboard's flex layout; the
+  // explicit guard catches the pathological 10x5 case.
+  const { stdout } = useStdout();
+  const cols = stdout.columns ?? 80;
+  const rows = stdout.rows ?? 24;
+  if (cols < 40 || rows < 10) {
+    return (
+      <Box borderStyle="round" borderColor="red" paddingX={1}>
+        <Text>
+          terminal too small ({cols}x{rows}) — need at least 40x10 for the TUI. Resize or run `mu
+          state` for the static card.
+        </Text>
+      </Box>
+    );
+  }
 
   // Yank callback handed down to popups (and used by the dashboard
   // for any direct yank in the future). The popup passes the command
