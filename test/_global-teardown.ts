@@ -21,8 +21,17 @@
 // vitest's globalSetup contract: this file exports `setup()` (runs once
 // before the suite) and `teardown()` (runs once after). Both are async.
 // globalSetup runs in vitest's main thread, BEFORE any worker fork is
-// created. So we set `process.env.MU_TMUX_SOCKET` in setup() and the
-// worker fork inherits it at fork time.
+// created. Empirically (see `mu-test fork` probe in setup.ts), the env
+// vitest mutates inside setup() IS visible to forks — so `setup()`
+// is a working seam. BUT the contract is fragile: `process.env`
+// mutation in async hooks can race with worker spawn on some
+// vitest pool variants. To eliminate the risk entirely (round-3 fix
+// for bug_test_flake_round_3 — Part A), we set `MU_TMUX_SOCKET` at
+// MODULE LOAD time, before vitest has a chance to do anything else.
+// Module load happens before setup() and unambiguously before any
+// fork pool spins up. The setup() hook then bootstraps the actual
+// tmux server (and reverts the env on bootstrap failure for
+// graceful fallback).
 //
 // The realExecutor in src/tmux.ts reads `MU_TMUX_SOCKET` per-call (see
 // `tmuxSocketArgs`) and prepends `-L <socket>` to every tmux invocation
@@ -48,6 +57,18 @@ const TEST_SOCKET = `mu-test-${process.pid.toString(36)}-${Date.now().toString(3
   .toString(36)
   .padStart(6, "0")}`;
 
+// Round-3 Part A: publish the socket name on process.env at MODULE LOAD
+// time, BEFORE the vitest pool has a chance to spawn workers. This is
+// the belt-and-suspenders fix for the worry that `process.env`
+// mutation inside an async setup() hook races with fork spawn on some
+// vitest pool variants. test/_setup.ts (per-fork) has
+// MU_TMUX_SOCKET on its allowlist, so forks inherit this value as-is.
+// If the actual tmux server bootstrap inside setup() FAILS, we
+// `delete process.env.MU_TMUX_SOCKET` there to fall back gracefully
+// (otherwise forks would route through `-L <socket>` to a non-existent
+// server and every tmux call would error).
+process.env.MU_TMUX_SOCKET = TEST_SOCKET;
+
 async function bootstrapPrivateTmuxServer(): Promise<void> {
   // tmux lazily starts the server on the first command; an explicit
   // `start-server` is the lightest no-op call that materialises it.
@@ -70,12 +91,18 @@ async function bootstrapPrivateTmuxServer(): Promise<void> {
     // Don't crash the suite — fall back to the user's default socket
     // and rely on Layer 1+2 (unique names + sweep) for isolation.
     // Loud warning so a CI failure stays diagnosable.
+    //
+    // Round-3 Part A: undo the module-load env publish so forks don't
+    // route through `-L <bogus-socket>` and turn every tmux call into
+    // a connect-failure.
+    const key = "MU_TMUX_SOCKET";
+    delete process.env[key];
     console.warn(
       `[mu-test global-setup] failed to bootstrap private tmux socket "${TEST_SOCKET}": ${r.stderr}; falling back to user's default tmux server`,
     );
-  } else {
-    process.env.MU_TMUX_SOCKET = TEST_SOCKET;
   }
+  // On success: nothing to do — process.env.MU_TMUX_SOCKET is already
+  // set from the module-load assignment above.
 }
 
 async function killPrivateTmuxServer(): Promise<void> {
