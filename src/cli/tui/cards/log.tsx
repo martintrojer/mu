@@ -6,16 +6,28 @@
 //
 // Aesthetic: rounded border, dim border, section header inset; verb
 // prefix coloured cyan via classifyEventVerb.
+//
+// Rows are column-aligned via src/cli/tui/columns.ts. Per
+// feat_column_aligned_lists clipping policy: timestamp, source, verb
+// are PROTECTED (short, identity-bearing); the rest is CLIPPABLE.
 
 import { Box, Text } from "ink";
 import { classifyEventVerb } from "../../../logs.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
+import { type ColumnSpec, layoutColumns, renderRow } from "../columns.js";
 
 export interface LogCardProps {
   snapshot: WorkstreamSnapshot | null;
 }
 
 const ROW_LIMIT = 8;
+
+const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
+  { kind: "protect" }, // ts (HH:MM:SS)
+  { kind: "protect" }, // source
+  { kind: "protect" }, // verb (or '·' fallback)
+  { kind: "clip", min: 1 }, // rest / payload
+];
 
 export function LogCard({ snapshot }: LogCardProps): JSX.Element {
   if (snapshot === null) {
@@ -44,26 +56,36 @@ export function LogCard({ snapshot }: LogCardProps): JSX.Element {
   // the head and reverse for "newest at bottom" reading.
   const tail = recent.slice(0, ROW_LIMIT).reverse();
 
+  const cellRows = tail.map((row) => {
+    const cls = classifyEventVerb(row.payload);
+    const ts = row.createdAt.slice(11, 19);
+    const verb = cls?.verb ?? "·";
+    const rest = cls?.rest ?? row.payload;
+    return [ts, row.source, verb, rest];
+  });
+  const widths = layoutColumns(cellRows, COLUMN_SPECS);
+
   return (
     <Box borderStyle="round" borderColor="gray" paddingX={1} flexDirection="column">
       <Text bold color="cyan">
         Activity log <Text dimColor>· last ↑{Math.min(recent.length, ROW_LIMIT)}</Text>
       </Text>
-      {tail.map((row) => {
+      {tail.map((row, i) => {
+        const cells = cellRows[i];
+        if (cells === undefined) return null;
         const cls = classifyEventVerb(row.payload);
-        const ts = row.createdAt.slice(11, 19); // HH:MM:SS
+        const padded = renderRow(cells, widths, COLUMN_SPECS);
+        const [ts = "", source = "", verb = "", rest = ""] = padded;
         return (
           <Box key={row.seq}>
             <Text>
-              <Text dimColor>{ts}</Text> <Text dimColor>{row.source}</Text>{" "}
-              {cls ? (
-                <>
-                  <Text color="cyan">{cls.verb}</Text>
-                  <Text>{cls.rest}</Text>
-                </>
-              ) : (
-                <Text>{row.payload}</Text>
-              )}
+              <Text dimColor>{ts}</Text>
+              {"  "}
+              <Text dimColor>{source}</Text>
+              {"  "}
+              {cls ? <Text color="cyan">{verb}</Text> : <Text dimColor>{verb}</Text>}
+              {"  "}
+              <Text>{rest}</Text>
             </Text>
           </Box>
         );

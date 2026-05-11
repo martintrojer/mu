@@ -5,15 +5,28 @@
 //
 // Aesthetic: rounded border, dim border, section header inset; ROI
 // bucket colours via roiBucket() — high=green, mid=yellow, low=dim.
+//
+// Rows are column-aligned via src/cli/tui/columns.ts. Per
+// feat_column_aligned_lists clipping policy: task name, ROI number,
+// owner are PROTECTED (yank affordance / numeric); the title is
+// CLIPPABLE.
 
 import { Box, Text } from "ink";
 import { type RoiBucket, type WorkstreamSnapshot, roiBucket } from "../../../state.js";
+import { type ColumnSpec, layoutColumns, renderRow } from "../columns.js";
 
 export interface ReadyCardProps {
   snapshot: WorkstreamSnapshot | null;
 }
 
 const ROW_LIMIT = 10;
+
+const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
+  { kind: "protect" }, // task name
+  { kind: "protect", align: "right" }, // ROI label (e.g. "ROI 50")
+  { kind: "clip", min: 1 }, // title
+  { kind: "protect" }, // owner (or "—")
+];
 
 export function ReadyCard({ snapshot }: ReadyCardProps): JSX.Element {
   if (snapshot === null) {
@@ -40,25 +53,41 @@ export function ReadyCard({ snapshot }: ReadyCardProps): JSX.Element {
   }
 
   const shown = ready.slice(0, ROW_LIMIT);
+  const meta = shown.map((t) => {
+    const bucket = roiBucket(t.impact, t.effortDays);
+    const roi = t.effortDays > 0 ? Math.round(t.impact / t.effortDays) : Number.POSITIVE_INFINITY;
+    const roiText = Number.isFinite(roi) ? String(roi) : "∞";
+    return { bucket, roiText };
+  });
+  const rows = shown.map((t, i) => [
+    t.name,
+    `ROI ${meta[i]?.roiText ?? ""}`,
+    t.title,
+    t.ownerName ?? "—",
+  ]);
+  const widths = layoutColumns(rows, COLUMN_SPECS);
 
   return (
     <Box borderStyle="round" borderColor="gray" paddingX={1} flexDirection="column">
       <Text bold color="cyan">
         Ready <Text dimColor>· {ready.length}</Text>
       </Text>
-      {shown.map((t) => {
-        const bucket = roiBucket(t.impact, t.effortDays);
-        const roi =
-          t.effortDays > 0 ? Math.round(t.impact / t.effortDays) : Number.POSITIVE_INFINITY;
-        const roiText = Number.isFinite(roi) ? String(roi) : "∞";
-        const roiColor = colorForBucket(bucket);
-        const ownerBit = t.ownerName ? <Text dimColor> · {t.ownerName}</Text> : null;
+      {shown.map((t, i) => {
+        const row = rows[i];
+        const m = meta[i];
+        if (row === undefined || m === undefined) return null;
+        const padded = renderRow(row, widths, COLUMN_SPECS);
+        const [name = "", roi = "", title = "", owner = ""] = padded;
         return (
           <Box key={t.name}>
             <Text>
-              <Text bold>{t.name}</Text> <Text color={roiColor}>ROI {roiText}</Text>
-              <Text dimColor> · {truncate(t.title, 60)}</Text>
-              {ownerBit}
+              <Text bold>{name}</Text>
+              {"  "}
+              <Text color={colorForBucket(m.bucket)}>{roi}</Text>
+              {"  "}
+              <Text dimColor>{title}</Text>
+              {"  "}
+              <Text dimColor>{owner}</Text>
             </Text>
           </Box>
         );
@@ -80,8 +109,4 @@ function colorForBucket(b: RoiBucket): string | undefined {
     case "low":
       return undefined;
   }
-}
-
-function truncate(s: string, n: number): string {
-  return s.length <= n ? s : `${s.slice(0, n - 1)}…`;
 }

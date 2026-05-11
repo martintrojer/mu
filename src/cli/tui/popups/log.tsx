@@ -2,11 +2,17 @@
 //
 // v0: list all snapshot.recent (newest at top), with j/k navigation.
 // Auto-tail with scroll-pause + filters are deferred to v0.next.
+//
+// Rows are column-aligned via src/cli/tui/columns.ts. Per
+// feat_column_aligned_lists clipping policy: seq, ts, source, verb
+// are PROTECTED (identity / numeric / short tokens); the payload rest
+// is CLIPPABLE.
 
 import { Box, Text, useInput } from "ink";
 import { useState } from "react";
 import { classifyEventVerb } from "../../../logs.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
+import { type ColumnSpec, layoutColumns, renderRow } from "../columns.js";
 import { dispatchPopupKey } from "../keys.js";
 
 export interface PopupProps {
@@ -16,6 +22,14 @@ export interface PopupProps {
 }
 
 const VIEWPORT = 20; // rows visible at once
+
+const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
+  { kind: "protect", align: "right" }, // seq (#N)
+  { kind: "protect" }, // ts
+  { kind: "protect" }, // source
+  { kind: "protect" }, // verb (or '·' fallback)
+  { kind: "clip", min: 1 }, // rest / payload
+];
 
 export function LogPopup({ yank, onClose, snapshot }: PopupProps): JSX.Element {
   const [cursor, setCursor] = useState(0);
@@ -94,25 +108,36 @@ export function LogPopup({ yank, onClose, snapshot }: PopupProps): JSX.Element {
   const start = Math.max(0, Math.min(events.length - VIEWPORT, cursor - Math.floor(VIEWPORT / 2)));
   const visible = events.slice(start, start + VIEWPORT);
 
+  const rows = visible.map((e) => {
+    const cls = classifyEventVerb(e.payload);
+    const ts = e.createdAt.slice(11, 19);
+    const verb = cls?.verb ?? "·";
+    const rest = cls?.rest ?? e.payload;
+    return [`#${e.seq}`, ts, e.source, verb, rest];
+  });
+  const widths = layoutColumns(rows, COLUMN_SPECS);
+
   return (
     <Shell title={`Activity log · popup (${cursor + 1}/${events.length})`}>
-      {visible.map((e) => {
+      {visible.map((e, i) => {
         const sel = events.indexOf(e) === cursor;
         const cls = classifyEventVerb(e.payload);
-        const ts = e.createdAt.slice(11, 19);
+        const row = rows[i];
+        if (row === undefined) return null;
+        const padded = renderRow(row, widths, COLUMN_SPECS);
+        const [seq = "", ts = "", source = "", verb = "", rest = ""] = padded;
         return (
           <Box key={e.seq}>
             <Text inverse={sel}>
-              <Text dimColor>#{e.seq}</Text> <Text dimColor>{ts}</Text>{" "}
-              <Text dimColor>{e.source}</Text>{" "}
-              {cls ? (
-                <>
-                  <Text color="cyan">{cls.verb}</Text>
-                  <Text>{cls.rest}</Text>
-                </>
-              ) : (
-                <Text>{e.payload}</Text>
-              )}
+              <Text dimColor>{seq}</Text>
+              {"  "}
+              <Text dimColor>{ts}</Text>
+              {"  "}
+              <Text dimColor>{source}</Text>
+              {"  "}
+              {cls ? <Text color="cyan">{verb}</Text> : <Text dimColor>{verb}</Text>}
+              {"  "}
+              <Text>{rest}</Text>
             </Text>
           </Box>
         );

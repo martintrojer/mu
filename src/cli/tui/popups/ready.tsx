@@ -8,10 +8,15 @@
 //   IN_PROGRESS owned-by-self → mu task close <id> -w <ws> --evidence "..."
 //   CLOSED                    → mu task open <id> -w <ws>
 // Other states yield no yank (toast says so).
+//
+// Rows are column-aligned via src/cli/tui/columns.ts. Per
+// feat_column_aligned_lists clipping policy: task name, status, owner
+// are PROTECTED (yank-bearing tokens); the title is CLIPPABLE.
 
 import { Box, Text, useInput } from "ink";
 import { useState } from "react";
 import type { WorkstreamSnapshot } from "../../../state.js";
+import { type ColumnSpec, layoutColumns, renderRow } from "../columns.js";
 import { dispatchPopupKey } from "../keys.js";
 
 export interface PopupProps {
@@ -19,6 +24,13 @@ export interface PopupProps {
   onClose: () => void;
   snapshot: WorkstreamSnapshot | null;
 }
+
+const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
+  { kind: "protect" }, // task name
+  { kind: "protect" }, // status
+  { kind: "protect" }, // owner (or "—")
+  { kind: "clip", min: 1 }, // title
+];
 
 export function ReadyPopup({ yank, onClose, snapshot }: PopupProps): JSX.Element {
   const [cursor, setCursor] = useState(0);
@@ -78,15 +90,27 @@ export function ReadyPopup({ yank, onClose, snapshot }: PopupProps): JSX.Element
     );
   }
 
+  const rows = tasks.map((t) => [t.name, t.status, t.ownerName ?? "—", t.title]);
+  const widths = layoutColumns(rows, COLUMN_SPECS);
+
   return (
     <PopupShell title={`Tasks · popup (${cursor + 1}/${tasks.length})`}>
       {tasks.map((t, i) => {
         const selected = i === cursor;
+        const row = rows[i];
+        if (row === undefined) return null;
+        const padded = renderRow(row, widths, COLUMN_SPECS);
+        const [name = "", status = "", owner = "", title = ""] = padded;
         return (
           <Box key={t.name}>
             <Text inverse={selected}>
-              <Text bold>{t.name}</Text> <Text dimColor>{t.status}</Text>{" "}
-              <Text dimColor>{t.ownerName ?? "—"}</Text> <Text>{truncate(t.title, 60)}</Text>
+              <Text bold>{name}</Text>
+              {"  "}
+              <Text dimColor>{status}</Text>
+              {"  "}
+              <Text dimColor>{owner}</Text>
+              {"  "}
+              <Text>{title}</Text>
             </Text>
           </Box>
         );
@@ -116,10 +140,6 @@ function yankCommandForTask(
     default:
       return null;
   }
-}
-
-function truncate(s: string, n: number): string {
-  return s.length <= n ? s : `${s.slice(0, n - 1)}…`;
 }
 
 function PopupShell({

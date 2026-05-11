@@ -3,11 +3,16 @@
 // Per design_popup_agents (workstream `tui`): list of agents with
 // per-agent yank intents (free / close / send). Full pane scrollback
 // integration is v0.next (needs a non-trivial readPane wiring).
+//
+// Rows are column-aligned via src/cli/tui/columns.ts. Per
+// feat_column_aligned_lists clipping policy: glyph, agent name,
+// status are PROTECTED; the role description is CLIPPABLE.
 
 import { Box, Text, useInput } from "ink";
 import { useState } from "react";
 import { STATUS_EMOJI } from "../../../agents.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
+import { type ColumnSpec, layoutColumns, renderRow } from "../columns.js";
 import { dispatchPopupKey } from "../keys.js";
 
 export interface PopupProps {
@@ -15,6 +20,13 @@ export interface PopupProps {
   onClose: () => void;
   snapshot: WorkstreamSnapshot | null;
 }
+
+const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
+  { kind: "protect" }, // glyph
+  { kind: "protect" }, // agent name
+  { kind: "protect" }, // status token
+  { kind: "clip", min: 1 }, // role
+];
 
 export function AgentsPopup({ yank, onClose, snapshot }: PopupProps): JSX.Element {
   const [cursor, setCursor] = useState(0);
@@ -90,15 +102,27 @@ export function AgentsPopup({ yank, onClose, snapshot }: PopupProps): JSX.Elemen
     );
   }
 
+  const rows = agents.map((a) => [STATUS_EMOJI[a.status] ?? "?", a.name, a.status, a.role]);
+  const widths = layoutColumns(rows, COLUMN_SPECS);
+
   return (
     <Shell title={`Agents · popup (${cursor + 1}/${agents.length})`}>
       {agents.map((a, i) => {
         const sel = i === cursor;
+        const row = rows[i];
+        if (row === undefined) return null;
+        const padded = renderRow(row, widths, COLUMN_SPECS);
+        const [glyph = "", name = "", status = "", role = ""] = padded;
         return (
           <Box key={a.name}>
             <Text inverse={sel}>
-              {STATUS_EMOJI[a.status] ?? "?"} <Text bold>{a.name}</Text>{" "}
-              <Text dimColor>{a.status}</Text> <Text dimColor>{a.role}</Text>
+              <Text>{glyph}</Text>
+              {"  "}
+              <Text bold>{name}</Text>
+              {"  "}
+              <Text dimColor>{status}</Text>
+              {"  "}
+              <Text dimColor>{role}</Text>
             </Text>
           </Box>
         );

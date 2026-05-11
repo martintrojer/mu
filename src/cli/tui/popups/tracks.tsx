@@ -1,8 +1,13 @@
 // Tracks popup (Shift+2 → `@`). Per design_popup_tracks.
+//
+// Rows are column-aligned via src/cli/tui/columns.ts. Per
+// feat_column_aligned_lists clipping policy: track number, ⋈ glyph,
+// counts are PROTECTED; the goal-name list is CLIPPABLE.
 
 import { Box, Text, useInput } from "ink";
 import { useState } from "react";
 import type { WorkstreamSnapshot } from "../../../state.js";
+import { type ColumnSpec, layoutColumns, renderRow } from "../columns.js";
 import { dispatchPopupKey } from "../keys.js";
 
 export interface PopupProps {
@@ -10,6 +15,13 @@ export interface PopupProps {
   onClose: () => void;
   snapshot: WorkstreamSnapshot | null;
 }
+
+const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
+  { kind: "protect" }, // "Track N"
+  { kind: "protect" }, // diamond glyph (or empty)
+  { kind: "clip", min: 1 }, // goal names
+  { kind: "protect" }, // counts
+];
 
 export function TracksPopup({ yank, onClose, snapshot }: PopupProps): JSX.Element {
   const [cursor, setCursor] = useState(0);
@@ -70,20 +82,32 @@ export function TracksPopup({ yank, onClose, snapshot }: PopupProps): JSX.Elemen
     );
   }
 
+  const rows = tracks.map((t, i) => {
+    const goalNames = t.roots.map((r) => r.name).join(", ");
+    const diamond = t.roots.length > 1 ? "⋈" : " ";
+    const counts = `(${t.taskIds.size} tasks · ${t.readyCount} ready)`;
+    return [`Track ${i + 1}`, diamond, goalNames, counts];
+  });
+  const widths = layoutColumns(rows, COLUMN_SPECS);
+
   return (
     <Shell title={`Tracks · popup (${cursor + 1}/${tracks.length})`}>
       {tracks.map((t, i) => {
         const sel = i === cursor;
-        const goalNames = t.roots.map((r) => r.name).join(", ");
-        const diamond = t.roots.length > 1 ? "⋈ " : "";
+        const row = rows[i];
+        if (row === undefined) return null;
+        const padded = renderRow(row, widths, COLUMN_SPECS);
+        const [trackLabel = "", diamond = "", goals = "", counts = ""] = padded;
         return (
           <Box key={`tr-${i}-${t.roots[0]?.name ?? "?"}`}>
             <Text inverse={sel}>
-              <Text color="cyan">Track {i + 1}</Text> {diamond}
-              <Text>{goalNames}</Text>{" "}
-              <Text dimColor>
-                ({t.taskIds.size} tasks · {t.readyCount} ready)
-              </Text>
+              <Text color="cyan">{trackLabel}</Text>
+              {"  "}
+              <Text>{diamond}</Text>
+              {"  "}
+              <Text>{goals}</Text>
+              {"  "}
+              <Text dimColor>{counts}</Text>
             </Text>
           </Box>
         );

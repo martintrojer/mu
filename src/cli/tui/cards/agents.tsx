@@ -6,6 +6,12 @@
 //
 // Aesthetic: rounded border, dim border colour, section header inset
 // into the top.
+//
+// Rows are column-aligned via src/cli/tui/columns.ts so name / task /
+// idle line up cleanly. Per feat_column_aligned_lists clipping policy:
+// glyph + agent name + idle marker are PROTECTED; the owned-task
+// summary is CLIPPABLE (it's a free-form string and the popup carries
+// the full version).
 
 import { Box, Text } from "ink";
 import { STATUS_EMOJI } from "../../../agents.js";
@@ -14,10 +20,18 @@ import {
   agentStatusHistogram,
   summarizeOwnedTasks,
 } from "../../../state.js";
+import { type ColumnSpec, layoutColumns, renderRow } from "../columns.js";
 
 export interface AgentsCardProps {
   snapshot: WorkstreamSnapshot | null;
 }
+
+const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
+  { kind: "protect" }, // status glyph
+  { kind: "protect" }, // agent name
+  { kind: "clip", min: 1 }, // owned-task summary
+  { kind: "protect" }, // idle marker
+];
 
 export function AgentsCard({ snapshot }: AgentsCardProps): JSX.Element {
   if (snapshot === null) {
@@ -43,22 +57,34 @@ export function AgentsCard({ snapshot }: AgentsCardProps): JSX.Element {
     );
   }
 
+  // Build the cell matrix once so column widths consider every row.
+  const rows = agents.map((a) => {
+    const owned = snapshot.inProgress.filter((t) => t.ownerName === a.name);
+    const taskBit = summarizeOwnedTasks(owned).bit;
+    const idle = a.idle ? "⚠ idle" : "—";
+    return [STATUS_EMOJI[a.status] ?? "?", a.name, taskBit, idle];
+  });
+  const widths = layoutColumns(rows, COLUMN_SPECS);
+
   return (
     <Box borderStyle="round" borderColor="gray" paddingX={1} flexDirection="column">
       <Text bold color="cyan">
         Agents <Text dimColor>· {histLabel}</Text>
       </Text>
-      {agents.map((a) => {
-        // Per-agent owned tasks: filter snapshot.inProgress by the
-        // `owner` field. Cheap on the typical <10-agent wave.
-        const owned = snapshot.inProgress.filter((t) => t.ownerName === a.name);
-        const taskBit = summarizeOwnedTasks(owned).bit;
-        const idle = a.idle ? "⚠ idle" : "—";
+      {agents.map((a, i) => {
+        const row = rows[i];
+        if (row === undefined) return null;
+        const padded = renderRow(row, widths, COLUMN_SPECS);
+        const [glyph = "", name = "", taskBit = "", idle = ""] = padded;
         return (
           <Box key={a.name}>
             <Text>
-              {STATUS_EMOJI[a.status] ?? "?"} <Text bold>{a.name}</Text>{" "}
-              <Text dimColor>{taskBit}</Text>{" "}
+              <Text>{glyph}</Text>
+              {"  "}
+              <Text bold>{name}</Text>
+              {"  "}
+              <Text dimColor>{taskBit}</Text>
+              {"  "}
               <Text color={a.idle ? "yellow" : undefined} dimColor={!a.idle}>
                 {idle}
               </Text>
