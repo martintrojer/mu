@@ -6,7 +6,7 @@
 //   2. Detect status from pane scrollback for surviving agents.
 //   3. Surface orphan panes that look like agents but have no DB row.
 //      Do NOT auto-adopt — `mu list` shows orphans under a separate
-//      section and the user runs `mu adopt` (roadmap) to formally claim.
+//      section and the user runs `mu agent adopt` (roadmap) to formally claim.
 //
 // `mu list` and `mu doctor` both call this. It's the only place where
 // the registry's view of the world is reconciled against tmux's view.

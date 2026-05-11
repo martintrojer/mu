@@ -131,8 +131,8 @@ describe("error-specific structured-step assertions", () => {
   it("ClaimerNotRegisteredError pins the exact pane id when given", () => {
     const err = new ClaimerNotRegisteredError("pi-mu", "%42");
     const steps = err.errorNextSteps();
-    const adopt = steps.find((s) => s.command.startsWith("mu adopt"));
-    expect(adopt?.command).toBe("mu adopt %42");
+    const adopt = steps.find((s) => s.command.startsWith("mu agent adopt"));
+    expect(adopt?.command).toBe("mu agent adopt %42");
   });
 
   it("TaskNotInWorkstreamError suggests the actual workstream", () => {

@@ -40,7 +40,7 @@ import {
 } from "../cli.js";
 import type { Db } from "../db.js";
 import { detectPiStatus } from "../detect.js";
-import { type NextStep, pc, printNextSteps } from "../output.js";
+import { type NextStep, isJsonMode, pc, printNextSteps } from "../output.js";
 import { listTasksByOwner } from "../tasks.js";
 import {
   capturePane,
@@ -214,7 +214,7 @@ export async function cmdList(
     console.log(pc.dim("  Panes that look like agents but aren't in the registry."));
     console.log(
       pc.dim(
-        "  Run `mu adopt <pane-id>` to register one as a managed agent (e.g. `mu adopt %15`).",
+        "  Run `mu agent adopt <pane-id>` to register one as a managed agent (e.g. `mu agent adopt %15`).",
       ),
     );
     for (const orphan of view.orphans) {
@@ -365,7 +365,7 @@ interface AdoptCliOpts {
 export async function cmdAdopt(db: Db, paneOrTitle: string, opts: AdoptCliOpts): Promise<void> {
   const ws = await resolveWorkstream(opts.workstream);
 
-  // Allow `mu adopt <pane-id>` (literal '%15') OR `mu adopt <pane-title>`
+  // Allow `mu agent adopt <pane-id>` (literal '%15') OR `mu agent adopt <pane-title>`
   // (a string that looks like an agent name; we look it up in the
   // workstream's tmux session). Pane-id form is preferred for scripting;
   // pane-title form is the ergonomic form for interactive use.
@@ -650,11 +650,12 @@ export function wireAgentCommands(program: Command): void {
       return handle((db) => cmdAttach(db, name, opts), this as Command)();
     });
 
-  // `mu adopt` is intentionally TOP-LEVEL, not nested under `mu agent`,
-  // matching the original e20af89 design and every doc/skill/orphan-hint
-  // reference (`mu adopt %15`, not `mu agent adopt %15`). It was dropped
-  // on the floor in the f42e86d wireXxxCommands split — bug_adopt_verb_unwired.
-  program
+  // `mu agent adopt` is the canonical form — every other agent-lifecycle
+  // verb lives under `mu agent`, so adopt belongs here too. The legacy
+  // top-level `mu adopt` (wired below as a deprecated alias) prints a
+  // stderr hint and continues to work until v0.5
+  // (mu_adopt_should_be_mu_agent_adopt_for).
+  agent
     .command("adopt <pane-or-title>")
     .description(
       "Register an existing tmux pane as a managed mu agent (the inverse of `mu agent list`'s 'orphan' state). Pane id form '%15' or pane title form 'worker-2'.",
@@ -665,8 +666,31 @@ export function wireAgentCommands(program: Command): void {
     .option(...WORKSTREAM_OPT)
     .option(...JSON_OPT)
     .action(function (paneOrTitle: string) {
+      const opts = (this as Command).optsWithGlobals() as AdoptCliOpts;
+      return handle((db) => cmdAdopt(db, paneOrTitle, opts), this as Command)();
+    });
+
+  // Deprecated alias: `mu adopt` at the top level. Same handler as
+  // `mu agent adopt`; stderr-only deprecation hint (suppressed under
+  // --json so machine consumers see a clean envelope). Removed in v0.5.
+  program
+    .command("adopt <pane-or-title>")
+    .description(
+      "(deprecated alias for `mu agent adopt`) Register an existing tmux pane as a managed mu agent. Will be removed in v0.5.",
+    )
+    .option("--name <name>", "agent name (defaults to the pane's current title)")
+    .option("--cli <cli>", "agent CLI key (default: pi)")
+    .option("--role <role>", "full-access | read-only", "full-access")
+    .option(...WORKSTREAM_OPT)
+    .option(...JSON_OPT)
+    .action(function (paneOrTitle: string) {
       // optsWithGlobals so the top-level -w / --json flags propagate.
       const opts = (this as Command).optsWithGlobals() as AdoptCliOpts;
+      if (!isJsonMode()) {
+        process.stderr.write(
+          "deprecated: use `mu agent adopt` instead (mu adopt will be removed in v0.5).\n",
+        );
+      }
       return handle((db) => cmdAdopt(db, paneOrTitle, opts), this as Command)();
     });
 

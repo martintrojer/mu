@@ -188,7 +188,7 @@ export class TaskHasOpenDependentsError extends Error implements HasNextSteps {
  * The FK on `tasks.owner` references `agents.name`; without this guard
  * the claim attempt would fail with the unhelpful 'FOREIGN KEY constraint
  * failed' from SQLite. This typed error gives the user actionable next
- * steps (run `mu adopt <pane-id>` to register, or use --for to pick a
+ * steps (run `mu agent adopt <pane-id>` to register, or use --for to pick a
  * different agent).
  *
  * Maps to exit code 4 (conflict) via the cli.ts handler.
@@ -209,7 +209,7 @@ export class ClaimerNotRegisteredError extends Error implements HasNextSteps {
    * Three actionable resolutions in expected-frequency order:
    *   1. --self  : orchestrator pattern (working directly)
    *   2. --for   : dispatcher pattern (assigning to a worker)
-   *   3. mu adopt: registration pattern (promote pane to worker)
+   *   3. mu agent adopt: registration pattern (promote pane to worker)
    */
   errorNextSteps(): NextStep[] {
     const steps: NextStep[] = [
@@ -218,10 +218,10 @@ export class ClaimerNotRegisteredError extends Error implements HasNextSteps {
     ];
     steps.push(
       this.paneId !== null
-        ? { intent: "Register this pane", command: `mu adopt ${this.paneId}` }
+        ? { intent: "Register this pane", command: `mu agent adopt ${this.paneId}` }
         : {
             intent: "Register a pane",
-            command: "mu adopt <pane-id>  (must be in mu-<workstream> tmux session)",
+            command: "mu agent adopt <pane-id>  (must be in mu-<workstream> tmux session)",
           },
     );
     return steps;

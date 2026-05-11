@@ -612,7 +612,7 @@ export function wireSnapshotCommands(program: Command): void {
   program
     .command("undo")
     .description(
-      "Restore the most recent snapshot (or one selected via --to). Pass --yes to actually restore; otherwise prints a dry-run summary. tmux state is NOT rolled back — the post-restore reconcile prunes ghost agents and surfaces orphan panes; re-spawn or `mu adopt` as needed.",
+      "Restore the most recent snapshot (or one selected via --to). Pass --yes to actually restore; otherwise prints a dry-run summary. tmux state is NOT rolled back — the post-restore reconcile prunes ghost agents and surfaces orphan panes; re-spawn or `mu agent adopt` as needed.",
     )
     .option("--to <id>", "snapshot id to restore (default: most recent)", parseLines)
     .option("-y, --yes", "actually restore (without this flag, prints a dry-run summary)")

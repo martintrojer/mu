@@ -260,8 +260,8 @@ running a wave.
   `import`.
 - **Agents**: `spawn` (`--workspace`, `--role read-only`,
   `--command`), `send`, `read`, `show`, `list`, `close`, `free`.
-  **`mu adopt <pane-id|title>`** registers an orphan pane as a
-  managed agent.
+  **`mu agent adopt <pane-id|title>`** registers an orphan pane as a
+  managed agent. (`mu adopt` is a deprecated alias kept until v0.5.)
 - **Tasks**: `add`, `list`, `next`, `show`, `tree`, `notes`, `note`,
   `claim` (`--for | --self`), `release` (`--reopen` to un-close),
   `close` (`--if-ready` = no-op unless every blocker terminal),
@@ -441,11 +441,11 @@ Verbs auto-resolve via `$TMUX_PANE` — `mu me`, `mu me next`,
 (set at spawn) IS the agent identity.
 
 - **Worker**: pane was created by `mu agent spawn` (or promoted via
-  `mu adopt`). Bare `mu task claim <id>` works.
+  `mu agent adopt`). Bare `mu task claim <id>` works.
 - **Orchestrator**: a top-level pi session NOT in `agents`. Bare
   `mu task claim` errors with `ClaimerNotRegisteredError` whose
   `errorNextSteps()` lists three options: `--self` (work directly,
-  owner=NULL), `--for <worker>` (dispatch), or `mu adopt <pane>`.
+  owner=NULL), `--for <worker>` (dispatch), or `mu agent adopt <pane>`.
 
 Working loop:
 

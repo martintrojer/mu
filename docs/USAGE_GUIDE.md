@@ -561,9 +561,10 @@ mu agent list -w auth-refactor   # surfaces orphans at the bottom
 # Orphan panes (1)
 #   %15 title=worker-2 cli=pi
 
-mu adopt %15 -w auth-refactor                    # adopt by pane id
-mu adopt worker-2 -w auth-refactor               # adopt by pane title (same effect)
-mu adopt %15 --name investigator -w auth-refactor  # adopt and rename the pane
+mu agent adopt %15 -w auth-refactor                    # adopt by pane id
+mu agent adopt worker-2 -w auth-refactor               # adopt by pane title (same effect)
+mu agent adopt %15 --name investigator -w auth-refactor  # adopt and rename the pane
+# (`mu adopt` is a deprecated alias kept until v0.5; prefer `mu agent adopt`.)
 ```
 
 The pane title becomes the agent name (`mu`'s claim protocol
@@ -737,7 +738,7 @@ If the orchestrator tries `mu task claim some-task` directly:
 conflict: claimer 'pi-mu' (pane %6441) is not a registered mu agent.
   Working directly?           Pass --self to attribute via log instead.
   Dispatching to a worker?    Pass --for <worker> to assign.
-  Want full registration?     Run: mu adopt %6441
+  Want full registration?     Run: mu agent adopt %6441
 ```
 
 Three actionable next steps. Pick one based on intent:
@@ -754,7 +755,7 @@ mu task claim some-task --for worker-1
 #   -> tasks.owner = 'worker-1'
 
 # Orchestrator wants to BE a registered worker (rare):
-mu adopt %6441 -w <ws>      # only if pane is in mu-<ws> session
+mu agent adopt %6441 -w <ws>  # only if pane is in mu-<ws> session (legacy `mu adopt` still works through v0.5)
 mu task claim some-task     # now works as a normal worker claim
 ```
 
@@ -1078,7 +1079,7 @@ Reconciliation runs on every `mu agent list` / `mu`. Three steps:
 3. **Surface orphan panes** — panes in the workstream's tmux session
    whose `pane.command` looks like an agent CLI (pi) but
    that aren't in the registry. **Not** auto-adopted; mu shows them
-   under "Orphan panes" and tells you `mu adopt <pane-id>` to register
+   under "Orphan panes" and tells you `mu agent adopt <pane-id>` to register
 
 ### You closed your terminal session
 

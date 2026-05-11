@@ -10,6 +10,23 @@ called out under "Breaking" in each entry.
 
 ## [Unreleased]
 
+### Changed
+
+- **`mu agent adopt` is the canonical form; `mu adopt` is deprecated**
+  (`mu_adopt_should_be_mu_agent_adopt_for`). Every other
+  agent-lifecycle verb (`spawn`, `send`, `read`, `show`, `list`,
+  `close`, `free`, `attach`) lives under `mu agent`; `adopt` was
+  the lone holdout at the top level. `mu agent adopt` now exists
+  alongside the legacy top-level `mu adopt`. Both call the same
+  `cmdAdopt` handler; the deprecated form prints a one-line stderr
+  hint (`deprecated: use \`mu agent adopt\` instead (mu adopt will
+  be removed in v0.5).`) suppressed under `--json`. Help text on
+  `mu adopt --help` now says `(deprecated alias for \`mu agent
+  adopt\`)`. Internal next-step hints (`ClaimerNotRegisteredError`,
+  the orphan-list footer in `mu agent list`, `mu undo`'s
+  reconcile note) all switched to the canonical form. The legacy
+  alias will be removed in v0.5.
+
 ### Added
 
 - **`mu task add --json` surfaces auto-id truncation telemetry**

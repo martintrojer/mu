@@ -158,7 +158,7 @@ describe("claimTask", () => {
       // --self is first (most-common-resolution-first).
       expect(steps[0]?.command).toContain("--self");
       expect(steps[1]?.command).toContain("--for");
-      expect(steps[2]?.command).toContain("mu adopt");
+      expect(steps[2]?.command).toContain("mu agent adopt");
     }
   });
 
@@ -177,8 +177,8 @@ describe("claimTask", () => {
       } catch (err) {
         expect(err).toBeInstanceOf(ClaimerNotRegisteredError);
         const steps = (err as ClaimerNotRegisteredError).errorNextSteps();
-        const adopt = steps.find((s) => s.command.startsWith("mu adopt"));
-        expect(adopt?.command).toBe("mu adopt %99");
+        const adopt = steps.find((s) => s.command.startsWith("mu agent adopt"));
+        expect(adopt?.command).toBe("mu agent adopt %99");
       }
     });
   });
