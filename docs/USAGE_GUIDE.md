@@ -564,7 +564,6 @@ mu agent list -w auth-refactor   # surfaces orphans at the bottom
 mu agent adopt %15 -w auth-refactor                    # adopt by pane id
 mu agent adopt worker-2 -w auth-refactor               # adopt by pane title (same effect)
 mu agent adopt %15 --name investigator -w auth-refactor  # adopt and rename the pane
-# (`mu adopt` is a deprecated alias kept until v0.5; prefer `mu agent adopt`.)
 ```
 
 The pane title becomes the agent name (`mu`'s claim protocol
@@ -755,7 +754,7 @@ mu task claim some-task --for worker-1
 #   -> tasks.owner = 'worker-1'
 
 # Orchestrator wants to BE a registered worker (rare):
-mu agent adopt %6441 -w <ws>  # only if pane is in mu-<ws> session (legacy `mu adopt` still works through v0.5)
+mu agent adopt %6441 -w <ws>  # only if pane is in mu-<ws> session
 mu task claim some-task     # now works as a normal worker claim
 ```
 

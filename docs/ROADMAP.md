@@ -115,12 +115,14 @@ if it lands, three rules stay non-negotiable:
 If those three rules hold, mu stays driveable from a shell forever
 and the extension stays thin.
 
-### `mu adopt <pane-id> [--name <agent>]` — SHIPPED in v0.2 (`e20af89`)
+### `mu agent adopt <pane-id> [--name <agent>]` — SHIPPED in v0.2 (`e20af89`)
 
-Reconciliation surfaces orphan panes; `mu adopt` formally registers
-one of them as a managed agent. Promotion was triggered by the
-multi-agent dogfood pattern (orchestrator runs in a pane outside
-the `mu-<ws>` session and wants to be claimable as a worker).
+Reconciliation surfaces orphan panes; `mu agent adopt` formally
+registers one of them as a managed agent. Promotion was triggered
+by the multi-agent dogfood pattern (orchestrator runs in a pane
+outside the `mu-<ws>` session and wants to be claimable as a
+worker). Originally shipped at the top level as `mu adopt`; moved
+under `mu agent` to match every other agent-lifecycle verb.
 
 ### Heterogeneous CLI status detection (claude, codex, ...)
 

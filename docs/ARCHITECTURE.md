@@ -245,7 +245,7 @@ returning. Three steps, in order:
    that has no matching `agents` row but whose pane title looks like
    an agent name, add it to the orphans list. **Do not auto-adopt** —
    `mu agent list` shows orphans under a separate "(orphans)" section and
-   the user runs `mu adopt %15 [--name X]` to formally claim them.
+   the user runs `mu agent adopt %15 [--name X]` to formally claim them.
 
 Full algorithm lives in `src/reconcile.ts` (the canonical
 implementation).

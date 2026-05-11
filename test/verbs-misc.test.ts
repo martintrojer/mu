@@ -178,7 +178,7 @@ describe("cmdAgentShow fresh-status reconciliation", () => {
 
 describe("adoptAgent (register an existing tmux pane as a managed agent)", () => {
   // Seed an orphan pane: pretend a session exists with one pane that
-  // wasn't created via spawn. mu adopt then registers it.
+  // wasn't created via spawn. mu agent adopt then registers it.
   function seedOrphanPane(opts: {
     sessionName: string;
     title: string;
@@ -376,28 +376,18 @@ describe("adoptAgent (register an existing tmux pane as a managed agent)", () =>
   });
 
   // Regression: bug_adopt_verb_unwired. cmdAdopt + adoptAgent are
-  // implemented and tested above, but the f42e86d wireXxxCommands
-  // refactor dropped the `program.command("adopt")` registration on
-  // the floor, so `mu adopt %15` returned commander's "too many
-  // arguments" parse error. The verb is intentionally TOP-LEVEL
-  // (`mu adopt <pane>`, not `mu agent adopt <pane>`) per its design
-  // and per every doc/skill/orphan-hint reference. This test asserts
-  // commander accepts the verb shape — the body of cmdAdopt is
-  // covered by the (case 1–8) tests above.
-  it("is wired on the top-level program (mu adopt <pane>, not mu agent adopt)", async () => {
+  // implemented and tested above; this asserts commander accepts the
+  // canonical `mu agent adopt <pane>` shape (the top-level `mu adopt`
+  // alias was removed in remove_top_level_mu_adopt_alias_now_was — the
+  // verb lives under `mu agent` like every other agent-lifecycle verb).
+  it("is wired under `mu agent` (mu agent adopt <pane>)", async () => {
     const { executor } = mockTmux(state);
     setTmuxExecutor(executor);
     const { paneId } = seedOrphanPane({ sessionName: "mu-auth", title: "worker-9" });
 
     const { runCli } = await import("./_runCli.js");
-    const result = await runCli(["adopt", paneId, "-w", "auth"], join(tempDir, "mu.db"));
+    const result = await runCli(["agent", "adopt", paneId, "-w", "auth"], join(tempDir, "mu.db"));
 
-    // Pre-fix: stderr would contain commander's "too many arguments.
-    // Expected 0 arguments but got 2." Now: the verb is wired, so
-    // either it succeeds or it surfaces a typed error from cmdAdopt /
-    // adoptAgent (e.g. AgentNotInWorkstreamError if the seeded pane
-    // were in another session). Whatever happens, it must NOT be the
-    // commander parse error.
     expect(result.error).toBeUndefined();
     expect(result.stderr).not.toMatch(/too many arguments/);
     expect(result.stderr).not.toMatch(/unknown command/);
@@ -406,14 +396,32 @@ describe("adoptAgent (register an existing tmux pane as a managed agent)", () =>
     expect(getAgent(db, "worker-9", "auth")?.paneId).toBe(paneId);
   });
 
-  it("`mu adopt --help` produces the verb's own help screen, not the program-level one", async () => {
+  it("`mu agent adopt --help` produces the verb's own help screen", async () => {
     const { runCli } = await import("./_runCli.js");
-    const result = await runCli(["adopt", "--help"], join(tempDir, "mu.db"));
+    const result = await runCli(["agent", "adopt", "--help"], join(tempDir, "mu.db"));
     // commander.exitOverride() throws CommanderError on --help (code
     // 'commander.helpDisplayed') which runCli filters — so error is
     // undefined and the help text lands on stdout.
     expect(result.error).toBeUndefined();
-    expect(result.stdout).toMatch(/Usage: mu adopt/);
+    expect(result.stdout).toMatch(/Usage: mu agent adopt/);
     expect(result.stdout).toMatch(/<pane-or-title>/);
+  });
+
+  // remove_top_level_mu_adopt_alias_now_was: the legacy top-level
+  // `mu adopt` alias was deleted. Bare `mu adopt <pane>` should now
+  // fall through to commander's default "unknown subcommand"
+  // behaviour (it surfaces as "too many arguments" because the
+  // program has no positional args; either way the verb does not
+  // execute and no agent gets adopted).
+  it("`mu adopt <pane>` (top-level, no `agent`) is no longer wired", async () => {
+    const { executor } = mockTmux(state);
+    setTmuxExecutor(executor);
+    const { paneId } = seedOrphanPane({ sessionName: "mu-auth", title: "worker-9" });
+
+    const { runCli } = await import("./_runCli.js");
+    const result = await runCli(["adopt", paneId, "-w", "auth"], join(tempDir, "mu.db"));
+
+    expect(result.stderr).toMatch(/(unknown command|too many arguments)/i);
+    expect(getAgent(db, "worker-9", "auth")).toBeUndefined();
   });
 });

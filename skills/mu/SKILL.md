@@ -277,8 +277,7 @@ running a wave.
   `--command`), `send`, `read`, `show`, `list`, `close`, `free`,
   `kick` (signal a wedged foreground tool subprocess from outside
   the pane). **`mu agent adopt <pane-id|title>`** registers an
-  orphan pane as a managed agent. (`mu adopt` is a deprecated
-  alias kept until v0.5.)
+  orphan pane as a managed agent.
 - **Tasks**: `add`, `list`, `next`, `show`, `tree`, `notes`
   (`--tail N` / `--since <iso>` / `--since-claim` to slice the
   timeline; default = every note, oldest first), `note`,

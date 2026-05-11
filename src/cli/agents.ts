@@ -44,7 +44,7 @@ import {
 } from "../cli.js";
 import type { Db } from "../db.js";
 import { detectPiStatus } from "../detect.js";
-import { type NextStep, isJsonMode, pc, printNextSteps } from "../output.js";
+import { type NextStep, pc, printNextSteps } from "../output.js";
 import { listTasksByOwner } from "../tasks.js";
 import {
   capturePane,
@@ -738,10 +738,8 @@ export function wireAgentCommands(program: Command): void {
       return handle((db) => cmdAttach(db, name, opts), this as Command)();
     });
 
-  // `mu agent adopt` is the canonical form — every other agent-lifecycle
-  // verb lives under `mu agent`, so adopt belongs here too. The legacy
-  // top-level `mu adopt` (wired below as a deprecated alias) prints a
-  // stderr hint and continues to work until v0.5
+  // `mu agent adopt` — register an existing tmux pane as a managed agent.
+  // Lives under `mu agent` like every other agent-lifecycle verb
   // (mu_adopt_should_be_mu_agent_adopt_for).
   agent
     .command("adopt <pane-or-title>")
@@ -755,30 +753,6 @@ export function wireAgentCommands(program: Command): void {
     .option(...JSON_OPT)
     .action(function (paneOrTitle: string) {
       const opts = (this as Command).optsWithGlobals() as AdoptCliOpts;
-      return handle((db) => cmdAdopt(db, paneOrTitle, opts), this as Command)();
-    });
-
-  // Deprecated alias: `mu adopt` at the top level. Same handler as
-  // `mu agent adopt`; stderr-only deprecation hint (suppressed under
-  // --json so machine consumers see a clean envelope). Removed in v0.5.
-  program
-    .command("adopt <pane-or-title>")
-    .description(
-      "(deprecated alias for `mu agent adopt`) Register an existing tmux pane as a managed mu agent. Will be removed in v0.5.",
-    )
-    .option("--name <name>", "agent name (defaults to the pane's current title)")
-    .option("--cli <cli>", "agent CLI key (default: pi)")
-    .option("--role <role>", "full-access | read-only", "full-access")
-    .option(...WORKSTREAM_OPT)
-    .option(...JSON_OPT)
-    .action(function (paneOrTitle: string) {
-      // optsWithGlobals so the top-level -w / --json flags propagate.
-      const opts = (this as Command).optsWithGlobals() as AdoptCliOpts;
-      if (!isJsonMode()) {
-        process.stderr.write(
-          "deprecated: use `mu agent adopt` instead (mu adopt will be removed in v0.5).\n",
-        );
-      }
       return handle((db) => cmdAdopt(db, paneOrTitle, opts), this as Command)();
     });
 
