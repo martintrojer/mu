@@ -750,6 +750,38 @@ function applyExitOverride(cmd: Command): void {
 
 // ─── Entry point ───────────────────────────────────────────────────────
 
+/** Bare verb-namespace invocations (`mu workspace`, `mu task`, …)
+ *  used to print nothing and exit 0 because commander, given a parent
+ *  with subcommands and no .action(), produces an empty render. We
+ *  fix this BEFORE parseAsync rather than via .action() on each
+ *  namespace because attaching .action() makes commander treat
+ *  `mu task bogus` as a positional arg to `task` instead of routing
+ *  it to the "unknown subcommand" lane (which other tests + emitError
+ *  depend on). Surfaced by `bare_verb_namespaces_mu_workspace_task`.
+ *
+ *  Triggers when:
+ *    - argv after the program name is exactly one token
+ *    - that token names a top-level subcommand of `mu`
+ *    - that subcommand itself has its own subcommands (i.e. it's a
+ *      namespace, not a leaf verb)
+ *  In that case we append `--help` so commander routes through its
+ *  help printer. Bare `mu` (mission control) is unaffected because
+ *  the slice has length 0.
+ */
+export function injectBareNamespaceHelp(
+  program: Command,
+  argv: readonly string[],
+): readonly string[] {
+  // argv is the full process.argv shape: [node, mu, ...userArgs].
+  if (argv.length !== 3) return argv;
+  const token = argv[2];
+  if (token === undefined || token.startsWith("-")) return argv;
+  const sub = program.commands.find((c) => c.name() === token || c.aliases().includes(token));
+  if (!sub) return argv;
+  if (sub.commands.length === 0) return argv;
+  return [...argv, "--help"];
+}
+
 // When invoked as `mu …` from the shell, parse argv. When imported (e.g.
 // from tests), do nothing — buildProgram() is exported for direct use.
 //
@@ -761,14 +793,15 @@ function applyExitOverride(cmd: Command): void {
 // and `mu --version` produces no output.
 if (isMainEntrypoint()) {
   const program = buildProgram();
+  const argv = injectBareNamespaceHelp(program, process.argv);
   try {
-    await program.parseAsync(process.argv);
+    await program.parseAsync(argv);
   } catch (err) {
     // CommanderError (parse-time) lands here because every command in
     // the tree had .exitOverride() applied. Locate the deepest matching
     // subcommand from argv so emitError can render its --help (human)
     // or `usage` JSON (--json).
-    const failingCmd = findCommandForArgv(program, process.argv.slice(2));
+    const failingCmd = findCommandForArgv(program, argv.slice(2));
     const exitCode = emitParseError(err, failingCmd);
     process.exit(exitCode);
   }

@@ -38,7 +38,7 @@
 //                Both cases land here and the test can pattern-match
 //                on which.
 
-import { buildProgram } from "../src/cli.js";
+import { buildProgram, injectBareNamespaceHelp } from "../src/cli.js";
 import { emitParseError, findCommandForArgv } from "../src/cli/handle.js";
 
 export interface Capture {
@@ -122,7 +122,14 @@ export async function runCli(argv: readonly string[], dbPath: string): Promise<C
     // every command throws CommanderError instead of process.exit'ing.
     // Combined with our process.exit shim above, ALL exit paths land
     // in this catch.
-    await program.parseAsync(["node", "mu", ...argv]);
+    //
+    // Mirror the production entry-point's bare-namespace shim so
+    // tests exercise the same argv-rewrite path (—> `mu task` becomes
+    // `mu task --help`). Without this, tests would assert against
+    // commander's silent-exit behaviour and the production fix would
+    // go unverified.
+    const fullArgv = injectBareNamespaceHelp(program, ["node", "mu", ...argv]);
+    await program.parseAsync(fullArgv);
   } catch (err) {
     // Four error classes can land here:
     //   1. our process.exit shim throws Error('__exit__:N') with the
