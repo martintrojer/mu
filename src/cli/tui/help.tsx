@@ -12,12 +12,13 @@
 import { Box, Text } from "ink";
 import { superscriptDigit } from "./glyphs.js";
 
-// Cards 1..7 visualised the same way they appear in each card's top
-// border line (per feat_card_header_digit_prefix). Slots 5/6/7 were
-// promoted by feat_card_5_workspaces, feat_card_6_inprogress, and
-// feat_card_7_blocked; remaining slots 8..9 stay reserved (per
-// design_global_keymap) until each is promoted by its own feat task.
-const CARD_DIGITS = `${superscriptDigit(1)}${superscriptDigit(2)}${superscriptDigit(3)}${superscriptDigit(4)}${superscriptDigit(5)}${superscriptDigit(6)}${superscriptDigit(7)}`;
+// Cards 1..8 visualised the same way they appear in each card's top
+// border line (per feat_card_header_digit_prefix). Slots 5/6/7/8
+// were promoted by feat_card_5_workspaces, feat_card_6_inprogress,
+// feat_card_7_blocked, and feat_card_8_recent; the remaining slot 9
+// stays reserved (per design_global_keymap) until promoted by its
+// own feat task.
+const CARD_DIGITS = `${superscriptDigit(1)}${superscriptDigit(2)}${superscriptDigit(3)}${superscriptDigit(4)}${superscriptDigit(5)}${superscriptDigit(6)}${superscriptDigit(7)}${superscriptDigit(8)}`;
 
 export function Help(): JSX.Element {
   return (
@@ -28,7 +29,7 @@ export function Help(): JSX.Element {
         </Text>
         <HelpRow
           keys={CARD_DIGITS}
-          effect="toggle Agents/Tracks/Ready/Log/Workspaces/In-progress/Blocked (1-7)"
+          effect="toggle Agents/Tracks/Ready/Log/Workspaces/In-progress/Blocked/Recent (1-8)"
         />
         <HelpRow keys="!@#$" effect="open card popup (Shift+1..Shift+4 on US)" />
         <HelpRow keys="+/=" effect="tick faster (floor 100ms)" />

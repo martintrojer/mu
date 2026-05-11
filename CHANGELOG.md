@@ -78,6 +78,25 @@ is opt-in via the new `--tui` flag.
     IDs / agent names / status tokens never truncate; titles /
     payloads / paths clip with `…`. Uses `string-width` for
     emoji + ANSI awareness.
+- **TUI Recent card (slot 8)** — toggleable with `8`. One
+  glanceable list of the most-recently CLOSED tasks in the
+  workstream, newest first: heavy-check glyph (✓, green), task
+  id, status, time-since-close (relative-time token with `ago`
+  suffix), and title. Subtitle inlines `<N>` or
+  `<N> · last <when>` where `<when>` is the time since the
+  most-recent close — the actionable anchor for the operator's
+  "did the wave just finish?" question. Reads
+  `snapshot.recentClosed` directly (the existing `listRecentClosed`
+  SDK helper, sorted by `updated_at DESC`); no SDK extension.
+  Empty-state body is `(none recently closed)`. Surfaces "what
+  just shipped" so the operator can cherry-pick / verify /
+  cross-reference without bouncing to a separate `mu task list
+  --status CLOSED -w <ws>` shell. Slot-8 popup (Shift+8 / `*`)
+  is not shipped yet; tracked by feat_more_cards_umbrella, and
+  when it lands it MUST follow feat_popup_search_filter (`/`)
+  and feat_track_drill_chains_to_task_drill (Enter chains rows
+  into TaskDetailDrill, since rows ARE tasks). Slot 9 stays
+  reserved.
 - **TUI Blocked card (slot 7)** — toggleable with `7`. One
   glanceable list of every OPEN task with at least one still-gating
   blocker (status ≠ CLOSED): chain-link glyph, task id, status,

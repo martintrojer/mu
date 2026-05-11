@@ -1,0 +1,124 @@
+// Tests for src/cli/tui/cards/recent.tsx (feat_card_8_recent,
+// workstream `tui-impl`). ink-testing-library is not installable in
+// this environment so we lean on:
+//   - calling the FC as a plain function (catches import-graph drift),
+//   - asserting on the pure helpers (glyphFor, ageMs, formatWhen,
+//     formatSubtitle).
+//
+// Mirrors test/tui-card-inprogress.test.ts and
+// test/tui-card-blocked.test.ts.
+
+import { describe, expect, it } from "vitest";
+import {
+  RecentCard,
+  ageMs,
+  formatSubtitle,
+  formatWhen,
+  glyphFor,
+} from "../src/cli/tui/cards/recent.js";
+import type { TaskRow } from "../src/tasks.js";
+
+const EMPTY_SNAPSHOT = {
+  workstreamName: "demo",
+  view: { agents: [], orphans: [], report: { reaped: [], pruned: [] } },
+  tracks: [],
+  ready: [],
+  inProgress: [],
+  blocked: [],
+  recentClosed: [],
+  workspaces: [],
+  workspaceOrphans: [],
+  recent: [],
+};
+
+function task(over: Partial<TaskRow> = {}): TaskRow {
+  return {
+    name: "feat_card_5",
+    workstreamName: "demo",
+    title: "FEAT: Card 5 — Workspaces",
+    status: "CLOSED",
+    impact: 50,
+    effortDays: 1,
+    ownerName: "worker-3",
+    createdAt: "2026-05-11T00:00:00Z",
+    updatedAt: "2026-05-11T00:00:00Z",
+    ...over,
+  };
+}
+
+describe("RecentCard", () => {
+  it("is exported as a function", () => {
+    expect(typeof RecentCard).toBe("function");
+  });
+
+  it("renders a placeholder for null snapshot (loading state)", () => {
+    const result = RecentCard({ snapshot: null });
+    expect(result).toBeTruthy();
+  });
+
+  it("renders the empty-state hint when no recently-closed tasks exist", () => {
+    const result = RecentCard({ snapshot: EMPTY_SNAPSHOT });
+    expect(result).toBeTruthy();
+  });
+
+  it("renders rows for a populated recentClosed list", () => {
+    const result = RecentCard({
+      snapshot: {
+        ...EMPTY_SNAPSHOT,
+        recentClosed: [
+          task({ name: "feat_card_5", title: "FEAT: Card 5 — Workspaces" }),
+          task({ name: "feat_card_6", title: "FEAT: Card 6 — In-progress" }),
+          task({ name: "feat_card_7", title: "FEAT: Card 7 — Blocked" }),
+        ],
+      },
+    });
+    expect(result).toBeTruthy();
+  });
+});
+
+describe("RecentCard pure helpers", () => {
+  it("glyphFor: every recently-closed row gets the heavy check glyph", () => {
+    const g = glyphFor(task());
+    expect(typeof g).toBe("string");
+    expect(g.length).toBeGreaterThan(0);
+    expect(g.length).toBeLessThanOrEqual(4);
+    // Pin the actual codepoint — heavy check U+2713.
+    expect(g).toBe("✓");
+  });
+
+  it("ageMs: returns the delta against `now`, never negative", () => {
+    const t = task({ updatedAt: "2026-05-11T00:00:00Z" });
+    const now = Date.parse("2026-05-11T00:01:30Z"); // +90s
+    expect(ageMs(t, now)).toBe(90_000);
+    // future updatedAt (clock skew): clamp to 0
+    expect(ageMs(t, Date.parse("2026-05-10T23:59:00Z"))).toBe(0);
+  });
+
+  it("ageMs: returns null when updatedAt is unparseable", () => {
+    expect(ageMs(task({ updatedAt: "not-a-date" }), Date.now())).toBeNull();
+  });
+
+  it("formatWhen: short relative-time tokens with `ago` suffix", () => {
+    expect(formatWhen(null)).toBe("—");
+    expect(formatWhen(undefined)).toBe("—");
+    expect(formatWhen(0)).toBe("0s ago");
+    expect(formatWhen(45_000)).toBe("45s ago");
+    expect(formatWhen(60_000)).toBe("1m ago");
+    expect(formatWhen(15 * 60_000)).toBe("15m ago");
+    expect(formatWhen(60 * 60_000)).toBe("1h ago");
+    expect(formatWhen(5 * 60 * 60_000)).toBe("5h ago");
+    expect(formatWhen(24 * 60 * 60_000)).toBe("1d ago");
+    expect(formatWhen(7 * 24 * 60 * 60_000)).toBe("1w ago");
+  });
+
+  it("formatSubtitle: total only when no most-recent age", () => {
+    expect(formatSubtitle(0, null)).toBe("0");
+    expect(formatSubtitle(3, null)).toBe("3");
+  });
+
+  it("formatSubtitle: appends `last <when>` when most-recent age is present", () => {
+    expect(formatSubtitle(3, 0)).toBe("3 · last 0s ago");
+    expect(formatSubtitle(3, 90_000)).toBe("3 · last 1m ago");
+    expect(formatSubtitle(7, 5 * 60 * 60_000)).toBe("7 · last 5h ago");
+  });
+});

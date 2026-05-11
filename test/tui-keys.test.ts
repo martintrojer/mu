@@ -9,7 +9,7 @@ import { dispatchGlobalKey } from "../src/cli/tui/keys.js";
 
 const NO_KEY = {};
 
-describe("dispatchGlobalKey: card toggles 1-7", () => {
+describe("dispatchGlobalKey: card toggles 1-8", () => {
   it.each([
     ["1", 1],
     ["2", 2],
@@ -18,14 +18,13 @@ describe("dispatchGlobalKey: card toggles 1-7", () => {
     ["5", 5],
     ["6", 6],
     ["7", 7],
+    ["8", 8],
   ] as const)("%s toggles card %d", (input, cardId) => {
     expect(dispatchGlobalKey(input, NO_KEY)).toEqual({ kind: "toggleCard", cardId });
   });
 
-  it("digits 8-9 do not toggle (still-reserved slots)", () => {
-    for (const d of ["8", "9"]) {
-      expect(dispatchGlobalKey(d, NO_KEY)).toEqual({ kind: "noop" });
-    }
+  it("digit 9 does not toggle (still-reserved slot)", () => {
+    expect(dispatchGlobalKey("9", NO_KEY)).toEqual({ kind: "noop" });
   });
 });
 
@@ -40,9 +39,9 @@ describe("dispatchGlobalKey: popup openers (Shift+1..Shift+4 → ! @ # $)", () =
   });
 
   it("the other shifted-digit glyphs (% ^ & * () are noops in v0", () => {
-    // Slot-5 (`%`), slot-6 (`^`), and slot-7 (`&`) popups are
-    // tracked by feat_more_cards_umbrella; until they ship the
-    // glyphs stay reserved noops.
+    // Slot-5 (`%`), slot-6 (`^`), slot-7 (`&`), and slot-8 (`*`)
+    // popups are tracked by feat_more_cards_umbrella; until they
+    // ship the glyphs stay reserved noops.
     for (const g of ["%", "^", "&", "*", "(", ")"]) {
       expect(dispatchGlobalKey(g, NO_KEY)).toEqual({ kind: "noop" });
     }

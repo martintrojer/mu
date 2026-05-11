@@ -31,6 +31,9 @@ export interface CardVisibility {
    *  blocker counts come from getTaskEdgesWithStatus (≤8 cheap sync reads
    *  per tick). No SDK extension. */
   blocked: boolean;
+  /** Card 8 — recently-CLOSED tasks (feat_card_8_recent, workstream
+   *  `tui-impl`). Reads snapshot.recentClosed directly; no SDK extension. */
+  recent: boolean;
 }
 
 export const DEFAULT_CARD_VISIBILITY: CardVisibility = {
@@ -41,6 +44,7 @@ export const DEFAULT_CARD_VISIBILITY: CardVisibility = {
   workspaces: true,
   inProgress: true,
   blocked: true,
+  recent: true,
 };
 
 export interface DashboardSnapshot {

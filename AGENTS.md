@@ -103,7 +103,7 @@ mu/
 │   │   │   ├── columns.ts  # column-aligned row layout with protect/clip clipping
 │   │   │   ├── help.tsx    # ?/F1 keymap overlay
 │   │   │   ├── use-popup-filter.tsx  # shared '/' substring filter (hook + reducer + applyFilter + FilterPrompt)
-│   │   │   ├── cards/{agents,tracks,ready,log,workspaces,inprogress,blocked}.tsx  # 7 dashboard glance cards
+│   │   │   ├── cards/{agents,tracks,ready,log,workspaces,inprogress,blocked,recent}.tsx  # 8 dashboard glance cards
 │   │   │   └── popups/{agents,tracks,ready,log}.tsx  # 4 fullscreen drill-down popups
 │   │   ├── snapshot.ts    # undo / snapshot list / snapshot show
 │   │   ├── sql.ts         # sql escape hatch
