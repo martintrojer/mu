@@ -108,133 +108,6 @@ describe("mu state — default (full) mode", () => {
   });
 });
 
-// ── --hud (dynamic-fit) mode ───────────────────────────────────────
-
-describe("mu state --hud — dynamic-fit render", () => {
-  let tempDir: string;
-  let dbPath: string;
-
-  beforeEach(async () => {
-    tempDir = mkdtempSync(join(tmpdir(), "mu-state-hud-"));
-    dbPath = join(tempDir, "mu.db");
-    await runCli(["workstream", "init", "ws", "--json"], dbPath);
-    await runCli(
-      ["task", "add", "alpha", "-w", "ws", "--title", "A", "-i", "50", "-e", "1", "--json"],
-      dbPath,
-    );
-    await runCli(
-      ["task", "add", "beta", "-w", "ws", "--title", "B", "-i", "60", "-e", "1", "--json"],
-      dbPath,
-    );
-  });
-
-  afterEach(() => {
-    try {
-      rmSync(tempDir, { recursive: true, force: true });
-    } catch {}
-    const key = "MU_HUD_FORCE_SIZE";
-    delete process.env[key];
-  });
-
-  it("renders header-less cli-table3 sections with hint words baked into cells", async () => {
-    process.env.MU_HUD_FORCE_SIZE = "120x40";
-    const { stdout, exitCode } = await runCli(["state", "--hud", "-w", "ws"], dbPath);
-    expect(exitCode).toBeNull();
-    expect(stdout).toContain("┌");
-    expect(stdout).toContain("│");
-    expect(stdout).toMatch(/│ ws +│/);
-    expect(stdout).toMatch(/2 ready/);
-    expect(stdout).toMatch(/0 in-progress/);
-    expect(stdout).toMatch(/2 tracks/);
-    expect(stdout).toContain("ready  alpha");
-    expect(stdout).toContain("ready  beta");
-    expect(stdout).toContain("ROI ");
-    expect(stdout).not.toMatch(/in-progress {2}/);
-    expect(stdout).toContain("track 1");
-    expect(stdout).toMatch(/\+\d+s/);
-    expect(stdout).toContain("task add");
-  });
-
-  it("medium pane (60x14) drops lower sections + shows '+N more' truncation footer", async () => {
-    for (const id of ["gamma", "delta", "eps", "zeta", "eta", "theta"]) {
-      await runCli(
-        ["task", "add", id, "-w", "ws", "--title", id, "-i", "50", "-e", "1", "--json"],
-        dbPath,
-      );
-    }
-    process.env.MU_HUD_FORCE_SIZE = "60x14";
-    const { stdout, exitCode } = await runCli(["state", "--hud", "-w", "ws"], dbPath);
-    expect(exitCode).toBeNull();
-    expect(stdout).toMatch(/│ ws +│/);
-    expect(stdout).toContain("ready  alpha");
-    expect(stdout).toMatch(/… \+\d+ more \(mu task next -n 0 -w ws\)/);
-  });
-
-  it("output never exceeds the forced height (no overflow)", async () => {
-    for (const id of ["gamma", "delta", "eps", "zeta", "eta", "theta", "iota", "kappa"]) {
-      await runCli(
-        ["task", "add", id, "-w", "ws", "--title", id, "-i", "50", "-e", "1", "--json"],
-        dbPath,
-      );
-    }
-    for (const height of [10, 12, 14, 20]) {
-      process.env.MU_HUD_FORCE_SIZE = `60x${height}`;
-      const { stdout } = await runCli(["state", "--hud", "-w", "ws"], dbPath);
-      const lineCount = stdout.split("\n").filter((l) => l.length > 0).length;
-      expect(lineCount).toBeLessThanOrEqual(height);
-    }
-  });
-
-  it("MU_HUD_FORCE_SIZE rejects malformed values with a UsageError", async () => {
-    process.env.MU_HUD_FORCE_SIZE = "not-a-size";
-    const { stderr, exitCode } = await runCli(["state", "--hud", "-w", "ws"], dbPath);
-    expect(exitCode).toBe(2);
-    expect(stderr).toContain("MU_HUD_FORCE_SIZE");
-  });
-
-  it("--hud --json emits SAME flat shape as default --json (render flag doesn't change machine view)", async () => {
-    const defaultJson = JSON.parse((await runCli(["state", "-w", "ws", "--json"], dbPath)).stdout);
-    const hudJson = JSON.parse(
-      (await runCli(["state", "--hud", "-w", "ws", "--json"], dbPath)).stdout,
-    );
-    expect(Object.keys(hudJson).sort()).toEqual(Object.keys(defaultJson).sort());
-    expect(hudJson.workstreamName).toBe("ws");
-    expect(hudJson.ready.length).toBe(defaultJson.ready.length);
-    expect(Array.isArray(hudJson.blocked)).toBe(true);
-    expect(Array.isArray(hudJson.workspaces)).toBe(true);
-  });
-
-  it("-n caps recent-events tail at exactly N entries (asserted via --json)", async () => {
-    for (const id of ["gamma", "delta", "epsilon", "zeta"]) {
-      await runCli(
-        ["task", "add", id, "-w", "ws", "--title", id, "-i", "50", "-e", "1", "--json"],
-        dbPath,
-      );
-    }
-    const oneJson = JSON.parse(
-      (await runCli(["state", "--hud", "-w", "ws", "--json", "-n", "1"], dbPath)).stdout,
-    );
-    expect(oneJson.recent.length).toBe(1);
-    const threeJson = JSON.parse(
-      (await runCli(["state", "--hud", "-w", "ws", "--json", "-n", "3"], dbPath)).stdout,
-    );
-    expect(threeJson.recent.length).toBe(3);
-  });
-
-  it("multi-workstream --hud --json wraps per-ws in { workstreams: [...] }", async () => {
-    await runCli(["workstream", "init", "ws2", "--json"], dbPath);
-    await runCli(
-      ["task", "add", "g", "-w", "ws2", "--title", "G", "-i", "10", "-e", "1", "--json"],
-      dbPath,
-    );
-    const { stdout, exitCode } = await runCli(["state", "--hud", "-w", "ws,ws2", "--json"], dbPath);
-    expect(exitCode).toBeNull();
-    const parsed = JSON.parse(stdout);
-    expect(Array.isArray(parsed.workstreams)).toBe(true);
-    expect(parsed.workstreams.length).toBe(2);
-  });
-});
-
 // ── --mission (stripped 5-col glance) ──────────────────────────────
 
 describe("mu state --mission — stripped glance card", () => {
@@ -342,15 +215,6 @@ describe("mu state — mutual-exclusion + cross-workstream", () => {
     delete process.env[key];
   });
 
-  it("--hud + --mission errors as a UsageError (mutually exclusive)", async () => {
-    const { stderr, exitCode } = await runCli(
-      ["state", "--hud", "--mission", "-w", "alpha"],
-      dbPath,
-    );
-    expect(exitCode).toBe(2);
-    expect(stderr).toContain("mutually exclusive");
-  });
-
   it("--all + -w errors as a UsageError (mutually exclusive)", async () => {
     const { stderr, exitCode } = await runCli(["state", "--all", "-w", "alpha"], dbPath);
     expect(exitCode).toBe(2);
@@ -363,18 +227,6 @@ describe("mu state — mutual-exclusion + cross-workstream", () => {
     expect(stdout).toContain("State of mu-alpha");
     expect(stdout).toContain("State of mu-beta");
     expect(stdout).not.toContain("State of mu-gamma");
-  });
-
-  it("cross-workstream works in --hud mode (-w X,Y unions with leading column)", async () => {
-    process.env.MU_HUD_FORCE_SIZE = "160x40";
-    const { stdout, exitCode } = await runCli(["state", "--hud", "-w", "alpha,beta"], dbPath);
-    expect(exitCode).toBeNull();
-    expect(stdout).toMatch(/│ alpha +│/);
-    expect(stdout).toMatch(/│ beta +│/);
-    expect(stdout).not.toMatch(/│ gamma +│/);
-    expect(stdout).toContain("ready  t_alpha");
-    expect(stdout).toContain("ready  t_beta");
-    expect(stdout).not.toContain("ready  t_gamma");
   });
 
   it("cross-workstream works in --mission mode (-w X,Y stacks per-ws cards)", async () => {
@@ -392,63 +244,37 @@ describe("mu state — mutual-exclusion + cross-workstream", () => {
   });
 });
 
-// ── colorEventPayload regression: every emitter verb is recognised ──
+// ── classifyEventVerb regression: every emitter verb is recognised ──
 //
-// Moved from test/hud.test.ts unchanged in spirit: the hud-mode event
-// renderer (now living under cli/state.ts) colours the leading verb
-// token of each event-log payload. EVENT_VERB_PREFIXES in src/logs.ts
-// is the single source of truth; this block enforces (a) every entry
-// round-trips, (b) every emitEvent callsite under src/ uses a payload
-// prefix that is recognised.
-describe("colorEventPayload", () => {
-  let savedNoColor: string | undefined;
-  let savedForceColor: string | undefined;
-  beforeEach(() => {
-    savedNoColor = process.env.NO_COLOR;
-    savedForceColor = process.env.MU_FORCE_COLOR;
-    const noColorKey = "NO_COLOR";
-    delete process.env[noColorKey];
-    process.env.MU_FORCE_COLOR = "1";
-    vi.resetModules();
-  });
-  afterEach(() => {
-    if (savedNoColor === undefined) {
-      const noColorKey = "NO_COLOR";
-      delete process.env[noColorKey];
-    } else {
-      process.env.NO_COLOR = savedNoColor;
-    }
-    if (savedForceColor === undefined) {
-      const forceColorKey = "MU_FORCE_COLOR";
-      delete process.env[forceColorKey];
-    } else {
-      process.env.MU_FORCE_COLOR = savedForceColor;
-    }
-    vi.resetModules();
-  });
-
-  it("colours every verb in EVENT_VERB_PREFIXES", async () => {
-    const { EVENT_VERB_PREFIXES } = await import("../src/logs.js");
-    const { colorEventPayload } = await import("../src/cli/state.js");
+// Per the TUI refactor (Wave 2 Task 10): the parsing half of the previous
+// HUD-mode `colorEventPayload` lives at src/logs.ts as `classifyEventVerb`
+// (verb extraction only; renderers apply their own colour). This block
+// preserves the old guarantees verbatim, just without the cyan part:
+// (a) every entry in EVENT_VERB_PREFIXES round-trips, (b) every
+// emitEvent callsite under src/ uses a payload prefix that is
+// recognised. Plus the false-positive guard.
+describe("classifyEventVerb", () => {
+  it("recognises every verb in EVENT_VERB_PREFIXES", async () => {
+    const { EVENT_VERB_PREFIXES, classifyEventVerb } = await import("../src/logs.js");
     expect(EVENT_VERB_PREFIXES.length).toBeGreaterThan(0);
     for (const verb of EVENT_VERB_PREFIXES) {
       const payload = `${verb} alpha (extra info)`;
-      const out = colorEventPayload(payload);
-      expect(out, `verb '${verb}' should be coloured`).not.toBe(payload);
-      expect(out, `verb '${verb}' tail should survive`).toContain(" alpha (extra info)");
-      expect(out, `verb '${verb}' should emit ANSI cyan`).toContain("\x1b[36m");
+      const r = classifyEventVerb(payload);
+      expect(r, `verb '${verb}' should classify`).not.toBeNull();
+      expect(r?.verb).toBe(verb);
+      expect(r?.rest).toBe(" alpha (extra info)");
     }
   });
 
-  it("leaves unknown payloads untouched (no false-positive matches)", async () => {
-    const { colorEventPayload } = await import("../src/cli/state.js");
+  it("returns null for unknown payloads (no false-positive matches)", async () => {
+    const { classifyEventVerb } = await import("../src/logs.js");
     for (const payload of [
       "random freeform message",
       "approve granted slug",
       "snapshot capture foo",
       "taskaddendum sneaky",
     ]) {
-      expect(colorEventPayload(payload)).toBe(payload);
+      expect(classifyEventVerb(payload)).toBeNull();
     }
   });
 
