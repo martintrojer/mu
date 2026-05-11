@@ -113,7 +113,7 @@ describe("mu task wait — cross-workstream qualified refs + --first", () => {
     expect(stderr).toBe("");
     expect(exitCode).toBeNull();
     const out = JSON.parse(stdout);
-    expect(out.allReached).toBe(true);
+    expect(out.timedOut).toEqual([]);
     expect(out.all).toHaveLength(2);
     const allIds = (out.all as { qualifiedId: string }[]).map((t) => t.qualifiedId).sort();
     expect(allIds).toEqual(["wsa/foo", "wsb/bar"]);

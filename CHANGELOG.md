@@ -33,6 +33,30 @@ called out under "Breaking" in each entry.
   unreadable / malformed` reason) — a single typed surface
   instead of two near-identical ones.
 
+### Breaking
+
+- **`mu task wait --json`: dropped legacy fields from the envelope**
+  (`drop_legacy_mu_task_wait_json_fields`). The previous shape spread
+  the SDK `TaskWaitResult` into the JSON envelope, which leaked
+  `tasks` / `allReached` / `anyReached` / `elapsedMs` and a *boolean*
+  `timedOut` alongside the operator-facing `firing` / `all` /
+  `timedOut` (array) / `nextSteps`. The legacy fields were kept for
+  back-compat at the time — but mu has a single user, no callers
+  pinned to the prior shape, and the dual-shape `timedOut`
+  (overwritten boolean → array) was an accident waiting to bite.
+  The canonical envelope is now exactly:
+
+  ```
+  { firing, all, timedOut, nextSteps }
+  ```
+
+  with `timedOut` always an array (`[]` on a clean exit; populated
+  on actual timeout). The SDK `TaskWaitResult` shape shrinks to
+  match: `{ refs, timedOut }`. Callers that need elapsed wall-clock
+  time wrap `waitForTasks` with their own `Date.now()` bracket.
+  `isDone()` inside `waitForTasks` now derives any/all from
+  `refs.filter(r => r.reachedTarget)` directly.
+
 ### Changed
 
 - **`mu agent close` auto-frees a clean workspace instead of requiring

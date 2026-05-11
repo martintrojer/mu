@@ -28,7 +28,6 @@ import {
   ReaperDetectedDuringWaitError,
   TaskNotFoundError,
   type TaskWaitRef,
-  type TaskWaitResult,
   type TaskWaitTaskState,
   claimTask,
   getTask,
@@ -283,7 +282,7 @@ export async function cmdTaskWait(
   const stuckAfterMs = opts.stuckAfter !== undefined ? opts.stuckAfter * 1000 : 300_000;
 
   const sdkOpts: {
-    status?: TaskWaitResult["tasks"][number]["status"];
+    status?: TaskWaitTaskState["status"];
     any?: boolean;
     timeoutMs: number;
     stuckAfterMs: number;
@@ -365,7 +364,9 @@ export async function cmdTaskWait(
     }
   };
 
+  const startedAt = Date.now();
   const result = await waitForTasks(db, refs, sdkOpts);
+  const elapsedMs = Date.now() - startedAt;
 
   // ─── WHICH-result shaping ────────────────────────────────────────
   // "firing" = the first ref that reached the target on the closing
@@ -373,9 +374,9 @@ export async function cmdTaskWait(
   // no "first" to single out) and on timeout (nothing reached).
   // The order matches the input refs order; tie-breaks by argv.
   const firingRef: TaskWaitTaskState | null =
-    wantFirstShape && !result.timedOut ? (result.tasks.find((t) => t.reachedTarget) ?? null) : null;
-  const reachedRefs = result.tasks.filter((t) => t.reachedTarget);
-  const unmetRefs = result.tasks.filter((t) => !t.reachedTarget);
+    wantFirstShape && !result.timedOut ? (result.refs.find((t) => t.reachedTarget) ?? null) : null;
+  const reachedRefs = result.refs.filter((t) => t.reachedTarget);
+  const unmetRefs = result.refs.filter((t) => !t.reachedTarget);
 
   // Build nextSteps. The structure differs by exit shape:
   //   - --first / --any success: name the firing ref, suggest
@@ -437,15 +438,18 @@ export async function cmdTaskWait(
   }
 
   if (opts.json) {
-    // JSON shape (task_wait_cross_workstream):
-    //   firing    — the first ref to reach target on --first/--any,
-    //              else null. { workstreamName, name, status }.
-    //   all       — per-ref state for refs that reached target.
-    //   timedOut  — per-ref state for refs that did NOT reach target.
-    //              On the success path this is [].
-    // The legacy `tasks`/`allReached`/`anyReached`/`elapsedMs`/
-    // `timedOut` fields stay (back-compat for any caller pinned to
-    // the prior shape).
+    // JSON envelope (task_wait_cross_workstream). Built explicitly
+    // (no spread of the SDK return) so the operator-facing contract
+    // stays narrow:
+    //   firing   — the firing ref on --first/--any success, else null
+    //   all      — refs that REACHED target (every ref on --all
+    //              success; just the firing ref for --first/--any;
+    //              the partial set on timeout)
+    //   timedOut — refs that did NOT reach target. ALWAYS [] on a
+    //              clean exit; populated on actual timeout. Callers
+    //              branch on `firing === null && timedOut.length > 0`
+    //              for the partial-progress case.
+    //   nextSteps— the same hint list printed to stdout.
     const firingJson =
       firingRef === null
         ? null
@@ -456,23 +460,10 @@ export async function cmdTaskWait(
             status: firingRef.status,
             owner: firingRef.owner,
           };
-    // The JSON shape for the cross-ws + WHICH design is:
-    //   firing   — the firing ref on --first/--any success, else null
-    //   all      — refs that REACHED target (on success: every ref for
-    //              --all; the firing ref for --first/--any. On partial
-    //              timeout: only the ones that made it.)
-    //   timedOut — refs that did NOT reach target. ALWAYS [] on a
-    //              clean exit (every --all ref reached, OR --any saw
-    //              one). Populated on actual timeout only.
-    //
-    // The legacy boolean `timedOut` from the SDK spread is intentionally
-    // overwritten by an array; downstream callers branch on
-    // `firing === null && timedOut.length > 0` for partial-progress.
     const timedOutArray = result.timedOut
       ? unmetRefs.map((t) => ({ ...t, qualifiedId: qualifiedId(t) }))
       : [];
     emitJson({
-      ...result,
       firing: firingJson,
       all: reachedRefs.map((t) => ({
         ...t,
@@ -496,12 +487,12 @@ export async function cmdTaskWait(
     console.log(qualifiedId(firingRef));
   }
   const summary = result.timedOut
-    ? pc.yellow(`Timed out after ${result.elapsedMs}ms`)
+    ? pc.yellow(`Timed out after ${elapsedMs}ms`)
     : pc.green(
-        `${wantAny ? "any-of" : "all-of"} ${refs.length} reached ${targetStatus} in ${result.elapsedMs}ms`,
+        `${wantAny ? "any-of" : "all-of"} ${refs.length} reached ${targetStatus} in ${elapsedMs}ms`,
       );
   console.log(summary);
-  for (const t of result.tasks) {
+  for (const t of result.refs) {
     const marker = t.reachedTarget ? pc.green("✓") : pc.dim("•");
     // Cross-ws: show the qualified id so a mixed list is unambiguous.
     // Single-ws (workstreamSet.size === 1) keeps today's bare-name

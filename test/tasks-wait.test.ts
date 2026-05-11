@@ -60,12 +60,12 @@ describe("waitForTasks", () => {
     setTaskStatus(db, "a", "CLOSED", { workstream: "test" });
     setTaskStatus(db, "b", "CLOSED", { workstream: "test" });
     setTaskStatus(db, "c", "CLOSED", { workstream: "test" });
+    const startedAt = Date.now();
     const r = await waitForTasks(db, ["a", "b", "c"], { pollMs: 50, workstream: "test" });
-    expect(r.allReached).toBe(true);
-    expect(r.anyReached).toBe(true);
     expect(r.timedOut).toBe(false);
-    expect(r.elapsedMs).toBeLessThan(100); // didn't sleep through any poll cycle
-    expect(r.tasks).toEqual([
+    expect(r.refs.every((t) => t.reachedTarget)).toBe(true);
+    expect(Date.now() - startedAt).toBeLessThan(100); // didn't sleep through any poll cycle
+    expect(r.refs).toEqual([
       {
         workstreamName: "test",
         name: "a",
@@ -100,8 +100,8 @@ describe("waitForTasks", () => {
       pollMs: 50,
       workstream: "test",
     });
-    expect(r.allReached).toBe(false);
-    expect(r.anyReached).toBe(true);
+    const reached = r.refs.filter((t) => t.reachedTarget).length;
+    expect(reached).toBe(1);
     expect(r.timedOut).toBe(false);
   });
 
@@ -110,7 +110,7 @@ describe("waitForTasks", () => {
     const flipAt = Date.now();
     setTimeout(() => setTaskStatus(db, "a", "CLOSED", { workstream: "test" }), 60);
     const r = await waitForTasks(db, ["a"], { pollMs: 30, timeoutMs: 1000, workstream: "test" });
-    expect(r.allReached).toBe(true);
+    expect(r.refs.every((t) => t.reachedTarget)).toBe(true);
     expect(r.timedOut).toBe(false);
     // Allow generous slack; assert we DID wait (not the immediate-exit path).
     expect(Date.now() - flipAt).toBeGreaterThanOrEqual(30);
@@ -123,10 +123,9 @@ describe("waitForTasks", () => {
       workstream: "test",
     });
     expect(r.timedOut).toBe(true);
-    expect(r.allReached).toBe(false);
-    expect(r.anyReached).toBe(false);
+    expect(r.refs.some((t) => t.reachedTarget)).toBe(false);
     // Per-task state at exit time still useful for the caller.
-    expect(r.tasks.map((t) => t.status)).toEqual(["OPEN", "OPEN"]);
+    expect(r.refs.map((t) => t.status)).toEqual(["OPEN", "OPEN"]);
   });
 
   it("--any times out cleanly when no task reaches the target", async () => {
@@ -137,7 +136,7 @@ describe("waitForTasks", () => {
       workstream: "test",
     });
     expect(r.timedOut).toBe(true);
-    expect(r.anyReached).toBe(false);
+    expect(r.refs.some((t) => t.reachedTarget)).toBe(false);
   });
 
   it("respects a non-default --status target (e.g. IN_PROGRESS)", async () => {
@@ -148,8 +147,8 @@ describe("waitForTasks", () => {
       pollMs: 50,
       workstream: "test",
     });
-    expect(r.allReached).toBe(true);
-    expect(r.tasks.every((t) => t.status === "IN_PROGRESS")).toBe(true);
+    expect(r.refs.every((t) => t.reachedTarget)).toBe(true);
+    expect(r.refs.every((t) => t.status === "IN_PROGRESS")).toBe(true);
   });
 
   it("throws TaskNotFoundError pre-flight if any listed task doesn't exist (loud-fail)", async () => {
@@ -164,13 +163,13 @@ describe("waitForTasks", () => {
 
   it("partial-progress on timeout: some tasks reached, others didn't", async () => {
     setTaskStatus(db, "a", "CLOSED", { workstream: "test" });
-    // b stays OPEN → all-of fails on timeout but anyReached is true.
+    // b stays OPEN → all-of fails on timeout but one ref reached.
     const r = await waitForTasks(db, ["a", "b"], { timeoutMs: 80, pollMs: 30, workstream: "test" });
     expect(r.timedOut).toBe(true);
-    expect(r.allReached).toBe(false);
-    expect(r.anyReached).toBe(true); // 'a' reached
-    expect(r.tasks[0]?.reachedTarget).toBe(true);
-    expect(r.tasks[1]?.reachedTarget).toBe(false);
+    const reached = r.refs.filter((t) => t.reachedTarget).length;
+    expect(reached).toBe(1); // 'a' reached, 'b' did not
+    expect(r.refs[0]?.reachedTarget).toBe(true);
+    expect(r.refs[1]?.reachedTarget).toBe(false);
   });
 
   it("survives a task being deleted mid-wait (treats it as 'never reached')", async () => {
@@ -182,7 +181,7 @@ describe("waitForTasks", () => {
     });
     expect(r.timedOut).toBe(true);
     // 'b' was deleted; defensive snapshot defaults to 'OPEN' / not reached.
-    const bState = r.tasks.find((t) => t.name === "b");
+    const bState = r.refs.find((t) => t.name === "b");
     expect(bState?.reachedTarget).toBe(false);
   });
 
@@ -196,11 +195,10 @@ describe("waitForTasks", () => {
     const r = await waitForTasks(db, ["a"], { pollMs: 1000, timeoutMs: 50, workstream: "test" });
     const elapsed = Date.now() - startedAt;
     expect(r.timedOut).toBe(true);
-    expect(r.allReached).toBe(false);
+    expect(r.refs.some((t) => t.reachedTarget)).toBe(false);
     // Pre-fix this would have been ~1000ms. 200ms is generous slack for
     // CI noise; the bug regression bound is ~1000.
     expect(elapsed).toBeLessThan(200);
-    expect(r.elapsedMs).toBeLessThan(200);
   });
 
   // Sibling-progress when one task in the wait set is deleted mid-wait:
@@ -218,9 +216,9 @@ describe("waitForTasks", () => {
       workstream: "test",
     });
     expect(r.timedOut).toBe(false);
-    expect(r.anyReached).toBe(true);
-    const aState = r.tasks.find((t) => t.name === "a");
-    const bState = r.tasks.find((t) => t.name === "b");
+    expect(r.refs.some((t) => t.reachedTarget)).toBe(true);
+    const aState = r.refs.find((t) => t.name === "a");
+    const bState = r.refs.find((t) => t.name === "b");
     expect(aState?.reachedTarget).toBe(true);
     expect(bState?.reachedTarget).toBe(false);
   });
@@ -298,8 +296,8 @@ describe("waitForTasks", () => {
       });
       expect(r.timedOut).toBe(true);
       // 'a' is stuck; 'b' is just OPEN with no owner (not stuck).
-      const aState = r.tasks.find((t) => t.name === "a");
-      const bState = r.tasks.find((t) => t.name === "b");
+      const aState = r.refs.find((t) => t.name === "a");
+      const bState = r.refs.find((t) => t.name === "b");
       expect(aState?.stuck).toBe(true);
       expect(bState?.stuck).toBe(false);
       // Multiple poll cycles ran (the timeout/poll math gives ~8) but
@@ -509,7 +507,7 @@ describe("waitForTasks", () => {
         workstream: "test",
       });
       expect(r.timedOut).toBe(true);
-      expect(r.tasks[0]?.stuck).toBe(false);
+      expect(r.refs[0]?.stuck).toBe(false);
       expect(warnings).toHaveLength(0);
     } finally {
       setWaitStuckWarnForTests(restoreWarn);

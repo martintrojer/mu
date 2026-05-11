@@ -177,17 +177,14 @@ export interface TaskWaitTaskState {
 }
 
 export interface TaskWaitResult {
-  /** Per-task state at exit time. Same length and order as the input list. */
-  tasks: TaskWaitTaskState[];
-  /** True when EVERY task reached the target (the --all condition). */
-  allReached: boolean;
-  /** True when AT LEAST ONE task reached the target (the --any condition). */
-  anyReached: boolean;
-  /** Wall-clock time spent waiting, in ms (always >= 0). */
-  elapsedMs: number;
+  /** Per-task state at exit time. Same length and order as the input
+   *  list. The caller derives all-reached / any-reached / elapsed
+   *  from this list (count `r.reachedTarget`) and from its own
+   *  startedAt clock — keeping the SDK return minimal. */
+  refs: TaskWaitTaskState[];
   /** True when we exited because of the timeout, not because the wait
-   *  condition was met. allReached / anyReached can still be true on
-   *  partial progress when timedOut is true. */
+   *  condition was met. Refs that did reach the target are still
+   *  reflected in `refs[i].reachedTarget` on partial-progress timeout. */
   timedOut: boolean;
 }
 
@@ -230,7 +227,6 @@ export async function waitForTasks(
   const stuckAfterMs = opts.stuckAfterMs ?? 300_000;
   const onStall: "warn" | "exit" = opts.onStall ?? "warn";
   const deadline = timeoutMs > 0 ? Date.now() + timeoutMs : Number.POSITIVE_INFINITY;
-  const startedAt = Date.now();
 
   // Pre-flight: every ref must exist in its own workstream scope.
   // Cross-workstream waits validate each ref against its declared ws
@@ -277,7 +273,7 @@ export async function waitForTasks(
 
   /** Read current state of all tasks; returns the result shape. */
   const snapshot = (): TaskWaitResult => {
-    const tasks: TaskWaitTaskState[] = refs.map((ref) => {
+    const refStates: TaskWaitTaskState[] = refs.map((ref) => {
       const row = getTask(db, ref.name, ref.workstreamName);
       // Defensive: if a task was deleted mid-wait, treat as 'never
       // reached'. (Not the same as TaskNotFoundError pre-flight —
@@ -334,18 +330,17 @@ export async function waitForTasks(
         stuck,
       };
     });
-    const reachedCount = tasks.filter((t) => t.reachedTarget).length;
     return {
-      tasks,
-      allReached: reachedCount === tasks.length,
-      anyReached: reachedCount > 0,
-      elapsedMs: Date.now() - startedAt,
+      refs: refStates,
       timedOut: false,
     };
   };
 
   /** Has the wait condition been met? */
-  const isDone = (snap: TaskWaitResult): boolean => (wantAny ? snap.anyReached : snap.allReached);
+  const isDone = (snap: TaskWaitResult): boolean => {
+    const reached = snap.refs.filter((r) => r.reachedTarget).length;
+    return wantAny ? reached > 0 : reached === snap.refs.length;
+  };
 
   // Initial check: maybe we're already done. Run beforePoll first so
   // the CLI's per-poll reconcile (task_wait_reconcile_dead_panes) runs

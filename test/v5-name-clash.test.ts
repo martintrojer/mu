@@ -295,9 +295,9 @@ describe("v5 name-clash regression: read verbs scope correctly", () => {
       timeoutMs: 100,
       pollMs: 10,
     });
-    expect(r.allReached).toBe(true);
+    expect(r.refs.every((t) => t.reachedTarget)).toBe(true);
     expect(r.timedOut).toBe(false);
-    expect(r.tasks[0]?.status).toBe("CLOSED");
+    expect(r.refs[0]?.status).toBe("CLOSED");
     // And the same wait targeting wsb times out (wsb's design still
     // OPEN).
     const r2 = await waitForTasks(db, ["design"], {
@@ -306,6 +306,6 @@ describe("v5 name-clash regression: read verbs scope correctly", () => {
       pollMs: 10,
     });
     expect(r2.timedOut).toBe(true);
-    expect(r2.tasks[0]?.status).toBe("OPEN");
+    expect(r2.refs[0]?.status).toBe("OPEN");
   });
 });
