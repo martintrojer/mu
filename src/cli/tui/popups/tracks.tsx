@@ -27,7 +27,7 @@
 // feat_column_aligned_lists clipping policy: track number, ⋈ glyph,
 // counts are PROTECTED; the goal-name list is CLIPPABLE.
 
-import { Box, Text, useInput } from "ink";
+import { Box, Text, useInput, useStdout } from "ink";
 import { useEffect, useMemo, useState } from "react";
 import type { Db } from "../../../db.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
@@ -281,13 +281,15 @@ export function TracksPopup({
     }
     return (
       <Shell title={`Track ${cursor + 1} · task: ${t.name} (notes)`}>
-        <TaskDetailDrill
-          task={t}
-          db={db}
-          workstream={workstream}
-          scrollTop={taskDetailScrollTop}
-          viewport={VIEWPORT}
-        />
+        <Box flexDirection="column" flexGrow={1}>
+          <TaskDetailDrill
+            task={t}
+            db={db}
+            workstream={workstream}
+            scrollTop={taskDetailScrollTop}
+            viewport={VIEWPORT}
+          />
+        </Box>
         <Box marginTop={1}>
           <Text dimColor>
             j/k scroll · Ctrl-D/U half page · y yanks `mu task notes` · Esc/q back to drill
@@ -319,24 +321,26 @@ export function TracksPopup({
     const widths = layoutColumns(rows, DRILL_COLUMN_SPECS);
     return (
       <Shell title={`${trackLabel} · ${goalSummary} (${drillCursor + 1}/${drillTasks.length})`}>
-        {visible.map((t, i) => {
-          const sel = drillTasks.indexOf(t) === drillCursor;
-          const row = rows[i];
-          if (row === undefined) return null;
-          const padded = renderRow(row, widths, DRILL_COLUMN_SPECS);
-          const [name = "", status = "", title = ""] = padded;
-          return (
-            <Box key={t.name}>
-              <Text inverse={sel}>
-                <Text bold>{name}</Text>
-                {"  "}
-                <Text dimColor>{status}</Text>
-                {"  "}
-                <Text>{title}</Text>
-              </Text>
-            </Box>
-          );
-        })}
+        <Box flexDirection="column" flexGrow={1}>
+          {visible.map((t, i) => {
+            const sel = drillTasks.indexOf(t) === drillCursor;
+            const row = rows[i];
+            if (row === undefined) return null;
+            const padded = renderRow(row, widths, DRILL_COLUMN_SPECS);
+            const [name = "", status = "", title = ""] = padded;
+            return (
+              <Box key={t.name}>
+                <Text inverse={sel}>
+                  <Text bold>{name}</Text>
+                  {"  "}
+                  <Text dimColor>{status}</Text>
+                  {"  "}
+                  <Text>{title}</Text>
+                </Text>
+              </Box>
+            );
+          })}
+        </Box>
         <Box marginTop={1}>
           <Text dimColor>
             j/k nav · Enter task notes · y yanks `mu task show` · Esc/q back to list
@@ -356,26 +360,28 @@ export function TracksPopup({
 
   return (
     <Shell title={`Tracks · popup (${cursor + 1}/${tracks.length})`}>
-      {tracks.map((t, i) => {
-        const sel = i === cursor;
-        const row = rows[i];
-        if (row === undefined) return null;
-        const padded = renderRow(row, widths, COLUMN_SPECS);
-        const [trackLabel = "", diamond = "", goals = "", counts = ""] = padded;
-        return (
-          <Box key={`tr-${i}-${t.roots[0]?.name ?? "?"}`}>
-            <Text inverse={sel}>
-              <Text color="cyan">{trackLabel}</Text>
-              {"  "}
-              <Text>{diamond}</Text>
-              {"  "}
-              <Text>{goals}</Text>
-              {"  "}
-              <Text dimColor>{counts}</Text>
-            </Text>
-          </Box>
-        );
-      })}
+      <Box flexDirection="column" flexGrow={1}>
+        {tracks.map((t, i) => {
+          const sel = i === cursor;
+          const row = rows[i];
+          if (row === undefined) return null;
+          const padded = renderRow(row, widths, COLUMN_SPECS);
+          const [trackLabel = "", diamond = "", goals = "", counts = ""] = padded;
+          return (
+            <Box key={`tr-${i}-${t.roots[0]?.name ?? "?"}`}>
+              <Text inverse={sel}>
+                <Text color="cyan">{trackLabel}</Text>
+                {"  "}
+                <Text>{diamond}</Text>
+                {"  "}
+                <Text>{goals}</Text>
+                {"  "}
+                <Text dimColor>{counts}</Text>
+              </Text>
+            </Box>
+          );
+        })}
+      </Box>
       <Box marginTop={1}>
         <Text dimColor>Enter task list · y yanks `mu task tree &lt;goal&gt;`</Text>
       </Box>
@@ -401,8 +407,20 @@ function statusRank(status: string): number {
 }
 
 function Shell({ title, children }: { title: string; children: React.ReactNode }): JSX.Element {
+  // width={cols} + flexGrow={1} ensure the popup fills the pane edge-to-edge
+  // (see bug_tui_popups_fill_pane). Without these, ink's Yoga layout sizes
+  // this Box to its content and the popup renders as a narrow strip.
+  const { stdout } = useStdout();
+  const cols = stdout.columns ?? 80;
   return (
-    <Box borderStyle="round" borderColor="cyan" paddingX={1} flexDirection="column">
+    <Box
+      borderStyle="round"
+      borderColor="cyan"
+      paddingX={1}
+      flexDirection="column"
+      flexGrow={1}
+      width={cols}
+    >
       <Text bold color="cyan">
         {title}
       </Text>

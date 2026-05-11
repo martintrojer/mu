@@ -15,7 +15,7 @@
 // are PROTECTED (identity / numeric / short tokens); the payload rest
 // is CLIPPABLE.
 
-import { Box, Text, useInput } from "ink";
+import { Box, Text, useInput, useStdout } from "ink";
 import { useState } from "react";
 import type { Db } from "../../../db.js";
 import { classifyEventVerb } from "../../../logs.js";
@@ -139,29 +139,31 @@ export function LogPopup({ yank, onClose, snapshot }: PopupProps): JSX.Element {
 
   return (
     <Shell title={`Activity log · popup (${cursor + 1}/${events.length})`}>
-      {visible.map((e, i) => {
-        const sel = events.indexOf(e) === cursor;
-        const cls = classifyEventVerb(e.payload);
-        const row = rows[i];
-        if (row === undefined) return null;
-        const padded = renderRow(row, widths, COLUMN_SPECS);
-        const [seq = "", ts = "", source = "", verb = "", rest = ""] = padded;
-        return (
-          <Box key={e.seq}>
-            <Text inverse={sel}>
-              <Text dimColor>{seq}</Text>
-              {"  "}
-              <Text dimColor>{ts}</Text>
-              {"  "}
-              <Text dimColor>{source}</Text>
-              {"  "}
-              {cls ? <Text color="cyan">{verb}</Text> : <Text dimColor>{verb}</Text>}
-              {"  "}
-              <Text>{rest}</Text>
-            </Text>
-          </Box>
-        );
-      })}
+      <Box flexDirection="column" flexGrow={1}>
+        {visible.map((e, i) => {
+          const sel = events.indexOf(e) === cursor;
+          const cls = classifyEventVerb(e.payload);
+          const row = rows[i];
+          if (row === undefined) return null;
+          const padded = renderRow(row, widths, COLUMN_SPECS);
+          const [seq = "", ts = "", source = "", verb = "", rest = ""] = padded;
+          return (
+            <Box key={e.seq}>
+              <Text inverse={sel}>
+                <Text dimColor>{seq}</Text>
+                {"  "}
+                <Text dimColor>{ts}</Text>
+                {"  "}
+                <Text dimColor>{source}</Text>
+                {"  "}
+                {cls ? <Text color="cyan">{verb}</Text> : <Text dimColor>{verb}</Text>}
+                {"  "}
+                <Text>{rest}</Text>
+              </Text>
+            </Box>
+          );
+        })}
+      </Box>
       <Box marginTop={1}>
         {/* Popup-specific yank target only; navigation hints live in the global status bar. */}
         <Text dimColor>y yanks the related `mu task/agent show` command</Text>
@@ -171,8 +173,20 @@ export function LogPopup({ yank, onClose, snapshot }: PopupProps): JSX.Element {
 }
 
 function Shell({ title, children }: { title: string; children: React.ReactNode }): JSX.Element {
+  // width={cols} + flexGrow={1} ensure the popup fills the pane edge-to-edge
+  // (see bug_tui_popups_fill_pane). The body region above also flexGrows so
+  // the bottom hint sticks to the popup's bottom (lazygit/btop convention).
+  const { stdout } = useStdout();
+  const cols = stdout.columns ?? 80;
   return (
-    <Box borderStyle="round" borderColor="cyan" paddingX={1} flexDirection="column">
+    <Box
+      borderStyle="round"
+      borderColor="cyan"
+      paddingX={1}
+      flexDirection="column"
+      flexGrow={1}
+      width={cols}
+    >
       <Text bold color="cyan">
         {title}
       </Text>

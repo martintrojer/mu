@@ -20,7 +20,7 @@
 // feat_column_aligned_lists clipping policy: task name, status, owner
 // are PROTECTED (yank-bearing tokens); the title is CLIPPABLE.
 
-import { Box, Text, useInput } from "ink";
+import { Box, Text, useInput, useStdout } from "ink";
 import { useMemo, useState } from "react";
 import type { Db } from "../../../db.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
@@ -173,13 +173,15 @@ export function ReadyPopup({
   if (mode === "drill" && focused) {
     return (
       <PopupShell title={`Tasks · ${focused.name} (notes)`}>
-        <TaskDetailDrill
-          task={focused}
-          db={db}
-          workstream={workstream}
-          scrollTop={scrollTop}
-          viewport={VIEWPORT}
-        />
+        <Box flexDirection="column" flexGrow={1}>
+          <TaskDetailDrill
+            task={focused}
+            db={db}
+            workstream={workstream}
+            scrollTop={scrollTop}
+            viewport={VIEWPORT}
+          />
+        </Box>
         <Box marginTop={1}>
           <Text dimColor>
             j/k scroll · Ctrl-D/U half page · y yanks `mu task notes` · Esc/q back to list
@@ -194,26 +196,28 @@ export function ReadyPopup({
 
   return (
     <PopupShell title={`Tasks · popup (${cursor + 1}/${tasks.length})`}>
-      {tasks.map((t, i) => {
-        const selected = i === cursor;
-        const row = rows[i];
-        if (row === undefined) return null;
-        const padded = renderRow(row, widths, COLUMN_SPECS);
-        const [name = "", status = "", owner = "", title = ""] = padded;
-        return (
-          <Box key={t.name}>
-            <Text inverse={selected}>
-              <Text bold>{name}</Text>
-              {"  "}
-              <Text dimColor>{status}</Text>
-              {"  "}
-              <Text dimColor>{owner}</Text>
-              {"  "}
-              <Text>{title}</Text>
-            </Text>
-          </Box>
-        );
-      })}
+      <Box flexDirection="column" flexGrow={1}>
+        {tasks.map((t, i) => {
+          const selected = i === cursor;
+          const row = rows[i];
+          if (row === undefined) return null;
+          const padded = renderRow(row, widths, COLUMN_SPECS);
+          const [name = "", status = "", owner = "", title = ""] = padded;
+          return (
+            <Box key={t.name}>
+              <Text inverse={selected}>
+                <Text bold>{name}</Text>
+                {"  "}
+                <Text dimColor>{status}</Text>
+                {"  "}
+                <Text dimColor>{owner}</Text>
+                {"  "}
+                <Text>{title}</Text>
+              </Text>
+            </Box>
+          );
+        })}
+      </Box>
       <Box marginTop={1}>
         <Text dimColor>Enter notes · y yanks the per-status `mu task …`</Text>
       </Box>
@@ -248,8 +252,20 @@ function PopupShell({
   title: string;
   children: React.ReactNode;
 }): JSX.Element {
+  // width={cols} + flexGrow={1} ensure the popup fills the pane edge-to-edge
+  // (see bug_tui_popups_fill_pane). Without these, ink's Yoga layout sizes
+  // this Box to its content and the popup renders as a narrow strip.
+  const { stdout } = useStdout();
+  const cols = stdout.columns ?? 80;
   return (
-    <Box borderStyle="round" borderColor="cyan" paddingX={1} flexDirection="column">
+    <Box
+      borderStyle="round"
+      borderColor="cyan"
+      paddingX={1}
+      flexDirection="column"
+      flexGrow={1}
+      width={cols}
+    >
       <Text bold color="cyan">
         {title}
       </Text>

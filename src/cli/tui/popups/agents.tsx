@@ -17,7 +17,7 @@
 // feat_column_aligned_lists clipping policy: glyph, agent name,
 // status are PROTECTED; the role description is CLIPPABLE.
 
-import { Box, Text, useInput } from "ink";
+import { Box, Text, useInput, useStdout } from "ink";
 import { useCallback, useEffect, useState } from "react";
 import { STATUS_EMOJI, readAgent } from "../../../agents.js";
 import type { Db } from "../../../db.js";
@@ -202,14 +202,16 @@ export function AgentsPopup({
   if (mode === "drill" && focused) {
     return (
       <Shell title={`Agents · ${focused.name} (scrollback)`}>
-        <DrillScrollView
-          title={`mu agent read ${focused.name} -n ${SCROLLBACK_LINES}`}
-          body={scrollbackErr !== null ? `error: ${scrollbackErr}` : scrollback}
-          viewport={VIEWPORT}
-          scrollTop={scrollTop}
-          hint={loading ? "loading…" : undefined}
-          emptyText="(no scrollback yet)"
-        />
+        <Box flexDirection="column" flexGrow={1}>
+          <DrillScrollView
+            title={`mu agent read ${focused.name} -n ${SCROLLBACK_LINES}`}
+            body={scrollbackErr !== null ? `error: ${scrollbackErr}` : scrollback}
+            viewport={VIEWPORT}
+            scrollTop={scrollTop}
+            hint={loading ? "loading…" : undefined}
+            emptyText="(no scrollback yet)"
+          />
+        </Box>
         <Box marginTop={1}>
           <Text dimColor>
             j/k scroll · Ctrl-D/U half page · g/G top/bottom · Esc/q back to list
@@ -224,26 +226,28 @@ export function AgentsPopup({
 
   return (
     <Shell title={`Agents · popup (${cursor + 1}/${agents.length})`}>
-      {agents.map((a, i) => {
-        const sel = i === cursor;
-        const row = rows[i];
-        if (row === undefined) return null;
-        const padded = renderRow(row, widths, COLUMN_SPECS);
-        const [glyph = "", name = "", status = "", role = ""] = padded;
-        return (
-          <Box key={a.name}>
-            <Text inverse={sel}>
-              <Text>{glyph}</Text>
-              {"  "}
-              <Text bold>{name}</Text>
-              {"  "}
-              <Text dimColor>{status}</Text>
-              {"  "}
-              <Text dimColor>{role}</Text>
-            </Text>
-          </Box>
-        );
-      })}
+      <Box flexDirection="column" flexGrow={1}>
+        {agents.map((a, i) => {
+          const sel = i === cursor;
+          const row = rows[i];
+          if (row === undefined) return null;
+          const padded = renderRow(row, widths, COLUMN_SPECS);
+          const [glyph = "", name = "", status = "", role = ""] = padded;
+          return (
+            <Box key={a.name}>
+              <Text inverse={sel}>
+                <Text>{glyph}</Text>
+                {"  "}
+                <Text bold>{name}</Text>
+                {"  "}
+                <Text dimColor>{status}</Text>
+                {"  "}
+                <Text dimColor>{role}</Text>
+              </Text>
+            </Box>
+          );
+        })}
+      </Box>
       <Box marginTop={1}>
         {/* Popup-specific verbs only; generic j/k/y/Esc/? live in the global status bar. */}
         <Text dimColor>Enter scrollback · f free · x close</Text>
@@ -253,8 +257,20 @@ export function AgentsPopup({
 }
 
 function Shell({ title, children }: { title: string; children: React.ReactNode }): JSX.Element {
+  // width={cols} + flexGrow={1} ensure the popup fills the pane edge-to-edge
+  // (see bug_tui_popups_fill_pane). Without these, ink's Yoga layout sizes
+  // this Box to its content and the popup renders as a narrow strip.
+  const { stdout } = useStdout();
+  const cols = stdout.columns ?? 80;
   return (
-    <Box borderStyle="round" borderColor="cyan" paddingX={1} flexDirection="column">
+    <Box
+      borderStyle="round"
+      borderColor="cyan"
+      paddingX={1}
+      flexDirection="column"
+      flexGrow={1}
+      width={cols}
+    >
       <Text bold color="cyan">
         {title}
       </Text>
