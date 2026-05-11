@@ -8,7 +8,17 @@ called out under "Breaking" in each entry.
 
 ---
 
-## [Unreleased]
+## [0.3.2] — 2026-05-11
+
+Feature theme: aggressive cleanup + dogfood-driven verbs. The 0.3.1 wave
+generated a fresh round of mufeedback: a wedged-worker escape hatch
+(`mu agent kick`), a clean-workspace `mu agent close` shortcut, a
+`mu workspace recreate` between-wave verb, scrollback-pattern detection
+for provider-auth failures during spawn, `mu task notes --tail`, and
+filters across `mu task add --json`. Then a sweep dropped every
+same-session deprecation alias / shim that nobody depended on yet:
+top-level `mu adopt`, the pre-v0.3 export-bucket detection, the legacy
+`mu task wait --json` envelope fields, the `TaskRow.localId` duplicate.
 
 ### Removed
 
@@ -32,6 +42,24 @@ called out under "Breaking" in each entry.
   `ImportBucketInvalidError` with the standard `manifest.json is
   unreadable / malformed` reason) — a single typed surface
   instead of two near-identical ones.
+
+- **`TaskRow.localId` duplicate field dropped**
+  (`drop_taskrow_localid_duplicate_of_name`). Commit 26a914a added
+  `localId` alongside `name` on every TaskRow as a "compat-safe"
+  duplicate so jq recipes like `.[].localId` (matching the
+  agents/workstreams JSON pattern) would work. With one user and the
+  rest of the codebase reading `.name` canonically across 134+ sites,
+  the duplicate was dead weight. `TaskRow.localId` is gone from the
+  SDK type and from every JSON read (`task list/next/show`, archive
+  bucket exports, etc.). `localId` survives as a function-parameter
+  NAME on `addTask` / `closeTask` / `releaseTask` and friends — that
+  is internal API shape, not a JSON key. The `mu agent list` JSON
+  shape (which renames the underlying SQL column to `localId` for an
+  internal struct) is untouched. Operators reading task JSON from jq
+  must switch `.localId` → `.name`. The corresponding regression-guard
+  tests (`test/json-output.test.ts` and
+  `test/output-labels-human-rename.test.ts`) flip from "emits both
+  keys" to "emits `name` only".
 
 ### Breaking
 
@@ -212,26 +240,6 @@ called out under "Breaking" in each entry.
   established by `audit_json_envelope_uniformity` (only emit
   optional fields when meaningful). SDK: `SlugifyResult` and
   `IdFromTitleResult` both gain an `originalSlug` field.
-
-### Removed
-
-- **`TaskRow.localId` duplicate field dropped**
-  (`drop_taskrow_localid_duplicate_of_name`). Commit 26a914a added
-  `localId` alongside `name` on every TaskRow as a "compat-safe"
-  duplicate so jq recipes like `.[].localId` (matching the
-  agents/workstreams JSON pattern) would work. With one user and the
-  rest of the codebase reading `.name` canonically across 134+ sites,
-  the duplicate was dead weight. `TaskRow.localId` is gone from the
-  SDK type and from every JSON read (`task list/next/show`, archive
-  bucket exports, etc.). `localId` survives as a function-parameter
-  NAME on `addTask` / `closeTask` / `releaseTask` and friends — that
-  is internal API shape, not a JSON key. The `mu agent list` JSON
-  shape (which renames the underlying SQL column to `localId` for an
-  internal struct) is untouched. Operators reading task JSON from jq
-  must switch `.localId` → `.name`. The corresponding regression-guard
-  tests (`test/json-output.test.ts` and
-  `test/output-labels-human-rename.test.ts`) flip from "emits both
-  keys" to "emits `name` only".
 
 ### Fixed
 
