@@ -102,7 +102,7 @@ mu/
 │   │   │   ├── titled-box.tsx  # rounded border with section header inset into top border
 │   │   │   ├── columns.ts  # column-aligned row layout with protect/clip clipping
 │   │   │   ├── help.tsx    # ?/F1 keymap overlay
-│   │   │   ├── cards/{agents,tracks,ready,log,workspaces}.tsx   # 5 dashboard glance cards
+│   │   │   ├── cards/{agents,tracks,ready,log,workspaces,inprogress}.tsx   # 6 dashboard glance cards
 │   │   │   └── popups/{agents,tracks,ready,log}.tsx  # 4 fullscreen drill-down popups
 │   │   ├── snapshot.ts    # undo / snapshot list / snapshot show
 │   │   ├── sql.ts         # sql escape hatch

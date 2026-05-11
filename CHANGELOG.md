@@ -63,6 +63,22 @@ is opt-in via the new `--tui` flag.
     IDs / agent names / status tokens never truncate; titles /
     payloads / paths clip with `…`. Uses `string-width` for
     emoji + ANSI awareness.
+- **TUI In-progress card (slot 6)** — toggleable with `6`. One
+  glanceable list of every IN_PROGRESS task with id, owner,
+  time-since-claim (relative-time token), and title. Glyph is the
+  cog (matches `STATUS_EMOJI.busy` so it reads the same as in the
+  Agents card). Subtitle inlines `<N>` or `<N> · <K> stale` when
+  any row's last lifecycle flip is ≥5min old (matches the
+  `MU_IDLE_THRESHOLD_MS` default). Reads `snapshot.inProgress`
+  directly — no SDK extension. Empty-state body is `(none in
+  progress)`. Fills the cross-ref pain that previously forced
+  the operator to read the Agents card AND the Ready card to
+  figure out "what's actually running right now". Slot-6 popup
+  (Shift+6 / `^`) is not shipped yet; tracked by
+  feat_more_cards_umbrella, and when it lands it MUST follow
+  feat_popup_search_filter (`/`) and
+  feat_track_drill_chains_to_task_drill (Enter chains rows into
+  TaskDetailDrill, since rows ARE tasks).
 - **TUI Workspaces card (slot 5)** — toggleable with `5`. Shows
   per-agent rows: status glyph (★ dirty / ⓘ stale / ✓ clean),
   agent name, backend, commits-behind-main (green ≤2 / yellow 3-9 /

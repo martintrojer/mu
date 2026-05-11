@@ -23,6 +23,9 @@ export interface CardVisibility {
   ready: boolean;
   log: boolean;
   workspaces: boolean;
+  /** Card 6 — IN_PROGRESS tasks (feat_card_6_inprogress, workstream
+   *  `tui-impl`). Reads snapshot.inProgress directly; no SDK extension. */
+  inProgress: boolean;
 }
 
 export const DEFAULT_CARD_VISIBILITY: CardVisibility = {
@@ -31,6 +34,7 @@ export const DEFAULT_CARD_VISIBILITY: CardVisibility = {
   ready: true,
   log: true,
   workspaces: true,
+  inProgress: true,
 };
 
 export interface DashboardSnapshot {

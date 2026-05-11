@@ -127,6 +127,7 @@ describe("App import graph", () => {
     const { ReadyCard } = await import("../src/cli/tui/cards/ready.js");
     const { LogCard } = await import("../src/cli/tui/cards/log.js");
     const { WorkspacesCard } = await import("../src/cli/tui/cards/workspaces.js");
+    const { InProgressCard } = await import("../src/cli/tui/cards/inprogress.js");
     const { AgentsPopup } = await import("../src/cli/tui/popups/agents.js");
     const { TracksPopup } = await import("../src/cli/tui/popups/tracks.js");
     const { ReadyPopup } = await import("../src/cli/tui/popups/ready.js");
@@ -136,6 +137,7 @@ describe("App import graph", () => {
     expect(typeof ReadyCard).toBe("function");
     expect(typeof LogCard).toBe("function");
     expect(typeof WorkspacesCard).toBe("function");
+    expect(typeof InProgressCard).toBe("function");
     expect(typeof AgentsPopup).toBe("function");
     expect(typeof TracksPopup).toBe("function");
     expect(typeof ReadyPopup).toBe("function");
