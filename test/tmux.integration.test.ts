@@ -18,6 +18,7 @@ import {
   setPaneTitle,
   splitWindow,
 } from "../src/tmux.js";
+import { freshWorkstream } from "./_fixture.js";
 
 const TMUX_AVAILABLE = process.env.TMUX !== undefined && process.env.TMUX !== "";
 
@@ -29,10 +30,9 @@ describeIfTmux("tmux integration (real tmux server)", () => {
   beforeEach(async () => {
     resetTmuxExecutor();
     // Unique session name per test so parallel test runs don't collide.
-    // Keep the tmux session name short and free of '.' / ':' (which
-    // tmux mangles or reserves). base36 keeps it under tmux's limits.
-    const tag = `${process.pid.toString(36)}-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`;
-    session = `mu-t-${tag}`;
+    // freshWorkstream() encodes pid + monotonic timestamp + random — fits
+    // inside tmux's session-name limits (no '.' or ':' chars).
+    session = `mu-${freshWorkstream("t")}`;
     await newSession(session, {
       windowName: "main",
       command: "sh -c 'while true; do sleep 60; done'",

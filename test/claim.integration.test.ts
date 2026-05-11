@@ -13,6 +13,7 @@ import { spawnAgent } from "../src/agents.js";
 import { type Db, openDb } from "../src/db.js";
 import { TaskNotFoundError, addTask, claimTask, getTask } from "../src/tasks.js";
 import { killSession, resetTmuxExecutor } from "../src/tmux.js";
+import { freshWorkstream } from "./_fixture.js";
 
 const TMUX_AVAILABLE = process.env.TMUX !== undefined && process.env.TMUX !== "";
 const describeIfTmux = TMUX_AVAILABLE ? describe : describe.skip;
@@ -31,9 +32,7 @@ describeIfTmux("claim integration (real tmux + real DB)", () => {
     process.env.MU_SPAWN_LIVENESS_MS = "0";
     tempDir = mkdtempSync(join(tmpdir(), "mu-claim-i-"));
     db = openDb({ path: join(tempDir, "mu.db") });
-    // Keep within the 32-char workstream-name limit. base36 keeps it short.
-    const tag = `${process.pid.toString(36)}-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`;
-    workstream = `claim-${tag}`;
+    workstream = freshWorkstream("claim");
     session = `mu-${workstream}`;
   });
 

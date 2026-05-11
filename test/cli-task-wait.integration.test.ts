@@ -32,6 +32,7 @@ import { setWaitSleepForTests } from "../src/tasks/wait.js";
 import { killPane, killSession, paneExists, resetTmuxExecutor } from "../src/tmux.js";
 import { ensureWorkstream } from "../src/workstream.js";
 import { pollUntil } from "./_env.js";
+import { freshWorkstream } from "./_fixture.js";
 import { runCli } from "./_runCli.js";
 
 const TMUX_AVAILABLE = process.env.TMUX !== undefined && process.env.TMUX !== "";
@@ -53,8 +54,7 @@ describeIfTmux("mu task wait — reaper-detection integration", () => {
     tempDir = mkdtempSync(join(tmpdir(), "mu-wait-i-"));
     dbPath = join(tempDir, "mu.db");
     db = openDb({ path: dbPath });
-    const tag = `${process.pid.toString(36)}-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`;
-    workstream = `wait-${tag}`;
+    workstream = freshWorkstream("wait");
     session = `mu-${workstream}`;
     ensureWorkstream(db, workstream);
     // Tight poll cadence so the reconcile-each-poll path observes the
@@ -254,9 +254,8 @@ describeIfTmux("mu task wait — cross-workstream reaper isolation", () => {
     tempDir = mkdtempSync(join(tmpdir(), "mu-wait-x-"));
     dbPath = join(tempDir, "mu.db");
     db = openDb({ path: dbPath });
-    const tag = `${process.pid.toString(36)}-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`;
-    wsA = `wxa-${tag}`;
-    wsB = `wxb-${tag}`;
+    wsA = freshWorkstream("wxa");
+    wsB = freshWorkstream("wxb");
     sessionA = `mu-${wsA}`;
     sessionB = `mu-${wsB}`;
     ensureWorkstream(db, wsA);

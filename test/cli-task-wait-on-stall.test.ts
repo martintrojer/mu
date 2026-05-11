@@ -36,6 +36,7 @@ import { addTask } from "../src/tasks.js";
 import { setWaitSleepForTests } from "../src/tasks/wait.js";
 import { type TmuxExecutor, resetTmuxExecutor, setTmuxExecutor } from "../src/tmux.js";
 import { ensureWorkstream } from "../src/workstream.js";
+import { freshWorkstream } from "./_fixture.js";
 import { runCli } from "./_runCli.js";
 
 describe("mu task wait --on-stall warn|exit", () => {
@@ -58,8 +59,7 @@ describe("mu task wait --on-stall warn|exit", () => {
     db = openDb({ path: dbPath });
     // Per-test unique workstream so even if a future change runs the
     // file in parallel-test mode the rows don't bleed across tests.
-    const tag = `${process.pid.toString(36)}-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`;
-    workstream = `stall-${tag}`;
+    workstream = freshWorkstream("stall");
     ensureWorkstream(db, workstream);
     liveAgentPaneIds.clear();
     // Mock tmux so the per-poll reconcile in cmdTaskWait sees every

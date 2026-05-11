@@ -22,6 +22,7 @@ import { addNote, addTask, claimTask, getTask, listReady } from "../src/tasks.js
 import { killPane, killSession, paneExists, resetTmuxExecutor } from "../src/tmux.js";
 import { getParallelTracks } from "../src/tracks.js";
 import { pollUntil } from "./_env.js";
+import { freshWorkstream } from "./_fixture.js";
 
 const TMUX_AVAILABLE = process.env.TMUX !== undefined && process.env.TMUX !== "";
 const describeIfTmux = TMUX_AVAILABLE ? describe : describe.skip;
@@ -43,10 +44,7 @@ describeIfTmux("MVP acceptance — full demo end-to-end", () => {
     process.env.MU_SPAWN_LIVENESS_MS = "0";
     tempDir = mkdtempSync(join(tmpdir(), "mu-accept-"));
     db = openDb({ path: join(tempDir, "mu.db") });
-    // Keep within the workstream-name length limit (32 chars). Encode
-    // pid + timestamp + random in base36 for compactness.
-    const tag = `${process.pid.toString(36)}-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`;
-    workstream = `accept-${tag}`;
+    workstream = freshWorkstream("acc");
     session = `mu-${workstream}`;
   });
 

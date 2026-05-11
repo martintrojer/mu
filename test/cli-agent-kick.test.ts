@@ -43,6 +43,7 @@ import {
   setTmuxExecutor,
 } from "../src/tmux.js";
 import { ensureWorkstream } from "../src/workstream.js";
+import { freshWorkstream } from "./_fixture.js";
 
 // ─── parsePsTtyOutput ─────────────────────────────────────────────────
 
@@ -317,7 +318,7 @@ describeIfTmux("kickAgent integration (real tmux + real ps + real kill)", () => 
   let tempDir: string;
   let db: Db;
   let session: string;
-  const ws = "kick-int-ws";
+  let ws: string;
 
   beforeEach(() => {
     resetTmuxExecutor();
@@ -326,9 +327,11 @@ describeIfTmux("kickAgent integration (real tmux + real ps + real kill)", () => 
     // we're calling newSessionWithPane directly + insertAgent.
     tempDir = mkdtempSync(join(tmpdir(), "mu-kick-int-"));
     db = openDb({ path: join(tempDir, "mu.db") });
+    // Per-run unique workstream + matching session keep two `npm test`
+    // runs from colliding on the user's shared tmux server.
+    ws = freshWorkstream("kick");
     ensureWorkstream(db, ws);
-    const tag = `${process.pid.toString(36)}-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`;
-    session = `mu-kick-${tag}`;
+    session = `mu-${ws}`;
   });
 
   afterEach(async () => {
@@ -349,9 +352,17 @@ describeIfTmux("kickAgent integration (real tmux + real ps + real kill)", () => 
     // foreground IS sleep, not bash — i.e. NOT the wrapping shell,
     // so our shell-only guard doesn't fire and we can verify the
     // kill actually lands.
+    //
+    // The sleep duration is per-test-unique so the `ps` sanity sweep
+    // doesn't observe a peer test (or a parallel `npm test` run on
+    // the same dev box) running its own `sleep 600`. The original
+    // hardcoded "600" was the canonical Layer-1 leak: under parallel
+    // runs the assertion `not.toMatch(/sleep 600/)` saw the OTHER
+    // process's still-running sleep and failed.
+    const sleepArg = `${600 + (process.pid % 1000)}.${Math.floor(Math.random() * 1e6)}`;
     const paneId = await newSessionWithPane(session, {
       windowName: "main",
-      command: "bash -c 'exec sleep 600'",
+      command: `bash -c 'exec sleep ${sleepArg}'`,
     });
     insertAgent(db, { name: "worker-1", workstream: ws, paneId, status: "busy" });
 
@@ -374,10 +385,12 @@ describeIfTmux("kickAgent integration (real tmux + real ps + real kill)", () => 
     }
     expect(exists).toBe(false);
 
-    // Sanity: no stray `sleep 600` is left running for our session
-    // (we used a unique sleep duration so we can grep for it).
+    // Sanity: no stray `sleep <our-arg>` is left running. Per-test
+    // unique duration above is what makes this safe under parallel
+    // `npm test` runs on the same machine.
     const ps = await execa("ps", ["-axo", "comm,args"], { reject: false });
-    expect(ps.stdout).not.toMatch(/sleep 600/);
+    const re = new RegExp(`sleep ${sleepArg.replace(/\./g, "\\.")}`);
+    expect(ps.stdout).not.toMatch(re);
   });
 
   it("refuses (NoForegroundProcessError shell-only) when the foreground is bash itself", async () => {
