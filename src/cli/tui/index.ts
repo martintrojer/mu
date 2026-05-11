@@ -1,11 +1,20 @@
+// Public entrypoint for the interactive TUI. Lazy-imported by
+// src/cli/state.ts cmdState so the ink/react dependency tree only
+// loads when the user actually enters the TUI (not on `mu task list`,
+// `mu state --json`, `mu agent show`, etc.).
+
+import { render } from "ink";
+import { createElement } from "react";
 import type { Db } from "../../db.js";
+import { App } from "./app.js";
 
 export interface RunTuiOptions {
   workstream: string;
 }
 
-// Real signature lands in Task 22 (Wave 4); for now this is a placeholder
-// so the dispatch branch in cmdState (Task 15) has something to dynamic-import.
-export async function runTui(_db: Db, _opts: RunTuiOptions): Promise<void> {
-  throw new Error("runTui: not implemented yet");
+export async function runTui(db: Db, opts: RunTuiOptions): Promise<void> {
+  const { waitUntilExit } = render(createElement(App, { db, workstream: opts.workstream }), {
+    exitOnCtrlC: true,
+  });
+  await waitUntilExit();
 }
