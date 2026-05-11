@@ -12,10 +12,73 @@
 // documents itself in the error message ("agent died within Nms of
 // spawn" / "agent reported a startup error within Nms of spawn").
 //
+// AgentSpawnCliNotFoundError is the pre-flight cousin of the two
+// post-spawn-detect errors above: thrown BEFORE prestageWorkspace when
+// the resolved `--cli` command's first token doesn't exist on PATH.
+// Distinct from AgentSpawnStartupError so the operator can tell
+// 'I never had a working CLI' from 'CLI started but parked at an error'.
+//
 // Extracted from src/agents.ts as part of refactor_split_large_src_files.
 
 import type { HasNextSteps, NextStep } from "../output.js";
 import { defaultSpawnLivenessMs } from "./spawn.js";
+
+/**
+ * Pre-flight failure: the command mu would have spawned in the new
+ * pane doesn't resolve to a binary on PATH (and isn't an absolute /
+ * relative path that exists + is executable). Thrown by `spawnAgent`
+ * BEFORE `prestageWorkspace` so a typo in `--cli` never leaves an
+ * orphan workspace dir behind.
+ *
+ * Source: feedback ws task `fb_agent_spawn_no_validation`. Live
+ * dogfood report: `mu agent spawn worker-1 --cli pi-meta` on a host
+ * where the `pi-meta` binary wasn't on PATH printed `Spawned worker-1
+ * (pi-meta)` and the pane immediately died with `command not found`;
+ * the existing 1.5s liveness check sometimes missed it (the shell
+ * stays alive after the failed exec). Pre-flighting the PATH lookup
+ * surfaces the typo before any side effects (workspace, pane, DB row).
+ *
+ * Distinct from `AgentSpawnStartupError` (pane alive but parked at an
+ * error prompt) and `AgentDiedOnSpawnError` (pane vanished within the
+ * liveness window). All three carry different remediation hints, so
+ * they're separate types.
+ */
+export class AgentSpawnCliNotFoundError extends Error implements HasNextSteps {
+  override readonly name = "AgentSpawnCliNotFoundError";
+  constructor(
+    public readonly cli: string,
+    /** First whitespace-separated token of the resolved command — the
+     *  thing actually missing on PATH. Surfaced verbatim in the
+     *  message so the operator sees what mu searched for (which may
+     *  differ from `cli` when `$MU_<UPPER_CLI>_COMMAND` rewrites it). */
+    public readonly binary: string,
+    /** Name of the env var that mu consulted before falling back to
+     *  the bare `cli` value (e.g. `MU_PI_META_COMMAND`). Always set
+     *  to the conventional name so the nextSteps hint can recommend
+     *  exporting it. */
+    public readonly envVarChecked: string,
+  ) {
+    super(
+      `--cli ${cli} resolved to binary "${binary}" which is not on PATH (and not an executable absolute/relative path). Refusing to spawn — would create a pane that dies immediately on "command not found".`,
+    );
+  }
+  errorNextSteps(): NextStep[] {
+    return [
+      {
+        intent: "Try the default CLI (the one mu's substrate ships against)",
+        command: "mu agent spawn <name> --cli pi",
+      },
+      {
+        intent: "If you meant a custom alias, set the env var to its real path",
+        command: `export ${this.envVarChecked}="<absolute-path-to-binary> [args...]"`,
+      },
+      {
+        intent: "List installed CLIs typically supported by mu",
+        command: "which pi pi-meta claude codex",
+      },
+    ];
+  }
+}
 
 export class AgentExistsError extends Error implements HasNextSteps {
   override readonly name = "AgentExistsError";

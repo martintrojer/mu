@@ -170,6 +170,44 @@ called out under "Breaking" in each entry.
 
 ### Fixed
 
+- **`mu agent spawn`: validate `--cli` resolves to a PATH binary BEFORE
+  any side effect; surface env-var attribution in the success line**
+  (`fb_agent_spawn_no_validation`). Live dogfood report: `mu agent
+  spawn worker-1 --cli pi-meta` on a host where `pi-meta` wasn't on
+  PATH printed `Spawned worker-1 (pi-meta)` and the pane immediately
+  died with `command not found`; the existing 1.5s liveness check
+  sometimes missed it (the shell stays alive past a failed exec).
+  Three coordinated fixes:
+
+  - **Pre-flight PATH check**: `spawnAgent` now resolves `--cli`
+    through `MU_<UPPER_CLI>_COMMAND` and then verifies the first
+    token is on PATH (via `command -v`) BEFORE `prestageWorkspace`.
+    A typo throws the new typed `AgentSpawnCliNotFoundError` with
+    no orphan workspace dir, no pane, no DB row.
+    `errorNextSteps()` carries three remediation hints: try the
+    default `--cli pi`, set the conventional env var
+    (`export MU_<KEY>_COMMAND=...`), and `which pi pi-meta claude
+    codex`. Hookable via `setCommandResolverForTests` so tests
+    don't depend on what's installed in the test env.
+  - **Extended scrollback scanner**: the post-spawn liveness scan
+    added in `agent_spawn_model_auth_failure_counts_as_live` now
+    also matches `/command not found/i` and
+    `/No such file or directory/i` in the first ~30 lines. Catches
+    the post-spawn variant that slips past the pre-flight (`--command`
+    opt-out, login-shell PATH drift, …) and maps to the existing
+    `AgentSpawnStartupError` (rolled back the same way).
+  - **Env-var attribution in the success line**: when `--cli` was
+    resolved via `$MU_<KEY>_COMMAND`, the human success line now
+    reads `Spawned worker-1 (pi-meta via $MU_PI_META_COMMAND)` and
+    the `--json` envelope carries `resolvedFromEnvVar:
+    "MU_PI_META_COMMAND"`. Stale aliases are now obvious without
+    `mu agent show`.
+
+  SDK additions: `AgentSpawnCliNotFoundError`,
+  `checkCommandResolvable`, `envVarNameForCli`,
+  `resolveCliCommandWithSource`,
+  `setCommandResolverForTests`/`resetCommandResolverForTests`.
+
 - **`mu agent spawn`: detect provider-auth startup failures during the
   liveness check** (`agent_spawn_model_auth_failure_counts_as_live`).
   Live dogfood report: `pi-meta --no-solo --model sonnet:high` printed

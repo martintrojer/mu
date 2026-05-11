@@ -25,6 +25,7 @@ import {
   readAgent,
   refreshAgentTitle,
   resolveCliCommand,
+  resolveCliCommandWithSource,
   sendToAgent,
   shouldOverwriteAgentStatus,
   spawnAgent,
@@ -119,6 +120,14 @@ export async function cmdSpawn(db: Db, name: string, opts: SpawnOpts): Promise<v
   // --command overrode the binary.
   const resolvedCommand = opts.command ?? resolveCliCommand(agent.cli);
   const commandOverridden = resolvedCommand !== agent.cli;
+  // fb_agent_spawn_no_validation part C: when the override came from
+  // an env var (no explicit --command), surface the env-var name in
+  // the success line so config issues ("Spawned ... (pi-meta)" but I
+  // never set $MU_PI_META_COMMAND — wait, I did, and it's stale")
+  // are visible without `mu agent show`. Explicit --command takes
+  // priority and is shown via the existing `(cmd: ...)` suffix below.
+  const envSourced =
+    opts.command === undefined ? resolveCliCommandWithSource(agent.cli) : undefined;
   const nextSteps: NextStep[] = [
     { intent: "Send work", command: `mu agent send ${name} "..." -w ${workstream}` },
     { intent: "Read pane", command: `mu agent read ${name} -w ${workstream}` },
@@ -134,17 +143,28 @@ export async function cmdSpawn(db: Db, name: string, opts: SpawnOpts): Promise<v
       workspace: workspace ?? null,
       resolvedCommand,
       commandOverridden,
+      // env-var attribution for machine consumers: present iff the
+      // resolution came from $MU_<UPPER_CLI>_COMMAND. Mirrors the
+      // human `(via $MU_PI_META_COMMAND)` suffix below.
+      ...(envSourced?.resolvedFromEnv ? { resolvedFromEnvVar: envSourced.envVar } : {}),
       nextSteps,
     });
     return;
   }
   const wsBit = opts.workspace ? pc.dim(" with auto-workspace") : "";
-  // Show 'pi (cmd: pi-meta --no-solo)' when overridden; just '(pi)'
-  // when running the default binary for the cli key. Avoids the
-  // misleading 'Spawned X (pi)' for pi-meta workers.
-  const cliDisplay = commandOverridden
-    ? `${agent.cli} ${pc.dim(`(cmd: ${resolvedCommand})`)}`
-    : agent.cli;
+  // Three display modes (precedence top-down):
+  //   1. --command was explicit       → 'pi (cmd: pi-meta --no-solo)'
+  //   2. resolved via env var override → 'pi (via $MU_PI_COMMAND)'
+  //   3. bare CLI name on PATH         → 'pi'
+  // Env-var attribution is preferred over the generic '(cmd: ...)'
+  // suffix because the env-var name is the actionable knob the
+  // operator can grep for / unset (fb_agent_spawn_no_validation pt C).
+  const cliDisplay =
+    opts.command !== undefined
+      ? `${agent.cli} ${pc.dim(`(cmd: ${resolvedCommand})`)}`
+      : envSourced?.resolvedFromEnv
+        ? `${agent.cli} ${pc.dim(`(via $${envSourced.envVar})`)}`
+        : agent.cli;
   console.log(
     `Spawned ${pc.bold(agent.name)} (${cliDisplay}) in window ${pc.bold(agent.tab ?? agent.name)} of ${pc.bold(`mu-${workstream}`)}, pane ${pc.dim(agent.paneId)}${wsBit}`,
   );

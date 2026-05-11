@@ -33,6 +33,7 @@ import {
   AgentExistsError,
   AgentNotFoundError,
   AgentNotInWorkstreamError,
+  AgentSpawnCliNotFoundError,
   AgentSpawnStartupError,
   WorkspacePreservedError,
 } from "../agents.js";
@@ -262,6 +263,14 @@ export function classifyError(err: unknown): { label: string; exitCode: number }
     err instanceof WorkstreamAlreadyExistsError
   ) {
     return { label: "conflict", exitCode: 4 };
+  }
+  if (err instanceof AgentSpawnCliNotFoundError) {
+    // Pre-flight failure: --cli's resolved binary isn't on PATH. We
+    // refused before any side effect, so this is the cleanest
+    // operator-typo lane there is. Generic exit 1 (substrate-class)
+    // matches AgentDiedOnSpawnError / AgentSpawnStartupError below —
+    // all three are "the spawn can't produce a working agent".
+    return { label: "spawn cli not found", exitCode: 1 };
   }
   if (err instanceof AgentDiedOnSpawnError) {
     // Substrate-level failure (CLI exited at spawn). The message is

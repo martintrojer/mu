@@ -8,6 +8,8 @@
 //
 // Extracted from src/agents.ts as part of refactor_split_large_src_files.
 
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import {
   type AgentRow,
   deleteAgent,
@@ -35,7 +37,12 @@ import {
 } from "../tmux.js";
 import type { VcsBackendName } from "../vcs.js";
 import { createWorkspace, freeWorkspace } from "../workspace.js";
-import { AgentDiedOnSpawnError, AgentExistsError, AgentSpawnStartupError } from "./errors.js";
+import {
+  AgentDiedOnSpawnError,
+  AgentExistsError,
+  AgentSpawnCliNotFoundError,
+  AgentSpawnStartupError,
+} from "./errors.js";
 
 /**
  * Smallest-unused-suffix naming convention for agent names: a role
@@ -79,9 +86,131 @@ function maybeWarnNonConventionalAgentName(name: string): void {
  * are still recognised as agents.
  */
 export function resolveCliCommand(cli: string): string {
-  const envName = `MU_${cli.toUpperCase()}_COMMAND`;
+  const envName = envVarNameForCli(cli);
   const override = process.env[envName];
   return override && override.trim() !== "" ? override : cli;
+}
+
+/**
+ * Compute the `MU_<UPPER_CLI>_COMMAND` env var name mu consults when
+ * resolving `--cli <key>`. Hyphens in the cli key become underscores
+ * (env var names can't contain `-`); this matches the operator-aliases
+ * convention documented in the mu skill (e.g. `--cli pi-meta` →
+ * `MU_PI_META_COMMAND`).
+ */
+export function envVarNameForCli(cli: string): string {
+  return `MU_${cli.toUpperCase().replace(/-/g, "_")}_COMMAND`;
+}
+
+/**
+ * Resolve `--cli <key>` to its actual command string AND tell the
+ * caller whether the resolution came from a `MU_<UPPER_CLI>_COMMAND`
+ * env var or fell through to the bare cli name. The CLI uses this to
+ * surface env-var attribution in the spawn-success line so config
+ * issues are visible without `mu agent show`
+ * (fb_agent_spawn_no_validation, part C).
+ */
+export function resolveCliCommandWithSource(cli: string): {
+  command: string;
+  envVar: string;
+  resolvedFromEnv: boolean;
+} {
+  const envVar = envVarNameForCli(cli);
+  const override = process.env[envVar];
+  if (override !== undefined && override.trim() !== "") {
+    return { command: override, envVar, resolvedFromEnv: true };
+  }
+  return { command: cli, envVar, resolvedFromEnv: false };
+}
+
+// ─── Pre-flight PATH check (fb_agent_spawn_no_validation, part A) ──
+//
+// Operator typo'd `mu agent spawn worker-1 --cli pi-meta` on a host
+// where `pi-meta` wasn't on PATH; the spawn appeared to succeed but
+// the pane died with `command not found` and the existing 1.5s
+// liveness check sometimes missed it (shells stay alive past a failed
+// exec). Pre-flight the PATH resolution so a typo never:
+//   1. creates an orphan workspace dir
+//   2. creates an orphan tmux pane
+//   3. inserts a half-spawned DB row
+// The check fires AFTER `resolveCliCommand` so `MU_<UPPER>_COMMAND`
+// overrides are honoured AND the diagnostic mentions the env var by
+// name. Hookable via `setCommandResolverForTests` so the test suite
+// can simulate "binary present" / "binary absent" without polluting
+// the real PATH.
+
+export interface CommandResolutionResult {
+  ok: boolean;
+  /** First whitespace-separated token of the command — the binary
+   *  whose presence on PATH we checked. */
+  binary: string;
+  /** Absolute path of the resolved binary on PATH, when ok=true. */
+  resolvedPath?: string;
+}
+
+export type CommandResolver = (command: string) => Promise<CommandResolutionResult>;
+
+const execFileP = promisify(execFile);
+
+/** Default resolver: shell-out to `command -v <binary>` (POSIX-portable
+ *  equivalent of `which`). Returns ok=false when the lookup exits
+ *  non-zero. Always returns the parsed `binary` field so the typed
+ *  error can quote what we actually searched for. */
+async function defaultCommandResolver(command: string): Promise<CommandResolutionResult> {
+  const binary = parseFirstToken(command);
+  if (binary === "") return { ok: false, binary };
+  try {
+    // `command -v` is the POSIX builtin lookup. Spawned via /bin/sh
+    // -c so the builtin is available (it's not an external program).
+    const { stdout } = await execFileP("/bin/sh", ["-c", `command -v -- ${shellQuote(binary)}`], {
+      env: process.env,
+    });
+    const resolvedPath = stdout.trim();
+    if (resolvedPath === "") return { ok: false, binary };
+    return { ok: true, binary, resolvedPath };
+  } catch {
+    return { ok: false, binary };
+  }
+}
+
+/** Single-quote a token for /bin/sh -c. Only used on the binary name,
+ *  which `parseFirstToken` already restricted to a non-whitespace run
+ *  — no embedded single-quotes expected. Escape defensively anyway. */
+function shellQuote(s: string): string {
+  return `'${s.replace(/'/g, "'\\''")}'`;
+}
+
+/** First whitespace-separated token of a command string ("pi-meta
+ *  --no-solo" → "pi-meta"). Returns "" on an empty / whitespace-only
+ *  input. */
+function parseFirstToken(command: string): string {
+  const trimmed = command.trim();
+  if (trimmed === "") return "";
+  const match = trimmed.match(/^\S+/);
+  return match ? match[0] : "";
+}
+
+let activeCommandResolver: CommandResolver = defaultCommandResolver;
+
+/** Override the PATH resolver. Tests use this to simulate "binary
+ *  absent" / "binary present" without depending on what's actually
+ *  installed. Production callers should never touch this. */
+export function setCommandResolverForTests(resolver: CommandResolver): void {
+  activeCommandResolver = resolver;
+}
+
+/** Restore the default PATH resolver. */
+export function resetCommandResolverForTests(): void {
+  activeCommandResolver = defaultCommandResolver;
+}
+
+/**
+ * Verify the first token of `command` resolves to a binary on PATH.
+ * Public so tests can call it directly; spawnAgent calls it before
+ * prestageWorkspace so a bad --cli never creates an orphan workspace.
+ */
+export async function checkCommandResolvable(command: string): Promise<CommandResolutionResult> {
+  return activeCommandResolver(command);
 }
 
 export interface SpawnAgentOptions {
@@ -154,6 +283,25 @@ export async function spawnAgent(db: Db, opts: SpawnAgentOptions): Promise<Agent
   const windowName = opts.tab ?? opts.name;
   const cli = opts.cli ?? "pi";
   const command = opts.command ?? resolveCliCommand(cli);
+
+  // Pre-flight PATH resolution. Catches `--cli does-not-exist` (and
+  // typos in `MU_<UPPER>_COMMAND` overrides) before any side effect.
+  // See `checkCommandResolvable` / `AgentSpawnCliNotFoundError` for
+  // the rationale; in short: prevents orphan workspace dirs + orphan
+  // panes + half-spawned DB rows on a typo.
+  //
+  // We do NOT pre-flight an explicit `--command "..."` value: the
+  // operator who passed --command gave us the literal string they
+  // want spawned (often a wrapper like `pi-meta --no-solo` whose
+  // first token IS on PATH but with arg-quoting that the resolver
+  // would mis-parse; or a shell snippet like `bash -lc '...'`). For
+  // those, the existing post-spawn liveness check is the safety net.
+  if (opts.command === undefined) {
+    const check = await checkCommandResolvable(command);
+    if (!check.ok) {
+      throw new AgentSpawnCliNotFoundError(cli, check.binary, envVarNameForCli(cli));
+    }
+  }
 
   // Workspace pre-stage. See `prestageWorkspace` for the FK-ordering
   // rationale. Returns the workspace path (used as the pane's cwd) or
@@ -417,6 +565,19 @@ const STARTUP_ERROR_PATTERNS: readonly RegExp[] = [
   /Authentication failed/i,
   /401 Unauthorized/i,
   /Could not authenticate/i,
+  // fb_agent_spawn_no_validation part B: post-spawn detection of the
+  // "binary not found at exec time" failure mode. The pre-flight check
+  // above catches the common typo BEFORE any side effect, but a few
+  // edge cases still slip through and only surface in the pane:
+  //   - `--command "..."` skips the pre-flight (operator opt-out).
+  //   - PATH inside the spawned shell differs from PATH in mu's
+  //     process (login shell rc files, /etc/paths.d, etc.).
+  //   - Race: binary on PATH at spawn time, gone 1.5s later.
+  // Scoped to the FIRST 30 lines of scrollback (see
+  // STARTUP_ERROR_TAIL_LINES) so a user's later `cat /no/such/file`
+  // can't false-positive long after spawn.
+  /command not found/i,
+  /No such file or directory/i,
 ];
 
 /**

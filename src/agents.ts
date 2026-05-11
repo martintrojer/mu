@@ -26,13 +26,21 @@ export {
   AgentExistsError,
   AgentNotFoundError,
   AgentNotInWorkstreamError,
+  AgentSpawnCliNotFoundError,
   AgentSpawnStartupError,
   WorkspacePreservedError,
 } from "./agents/errors.js";
 export {
+  type CommandResolutionResult,
+  type CommandResolver,
   type SpawnAgentOptions,
+  checkCommandResolvable,
   defaultSpawnLivenessMs,
+  envVarNameForCli,
+  resetCommandResolverForTests,
   resolveCliCommand,
+  resolveCliCommandWithSource,
+  setCommandResolverForTests,
   spawnAgent,
 } from "./agents/spawn.js";
 export {

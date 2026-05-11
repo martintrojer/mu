@@ -17,7 +17,9 @@ import {
   defaultSpawnLivenessMs,
   getAgent,
   insertAgent,
+  resetCommandResolverForTests,
   resolveCliCommand,
+  setCommandResolverForTests,
   spawnAgent,
 } from "../src/agents.js";
 import { detectSpawnStartupError } from "../src/agents/spawn.js";
@@ -53,6 +55,16 @@ beforeEach(() => {
   state = freshMockState();
   resetTmuxExecutor();
   setSleepForTests(async () => {}); // no-op delays in send
+  // The pre-flight PATH check (fb_agent_spawn_no_validation Part A)
+  // would otherwise reject spawns with synthetic --cli values like
+  // 'pi-alt' that aren't installed in the test env. The cases here
+  // exercise the spawn machinery itself, not the PATH check; install
+  // a permissive resolver so every binary appears present. The
+  // dedicated PATH-check tests live in test/cli-agent-spawn-validation.test.ts.
+  setCommandResolverForTests(async (command) => {
+    const binary = command.trim().split(/\s+/)[0] ?? "";
+    return { ok: true, binary, resolvedPath: `/fake/bin/${binary}` };
+  });
 });
 
 afterEach(() => {
@@ -60,6 +72,7 @@ afterEach(() => {
   rmSync(tempDir, { recursive: true, force: true });
   resetTmuxExecutor();
   resetSleep();
+  resetCommandResolverForTests();
 });
 
 // ─── spawnAgent ────────────────────────────────────────────────────────
