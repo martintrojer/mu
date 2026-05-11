@@ -94,9 +94,13 @@ describe("output_labels_human_rename: cli-table3 column headers", () => {
   // intentionally relaxed here.
   it("`mu task list --json` emits `name` and `localId` (same value)", async () => {
     const { stdout } = await runCli(["task", "list", "-w", "auth", "--json"], dbPath);
-    const parsed = JSON.parse(stdout.trim()) as Array<Record<string, unknown>>;
-    expect(parsed.length).toBeGreaterThan(0);
-    const first = parsed[0];
+    const env = JSON.parse(stdout.trim()) as {
+      items: Array<Record<string, unknown>>;
+      count: number;
+    };
+    expect(env.items.length).toBeGreaterThan(0);
+    expect(env.count).toBe(env.items.length);
+    const first = env.items[0];
     if (!first) throw new Error("expected at least one task row");
     expect(first).toHaveProperty("name");
     expect(first).toHaveProperty("localId");

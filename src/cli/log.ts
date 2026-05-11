@@ -9,7 +9,7 @@
 // Extracted from src/cli.ts as part of refactor_split_large_src_files.
 
 import { getAgentByPane } from "../agents.js";
-import { emitJson, printLogRow, resolveOptionalWorkstream } from "../cli.js";
+import { emitJson, emitJsonCollection, printLogRow, resolveOptionalWorkstream } from "../cli.js";
 import type { Db } from "../db.js";
 import { type ListLogsOptions, appendLog, latestSeq, listLogs } from "../logs.js";
 import { pc } from "../output.js";
@@ -114,7 +114,7 @@ async function cmdLogRead(db: Db, opts: LogReadOpts): Promise<void> {
 
   const rows = listLogs(db, listOpts);
   if (opts.json) {
-    emitJson(rows);
+    emitJsonCollection(rows);
     return;
   }
   if (rows.length === 0) {

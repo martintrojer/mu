@@ -22,6 +22,7 @@ import {
   assertTaskInWorkstream,
   colorStatus,
   emitJson,
+  emitJsonCollection,
   parseCsvFlag,
   resolveEntityRef,
   resolveWorkstream,
@@ -329,7 +330,7 @@ export async function cmdTaskNotes(
   if (!task) throw new TaskNotFoundError(localId);
   const notes = listNotes(db, localId, task.workstreamName);
   if (opts.json) {
-    emitJson(notes);
+    emitJsonCollection(notes);
     return;
   }
   if (notes.length === 0) {

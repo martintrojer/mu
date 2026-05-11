@@ -7,6 +7,7 @@
 import {
   assertAgentInWorkstream,
   emitJson,
+  emitJsonCollection,
   formatWorkspacesTable,
   resolveEntityRef,
   resolveWorkstream,
@@ -79,7 +80,7 @@ export async function cmdWorkspaceList(
   // automatic fetch.
   const decorated = await decorateWithStaleness(rows);
   if (opts.json) {
-    emitJson(decorated);
+    emitJsonCollection(decorated);
     return;
   }
   if (decorated.length === 0) {
@@ -162,7 +163,7 @@ export async function cmdWorkspaceCommits(
   if (opts.since !== undefined) listOpts.since = opts.since;
   const r = await listCommitsForWorkspace(db, agent, listOpts);
   if (opts.json) {
-    emitJson(r.commits);
+    emitJsonCollection(r.commits);
     return;
   }
   if (r.commits.length === 0) {
@@ -216,7 +217,10 @@ export async function cmdWorkspaceOrphans(
             },
           ];
     if (opts.json) {
-      emitJson(orphans);
+      // audit_json_envelope_uniformity: collection envelope plus the
+      // sibling nextSteps field. workstreamName is omitted because
+      // --all spans the whole state dir.
+      emitJson({ items: orphans, count: orphans.length, nextSteps });
       return;
     }
     if (orphans.length === 0) {
@@ -263,7 +267,14 @@ export async function cmdWorkspaceOrphans(
           },
         ];
   if (opts.json) {
-    emitJson({ workstreamName: workstream, orphans, nextSteps });
+    // audit_json_envelope_uniformity: items + count for the
+    // collection envelope; workstreamName + nextSteps as siblings.
+    emitJson({
+      workstreamName: workstream,
+      items: orphans,
+      count: orphans.length,
+      nextSteps,
+    });
     return;
   }
   if (orphans.length === 0) {

@@ -82,6 +82,32 @@ called out under "Breaking" in each entry.
 
 ### Changed
 
+- **Uniform `--json` collection envelope across every list/search/
+  notes/orphans/commits verb** (`audit_json_envelope_uniformity`).
+  Pre-1.0 breaking. Every collection-read verb used to emit a bare
+  array (`mu task list --json` → `[{...}, {...}]`); a sibling field
+  could not be added later (e.g. `baseRef`, `behindCount`,
+  `totalAcrossPages`) without breaking every caller. Now uniformly
+  `{items: T[], count: number}`. Affected verbs:
+  `mu task list / next / owned-by / notes`, `mu workstream list`,
+  `mu workstream destroy --empty` (dry-run), `mu archive list /
+  search`, `mu workspace list / orphans / commits`, `mu snapshot
+  list`, `mu log -n N` (read; NOT `mu log --tail` which stays NDJSON
+  one-object-per-line for stream consumers).
+  - `count` is `items.length` pre-computed; future siblings can
+    layer on without breaking the existing two fields.
+  - `mu workspace orphans` (with `-w`) was already an object
+    envelope; renamed `orphans` field to `items` for uniformity
+    and added `count`. The `--all` form was bare-array; now matches.
+  - **Carve-outs**: `mu sql --json` keeps bare-array rows (it's the
+    escape hatch; row shape is per-query, not part of the typed
+    contract; envelope-wrapping is paternalism). `mu log --tail`
+    keeps NDJSON (one object per line) since it's a stream, not a
+    collection.
+  Codified by a new `emitJsonCollection<T>(items)` helper in
+  `src/cli.ts` so any future collection-read verb gets the shape
+  for free.
+
 - **Uniform validation-error contract across every operator-error
   path** (`audit_cli_validation_uniformity`). Pre-1.0 breaking on
   exit codes. Three error classes used to produce three different

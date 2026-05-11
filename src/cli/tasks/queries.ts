@@ -19,7 +19,7 @@
 import {
   type TaskSortKey,
   byRoiDesc,
-  emitJson,
+  emitJsonCollection,
   formatTaskListTable,
   parseSortOption,
   parseStatusesOption,
@@ -49,7 +49,7 @@ export async function cmdMyTasks(
     includeClosed: opts.includeClosed ?? false,
   });
   if (opts.json) {
-    emitJson(withRoiAll(tasks));
+    emitJsonCollection(withRoiAll(tasks));
     return;
   }
   if (tasks.length === 0) {
@@ -65,7 +65,7 @@ export async function cmdMyNext(db: Db, opts: { lines?: number; json?: boolean }
   const sorted = listReady(db, self.workstreamName).sort(byRoiDesc);
   const tasks = k === 0 ? sorted : sorted.slice(0, k);
   if (opts.json) {
-    emitJson(withRoiAll(tasks));
+    emitJsonCollection(withRoiAll(tasks));
     return;
   }
   if (tasks.length === 0) {
@@ -94,7 +94,7 @@ export async function cmdTaskList(
   const sortKey: TaskSortKey = opts.sort === undefined ? "id" : parseSortOption(opts.sort);
   const tasks = sortTasks(listTasks(db, workstream, listOpts), sortKey);
   if (opts.json) {
-    emitJson(withRoiAll(tasks));
+    emitJsonCollection(withRoiAll(tasks));
     return;
   }
   console.log(pc.bold(`mu-${workstream}`));
@@ -125,7 +125,7 @@ export async function cmdTaskNext(
   const sorted = sortTasks(listReady(db, workstream, readyOpts), sortKey);
   const tasks = k === 0 ? sorted : sorted.slice(0, k);
   if (opts.json) {
-    emitJson(withRoiAll(tasks));
+    emitJsonCollection(withRoiAll(tasks));
     return;
   }
   if (tasks.length === 0) {
@@ -152,7 +152,7 @@ export async function cmdTaskOwnedBy(
     ? listTasksByOwnerCrossWorkstream(db, agent, { includeClosed })
     : listTasksByOwner(db, await resolveWorkstream(opts.workstream), agent, { includeClosed });
   if (opts.json) {
-    emitJson(withRoiAll(tasks));
+    emitJsonCollection(withRoiAll(tasks));
     return;
   }
   if (tasks.length === 0) {

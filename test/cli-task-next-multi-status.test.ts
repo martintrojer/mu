@@ -38,8 +38,8 @@ describe("mu task next --status (multi-value)", () => {
     const { stdout, exitCode, error } = await runCli(argv, dbPath);
     expect(error).toBeUndefined();
     expect(exitCode).toBeNull();
-    const parsed = JSON.parse(stdout.trim()) as Array<{ name: string }>;
-    return parsed.map((t) => t.name);
+    const env = JSON.parse(stdout.trim()) as { items: Array<{ name: string }>; count: number };
+    return env.items.map((t) => t.name);
   }
 
   it("single --status OPEN: back-compat (matches today's no-flag set)", async () => {

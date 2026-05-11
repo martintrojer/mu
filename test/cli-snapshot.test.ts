@@ -221,10 +221,10 @@ describe("mu snapshot list", () => {
     expect(stdout).toContain("no snapshots");
   });
 
-  it("--json with no snapshots emits []", async () => {
+  it("--json with no snapshots emits an empty collection envelope", async () => {
     const { stdout, error } = await runCli(["snapshot", "list", "--json"], dbPath);
     expect(error).toBeUndefined();
-    expect(JSON.parse(stdout.trim())).toEqual([]);
+    expect(JSON.parse(stdout.trim())).toEqual({ items: [], count: 0 });
   });
 
   it("populated --json emits an array of rows with sizeBytes", async () => {
@@ -236,16 +236,20 @@ describe("mu snapshot list", () => {
 
     const { stdout, error } = await runCli(["snapshot", "list", "--json"], dbPath);
     expect(error).toBeUndefined();
-    const parsed = JSON.parse(stdout.trim()) as Array<{
-      id: number;
-      label: string;
-      workstreamName: string | null;
-      sizeBytes: number | null;
-    }>;
+    const env = JSON.parse(stdout.trim()) as {
+      items: Array<{
+        id: number;
+        label: string;
+        workstreamName: string | null;
+        sizeBytes: number | null;
+      }>;
+      count: number;
+    };
     // Newest first (id DESC).
-    expect(parsed.map((r) => r.label)).toEqual(["snap-c", "snap-b", "snap-a"]);
-    expect(parsed[0]?.workstreamName).toBeNull();
-    expect(parsed[0]?.sizeBytes).toBeGreaterThan(0);
+    expect(env.items.map((r) => r.label)).toEqual(["snap-c", "snap-b", "snap-a"]);
+    expect(env.items[0]?.workstreamName).toBeNull();
+    expect(env.items[0]?.sizeBytes).toBeGreaterThan(0);
+    expect(env.count).toBe(3);
   });
 
   it("populated table form contains every label and the workstream", async () => {
@@ -270,8 +274,9 @@ describe("mu snapshot list", () => {
 
     const { stdout, error } = await runCli(["snapshot", "list", "-n", "2", "--json"], dbPath);
     expect(error).toBeUndefined();
-    const parsed = JSON.parse(stdout.trim()) as Array<{ label: string }>;
-    expect(parsed.length).toBe(2);
+    const env = JSON.parse(stdout.trim()) as { items: Array<{ label: string }>; count: number };
+    expect(env.items.length).toBe(2);
+    expect(env.count).toBe(2);
   });
 });
 

@@ -16,7 +16,7 @@
 //
 // Extracted from src/cli.ts as part of refactor_split_large_src_files.
 
-import { UsageError, emitJson, truncate } from "../cli.js";
+import { UsageError, emitJson, emitJsonCollection, truncate } from "../cli.js";
 import { type Db, openDb } from "../db.js";
 import { muTable, pc, printNextSteps } from "../output.js";
 import { reconcile } from "../reconcile.js";
@@ -287,7 +287,7 @@ export async function cmdSnapshotList(
   const limit = opts.lines ?? 20;
   const rows = listSnapshots(db, { limit });
   if (opts.json) {
-    emitJson(
+    emitJsonCollection(
       rows.map((r) => ({
         ...r,
         sizeBytes: snapshotFileSize(r),

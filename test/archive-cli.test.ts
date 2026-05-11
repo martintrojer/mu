@@ -124,14 +124,18 @@ describe("mu archive create / list / show", () => {
     expect(createObj.nextSteps.length).toBeGreaterThan(0);
 
     const list = await runCli(["archive", "list", "--json"], dbPath);
-    const arr = JSON.parse(list.stdout.trim()) as Array<{
-      label: string;
-      totalTasks: number;
-      sourceWorkstreams: unknown[];
-    }>;
-    expect(arr.map((r) => r.label).sort()).toEqual(["wave", "wave2"]);
-    expect(arr[0]?.totalTasks).toBe(0);
-    expect(arr[0]?.sourceWorkstreams).toEqual([]);
+    const env = JSON.parse(list.stdout.trim()) as {
+      items: Array<{
+        label: string;
+        totalTasks: number;
+        sourceWorkstreams: unknown[];
+      }>;
+      count: number;
+    };
+    expect(env.items.map((r) => r.label).sort()).toEqual(["wave", "wave2"]);
+    expect(env.items[0]?.totalTasks).toBe(0);
+    expect(env.items[0]?.sourceWorkstreams).toEqual([]);
+    expect(env.count).toBe(2);
 
     const show = await runCli(["archive", "show", "wave", "--json"], dbPath);
     const obj = JSON.parse(show.stdout.trim()) as {
@@ -149,10 +153,10 @@ describe("mu archive create / list / show", () => {
     expect(stdout).toContain("(no archives)");
   });
 
-  it("list with no archives --json emits []", async () => {
+  it("list with no archives --json emits an empty collection envelope", async () => {
     const { stdout, error } = await runCli(["archive", "list", "--json"], dbPath);
     expect(error).toBeUndefined();
-    expect(JSON.parse(stdout.trim())).toEqual([]);
+    expect(JSON.parse(stdout.trim())).toEqual({ items: [], count: 0 });
   });
 });
 
@@ -476,14 +480,18 @@ describe("mu archive search", () => {
   it("matches a note's content (--json)", async () => {
     const { stdout, error } = await runCli(["archive", "search", "design note", "--json"], dbPath);
     expect(error).toBeUndefined();
-    const hits = JSON.parse(stdout.trim()) as Array<{
-      archiveLabel: string;
-      sourceWorkstream: string;
-      originalLocalId: string;
-      matchKind: "title" | "note";
-      matchSnippet: string;
-    }>;
-    expect(hits.length).toBe(1);
+    const env = JSON.parse(stdout.trim()) as {
+      items: Array<{
+        archiveLabel: string;
+        sourceWorkstream: string;
+        originalLocalId: string;
+        matchKind: "title" | "note";
+        matchSnippet: string;
+      }>;
+      count: number;
+    };
+    const hits = env.items;
+    expect(env.count).toBe(1);
     expect(hits[0]?.matchKind).toBe("note");
     expect(hits[0]?.archiveLabel).toBe("wave");
     expect(hits[0]?.originalLocalId).toBe("design");
@@ -495,17 +503,23 @@ describe("mu archive search", () => {
     // Design beta). Without --label we get 2; with --label wave we
     // get 1.
     const all = await runCli(["archive", "search", "esign", "--json"], dbPath);
-    const allHits = JSON.parse(all.stdout.trim()) as Array<{ archiveLabel: string }>;
-    const labels = new Set(allHits.map((h) => h.archiveLabel));
+    const allEnv = JSON.parse(all.stdout.trim()) as {
+      items: Array<{ archiveLabel: string }>;
+      count: number;
+    };
+    const labels = new Set(allEnv.items.map((h) => h.archiveLabel));
     expect(labels.size).toBe(2);
 
     const scoped = await runCli(
       ["archive", "search", "esign", "--label", "wave", "--json"],
       dbPath,
     );
-    const scopedHits = JSON.parse(scoped.stdout.trim()) as Array<{ archiveLabel: string }>;
-    expect(scopedHits.every((h) => h.archiveLabel === "wave")).toBe(true);
-    expect(scopedHits.length).toBeGreaterThan(0);
+    const scopedEnv = JSON.parse(scoped.stdout.trim()) as {
+      items: Array<{ archiveLabel: string }>;
+      count: number;
+    };
+    expect(scopedEnv.items.every((h) => h.archiveLabel === "wave")).toBe(true);
+    expect(scopedEnv.count).toBeGreaterThan(0);
   });
 
   it("--label nonexistent → ArchiveNotFoundError; exit 3", async () => {
@@ -523,8 +537,9 @@ describe("mu archive search", () => {
       dbPath,
     );
     expect(error).toBeUndefined();
-    const hits = JSON.parse(stdout.trim()) as unknown[];
-    expect(hits).toHaveLength(1);
+    const env = JSON.parse(stdout.trim()) as { items: unknown[]; count: number };
+    expect(env.count).toBe(1);
+    expect(env.items).toHaveLength(1);
   });
 
   it("empty pattern → UsageError; exit 2", async () => {
@@ -546,23 +561,27 @@ describe("mu archive search", () => {
     expect(stdout).toContain("Next:");
   });
 
-  it("empty results --json emits []", async () => {
+  it("empty results --json emits an empty collection envelope", async () => {
     const { stdout, error } = await runCli(
       ["archive", "search", "absolutely-nope", "--json"],
       dbPath,
     );
     expect(error).toBeUndefined();
-    expect(JSON.parse(stdout.trim())).toEqual([]);
+    expect(JSON.parse(stdout.trim())).toEqual({ items: [], count: 0 });
   });
 
   it("SQL-injection attempt is parameter-bound; archives table survives", async () => {
     const malicious = "'); DROP TABLE archives; --";
     const { stdout, error } = await runCli(["archive", "search", malicious, "--json"], dbPath);
     expect(error).toBeUndefined();
-    expect(JSON.parse(stdout.trim())).toEqual([]);
+    expect(JSON.parse(stdout.trim())).toEqual({ items: [], count: 0 });
     // Both archives still listed.
     const list = await runCli(["archive", "list", "--json"], dbPath);
-    const arr = JSON.parse(list.stdout.trim()) as Array<{ label: string }>;
-    expect(arr.map((a) => a.label).sort()).toEqual(["other", "wave"]);
+    const env = JSON.parse(list.stdout.trim()) as {
+      items: Array<{ label: string }>;
+      count: number;
+    };
+    expect(env.items.map((a) => a.label).sort()).toEqual(["other", "wave"]);
+    expect(env.count).toBe(2);
   });
 });

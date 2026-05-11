@@ -13,6 +13,7 @@ import { type AddToArchiveResult, addToArchive, getArchive } from "../archives.j
 import {
   UsageError,
   emitJson,
+  emitJsonCollection,
   formatWorkstreamsTable,
   parseCsvFlag,
   resolveWorkstream,
@@ -110,7 +111,7 @@ export async function cmdInit(db: Db, name: string, opts: { json?: boolean } = {
 export async function cmdWorkstreamList(db: Db, opts: { json?: boolean } = {}): Promise<void> {
   const summaries = await listWorkstreams(db);
   if (opts.json) {
-    emitJson(summaries);
+    emitJsonCollection(summaries);
     return;
   }
   if (summaries.length === 0) {
@@ -549,7 +550,7 @@ async function cmdDestroyEmpty(
 
   if (!opts.yes) {
     if (opts.json) {
-      emitJson(empties);
+      emitJsonCollection(empties);
       return;
     }
     if (empties.length === 0) {

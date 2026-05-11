@@ -606,6 +606,21 @@ export function emitJson(value: unknown): void {
   console.log(JSON.stringify(value));
 }
 
+/** Wrap a collection in mu's canonical `{items, count}` envelope.
+ *  audit_json_envelope_uniformity: every collection-read verb (list,
+ *  next, owned-by, notes, search, orphans, commits, ...) emits this
+ *  shape so a future sibling field (`baseRef`, `totalAcrossPages`,
+ *  ...) can be added without breaking every caller. Pre-1.0
+ *  breaking versus the pre-audit bare-array shape.
+ *
+ *  Carve-out: `mu sql --json` keeps bare-array rows (it's the escape
+ *  hatch; row shape is per-query, not part of the typed contract).
+ *  `mu log --tail --json` keeps NDJSON (one object per line) since
+ *  it's a stream, not a collection. */
+export function emitJsonCollection<T>(items: readonly T[]): void {
+  emitJson({ items, count: items.length });
+}
+
 /**
  * Read the package version from the shipped package.json. Works for
  * both source mode (src/cli.ts → ../package.json) and bundled mode

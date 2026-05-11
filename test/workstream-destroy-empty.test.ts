@@ -159,17 +159,22 @@ describe("mu workstream destroy --empty", () => {
     // JSON form: array of WorkstreamSummary, sorted by name.
     const j = await runCli(["workstream", "destroy", "--empty", "--json"], dbPath);
     expect(j.error).toBeUndefined();
-    const arr = JSON.parse(j.stdout.trim()) as Array<{
-      name: string;
-      tmuxAlive: boolean;
-      agentCount: number;
-      taskCount: number;
-    }>;
+    const env = JSON.parse(j.stdout.trim()) as {
+      items: Array<{
+        name: string;
+        tmuxAlive: boolean;
+        agentCount: number;
+        taskCount: number;
+      }>;
+      count: number;
+    };
+    const arr = env.items;
     expect(arr.map((w) => w.name)).toEqual(["empty-a", "empty-b"]);
     expect(arr[0]?.tmuxAlive).toBe(true);
     expect(arr[1]?.tmuxAlive).toBe(false);
     expect(arr[0]?.agentCount).toBe(0);
     expect(arr[0]?.taskCount).toBe(0);
+    expect(env.count).toBe(2);
 
     // Nothing actually destroyed.
     db = openDb({ path: dbPath });
@@ -253,8 +258,12 @@ describe("mu workstream destroy --empty", () => {
 
     const r = await runCli(["workstream", "destroy", "--empty", "--json"], dbPath);
     expect(r.error).toBeUndefined();
-    const arr = JSON.parse(r.stdout.trim()) as Array<{ name: string }>;
-    expect(arr.map((w) => w.name)).toEqual(["audit-only"]);
+    const env = JSON.parse(r.stdout.trim()) as {
+      items: Array<{ name: string }>;
+      count: number;
+    };
+    expect(env.items.map((w) => w.name)).toEqual(["audit-only"]);
+    expect(env.count).toBe(1);
   });
 
   it("--empty + -w errors with exit 2 (mutually exclusive)", async () => {
@@ -339,16 +348,20 @@ describe("mu workstream destroy --empty", () => {
     // tmuxAlive=true, all counts 0.
     const j = await runCli(["workstream", "destroy", "--empty", "--json"], dbPath);
     expect(j.error).toBeUndefined();
-    const arr = JSON.parse(j.stdout.trim()) as Array<{
-      name: string;
-      tmuxAlive: boolean;
-      registered: boolean;
-      agentCount: number;
-      taskCount: number;
-      noteCount: number;
-      edgeCount: number;
-      workspaceCount: number;
-    }>;
+    const env = JSON.parse(j.stdout.trim()) as {
+      items: Array<{
+        name: string;
+        tmuxAlive: boolean;
+        registered: boolean;
+        agentCount: number;
+        taskCount: number;
+        noteCount: number;
+        edgeCount: number;
+        workspaceCount: number;
+      }>;
+      count: number;
+    };
+    const arr = env.items;
     expect(arr.map((w) => w.name)).toEqual(["bar", "foo"]);
     for (const ws of arr) {
       expect(ws.registered).toBe(false);
@@ -442,7 +455,7 @@ describe("mu workstream destroy --empty", () => {
     // Dry-run: no entries.
     const j = await runCli(["workstream", "destroy", "--empty", "--json"], dbPath);
     expect(j.error).toBeUndefined();
-    expect(JSON.parse(j.stdout.trim())).toEqual([]);
+    expect(JSON.parse(j.stdout.trim())).toEqual({ items: [], count: 0 });
 
     // --yes: still nothing destroyed; sessions untouched.
     const r = await runCli(["workstream", "destroy", "--empty", "--yes", "--json"], dbPath);

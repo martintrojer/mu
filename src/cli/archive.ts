@@ -32,7 +32,14 @@ import {
   removeFromArchive,
   searchArchives,
 } from "../archives.js";
-import { UsageError, emitJson, relTime, resolveWorkstream, truncate } from "../cli.js";
+import {
+  UsageError,
+  emitJson,
+  emitJsonCollection,
+  relTime,
+  resolveWorkstream,
+  truncate,
+} from "../cli.js";
 import type { Db } from "../db.js";
 import { exportArchive } from "../exporting.js";
 import { type NextStep, muTable, pc, printNextSteps } from "../output.js";
@@ -83,7 +90,7 @@ export async function cmdArchiveCreate(
 export async function cmdArchiveList(db: Db, opts: { json?: boolean } = {}): Promise<void> {
   const rows = listArchives(db);
   if (opts.json) {
-    emitJson(rows);
+    emitJsonCollection(rows);
     return;
   }
   if (rows.length === 0) {
@@ -401,7 +408,7 @@ export async function cmdArchiveSearch(
   });
 
   if (opts.json) {
-    emitJson(hits);
+    emitJsonCollection(hits);
     return;
   }
 

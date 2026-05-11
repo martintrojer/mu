@@ -12,13 +12,15 @@ panes coordinated through a task graph. State lives at
 **Output:**
 - Default: every verb prints a textual card on stdout AND a `Next:`
   block of suggested follow-up commands. Read both.
-- `--json` (every verb): success → one object on stdout. Errors →
-  `{error,message,nextSteps,exitCode}` on stderr. Validation errors
-  ALSO carry `usage` (structured `--help`: synopsis + options +
-  args). **`nextSteps` survives in JSON** — `mu task wait --first
-  --json` literally puts the cherry-pick command in
-  `.nextSteps[0].command`. Use `--json` whenever you compose mu
-  output into another command.
+- `--json` (every verb): success → one object on stdout. Collection
+  reads (`task list`, `workspace commits`, `archive search`, ...)
+  emit `{items: T[], count: number}`; singletons keep named fields.
+  Carve-outs: `mu sql --json` is bare-array rows; `mu log --tail`
+  is NDJSON (one object per line). Errors →
+  `{error,message,nextSteps,exitCode}` on stderr; validation errors
+  ALSO carry `usage` (structured `--help`). **`nextSteps` survives
+  in JSON** — `mu task wait --first --json` literally puts the
+  cherry-pick command in `.nextSteps[0].command`.
 
 **Trust `mu --help` and `mu <verb> --help` over this skill** if they
 disagree. Verbs not in `--help` do not exist.
@@ -362,7 +364,7 @@ res=$(mu task wait t1 t2 t3 -w ws --any --first --json \
 firing=$(jq -r .firing.qualifiedId <<<"$res")
 sha=$(mu workspace commits $worker -w ws --json \
         | jq -r --arg id "${firing#*/}" \
-            '.[] | select(.subject | startswith($id+":")) | .sha' | head -1)
+            '.items[] | select(.subject | startswith($id+":")) | .sha' | head -1)
 git cherry-pick $sha && cargo test --lib
 # Next turn: same wait on the smaller set.
 ```

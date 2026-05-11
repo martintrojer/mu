@@ -705,14 +705,19 @@ describe("`mu workspace orphans` CLI", () => {
     const r = await runCli(["workspace", "orphans", "--all", "--json"], dbPath);
     expect(r.error).toBeUndefined();
     expect(r.exitCode).toBeNull();
-    const parsed = JSON.parse(r.stdout) as Array<{
-      workstreamName: string;
-      agentName: string;
-      path: string;
-      stranded: boolean;
-    }>;
-    expect(parsed.length).toBe(2);
-    const byWs = new Map(parsed.map((o) => [o.workstreamName, o]));
+    const env = JSON.parse(r.stdout) as {
+      items: Array<{
+        workstreamName: string;
+        agentName: string;
+        path: string;
+        stranded: boolean;
+      }>;
+      count: number;
+      nextSteps: unknown[];
+    };
+    expect(env.count).toBe(2);
+    expect(env.items.length).toBe(2);
+    const byWs = new Map(env.items.map((o) => [o.workstreamName, o]));
     expect(byWs.get("auth")?.stranded).toBe(false);
     expect(byWs.get("ghost")?.stranded).toBe(true);
     db = openDb({ path: dbPath });
@@ -730,7 +735,7 @@ describe("`mu workspace orphans` CLI", () => {
     );
     expect(r.error).toBeUndefined();
     expect(r.exitCode).toBeNull();
-    expect(JSON.parse(r.stdout)).toEqual([]);
+    expect(JSON.parse(r.stdout)).toEqual({ items: [], count: 0, nextSteps: [] });
     db = openDb({ path: dbPath });
   });
 });

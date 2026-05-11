@@ -186,6 +186,40 @@ commander mistakes and handler-thrown `UsageError`s alike. Other
 classes keep their own codes (3 = not found, 4 = conflict, 5 =
 substrate, 6 = reaper, 7 = stall).
 
+### CLI conventions: `--json` collection envelope
+
+Collection-read verbs emit a canonical `{items: T[], count: number}`
+shape on stdout:
+
+```bash
+$ mu task list -w foo --json
+{"items":[{"name":"a",...},{"name":"b",...}],"count":2}
+```
+
+`count` is `items.length` pre-computed so `jq '.count'` is one less
+hop than `jq '.items | length'`. Future siblings (e.g. `baseRef` on
+`mu workspace commits`, `behindCount` on `mu workspace list`) layer
+on without breaking the existing two fields.
+
+Applies to: `mu task list / next / owned-by / notes`,
+`mu workstream list`, `mu workstream destroy --empty` (dry-run),
+`mu archive list / search`, `mu workspace list / orphans / commits`,
+`mu snapshot list`, `mu log -n N` (read).
+
+Two deliberate carve-outs:
+- **`mu sql --json`** keeps bare-array rows. The verb is the typed-
+  escape hatch; row shape is per-query, not part of the typed
+  contract.
+- **`mu log --tail --json`** emits NDJSON (one JSON object per line)
+  because it's a stream, not a collection. Stream consumers want one
+  envelope per row, not a single envelope that grows forever.
+
+Singleton verbs (`mu task show`, `mu agent show`, `mu workstream
+init`, `mu task close`, ...) keep their existing object envelopes
+with named top-level fields (`{task, blockers, dependents, notes}`,
+`{taskName, ..., nextSteps}`, etc.). The `items + count` envelope is
+for collection reads only.
+
 ### CLI conventions: multi-value flags
 
 Multi-value flags accept either repeated invocations

@@ -126,9 +126,12 @@ gitDescribe("workspace staleness rendering", () => {
     await setupWithStaleness(0);
     const r = await runCli(["workspace", "list", "-w", "auth", "--json"], dbPath);
     expect(r.error).toBeUndefined();
-    const rows = JSON.parse(r.stdout) as { commitsBehindMain: number | null }[];
-    expect(rows).toHaveLength(1);
-    expect(rows[0]?.commitsBehindMain).toBe(0);
+    const env = JSON.parse(r.stdout) as {
+      items: { commitsBehindMain: number | null }[];
+      count: number;
+    };
+    expect(env.items).toHaveLength(1);
+    expect(env.items[0]?.commitsBehindMain).toBe(0);
   });
 
   it("workspace list table renders a 'behind' column with a number", async () => {
@@ -141,9 +144,12 @@ gitDescribe("workspace staleness rendering", () => {
     // review_test_workspace_staleness_behind_value_unanchored).
     const j = await runCli(["workspace", "list", "-w", "auth", "--json"], dbPath);
     expect(j.error).toBeUndefined();
-    const rows = JSON.parse(j.stdout) as { commitsBehindMain: number | null }[];
-    expect(rows).toHaveLength(1);
-    expect(rows[0]?.commitsBehindMain).toBe(5);
+    const env = JSON.parse(j.stdout) as {
+      items: { commitsBehindMain: number | null }[];
+      count: number;
+    };
+    expect(env.items).toHaveLength(1);
+    expect(env.items[0]?.commitsBehindMain).toBe(5);
     // Also assert the table surface: header word "behind" present,
     // and the value 5 appears in the behind column specifically (not
     // just anywhere in the row). cli-table3 separates columns with
@@ -207,8 +213,11 @@ describe("workspace staleness (none-backend)", () => {
       expect(r.stdout).not.toMatch(/stale .* commits behind/);
       // JSON must report null, not undefined or 0.
       const j = await runCli(["workspace", "list", "-w", "auth", "--json"], dbPath);
-      const rows = JSON.parse(j.stdout) as { commitsBehindMain: number | null }[];
-      expect(rows[0]?.commitsBehindMain).toBeNull();
+      const env = JSON.parse(j.stdout) as {
+        items: { commitsBehindMain: number | null }[];
+        count: number;
+      };
+      expect(env.items[0]?.commitsBehindMain).toBeNull();
     } finally {
       rmSync(projectRoot, { recursive: true, force: true });
     }
