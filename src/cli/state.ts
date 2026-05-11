@@ -902,6 +902,6 @@ export function wireStateCommands(program: Command): void {
     .option(...JSON_OPT)
     .action(function () {
       const opts = (this as Command).opts() as StateOpts;
-      return handle((db) => cmdState(db, opts))();
+      return handle((db) => cmdState(db, opts), this as Command)();
     });
 }

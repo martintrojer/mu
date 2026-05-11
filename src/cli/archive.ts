@@ -539,7 +539,7 @@ export function wireArchiveCommands(program: Command): void {
         description?: string;
         json?: boolean;
       };
-      return handle((db) => cmdArchiveCreate(db, label, opts))();
+      return handle((db) => cmdArchiveCreate(db, label, opts), this as Command)();
     });
 
   archive
@@ -548,7 +548,7 @@ export function wireArchiveCommands(program: Command): void {
     .option(...JSON_OPT)
     .action(function () {
       const opts = (this as Command).opts() as { json?: boolean };
-      return handle((db) => cmdArchiveList(db, opts))();
+      return handle((db) => cmdArchiveList(db, opts), this as Command)();
     });
 
   archive
@@ -559,7 +559,7 @@ export function wireArchiveCommands(program: Command): void {
     .option(...JSON_OPT)
     .action(function (label: string) {
       const opts = (this as Command).opts() as { json?: boolean };
-      return handle((db) => cmdArchiveShow(db, label, opts))();
+      return handle((db) => cmdArchiveShow(db, label, opts), this as Command)();
     });
 
   archive
@@ -583,7 +583,7 @@ export function wireArchiveCommands(program: Command): void {
         destroy?: boolean;
         json?: boolean;
       };
-      return handle((db) => cmdArchiveAdd(db, label, opts))();
+      return handle((db) => cmdArchiveAdd(db, label, opts), this as Command)();
     });
 
   archive
@@ -599,7 +599,7 @@ export function wireArchiveCommands(program: Command): void {
         workstream?: string;
         json?: boolean;
       };
-      return handle((db) => cmdArchiveRemove(db, label, opts))();
+      return handle((db) => cmdArchiveRemove(db, label, opts), this as Command)();
     });
 
   archive
@@ -616,7 +616,7 @@ export function wireArchiveCommands(program: Command): void {
         limit?: string;
         json?: boolean;
       };
-      return handle((db) => cmdArchiveSearch(db, pattern, opts))();
+      return handle((db) => cmdArchiveSearch(db, pattern, opts), this as Command)();
     });
 
   archive
@@ -628,7 +628,7 @@ export function wireArchiveCommands(program: Command): void {
     .option(...JSON_OPT)
     .action(function (label: string) {
       const opts = (this as Command).opts() as { out?: string; json?: boolean };
-      return handle((db) => cmdArchiveExport(db, label, opts))();
+      return handle((db) => cmdArchiveExport(db, label, opts), this as Command)();
     });
 
   archive
@@ -640,6 +640,6 @@ export function wireArchiveCommands(program: Command): void {
     .option(...JSON_OPT)
     .action(function (label: string) {
       const opts = (this as Command).opts() as { yes?: boolean; json?: boolean };
-      return handle((db) => cmdArchiveDelete(db, label, opts))();
+      return handle((db) => cmdArchiveDelete(db, label, opts), this as Command)();
     });
 }

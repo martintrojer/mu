@@ -301,6 +301,6 @@ export function wireSqlCommand(program: Command): void {
     )
     .action(function (query: string) {
       const opts = (this as Command).opts() as { json?: boolean; confirmRows?: number };
-      return handle((db) => cmdSql(db, query, opts))();
+      return handle((db) => cmdSql(db, query, opts), this as Command)();
     });
 }

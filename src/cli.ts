@@ -24,7 +24,13 @@ import { AgentNotInWorkstreamError, type AgentRow, getAgentByPane } from "./agen
 import { wireAgentCommands, wireSelfCommands } from "./cli/agents.js";
 import { wireArchiveCommands } from "./cli/archive.js";
 import { wireDoctorCommand } from "./cli/doctor.js";
-import { NameAmbiguousError, UsageError, handle } from "./cli/handle.js";
+import {
+  NameAmbiguousError,
+  UsageError,
+  emitParseError,
+  findCommandForArgv,
+  handle,
+} from "./cli/handle.js";
 import { wireLogCommand } from "./cli/log.js";
 import { wireSnapshotCommands } from "./cli/snapshot.js";
 import { wireSqlCommand } from "./cli/sql.js";
@@ -628,7 +634,14 @@ export function buildProgram(): Command {
     )
     .version(readPackageVersion())
     .helpOption("-h, --help")
-    .showHelpAfterError()
+    // .showHelpAfterError() removed (audit_cli_validation_uniformity):
+    // emitError() in handle.ts now owns help-on-error emission for both
+    // commander mistakes and handler-thrown UsageErrors. Without this
+    // removal, commander would print its own "\n<help>" appendix to
+    // stderr before throwing CommanderError, leaving us with a duplicate
+    // help dump (commander's then ours). We suppress commander's stderr
+    // entirely in applyExitOverride below; this comment is the load-
+    // bearing explanation of why we don't reach for showHelpAfterError().
     // Sort the Commands list (NOT the Options list) alphabetically in
     // every --help screen. Commander v14 inherits configureHelp via
     // copyInheritedSettings() when subcommands are created with
@@ -658,7 +671,7 @@ export function buildProgram(): Command {
     .option(...JSON_OPT)
     .action(function () {
       const opts = (this as Command).opts() as { workstream?: string[]; json?: boolean };
-      return handle((db) => cmdState(db, { ...opts, mission: true }))();
+      return handle((db) => cmdState(db, { ...opts, mission: true }), this as Command)();
     });
 
   wireWorkstreamCommands(program);
@@ -673,6 +686,12 @@ export function buildProgram(): Command {
   wireSnapshotCommands(program);
   wireDoctorCommand(program);
   applyAlphabeticalHelpSort(program);
+  // audit_cli_validation_uniformity: every node in the command tree
+  // must call exitOverride() so commander throws CommanderError
+  // instead of calling process.exit() itself. Lets the parseAsync()
+  // catch route every operator-error through emitError() with the
+  // failing subcommand's --help (human) or `usage` JSON (--json).
+  applyExitOverride(program);
   return program;
 }
 
@@ -689,6 +708,31 @@ function applyAlphabeticalHelpSort(cmd: Command): void {
   }
 }
 
+/** Recursively call exitOverride() on every command in the tree.
+ *  Without this, commander writes its error to stderr and calls
+ *  process.exit() inline — we never see the error and our emitError()
+ *  contract (--help on usage errors, --json envelopes, exit-2
+ *  uniformity) doesn't apply.
+ *
+ *  We ALSO swallow commander's writeErr so commander never prints the
+ *  unformatted "error: ..." / help combo before our handler runs. The
+ *  captured text is discarded; emitError() re-emits message + help in
+ *  mu's format. Help displays via --help still flow through writeOut
+ *  (commander.helpDisplayed code, which classifyCommanderError maps to
+ *  exit 0 with no further output). */
+function applyExitOverride(cmd: Command): void {
+  cmd.exitOverride();
+  cmd.configureOutput({
+    writeOut: (s) => process.stdout.write(s),
+    writeErr: () => {
+      // Swallow commander's pre-throw stderr; emitError re-emits.
+    },
+  });
+  for (const sub of cmd.commands) {
+    applyExitOverride(sub);
+  }
+}
+
 // ─── Entry point ───────────────────────────────────────────────────────
 
 // When invoked as `mu …` from the shell, parse argv. When imported (e.g.
@@ -701,7 +745,18 @@ function applyAlphabeticalHelpSort(cmd: Command): void {
 // ing argv[1] first — otherwise the entry-point check fails silently
 // and `mu --version` produces no output.
 if (isMainEntrypoint()) {
-  await buildProgram().parseAsync(process.argv);
+  const program = buildProgram();
+  try {
+    await program.parseAsync(process.argv);
+  } catch (err) {
+    // CommanderError (parse-time) lands here because every command in
+    // the tree had .exitOverride() applied. Locate the deepest matching
+    // subcommand from argv so emitError can render its --help (human)
+    // or `usage` JSON (--json).
+    const failingCmd = findCommandForArgv(program, process.argv.slice(2));
+    const exitCode = emitParseError(err, failingCmd);
+    process.exit(exitCode);
+  }
 }
 
 function isMainEntrypoint(): boolean {

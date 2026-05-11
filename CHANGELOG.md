@@ -82,6 +82,35 @@ called out under "Breaking" in each entry.
 
 ### Changed
 
+- **Uniform validation-error contract across every operator-error
+  path** (`audit_cli_validation_uniformity`). Pre-1.0 breaking on
+  exit codes. Three error classes used to produce three different
+  surfaces: commander mistakes (missing required option, unknown
+  option/subcommand, missing positional, type-coercion failure)
+  exited 1 with a help dump and ignored `--json`; handler-thrown
+  `UsageError` (mutex flags, range checks) exited 2 with NO help
+  and a `{error,message,nextSteps,exitCode}` JSON; typed `*Invalid*`
+  domain errors (workstream-name / archive-label / task-id / prune-
+  options) exited 2 with no help. Now all three:
+  - print red `error: <msg>` then the failing subcommand's `--help`
+    (human path), exit **2** uniformly.
+  - emit `{error, message, nextSteps, exitCode: 2, usage}` to stderr
+    (`--json` path) where `usage` is a structured rendition of the
+    same `--help`: `{command, synopsis, description, args[], options[]}`.
+    `usage.options[].mandatory` distinguishes "operator MUST pass"
+    (`.requiredOption()`) from `valueRequired` ("if passed, value
+    can't be omitted"); the two were conflated as one `required`
+    flag in the previous JSON.
+  Plumbing: every command in the tree now calls `.exitOverride()`
+  recursively, the active subcommand is tracked in a module-local
+  set by `handle()`, and the parseAsync catch routes commander
+  errors through the same `emitError()` pipeline. `_runCli.ts` test
+  helper updated to mirror the new entry-point shape. Excluded from
+  the help-on-error rendering: `Import*Error` / `LegacyExportLayoutError`
+  (those fault on directory contents the operator pointed at;
+  `--help` wouldn't have prevented them; their typed `nextSteps`
+  already carry the fix).
+
 - **`mu task delete <id>` is now two-phase: bare = dry-run preview;
   `--yes` commits** (`fb_task_delete_no_yes`, impact=30). Pre-1.0
   breaking change. The dogfood report: typed `mu task delete X

@@ -308,7 +308,7 @@ export function wireWorkspaceCommands(program: Command): void {
         workstream?: string;
         json?: boolean;
       };
-      return handle((db) => cmdWorkspaceCreate(db, agent, opts))();
+      return handle((db) => cmdWorkspaceCreate(db, agent, opts), this as Command)();
     });
 
   workspace
@@ -323,7 +323,7 @@ export function wireWorkspaceCommands(program: Command): void {
         workstream?: string;
         json?: boolean;
       };
-      return handle((db) => cmdWorkspaceList(db, opts))();
+      return handle((db) => cmdWorkspaceList(db, opts), this as Command)();
     });
 
   workspace
@@ -340,7 +340,7 @@ export function wireWorkspaceCommands(program: Command): void {
         workstream?: string;
         json?: boolean;
       };
-      return handle((db) => cmdWorkspaceRefresh(db, agent, opts))();
+      return handle((db) => cmdWorkspaceRefresh(db, agent, opts), this as Command)();
     });
 
   workspace
@@ -357,7 +357,7 @@ export function wireWorkspaceCommands(program: Command): void {
         workstream?: string;
         json?: boolean;
       };
-      return handle((db) => cmdWorkspaceFree(db, agent, opts))();
+      return handle((db) => cmdWorkspaceFree(db, agent, opts), this as Command)();
     });
 
   workspace
@@ -374,7 +374,7 @@ export function wireWorkspaceCommands(program: Command): void {
         workstream?: string;
         json?: boolean;
       };
-      return handle((db) => cmdWorkspaceCommits(db, agent, opts))();
+      return handle((db) => cmdWorkspaceCommits(db, agent, opts), this as Command)();
     });
 
   workspace
@@ -386,7 +386,7 @@ export function wireWorkspaceCommands(program: Command): void {
     .option(...JSON_OPT)
     .action(function (agent: string) {
       const opts = (this as Command).opts() as { workstream?: string; json?: boolean };
-      return handle((db) => cmdWorkspacePath(db, agent, opts))();
+      return handle((db) => cmdWorkspacePath(db, agent, opts), this as Command)();
     });
 
   workspace
@@ -406,6 +406,6 @@ export function wireWorkspaceCommands(program: Command): void {
         all?: boolean;
         json?: boolean;
       };
-      return handle((db) => cmdWorkspaceOrphans(db, opts))();
+      return handle((db) => cmdWorkspaceOrphans(db, opts), this as Command)();
     });
 }

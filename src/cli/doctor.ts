@@ -327,6 +327,6 @@ export function wireDoctorCommand(program: Command): void {
     .option(...JSON_OPT)
     .action(function () {
       const opts = (this as Command).opts() as { json?: boolean };
-      return handle((db) => cmdDoctor(db, opts))();
+      return handle((db) => cmdDoctor(db, opts), this as Command)();
     });
 }

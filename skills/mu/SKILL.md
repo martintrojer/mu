@@ -13,10 +13,12 @@ panes coordinated through a task graph. State lives at
 - Default: every verb prints a textual card on stdout AND a `Next:`
   block of suggested follow-up commands. Read both.
 - `--json` (every verb): success → one object on stdout. Errors →
-  `{error,message,nextSteps,exitCode}` on stderr. **`nextSteps`
-  survives in JSON** — `mu task wait --first --json` literally
-  puts the cherry-pick command in `.nextSteps[0].command`. Use
-  `--json` whenever you compose mu output into another command.
+  `{error,message,nextSteps,exitCode}` on stderr. Validation errors
+  ALSO carry `usage` (structured `--help`: synopsis + options +
+  args). **`nextSteps` survives in JSON** — `mu task wait --first
+  --json` literally puts the cherry-pick command in
+  `.nextSteps[0].command`. Use `--json` whenever you compose mu
+  output into another command.
 
 **Trust `mu --help` and `mu <verb> --help` over this skill** if they
 disagree. Verbs not in `--help` do not exist.

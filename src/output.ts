@@ -11,6 +11,7 @@
 // helpers in one place avoids circular imports.
 
 import Table from "cli-table3";
+import type { Command } from "commander";
 import picocolors from "picocolors";
 
 /**
@@ -204,4 +205,82 @@ export function hasNextSteps(err: unknown): err is HasNextSteps {
     err !== null &&
     typeof (err as { errorNextSteps?: unknown }).errorNextSteps === "function"
   );
+}
+
+// ─── Usage rendering for the validation-error contract ──────────────
+//
+// Every operator-error path (commander-thrown CommanderError, handler-
+// thrown UsageError, typed *Invalid* errors) gets the same surface:
+// (1) the error line, (2) the failing subcommand's --help. The human
+// path prints commander's own helpInformation() (so future commander
+// version bumps automatically pick up any rendering improvements);
+// the --json path renders a structured shape so a script orchestrator
+// can introspect the verb without re-shelling for --help.
+//
+// Why structured-not-string for JSON: the entire point of --json is
+// that consumers never have to free-text-parse mu output. Embedding a
+// multi-kilobyte rendered help blob in the JSON envelope defeats that
+// — every option is already structured on the Command object.
+
+/** Structured rendition of a verb's --help, for JSON error envelopes. */
+export interface UsageJson {
+  /** Full canonical name including parent commands (e.g. "mu task add"). */
+  command: string;
+  /** The single-line synopsis (e.g. "mu task add [options] [id]"). */
+  synopsis: string;
+  /** Verb description (the one-paragraph prose under the synopsis). */
+  description: string;
+  /** Positional arguments in declared order. */
+  args: Array<{ name: string; required: boolean; variadic: boolean; description: string }>;
+  /** Options in declared order. `mandatory: true` iff the option was
+   *  declared via `.requiredOption()` (i.e. the operator MUST pass it).
+   *  `valueRequired: true` for `<value>`-style options whose value is
+   *  required when the flag IS passed. The two are independent. */
+  options: Array<{
+    flags: string;
+    description: string;
+    mandatory: boolean;
+    valueRequired: boolean;
+  }>;
+}
+
+/** Walk parent chain so subcommand renderings include the full path
+ *  ("mu task add" not just "add"). */
+function commandFullName(cmd: Command): string {
+  const parts: string[] = [];
+  let cur: Command | null = cmd;
+  while (cur) {
+    parts.unshift(cur.name());
+    cur = cur.parent;
+  }
+  return parts.join(" ");
+}
+
+/** Extract the structured usage shape for `--json` error envelopes. */
+export function renderUsageJson(cmd: Command): UsageJson {
+  return {
+    command: commandFullName(cmd),
+    synopsis: `${commandFullName(cmd)} ${cmd.usage()}`,
+    description: cmd.description(),
+    args: cmd.registeredArguments.map((a) => ({
+      name: a.name(),
+      required: a.required,
+      variadic: a.variadic,
+      description: a.description ?? "",
+    })),
+    options: cmd.options.map((o) => ({
+      flags: o.flags,
+      description: o.description ?? "",
+      mandatory: o.mandatory ?? false,
+      valueRequired: o.required ?? false,
+    })),
+  };
+}
+
+/** Render the human --help block (commander's own `helpInformation()`)
+ *  to stderr. Single source of truth for the post-error help dump. */
+export function printUsageHuman(cmd: Command): void {
+  // helpInformation() returns the full "Usage: ...\n\n<desc>\n\nOptions:\n  ..." block.
+  // Print to stderr (errors only) so success-path stdout is never polluted.
+  process.stderr.write(`\n${cmd.helpInformation()}`);
 }

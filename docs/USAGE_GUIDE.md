@@ -149,6 +149,43 @@ resolutions you can `eval` directly. (One verb opts out:
 `mu agent attach`, which prints a `tmux attach` command for a
 human to copy.)
 
+### CLI conventions: validation errors
+
+Every operator-error path — missing required option, unknown option,
+unknown subcommand, missing positional, type-coercion failure, mutex
+flags, range checks — produces a uniform surface:
+
+- **Human path**: red `error: <msg>` on stderr, then the failing
+  subcommand's `--help` block (same text as `mu <verb> --help`),
+  then exit **2**.
+- **`--json` path**: a structured envelope on stderr:
+
+  ```json
+  {
+    "error": "UsageError",
+    "message": "--self and --for are mutually exclusive",
+    "nextSteps": [],
+    "exitCode": 2,
+    "usage": {
+      "command": "mu task claim",
+      "synopsis": "mu task claim [options] <id>",
+      "description": "...",
+      "args":    [{"name": "id", "required": true, "variadic": false, "description": ""}],
+      "options": [{"flags": "--self", "description": "...", "mandatory": false, "valueRequired": false}, ...]
+    }
+  }
+  ```
+
+  `usage.options[].mandatory` is `true` when the operator MUST pass
+  the option (`.requiredOption()` in commander terms). `valueRequired`
+  is `true` when the option's argument can't be omitted if the flag
+  IS passed (`<value>` form vs bare flag). The two are independent.
+
+Exit 2 is the consistent code for the whole operator-error class —
+commander mistakes and handler-thrown `UsageError`s alike. Other
+classes keep their own codes (3 = not found, 4 = conflict, 5 =
+substrate, 6 = reaper, 7 = stall).
+
 ### CLI conventions: multi-value flags
 
 Multi-value flags accept either repeated invocations

@@ -550,7 +550,7 @@ export function wireAgentCommands(program: Command): void {
         workspaceProjectRoot?: string;
         json?: boolean;
       };
-      return handle((db) => cmdSpawn(db, name, opts))();
+      return handle((db) => cmdSpawn(db, name, opts), this as Command)();
     });
 
   agent
@@ -560,7 +560,7 @@ export function wireAgentCommands(program: Command): void {
     .option(...JSON_OPT)
     .action(function (name: string, text: string) {
       const opts = (this as Command).opts() as { workstream?: string; json?: boolean };
-      return handle((db) => cmdSend(db, name, text, opts))();
+      return handle((db) => cmdSend(db, name, text, opts), this as Command)();
     });
 
   agent
@@ -575,7 +575,7 @@ export function wireAgentCommands(program: Command): void {
         workstream?: string;
         json?: boolean;
       };
-      return handle((db) => cmdRead(db, name, opts))();
+      return handle((db) => cmdRead(db, name, opts), this as Command)();
     });
 
   agent
@@ -588,7 +588,7 @@ export function wireAgentCommands(program: Command): void {
         workstream?: string;
         json?: boolean;
       };
-      return handle((db) => cmdList(db, opts))();
+      return handle((db) => cmdList(db, opts), this as Command)();
     });
 
   agent
@@ -603,7 +603,7 @@ export function wireAgentCommands(program: Command): void {
         json?: boolean;
         workstream?: string;
       };
-      return handle((db) => cmdAgentShow(db, name, opts))();
+      return handle((db) => cmdAgentShow(db, name, opts), this as Command)();
     });
 
   agent
@@ -623,7 +623,7 @@ export function wireAgentCommands(program: Command): void {
         json?: boolean;
         discardWorkspace?: boolean;
       };
-      return handle((db) => cmdClose(db, name, opts))();
+      return handle((db) => cmdClose(db, name, opts), this as Command)();
     });
 
   agent
@@ -635,7 +635,7 @@ export function wireAgentCommands(program: Command): void {
     .option(...JSON_OPT)
     .action(function (name: string) {
       const opts = (this as Command).opts() as { workstream?: string; json?: boolean };
-      return handle((db) => cmdFree(db, name, opts))();
+      return handle((db) => cmdFree(db, name, opts), this as Command)();
     });
 
   agent
@@ -647,7 +647,7 @@ export function wireAgentCommands(program: Command): void {
       // Routed through handle() like every other verb — errorNextSteps
       // fire on typed errors, exit codes classify uniformly
       // (review_code_attach_bypasses_handle).
-      return handle((db) => cmdAttach(db, name, opts))();
+      return handle((db) => cmdAttach(db, name, opts), this as Command)();
     });
 
   // `mu adopt` is intentionally TOP-LEVEL, not nested under `mu agent`,
@@ -667,7 +667,7 @@ export function wireAgentCommands(program: Command): void {
     .action(function (paneOrTitle: string) {
       // optsWithGlobals so the top-level -w / --json flags propagate.
       const opts = (this as Command).optsWithGlobals() as AdoptCliOpts;
-      return handle((db) => cmdAdopt(db, paneOrTitle, opts))();
+      return handle((db) => cmdAdopt(db, paneOrTitle, opts), this as Command)();
     });
 
   // ─── task ───────────────────────────────────────────────────────────
@@ -688,7 +688,7 @@ export function wireSelfCommands(program: Command): void {
     .option(...JSON_OPT)
     .action(function () {
       const opts = (this as Command).opts() as { json?: boolean; includeClosed?: boolean };
-      return handle((db) => cmdMe(db, opts))();
+      return handle((db) => cmdMe(db, opts), this as Command)();
     });
 
   me.command("tasks")
@@ -699,7 +699,7 @@ export function wireSelfCommands(program: Command): void {
     .option(...JSON_OPT)
     .action(function () {
       const opts = (this as Command).opts() as { json?: boolean; includeClosed?: boolean };
-      return handle((db) => cmdMyTasks(db, opts))();
+      return handle((db) => cmdMyTasks(db, opts), this as Command)();
     });
 
   me.command("next")
@@ -714,6 +714,6 @@ export function wireSelfCommands(program: Command): void {
     .option(...JSON_OPT)
     .action(function () {
       const opts = (this as Command).opts() as { lines?: number; json?: boolean };
-      return handle((db) => cmdMyNext(db, opts))();
+      return handle((db) => cmdMyNext(db, opts), this as Command)();
     });
 }

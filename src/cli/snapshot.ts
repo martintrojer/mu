@@ -623,7 +623,7 @@ export function wireSnapshotCommands(program: Command): void {
         yes?: boolean;
         json?: boolean;
       };
-      return handle((db) => cmdUndo(db, opts))();
+      return handle((db) => cmdUndo(db, opts), this as Command)();
     });
 
   const snapshot = program
@@ -637,7 +637,7 @@ export function wireSnapshotCommands(program: Command): void {
     .option(...JSON_OPT)
     .action(function () {
       const opts = (this as Command).opts() as { lines?: number; json?: boolean };
-      return handle((db) => cmdSnapshotList(db, opts))();
+      return handle((db) => cmdSnapshotList(db, opts), this as Command)();
     });
 
   snapshot
@@ -647,7 +647,7 @@ export function wireSnapshotCommands(program: Command): void {
     .action(function (idArg: string) {
       const id = parseLines(idArg);
       const opts = (this as Command).opts() as { json?: boolean };
-      return handle((db) => cmdSnapshotShow(db, id, opts))();
+      return handle((db) => cmdSnapshotShow(db, id, opts), this as Command)();
     });
 
   snapshot
@@ -671,7 +671,7 @@ export function wireSnapshotCommands(program: Command): void {
     .option(...JSON_OPT)
     .action(function () {
       const opts = (this as Command).opts() as PruneCliOptions;
-      return handle((db) => cmdSnapshotPrune(db, opts))();
+      return handle((db) => cmdSnapshotPrune(db, opts), this as Command)();
     });
 
   snapshot
@@ -683,6 +683,6 @@ export function wireSnapshotCommands(program: Command): void {
     .action(function (idArg: string) {
       const id = parseLines(idArg);
       const opts = (this as Command).opts() as { json?: boolean };
-      return handle((db) => cmdSnapshotDelete(db, id, opts))();
+      return handle((db) => cmdSnapshotDelete(db, id, opts), this as Command)();
     });
 }

@@ -39,6 +39,7 @@
 //                on which.
 
 import { buildProgram } from "../src/cli.js";
+import { emitParseError, findCommandForArgv } from "../src/cli/handle.js";
 
 export interface Capture {
   stdout: string;
@@ -114,30 +115,40 @@ export async function runCli(argv: readonly string[], dbPath: string): Promise<C
   };
 
   let caughtError: Error | undefined;
+  let program: ReturnType<typeof buildProgram> | undefined;
   try {
-    const program = buildProgram();
-    // exitOverride() converts commander's process.exit (on parse errors,
-    // unknown options, etc.) into a thrown CommanderError. Combined with
-    // our own process.exit shim above, ALL exit paths land in this catch.
-    program.exitOverride();
+    program = buildProgram();
+    // buildProgram already calls applyExitOverride() recursively, so
+    // every command throws CommanderError instead of process.exit'ing.
+    // Combined with our process.exit shim above, ALL exit paths land
+    // in this catch.
     await program.parseAsync(["node", "mu", ...argv]);
   } catch (err) {
-    // Three error classes can land here:
+    // Four error classes can land here:
     //   1. our process.exit shim throws Error('__exit__:N') with the
     //      exit code already captured to `exitCode`. Expected.
     //   2. commander's exitOverride() throws CommanderError on parse
-    //      errors (its `code` starts with 'commander.'). Expected.
-    //   3. anything else — a real bug in the verb (TypeError mid-
-    //      render, an unhandled rejection, an opendb failure not
-    //      caught by handle()). MUST be surfaced so the test fails
-    //      instead of silently appearing-to-succeed.
+    //      errors (its `code` starts with 'commander.'). Mirror the
+    //      production main-entry catch: route through emitParseError()
+    //      so the test sees the same human/JSON surface a real shell
+    //      invocation would, and the exitCode is set on this side.
+    //      audit_cli_validation_uniformity.
+    //   3. handle() inside an action calls process.exit on typed errors;
+    //      that goes through the shim above (case 1).
+    //   4. anything else — a real bug in the verb (TypeError mid-render,
+    //      unhandled rejection, opendb failure). MUST be surfaced so the
+    //      test fails instead of silently appearing-to-succeed.
     if (err instanceof Error) {
       const msg = err.message;
       const isExitShim = msg.startsWith("__exit__:");
       // CommanderError has a string `code` like 'commander.unknownOption'.
       const code = (err as { code?: unknown }).code;
       const isCommander = typeof code === "string" && code.startsWith("commander.");
-      if (!isExitShim && !isCommander) {
+      if (isCommander && program !== undefined) {
+        const failingCmd = findCommandForArgv(program, argv);
+        const ec = emitParseError(err, failingCmd);
+        if (exitCode === null) exitCode = ec;
+      } else if (!isExitShim && !isCommander) {
         caughtError = err;
       }
     } else {

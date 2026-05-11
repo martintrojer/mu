@@ -237,6 +237,6 @@ export function wireLogCommand(program: Command): void {
       if (raw.all !== undefined) opts.allWorkstreams = raw.all;
       if (raw.workstream !== undefined) opts.workstream = raw.workstream;
       if (raw.json !== undefined) opts.json = raw.json;
-      return handle((db) => cmdLog(db, text, opts))();
+      return handle((db) => cmdLog(db, text, opts), this as Command)();
     });
 }

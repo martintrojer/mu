@@ -52,7 +52,7 @@ export function wireTaskCommands(program: Command): void {
         workstream?: string;
         json?: boolean;
       };
-      return handle((db) => cmdTaskAdd(db, id, opts))();
+      return handle((db) => cmdTaskAdd(db, id, opts), this as Command)();
     });
 
   // --sort key list shared across list/next/ready. `id` is the
@@ -80,7 +80,7 @@ export function wireTaskCommands(program: Command): void {
         status?: string[];
         sort?: string;
       };
-      return handle((db) => cmdTaskList(db, opts))();
+      return handle((db) => cmdTaskList(db, opts), this as Command)();
     });
 
   task
@@ -108,7 +108,7 @@ export function wireTaskCommands(program: Command): void {
         sort?: string;
         status?: string[];
       };
-      return handle((db) => cmdTaskNext(db, opts))();
+      return handle((db) => cmdTaskNext(db, opts), this as Command)();
     });
 
   task
@@ -133,7 +133,7 @@ export function wireTaskCommands(program: Command): void {
         all?: boolean;
         workstream?: string;
       };
-      return handle((db) => cmdTaskOwnedBy(db, agent, opts))();
+      return handle((db) => cmdTaskOwnedBy(db, agent, opts), this as Command)();
     });
 
   task
@@ -150,7 +150,7 @@ export function wireTaskCommands(program: Command): void {
         json?: boolean;
         author?: string;
       };
-      return handle((db) => cmdTaskNote(db, id, text, opts))();
+      return handle((db) => cmdTaskNote(db, id, text, opts), this as Command)();
     });
 
   task
@@ -160,7 +160,7 @@ export function wireTaskCommands(program: Command): void {
     .option(...JSON_OPT)
     .action(function (id: string) {
       const opts = (this as Command).opts() as { json?: boolean; workstream?: string };
-      return handle((db) => cmdTaskShow(db, id, opts))();
+      return handle((db) => cmdTaskShow(db, id, opts), this as Command)();
     });
 
   task
@@ -177,7 +177,7 @@ export function wireTaskCommands(program: Command): void {
         workstream?: string;
         json?: boolean;
       };
-      return handle((db) => cmdTaskTree(db, id, opts))();
+      return handle((db) => cmdTaskTree(db, id, opts), this as Command)();
     });
 
   task
@@ -187,7 +187,7 @@ export function wireTaskCommands(program: Command): void {
     .option(...JSON_OPT)
     .action(function (id: string) {
       const opts = (this as Command).opts() as { json?: boolean; workstream?: string };
-      return handle((db) => cmdTaskNotes(db, id, opts))();
+      return handle((db) => cmdTaskNotes(db, id, opts), this as Command)();
     });
 
   // --evidence <text> on the four lifecycle verbs records what the
@@ -219,7 +219,7 @@ export function wireTaskCommands(program: Command): void {
         workstream?: string;
         json?: boolean;
       };
-      return handle((db) => cmdTaskClose(db, id, opts))();
+      return handle((db) => cmdTaskClose(db, id, opts), this as Command)();
     });
 
   task
@@ -234,7 +234,7 @@ export function wireTaskCommands(program: Command): void {
         workstream?: string;
         json?: boolean;
       };
-      return handle((db) => cmdTaskOpen(db, id, opts))();
+      return handle((db) => cmdTaskOpen(db, id, opts), this as Command)();
     });
 
   task
@@ -258,7 +258,7 @@ export function wireTaskCommands(program: Command): void {
         workstream?: string;
         json?: boolean;
       };
-      return handle((db) => cmdTaskReject(db, id, opts))();
+      return handle((db) => cmdTaskReject(db, id, opts), this as Command)();
     });
 
   task
@@ -282,7 +282,7 @@ export function wireTaskCommands(program: Command): void {
         workstream?: string;
         json?: boolean;
       };
-      return handle((db) => cmdTaskDefer(db, id, opts))();
+      return handle((db) => cmdTaskDefer(db, id, opts), this as Command)();
     });
 
   task
@@ -304,7 +304,7 @@ export function wireTaskCommands(program: Command): void {
         workstream?: string;
         json?: boolean;
       };
-      return handle((db) => cmdTaskRelease(db, id, opts))();
+      return handle((db) => cmdTaskRelease(db, id, opts), this as Command)();
     });
 
   task
@@ -337,7 +337,7 @@ export function wireTaskCommands(program: Command): void {
         workstream?: string;
         json?: boolean;
       };
-      return handle((db) => cmdClaim(db, taskId, opts))();
+      return handle((db) => cmdClaim(db, taskId, opts), this as Command)();
     });
 
   task
@@ -350,7 +350,7 @@ export function wireTaskCommands(program: Command): void {
     .option(...JSON_OPT)
     .action(function (blocked: string) {
       const opts = (this as Command).opts() as { by: string; workstream?: string; json?: boolean };
-      return handle((db) => cmdTaskBlock(db, blocked, opts))();
+      return handle((db) => cmdTaskBlock(db, blocked, opts), this as Command)();
     });
 
   task
@@ -361,7 +361,7 @@ export function wireTaskCommands(program: Command): void {
     .option(...JSON_OPT)
     .action(function (blocked: string) {
       const opts = (this as Command).opts() as { by: string; workstream?: string; json?: boolean };
-      return handle((db) => cmdTaskUnblock(db, blocked, opts))();
+      return handle((db) => cmdTaskUnblock(db, blocked, opts), this as Command)();
     });
 
   task
@@ -378,7 +378,7 @@ export function wireTaskCommands(program: Command): void {
         json?: boolean;
         yes?: boolean;
       };
-      return handle((db) => cmdTaskDelete(db, id, opts))();
+      return handle((db) => cmdTaskDelete(db, id, opts), this as Command)();
     });
 
   task
@@ -399,7 +399,7 @@ export function wireTaskCommands(program: Command): void {
         workstream?: string;
         json?: boolean;
       };
-      return handle((db) => cmdTaskUpdate(db, id, opts))();
+      return handle((db) => cmdTaskUpdate(db, id, opts), this as Command)();
     });
 
   task
@@ -419,7 +419,7 @@ export function wireTaskCommands(program: Command): void {
         workstream?: string;
         json?: boolean;
       };
-      return handle((db) => cmdTaskReparent(db, id, opts))();
+      return handle((db) => cmdTaskReparent(db, id, opts), this as Command)();
     });
 
   task
@@ -459,6 +459,6 @@ export function wireTaskCommands(program: Command): void {
         workstream?: string;
         json?: boolean;
       };
-      return handle((db) => cmdTaskWait(db, ids, opts))();
+      return handle((db) => cmdTaskWait(db, ids, opts), this as Command)();
     });
 }

@@ -10,7 +10,11 @@
 // Exit codes (from VOCABULARY.md / ARCHITECTURE.md):
 //   0 = success
 //   1 = generic error
-//   2 = usage error (commander default)
+//   2 = usage error (validation / missing-flag / type / mutex /
+//       unknown subcommand) — commander-detected mistakes AND
+//       handler-thrown UsageError. Both surfaces print the failing
+//       subcommand's --help (human path) or include a structured
+//       `usage` field (--json path). See `audit_cli_validation_uniformity`.
 //   3 = not found (no such agent / task / pane)
 //   4 = conflict (name collision, double-claim, cycle, etc.)
 //   5 = substrate unavailable (tmux not running, DB locked)
@@ -23,6 +27,7 @@
 //       watched task. Same target=CLOSED carve-out as exit 6; if
 //       both fire in the same poll iteration, exit 6 wins.
 
+import { type Command, CommanderError } from "commander";
 import {
   AgentDiedOnSpawnError,
   AgentExistsError,
@@ -45,7 +50,16 @@ import {
   ImportSourceNotInBucketError,
   WorkstreamAlreadyExistsError,
 } from "../importing.js";
-import { type NextStep, hasNextSteps, isJsonMode, pc, printNextStepsTo } from "../output.js";
+import {
+  type NextStep,
+  type UsageJson,
+  hasNextSteps,
+  isJsonMode,
+  pc,
+  printNextStepsTo,
+  printUsageHuman,
+  renderUsageJson,
+} from "../output.js";
 import {
   PruneOptionsInvalidError,
   SnapshotFileMissingError,
@@ -77,6 +91,83 @@ import { WorkstreamNameInvalidError } from "../workstream.js";
 
 export class UsageError extends Error {
   override readonly name = "UsageError";
+}
+
+// ─── Active-command tracking for the validation-error contract ──────
+//
+// `setActiveCommand` is called by `handle()` at the entry of every
+// .action() body. `emitError()` reads it to render the failing
+// subcommand's --help on usage errors. We thread it via module-local
+// state (mirror of `isJsonMode` reading process.argv) instead of
+// constructor-arg-ing every UsageError throw site — there are 27 of
+// them, several inside helpers (resolveWorkstream, parseStatusFilter)
+// that don't know which subcommand called them.
+//
+// Cleared in handle()'s finally so a sequence of test calls (which
+// re-use the process) doesn't bleed state across cases.
+
+let activeCommand: Command | undefined;
+
+/** Test-only: introspect the current active command. */
+export function getActiveCommandForTest(): Command | undefined {
+  return activeCommand;
+}
+
+/** Test-only: clear stale state between vitest cases. */
+export function clearActiveCommandForTest(): void {
+  activeCommand = undefined;
+}
+
+/** Map a commander.CommanderError to (exitCode, label). The codes that
+ *  represent successful early-exits (--help, --version) are mapped to
+ *  exitCode 0 and a sentinel label so emitError can short-circuit
+ *  without printing anything. All other codes are uniform exit 2 —
+ *  the documented "usage error" lane that handler-thrown UsageError
+ *  also occupies. */
+function classifyCommanderError(err: CommanderError): { label: string; exitCode: number } {
+  if (
+    err.code === "commander.helpDisplayed" ||
+    err.code === "commander.help" ||
+    err.code === "commander.version"
+  ) {
+    return { label: "help", exitCode: 0 };
+  }
+  // Everything else is a usage mistake (missing required option,
+  // unknown option, unknown command, missing argument, type-coercion
+  // via InvalidArgumentError). Renumber commander's default exit 1
+  // to mu's documented exit 2 so the surface is uniform with the
+  // handler-thrown UsageError lane.
+  return { label: "error", exitCode: 2 };
+}
+
+/** Predicate: is this error a usage-class one for which we should
+ *  render the failing subcommand's --help? Three families:
+ *    1. CommanderError (missing required option, unknown option,
+ *       unknown command, missing argument, type-coercion failure).
+ *    2. UsageError (handler-thrown mutex / arity / range checks).
+ *    3. Typed *Invalid* domain errors that fault on a value the
+ *       operator typed at the CLI (workstream name, archive label,
+ *       task id, prune-flag combination). The verb's --help would
+ *       have explained the constraint; show it.
+ *
+ *       Deliberately excluded: ImportBucketInvalidError /
+ *       ImportLegacyLayoutError / LegacyExportLayoutError. Those
+ *       fault on the contents of a directory the operator pointed at;
+ *       --help wouldn't have prevented them, and their typed
+ *       nextSteps already point at the fix.
+ */
+function isUsageClassError(err: unknown): boolean {
+  if (err instanceof CommanderError) return true;
+  if (err instanceof UsageError) return true;
+  if (
+    err instanceof WorkstreamNameInvalidError ||
+    err instanceof ArchiveLabelInvalidError ||
+    err instanceof PruneOptionsInvalidError ||
+    err instanceof TaskIdInvalidError
+  ) {
+    return true;
+  }
+  return false;
 }
 
 /**
@@ -211,38 +302,66 @@ export function classifyError(err: unknown): { label: string; exitCode: number }
 
 /** Render error + nextSteps to stderr and return the resolved exit
  *  code. Returning the exitCode lets `handle` reuse it instead of
- *  re-classifying the same error twice (review_code_classify_error_called_twice). */
+ *  re-classifying the same error twice (review_code_classify_error_called_twice).
+ *
+ *  audit_cli_validation_uniformity: usage-class errors (commander +
+ *  UsageError + typed *Invalid*) ALSO emit the failing subcommand's
+ *  --help (human path) or a structured `usage` field (JSON path). */
 function emitError(err: unknown): number {
+  // Commander's --help / --version success-exits arrive as CommanderError
+  // with exitCode 0. helpInformation() has already been written by
+  // commander itself; nothing more to do.
+  if (err instanceof CommanderError) {
+    const { exitCode } = classifyCommanderError(err);
+    if (exitCode === 0) return 0;
+  }
+
   const message = err instanceof Error ? err.message : String(err);
-  const { label, exitCode } = classifyError(err);
+  const { label, exitCode } =
+    err instanceof CommanderError ? classifyCommanderError(err) : classifyError(err);
   const errClass = err instanceof Error ? err.name : "Error";
   const steps: NextStep[] = hasNextSteps(err) ? err.errorNextSteps() : [];
+  // Strip commander's own "error: " prefix — we re-add our own "error: "
+  // (red, in the human path) and don't want "error: error: ...".
+  const cleanMessage =
+    err instanceof CommanderError && message.startsWith("error: ")
+      ? message.slice("error: ".length)
+      : message;
+  const usageCmd = isUsageClassError(err) ? activeCommand : undefined;
+  const usage: UsageJson | undefined = usageCmd ? renderUsageJson(usageCmd) : undefined;
 
   if (isJsonMode()) {
-    process.stderr.write(
-      `${JSON.stringify({
-        error: errClass,
-        message,
-        nextSteps: steps,
-        exitCode,
-      })}\n`,
-    );
+    const envelope: Record<string, unknown> = {
+      error: errClass,
+      message: cleanMessage,
+      nextSteps: steps,
+      exitCode,
+    };
+    if (usage) envelope.usage = usage;
+    process.stderr.write(`${JSON.stringify(envelope)}\n`);
     return exitCode;
   }
 
-  console.error(pc.red(`${label}: ${message}`));
+  console.error(pc.red(`${label}: ${cleanMessage}`));
   if (steps.length > 0) {
-    // Dim the next-step block so humans skim past; agents reading the
-    // captured error still get them.
     printNextStepsTo(steps, "stderr");
+  }
+  if (usageCmd) {
+    printUsageHuman(usageCmd);
   }
   return exitCode;
 }
 
-/** Wrap an async handler so typed errors become specific exit codes. */
-export function handle(fn: (db: Db) => Promise<void>): () => Promise<void> {
+/** Wrap an async handler so typed errors become specific exit codes.
+ *
+ *  The optional `command` arg is the failing subcommand's `Command`
+ *  (commander's `this` in a `.action(function () { ... })` body).
+ *  When supplied, usage-class errors thrown inside `fn` will render
+ *  that subcommand's --help (human) or `usage` JSON (--json). */
+export function handle(fn: (db: Db) => Promise<void>, command?: Command): () => Promise<void> {
   return async () => {
     let db: Db | undefined;
+    activeCommand = command;
     try {
       db = openDb();
       await fn(db);
@@ -250,6 +369,7 @@ export function handle(fn: (db: Db) => Promise<void>): () => Promise<void> {
       const exitCode = emitError(err);
       process.exit(exitCode);
     } finally {
+      activeCommand = undefined;
       try {
         db?.close();
       } catch {
@@ -257,4 +377,34 @@ export function handle(fn: (db: Db) => Promise<void>): () => Promise<void> {
       }
     }
   };
+}
+
+/** Translate a commander parse-time error into mu's wire format,
+ *  then return the exit code. Used by the top-level `parseAsync` catch
+ *  in cli.ts so commander mistakes go through the same emitError
+ *  pipeline that handler-thrown errors use. */
+export function emitParseError(err: unknown, failingCommand: Command | undefined): number {
+  activeCommand = failingCommand;
+  try {
+    return emitError(err);
+  } finally {
+    activeCommand = undefined;
+  }
+}
+
+/** Walk argv tokens against the program tree to find the deepest
+ *  matching subcommand. Used by parseAsync's catch to identify which
+ *  subcommand commander was processing when it threw. Stops at the
+ *  first `-` (option) or unknown token. */
+export function findCommandForArgv(root: Command, argv: readonly string[]): Command {
+  let cur: Command = root;
+  for (const t of argv) {
+    if (t.startsWith("-")) break;
+    const next: Command | undefined = cur.commands.find(
+      (c) => c.name() === t || (c.aliases().includes(t) ?? false),
+    );
+    if (!next) break;
+    cur = next;
+  }
+  return cur;
 }

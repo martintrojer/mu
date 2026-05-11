@@ -688,7 +688,7 @@ export function wireWorkstreamCommands(program: Command): void {
     .option(...JSON_OPT)
     .action(function (name: string) {
       const opts = (this as Command).opts() as { json?: boolean };
-      return handle((db) => cmdInit(db, name, opts))();
+      return handle((db) => cmdInit(db, name, opts), this as Command)();
     });
 
   workstream
@@ -697,7 +697,7 @@ export function wireWorkstreamCommands(program: Command): void {
     .option(...JSON_OPT)
     .action(function () {
       const opts = (this as Command).opts() as { json?: boolean };
-      return handle((db) => cmdWorkstreamList(db, opts))();
+      return handle((db) => cmdWorkstreamList(db, opts), this as Command)();
     });
 
   workstream
@@ -726,7 +726,7 @@ export function wireWorkstreamCommands(program: Command): void {
         archive?: string;
         empty?: boolean;
       };
-      return handle((db) => cmdDestroy(db, opts))();
+      return handle((db) => cmdDestroy(db, opts), this as Command)();
     });
 
   workstream
@@ -751,7 +751,7 @@ export function wireWorkstreamCommands(program: Command): void {
         json?: boolean;
         sourceWs?: string[];
       };
-      return handle((db) => cmdWorkstreamImport(db, bucketDir, opts))();
+      return handle((db) => cmdWorkstreamImport(db, bucketDir, opts), this as Command)();
     });
 
   workstream
@@ -768,6 +768,6 @@ export function wireWorkstreamCommands(program: Command): void {
         out?: string;
         json?: boolean;
       };
-      return handle((db) => cmdWorkstreamExport(db, opts))();
+      return handle((db) => cmdWorkstreamExport(db, opts), this as Command)();
     });
 }
