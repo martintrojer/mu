@@ -156,10 +156,11 @@ describe("classifyFilterKey", () => {
       kind: "appendChar",
       char: "",
     });
-    expect(classifyFilterKey(editing, "", { f1: true })).toEqual({
-      kind: "appendChar",
-      char: "",
-    });
+    // F1 was dropped from the explicit consume list (per
+    // nit_tui_remove_f1_help_toggle) since it's not a control key
+    // anywhere in the TUI anymore. ink reports it as input="" with
+    // no flag we recognise → falls through to the final
+    // "unknown — consume-and-ignore" branch (still appendChar "").
   });
 
   it("Ctrl-* combos consume-and-ignore (so Ctrl-D doesn't page-scroll mid-edit)", () => {

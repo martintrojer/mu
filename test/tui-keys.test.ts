@@ -87,8 +87,12 @@ describe("dispatchGlobalKey: refresh / quit / help / footer-clear", () => {
   it("? toggleHelp", () => {
     expect(dispatchGlobalKey("?", NO_KEY)).toEqual({ kind: "toggleHelp" });
   });
-  it("F1 toggleHelp", () => {
-    expect(dispatchGlobalKey("", { f1: true })).toEqual({ kind: "toggleHelp" });
+  it("F1 is no longer a help alias (dropped per nit_tui_remove_f1_help_toggle)", () => {
+    // Function keys are remapped/eaten by tmux/screen and fire OS-level
+    // help in many terminals. '?' is the canonical help binding
+    // (lazygit/btop/k9s/vim) and works everywhere — single key, single
+    // place to document.
+    expect(dispatchGlobalKey("", { f1: true } as { f1: true })).toEqual({ kind: "noop" });
   });
   it("c clearFooter (without ctrl)", () => {
     expect(dispatchGlobalKey("c", NO_KEY)).toEqual({ kind: "clearFooter" });

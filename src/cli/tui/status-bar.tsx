@@ -81,13 +81,13 @@ function hintsPlain(
 ): string {
   switch (mode) {
     case "dashboard":
-      return "1-4 toggle · !@#$ popup · ?/F1 help · q quit · +/- tick · r refresh";
+      return "1-9 toggle · Shift 1-9 popup · ? help · q quit · +/- tick · r refresh";
     case "popup": {
       const label = popupName ? `${popupName} · ` : "";
       if (popupMode === "drill") {
         return `${label}drill · j/k scroll · Esc back · ? help · q back`;
       }
-      return `${label}j/k nav · / filter · Enter drill · y yank · Esc close · ? help · q quit`;
+      return `${label}j/k nav · Shift 1-9 switch popup · / filter · Enter drill · y yank · Esc close · ? help · q quit`;
     }
     case "popup-filter": {
       const label = popupName ? `${popupName} · filter · ` : "filter · ";
@@ -107,8 +107,8 @@ function renderHints(
     case "dashboard":
       return (
         <Text>
-          <Key>1-4</Key> <Text dimColor>toggle ·</Text> <Key>!@#$</Key>{" "}
-          <Text dimColor>popup ·</Text> <Key>?/F1</Key> <Text dimColor>help ·</Text> <Key>q</Key>{" "}
+          <Key>1-9</Key> <Text dimColor>toggle ·</Text> <Key>Shift 1-9</Key>{" "}
+          <Text dimColor>popup ·</Text> <Key>?</Key> <Text dimColor>help ·</Text> <Key>q</Key>{" "}
           <Text dimColor>quit ·</Text> <Key>+/-</Key> <Text dimColor>tick ·</Text> <Key>r</Key>{" "}
           <Text dimColor>refresh</Text>
         </Text>
@@ -138,7 +138,8 @@ function renderHints(
       return (
         <Text>
           {label}
-          <Key>j/k</Key> <Text dimColor>nav ·</Text> <Key>/</Key> <Text dimColor>filter ·</Text>{" "}
+          <Key>j/k</Key> <Text dimColor>nav ·</Text> <Key>Shift 1-9</Key>{" "}
+          <Text dimColor>switch popup ·</Text> <Key>/</Key> <Text dimColor>filter ·</Text>{" "}
           <Key>Enter</Key> <Text dimColor>drill ·</Text> <Key>y</Key> <Text dimColor>yank ·</Text>{" "}
           <Key>Esc</Key> <Text dimColor>close ·</Text> <Key>?</Key> <Text dimColor>help ·</Text>{" "}
           <Key>q</Key> <Text dimColor>quit</Text>

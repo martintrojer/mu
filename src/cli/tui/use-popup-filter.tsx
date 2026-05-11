@@ -114,7 +114,6 @@ export function classifyFilterKey(
     key.rightArrow === true ||
     key.pageUp === true ||
     key.pageDown === true ||
-    key.f1 === true ||
     key.f5 === true
   ) {
     // Consume (silently ignore) so they don't navigate the underlying

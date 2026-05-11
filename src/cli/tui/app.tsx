@@ -5,7 +5,7 @@
 //   - Card visibility flags (1-4 toggle)
 //   - Tick rate (+/-/=/0 adjust)
 //   - Single-popup invariant + state-restore on close
-//   - Help overlay (?/F1)
+//   - Help overlay (?)
 //   - Footer line (last yanked command + [copied]/[no clipboard])
 //   - Yank backend probe (memoised once per session)
 //   - Quit / Ctrl-C

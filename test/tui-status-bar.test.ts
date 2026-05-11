@@ -86,6 +86,57 @@ describe("StatusBar", () => {
     expect(text).toContain("popup");
     expect(text).toContain("help");
     expect(text).toContain("quit");
+    // Dashboard hint reflects 1-9 cards (was 1-4 in v0) per
+    // nit_tui_status_bar_card_range. Popup-opener label is plain
+    // English 'Shift 1-9' (no '+', no glyph cluster) per user
+    // preference — layout-independent and self-explanatory.
+    expect(text).toContain("1-9");
+    expect(text).toContain("Shift 1-9");
+    // F1 alias dropped per nit_tui_remove_f1_help_toggle.
+    expect(text).not.toContain("F1");
+    expect(text).not.toContain("!@#$");
+  });
+
+  it("popup list-mode hint cluster surfaces `Shift 1-9 switch popup`", () => {
+    // Per nit_tui_status_bar_popup_shift_range: the popup-mode hint
+    // must advertise the cross-popup hop affordance (otherwise users
+    // can only discover it via the help overlay).
+    const node = StatusBar({
+      mode: "popup",
+      tickMs: 1000,
+      footer: null,
+      cols: 200,
+      popupName: "Tasks",
+      popupMode: "list",
+    });
+    const text = renderToString(node);
+    expect(text).toContain("Shift 1-9");
+    expect(text).toContain("switch popup");
+  });
+
+  it("popup drill-mode hint cluster does NOT advertise `Shift 1-9` (transient view)", () => {
+    // Drill is a transient view that returns to the popup-list on Esc;
+    // switching popups from drill mode is unusual. Keep it terse.
+    const node = StatusBar({
+      mode: "popup",
+      tickMs: 1000,
+      footer: null,
+      cols: 200,
+      popupName: "Tasks",
+      popupMode: "drill",
+    });
+    expect(renderToString(node)).not.toContain("Shift 1-9");
+  });
+
+  it("popup-filter hint cluster does NOT advertise `Shift 1-9` (digits are filter input mid-edit)", () => {
+    const node = StatusBar({
+      mode: "popup-filter",
+      tickMs: 1000,
+      footer: null,
+      cols: 200,
+      popupName: "Tasks",
+    });
+    expect(renderToString(node)).not.toContain("Shift 1-9");
   });
 
   it("renders popup hints with the popup name when mode=popup (default = list)", () => {

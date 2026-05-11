@@ -1,4 +1,4 @@
-// Help overlay (?/F1). Renders the keymap summary table from
+// Help overlay (?). Renders the keymap summary table from
 // design_global_keymap as a static reference. Per design_help_overlay
 // (workstream `tui`).
 //
@@ -31,12 +31,12 @@ export function Help(): JSX.Element {
           keys={CARD_DIGITS}
           effect="toggle Agents/Tracks/Ready/Log/Workspaces/In-progress/Blocked/Recent/Doctor (1-9)"
         />
-        <HelpRow keys="!@#$" effect="open card popup (Shift+1..Shift+4 on US)" />
+        <HelpRow keys="Shift 1-9" effect="open card popup (layout-dependent on non-US)" />
         <HelpRow keys="+/=" effect="tick faster (floor 100ms)" />
         <HelpRow keys="-" effect="tick slower (ceiling 10s)" />
         <HelpRow keys="0" effect="reset tick to 1s" />
         <HelpRow keys="r/F5" effect="refresh now" />
-        <HelpRow keys="?/F1" effect="toggle this overlay" />
+        <HelpRow keys="?" effect="toggle this overlay" />
         <HelpRow keys="q/Q" effect="quit (Ctrl-C also)" />
         <HelpRow keys="c" effect="clear footer (last yank)" />
         <HelpRow keys="w" effect="workstream picker (v0.next)" />

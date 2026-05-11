@@ -19,7 +19,7 @@
 //   -           tick slower (ceiling 10s)
 //   0           reset tick to default 1s
 //   r / F5      refresh now (poke poll loop)
-//   ? / F1      toggle help overlay
+//   ?           toggle help overlay
 //   q / Q       quit
 //   Ctrl-C      quit (handled by ink's exitOnCtrlC)
 //   c           clear footer (most-recent-yank line)
@@ -60,7 +60,6 @@ export interface KeyFlags {
   pageUp?: boolean;
   pageDown?: boolean;
   f5?: boolean;
-  f1?: boolean;
 }
 
 /**
@@ -78,7 +77,7 @@ export function dispatchGlobalKey(input: string, key: KeyFlags): GlobalAction {
   if (input === "q" || input === "Q") return { kind: "quit" };
 
   // Help overlay
-  if (input === "?" || key.f1) return { kind: "toggleHelp" };
+  if (input === "?") return { kind: "toggleHelp" };
 
   // Refresh-now poke
   if (input === "r" || key.f5) return { kind: "refreshNow" };
