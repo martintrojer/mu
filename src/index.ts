@@ -8,6 +8,7 @@ export {
   AgentExistsError,
   AgentNotFoundError,
   AgentNotInWorkstreamError,
+  AgentSpawnStartupError,
   adoptAgent,
   closeAgent,
   defaultSpawnLivenessMs,

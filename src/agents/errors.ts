@@ -4,11 +4,13 @@
 // here. The CLI's classifyError() (src/cli.ts) maps them to exit codes:
 //   not found  → 3   (AgentNotFoundError)
 //   conflict   → 4   (AgentExistsError, AgentNotInWorkstreamError,
-//                     AgentDiedOnSpawnError, WorkspacePreservedError)
+//                     AgentDiedOnSpawnError, AgentSpawnStartupError,
+//                     WorkspacePreservedError)
 //
-// AgentDiedOnSpawnError reaches into spawn.ts for defaultSpawnLivenessMs
-// — a single, narrow cross-cluster import that documents itself in the
-// error message ("agent died within Nms of spawn").
+// AgentDiedOnSpawnError + AgentSpawnStartupError reach into spawn.ts for
+// defaultSpawnLivenessMs — a single, narrow cross-cluster import that
+// documents itself in the error message ("agent died within Nms of
+// spawn" / "agent reported a startup error within Nms of spawn").
 //
 // Extracted from src/agents.ts as part of refactor_split_large_src_files.
 
@@ -154,6 +156,75 @@ export class AgentDiedOnSpawnError extends Error implements HasNextSteps {
         command: "export MU_SPAWN_LIVENESS_MS=0",
       },
       { intent: "Run health check", command: "mu doctor" },
+    ];
+  }
+}
+
+/**
+ * Thrown when an agent's pane is alive AND staying alive after the
+ * liveness window, but its first burst of output matches a known
+ * provider-startup-failure pattern (missing API key, auth rejected, …).
+ * Source: feedback ws task `agent_spawn_model_auth_failure_counts_as_live`.
+ * Live dogfood report: `pi-meta --no-solo --model sonnet:high` printed
+ * `Error: No API key found for amazon-bedrock` and parked at a prompt.
+ * The pane stayed alive (1.5s liveness check passed) but the worker
+ * could never do work — the orchestrator only discovered this when
+ * `mu task wait` stalled minutes later.
+ *
+ * Distinct from `AgentDiedOnSpawnError`:
+ *   - `AgentDiedOnSpawnError` → pane vanished within the liveness window
+ *     (CLI exited fast).
+ *   - `AgentSpawnStartupError` → pane alive, but the captured scrollback
+ *     tail contains a curated provider-auth-failure pattern.
+ * The two carry different remediation hints (CLI override vs. fix the
+ * env var), so they're separate types instead of one with a flag.
+ *
+ * The pattern list is curated and short to keep false-positive risk low
+ * — the scan only looks at the last ~30 lines of the 50-line capture
+ * taken right after the liveness sleep, so matches naturally come from
+ * the CLI's first ~1.5s of output (not arbitrary later prompts the
+ * agent might type into).
+ */
+export class AgentSpawnStartupError extends Error implements HasNextSteps {
+  override readonly name = "AgentSpawnStartupError";
+  constructor(
+    public readonly agentName: string,
+    public readonly paneId: string,
+    /** The single scrollback line that matched a known startup-error
+     *  pattern. Surfaced verbatim in the message so the operator sees
+     *  what mu saw. */
+    public readonly matchedLine: string,
+    /** Full captured scrollback (tail-trimmed already by
+     *  awaitSpawnLiveness). Attached to the message for context. */
+    public readonly scrollback: string,
+  ) {
+    super(
+      `agent ${agentName} reported a startup error within ${defaultSpawnLivenessMs()}ms of spawn (pane ${paneId}). The pane is alive but the spawned CLI parked at an error prompt instead of becoming a working agent.\n\nMatched line: ${matchedLine.trim()}\n\n--- pane scrollback ---\n${scrollback.trim()}\n--- end scrollback ---`,
+    );
+  }
+  errorNextSteps(): NextStep[] {
+    return [
+      {
+        intent: "Inspect the parked pane's scrollback for the full error",
+        command: `mu agent read ${this.agentName} -n 100`,
+      },
+      {
+        // Most common today: the operator picked a model whose
+        // provider has no credentials in this env. Default Anthropic
+        // is the safe fallback for pi-meta.
+        intent: "Re-spawn with a CLI command whose provider credentials are present",
+        command: `mu agent spawn ${this.agentName} --command "pi-meta --no-solo"   # default Anthropic`,
+      },
+      {
+        intent: "Or set the missing API key env var for the provider you wanted, then re-spawn",
+        command:
+          "export ANTHROPIC_API_KEY=...   # or AWS_BEARER_TOKEN_BEDROCK, OPENAI_API_KEY, ...",
+      },
+      {
+        intent:
+          "Disable the startup-error scan if you actually wanted that prompt (CI / scripted recovery)",
+        command: "export MU_SPAWN_LIVENESS_MS=0",
+      },
     ];
   }
 }

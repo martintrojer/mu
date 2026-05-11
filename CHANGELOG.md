@@ -52,6 +52,33 @@ called out under "Breaking" in each entry.
 
 ### Fixed
 
+- **`mu agent spawn`: detect provider-auth startup failures during the
+  liveness check** (`agent_spawn_model_auth_failure_counts_as_live`).
+  Live dogfood report: `pi-meta --no-solo --model sonnet:high` printed
+  `Error: No API key found for amazon-bedrock` and parked at a prompt.
+  The pane stayed alive (1.5s liveness check passed) but the worker
+  could never do work — the orchestrator only discovered this when
+  `mu task wait` stalled minutes later. Fix: after confirming
+  `paneExists`, `awaitSpawnLiveness` now scans the LAST ~30 lines of
+  the post-liveness pane capture for a curated list of startup-error
+  patterns:
+      - `/No API key found for [\w-]+/i`
+      - `/Error: invalid API key/i`
+      - `/Authentication failed/i`
+      - `/401 Unauthorized/i`
+      - `/Could not authenticate/i`
+  On a match the spawn rolls back (workspace + agent row) and throws
+  the new typed `AgentSpawnStartupError` with the matched line, the
+  full scrollback tail, and `nextSteps` pointing at the safe pi-meta
+  default (`--command "pi-meta --no-solo"`) and the
+  `export ANTHROPIC_API_KEY=...` recipe. The new error is exit-code 1
+  (substrate-level, same lane as `AgentDiedOnSpawnError`). The scan is
+  tail-only (last 30 lines of a 50-line capture) so harmless
+  prior-session text scrolled off the top of a brand-new pane can't
+  trip it; the patterns must come from the spawned CLI's first ~1.5s
+  of output. Disable with `MU_SPAWN_LIVENESS_MS=0` if you actually
+  wanted the parked prompt (CI / scripted recovery).
+
 - **`mu agent spawn --workspace`: rollback the workspace dir + agent
   row when tmux pane creation fails** (`agent_spawn_abort_leaves_orphan_workspace`).
   Live dogfood report: spawning a worker into a workstream whose tmux

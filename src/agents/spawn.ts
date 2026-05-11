@@ -35,7 +35,7 @@ import {
 } from "../tmux.js";
 import type { VcsBackendName } from "../vcs.js";
 import { createWorkspace, freeWorkspace } from "../workspace.js";
-import { AgentDiedOnSpawnError, AgentExistsError } from "./errors.js";
+import { AgentDiedOnSpawnError, AgentExistsError, AgentSpawnStartupError } from "./errors.js";
 
 /**
  * Smallest-unused-suffix naming convention for agent names: a role
@@ -394,6 +394,58 @@ export function defaultSpawnLivenessMs(): number {
   return parsed;
 }
 
+/**
+ * Curated list of patterns that indicate the spawned CLI hit a fatal
+ * provider/auth error during startup and is now parked at an error
+ * prompt instead of becoming a working agent. Source:
+ * `agent_spawn_model_auth_failure_counts_as_live` in the feedback ws.
+ *
+ * Kept short and case-insensitive on purpose: every entry must match a
+ * real, observed dogfood failure mode. Don't add patterns speculatively
+ * — the false-positive cost is to roll back a healthy spawn, which the
+ * operator then has to re-attempt without the scan (`MU_SPAWN_LIVENESS_MS=0`).
+ *
+ * Mitigation against scrollback noise from harmless prior-session text:
+ * the caller (`awaitSpawnLiveness`) only scans the LAST `STARTUP_ERROR_TAIL_LINES`
+ * lines of the capture taken right after the liveness sleep, so matches
+ * naturally come from the CLI's first ~1.5s of output (the spawned
+ * pane has had no time to scroll older content into view).
+ */
+const STARTUP_ERROR_PATTERNS: readonly RegExp[] = [
+  /No API key found for [\w-]+/i,
+  /Error: invalid API key/i,
+  /Authentication failed/i,
+  /401 Unauthorized/i,
+  /Could not authenticate/i,
+];
+
+/**
+ * Number of trailing lines of the post-liveness scrollback to scan for
+ * `STARTUP_ERROR_PATTERNS`. The capture is `lines: 50`; tailing the last
+ * 30 keeps the scan focused on the spawned CLI's own startup output
+ * (the pane is brand-new, so anything earlier than that is the shell
+ * banner / our own command-line, both safe).
+ */
+const STARTUP_ERROR_TAIL_LINES = 30;
+
+/**
+ * Scan the tail of a freshly-captured pane buffer for known startup-
+ * failure patterns. Returns the matched line on first hit, or undefined
+ * if the buffer is clean.
+ *
+ * Exported for the test suite; not part of the SDK surface.
+ */
+export function detectSpawnStartupError(scrollback: string): string | undefined {
+  const lines = scrollback.split(/\r?\n/);
+  const tail = lines.slice(Math.max(0, lines.length - STARTUP_ERROR_TAIL_LINES));
+  for (const line of tail) {
+    for (const pattern of STARTUP_ERROR_PATTERNS) {
+      if (pattern.test(line)) return line;
+    }
+  }
+  return undefined;
+}
+
 async function awaitSpawnLiveness(paneId: string, agentName: string): Promise<void> {
   const ms = defaultSpawnLivenessMs();
   if (ms === 0) return;
@@ -402,8 +454,20 @@ async function awaitSpawnLiveness(paneId: string, agentName: string): Promise<vo
   // pane is in the process of being torn down (the buffer survives a beat
   // longer than the pane's existence in some tmux builds).
   const scrollback = await capturePane(paneId, { lines: 50 }).catch(() => undefined);
-  if (await paneExists(paneId)) return;
-  throw new AgentDiedOnSpawnError(agentName, paneId, scrollback);
+  if (!(await paneExists(paneId))) {
+    throw new AgentDiedOnSpawnError(agentName, paneId, scrollback);
+  }
+  // Pane is alive — but "alive" doesn't mean "working". Scan the tail of
+  // the capture for known provider/auth startup errors
+  // (agent_spawn_model_auth_failure_counts_as_live). The pane stays at
+  // an error prompt forever otherwise, and the orchestrator only
+  // discovers the dud minutes later when `mu task wait` stalls.
+  if (scrollback !== undefined) {
+    const matchedLine = detectSpawnStartupError(scrollback);
+    if (matchedLine !== undefined) {
+      throw new AgentSpawnStartupError(agentName, paneId, matchedLine, scrollback);
+    }
+  }
 }
 
 /**

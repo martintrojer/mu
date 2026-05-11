@@ -317,7 +317,7 @@ XDG-Base-Directory-Spec compliant. The state directory resolves as:
 | `MU_SEND_DELAY_MS`           | Delay between bracketed paste and Enter (default `500`) |
 | `MU_TMUX_SOCKET`             | Override tmux socket (`-L <name>`); default uses `$TMUX` |
 | `MU_<UPPER_CLI>_COMMAND`     | Override the executable launched for `--cli <cli>` (e.g. `MU_PI_COMMAND=pi-alt` makes `--cli pi` exec `pi-alt`). Accepts multi-word strings (`MU_PI_COMMAND="pi-alt --some-flag"`); tmux exec's via a shell. Reconcile also treats the resolved binary as agent-worthy when surfacing orphan panes. |
-| `MU_SPAWN_LIVENESS_MS`       | After spawn, wait this many ms then verify the pane is still alive. Default 1500. Set to 0 to disable (useful in CI). On detected death, the DB row is rolled back and `AgentDiedOnSpawnError` is thrown with the captured scrollback. |
+| `MU_SPAWN_LIVENESS_MS`       | After spawn, wait this many ms then verify the pane is still alive AND scan the tail of its scrollback for known startup-error patterns (provider auth failures — `No API key found for X`, `401 Unauthorized`, …). Default 1500. Set to 0 to disable (useful in CI). On detected death the DB row is rolled back and `AgentDiedOnSpawnError` is thrown with the captured scrollback; on a startup-error match (pane alive but parked at an error prompt) the row is rolled back and `AgentSpawnStartupError` is thrown with the matched line + remediation hints. |
 
 These mirror pi-subagents' `PI_SUBAGENT_*` env vars in spirit but live
 in a separate namespace so the two can coexist in one pi session.

@@ -14,6 +14,7 @@ import {
   AgentExistsError,
   AgentNotFoundError,
   AgentNotInWorkstreamError,
+  AgentSpawnStartupError,
   WorkspacePreservedError,
 } from "../src/agents.js";
 import { WorkstreamNotFoundError, openDb } from "../src/db.js";
@@ -82,6 +83,16 @@ describe("typed errors all carry actionable errorNextSteps()", () => {
       ["alice", "actual"],
     ],
     [new AgentDiedOnSpawnError("alice", "%15", "panic: died"), "AgentDiedOnSpawnError", ["alice"]],
+    [
+      new AgentSpawnStartupError(
+        "alice",
+        "%15",
+        "Error: No API key found for amazon-bedrock",
+        "Error: No API key found for amazon-bedrock\n> ",
+      ),
+      "AgentSpawnStartupError",
+      ["alice"],
+    ],
     // TmuxError doesn't carry a single id; check that its command
     // mentions doctor (its standard recovery hint).
     [new TmuxError(["list-panes"], "no server", "", 1), "TmuxError", ["doctor"]],

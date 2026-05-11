@@ -13,12 +13,14 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   AgentDiedOnSpawnError,
   AgentExistsError,
+  AgentSpawnStartupError,
   defaultSpawnLivenessMs,
   getAgent,
   insertAgent,
   resolveCliCommand,
   spawnAgent,
 } from "../src/agents.js";
+import { detectSpawnStartupError } from "../src/agents/spawn.js";
 import { type Db, openDb } from "../src/db.js";
 import { hasNextSteps } from "../src/output.js";
 import {
@@ -416,6 +418,158 @@ describe("spawn liveness check", () => {
   });
 });
 
+// ─── spawn startup-error scan (provider auth failures) ───────────────
+//
+// Regression for agent_spawn_model_auth_failure_counts_as_live: when
+// pi-meta is invoked with a --model whose provider has no credentials,
+// it prints `Error: No API key found for <provider>` and parks at a
+// prompt. The pane stays alive so the existing liveness check passes,
+// but the worker can never do work — the orchestrator only discovers
+// this when `mu task wait` stalls minutes later. Fix: after confirming
+// paneExists, scan the tail of the captured scrollback for a curated
+// list of startup-error patterns.
+
+describe("detectSpawnStartupError (pure scanner)", () => {
+  it("returns the matched line for each curated provider-auth pattern", () => {
+    const cases: Array<[string, RegExp]> = [
+      ["Error: No API key found for amazon-bedrock", /amazon-bedrock/],
+      ["Error: invalid API key", /invalid API key/],
+      ["Authentication failed against provider", /Authentication failed/],
+      ["HTTP 401 Unauthorized from upstream", /401 Unauthorized/],
+      ["Could not authenticate with the configured key", /Could not authenticate/],
+    ];
+    for (const [line, expectedFragment] of cases) {
+      const matched = detectSpawnStartupError(`pi v0.5.0\n${line}\n> `);
+      expect(matched, `pattern should match line: ${line}`).toBeDefined();
+      expect(matched).toMatch(expectedFragment);
+    }
+  });
+
+  it("is case-insensitive", () => {
+    expect(detectSpawnStartupError("NO API KEY FOUND FOR Openai")).toBeDefined();
+    expect(detectSpawnStartupError("401 unauthorized")).toBeDefined();
+  });
+
+  it("returns undefined on a clean buffer", () => {
+    expect(detectSpawnStartupError("pi v0.5.0\nready\n> ")).toBeUndefined();
+    expect(detectSpawnStartupError("")).toBeUndefined();
+  });
+
+  it("only scans the last ~30 lines (so harmless prior-session text doesn't trip it)", () => {
+    // 100 lines of harmless content, then 30 lines of new startup
+    // output that's clean. Even though an old line buried at the top
+    // says `No API key found for foo`, it's outside the tail window
+    // and must NOT trip the scanner.
+    const oldNoise = Array.from({ length: 100 }, (_, i) =>
+      i === 0 ? "No API key found for foo" : `harmless prior line ${i}`,
+    ).join("\n");
+    const recent = Array.from({ length: 30 }, (_, i) => `pi: ready ${i}`).join("\n");
+    expect(detectSpawnStartupError(`${oldNoise}\n${recent}`)).toBeUndefined();
+  });
+});
+
+describe("spawn startup-error scan", () => {
+  /** Wire the mock pane's scrollback so capture-pane returns the given
+   *  content for every pane that exists when the liveness sleep ends. */
+  function injectScrollbackOnSleep(content: string): void {
+    setSleepForTests(async () => {
+      for (const pane of state.panes.values()) {
+        pane.scrollback = content;
+      }
+    });
+  }
+
+  it("throws AgentSpawnStartupError when scrollback contains a known auth-error pattern", async () => {
+    const { executor } = mockTmux(state);
+    setTmuxExecutor(executor);
+    injectScrollbackOnSleep(
+      "pi v0.5.0\nError: No API key found for amazon-bedrock\nPress any key to dismiss",
+    );
+
+    let caught: unknown;
+    try {
+      await spawnAgent(db, { name: "alice", workstream: "auth" });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(AgentSpawnStartupError);
+    if (!(caught instanceof AgentSpawnStartupError)) throw new Error("unreachable");
+    expect(caught.agentName).toBe("alice");
+    expect(caught.matchedLine).toMatch(/No API key found for amazon-bedrock/);
+    // The agent row + pane were rolled back — no half-spawned ghost.
+    expect(getAgent(db, "alice", "auth")).toBeUndefined();
+  });
+
+  it.each([
+    ["Error: No API key found for openai", /No API key found/],
+    ["Error: invalid API key — check your config", /invalid API key/],
+    ["fatal: Authentication failed talking to provider", /Authentication failed/],
+    ["server returned 401 Unauthorized", /401 Unauthorized/],
+    ["Could not authenticate with the configured credential", /Could not authenticate/],
+  ])("detects pattern: %s", async (line, expectedFragment) => {
+    const { executor } = mockTmux(state);
+    setTmuxExecutor(executor);
+    injectScrollbackOnSleep(`pi v0.5.0\n${line}`);
+
+    let caught: unknown;
+    try {
+      await spawnAgent(db, { name: "alice", workstream: "auth" });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(AgentSpawnStartupError);
+    if (!(caught instanceof AgentSpawnStartupError)) throw new Error("unreachable");
+    expect(caught.matchedLine).toMatch(expectedFragment);
+  });
+
+  it("AgentSpawnStartupError carries actionable nextSteps (default-Anthropic recipe)", async () => {
+    const { executor } = mockTmux(state);
+    setTmuxExecutor(executor);
+    injectScrollbackOnSleep("Error: No API key found for amazon-bedrock");
+
+    let caught: unknown;
+    try {
+      await spawnAgent(db, { name: "worker-1", workstream: "auth" });
+    } catch (err) {
+      caught = err;
+    }
+    expect(hasNextSteps(caught)).toBe(true);
+    if (!hasNextSteps(caught)) throw new Error("unreachable");
+    const commands = caught
+      .errorNextSteps()
+      .map((s) => s.command)
+      .join("\n");
+    // Must point at the safe pi-meta default + name the agent.
+    expect(commands).toMatch(/mu agent spawn worker-1/);
+    expect(commands).toMatch(/pi-meta --no-solo/);
+    // Must mention setting an API key as the alternative fix.
+    expect(commands).toMatch(/API_KEY/);
+  });
+
+  it("healthy spawn (clean scrollback) is NOT tripped by the scan", async () => {
+    const { executor } = mockTmux(state);
+    setTmuxExecutor(executor);
+    injectScrollbackOnSleep("pi v0.5.0\nready\n> ");
+
+    const agent = await spawnAgent(db, { name: "alice", workstream: "auth" });
+    expect(agent.name).toBe("alice");
+    expect(getAgent(db, "alice", "auth")).toBeDefined();
+  });
+
+  it("is disabled when MU_SPAWN_LIVENESS_MS=0 (whole liveness check is skipped)", async () => {
+    const { executor } = mockTmux(state);
+    setTmuxExecutor(executor);
+    // Even with a startup-error in the buffer, the scan only runs as
+    // part of the liveness check; with the check disabled, the spawn
+    // succeeds. (This matches existing behaviour for AgentDiedOnSpawnError.)
+    injectScrollbackOnSleep("Error: No API key found for amazon-bedrock");
+    await withMuSpawnLivenessMs("0", async () => {
+      const agent = await spawnAgent(db, { name: "alice", workstream: "auth" });
+      expect(agent.name).toBe("alice");
+    });
+  });
+});
+
 // ─── --workspace rollback on tmux failure ──────────────────────────────
 //
 // Regression for agent_spawn_abort_leaves_orphan_workspace: when a
@@ -568,5 +722,45 @@ describe("spawn --workspace rollback on tmux failure", () => {
       .join("\n");
     expect(commands).toMatch(/mu agent read worker-1/); // existing hint
     expect(commands).toMatch(/mu workspace orphans -w auth/); // appended hint
+  });
+
+  it("rollback also runs when the startup-error scan fires for a --workspace spawn", async () => {
+    // agent_spawn_model_auth_failure_counts_as_live: when the new
+    // startup-error scan trips, the same outer try/catch must run
+    // rollbackSpawn + attachOrphanCleanupHint. This is just
+    // exercising the existing seam with the new error class — if
+    // someone later moves the scan outside the try, this test breaks.
+    const { executor } = mockTmux(state);
+    setTmuxExecutor(executor);
+    setSleepForTests(async () => {
+      for (const pane of state.panes.values()) {
+        pane.scrollback = "Error: No API key found for amazon-bedrock";
+      }
+    });
+    const expectedWsPath = workspacePath("auth", "worker-1");
+
+    let caught: unknown;
+    try {
+      await spawnAgent(db, {
+        name: "worker-1",
+        workstream: "auth",
+        workspace: true,
+        workspaceBackend: "none",
+        workspaceProjectRoot: projectRoot,
+      });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(AgentSpawnStartupError);
+    expect(getAgent(db, "worker-1", "auth")).toBeUndefined();
+    expect(listWorkspaces(db, "auth")).toEqual([]);
+    expect(existsSync(expectedWsPath)).toBe(false);
+    if (!hasNextSteps(caught)) throw new Error("expected nextSteps");
+    const commands = caught
+      .errorNextSteps()
+      .map((s) => s.command)
+      .join("\n");
+    expect(commands).toMatch(/mu agent spawn worker-1/); // existing diagnostic hint
+    expect(commands).toMatch(/mu workspace orphans -w auth/); // appended orphan-cleanup hint
   });
 });

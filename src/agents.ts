@@ -26,6 +26,7 @@ export {
   AgentExistsError,
   AgentNotFoundError,
   AgentNotInWorkstreamError,
+  AgentSpawnStartupError,
   WorkspacePreservedError,
 } from "./agents/errors.js";
 export {

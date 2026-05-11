@@ -33,6 +33,7 @@ import {
   AgentExistsError,
   AgentNotFoundError,
   AgentNotInWorkstreamError,
+  AgentSpawnStartupError,
   WorkspacePreservedError,
 } from "../agents.js";
 import {
@@ -266,6 +267,15 @@ export function classifyError(err: unknown): { label: string; exitCode: number }
     // Substrate-level failure (CLI exited at spawn). The message is
     // already rich (includes captured scrollback). Generic exit 1.
     return { label: "spawn failed", exitCode: 1 };
+  }
+  if (err instanceof AgentSpawnStartupError) {
+    // Pane is alive but the spawned CLI parked at a known
+    // provider-auth-failure prompt. Same generic exit 1 lane as
+    // AgentDiedOnSpawnError — both are "the spawn looked OK to mu but
+    // the operator can't actually use this agent". The error message
+    // already carries the matched line + scrollback;
+    // errorNextSteps() carries the remediation recipe.
+    return { label: "spawn startup error", exitCode: 1 };
   }
   if (err instanceof TmuxError || err instanceof PaneNotFoundError) {
     return { label: "tmux", exitCode: 5 };
