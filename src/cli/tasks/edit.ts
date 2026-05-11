@@ -138,9 +138,14 @@ export async function cmdTaskAdd(
   // collisions with `_2`, `_3`, … suffixes AND surfaces a `truncated`
   // flag so we can warn the user when the SLUG_SOFT_CAP word-boundary
   // cut dropped clauses (slugifytitle_silently_drops_clauses).
-  let derivation: { id: string; truncated: boolean };
+  // `autoDerived` distinguishes the explicit-<id> branch from the
+  // auto-derived branch so `--json` can selectively expose the
+  // truncation telemetry only when it's meaningful
+  // (task_add_slugify_silently_truncates_ids).
+  const autoDerived = localId === undefined;
+  let derivation: { id: string; truncated: boolean; originalSlug: string };
   if (localId !== undefined) {
-    derivation = { id: localId, truncated: false };
+    derivation = { id: localId, truncated: false, originalSlug: localId };
   } else {
     derivation = idFromTitleVerbose(db, workstream, opts.title);
   }
@@ -174,10 +179,29 @@ export async function cmdTaskAdd(
     },
   ];
   if (opts.json) {
-    // JSON callers are scripts: stay machine-readable. The hint is a
-    // human-prose convenience and is suppressed under --json (matches
-    // every other prose surface in the CLI).
-    emitJson({ task: withRoiAll([task])[0], blockers: blockedBy ?? [], nextSteps });
+    // JSON callers are scripts: stay machine-readable. The human
+    // stderr hint is suppressed under --json (matches every other
+    // prose surface in the CLI). The truncation signal still has to
+    // reach scripted callers, though — otherwise pipelines that
+    // build follow-up commands from the JSON envelope can't tell the
+    // id no longer carries the title's full meaning. Surface it as
+    // top-level `truncated`/`originalSlug` siblings of `task` (NOT
+    // inside `task`, which mirrors the persisted row).
+    // Conventions, consistent with the audit_json_envelope_uniformity
+    // singleton style: only emit when meaningful. Both fields are
+    // omitted when the operator passed an explicit <id> (no
+    // auto-derive) and when auto-derivation produced no truncation
+    // (task_add_slugify_silently_truncates_ids).
+    const truncationFields =
+      autoDerived && derivation.truncated
+        ? { truncated: true, originalSlug: derivation.originalSlug }
+        : {};
+    emitJson({
+      task: withRoiAll([task])[0],
+      blockers: blockedBy ?? [],
+      nextSteps,
+      ...truncationFields,
+    });
     return;
   }
   // Stderr hint when auto-id derivation truncated the slug. Stderr +

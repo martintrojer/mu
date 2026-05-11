@@ -8,6 +8,33 @@ called out under "Breaking" in each entry.
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- **`mu task add --json` surfaces auto-id truncation telemetry**
+  (`task_add_slugify_silently_truncates_ids`). Sibling fix to the
+  human stderr hint in `slugifytitle_silently_drops_clauses`:
+  scripted callers parse stdout JSON and never see the stderr
+  prose, so they cannot tell when the SLUG_SOFT_CAP word-boundary
+  cut dropped trailing clauses from the auto-derived id. The JSON
+  envelope now adds two top-level fields (siblings of `task` /
+  `blockers` / `nextSteps`, NOT inside `task`) when auto-id
+  derivation actually truncated:
+
+      truncated:    boolean   // only present when true
+      originalSlug: string    // un-truncated slug, only present when truncated
+
+  Both fields are omitted when the operator passed an explicit
+  `<id>` positional (no auto-derive happened) and when
+  auto-derivation produced no truncation — the omission itself is
+  the false-signal, matching the singleton-envelope convention
+  established by `audit_json_envelope_uniformity` (only emit
+  optional fields when meaningful). SDK: `SlugifyResult` and
+  `IdFromTitleResult` both gain an `originalSlug` field.
+
+---
+
 ## [0.3.1] — 2026-05-11
 
 **First npm release.** Published as `@martintrojer/mu`. The skill

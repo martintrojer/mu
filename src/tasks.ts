@@ -278,6 +278,14 @@ export function slugifyTitle(title: string): string {
  *                    exceeds the SLUG_SOFT_CAP the verbose form had to
  *                    cut at a word boundary (or hard-truncate); the
  *                    cut clauses are gone with no in-band signal.
+ *   originalSlug   — what the slug WOULD have been without the
+ *                    SLUG_SOFT_CAP cut: full stripped slug with the
+ *                    same `t_` digit-prefix correction and the same
+ *                    SLUG_HARD_CAP ceiling, but no word-boundary
+ *                    truncation. Equal to `slug` when nothing was
+ *                    cut. The CLI surfaces this in `mu task add
+ *                    --json` so scripted callers can detect the
+ *                    truncation without grepping stderr.
  *   truncated      — true iff `slug.length < strippedLength` AFTER the
  *                    `t_` digit-prefix correction, i.e. real bytes were
  *                    dropped. False for any title that fits under the
@@ -285,12 +293,14 @@ export function slugifyTitle(title: string): string {
  *                    is the `t_` prefix.
  *
  * The CLI's `mu task add` uses `truncated` to print a one-line stderr
- * hint pointing at the `<id>` positional override
- * (slugifytitle_silently_drops_clauses).
+ * hint pointing at the `<id>` positional override and (under --json)
+ * to surface `originalSlug` alongside `truncated:true`
+ * (slugifytitle_silently_drops_clauses; task_add_slugify_silently_truncates_ids).
  */
 export interface SlugifyResult {
   slug: string;
   strippedLength: number;
+  originalSlug: string;
   truncated: boolean;
 }
 
@@ -327,9 +337,14 @@ export function slugifyTitleVerbose(title: string): SlugifyResult {
   // First char must be a letter → prefix `t_` if it isn't. v5 has no
   // global namespace and no reserved prefix; `mu_foo` is a perfectly
   // valid local_id (per-workstream unique).
-  const slug = /^[a-z]/.test(trimmed)
-    ? trimmed.slice(0, SLUG_HARD_CAP)
-    : `t_${trimmed}`.slice(0, SLUG_HARD_CAP);
+  const applyPrefix = (s: string): string =>
+    /^[a-z]/.test(s) ? s.slice(0, SLUG_HARD_CAP) : `t_${s}`.slice(0, SLUG_HARD_CAP);
+  const slug = applyPrefix(trimmed);
+  // `originalSlug` is what the slug would have been without the
+  // soft-cap word-boundary cut: same prefix correction, same hard
+  // cap, no word-boundary trim. Used by `mu task add --json` so
+  // scripted callers can detect truncation programmatically.
+  const originalSlug = applyPrefix(stripped);
   // `truncated` reflects whether real characters were dropped — the
   // `t_` prefix doesn't count as truncation. We compare the trimmed
   // length against the stripped length (both pre-prefix) so a digit-
@@ -337,6 +352,7 @@ export function slugifyTitleVerbose(title: string): SlugifyResult {
   return {
     slug,
     strippedLength: stripped.length,
+    originalSlug,
     truncated: trimmed.length < stripped.length,
   };
 }
@@ -354,25 +370,40 @@ export function idFromTitle(db: Db, workstream: string, title: string): string {
  * Result of `idFromTitleVerbose`: the unique-in-workstream id plus the
  * truncated flag from the underlying slugify pass. Used by `mu task
  * add` to decide whether to surface the stderr hint about lost clauses
- * (slugifytitle_silently_drops_clauses).
+ * (slugifytitle_silently_drops_clauses) and to surface the un-truncated
+ * slug in `--json` (task_add_slugify_silently_truncates_ids).
+ *
+ *   id            — the unique-in-workstream task id.
+ *   truncated     — true iff the underlying slugify pass cut real
+ *                   characters (collision-suffixing does NOT flip
+ *                   this).
+ *   originalSlug  — what the slug would have been without the
+ *                   SLUG_SOFT_CAP cut. Equal to `id` when nothing was
+ *                   cut AND no collision suffix was appended; for
+ *                   the truncation-detection use case the only thing
+ *                   the CLI cares about is the lossy-vs-not
+ *                   comparison surfaced via `truncated`.
  */
 export interface IdFromTitleResult {
   id: string;
   truncated: boolean;
+  originalSlug: string;
 }
 
 /**
- * Verbose sibling of `idFromTitle`: returns both the unique id and the
- * `truncated` flag from the slugify pass. Collision-suffixing (`_2`,
+ * Verbose sibling of `idFromTitle`: returns the unique id, the
+ * `truncated` flag from the slugify pass, and the un-truncated
+ * `originalSlug` for `--json` consumers. Collision-suffixing (`_2`,
  * `_3`, …) does not flip `truncated` — the underlying slug's lossiness
  * is what the CLI hint cares about.
  */
 export function idFromTitleVerbose(db: Db, workstream: string, title: string): IdFromTitleResult {
-  const { slug: base, truncated } = slugifyTitleVerbose(title);
-  if (getTask(db, base, workstream) === undefined) return { id: base, truncated };
+  const { slug: base, truncated, originalSlug } = slugifyTitleVerbose(title);
+  if (getTask(db, base, workstream) === undefined) return { id: base, truncated, originalSlug };
   for (let i = 2; i < 1000; i++) {
     const candidate = `${base}_${i}`.slice(0, SLUG_HARD_CAP);
-    if (getTask(db, candidate, workstream) === undefined) return { id: candidate, truncated };
+    if (getTask(db, candidate, workstream) === undefined)
+      return { id: candidate, truncated, originalSlug };
   }
   throw new Error(`could not derive a unique id from title in workstream ${workstream}: ${title}`);
 }

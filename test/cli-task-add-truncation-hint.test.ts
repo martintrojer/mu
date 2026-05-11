@@ -88,4 +88,72 @@ describe("mu task add — truncation hint", () => {
     expect(parsed).toHaveProperty("task");
     expect(typeof parsed.task.name).toBe("string");
   });
+
+  // task_add_slugify_silently_truncates_ids: the stderr hint reaches
+  // humans but scripted callers parse stdout JSON. The envelope has
+  // to surface the truncation signal too, alongside the un-truncated
+  // slug, so pipelines can detect meaning loss without grepping
+  // stderr.
+  it("--json surfaces top-level truncated:true + originalSlug when auto-id is truncated", async () => {
+    const r = await runCli(
+      ["task", "add", "-w", "test", "-t", LONG_TITLE, "-i", "50", "-e", "1", "--json"],
+      dbPath,
+    );
+    expect(r.error).toBeUndefined();
+    const parsed = JSON.parse(r.stdout);
+    expect(parsed.truncated).toBe(true);
+    expect(typeof parsed.originalSlug).toBe("string");
+    // Sanity: the originalSlug is strictly longer than the truncated
+    // id, and the truncated id is a prefix of the original (the cut
+    // happens at a word boundary inside the original).
+    expect(parsed.originalSlug.length).toBeGreaterThan(parsed.task.name.length);
+    expect(parsed.originalSlug.startsWith(parsed.task.name)).toBe(true);
+    // The fields live at the top level (siblings of `task`), not
+    // inside the persisted task row — the row mirrors the schema and
+    // the slug after truncation IS the canonical id.
+    expect(parsed.task).not.toHaveProperty("truncated");
+    expect(parsed.task).not.toHaveProperty("originalSlug");
+  });
+
+  it("--json omits truncated/originalSlug entirely for a short auto-derived title", async () => {
+    const r = await runCli(
+      ["task", "add", "-w", "test", "-t", SHORT_TITLE, "-i", "50", "-e", "1", "--json"],
+      dbPath,
+    );
+    expect(r.error).toBeUndefined();
+    const parsed = JSON.parse(r.stdout);
+    // Conventions — audit_json_envelope_uniformity singleton style:
+    // optional fields stay omitted when there's nothing to say.
+    // truncated/originalSlug only appear when truncation actually
+    // happened, so the absence is itself the false-signal.
+    expect(parsed).not.toHaveProperty("truncated");
+    expect(parsed).not.toHaveProperty("originalSlug");
+  });
+
+  it("--json omits truncated/originalSlug when the operator passed an explicit <id>", async () => {
+    // Explicit <id> path — even with a long title, the operator chose
+    // the id by hand; there is no auto-derive lossiness to report.
+    const r = await runCli(
+      [
+        "task",
+        "add",
+        "manual_short_id",
+        "-w",
+        "test",
+        "-t",
+        LONG_TITLE,
+        "-i",
+        "50",
+        "-e",
+        "1",
+        "--json",
+      ],
+      dbPath,
+    );
+    expect(r.error).toBeUndefined();
+    const parsed = JSON.parse(r.stdout);
+    expect(parsed.task.name).toBe("manual_short_id");
+    expect(parsed).not.toHaveProperty("truncated");
+    expect(parsed).not.toHaveProperty("originalSlug");
+  });
 });
