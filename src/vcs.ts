@@ -245,6 +245,32 @@ export interface VcsBackend {
   rebaseTo(workspacePath: string, fromRef?: string): Promise<RebaseResult>;
 
   /**
+   * Cheap "is the working copy clean?" probe used by close-auto-free
+   * (allow_mu_agent_close_without_discard). Definition: ZERO uncommitted
+   * changes (no working-tree modifications, no staged changes, no
+   * untracked-not-ignored files). Pure observation; no fetch, no commit.
+   *
+   * Backend-specific:
+   *   - git: empty `git status --porcelain` output.
+   *   - jj:  jj is auto-snapshotted, so the @ commit IS the WC; clean
+   *          here means @ has no diff from its parent (empty `jj diff
+   *          -r @ --summary`). A description-only difference still
+   *          counts as clean.
+   *   - sl:  empty `sl status` output.
+   *   - none: meaningless (cp -a snapshot has no notion of
+   *          "committed" vs "uncommitted"); always returns true so the
+   *          close-auto-free path treats every none-workspace as
+   *          eligible for silent free (no commits can be lost; the only
+   *          loss is local file edits, which the operator implicitly
+   *          accepts by closing the agent).
+   *
+   * Returns false on any backend command failure — be conservative
+   * (we'd rather refuse a close than auto-free a workspace whose
+   * cleanliness we couldn't verify).
+   */
+  isClean(workspacePath: string): Promise<boolean>;
+
+  /**
    * List commits the workspace has on top of `baseRef`, oldest-first.
    * Used by `mu workspace commits` (fb_workspace_commits_verb) to
    * promote the dogfood-painful
@@ -329,6 +355,14 @@ export const noneBackend: VcsBackend = {
     return null;
   },
 
+  // none has no notion of clean — a cp -a snapshot doesn't track
+  // committed vs uncommitted state. Returning true makes the
+  // close-auto-free path silently free a none-workspace (consistent
+  // with the fact that there are no commits to lose).
+  async isClean(_workspacePath) {
+    return true;
+  },
+
   // none has no upstream to rebase onto. Throw a typed error so the
   // CLI's handle() maps it to exit 4 with a clean Next: hint.
   async rebaseTo(workspacePath, _fromRef) {
@@ -381,6 +415,21 @@ export const gitBackend: VcsBackend = {
     // Resolve the actual SHA we ended up on for the parentRef record.
     const sha = await run("git", ["rev-parse", "HEAD"], opts.workspacePath);
     return { parentRef: sha };
+  },
+
+  // Working-copy clean check: empty `git status --porcelain` output
+  // means no working-tree, staged, or untracked-not-ignored changes.
+  // Returns false on any failure (workspace path missing, git
+  // explodes) — be conservative; auto-free should never "silently
+  // succeed" because we couldn't check.
+  async isClean(workspacePath) {
+    if (!existsSync(workspacePath)) return false;
+    try {
+      const files = await listGitDirtyFiles(workspacePath);
+      return files.length === 0;
+    } catch {
+      return false;
+    }
   },
 
   // Compute commits-behind as: count of commits reachable from main
@@ -739,6 +788,24 @@ export const jjBackend: VcsBackend = {
     return result;
   },
 
+  // jj working-copy clean: @ has no diff from its parent.
+  // `jj diff -r @ --summary` prints one line per changed file; empty
+  // stdout = clean. jj's auto-snapshotting means there's no separate
+  // "untracked" bucket — every working-tree change is already in @.
+  async isClean(workspacePath) {
+    if (!existsSync(workspacePath)) return false;
+    try {
+      const out = await run(
+        "jj",
+        ["diff", "-r", "@", "--summary", "--no-pager", "--color", "never"],
+        workspacePath,
+      );
+      return out.length === 0;
+    } catch {
+      return false;
+    }
+  },
+
   // Compute commits-behind via jj's `trunk()` revset, which resolves
   // to the project's configured trunk (default-branch heuristic).
   // Returns null when trunk() is unresolvable (e.g. fresh repo with
@@ -977,6 +1044,19 @@ export const slBackend: VcsBackend = {
     const result: FreeWorkspaceResult = { removed: true };
     if (committedRef !== undefined) result.committedRef = committedRef;
     return result;
+  },
+
+  // sl working-copy clean: empty `sl status` output. Same shape as
+  // listSlDirtyFiles below but inlined to keep the failure-mode
+  // boundary tight (any throw → not clean).
+  async isClean(workspacePath) {
+    if (!existsSync(workspacePath)) return false;
+    try {
+      const out = await run("sl", ["status"], workspacePath);
+      return out.length === 0;
+    } catch {
+      return false;
+    }
   },
 
   // Same shape as the jj impl: count commits in trunk() not reachable

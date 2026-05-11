@@ -86,8 +86,13 @@ track. Don't spawn more agents than there are tracks.
 For two agents editing the same project, use `--workspace` on spawn.
 Each gets an isolated working copy under
 `<state-dir>/workspaces/<workstream>/<agent>/`. Auto-detects
-jj/sl/git; `cp -a` for non-VCS. Workspaces are NOT freed when you
-close an agent — run `mu workspace free <agent>` explicitly. Between
+jj/sl/git; `cp -a` for non-VCS. Workspaces are auto-freed when
+you close an agent **iff the workspace is clean** (no uncommitted
+changes AND no commits since fork); a non-clean workspace blocks
+`mu agent close` with `WorkspacePreservedError` and forces an
+explicit `mu workspace free <agent>` (or
+`mu agent close <agent> --discard-workspace` for the lossy override).
+Between
 waves, `mu workspace refresh <agent>` rebases the dir onto fresh
 main without killing the agent's LLM context; `mu workspace commits
 <agent>` lists since-fork commits for cherry-picking.

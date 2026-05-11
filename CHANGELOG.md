@@ -12,6 +12,31 @@ called out under "Breaking" in each entry.
 
 ### Changed
 
+- **`mu agent close` auto-frees a clean workspace instead of requiring
+  `--discard-workspace`** (`allow_mu_agent_close_without_discard`).
+  Real-user pain (mufeedback gchatui): a misconfigured spawn left two
+  workers whose `--workspace` dirs contained nothing but the
+  backend's `.git` / `.jj` pointer file (no commits since fork, no
+  uncommitted changes). `mu agent close <name>` refused both with the
+  WorkspacePreservedError nag, forcing the user through the lossy
+  `--discard-workspace` flag (or two extra `mu workspace free`
+  invocations) just to clean up. Now: `closeAgent` calls
+  `isWorkspaceClean(row)` and, if true (no uncommitted changes per
+  the backend's new `isClean` probe AND zero commits since fork per
+  `commitsSinceBase`), silently frees the workspace and proceeds with
+  the close — the same audit trail (`workspace free` event) is
+  emitted, just without the operator friction. Non-clean workspaces
+  (uncommitted changes OR commits since fork) still throw
+  WorkspacePreservedError and still require `--discard-workspace` for
+  the lossy escape hatch. The new `VcsBackend.isClean(workspacePath)`
+  method is implemented for git (empty `git status --porcelain`), jj
+  (empty `jj diff -r @ --summary`), sl (empty `sl status`), and `none`
+  (unconditionally true: a cp -a snapshot has nothing committed worth
+  preserving). `closeAgent`'s `CloseAgentResult` gains a
+  `workspaceAutoFreedClean: boolean` so the CLI can render
+  "workspace auto-freed" vs "workspace discarded" accurately and JSON
+  consumers get a stable signal.
+
 - **`mu agent adopt` is the canonical form; `mu adopt` is deprecated**
   (`mu_adopt_should_be_mu_agent_adopt_for`). Every other
   agent-lifecycle verb (`spawn`, `send`, `read`, `show`, `list`,

@@ -422,9 +422,34 @@ describe("WorkspaceNotFoundError", () => {
 });
 
 // ─── closeAgent integration with workspace ────────────────────
+//
+// allow_mu_agent_close_without_discard:
+//   - clean workspace (no uncommitted changes AND no commits since fork)
+//     → auto-free, success, no error
+//   - dirty workspace (uncommitted changes)
+//     → still throws WorkspacePreservedError
+//   - clean workspace + commits since fork
+//     → still throws WorkspacePreservedError (commits would be lost)
+//   - --discard-workspace overrides ALL of the above (lossy)
+//
+// We exercise the dirty / commits-since-fork branches with the git
+// backend (the only backend whose `isClean` + `commitsSinceBase` we
+// can drive deterministically without skipping); the clean-on-none
+// branch covers the no-VCS case where `isClean` is unconditionally
+// true and there's no fork point to worry about.
+
+const GIT = (() => {
+  try {
+    execFileSync("git", ["--version"], { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+})();
+const gitDescribe = GIT ? describe : describe.skip;
 
 describe("closeAgent + workspace integration", () => {
-  it("closeAgent REFUSES (WorkspacePreservedError) when the agent has a workspace and --discard-workspace is not passed", async () => {
+  it("closeAgent auto-frees a clean workspace (none backend: no commits, no dirty) without --discard-workspace", async () => {
     const ws = await createWorkspace(db, {
       agent: "worker-1",
       workstream: "auth",
@@ -433,20 +458,20 @@ describe("closeAgent + workspace integration", () => {
     });
     expect(() => execFileSync("ls", [ws.path], { stdio: "pipe" })).not.toThrow();
 
-    const { closeAgent, WorkspacePreservedError } = await import("../src/agents.js");
-    await expect(closeAgent(db, "worker-1", { workstream: "auth" })).rejects.toBeInstanceOf(
-      WorkspacePreservedError,
-    );
+    const { closeAgent } = await import("../src/agents.js");
+    const r = await closeAgent(db, "worker-1", { workstream: "auth" });
 
-    // Refuse path: nothing changed. Agent still in DB, workspace row still
-    // there, dir still on disk.
-    expect(getWorkspaceForAgent(db, "worker-1", "auth")).toBeDefined();
-    expect(() => execFileSync("ls", [ws.path], { stdio: "pipe" })).not.toThrow();
-    // Cleanup.
-    rmSync(ws.path, { recursive: true, force: true });
+    expect(r.killedPane).toBe(true);
+    expect(r.deletedRow).toBe(true);
+    expect(r.workspaceFreed).toBe(true);
+    expect(r.workspaceAutoFreedClean).toBe(true);
+
+    // Workspace gone from DB AND from disk.
+    expect(getWorkspaceForAgent(db, "worker-1", "auth")).toBeUndefined();
+    expect(() => execFileSync("ls", [ws.path], { stdio: "pipe" })).toThrow();
   });
 
-  it("closeAgent { discardWorkspace: true } frees workspace AND deletes agent in one shot", async () => {
+  it("closeAgent { discardWorkspace: true } frees workspace AND deletes agent in one shot (lossy override path)", async () => {
     // worker-1 is pre-inserted by the outer beforeEach; create a workspace
     // for it then close with discard.
     const ws = await createWorkspace(db, {
@@ -463,6 +488,10 @@ describe("closeAgent + workspace integration", () => {
     expect(r.killedPane).toBe(true);
     expect(r.deletedRow).toBe(true);
     expect(r.workspaceFreed).toBe(true);
+    // The auto-free flag is FALSE on the explicit-discard path so the
+    // CLI can render "workspace discarded" rather than
+    // "workspace auto-freed (clean)". Distinct signals for distinct UX.
+    expect(r.workspaceAutoFreedClean).toBe(false);
 
     // Workspace gone from DB AND from disk.
     expect(getWorkspaceForAgent(db, "worker-1", "auth")).toBeUndefined();
@@ -474,6 +503,7 @@ describe("closeAgent + workspace integration", () => {
     const { closeAgent } = await import("../src/agents.js");
     const r = await closeAgent(db, "plain-1", { workstream: "auth" });
     expect(r.workspaceFreed).toBe(false);
+    expect(r.workspaceAutoFreedClean).toBe(false);
     expect(r.deletedRow).toBe(true);
   });
 
@@ -484,7 +514,118 @@ describe("closeAgent + workspace integration", () => {
       killedPane: false,
       deletedRow: false,
       workspaceFreed: false,
+      workspaceAutoFreedClean: false,
     });
+  });
+});
+
+gitDescribe("closeAgent + workspace integration (git backend, dirty / commits-since-fork)", () => {
+  function gitInit(): void {
+    execFileSync("git", ["init", "-q", "-b", "main", projectRoot], { stdio: "ignore" });
+    execFileSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", "add", "."], {
+      cwd: projectRoot,
+    });
+    execFileSync(
+      "git",
+      ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "init"],
+      { cwd: projectRoot },
+    );
+  }
+
+  beforeEach(() => {
+    gitInit();
+  });
+
+  it("closeAgent auto-frees a clean git workspace (no uncommitted changes, no commits since fork)", async () => {
+    const ws = await createWorkspace(db, {
+      agent: "worker-1",
+      workstream: "auth",
+      projectRoot,
+      backend: "git",
+    });
+    expect(ws.parentRef).toBeTruthy();
+
+    const { closeAgent } = await import("../src/agents.js");
+    const r = await closeAgent(db, "worker-1", { workstream: "auth" });
+
+    expect(r.workspaceFreed).toBe(true);
+    expect(r.workspaceAutoFreedClean).toBe(true);
+    expect(getWorkspaceForAgent(db, "worker-1", "auth")).toBeUndefined();
+    expect(() => execFileSync("ls", [ws.path], { stdio: "pipe" })).toThrow();
+  });
+
+  it("closeAgent REFUSES (WorkspacePreservedError) on a dirty git workspace (uncommitted changes)", async () => {
+    const ws = await createWorkspace(db, {
+      agent: "worker-1",
+      workstream: "auth",
+      projectRoot,
+      backend: "git",
+    });
+    // Stage an uncommitted change — dirty.
+    writeFileSync(join(ws.path, "dirty.txt"), "dirty\n");
+
+    const { closeAgent, WorkspacePreservedError } = await import("../src/agents.js");
+    await expect(closeAgent(db, "worker-1", { workstream: "auth" })).rejects.toBeInstanceOf(
+      WorkspacePreservedError,
+    );
+
+    // Refuse path: nothing changed.
+    expect(getWorkspaceForAgent(db, "worker-1", "auth")).toBeDefined();
+    expect(() => execFileSync("ls", [ws.path], { stdio: "pipe" })).not.toThrow();
+  });
+
+  it("closeAgent REFUSES (WorkspacePreservedError) when there are commits since fork (clean WC, but work would be lost)", async () => {
+    const ws = await createWorkspace(db, {
+      agent: "worker-1",
+      workstream: "auth",
+      projectRoot,
+      backend: "git",
+    });
+    // Make a real commit in the workspace then leave the WC clean.
+    writeFileSync(join(ws.path, "new.txt"), "hi\n");
+    execFileSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", "add", "."], {
+      cwd: ws.path,
+    });
+    execFileSync(
+      "git",
+      ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "draft work"],
+      { cwd: ws.path },
+    );
+
+    const { closeAgent, WorkspacePreservedError } = await import("../src/agents.js");
+    await expect(closeAgent(db, "worker-1", { workstream: "auth" })).rejects.toBeInstanceOf(
+      WorkspacePreservedError,
+    );
+    expect(getWorkspaceForAgent(db, "worker-1", "auth")).toBeDefined();
+  });
+
+  it("closeAgent --discard-workspace overrides BOTH dirty AND commits-since-fork (lossy escape hatch)", async () => {
+    const ws = await createWorkspace(db, {
+      agent: "worker-1",
+      workstream: "auth",
+      projectRoot,
+      backend: "git",
+    });
+    // Both: a real commit AND uncommitted changes.
+    writeFileSync(join(ws.path, "committed.txt"), "x\n");
+    execFileSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", "add", "."], {
+      cwd: ws.path,
+    });
+    execFileSync(
+      "git",
+      ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "committed"],
+      { cwd: ws.path },
+    );
+    writeFileSync(join(ws.path, "uncommitted.txt"), "y\n");
+
+    const { closeAgent } = await import("../src/agents.js");
+    const r = await closeAgent(db, "worker-1", {
+      discardWorkspace: true,
+      workstream: "auth",
+    });
+    expect(r.workspaceFreed).toBe(true);
+    expect(r.workspaceAutoFreedClean).toBe(false);
+    expect(getWorkspaceForAgent(db, "worker-1", "auth")).toBeUndefined();
   });
 });
 

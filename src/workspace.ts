@@ -752,6 +752,45 @@ export async function listCommitsForWorkspace(
 }
 
 /**
+ * "Is this workspace safe to silently free on agent close?" — i.e.
+ * does it have ZERO uncommitted changes AND ZERO commits since its
+ * fork point. Used by closeAgent to auto-free clean workspaces
+ * (allow_mu_agent_close_without_discard) so the user no longer has
+ * to type --discard-workspace for a workspace that contains nothing
+ * worth preserving.
+ *
+ * Returns false on any backend failure / unknown state — be
+ * conservative: we'd rather refuse a close (forcing the user to
+ * decide) than silently free a workspace whose state we couldn't
+ * verify. The `none` backend's isClean() returns true unconditionally
+ * (no commits to lose; see VcsBackend.isClean docstring); the
+ * commitsSinceBase check is skipped on `none` for the same reason
+ * (cp -a snapshots have no fork point).
+ */
+export async function isWorkspaceClean(row: WorkspaceRow): Promise<boolean> {
+  const backend = backendByName(row.backend);
+  let clean: boolean;
+  try {
+    clean = await backend.isClean(row.path);
+  } catch {
+    return false;
+  }
+  if (!clean) return false;
+  // none: no notion of "commits since fork"; treat as clean iff
+  // isClean returned true (which for none is unconditionally true).
+  if (row.backend === "none") return true;
+  // No recorded parent_ref means we can't safely answer "any commits
+  // since fork?" — refuse rather than guess.
+  if (row.parentRef === null || row.parentRef.length === 0) return false;
+  try {
+    const commits = await backend.commitsSinceBase(row.path, row.parentRef);
+    return commits.length === 0;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Tear down an agent's workspace. Calls the backend to remove the
  * on-disk directory (with optional auto-commit), then DELETEs the row.
  * Idempotent on a missing workspace (returns all-false).

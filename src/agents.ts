@@ -63,7 +63,7 @@ import {
   sendToPane,
   setPaneTitle,
 } from "./tmux.js";
-import { freeWorkspace, getWorkspaceForAgent } from "./workspace.js";
+import { freeWorkspace, getWorkspaceForAgent, isWorkspaceClean } from "./workspace.js";
 // (freeWorkspace is used by the spawn rollback paths below, not by closeAgent.
 // Closing an agent is intentionally a separate concern from freeing its workspace;
 // see the closeAgent docstring.)
@@ -599,14 +599,17 @@ export function freeAgent(db: Db, name: string, workstream: string): FreeAgentRe
 
 export interface CloseAgentOptions {
   /**
-   * When true, free the agent's workspace BEFORE deleting the agent
-   * (so we control the order rather than relying on FK cascade, which
-   * leaves the on-disk dir orphaned). Lossy: any pending changes in
-   * the workspace are gone unless the caller frees with `--commit`
-   * separately first.
+   * Lossy override: when true, free the agent's workspace BEFORE
+   * deleting the agent regardless of whether it's clean. (We control
+   * the order rather than relying on FK cascade, which leaves the
+   * on-disk dir orphaned.) Any pending changes / commits since fork
+   * are gone unless the caller frees with `--commit` separately first.
    *
-   * When false (default) and a workspace exists, throws
-   * WorkspacePreservedError so the caller has to decide explicitly.
+   * When false (default), behaviour depends on workspace state:
+   *   - clean (no uncommitted changes AND no commits since fork):
+   *     silently auto-free. allow_mu_agent_close_without_discard.
+   *   - dirty (uncommitted changes OR commits since fork): throw
+   *     WorkspacePreservedError so the caller decides explicitly.
    * Surfaced as a real bug in the multi-agent dogfood teardown.
    */
   discardWorkspace?: boolean;
@@ -615,11 +618,20 @@ export interface CloseAgentOptions {
 export interface CloseAgentResult {
   killedPane: boolean;
   deletedRow: boolean;
-  /** True iff the agent had an associated workspace AND the caller
-   *  passed `discardWorkspace: true` so we proactively freed it.
-   *  False on the no-workspace path (nothing to free) and on the
-   *  refused path (we threw before doing anything). */
+  /** True iff the agent had an associated workspace AND we proactively
+   *  freed it — either because the caller passed `discardWorkspace:
+   *  true` (lossy) or because the workspace was clean and we
+   *  auto-freed (allow_mu_agent_close_without_discard). False on the
+   *  no-workspace path (nothing to free) and on the refused path (we
+   *  threw before doing anything). */
   workspaceFreed: boolean;
+  /** True iff `workspaceFreed` was triggered by the clean-workspace
+   *  auto-free path (no uncommitted changes AND no commits since
+   *  fork) rather than the explicit `discardWorkspace: true` override.
+   *  Lets the CLI render an accurate message ("auto-freed (clean)"
+   *  vs "workspace discarded") and gives JSON consumers a stable
+   *  signal. False on every other path. */
+  workspaceAutoFreedClean: boolean;
 }
 
 /**
@@ -628,15 +640,22 @@ export interface CloseAgentResult {
  *   - if the tmux pane is already gone, killPane swallows the error
  *
  * Workspace handling: closing an agent and freeing its workspace are
- * separate concerns (agent lifecycle vs disk artifacts), so by default
- * `closeAgent` REFUSES if the agent has a workspace — you'd otherwise
- * orphan the on-disk dir (the FK cascade drops the registry row but
- * not the directory). Two ways to proceed:
+ * separate concerns (agent lifecycle vs disk artifacts). Three cases:
  *
- *   1. `freeWorkspace(db, name)` first, then `closeAgent(db, name)`.
- *      Preserves the option to `--commit` pending changes.
- *   2. `closeAgent(db, name, { discardWorkspace: true })`. One-shot;
- *      lossy.
+ *   - No workspace: close proceeds normally.
+ *   - Workspace exists AND is CLEAN (no uncommitted changes, no
+ *     commits since fork): silently auto-free (so a workspace that
+ *     contains nothing worth preserving doesn't make the operator
+ *     type --discard-workspace just to clean it up). Surfaced by
+ *     allow_mu_agent_close_without_discard — a misconfigured-spawn
+ *     teardown was needlessly forced through the lossy flag.
+ *   - Workspace exists AND has either uncommitted changes OR commits
+ *     since fork: REFUSE with WorkspacePreservedError so the operator
+ *     decides explicitly. Two resolutions:
+ *       1. `freeWorkspace(db, name)` first, then `closeAgent(db, name)`.
+ *          Preserves the option to `--commit` pending changes.
+ *       2. `closeAgent(db, name, { discardWorkspace: true })`.
+ *          One-shot; lossy.
  *
  * The CLI surfaces these as the two actionable nextSteps on the
  * `WorkspacePreservedError` thrown by the refuse path.
@@ -648,22 +667,38 @@ export async function closeAgent(
 ): Promise<CloseAgentResult> {
   const agent = getAgent(db, name, opts.workstream);
   if (!agent) {
-    return { killedPane: false, deletedRow: false, workspaceFreed: false };
+    return {
+      killedPane: false,
+      deletedRow: false,
+      workspaceFreed: false,
+      workspaceAutoFreedClean: false,
+    };
   }
   const ws = getWorkspaceForAgent(db, name, agent.workstreamName);
+  // allow_mu_agent_close_without_discard: silently auto-free a clean
+  // workspace (no uncommitted changes AND no commits since fork) so
+  // the user doesn't have to type --discard-workspace for a workspace
+  // that contains nothing worth preserving. Only refuse when there's
+  // actually something to lose. The flag stays as the lossy override
+  // for non-clean workspaces.
+  let autoFreeClean = false;
   if (ws !== undefined && opts.discardWorkspace !== true) {
-    throw new WorkspacePreservedError(name, ws.path);
+    autoFreeClean = await isWorkspaceClean(ws);
+    if (!autoFreeClean) {
+      throw new WorkspacePreservedError(name, ws.path);
+    }
   }
   // Pre-mutation snapshot (snap_design §CAPTURE STRATEGY > WHEN).
   // Captures the agent row + the FK SET NULL ripple onto tasks.owner +
-  // (when --discard-workspace) the vcs_workspaces row. Workstream is
-  // recorded so this snapshot is filterable in `mu snapshot list`.
+  // (when --discard-workspace or auto-free) the vcs_workspaces row.
+  // Workstream is recorded so this snapshot is filterable in `mu
+  // snapshot list`.
   captureSnapshot(db, `agent close ${name}`, agent.workstreamName);
   // Free the workspace BEFORE the agent (so the on-disk dir is
   // removed cleanly, not orphaned by FK cascade). freeWorkspace is
   // idempotent on missing rows.
   let workspaceFreed = false;
-  if (ws !== undefined && opts.discardWorkspace === true) {
+  if (ws !== undefined && (opts.discardWorkspace === true || autoFreeClean)) {
     await freeWorkspace(db, name, { commit: false, workstream: agent.workstreamName });
     workspaceFreed = true;
   }
@@ -674,12 +709,19 @@ export async function closeAgent(
   emitEvent(
     db,
     agent.workstreamName,
-    `agent close ${name} (pane=${agent.paneId}${workspaceFreed ? ", workspace discarded" : ""})`,
+    `agent close ${name} (pane=${agent.paneId}${
+      workspaceFreed
+        ? autoFreeClean
+          ? ", workspace auto-freed (clean)"
+          : ", workspace discarded"
+        : ""
+    })`,
   );
   return {
     killedPane: true,
     deletedRow,
     workspaceFreed,
+    workspaceAutoFreedClean: workspaceFreed && autoFreeClean,
   };
 }
 

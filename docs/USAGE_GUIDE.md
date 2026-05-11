@@ -1269,6 +1269,19 @@ mu agent close reviewer-1
 `mu agent close` is idempotent: `killPane` swallows "pane already gone"
 errors; `deleteAgent` returns false (not throws) on a missing row.
 
+If the agent has a workspace, behaviour depends on its state:
+
+- **Clean** (no uncommitted changes AND no commits since fork) — the
+  workspace is silently auto-freed alongside the close, so a
+  `--workspace` spawn that did no real work doesn't make you type
+  `--discard-workspace` just to clean up.
+- **Dirty** (uncommitted changes OR commits since fork) — close refuses
+  with `WorkspacePreservedError` (exit 4). Two resolutions: (a) `mu
+  workspace free <agent>` first (optionally with `--commit` to capture
+  pending changes), then `mu agent close <agent>`; or (b) `mu agent
+  close <agent> --discard-workspace` to free both in one shot (lossy:
+  any work in the workspace is gone).
+
 ### Tear down the whole workstream
 
 `mu workstream destroy` is the symmetric counterpart of `mu workstream init`: it kills the

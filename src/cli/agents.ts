@@ -335,7 +335,9 @@ export async function cmdClose(
   const next: NextStep[] = [];
   if (result.workspaceFreed) {
     next.push({
-      intent: "Workspace was freed alongside the agent (--discard-workspace)",
+      intent: result.workspaceAutoFreedClean
+        ? "Workspace was clean (no uncommitted changes, no commits since fork) so it was auto-freed alongside the agent"
+        : "Workspace was freed alongside the agent (--discard-workspace)",
       command: "cd /  # the workspace dir is gone",
     });
   }
@@ -352,7 +354,9 @@ export async function cmdClose(
     printNextSteps(next);
     return;
   }
-  const wsBit = result.workspaceFreed ? pc.dim(" (workspace discarded)") : "";
+  const wsBit = result.workspaceFreed
+    ? pc.dim(result.workspaceAutoFreedClean ? " (workspace auto-freed)" : " (workspace discarded)")
+    : "";
   console.log(`Closed ${pc.bold(name)}${wsBit}`);
   printNextSteps(next);
 }
@@ -652,7 +656,7 @@ export function wireAgentCommands(program: Command): void {
   agent
     .command("close <name>")
     .description(
-      "Kill an agent's pane and remove its registry row. If the agent has a workspace, refuses by default (would orphan the on-disk dir); pass --discard-workspace to free both, or run `mu workspace free <agent>` first.",
+      "Kill an agent's pane and remove its registry row. If the agent has a clean workspace (no uncommitted changes AND no commits since fork) it is auto-freed alongside the close; otherwise close refuses (would orphan or lose work) — pass --discard-workspace to free both anyway (lossy), or run `mu workspace free <agent>` first.",
     )
     .option(
       "--discard-workspace",
