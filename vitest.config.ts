@@ -32,6 +32,13 @@ export default defineConfig({
     // `tmux -L <socket>` per integration suite) lands and renders
     // it obsolete.
     globalSetup: ["./test/_global-teardown.ts"],
+    // Per-fork pre-test setup: scrub MU_* env vars inherited from
+    // the parent shell so SDK-level overrides (MU_PI_COMMAND,
+    // MU_IDLE_THRESHOLD_MS, …) can't silently change behaviour
+    // underneath tests. See test/_setup.ts for the rationale and
+    // the allowlist (MU_TMUX_SOCKET is preserved). Layer "test" of
+    // bug_test_flake_round_2.
+    setupFiles: ["./test/_setup.ts"],
     // Belt-and-suspenders for tmux-fan-out integration tests:
     // many tests in test/*.integration.test.ts spawn real tmux
     // panes + sh subprocesses and then poll/wait for state to

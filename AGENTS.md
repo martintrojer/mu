@@ -195,6 +195,14 @@ those tests skip themselves; CI runs inside tmux.
   with the user's panes or with parallel test runs.
 - The acceptance test in `test/acceptance.test.ts` is the
   "everything works" gate. Keep it passing.
+- **Env baseline**: `test/_setup.ts` (vitest `setupFiles`) clears
+  every `MU_*` env var inherited from the parent shell at the start
+  of each fork, so SDK-level overrides (`MU_PI_COMMAND`,
+  `MU_IDLE_THRESHOLD_MS`, `MU_SEND_DELAY_MS`, …) can't silently
+  change behaviour underneath tests. Allowlist: `MU_TMUX_SOCKET`
+  (set by `_global-teardown.ts` BEFORE fork spawn for Layer-3
+  isolation). Tests that need a specific value opt IN per-test via
+  `process.env.X = "..."` or `withEnv()` from `test/_env.ts`.
 
 ### When you change behaviour, update VOCABULARY first
 

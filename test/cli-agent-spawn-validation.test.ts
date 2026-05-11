@@ -77,12 +77,23 @@ async function withEnv(
   }
 }
 
-// ─── Setup / teardown ────────────────────────────────────────────────
+// ─── Setup / teardown ──────────────────────────────────────
+//
+// Why we double-scrub MU_PI_COMMAND here:
+//
+// test/_setup.ts (vitest setupFiles) clears every MU_* var ONCE per
+// fork, so the pristine baseline is guaranteed. But these tests reason
+// about CLI resolution specifically and a regression where a sibling
+// test (or a future change) sets MU_PI_COMMAND in the same fork would
+// silently re-bind `--cli pi` to a different binary. Belt-and-suspenders:
+// snapshot + delete in beforeEach, restore in afterEach. (Same pattern
+// the file already uses for MU_SPAWN_LIVENESS_MS.)
 
 let tempDir: string;
 let dbPath: string;
 let db: Db;
 let state: MockState;
+let originalMuPiCommand: string | undefined;
 
 beforeEach(() => {
   tempDir = mkdtempSync(join(tmpdir(), "mu-spawn-validation-"));
@@ -91,6 +102,9 @@ beforeEach(() => {
   state = freshMockState();
   resetTmuxExecutor();
   setSleepForTests(async () => {});
+  const piKey = "MU_PI_COMMAND";
+  originalMuPiCommand = process.env[piKey];
+  delete process.env[piKey];
 });
 
 afterEach(() => {
@@ -101,8 +115,11 @@ afterEach(() => {
   resetCommandResolverForTests();
   // Tests poke MU_SPAWN_LIVENESS_MS via runCli's child env on some
   // paths; ensure the parent process env is clean between cases.
-  const key = "MU_SPAWN_LIVENESS_MS";
-  delete process.env[key];
+  const livenessKey = "MU_SPAWN_LIVENESS_MS";
+  delete process.env[livenessKey];
+  const piKey = "MU_PI_COMMAND";
+  if (originalMuPiCommand === undefined) delete process.env[piKey];
+  else process.env[piKey] = originalMuPiCommand;
 });
 
 // ─── Pure helper: envVarNameForCli ───────────────────────────────────

@@ -297,6 +297,22 @@ is opt-in via the new `--tui` flag.
   stable workstream the dashboard is now visually static between
   ticks; only the dim tick-rate indicator in the bottom-right may
   refresh, and ink diffs that down to ~3 cells of repaint.
+- **Test infrastructure: `MU_*` env-var baseline scrub** (Layer
+  "test" of bug_test_flake_round_2). vitest forks inherit the
+  parent shell's environment; when a developer (or the
+  orchestrator agent) runs `npm test` from a shell that exports
+  `MU_PI_COMMAND=pi-meta` (Meta-internal pi wrapper),
+  `MU_IDLE_THRESHOLD_MS=...`, etc., those values silently changed
+  SDK behaviour underneath every test — 5 cli-agent-spawn-validation
+  tests deterministically failed because `--cli pi` was being
+  resolved to `pi-meta` (not on PATH outside Meta). New per-fork
+  `setupFiles: ["./test/_setup.ts"]` hook deletes every `MU_*`
+  env var at fork startup. Allowlist: `MU_TMUX_SOCKET` (set by
+  `_global-teardown.ts` BEFORE fork spawn for Layer-3 isolation
+  and inherited intentionally). Tests that need a specific value
+  opt IN per-test via `process.env.X = "..."` or `withEnv()` from
+  `test/_env.ts`. Verified by
+  `MU_PI_COMMAND=pi-meta npm test` → 0 failures.
 - **TUI dashboard renders flush with row 1 again** (bug_tui_topalign_v2).
   The alt-screen swap (`\x1b[?1049h`) inherits the cursor row from
   the prior buffer on iTerm2, Apple Terminal, and tmux's inner
