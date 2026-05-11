@@ -9,7 +9,7 @@
 //   - row-shape mapping (snake_case columns → camelCase TS)
 
 import { type Db, resolveWorkstreamId, tryResolveWorkstreamId } from "./db.js";
-import { emitEvent } from "./logs.js";
+import { emitEvent, lastClaimEventAt } from "./logs.js";
 import { captureSnapshot } from "./snapshots.js";
 import {
   CrossWorkstreamEdgeError,
@@ -591,18 +591,79 @@ export function listRecentClosed(db: Db, workstream: string, limit = 5): TaskRow
   return rows.map(rowFromDb);
 }
 
+/** Optional filter knobs for `listNotes`. Default-everything-undefined
+ *  preserves the historical "return every note, oldest-first" shape so
+ *  every existing caller (cmdTaskShow's notes block, exporting.ts's
+ *  bucket renderer, agents.test.ts) keeps working unchanged.
+ *
+ *  Filters compose multiplicatively when both apply (`since` AND
+ *  `tail`): the timestamp filter is applied first, then `tail` slices
+ *  the last N of what survived. The CLI surface (`mu task notes
+ *  --tail / --since / --since-claim`) lives in src/cli/tasks/edit.ts;
+ *  the mutex between `--since` and `--since-claim` is a CLI concern,
+ *  not enforced here — if both arrive at the SDK, `since` wins (it's
+ *  the explicit one) and `sinceClaim` is ignored. The auto-resolve
+ *  for `sinceClaim` (look up the most recent `task claim` event in
+ *  agent_logs) happens here so the SDK is self-contained for scripted
+ *  callers. */
+export interface ListNotesOptions {
+  /** Print only the last N notes (after any timestamp filter). Must
+   *  be a positive integer; a value of 0 returns no rows but is not
+   *  an error here — CLI-side validation rejects `--tail 0`. */
+  tail?: number;
+  /** ISO-8601 cutoff: only notes with `created_at > since` survive.
+   *  Comparison is lexicographic on the ISO string (matches the way
+   *  the rest of the codebase compares ISO timestamps). */
+  since?: string;
+  /** When true and `since` is unset, look up the `created_at` of the
+   *  most recent `task claim` event for this task and use it as the
+   *  cutoff. Falls back to no filter when no claim event exists
+   *  (equivalent to `--since-beginning`). */
+  sinceClaim?: boolean;
+}
+
 /** List notes for a task. Operator-facing local_id; resolves to the
- *  surrogate task id via taskIdFor (with optional workstream scope). */
-export function listNotes(db: Db, taskLocalId: string, workstream: string): TaskNoteRow[] {
+ *  surrogate task id via taskIdFor (with optional workstream scope).
+ *
+ *  Optional filters: see {@link ListNotesOptions}. Default behaviour
+ *  (no opts) is unchanged — every note, oldest-first. */
+export function listNotes(
+  db: Db,
+  taskLocalId: string,
+  workstream: string,
+  opts: ListNotesOptions = {},
+): TaskNoteRow[] {
   const taskId = taskIdFor(db, taskLocalId, workstream);
   if (taskId === null) return [];
-  const rows = db
-    .prepare(
-      `SELECT ${SELECT_NOTE_COLS} FROM task_notes n JOIN tasks t ON t.id = n.task_id
-        WHERE n.task_id = ? ORDER BY n.id`,
-    )
-    .all(taskId) as RawTaskNoteRow[];
-  return rows.map(noteFromDb);
+  // Resolve the cutoff once: explicit `since` wins; otherwise
+  // `sinceClaim` resolves via lastClaimEventAt (null → no filter).
+  // Inlined import to avoid a top-level cycle: src/logs.ts already
+  // imports from src/tasks.ts indirectly. Cheap require() at call
+  // time keeps the SDK self-contained.
+  let cutoff: string | undefined = opts.since;
+  if (cutoff === undefined && opts.sinceClaim === true) {
+    const at = lastClaimEventAt(db, workstream, taskLocalId);
+    if (at !== null) cutoff = at;
+  }
+  const rows =
+    cutoff !== undefined
+      ? (db
+          .prepare(
+            `SELECT ${SELECT_NOTE_COLS} FROM task_notes n JOIN tasks t ON t.id = n.task_id
+              WHERE n.task_id = ? AND n.created_at > ? ORDER BY n.id`,
+          )
+          .all(taskId, cutoff) as RawTaskNoteRow[])
+      : (db
+          .prepare(
+            `SELECT ${SELECT_NOTE_COLS} FROM task_notes n JOIN tasks t ON t.id = n.task_id
+              WHERE n.task_id = ? ORDER BY n.id`,
+          )
+          .all(taskId) as RawTaskNoteRow[]);
+  const mapped = rows.map(noteFromDb);
+  if (opts.tail !== undefined && opts.tail >= 0) {
+    return opts.tail === 0 ? [] : mapped.slice(-opts.tail);
+  }
+  return mapped;
 }
 
 /**

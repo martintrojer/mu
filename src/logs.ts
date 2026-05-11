@@ -297,6 +297,37 @@ export function lastClaimActor(db: Db, workstream: string, localId: string): str
 }
 
 /**
+ * Find the `created_at` timestamp of the most recent `task claim`
+ * event for a given task (the structured `task.claim<TAB>...` payload
+ * emitted by claim.ts, both worker-claim and `--self` paths).
+ *
+ * Used by `mu task notes --since-claim` to slice the note timeline at
+ * the most recent claim, so an operator dispatching a worker can see
+ * only the post-claim notes (the spec was added before the claim;
+ * the worker's progress lives after).
+ *
+ * Returns null when no claim event exists for this task — the CLI's
+ * `--since-claim` then degrades gracefully to no filter (equivalent
+ * to `--since-beginning`). Mirrors `lastClaimActor`'s LIKE-with-
+ * escape pattern so a same-prefix id (`foo` vs `foo_2`) can't
+ * cross-match.
+ */
+export function lastClaimEventAt(db: Db, workstream: string, localId: string): string | null {
+  const escaped = localId.replace(/[\\%_]/g, (c) => `\\${c}`);
+  const pattern = `${CLAIM_EVENT_PREFIX}\t${escaped}\t%`;
+  const wsId = tryResolveWorkstreamId(db, workstream);
+  if (wsId === null) return null;
+  const row = db
+    .prepare(
+      `SELECT created_at FROM agent_logs
+        WHERE workstream_id = ? AND kind = 'event' AND payload LIKE ? ESCAPE '\\'
+        ORDER BY seq DESC LIMIT 1`,
+    )
+    .get(wsId, pattern) as { created_at: string } | undefined;
+  return row ? row.created_at : null;
+}
+
+/**
  * Canonical list of two-token verb prefixes that `emitEvent` callers
  * use as the leading words of a payload. Single source of truth: the
  * HUD's event-tail colourer (src/cli/state.ts colorEventPayload) reads

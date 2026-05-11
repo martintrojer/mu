@@ -127,6 +127,7 @@ export {
   TASK_STATUSES,
   TASK_STATUS_LIST,
   isValidTaskId,
+  type ListNotesOptions,
   type ListReadyOptions,
   type ListTasksOptions,
   listBlocked,

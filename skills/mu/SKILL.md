@@ -274,7 +274,9 @@ running a wave.
   the pane). **`mu agent adopt <pane-id|title>`** registers an
   orphan pane as a managed agent. (`mu adopt` is a deprecated
   alias kept until v0.5.)
-- **Tasks**: `add`, `list`, `next`, `show`, `tree`, `notes`, `note`,
+- **Tasks**: `add`, `list`, `next`, `show`, `tree`, `notes`
+  (`--tail N` / `--since <iso>` / `--since-claim` to slice the
+  timeline; default = every note, oldest first), `note`,
   `claim` (`--for | --self`), `release` (`--reopen` to un-close),
   `close` (`--if-ready` = no-op unless every blocker terminal),
   `open`, `reject`, `defer`, `block`, `unblock`, `update`,

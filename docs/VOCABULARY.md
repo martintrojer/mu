@@ -153,6 +153,7 @@ release is about the *task*.
 | `mu task claim <task> [--for <agent>]`     | Atomic: sets `owner`, flips status to `IN_PROGRESS`   |
 | `mu release <task>`                   | Clears `owner`. Auto-flips `IN_PROGRESS` → `OPEN` (so the task re-enters the ready set); other statuses preserved. `--reopen` forces `OPEN` from `CLOSED`/`REJECTED`/`DEFERRED` |
 | `mu task note <task> "..."`           | Appends to `task_notes`. Never edits prior notes.     |
+| `mu task notes <task> [--tail N \| --since <iso> \| --since-claim]` | List notes (oldest first). `--tail N` (alias `--last N`) prints last N; `--since <iso>` filters by `created_at`; `--since-claim` auto-resolves to the most recent `task claim` event timestamp. `--since` and `--since-claim` are mutually exclusive. |
 
 ---
 

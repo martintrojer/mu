@@ -182,12 +182,43 @@ export function wireTaskCommands(program: Command): void {
 
   task
     .command("notes <id>")
-    .description("List the notes attached to a task (oldest first)")
+    .description(
+      "List the notes attached to a task (oldest first). Filters: --tail N (last N), --since <iso> (after timestamp), --since-claim (since most recent claim event).",
+    )
     .option(...WORKSTREAM_OPT)
     .option(...JSON_OPT)
+    .option("--tail <n>", "print only the last N notes (alias --last)", parsePositiveNumber)
+    .option("--last <n>", "alias for --tail", parsePositiveNumber)
+    .option("--since <iso>", "print only notes created after this ISO 8601 timestamp")
+    .option(
+      "--since-claim",
+      "print only notes since the most recent 'task claim' event (auto-resolved)",
+    )
     .action(function (id: string) {
-      const opts = (this as Command).opts() as { json?: boolean; workstream?: string };
-      return handle((db) => cmdTaskNotes(db, id, opts), this as Command)();
+      const opts = (this as Command).opts() as {
+        json?: boolean;
+        workstream?: string;
+        tail?: number;
+        last?: number;
+        since?: string;
+        sinceClaim?: boolean;
+      };
+      // --last is an alias for --tail; collapse before passing to the verb.
+      // If both are provided, prefer the explicit --tail.
+      const tail = opts.tail ?? opts.last;
+      const merged: {
+        json?: boolean;
+        workstream?: string;
+        tail?: number;
+        since?: string;
+        sinceClaim?: boolean;
+      } = {};
+      if (opts.json !== undefined) merged.json = opts.json;
+      if (opts.workstream !== undefined) merged.workstream = opts.workstream;
+      if (tail !== undefined) merged.tail = tail;
+      if (opts.since !== undefined) merged.since = opts.since;
+      if (opts.sinceClaim !== undefined) merged.sinceClaim = opts.sinceClaim;
+      return handle((db) => cmdTaskNotes(db, id, merged), this as Command)();
     });
 
   // --evidence <text> on the four lifecycle verbs records what the

@@ -58,6 +58,44 @@ called out under "Breaking" in each entry.
   swappable via `setKickProcessExecutor` (mirror of
   `setTmuxExecutor`) so unit tests don't touch real `ps` / `kill`.
 
+- **`mu task notes` gains `--tail / --since / --since-claim` filters**
+  (`fb_task_notes_tail`). Live mufeedback note: `mu task notes <id>`
+  dumps EVERY note attached to the task, including the multi-screen
+  pre-task SPEC the orchestrator drops before dispatching. Checking
+  "what did the worker actually report at close?" required scrolling
+  past the spec every time. Three composable filters:
+
+  - `--tail N` (alias `--last N`): print only the last N notes.
+    Must be a positive integer; commander's `parsePositiveNumber`
+    rejects 0 / negatives at parse time (exit 2).
+  - `--since <iso>`: print only notes with `created_at > <iso>`.
+    Comparison is lexicographic on the ISO string. Unparseable
+    timestamps error with `--since must be an ISO 8601 timestamp`
+    (exit 2).
+  - `--since-claim`: auto-resolves to the `created_at` of the most
+    recent `task claim` event in `agent_logs` for this task and
+    uses it as the cutoff. When no claim event exists, degrades to
+    no filter (equivalent to `--since-beginning`) so the verb stays
+    useful on un-claimed tasks. Mutually exclusive with `--since`
+    (both define a cutoff); passing both errors with `--since and
+    --since-claim are mutually exclusive` (exit 2).
+
+  Filters compose multiplicatively: the timestamp filter is applied
+  first, then `--tail` slices the last N of what survived. Default
+  behaviour (no filters) is unchanged — every note, oldest-first.
+  `--json` keeps the `{items, count}` collection envelope per
+  `audit_json_envelope_uniformity`.
+
+  SDK: `listNotes(db, id, ws, opts?)` gains an optional fourth
+  `ListNotesOptions` argument (`{tail?, since?, sinceClaim?}`).
+  All-undefined preserves the historical "return every note" shape
+  so every existing caller (`cmdTaskShow`'s notes block,
+  `exporting.ts`'s bucket renderer, `agents.test.ts`) keeps working
+  unchanged. `lastClaimEventAt` is the new helper in `src/logs.ts`
+  that resolves `--since-claim`; it mirrors `lastClaimActor`'s
+  LIKE-with-escape pattern so a same-prefix id (`foo` vs `foo_2`)
+  can't cross-match.
+
 - **`mu task add --json` surfaces auto-id truncation telemetry**
   (`task_add_slugify_silently_truncates_ids`). Sibling fix to the
   human stderr hint in `slugifytitle_silently_drops_clauses`:

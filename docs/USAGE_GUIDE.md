@@ -791,7 +791,31 @@ mu task note design "DECISION: JWT, 24h expiry, refresh via cookie"
 mu task note design "FILES: src/auth.rs:45-120"
 ```
 
-Read them via the SQL escape hatch:
+Read them via the typed verb:
+
+```bash
+mu task notes design                          # all notes, oldest first
+mu task notes design --tail 3                 # only the last 3 (alias --last)
+mu task notes design --since 2026-01-01       # only notes after an ISO 8601 cutoff
+mu task notes design --since-claim            # only notes since the most recent
+                                              # 'task claim' event for this task
+                                              # (auto-resolved from agent_logs)
+mu task notes design --tail 5 --json          # collection envelope {items, count}
+```
+
+Filters compose: `--tail` slices the last N of whatever survived
+the timestamp filter. `--since` and `--since-claim` are mutually
+exclusive (both define a cutoff) — pick one. With no filters the
+output is unchanged from prior versions (every note, oldest-first).
+
+`--since-claim` is the orchestrator-friendly form: dispatch flows
+often drop a multi-screen SPEC note BEFORE claiming, then the
+worker appends progress notes AFTER the claim. `--since-claim`
+slices off the SPEC so you see only the worker's reports. If no
+claim event exists for the task, it degrades to no filter (so the
+verb stays useful on un-claimed tasks).
+
+Or, for ad-hoc shape, the SQL escape hatch:
 
 ```bash
 mu sql "SELECT author, content, created_at FROM task_notes WHERE task_id='design' ORDER BY id"

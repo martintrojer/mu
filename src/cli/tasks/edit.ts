@@ -345,14 +345,60 @@ export async function cmdTaskShow(
 export async function cmdTaskNotes(
   db: Db,
   rawId: string,
-  opts: { json?: boolean; workstream?: string } = {},
+  opts: {
+    json?: boolean;
+    workstream?: string;
+    tail?: number;
+    since?: string;
+    sinceClaim?: boolean;
+  } = {},
 ): Promise<void> {
+  // Mutex: --since and --since-claim both define a cutoff; allowing
+  // both would force one to silently win, which is a footgun. The SDK
+  // documents "since wins" for safety, but the CLI is strict so the
+  // user gets feedback at the surface they typed at. (Mirrors the
+  // pattern in cmdTaskUpdate where conflicting fields error rather
+  // than picking one.)
+  if (opts.since !== undefined && opts.sinceClaim === true) {
+    throw new UsageError(
+      "--since and --since-claim are mutually exclusive (both define a cutoff); pick one",
+    );
+  }
+  // --tail must be a positive integer. The commander parser
+  // (parsePositiveNumber) already rejects 0 and negatives at the
+  // parse layer, but defend here too in case a programmatic caller
+  // pokes a bad value through (the SDK accepts >=0 by design).
+  if (
+    opts.tail !== undefined &&
+    (!Number.isFinite(opts.tail) || opts.tail <= 0 || !Number.isInteger(opts.tail))
+  ) {
+    throw new UsageError(`--tail must be a positive integer (got ${JSON.stringify(opts.tail)})`);
+  }
+  // --since must parse as ISO 8601. We accept anything Date.parse
+  // recognises (so '2025-01-01' and full RFC3339 both work) but
+  // reject typos that produce NaN (e.g. 'yesterday', 'last week').
+  if (opts.since !== undefined) {
+    const parsed = Date.parse(opts.since);
+    if (Number.isNaN(parsed)) {
+      throw new UsageError(
+        `--since must be an ISO 8601 timestamp (got ${JSON.stringify(opts.since)})`,
+      );
+    }
+  }
   const { name: localId } = await resolveEntityRef(db, rawId, opts, "task");
   assertTaskInWorkstream(db, localId, opts.workstream);
   const ws = await resolveWorkstream(opts.workstream);
   const task = getTask(db, localId, ws);
   if (!task) throw new TaskNotFoundError(localId);
-  const notes = listNotes(db, localId, task.workstreamName);
+  const filterOpts: {
+    tail?: number;
+    since?: string;
+    sinceClaim?: boolean;
+  } = {};
+  if (opts.tail !== undefined) filterOpts.tail = opts.tail;
+  if (opts.since !== undefined) filterOpts.since = opts.since;
+  if (opts.sinceClaim === true) filterOpts.sinceClaim = true;
+  const notes = listNotes(db, localId, task.workstreamName, filterOpts);
   if (opts.json) {
     emitJsonCollection(notes);
     return;
