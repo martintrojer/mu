@@ -195,6 +195,15 @@ those tests skip themselves; CI runs inside tmux.
   with the user's panes or with parallel test runs.
 - The acceptance test in `test/acceptance.test.ts` is the
   "everything works" gate. Keep it passing.
+- **DB baseline**: `openDb()` refuses to open the user's REAL
+  default DB (`<HOME or XDG_STATE_HOME>/mu/mu.db`) when
+  `process.env.VITEST` is set or `NODE_ENV === "test"`. Tests
+  MUST use a per-test temp DB — either via MU_DB_PATH (which
+  `test/_runCli.ts` sets automatically) or an explicit `{ path }`
+  argument to `openDb`. A regression that forgets either one
+  fails loudly at the offending openDb() call site instead of
+  silently writing to the dev box's live state. Production never
+  sets VITEST, so the guard is a no-op outside the test runner.
 - **Env baseline**: `test/_setup.ts` (vitest `setupFiles`) clears
   every `MU_*` env var inherited from the parent shell at the start
   of each fork, so SDK-level overrides (`MU_PI_COMMAND`,

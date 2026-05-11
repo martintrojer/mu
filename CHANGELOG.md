@@ -297,6 +297,22 @@ is opt-in via the new `--tui` flag.
   stable workstream the dashboard is now visually static between
   ticks; only the dim tick-rate indicator in the bottom-right may
   refresh, and ink diffs that down to ~3 cells of repaint.
+- **Test infrastructure: `openDb` refuses the user's real DB under
+  VITEST** (Layer "db" of bug_test_flake_round_2). A new hard
+  guard at the top of `openDb()` throws when called with a path
+  that resolves to `<HOME or XDG_STATE_HOME>/mu/mu.db` while
+  `process.env.VITEST` is set (or `NODE_ENV === "test"`). Tests
+  MUST point at a per-test temp DB (via MU_DB_PATH — which
+  test/_runCli.ts sets automatically — or an explicit `{ path }`
+  argument). The previous regime relied on every test remembering
+  to override the path; a slip silently mutated the dev box's live
+  state (we observed a stray 'demo' workstream replicated from
+  test/tui-acceptance.test.ts into ~/.local/state/mu/mu.db). The
+  guard catches the leak source at the offending openDb() stack
+  frame. Production code paths never set VITEST, so the guard is a
+  complete no-op outside the test runner. Coverage:
+  test/db-test-guard.test.ts (3 cases: HOME-rooted forbidden,
+  arbitrary temp permitted, XDG_STATE_HOME-rooted forbidden).
 - **Test infrastructure: `MU_*` env-var baseline scrub** (Layer
   "test" of bug_test_flake_round_2). vitest forks inherit the
   parent shell's environment; when a developer (or the

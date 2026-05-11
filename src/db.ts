@@ -27,7 +27,7 @@
 
 import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import Database, { type Database as DatabaseType } from "better-sqlite3";
 import type { HasNextSteps, NextStep } from "./output.js";
 
@@ -86,6 +86,7 @@ export function workstreamStateDir(workstream: string): string {
  */
 export function openDb(options: OpenDbOptions = {}): Db {
   const path = options.path ?? defaultDbPath();
+  refuseUserDbDuringTests(path);
   mkdirSync(dirname(path), { recursive: true });
 
   const db = new Database(path, { readonly: options.readonly ?? false });
@@ -117,6 +118,40 @@ export function openDb(options: OpenDbOptions = {}): Db {
   }
 
   return db;
+}
+
+/**
+ * Hard guard (Layer "db" of bug_test_flake_round_2): refuse to open
+ * the user's REAL default mu.db when running under vitest. Tests
+ * MUST point at a per-test temp DB (via MU_DB_PATH or the explicit
+ * `{ path }` option). A test that forgets to override either one
+ * silently mutated the dev box's live state — we observed a stray
+ * 'demo' workstream row replicated from test/tui-acceptance.test.ts
+ * into ~/.local/state/mu/mu.db. The guard throws a useful diagnostic
+ * the moment the offending openDb() call is made; the failing test's
+ * stack trace then names the leak source directly.
+ *
+ * Test mode = `process.env.VITEST` is defined OR `NODE_ENV === "test"`.
+ * vitest sets VITEST="true" in every fork; the NODE_ENV branch is for
+ * other runners that may invoke openDb during tests.
+ *
+ * The user's REAL DB path is computed from HOME / XDG_STATE_HOME
+ * directly (NOT from defaultDbPath() — which would honour MU_DB_PATH
+ * and produce the temp path the test set, defeating the check).
+ * Production code paths (the `mu` CLI binary) never set VITEST, so
+ * the guard is a complete no-op outside the test runner.
+ */
+function refuseUserDbDuringTests(path: string): void {
+  const inTest = process.env.VITEST !== undefined || process.env.NODE_ENV === "test";
+  if (!inTest) return;
+  const home = process.env.HOME ?? homedir();
+  const xdg = process.env.XDG_STATE_HOME ?? join(home, ".local", "state");
+  const realDb = resolve(join(xdg, "mu", "mu.db"));
+  if (resolve(path) === realDb) {
+    throw new Error(
+      `openDb refused: tests must NEVER write to the user DB (${realDb}). Set MU_DB_PATH to a per-test temp path (test/_runCli.ts does this automatically) or pass an explicit { path } argument. The leak source is the call site of openDb in this stack frame.`,
+    );
+  }
 }
 
 /**
