@@ -650,7 +650,6 @@ export function exportSourcesForArchive(db: Db, label: string): ExportSource[] {
   for (const [sourceName, taskList] of bySource) {
     const tasks: TaskRow[] = taskList.map((t) => ({
       name: t.originalLocalId,
-      localId: t.originalLocalId,
       workstreamName: t.sourceWorkstream,
       title: t.title,
       // Status as snapshotted; cast through the TaskStatus union by

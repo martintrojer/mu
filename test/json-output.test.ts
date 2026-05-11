@@ -163,44 +163,42 @@ describe("--json output on read verbs", () => {
     expect(parsed.notes.map((n) => n.content)).toEqual(["FILES: src/auth.ts"]);
   });
 
-  it("task list/next/show --json expose `localId` alongside `name` (same value)", async () => {
-    // Regression for task_list_show_json_omits_localid_only: prior to
-    // the fix, task JSON exposed only `name` as the per-workstream
-    // identifier. The natural inference (from agents/workstreams JSON)
-    // is `localId`, and the SKILL.md "Pick the highest-ROI" recipe
-    // even uses `.localId`. Pin both keys to the same value across
-    // every task-shaped JSON read so consumers can dot-access either.
+  it("task list/next/show --json expose `name` as the sole per-workstream id key (no `localId`)", async () => {
+    // The TaskRow.localId duplicate field was dropped: jq consumers
+    // read .name canonically (matching the rest of the codebase's
+    // 134+ read sites). Pin that no task-shaped JSON read leaks a
+    // `localId` key.
     {
       const { stdout } = await runCli(["task", "list", "-w", "auth", "--json"], dbPath);
       const env = JSON.parse(stdout.trim()) as {
-        items: Array<{ name: string; localId: string }>;
+        items: Array<Record<string, unknown>>;
         count: number;
       };
       const parsed = env.items;
       expect(parsed.length).toBeGreaterThan(0);
       for (const t of parsed) {
-        expect(t.localId).toBe(t.name);
-        expect(typeof t.localId).toBe("string");
+        expect(typeof t.name).toBe("string");
+        expect(t).not.toHaveProperty("localId");
       }
     }
     {
       const { stdout } = await runCli(["task", "next", "-w", "auth", "--json"], dbPath);
       const env = JSON.parse(stdout.trim()) as {
-        items: Array<{ name: string; localId: string }>;
+        items: Array<Record<string, unknown>>;
         count: number;
       };
       const parsed = env.items;
       expect(parsed.length).toBeGreaterThan(0);
       for (const t of parsed) {
-        expect(t.localId).toBe(t.name);
+        expect(t).not.toHaveProperty("localId");
       }
-      expect(parsed[0]?.localId).toBe("a");
+      expect(parsed[0]?.name).toBe("a");
     }
     {
       const { stdout } = await runCli(["task", "show", "a", "-w", "auth", "--json"], dbPath);
-      const parsed = JSON.parse(stdout.trim()) as { task: { name: string; localId: string } };
-      expect(parsed.task.localId).toBe(parsed.task.name);
-      expect(parsed.task.localId).toBe("a");
+      const parsed = JSON.parse(stdout.trim()) as { task: Record<string, unknown> };
+      expect(parsed.task).not.toHaveProperty("localId");
+      expect(parsed.task.name).toBe("a");
     }
   });
 

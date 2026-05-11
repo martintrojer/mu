@@ -87,12 +87,10 @@ describe("output_labels_human_rename: cli-table3 column headers", () => {
   // The human-rename task left the JSON shape alone; the v5 rename
   // (this task) flipped it. Both column header AND JSON now agree.
   //
-  // POST task_list_show_json_omits_localid_only: `localId` is now
-  // ALSO emitted alongside `name` (same value) so consumers can
-  // dot-access either key. The original assertion ('`localId` not
-  // present') was a compat-belt for the prior v5 rename and is
-  // intentionally relaxed here.
-  it("`mu task list --json` emits `name` and `localId` (same value)", async () => {
+  // POST drop_taskrow_localid_duplicate_of_name: the `localId`
+  // duplicate field was dropped (sole user; codebase reads `.name`
+  // canonically). `name` is once again the only id key on a task.
+  it("`mu task list --json` emits `name` as the sole per-workstream id key", async () => {
     const { stdout } = await runCli(["task", "list", "-w", "auth", "--json"], dbPath);
     const env = JSON.parse(stdout.trim()) as {
       items: Array<Record<string, unknown>>;
@@ -103,7 +101,6 @@ describe("output_labels_human_rename: cli-table3 column headers", () => {
     const first = env.items[0];
     if (!first) throw new Error("expected at least one task row");
     expect(first).toHaveProperty("name");
-    expect(first).toHaveProperty("localId");
-    expect(first.localId).toBe(first.name);
+    expect(first).not.toHaveProperty("localId");
   });
 });

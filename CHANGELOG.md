@@ -213,6 +213,26 @@ called out under "Breaking" in each entry.
   optional fields when meaningful). SDK: `SlugifyResult` and
   `IdFromTitleResult` both gain an `originalSlug` field.
 
+### Removed
+
+- **`TaskRow.localId` duplicate field dropped**
+  (`drop_taskrow_localid_duplicate_of_name`). Commit 26a914a added
+  `localId` alongside `name` on every TaskRow as a "compat-safe"
+  duplicate so jq recipes like `.[].localId` (matching the
+  agents/workstreams JSON pattern) would work. With one user and the
+  rest of the codebase reading `.name` canonically across 134+ sites,
+  the duplicate was dead weight. `TaskRow.localId` is gone from the
+  SDK type and from every JSON read (`task list/next/show`, archive
+  bucket exports, etc.). `localId` survives as a function-parameter
+  NAME on `addTask` / `closeTask` / `releaseTask` and friends — that
+  is internal API shape, not a JSON key. The `mu agent list` JSON
+  shape (which renames the underlying SQL column to `localId` for an
+  internal struct) is untouched. Operators reading task JSON from jq
+  must switch `.localId` → `.name`. The corresponding regression-guard
+  tests (`test/json-output.test.ts` and
+  `test/output-labels-human-rename.test.ts`) flip from "emits both
+  keys" to "emits `name` only".
+
 ### Fixed
 
 - **`mu agent spawn`: validate `--cli` resolves to a PATH binary BEFORE
