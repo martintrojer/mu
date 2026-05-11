@@ -8,6 +8,29 @@
 // The hook pauses fetches when `enabled === false` so the dashboard
 // can stop ticking while a popup is open. Popups can run their own
 // fetch loops if they need data not in the dashboard snapshot.
+//
+// Re-render guard (bug_tui_flicker_on_every_tick, workstream
+// `tui-impl`):
+//
+//   The naive unconditional setData on every tick was the bug;
+//   forced React/ink to diff a brand-new top-level state object,
+//   which in turn re-rendered every card body — a perceptible
+//   full-frame flash 1×/sec on any stable workstream.
+//
+//   Two-layer fix lives here:
+//     LAYER A: stringify a `snapshotKey()` of the visible-affecting
+//              fields and short-circuit setData when the key is
+//              byte-equal to the previous one. The hook returns the
+//              SAME `data` reference across no-op ticks so ink's
+//              prop-diff bottoms out at the cards.
+//     LAYER B: lastTickMs lives in its OWN useState, so the
+//              StatusBar's tick-rate display can update every tick
+//              without dragging the cards along.
+//
+//   Layer C (per-card useMemo) is intentionally skipped — Layer A
+//   stops the new-prop cascade at the top-level `data` reference,
+//   which is enough in practice. Revisit only if visible flicker
+//   regresses against a stable workstream.
 
 import { useEffect, useState } from "react";
 import type { Db } from "../../db.js";
@@ -55,6 +78,10 @@ export const DEFAULT_CARD_VISIBILITY: CardVisibility = {
 
 export interface DashboardSnapshot {
   data: WorkstreamSnapshot | null;
+  /** Measured fetch duration of the most recent tick (ms). Lives in
+   *  its OWN useState (Layer B); decoupled from `data` so the
+   *  StatusBar's tick display can refresh without re-rendering the
+   *  cards. */
   lastTickMs: number;
   error: string | null;
 }
@@ -62,6 +89,12 @@ export interface DashboardSnapshot {
 /**
  * Subscribe to the workstream snapshot via a setInterval-owned poll
  * loop. Re-fetches every `tickMs` while `enabled` is true.
+ *
+ * Re-render guard: returns the SAME `data` reference across ticks
+ * whose visible content (`snapshotKey`) is unchanged, so React/ink
+ * diff against the cards bottoms out cheaply. `lastTickMs` is in a
+ * separate useState (Layer B) so its 1×/sec update does not force a
+ * card re-render.
  */
 export function useDashboardSnapshot(
   db: Db,
@@ -69,11 +102,14 @@ export function useDashboardSnapshot(
   tickMs: number,
   enabled: boolean,
 ): DashboardSnapshot {
-  const [snap, setSnap] = useState<DashboardSnapshot>({
+  // Layer A: data + error (the stuff the cards read).
+  const [data, setData] = useState<{ data: WorkstreamSnapshot | null; error: string | null }>({
     data: null,
-    lastTickMs: 0,
     error: null,
   });
+  // Layer B: tick duration lives by itself so its update doesn't
+  // ripple into the card render path.
+  const [lastTickMs, setLastTickMs] = useState(0);
 
   useEffect(() => {
     if (!enabled) return;
@@ -82,7 +118,7 @@ export function useDashboardSnapshot(
       if (cancelled) return;
       const t0 = performance.now();
       try {
-        const data = await loadWorkstreamSnapshot(db, workstream, {
+        const fresh = await loadWorkstreamSnapshot(db, workstream, {
           eventLimit: 200,
           // Workspaces card (feat_card_5_workspaces) needs the dirty
           // marker; the cost is one `git status --porcelain` per row,
@@ -96,10 +132,22 @@ export function useDashboardSnapshot(
         });
         if (cancelled) return;
         const dur = performance.now() - t0;
-        setSnap({ data, lastTickMs: dur, error: null });
+        setLastTickMs(dur);
+        const freshKey = snapshotKeyString(fresh);
+        setData((prev) => {
+          const prevKey = prev.data === null ? "" : snapshotKeyString(prev.data);
+          if (prev.error === null && prevKey === freshKey) {
+            // Visible content unchanged — return the SAME object
+            // reference so React/ink skip the cascade. (`fresh` is
+            // discarded; that's the point.)
+            return prev;
+          }
+          return { data: fresh, error: null };
+        });
       } catch (err) {
         if (cancelled) return;
-        setSnap((s) => ({ ...s, error: String(err) }));
+        const msg = String(err);
+        setData((prev) => (prev.error === msg ? prev : { ...prev, error: msg }));
       }
     };
     void tick();
@@ -110,7 +158,7 @@ export function useDashboardSnapshot(
     };
   }, [db, workstream, tickMs, enabled]);
 
-  return snap;
+  return { data: data.data, lastTickMs, error: data.error };
 }
 
 /** Clamp a desired tick rate to [floor, ceiling]. */
@@ -126,4 +174,81 @@ export function fasterTick(current: number): number {
 /** Compute the next-slower tick (double, ceiling 10s). */
 export function slowerTick(current: number): number {
   return clampTick(current * 2);
+}
+
+// ─── snapshotKey ───────────────────────────────────────────────────
+//
+// Pure projection of the WorkstreamSnapshot fields that actually
+// affect what the user sees on screen. Two snapshots with the same
+// snapshotKey() are guaranteed to render identical frames — so the
+// hook can safely skip setData for them.
+//
+// Design notes:
+//   - Picks ONE of every visible-affecting field per row, no more.
+//     Adding a field that DOES affect rendering but ISN'T listed
+//     here is a regression (cards will lag a tick); adding a field
+//     that DOESN'T affect rendering is a regression (we'll re-render
+//     unnecessarily).
+//   - tracks[i].taskIds is a Set<string>; serialise it as a sorted
+//     array so JSON.stringify is deterministic.
+//   - We DO NOT include workspaceOrphans because no card surfaces
+//     them today (the TUI shows orphans only on the static
+//     `mu state` card). If a future card reads them, add it here.
+//   - We DO NOT include reconcile report counters (prunedGhosts,
+//     statusChanges) — they are diagnostic, not rendered.
+
+/**
+ * Pure projection of the visible-affecting fields of a snapshot.
+ * Two snapshots that produce equal `snapshotKey` render identical
+ * frames. Exported for unit tests; consumers should prefer
+ * `snapshotKeyString` (which JSON-encodes the result for cheap
+ * byte-equality checks).
+ */
+export function snapshotKey(s: WorkstreamSnapshot): unknown {
+  return {
+    workstreamName: s.workstreamName,
+    agents: s.view.agents.map((a) => [a.name, a.status, a.role, a.idle === true ? 1 : 0]),
+    orphanPaneIds: s.view.orphans.map((o) => o.paneId).sort(),
+    tracks: s.tracks.map((t) => ({
+      roots: t.roots.map((r) => r.name),
+      readyCount: t.readyCount,
+      // Set → sorted array; deterministic JSON.
+      taskIds: [...t.taskIds].sort(),
+    })),
+    ready: s.ready.map(taskKey),
+    inProgress: s.inProgress.map(taskKey),
+    blocked: s.blocked.map(taskKey),
+    recentClosed: s.recentClosed.map(taskKey),
+    workspaces: s.workspaces.map((w) => [
+      w.agentName,
+      w.backend,
+      w.parentRef ?? "",
+      w.commitsBehindMain ?? "",
+      w.dirty === true ? 1 : 0,
+    ]),
+    // Recent log entries: seq is monotonic, so eq-by-seq is enough
+    // for ordered membership; payload bytes drive what shows.
+    recent: s.recent.map((l) => [l.seq, l.source, l.kind, l.payload]),
+  };
+}
+
+/** Stable JSON encoding of `snapshotKey`. Cheap byte-equal check. */
+export function snapshotKeyString(s: WorkstreamSnapshot): string {
+  return JSON.stringify(snapshotKey(s));
+}
+
+// One row of every visible-affecting task field. impact + effortDays
+// drive the ROI bucket / sort; status drives glyph + colour;
+// updatedAt drives the relative-time column (RecentCard,
+// InProgressCard); ownerName + title are rendered verbatim.
+function taskKey(t: {
+  name: string;
+  status: string;
+  impact: number;
+  effortDays: number;
+  ownerName: string | null;
+  title: string;
+  updatedAt: string;
+}): (string | number)[] {
+  return [t.name, t.status, t.impact, t.effortDays, t.ownerName ?? "", t.title, t.updatedAt];
 }

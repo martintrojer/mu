@@ -283,6 +283,20 @@ is opt-in via the new `--tui` flag.
 
 ### Fixed
 
+- **TUI dashboard no longer flickers on every tick**
+  (bug_tui_flicker_on_every_tick). The `useDashboardSnapshot` hook
+  was unconditionally calling `setSnap({ data, lastTickMs, error })`
+  on every successful poll — even when nothing visible had changed —
+  forcing React/ink to re-render every card 1×/sec. Two-layer fix in
+  `src/cli/tui/state.ts`: (A) project the visible-affecting fields
+  through a pure `snapshotKey()` and short-circuit `setData` when the
+  JSON-encoded key is byte-equal to the previous one (returns the
+  same `data` reference so ink's prop-diff bottoms out at the cards);
+  (B) move `lastTickMs` into its own `useState` so the StatusBar's
+  tick display can refresh without dragging the cards along. On a
+  stable workstream the dashboard is now visually static between
+  ticks; only the dim tick-rate indicator in the bottom-right may
+  refresh, and ink diffs that down to ~3 cells of repaint.
 - **TUI dashboard renders flush with row 1 again** (bug_tui_topalign_v2).
   The alt-screen swap (`\x1b[?1049h`) inherits the cursor row from
   the prior buffer on iTerm2, Apple Terminal, and tmux's inner
