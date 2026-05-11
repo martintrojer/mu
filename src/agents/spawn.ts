@@ -19,7 +19,7 @@ import {
 } from "../agents.js";
 import type { Db } from "../db.js";
 import { emitEvent } from "../logs.js";
-import { isJsonMode } from "../output.js";
+import { type NextStep, isJsonMode } from "../output.js";
 import {
   capturePane,
   enableMuPaneBordersForPane,
@@ -175,18 +175,31 @@ export async function spawnAgent(db: Db, opts: SpawnAgentOptions): Promise<Agent
     MU_WORKSTREAM: opts.workstream,
   };
 
-  const paneId = await createOrReusePane({
-    session,
-    windowName,
-    command,
-    cwd: workspacePathStr ?? opts.cwd,
-    env: paneEnv,
-  });
-
   const hasWorkspace = workspacePathStr !== undefined;
 
+  // Single outer try wrapping every step that can throw AFTER the
+  // workspace has been prestaged: pane create/reuse, pane title +
+  // borders, agent-row finalize, liveness check. Earlier shape had
+  // createOrReusePane outside the try, so a tmux failure (e.g. no
+  // workstream session and tmux refusing to create one) left the
+  // prestaged workspace dir + placeholder agent row behind as an
+  // orphan — task agent_spawn_abort_leaves_orphan_workspace.
+  //
+  // paneId is undefined until createOrReusePane returns; rollbackSpawn
+  // skips killPane in that case. The inner try/catches that previously
+  // wrapped finalize and liveness were folded into this single catch
+  // (clarity > belt-and-suspenders; rollbackSpawn is idempotent and
+  // best-effort regardless).
+  let paneId: string | undefined;
   let agent: AgentRow;
   try {
+    paneId = await createOrReusePane({
+      session,
+      windowName,
+      command,
+      cwd: workspacePathStr ?? opts.cwd,
+      env: paneEnv,
+    });
     await setPaneTitle(paneId, opts.name);
     // Apply the mu pane border to the new window. Window-scoped option;
     // see enableMuPaneBorders docstring for why this is required per
@@ -194,20 +207,14 @@ export async function spawnAgent(db: Db, opts: SpawnAgentOptions): Promise<Agent
     // and is best-effort — the border is decorative.
     await enableMuPaneBordersForPane(paneId);
     agent = finalizeAgentRow(db, { opts, cli, paneId, hasWorkspace });
-  } catch (err) {
-    await rollbackSpawn(db, opts.name, paneId, hasWorkspace, opts.workstream);
-    throw err;
-  }
-
-  // Liveness check: wait briefly, then verify the pane is still alive.
-  // Catches the silent-spawn-failure class of bugs where the CLI dies
-  // immediately (lock conflict, bad credentials, etc.). On failure, roll
-  // back the DB row and surface a typed error with whatever scrollback
-  // tmux still has.
-  try {
+    // Liveness check: wait briefly, then verify the pane is still alive.
+    // Catches the silent-spawn-failure class of bugs where the CLI dies
+    // immediately (lock conflict, bad credentials, etc.). On failure,
+    // surface a typed error with whatever scrollback tmux still has.
     await awaitSpawnLiveness(paneId, opts.name);
   } catch (err) {
     await rollbackSpawn(db, opts.name, paneId, hasWorkspace, opts.workstream);
+    if (hasWorkspace) attachOrphanCleanupHint(err, opts.name, opts.workstream);
     throw err;
   }
   emitEvent(
@@ -316,15 +323,21 @@ function finalizeAgentRow(
  * Roll back a failed spawn. Idempotent and best-effort: every step
  * swallows its own errors so a partial-cleanup substrate (already-killed
  * pane, no agent row) never masks the original failure.
+ *
+ * `paneId` is `undefined` when createOrReusePane itself threw before
+ * returning a pane id — there's nothing to kill. `hasWorkspace` is
+ * `true` when prestageWorkspace succeeded; freeWorkspace is idempotent
+ * on a missing workspace so calling it after a same-cycle failure is
+ * safe. deleteAgent is also idempotent (no-op on a missing row).
  */
 async function rollbackSpawn(
   db: Db,
   name: string,
-  paneId: string,
+  paneId: string | undefined,
   hasWorkspace: boolean,
   workstream: string,
 ): Promise<void> {
-  await killPane(paneId).catch(() => {});
+  if (paneId !== undefined) await killPane(paneId).catch(() => {});
   if (hasWorkspace) {
     // Scope cleanup to the spawn's workstream so a same-named worker
     // elsewhere isn't torn down by accident
@@ -332,6 +345,40 @@ async function rollbackSpawn(
     await freeWorkspace(db, name, { workstream }).catch(() => {});
   }
   deleteAgent(db, name, workstream);
+}
+
+/**
+ * After a failed spawn that prestaged a workspace, augment the thrown
+ * error with orphan-cleanup hints (`mu workspace orphans` +
+ * `mu workspace free`). rollbackSpawn is best-effort — if the
+ * freeWorkspace call inside it failed (rmdir blocked, vcs backend
+ * refusing to remove a workspace with uncommitted state, etc.), the
+ * dir survives and the operator needs to know how to clean it up.
+ *
+ * Uses the duck-typed `errorNextSteps()` convention (see
+ * `hasNextSteps()` in src/output.ts) so this works whether the inner
+ * error is a typed mu error already exposing nextSteps
+ * (AgentDiedOnSpawnError) or a bare TmuxError / Error from
+ * createOrReusePane that has none. Existing hints (if any) are
+ * preserved and listed first; the orphan-cleanup hints are appended
+ * so the diagnostic-first ordering of typed errors is kept.
+ */
+function attachOrphanCleanupHint(err: unknown, agent: string, workstream: string): void {
+  if (typeof err !== "object" || err === null) return;
+  const target = err as { errorNextSteps?: () => NextStep[] };
+  const existing =
+    typeof target.errorNextSteps === "function" ? target.errorNextSteps.bind(target) : null;
+  const orphanHints: NextStep[] = [
+    {
+      intent: "Check for an orphan workspace dir (rollback is best-effort; may have failed)",
+      command: `mu workspace orphans -w ${workstream}`,
+    },
+    {
+      intent: "Free the workspace if it survived the rollback (idempotent on missing)",
+      command: `mu workspace free ${agent} -w ${workstream}`,
+    },
+  ];
+  target.errorNextSteps = () => [...(existing ? existing() : []), ...orphanHints];
 }
 
 /**

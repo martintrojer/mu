@@ -33,6 +33,29 @@ called out under "Breaking" in each entry.
   optional fields when meaningful). SDK: `SlugifyResult` and
   `IdFromTitleResult` both gain an `originalSlug` field.
 
+### Fixed
+
+- **`mu agent spawn --workspace`: rollback the workspace dir + agent
+  row when tmux pane creation fails** (`agent_spawn_abort_leaves_orphan_workspace`).
+  Live dogfood report: spawning a worker into a workstream whose tmux
+  session didn't exist (and where tmux refused `new-session`)
+  prestaged the workspace dir + placeholder agent row, then threw —
+  but the existing rollback only fired on later phases (finalize,
+  liveness). The orphan workspace dir survived; `mu workspace list`
+  showed nothing; `mu workspace orphans` was the only way to find
+  it. Fix: a single outer try wraps `createOrReusePane` +
+  `setPaneTitle` + `enableMuPaneBordersForPane` + `finalizeAgentRow`
+  + `awaitSpawnLiveness`; any failure runs the existing
+  `rollbackSpawn` (idempotent and best-effort). When the failure
+  happens after a workspace was prestaged, the thrown error is
+  augmented with two orphan-cleanup `nextSteps` (`mu workspace
+  orphans -w <ws>`, `mu workspace free <agent> -w <ws>`) so the
+  operator gets the cleanup recipe inline. Two follow-ups left
+  out of scope (filed for triage): auto-creating the missing tmux
+  workstream session before spawn (operator's update note 3), and
+  SIGINT handlers between prestage and the first try-block (needs
+  process-global state).
+
 ---
 
 ## [0.3.1] — 2026-05-11
