@@ -717,6 +717,8 @@ Each card gets its own task because they're independent post-`design_card_iface`
 
 Read full spec at `mu task notes design_card_agents -w tui`.
 
+**Aesthetic:** wrap in `<Box borderStyle="round" borderColor="gray">`; section header inset into the top border per the Aesthetic block at the top of this plan.
+
 **Verify:**
 ```bash
 npm run typecheck && npm run build
@@ -731,6 +733,8 @@ npm run typecheck && npm run build
 **Time:** ~15 min
 
 **Steps:** per `design_card_tracks`. Use `snapshot.tracks` directly. ROI sum from `roiBucket` colours.
+
+**Aesthetic:** rounded box, section header inset (e.g. `Tracks (2 · 1 ready)`).
 
 **Verify:**
 ```bash
@@ -747,6 +751,8 @@ npm run typecheck && npm run build
 
 **Steps:** per `design_card_ready`. Top-N (default 10) sorted by ROI desc; tie-break effort asc, then name asc. Use `roiBucket` for colour buckets.
 
+**Aesthetic:** rounded box, section header inset (e.g. `Ready (5)`).
+
 **Verify:**
 ```bash
 npm run typecheck && npm run build
@@ -761,6 +767,8 @@ npm run typecheck && npm run build
 **Time:** ~15 min
 
 **Steps:** per `design_card_log`. Card has fixed-height summary (no scroll; that's the popup). Use `classifyEventVerb` for verb colouring. Auto-update on tick (no scroll-pause needed at card level).
+
+**Aesthetic:** rounded box, section header inset (e.g. `Activity log (last ↑10)`).
 
 **Verify:**
 ```bash
@@ -808,7 +816,7 @@ npm run test -- tui-card
 **File:** `src/cli/tui/popups/agents.tsx`
 **Time:** ~25 min
 
-**Steps:** per `design_popup_agents`. Two-pane (25/75): agent list left, scrollback right. On-open hook fetches pane scrollback (`mu agent read`). Per-popup verbs: `f`, `o`, `e` plus `y` yank matrix. In-popup convention keys (j/k g/G / Esc y ?) handled by a shared helper if you can extract one cleanly; otherwise per-popup.
+**Steps:** per `design_popup_agents`. Two-pane (25/75): agent list left, scrollback right. **Aesthetic:** outer rounded box `╭─ Agents · popup ──╮`; inner sub-boxes for each pane with their own headers (`╭─ list ─╮`, `╭─ scrollback · worker-1 ─╮`). On-open hook fetches pane scrollback (`mu agent read`). Per-popup verbs: `f`, `o`, `e` plus `y` yank matrix. In-popup convention keys (j/k g/G / Esc y ?) handled by a shared helper if you can extract one cleanly; otherwise per-popup.
 
 **Verify:**
 ```bash
@@ -823,7 +831,7 @@ npm run build
 **File:** `src/cli/tui/popups/tracks.tsx`
 **Time:** ~20 min
 
-**Steps:** per `design_popup_tracks`. Per-track expandable list; `e` to expand/collapse; `t` to jump to task tree.
+**Steps:** per `design_popup_tracks`. Per-track expandable list; `e` to expand/collapse; `t` to jump to task tree. **Aesthetic:** outer rounded box `╭─ Tracks · popup ─╮`.
 
 **Verify:**
 ```bash
@@ -845,7 +853,7 @@ npm run build
 - CLOSED: `mu task open <id> -w <ws>`
 - (etc.)
 
-This is the most complex popup. Consult `design_popup_tasks` notes verbatim.
+This is the most complex popup. Consult `design_popup_tasks` notes verbatim. **Aesthetic:** outer rounded box `╭─ Tasks · popup ─╮`; inner sub-boxes for list-pane / detail-pane.
 
 **Verify:**
 ```bash
@@ -860,7 +868,7 @@ npm run build
 **File:** `src/cli/tui/popups/log.tsx`
 **Time:** ~25 min
 
-**Steps:** per `design_popup_log`. Auto-tail with scroll-pause (toast "tail paused; G to resume" when scrolled up). Filters: `/` substring, `e` event-kind cycle, `m` my-events.
+**Steps:** per `design_popup_log`. Auto-tail with scroll-pause (toast "tail paused; G to resume" when scrolled up). Filters: `/` substring, `e` event-kind cycle, `m` my-events. **Aesthetic:** outer rounded box `╭─ Activity log · popup ─╮`; tail-paused indicator in the header (e.g. `⏸ paused`).
 
 **Verify:**
 ```bash
@@ -896,7 +904,7 @@ npm run test -- tui-popup
 **File:** `src/cli/tui/help.tsx`
 **Time:** ~15 min
 
-**Steps:** per `design_help_overlay`. Modal-ish overlay; renders the keymap summary table from `design_global_keymap`. When opened from inside a popup, includes that popup's per-popup verbs. `?` / `Esc` / `q` close.
+**Steps:** per `design_help_overlay`. Modal-ish overlay; renders the keymap summary table from `design_global_keymap`. When opened from inside a popup, includes that popup's per-popup verbs. `?` / `Esc` / `q` close. **Aesthetic:** rounded box `╭─ keys ─╮`; same family as cards/popups.
 
 **Verify:**
 ```bash
