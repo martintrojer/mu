@@ -9,26 +9,15 @@
 //   - Idempotent at the per-task level via sha256 short-circuit.
 //   - Tasks deleted from the source between exports are preserved
 //     with a one-time banner.
-//   - Refuses to write into a legacy (pre-0.3, single-source) export
-//     directory; throws LegacyExportLayoutError.
 //   - Auto-export at destroy time uses this same renderer.
 
-import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  readdirSync,
-  rmSync,
-  statSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { addToArchive, createArchive } from "../src/archives.js";
 import { type Db, openDb } from "../src/db.js";
-import { type ExportManifest, LegacyExportLayoutError, exportArchive } from "../src/exporting.js";
+import { type ExportManifest, exportArchive } from "../src/exporting.js";
 import { addNote, addTask, deleteTask } from "../src/tasks.js";
 import { resetTmuxExecutor, setTmuxExecutor } from "../src/tmux.js";
 import { destroyWorkstream, exportWorkstream } from "../src/workstream.js";
@@ -196,33 +185,6 @@ describe("renderToBucket — additive across workstreams", () => {
     const secondManifest = readManifest(outDir);
     expect(secondManifest.bucketCreatedAt).toBe(createdAt);
     expect(secondManifest.bucketLastUpdatedAt > createdAt).toBe(true);
-  });
-});
-
-describe("renderToBucket — refuses legacy pre-0.3 layout", () => {
-  it("throws LegacyExportLayoutError when manifest.json has no bucketVersion + has top-level workstream", () => {
-    const outDir = join(tmpDir, "legacy");
-    mkdirSync(outDir);
-    // Pre-0.3 single-source manifest shape.
-    writeFileSync(
-      join(outDir, "manifest.json"),
-      JSON.stringify(
-        {
-          workstream: "auth",
-          exportedAt: "2025-01-01T00:00:00.000Z",
-          muVersion: "0.2.0",
-          eventsSeqAtExport: 1,
-          tasks: [],
-        },
-        null,
-        2,
-      ),
-      "utf8",
-    );
-
-    expect(() => exportWorkstream(db, { workstream: "auth", outDir })).toThrow(
-      LegacyExportLayoutError,
-    );
   });
 });
 

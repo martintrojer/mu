@@ -71,8 +71,8 @@ export interface ExportSourceManifest {
 }
 
 /** Top-level bucket manifest. `bucketVersion: 2` — the v0.3 shape.
- *  v1 (bucketVersion absent + top-level `workstream` field) is the
- *  legacy single-source shape and is rejected at write time. */
+ *  Manifests without `bucketVersion: 2` fall through to the
+ *  `corrupt` lane in `readManifest`. */
 export interface ExportManifest {
   /** Schema discriminator. Always 2 in this codebase. */
   bucketVersion: 2;
@@ -120,21 +120,6 @@ export interface RenderBucketResult {
   preserved: number;
   manifestPath: string;
   manifest: ExportManifest;
-}
-
-/** Thrown when the operator points an export at a directory whose
- *  existing manifest predates bucket layout (v1, single-source). The
- *  fix is destructive (remove and re-export) so we refuse to touch
- *  it in-place — the legacy directory may be checked into git and
- *  the operator should choose between rebuilding it and picking a
- *  new --out. */
-export class LegacyExportLayoutError extends Error {
-  override readonly name = "LegacyExportLayoutError";
-  constructor(public readonly outDir: string) {
-    super(
-      `${outDir} was created with a pre-bucket export (mu < 0.3); the on-disk shape changed in 0.3 (top-level README/INDEX/manifest + per-source-ws subdirs). Re-export is not in-place; either pick a different --out or 'rm -rf ${outDir}' and re-run.`,
-    );
-  }
 }
 
 // ─── Markdown render helpers (per-task) ──────────────────────────────
@@ -328,15 +313,13 @@ export function bannerFor(timestamp: string): string {
 // ─── manifest.json read/parse ────────────────────────────────────────
 
 /** Read an existing bucket manifest. Returns `{ kind: "v2", manifest }`
- *  for a v0.3+ bucket; `{ kind: "legacy" }` for a pre-0.3
- *  single-source export (whose manifest has a top-level `workstream`
- *  field but no `bucketVersion`); `{ kind: "absent" }` if the file
- *  doesn't exist. Throws `LegacyExportLayoutError` would be premature
- *  here — the caller decides whether to refuse based on whether they
- *  actually need to write. */
+ *  for a v0.3+ bucket; `{ kind: "absent" }` if the file doesn't
+ *  exist; `{ kind: "corrupt" }` for anything else. The pre-0.3
+ *  (single-source, top-level `workstream` + `tasks`) shape is no
+ *  longer recognized — v0.3 shipped 2026-05-10 and there are no
+ *  pre-v0.3 buckets in the wild to keep a detection branch for. */
 export type ManifestProbe =
   | { kind: "v2"; manifest: ExportManifest }
-  | { kind: "legacy" }
   | { kind: "absent" }
   | { kind: "corrupt" };
 
@@ -360,11 +343,6 @@ export function readManifest(path: string): ManifestProbe {
     // Best-effort cast; the caller treats unknown sources as a fresh
     // bucket if any field is malformed.
     return { kind: "v2", manifest: obj as unknown as ExportManifest };
-  }
-  // Legacy v1 shape: top-level `workstream` + `tasks` array, no
-  // bucketVersion. We refuse to touch these in-place.
-  if (typeof obj.workstream === "string" && Array.isArray(obj.tasks)) {
-    return { kind: "legacy" };
   }
   return { kind: "corrupt" };
 }
@@ -399,8 +377,6 @@ export function readMuVersion(): string {
  *     `input.sources` either appends (new) or refreshes (existing)
  *     its subdirectory; sources NOT in `input.sources` are left
  *     untouched.
- *   - If it exists but with a legacy (v1) manifest, throw
- *     `LegacyExportLayoutError`.
  *
  * Per-task idempotency is sha256-keyed: a re-export of the same
  * source against an unchanged DB rewrites zero task files. Tasks
@@ -420,9 +396,6 @@ export function renderToBucket(input: RenderBucketInput): RenderBucketResult {
 
   const manifestPath = join(outDir, "manifest.json");
   const probe = readManifest(manifestPath);
-  if (probe.kind === "legacy") {
-    throw new LegacyExportLayoutError(outDir);
-  }
 
   const now = new Date().toISOString();
   const muVersion = readMuVersion();

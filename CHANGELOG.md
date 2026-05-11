@@ -10,6 +10,29 @@ called out under "Breaking" in each entry.
 
 ## [Unreleased]
 
+### Removed
+
+- **Pre-v0.3 ("v1", single-source) export-bucket detection** in
+  `src/exporting.ts` and `src/importing.ts`. v0.3 shipped
+  2026-05-10 with the new bucket layout (top-level
+  README/INDEX/manifest + per-source-ws subdirs). There are no
+  pre-v0.3 buckets in the wild, so the operator-facing branches
+  that probed for the old shape and threw
+  `LegacyExportLayoutError` / `ImportLegacyLayoutError` with a
+  re-export hint are now dead weight. Dropped: both error
+  classes, the `{ kind: "legacy" }` arm of `ManifestProbe`, the
+  legacy detection in `readManifest`, the `if (probe.kind ===
+  "legacy") throw` blocks in `renderToBucket` /
+  `loadBucketLayout`, the imports + `instanceof` arms in
+  `src/cli/handle.ts`'s usage-class predicate and `classifyError`,
+  the SDK re-exports in `src/index.ts`, and the legacy-throw
+  tests in `test/exporting.test.ts` / `test/importing.test.ts`.
+  Manifests that aren't `bucketVersion: 2` now fall through to
+  the existing `corrupt` lane (export: re-scaffold; import:
+  `ImportBucketInvalidError` with the standard `manifest.json is
+  unreadable / malformed` reason) — a single typed surface
+  instead of two near-identical ones.
+
 ### Changed
 
 - **`mu agent close` auto-frees a clean workspace instead of requiring

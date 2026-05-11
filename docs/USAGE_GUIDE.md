@@ -1479,8 +1479,6 @@ Key properties:
 - **Forward edge refs are deferred.** `blocked_by` / `blocks`
   arrays are validated against the bucket's id-set up front, then
   inserted after every task in the source-ws is created.
-- **Pre-0.3 layouts refuse.** Buckets without a `bucketVersion: 2`
-  manifest throw `ImportLegacyLayoutError` with a re-export hint.
 - **Partial import.** Multi-source buckets accept either a
   per-source-ws subdir path (auto-detected via
   `README.md` + `INDEX.md` + `tasks/` + a parent

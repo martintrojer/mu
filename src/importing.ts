@@ -84,23 +84,6 @@ export class ImportSourceNotInBucketError extends Error implements HasNextSteps 
   }
 }
 
-export class ImportLegacyLayoutError extends Error implements HasNextSteps {
-  override readonly name = "ImportLegacyLayoutError";
-  constructor(public readonly bucketDir: string) {
-    super(
-      `${bucketDir} is a pre-0.3 (single-workstream) export; mu workstream import requires bucketVersion 2. Re-export with mu ≥ 0.3, or run mu workstream import on a freshly-rendered bucket.`,
-    );
-  }
-  errorNextSteps(): NextStep[] {
-    return [
-      {
-        intent: "Re-export the source workstream into a new bucket",
-        command: "mu workstream export -w <ws> --out <new-bucket-dir>",
-      },
-    ];
-  }
-}
-
 export class WorkstreamAlreadyExistsError extends Error implements HasNextSteps {
   override readonly name = "WorkstreamAlreadyExistsError";
   constructor(public readonly workstream: string) {
@@ -514,9 +497,6 @@ function walkBucket(bucketDir: string): {
   if (probe.kind === "corrupt") {
     throw new ImportBucketInvalidError(bucketDir, "manifest.json is unreadable / malformed");
   }
-  if (probe.kind === "legacy") {
-    throw new ImportLegacyLayoutError(bucketDir);
-  }
 
   // ── Form 1 (per-source-ws subdir): manifest.json absent at <dir>;
   // expect README.md + INDEX.md + tasks/ and a parent bucket manifest. ──
@@ -698,8 +678,8 @@ function importOneSource(
  * Per source-ws transactional: a failure in source A rolls back A
  * but leaves source B's import committed.
  *
- * Throws on unrecoverable bucket-level errors (no manifest, legacy
- * layout, --workstream override against multi-source). Per-source
+ * Throws on unrecoverable bucket-level errors (no manifest,
+ * --workstream override against multi-source). Per-source
  * errors (frontmatter parse, edge ref, target name collision) leave
  * the failing source's `errors` array populated and that source's
  * counts at zero; siblings still attempt their own import.

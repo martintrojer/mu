@@ -529,8 +529,6 @@ function countEdges(db: Db, workstream: string): number {
 // Re-export against the same outDir is additive: a different `-w`
 // adds a sibling subdir without touching the existing one. A re-run
 // with the same `-w` refreshes that subdir (sha256 short-circuit).
-// Pointing this at a directory built by mu < 0.3 throws
-// `LegacyExportLayoutError`.
 //
 // Anti-features (preserved from the originating design note):
 //   - re-import: out of scope
@@ -568,9 +566,6 @@ export interface ExportResult {
  * exporting a different workstream into the same bucket appends a
  * sibling subdir.
  *
- * Throws:
- *   - `LegacyExportLayoutError` if `outDir` already contains a
- *     pre-0.3 (single-source) manifest.json.
  */
 export function exportWorkstream(db: Db, opts: ExportWorkstreamOptions): ExportResult {
   const outDir = resolve(opts.outDir ?? join(process.cwd(), opts.workstream));

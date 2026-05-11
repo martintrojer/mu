@@ -43,12 +43,10 @@ import {
   ArchiveNotFoundError,
 } from "../archives.js";
 import { type Db, SchemaTooOldError, WorkstreamNotFoundError, openDb } from "../db.js";
-import { LegacyExportLayoutError } from "../exporting.js";
 import {
   ImportBucketInvalidError,
   ImportEdgeRefMissingError,
   ImportFrontmatterParseError,
-  ImportLegacyLayoutError,
   ImportSourceNotInBucketError,
   WorkstreamAlreadyExistsError,
 } from "../importing.js";
@@ -152,11 +150,10 @@ function classifyCommanderError(err: CommanderError): { label: string; exitCode:
  *       task id, prune-flag combination). The verb's --help would
  *       have explained the constraint; show it.
  *
- *       Deliberately excluded: ImportBucketInvalidError /
- *       ImportLegacyLayoutError / LegacyExportLayoutError. Those
- *       fault on the contents of a directory the operator pointed at;
- *       --help wouldn't have prevented them, and their typed
- *       nextSteps already point at the fix.
+ *       Deliberately excluded: ImportBucketInvalidError. It faults
+ *       on the contents of a directory the operator pointed at;
+ *       --help wouldn't have prevented it, and its typed nextSteps
+ *       already point at the fix.
  */
 function isUsageClassError(err: unknown): boolean {
   if (err instanceof CommanderError) return true;
@@ -213,9 +210,7 @@ export function classifyError(err: unknown): { label: string; exitCode: number }
     err instanceof UsageError ||
     err instanceof WorkstreamNameInvalidError ||
     err instanceof ArchiveLabelInvalidError ||
-    err instanceof LegacyExportLayoutError ||
     err instanceof ImportBucketInvalidError ||
-    err instanceof ImportLegacyLayoutError ||
     err instanceof ImportFrontmatterParseError ||
     err instanceof ImportEdgeRefMissingError ||
     err instanceof PruneOptionsInvalidError

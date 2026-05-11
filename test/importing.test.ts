@@ -14,7 +14,6 @@ import {
   ImportBucketInvalidError,
   ImportEdgeRefMissingError,
   ImportFrontmatterParseError,
-  ImportLegacyLayoutError,
   ImportSourceNotInBucketError,
   WorkstreamAlreadyExistsError,
   importBucket,
@@ -244,23 +243,6 @@ describe("importBucket — validation errors", () => {
 
     expect(() => importBucket(db, { bucketDir: bucket })).toThrow(ImportFrontmatterParseError);
     expect(listTasks(db, "auth")).toHaveLength(0);
-  });
-
-  it("ImportLegacyLayoutError on a pre-0.3 single-source manifest", () => {
-    const bucket = join(tmpDir, "legacy");
-    mkdirSync(bucket);
-    writeFileSync(
-      join(bucket, "manifest.json"),
-      JSON.stringify({
-        workstream: "auth",
-        exportedAt: "2025-01-01T00:00:00.000Z",
-        muVersion: "0.2.0",
-        eventsSeqAtExport: 1,
-        tasks: [],
-      }),
-      "utf8",
-    );
-    expect(() => importBucket(db, { bucketDir: bucket })).toThrow(ImportLegacyLayoutError);
   });
 
   it("ImportBucketInvalidError when the bucket dir is missing or has no manifest", () => {
