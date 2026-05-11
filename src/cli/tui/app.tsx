@@ -231,10 +231,18 @@ export function App({ db, workstream }: AppProps): JSX.Element {
 
   // Help overlay covers everything else (still gets the global
   // status bar at the bottom for consistent navigation hints).
+  //
+  // height={rows} + a flexGrow={1} spacer above the StatusBar pins
+  // every frame to the full terminal height. Without this, ink's
+  // diff-based renderer leaves "ghost" lines below a shrinking
+  // frame on card-toggle / branch-swap (see
+  // bug_tui_render_ghosting_v2). The spacer also bottom-sticks the
+  // status bar so it doesn't float up against a shorter body.
   if (helpOpen) {
     return (
-      <Box flexDirection="column">
+      <Box flexDirection="column" height={rows}>
         <Help />
+        <Box flexGrow={1} />
         <StatusBar mode="help" tickMs={tickMs} footer={footer} cols={cols} />
       </Box>
     );
@@ -242,9 +250,15 @@ export function App({ db, workstream }: AppProps): JSX.Element {
 
   // Popup mounted: render full-screen instead of dashboard, with
   // the popup-mode status bar pinned at the bottom.
+  //
+  // NOTE: no flexGrow={1} spacer here — popup bodies own their
+  // bottom-fill (see sibling task bug_tui_popups_fill_pane). Adding
+  // a sibling spacer would steal the space the popup wants. The
+  // height={rows} pin is still required to prevent ghost lines
+  // when swapping between popup ↔ dashboard ↔ help.
   if (popup !== null) {
     return (
-      <Box flexDirection="column">
+      <Box flexDirection="column" height={rows}>
         {renderPopup(popup)}
         <StatusBar
           mode="popup"
@@ -260,7 +274,7 @@ export function App({ db, workstream }: AppProps): JSX.Element {
 
   // Dashboard.
   return (
-    <Box flexDirection="column">
+    <Box flexDirection="column" height={rows}>
       {snap.error !== null && (
         <Box borderStyle="round" borderColor="red" paddingX={1}>
           <Text color="red">snapshot error: {snap.error}</Text>
@@ -271,6 +285,7 @@ export function App({ db, workstream }: AppProps): JSX.Element {
       {visibility.ready && <ReadyCard snapshot={snap.data} />}
       {visibility.log && <LogCard snapshot={snap.data} />}
       {visibility.workspaces && <WorkspacesCard snapshot={snap.data} />}
+      <Box flexGrow={1} />
       <StatusBar mode="dashboard" tickMs={tickMs} footer={footer} cols={cols} />
     </Box>
   );
