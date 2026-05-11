@@ -79,7 +79,10 @@ describe("layoutColumns", () => {
 
   it("respects per-column min/max", () => {
     const rows = [["a", "bb"]];
-    const specs: ColumnSpec[] = [{ kind: "protect", min: 5 }, { kind: "clip", max: 1 }];
+    const specs: ColumnSpec[] = [
+      { kind: "protect", min: 5 },
+      { kind: "clip", max: 1 },
+    ];
     expect(layoutColumns(rows, specs)).toEqual([5, 1]);
   });
 
