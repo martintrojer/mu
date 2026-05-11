@@ -449,6 +449,26 @@ is opt-in via the new `--tui` flag.
   survived; `mu-injected-leak` killed at teardown. Pure policy
   helper `sessionsToKill(allMuSessions, allowlist)` covered by
   test/global-teardown-allowlist.test.ts (6 cases).
+- **Test infrastructure: allowlist drops the "pre-existing sessions"
+  snapshot — DB-only** (round-4 of bug_test_flake_round_4_self_heal).
+  The round-3 allowlist had a self-locking edge case: it snapshotted
+  `mu-*` sessions present on the user's default socket at module-load
+  time and never invalidated them, so test residue from a partially
+  broken run got grandfathered in as protected forever. The
+  orchestrator had to manually `tmux kill-session` 7 leaked sessions
+  (`mu-alpha mu-beta mu-demo mu-gamma mu-scratch mu-ws mu-ws2`) that
+  no future sweep would ever clean up. Replaced with a DB-only
+  allowlist: `mu-<name>` for every row in the user's `workstreams`
+  table, plus `mu-$MU_SESSION` if the orchestrator runs the suite
+  inside a tmux pane. The pre-existing snapshot helper
+  (`snapshotPreexistingSessions` + `PROTECTED_PREEXISTING_SESSIONS`)
+  is gone. Cost: an ad-hoc `tmux new-session -t mu-foo` with no DB
+  row gets killed by the sweep — the workaround is
+  `mu workstream init foo` (which the user would have to do anyway
+  to use it as a workstream). Pure-helper test coverage rebalanced:
+  the "pre-existing overlap" case becomes "DB-row overlap" plus a
+  new "ad-hoc with no DB row gets killed" case proving the
+  self-heal contract holds.
 - **Test infrastructure: `MU_*` env-var baseline scrub** (Layer
   "test" of bug_test_flake_round_2). vitest forks inherit the
   parent shell's environment; when a developer (or the

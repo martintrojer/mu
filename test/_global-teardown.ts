@@ -10,16 +10,23 @@
 //   The user's interactive sessions are invisible to the suite, and
 //   suite-residue is invisible to the user.
 //
-//   LAYER 2 (round-3 Part B — allowlist-based sweep) — a safety net
-//   for any test that bypasses the private socket and accidentally
-//   creates a session on the user's DEFAULT socket. The sweep computes
-//   an allowlist of names we MUST NEVER kill (pre-existing sessions
-//   captured at module load + every workstream name in the user's
-//   real DB) and kills any other `mu-*` session on the default socket.
-//   The previous regex-prefix sweep missed bare-name leftovers like
-//   `mu-alpha` / `mu-demo` / `mu-ws` (no trailing dash); the allowlist
-//   approach inverts the question and catches everything by default.
-//   See the long comment above PROTECTED_PREEXISTING_SESSIONS below.
+//   LAYER 2 (round-4 — DB-rooted allowlist) — a safety net for any
+//   test that bypasses the private socket and accidentally creates a
+//   session on the user's DEFAULT socket. The sweep computes an
+//   allowlist of names we MUST NEVER kill — every workstream name in
+//   the user's real DB plus the orchestrator's own `$MU_SESSION` — and
+//   kills any other `mu-*` session on the default socket.
+//
+//   Round-3 Part B used the same approach but ALSO captured a snapshot
+//   of `mu-*` sessions present at module-load time. That snapshot is
+//   gone (round-4 — bug_test_flake_round_4_self_heal): leftover test
+//   residue from a partially-broken run on the user's default socket
+//   would get "grandfathered in" as protected forever, defeating the
+//   self-healing intent of the sweep. The DB is the only source of
+//   truth for what the user considers a real workstream; an ad-hoc
+//   `tmux new-session -t mu-foo` with no DB row is now killed by the
+//   sweep (the user can `mu workstream init foo` to register it,
+//   which they'd need to do anyway to use it as a workstream).
 //
 // CONTRACT
 //
@@ -124,18 +131,17 @@ async function killPrivateTmuxServer(): Promise<void> {
   delete process.env[key];
 }
 
-// ─── Layer 2 (round-3 Part B): allowlist-based default-socket sweep ───
+// ─── Layer 2 (round-4): DB-rooted default-socket sweep ────────────
 
 /**
- * Round-3 Part B replaced the prior regex-prefix sweep with an
- * allowlist sweep. The regex `^mu-(acc|claim|kick|...)-` only matched
- * sessions whose name started with a known fixture prefix followed
- * by a dash, so bare-name leftovers like `mu-alpha`, `mu-demo`,
- * `mu-ws`, `mu-ws2`, `mu-scratch`, `mu-beta`, `mu-gamma` (created by
- * tests that hardcode short workstream names instead of using
- * `freshWorkstream()`) never matched and lingered on the user's
- * default tmux socket forever. The user reported them after three
- * previous rounds of fixes had already shipped.
+ * Round-4 replaced round-3's two-source allowlist (pre-existing
+ * snapshot + DB) with a DB-only allowlist. The pre-existing snapshot
+ * was a self-locking trap: leftover test residue on the user's
+ * default socket at module-load time was "grandfathered in" as
+ * protected forever, defeating the self-healing intent of the sweep
+ * (see bug_test_flake_round_4_self_heal). The orchestrator had to
+ * manually `tmux kill-session` 7 leaked sessions because each new
+ * test run snapshotted them as preexisting and protected them.
  *
  * The allowlist approach inverts the question: instead of "does this
  * name look like test fixture residue?" we ask "is this name something
@@ -143,14 +149,7 @@ async function killPrivateTmuxServer(): Promise<void> {
  *
  * The allowlist has two sources, unioned:
  *
- *   1. PRE-EXISTING SESSIONS — a snapshot of `mu-*` sessions present
- *      on the user's default tmux socket at module-load time. These
- *      are sessions the user (or their orchestrator agent) created
- *      BEFORE `npm test` ran. We MUST NEVER kill any of them, even
- *      if their bare name happens to overlap with a test fixture
- *      name. Captured ONCE at module load and frozen.
- *
- *   2. USER WORKSTREAMS — every workstream name in the user's REAL
+ *   1. USER WORKSTREAMS — every workstream name in the user's REAL
  *      mu DB (`~/.local/state/mu/mu.db` or `$XDG_STATE_HOME/mu/mu.db`).
  *      A `mu-<name>` session matching one of these is the user's
  *      workstream session, even if it was created mid-suite by an
@@ -162,27 +161,23 @@ async function killPrivateTmuxServer(): Promise<void> {
  *      layer (and the round-2 guard's intent was to prevent test
  *      WRITES, not metadata reads).
  *
+ *   2. THE ORCHESTRATOR'S OWN SESSION — `mu-$MU_SESSION` if
+ *      `$MU_SESSION` is set in the parent shell. Belt-and-suspenders
+ *      protection for the workstream the orchestrator is actively
+ *      running in, in case its DB row was somehow not visible at the
+ *      moment buildAllowlist() ran (DB locked, schema mismatch, etc).
+ *
  * Anything on the default socket starting with `mu-` and NOT in the
  * union of those two sets is, by elimination, test residue — a
  * session our suite created by accidentally bypassing the private
  * `-L <socket>` (legacy hardcoded-name tests, future tests that spawn
  * `execa("tmux", …)` directly without routing through src/tmux.ts,
  * etc). We kill it.
+ *
+ * Cost: an ad-hoc `tmux new-session -t mu-foo` with no DB row gets
+ * killed by the sweep. Workaround: `mu workstream init foo` first
+ * (which the user would need to do anyway to use it as a workstream).
  */
-
-/** Snapshot of pre-existing `mu-*` default-socket sessions, captured
- *  once at module-load time. Frozen for the lifetime of the run. */
-const PROTECTED_PREEXISTING_SESSIONS: ReadonlySet<string> = await snapshotPreexistingSessions();
-
-async function snapshotPreexistingSessions(): Promise<ReadonlySet<string>> {
-  // List on the USER's default socket (no -L). Tmux exits 1 with
-  // "no server running" when no daemon is up; treat as no sessions.
-  const ls = await execa("tmux", ["list-sessions", "-F", "#{session_name}"], {
-    reject: false,
-  });
-  if (ls.exitCode !== 0) return new Set();
-  return new Set((ls.stdout ?? "").split("\n").filter((l) => l.length > 0 && l.startsWith("mu-")));
-}
 
 /**
  * Compute the user's REAL DB path the same way src/db.ts does, but
@@ -213,7 +208,7 @@ function readUserWorkstreamsFromDb(): ReadonlySet<string> {
     // SQLite locked, etc. We fail OPEN — better to leave a stray
     // session than to nuke the user's workstreams.
     console.warn(
-      `[mu-test global-setup] could not read user workstreams from ${path}: ${err instanceof Error ? err.message : String(err)}; allowlist falls back to pre-existing sessions only`,
+      `[mu-test global-setup] could not read user workstreams from ${path}: ${err instanceof Error ? err.message : String(err)}; allowlist falls back to $MU_SESSION only`,
     );
     return new Set();
   } finally {
@@ -228,9 +223,13 @@ function readUserWorkstreamsFromDb(): ReadonlySet<string> {
  * (e.g. an orchestrator agent's `mu workstream init` mid-run).
  */
 function buildAllowlist(): ReadonlySet<string> {
-  const allowed = new Set<string>(PROTECTED_PREEXISTING_SESSIONS);
+  const allowed = new Set<string>();
   for (const ws of readUserWorkstreamsFromDb()) {
     allowed.add(`mu-${ws}`);
+  }
+  const orchSession = process.env.MU_SESSION;
+  if (orchSession !== undefined && orchSession.length > 0) {
+    allowed.add(`mu-${orchSession}`);
   }
   return allowed;
 }

@@ -1,29 +1,26 @@
 // Unit tests for the allowlist policy in test/_global-teardown.ts
-// (round-3 Part B). The policy itself is a pure helper —
+// (round-4: DB-rooted allowlist). The policy itself is a pure helper —
 // `sessionsToKill(allMuSessions, allowlist)` — so we exercise it
 // directly without touching real tmux, real DBs, or vitest hooks.
 //
 // What we verify:
 //
-//   1. Pre-existing sessions on the user's default socket are NEVER
-//      killed, even if their bare name overlaps with a test fixture
-//      name (the original failure mode: the regex sweep killed
-//      `mu-acc-foo` but never `mu-alpha`; the allowlist must protect
-//      `mu-alpha` if it predates the suite).
-//
-//   2. User-DB workstreams are protected by `mu-<name>` mapping —
+//   1. User-DB workstreams are protected by `mu-<name>` mapping —
 //      `tui-impl` workstream protects the `mu-tui-impl` session.
 //
-//   3. Anything else starting with `mu-` is killed (the leak from
+//   2. Anything else starting with `mu-` is killed (the leak from
 //      bug_test_flake_round_3: bare-name test sessions that bypassed
-//      the private socket).
+//      the private socket). Round-4: this now includes ad-hoc sessions
+//      with no DB row — by design, see
+//      bug_test_flake_round_4_self_heal. The pre-existing-snapshot
+//      escape hatch was a self-locking trap (test residue at
+//      module-load got grandfathered in as protected forever).
 //
-//   4. Non-`mu-` sessions are never considered (the helper takes
+//   3. Non-`mu-` sessions are never considered (the helper takes
 //      pre-filtered `mu-*` sessions; this just documents the contract).
 //
-// We don't try to test `snapshotPreexistingSessions` /
-// `readUserWorkstreamsFromDb` here — those are I/O wrappers and
-// are exercised by the suite running them on every `npm test`.
+// We don't try to test `readUserWorkstreamsFromDb` here — it's an
+// I/O wrapper exercised by the suite running it on every `npm test`.
 
 import { describe, expect, it } from "vitest";
 import { sessionsToKill } from "./_global-teardown.js";
@@ -35,14 +32,34 @@ describe("global-teardown allowlist sweep policy", () => {
     expect(sessionsToKill(sessions, allowlist)).toEqual([]);
   });
 
-  it("protects pre-existing sessions whose bare name overlaps a test fixture", () => {
-    // The user manually created `mu-alpha` BEFORE running `npm test`.
-    // The previous regex sweep would have left it alone (no trailing
-    // dash); the allowlist sweep must also leave it alone (it's in
-    // the snapshot).
+  it("protects ad-hoc sessions only when they have a DB row in the allowlist", () => {
+    // The user ran `mu workstream init alpha` (DB row exists) and
+    // then `tmux new-session -t mu-alpha`. The DB row puts `mu-alpha`
+    // in the allowlist; the sweep must not touch it.
+    //
+    // Contrast with round-3, which ALSO protected an ad-hoc
+    // `mu-alpha` session purely because it was visible at
+    // module-load time (the "preexisting snapshot" escape hatch).
+    // That hatch was removed in round-4 because leftover test
+    // residue at module-load got grandfathered in as protected
+    // forever. See bug_test_flake_round_4_self_heal.
     const allowlist = new Set(["mu-alpha", "mu-tui-impl"]);
     const sessions = ["mu-alpha", "mu-tui-impl"];
     expect(sessionsToKill(sessions, allowlist)).toEqual([]);
+  });
+
+  it("kills ad-hoc sessions with no DB row (round-4 self-heal contract)", () => {
+    // Inverse of the previous case: the user did `tmux new-session
+    // -t mu-experiment` WITHOUT a `mu workstream init experiment`
+    // first. Round-3 would have grandfathered it in (visible at
+    // module-load → added to PROTECTED_PREEXISTING_SESSIONS).
+    // Round-4 kills it: the DB is the only source of truth for
+    // "this is a real workstream the user cares about". Cost is
+    // documented in the helper's docstring; workaround is `mu
+    // workstream init experiment`.
+    const allowlist = new Set(["mu-tui-impl"]); // DB has tui-impl only
+    const sessions = ["mu-experiment", "mu-tui-impl"];
+    expect(sessionsToKill(sessions, allowlist)).toEqual(["mu-experiment"]);
   });
 
   it("kills bare-name test residue not in the allowlist", () => {
@@ -80,9 +97,9 @@ describe("global-teardown allowlist sweep policy", () => {
   });
 
   it("treats the empty allowlist as kill-all-mu-sessions (defensive — should never fire in production)", () => {
-    // If both PRE-EXISTING and DB-read produce empty sets (no user
-    // tmux server, no user DB), the suite is the only thing producing
-    // mu-* sessions and they're all leaked-by-definition.
+    // If DB-read produces an empty set (no user DB) and `$MU_SESSION`
+    // is unset, the suite is the only thing producing mu-* sessions
+    // and they're all leaked-by-definition.
     const allowlist = new Set<string>();
     const sessions = ["mu-foo", "mu-bar"];
     expect(sessionsToKill(sessions, allowlist)).toEqual(["mu-foo", "mu-bar"]);

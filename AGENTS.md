@@ -216,14 +216,19 @@ those tests skip themselves; CI runs inside tmux.
   `process.env.X = "..."` or `withEnv()` from `test/_env.ts`.
 - **Default-socket sweep philosophy**: `_global-teardown.ts` runs
   an ALLOWLIST sweep of `mu-*` sessions on the user's default tmux
-  socket at suite setup AND teardown. The allowlist is the union
-  of (1) `mu-*` sessions present at module-load time (the user's
-  pre-existing tmux state) and (2) `mu-<name>` for every workstream
-  in the user's REAL DB (read-only via better-sqlite3, bypassing
-  the `openDb()` test guard). Anything not in the union is, by
-  elimination, test residue and is killed. Replaces the old
-  regex-prefix sweep that missed bare-name leftovers like
-  `mu-alpha` / `mu-demo` / `mu-ws`. New tests can hardcode any
+  socket at suite setup AND teardown. The allowlist is DB-rooted:
+  (1) `mu-<name>` for every workstream in the user's REAL DB
+  (read-only via better-sqlite3, bypassing the `openDb()` test
+  guard) and (2) `mu-$MU_SESSION` if the orchestrator runs the suite
+  inside a tmux pane. Anything else is, by elimination, test residue
+  and is killed. Replaces the old regex-prefix sweep that missed
+  bare-name leftovers like `mu-alpha` / `mu-demo` / `mu-ws`. Round-4
+  removed the previous "pre-existing sessions snapshot" source
+  (`bug_test_flake_round_4_self_heal`): leftover test residue at
+  module-load time was getting grandfathered in as protected forever,
+  defeating the self-healing intent. Cost: an ad-hoc
+  `tmux new-session -t mu-foo` with no DB row gets killed; workaround
+  is `mu workstream init foo` first. New tests can hardcode any
   workstream name they want — if they accidentally bypass the
   private socket the sweep catches them by default.
 
