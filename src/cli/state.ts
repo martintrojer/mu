@@ -193,14 +193,48 @@ export async function cmdState(db: Db, opts: StateOpts): Promise<void> {
 
   const workstreams = await resolveWorkstreamSet(db, opts);
 
-  // --all on an empty machine: render empty hint cleanly.
+  // workstreams.length === 0 splits into THREE distinct user errors,
+  // each with its own helpful message:
+  //   (a) --all on a machine with zero workstreams (truly empty universe)
+  //   (b) bare `mu state` outside a tmux session, with workstreams
+  //       on the machine but no way to auto-pick one (the most
+  //       common confusing case; bug_bare_mu_state_no_ws)
+  //   (c) bare `mu state --json`: same as (b) but JSON consumer; emit
+  //       {workstreams:[]} for back-compat
   if (workstreams.length === 0) {
     if (opts.json === true) {
       emitJson({ workstreams: [] });
       return;
     }
-    console.log(pc.dim("(no workstreams)"));
-    return;
+    const explicitAll = opts.all === true;
+    if (explicitAll) {
+      // (a) --all + truly empty machine
+      console.log(pc.dim("(no workstreams) try `mu workstream init <name>`"));
+      return;
+    }
+    // (b) bare `mu state` with no auto-resolution path. Surface the
+    // available workstreams so the user can pick one without a
+    // separate `mu workstream list` round-trip.
+    const all = await listWorkstreams(db);
+    if (all.length === 0) {
+      console.log(pc.dim("(no workstreams) try `mu workstream init <name>`"));
+      return;
+    }
+    const lines = [
+      "`mu state` could not auto-resolve a workstream.",
+      "",
+      "You're not inside a tmux session whose name matches a workstream,",
+      "and `$MU_SESSION` is unset.",
+      "",
+      `Workstreams on this machine: ${all.map((w) => w.name).join(", ")}`,
+      "",
+      "Try:",
+      `  mu state -w ${all[0]?.name ?? "<name>"}     # pick one`,
+      "  mu state --all              # render every workstream",
+      "  mu --help                   # full verb list",
+    ];
+    process.stderr.write(`${lines.join("\n")}\n`);
+    process.exit(2);
   }
 
   const eventLimit = opts.events ?? 20;
