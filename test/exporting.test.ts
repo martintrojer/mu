@@ -11,7 +11,15 @@
 //     with a one-time banner.
 //   - Auto-export at destroy time uses this same renderer.
 
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -97,13 +105,19 @@ describe("renderToBucket — single workstream", () => {
 
     const manifest = readManifest(outDir);
     expect(manifest.bucketVersion).toBe(2);
+    expect(manifest.manifest_version).toBe(2);
     expect(manifest.bucketLabel).toBeNull();
     expect(Object.keys(manifest.sources)).toEqual(["auth"]);
     const auth = manifest.sources.auth;
     expect(auth).toBeDefined();
     if (!auth) throw new Error("unreachable");
     expect(auth.tasks.map((t) => t.id)).toEqual(["build", "design"]);
+    expect(auth.tasks.map((t) => t.name)).toEqual(["build", "design"]);
     expect(auth.tasks[0]?.path).toBe("auth/tasks/build.md");
+    expect(auth.tasks[0]?.title).toBe("Build");
+    expect(auth.tasks[0]?.status).toBe("OPEN");
+    expect(auth.tasks[0]?.impact).toBe(50);
+    expect(auth.tasks[0]?.effortDays).toBe(1);
   });
 
   it("re-exports the same source-ws with zero file rewrites (sha256 short-circuit)", async () => {
@@ -166,9 +180,16 @@ describe("renderToBucket — additive across workstreams", () => {
     ]);
     // First source-ws untouched.
     expect(statSync(join(outDir, "auth/tasks/design.md")).mtimeMs).toBe(authMtime);
-    // Both sources tracked in manifest.
+    // Both sources tracked in manifest AND rendered in the bucket-level index.
     const manifest = readManifest(outDir);
     expect(Object.keys(manifest.sources).sort()).toEqual(["auth", "ui"]);
+    const bucketIndex = readFileSync(join(outDir, "INDEX.md"), "utf8");
+    expect(bucketIndex).toContain(
+      "| auth | [`design`](auth/tasks/design.md) | OPEN | 50 | 1 | 50.00 | Design |",
+    );
+    expect(bucketIndex).toContain(
+      "| ui | [`mockup`](ui/tasks/mockup.md) | OPEN | 50 | 1 | 50.00 | Mockup |",
+    );
   });
 
   it("manifest preserves bucketCreatedAt across additive re-exports", async () => {
@@ -185,6 +206,43 @@ describe("renderToBucket — additive across workstreams", () => {
     const secondManifest = readManifest(outDir);
     expect(secondManifest.bucketCreatedAt).toBe(createdAt);
     expect(secondManifest.bucketLastUpdatedAt > createdAt).toBe(true);
+  });
+
+  it("migrates a manifest_version 1 bucket by inferring compact task summaries", () => {
+    seed("auth", ["design"]);
+    const outDir = join(tmpDir, "v1-bucket");
+    exportWorkstream(db, { workstream: "auth", outDir });
+    const { manifest_version: _manifestVersion, ...manifest } = readManifest(outDir);
+    void _manifestVersion;
+    const auth = manifest.sources.auth;
+    if (!auth) throw new Error("missing auth source");
+    auth.tasks = auth.tasks.map(({ id, path, sha256 }) => ({
+      id,
+      path,
+      sha256,
+    })) as typeof auth.tasks;
+    writeFileSync(join(outDir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+
+    seed("ui", ["mockup"]);
+    const result = exportWorkstream(db, { workstream: "ui", outDir });
+
+    expect(result.manifest.manifest_version).toBe(2);
+    const authTask = result.manifest.sources.auth?.tasks[0];
+    expect(authTask).toMatchObject({
+      id: "design",
+      name: "design",
+      title: "Design",
+      status: "OPEN",
+      impact: 50,
+      effortDays: 1,
+    });
+    const bucketIndex = readFileSync(join(outDir, "INDEX.md"), "utf8");
+    expect(bucketIndex).toContain(
+      "| auth | [`design`](auth/tasks/design.md) | OPEN | 50 | 1 | 50.00 | Design |",
+    );
+    expect(bucketIndex).toContain(
+      "| ui | [`mockup`](ui/tasks/mockup.md) | OPEN | 50 | 1 | 50.00 | Mockup |",
+    );
   });
 });
 

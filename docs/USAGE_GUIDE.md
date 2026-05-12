@@ -1416,7 +1416,7 @@ subdirectory per source workstream:
 <bucket>/
   README.md           # bucket-level summary (every source-ws + dates + totals)
   INDEX.md            # union of all task tables; first column = source-ws
-  manifest.json       # bucketVersion: 2 + per-source-ws sha256 + per-task sha256
+  manifest.json       # bucketVersion: 2, manifest_version: 2, per-source-ws task summaries + sha256s
   <source-ws>/
     README.md         # per-source-ws (counts)
     INDEX.md          # per-source-ws (table of every task)
@@ -1426,12 +1426,21 @@ subdirectory per source workstream:
 Bucket exports are **additive**: `mu workstream export -w X --out
 <bucket>` creates the bucket scaffolding plus `X/` on first use,
 and a follow-up call with `-w Y --out <same-bucket>` appends a
-sibling `Y/` subdirectory without touching `X/`. Re-running with
+sibling `Y/` subdirectory without touching `X/`. The top-level
+`INDEX.md` is always the union from `manifest.sources`, so a later
+single-workstream refresh does not drop sibling workstreams from the
+bucket-wide task table. Re-running with
 the same `-w` is sha256-idempotent: only changed task files are
 rewritten (mtime preserved on identical files); tasks added since
 the previous export get fresh files; tasks deleted from the DB
 STAY on disk with a `> **Deleted from DB on <ts>**` banner so you
-never lose context that may already be git-blamed.
+never lose context that may already be git-blamed. `manifest_version:
+2` stores compact task summaries (`name`/`title`/`status`/`impact`/
+`effortDays`) beside the per-file sha256s; older v1 manifests are
+accepted on re-export; mu infers the missing summaries from existing
+per-task markdown when possible, falling back to placeholder values
+only if a task file is missing or unreadable, so the bucket remains
+appendable.
 
 ```bash
 # One-shot dump (bucket happens to contain just one source-ws)

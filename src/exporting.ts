@@ -32,20 +32,30 @@
 
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { listArchivedTasks } from "./archives.js";
 import type { Db } from "./db.js";
 import { emitEvent, latestSeq } from "./logs.js";
 import { getTaskEdges, listNotes, listTasks } from "./tasks.js";
 import type { TaskNoteRow, TaskRow } from "./tasks.js";
+import { isTaskStatus } from "./tasks/status.js";
 
 // ─── Types ───────────────────────────────────────────────────────────
 
+export const EXPORT_MANIFEST_VERSION = 2;
+
 /** One per-task summary inside a per-source-ws section of the manifest. */
 export interface ExportTaskEntry {
-  /** Task local_id == filename stem (`<id>.md`). */
+  /** Task local_id == filename stem (`<id>.md`). Kept for v1 manifest compatibility. */
   id: string;
+  /** Task local_id, duplicated under the operator-facing SDK name so bucket INDEX can render from manifest alone. */
+  name: string;
+  /** Compact summary fields needed for bucket-level INDEX.md without re-reading the DB. */
+  title: string;
+  status: TaskRow["status"];
+  impact: number;
+  effortDays: number;
   /** Path relative to the bucket root (e.g. `auth/tasks/design.md`). */
   path: string;
   /** sha256 of the markdown body bytes; idempotency key. */
@@ -70,12 +80,16 @@ export interface ExportSourceManifest {
   tasks: ExportTaskEntry[];
 }
 
-/** Top-level bucket manifest. `bucketVersion: 2` — the v0.3 shape.
- *  Manifests without `bucketVersion: 2` fall through to the
- *  `corrupt` lane in `readManifest`. */
+/** Top-level bucket manifest. `bucketVersion: 2` — the v0.3 disk layout.
+ *  `manifest_version` is the schema of the manifest JSON payload itself:
+ *  v1 lacked task summaries, v2 stores enough per-task data to render
+ *  bucket INDEX.md from `manifest.sources` alone. Manifests without
+ *  `bucketVersion: 2` fall through to the `corrupt` lane in `readManifest`. */
 export interface ExportManifest {
-  /** Schema discriminator. Always 2 in this codebase. */
+  /** Disk-layout discriminator. Always 2 in this codebase. */
   bucketVersion: 2;
+  /** Manifest-payload discriminator. Always 2 when written by this codebase. */
+  manifest_version: typeof EXPORT_MANIFEST_VERSION;
   /** Operator-chosen bucket label (an archive label, or null for a
    *  one-shot `mu workstream export`). Surfaced in README only. */
   bucketLabel: string | null;
@@ -248,6 +262,7 @@ export function renderBucketReadmeMarkdown(manifest: ExportManifest): string {
   lines.push(`- Bucket last updated at: ${manifest.bucketLastUpdatedAt}`);
   lines.push(`- mu version: ${manifest.muVersion}`);
   lines.push(`- Bucket layout version: ${manifest.bucketVersion}`);
+  lines.push(`- Manifest version: ${manifest.manifest_version}`);
   lines.push("");
   const sources = Object.entries(manifest.sources).sort(([a], [b]) => a.localeCompare(b));
   lines.push(`## Sources (${sources.length})`);
@@ -274,12 +289,34 @@ export function renderBucketReadmeMarkdown(manifest: ExportManifest): string {
 
 /** Bucket-level INDEX.md — union of every source-ws's task table,
  *  with a leading source-ws column to disambiguate cross-source. */
-export function renderBucketIndexMarkdown(input: RenderBucketInput): string {
+function taskEntryName(entry: Pick<ExportTaskEntry, "id"> & { name?: string }): string {
+  return entry.name ?? entry.id;
+}
+
+function taskEntryFromTask(task: TaskRow, path: string, sha256: string): ExportTaskEntry {
+  return {
+    id: task.name,
+    name: task.name,
+    title: task.title,
+    status: task.status,
+    impact: task.impact,
+    effortDays: task.effortDays,
+    path,
+    sha256,
+  };
+}
+
+export function renderBucketIndexMarkdown(manifest: ExportManifest): string {
   const lines: string[] = [];
-  const label = input.bucketLabel ?? "(no label)";
+  const label = manifest.bucketLabel ?? "(no label)";
   lines.push(`# ${label} — task index (all sources)`);
   lines.push("");
-  const sourcesWithTasks = input.sources.filter((s) => s.tasks.length > 0);
+  const sourcesWithTasks = Object.entries(manifest.sources)
+    .map(([name, source]) => ({
+      name,
+      tasks: source.tasks.filter((task) => task.deletedAt === undefined),
+    }))
+    .filter((source) => source.tasks.length > 0);
   if (sourcesWithTasks.length === 0) {
     lines.push("_No tasks._");
     lines.push("");
@@ -288,13 +325,14 @@ export function renderBucketIndexMarkdown(input: RenderBucketInput): string {
   lines.push("| source-ws | id | status | impact | effort | ROI | title |");
   lines.push("| --- | --- | --- | --- | --- | --- | --- |");
   // Stable sort across sources: source name then task name.
-  const sortedSources = [...input.sources].sort((a, b) => a.name.localeCompare(b.name));
+  const sortedSources = sourcesWithTasks.sort((a, b) => a.name.localeCompare(b.name));
   for (const src of sortedSources) {
     for (const t of src.tasks) {
+      const name = taskEntryName(t);
       const roi = (t.impact / t.effortDays).toFixed(2);
       const title = t.title.replace(/\|/g, "\\|");
       lines.push(
-        `| ${src.name} | [\`${t.name}\`](${src.name}/tasks/${t.name}.md) | ${t.status} | ${t.impact} | ${t.effortDays} | ${roi} | ${title} |`,
+        `| ${src.name} | [\`${name}\`](${t.path}) | ${t.status} | ${t.impact} | ${t.effortDays} | ${roi} | ${title} |`,
       );
     }
   }
@@ -340,11 +378,144 @@ export function readManifest(path: string): ManifestProbe {
   if (typeof parsed !== "object" || parsed === null) return { kind: "corrupt" };
   const obj = parsed as Record<string, unknown>;
   if (obj.bucketVersion === 2 && typeof obj.sources === "object" && obj.sources !== null) {
-    // Best-effort cast; the caller treats unknown sources as a fresh
-    // bucket if any field is malformed.
-    return { kind: "v2", manifest: obj as unknown as ExportManifest };
+    const manifest = migrateManifest(obj, dirname(path));
+    return manifest ? { kind: "v2", manifest } : { kind: "corrupt" };
   }
   return { kind: "corrupt" };
+}
+
+function migrateManifest(obj: Record<string, unknown>, bucketDir: string): ExportManifest | null {
+  const rawVersion = obj.manifest_version;
+  const version = rawVersion === undefined ? 1 : rawVersion;
+  if (version !== 1 && version !== 2) return null;
+  const sources = migrateSources(obj.sources, bucketDir);
+  if (sources === null) return null;
+  return {
+    bucketVersion: 2,
+    manifest_version: EXPORT_MANIFEST_VERSION,
+    bucketLabel:
+      typeof obj.bucketLabel === "string" || obj.bucketLabel === null ? obj.bucketLabel : null,
+    bucketCreatedAt: typeof obj.bucketCreatedAt === "string" ? obj.bucketCreatedAt : "",
+    bucketLastUpdatedAt: typeof obj.bucketLastUpdatedAt === "string" ? obj.bucketLastUpdatedAt : "",
+    muVersion: typeof obj.muVersion === "string" ? obj.muVersion : "unknown",
+    sources,
+  };
+}
+
+function migrateSources(
+  raw: unknown,
+  bucketDir: string,
+): Record<string, ExportSourceManifest> | null {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null;
+  const out: Record<string, ExportSourceManifest> = {};
+  for (const [sourceName, value] of Object.entries(raw)) {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+    const source = value as Record<string, unknown>;
+    const tasks = Array.isArray(source.tasks)
+      ? source.tasks.map((task) => migrateTaskEntry(sourceName, task, bucketDir))
+      : [];
+    if (tasks.some((task) => task === null)) return null;
+    out[sourceName] = {
+      addedAt: typeof source.addedAt === "string" ? source.addedAt : "",
+      lastReExportedAt: typeof source.lastReExportedAt === "string" ? source.lastReExportedAt : "",
+      eventsSeqAtExport:
+        typeof source.eventsSeqAtExport === "number" ? source.eventsSeqAtExport : 0,
+      tasks: tasks.filter((task): task is ExportTaskEntry => task !== null),
+    };
+  }
+  return out;
+}
+
+function migrateTaskEntry(
+  sourceName: string,
+  raw: unknown,
+  bucketDir: string,
+): ExportTaskEntry | null {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null;
+  const entry = raw as Record<string, unknown>;
+  const id = typeof entry.id === "string" ? entry.id : undefined;
+  const name = typeof entry.name === "string" ? entry.name : id;
+  const path = typeof entry.path === "string" ? entry.path : `${sourceName}/tasks/${name ?? ""}.md`;
+  const inferred = inferTaskSummaryFromMarkdown(join(bucketDir, path), name ?? id ?? "");
+  const title = typeof entry.title === "string" ? entry.title : inferred.title;
+  const status =
+    typeof entry.status === "string" && isTaskStatus(entry.status) ? entry.status : inferred.status;
+  const impact =
+    typeof entry.impact === "number" && Number.isFinite(entry.impact)
+      ? entry.impact
+      : inferred.impact;
+  const effortDays =
+    typeof entry.effortDays === "number" &&
+    Number.isFinite(entry.effortDays) &&
+    entry.effortDays > 0
+      ? entry.effortDays
+      : inferred.effortDays;
+  const sha256 = typeof entry.sha256 === "string" ? entry.sha256 : "";
+  if (!id || !name) return null;
+  const migrated: ExportTaskEntry = {
+    id,
+    name,
+    title,
+    status,
+    impact,
+    effortDays,
+    path,
+    sha256,
+  };
+  if (typeof entry.deletedAt === "string") migrated.deletedAt = entry.deletedAt;
+  return migrated;
+}
+
+function inferTitleFromPath(path: string, fallback: string): string {
+  const stem = basename(path).replace(/\.md$/, "");
+  return stem || fallback || "(unknown title; manifest v1 fallback)";
+}
+
+function inferTaskSummaryFromMarkdown(
+  path: string,
+  fallbackName: string,
+): Pick<ExportTaskEntry, "title" | "status" | "impact" | "effortDays"> {
+  const fallback = {
+    title: inferTitleFromPath(path, fallbackName),
+    status: "OPEN" as TaskRow["status"],
+    impact: 0,
+    effortDays: 1,
+  };
+  if (!existsSync(path)) return fallback;
+  let raw: string;
+  try {
+    raw = readFileSync(path, "utf8");
+  } catch {
+    return fallback;
+  }
+  const lines = raw.split("\n");
+  const firstFence = lines.findIndex((line) => line === "---");
+  if (firstFence < 0) return fallback;
+  let secondFence = -1;
+  for (let i = firstFence + 1; i < lines.length; i += 1) {
+    if (lines[i] === "---") {
+      secondFence = i;
+      break;
+    }
+  }
+  if (secondFence < 0) return fallback;
+  const fields: Record<string, string> = {};
+  for (let i = firstFence + 1; i < secondFence; i += 1) {
+    const line = lines[i] ?? "";
+    const colon = line.indexOf(":");
+    if (colon < 0) continue;
+    fields[line.slice(0, colon).trim()] = line.slice(colon + 1).trim();
+  }
+  const status = fields.status && isTaskStatus(fields.status) ? fields.status : fallback.status;
+  const impact = Number(fields.impact);
+  const effortDays = Number(fields.effort_days);
+  const titleLine = lines.slice(secondFence + 1).find((line) => line.startsWith("# "));
+  return {
+    title: titleLine ? titleLine.slice(2).trim() : fallback.title,
+    status,
+    impact: Number.isFinite(impact) ? impact : fallback.impact,
+    effortDays: Number.isFinite(effortDays) && effortDays > 0 ? effortDays : fallback.effortDays,
+  };
 }
 
 // ─── sha256 + mu version ─────────────────────────────────────────────
@@ -405,6 +576,7 @@ export function renderToBucket(input: RenderBucketInput): RenderBucketResult {
   const manifest: ExportManifest = previous
     ? {
         bucketVersion: 2,
+        manifest_version: EXPORT_MANIFEST_VERSION,
         bucketLabel: input.bucketLabel ?? previous.bucketLabel,
         bucketCreatedAt: previous.bucketCreatedAt,
         bucketLastUpdatedAt: now,
@@ -413,6 +585,7 @@ export function renderToBucket(input: RenderBucketInput): RenderBucketResult {
       }
     : {
         bucketVersion: 2,
+        manifest_version: EXPORT_MANIFEST_VERSION,
         bucketLabel: input.bucketLabel,
         bucketCreatedAt: now,
         bucketLastUpdatedAt: now,
@@ -432,7 +605,7 @@ export function renderToBucket(input: RenderBucketInput): RenderBucketResult {
     const previousSource = previous?.sources[source.name];
     const previousById = new Map<string, ExportTaskEntry>();
     if (previousSource) {
-      for (const t of previousSource.tasks) previousById.set(t.id, t);
+      for (const t of previousSource.tasks) previousById.set(taskEntryName(t), t);
     }
 
     const liveIds = new Set(source.tasks.map((t) => t.name));
@@ -457,13 +630,13 @@ export function renderToBucket(input: RenderBucketInput): RenderBucketResult {
         writeFileSync(absPath, md, "utf8");
         written += 1;
       }
-      manifestEntries.push({ id: task.name, path: relPath, sha256: sha });
+      manifestEntries.push(taskEntryFromTask(task, relPath, sha));
     }
 
     // Preserve files for tasks that disappeared from the source.
     // Banner is one-time (idempotent across re-exports).
     for (const prev of previousById.values()) {
-      if (liveIds.has(prev.id)) continue;
+      if (liveIds.has(taskEntryName(prev))) continue;
       const absPath = join(outDir, prev.path);
       const deletedAt = prev.deletedAt ?? now;
       if (existsSync(absPath)) {
@@ -477,7 +650,7 @@ export function renderToBucket(input: RenderBucketInput): RenderBucketResult {
     }
 
     // Stable order — diffs across re-exports stay clean.
-    manifestEntries.sort((a, b) => a.id.localeCompare(b.id));
+    manifestEntries.sort((a, b) => taskEntryName(a).localeCompare(taskEntryName(b)));
 
     // Per-source-ws scaffolding (cheap; always rewritten — but the
     // sha256 short-circuit on `tasks/<id>.md` is what matters for
@@ -505,19 +678,12 @@ export function renderToBucket(input: RenderBucketInput): RenderBucketResult {
     preservedTotal += preserved;
   }
 
-  // Bucket-level scaffolding: covers EVERY source-ws in the
-  // (possibly merged) manifest, not just the ones in this call.
-  // The bucket README/INDEX must reflect untouched siblings too.
-  // To render the bucket INDEX we need TaskRow shapes for siblings
-  // we did NOT pass in this call; we don't have them. Compromise:
-  // the bucket INDEX renders ONLY the sources whose data we have
-  // in `input.sources`. This is honest about what this call refreshed
-  // and matches the additive semantics: mu archive export passes
-  // every source; mu workstream export passes one and the bucket
-  // INDEX shrinks to that one source. Operators who care about the
-  // global table use mu archive export.
+  // Bucket-level scaffolding covers EVERY source-ws in the merged
+  // manifest, not just the ones refreshed by this call. Manifest v2
+  // carries compact task summaries so INDEX.md can remain a true
+  // cross-source union after additive one-workstream re-exports.
   const bucketReadme = renderBucketReadmeMarkdown(manifest);
-  const bucketIndex = renderBucketIndexMarkdown(input);
+  const bucketIndex = renderBucketIndexMarkdown(manifest);
   writeFileSync(join(outDir, "README.md"), bucketReadme, "utf8");
   writeFileSync(join(outDir, "INDEX.md"), bucketIndex, "utf8");
 

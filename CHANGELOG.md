@@ -672,6 +672,15 @@ is opt-in via the new `--tui` flag.
   existing TitledBox frame-height source guard. While there, the
   Tracks card now renders the singular `1 task` count instead of
   `1 tasks`.
+- **Bucket-level export INDEX.md stays additive across one-workstream refreshes**
+  (review_repo_export_bucket_index_not_additive). The renderer now
+  writes `manifest_version: 2` and stores compact task summaries
+  (`name` / `title` / `status` / `impact` / `effortDays`) in each
+  `manifest.sources[].tasks[]` entry, so the top-level `INDEX.md`
+  renders the union from the merged manifest instead of only the
+  `input.sources` for the current call. v1 manifests are accepted
+  on re-export by inferring summaries from existing task markdown
+  where possible, then rewritten as v2.
 - **Archive re-adds now document their snapshot-only contract**
   (review_repo_archive_events_not_incremental). `mu archive add`
   still targets end-of-milestone snapshot-and-destroy flows rather

@@ -789,6 +789,7 @@ describe("exportWorkstream", () => {
     expect(result.preserved).toBe(0);
     expect(result.source.tasks.map((t) => t.id)).toEqual(["build", "design", "ship"]);
     expect(result.manifest.bucketVersion).toBe(2);
+    expect(result.manifest.manifest_version).toBe(2);
     expect(Object.keys(result.manifest.sources)).toEqual(["auth"]);
     // Bucket layout: top-level scaffolding + per-source-ws subdir.
     expect(exportFiles(outDir)).toEqual([
