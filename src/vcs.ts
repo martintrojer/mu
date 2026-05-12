@@ -619,9 +619,11 @@ export const gitBackend: VcsBackend = {
     }
     let committedRef: string | undefined;
     if (opts.commit) {
-      // Commit only if there's anything to commit. `git diff --quiet`
-      // returns 0 when clean, 1 when dirty.
-      const dirty = await isGitDirty(opts.workspacePath);
+      // Commit only if there's anything to commit. Reuse the same
+      // dirty-file semantics as isClean() and rebaseTo(): `git status
+      // --porcelain` includes working-tree, staged, and untracked-not-
+      // ignored changes.
+      const dirty = (await listGitDirtyFiles(opts.workspacePath)).length > 0;
       if (dirty) {
         await run("git", ["add", "-A"], opts.workspacePath);
         await run(
@@ -700,8 +702,7 @@ async function resolveGitMainRef(workspacePath: string): Promise<string | undefi
 async function listGitDirtyFiles(workspacePath: string): Promise<string[]> {
   // `git status --porcelain` prints one line per changed file with
   // a 2-char status prefix; trim the prefix to get the path. Untracked
-  // files appear as `?? path` and are included by default — same
-  // strictness as isGitDirty (which used three independent commands).
+  // files appear as `?? path` and are included by default.
   const { stdout } = await exec("git", ["status", "--porcelain"], { cwd: workspacePath });
   const lines = stdout.split("\n").filter((l) => l.length > 0);
   return lines.map((l) => l.slice(3));
@@ -719,25 +720,6 @@ async function listGitUnmergedPaths(workspacePath: string): Promise<string[]> {
   } catch {
     return [];
   }
-}
-
-async function isGitDirty(workspacePath: string): Promise<boolean> {
-  // Three independent checks: working-tree changes, staged changes,
-  // untracked-but-not-ignored files. Any of the three → dirty.
-  try {
-    await exec("git", ["diff", "--quiet"], { cwd: workspacePath });
-  } catch {
-    return true;
-  }
-  try {
-    await exec("git", ["diff", "--cached", "--quiet"], { cwd: workspacePath });
-  } catch {
-    return true;
-  }
-  const { stdout } = await exec("git", ["ls-files", "--others", "--exclude-standard"], {
-    cwd: workspacePath,
-  });
-  return stdout.trim().length > 0;
 }
 
 /**

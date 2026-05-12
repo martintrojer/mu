@@ -133,7 +133,7 @@ export class AgentNotFoundError extends Error implements HasNextSteps {
   errorNextSteps(): NextStep[] {
     return [
       { intent: "List agents in current workstream", command: "mu agent list" },
-      { intent: "List agents across ALL workstreams", command: "mu agent list -w *" },
+      { intent: "List workstreams to choose the right scope", command: "mu workstream list" },
       {
         intent: "Spawn it now",
         command: `mu agent spawn ${this.agentName} -w <workstream>`,

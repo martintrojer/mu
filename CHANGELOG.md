@@ -351,6 +351,23 @@ is opt-in via the new `--tui` flag.
   `--all` on a truly empty machine still prints a helpful hint.
   `--json` callers continue to get `{workstreams: []}` for back-compat.
 
+### Repo cleanups
+
+- Dropped the unused `zod` runtime dependency and refreshed the lockfile.
+- Removed dead `mu agent list --all` documentation/next-step residue:
+  `mu agent list` remains explicitly workstream-scoped, and typed hints
+  now point users to `mu workstream list` before choosing a scope.
+- Purged vestigial HUD-era helpers/comments: deleted the unused
+  `currentPaneSize()` tmux helper, removed the HUD-only rationale from
+  the `mu state -n/--lines` alias, and updated stale internal comments
+  to the static-state/TUI model.
+- `mu workspace commits --json` now keeps the collection envelope while
+  preserving the metadata the SDK already computes:
+  `{items,count,vcs,baseRef,workspacePath}`.
+- Git workspace dirtiness now has one source of truth: `freeWorkspace`
+  reuses `listGitDirtyFiles().length > 0`, and the duplicate
+  `isGitDirty()` helper is gone.
+
 ### TUI internals
 
 - **Yank OSC-52 branch + platform-conditional probe now have real

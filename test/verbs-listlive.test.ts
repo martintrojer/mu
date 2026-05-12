@@ -106,11 +106,11 @@ describe("listLiveAgents", () => {
     expect(getAgent(db, "ghost", "auth")).toBeUndefined();
   });
 
-  // mode propagation — status pollers (mu hud / mu state / mu attach
-  // / bare mu) MUST pass mode: "status-only" and read-only diagnostic
-  // verbs (mu doctor / mu undo) MUST pass mode: "report-only" so the
-  // periodic poll doesn't race a long-running spawn (see
-  // bug_agent_spawn_workspace_fk_failure: a `watch -n 5 mu hud` was
+  // mode propagation — status pollers (mu state / mu attach / bare mu)
+  // MUST pass mode: "status-only" and read-only diagnostic verbs (mu
+  // doctor / mu undo) MUST pass mode: "report-only" so the periodic
+  // poll doesn't race a long-running spawn (see
+  // bug_agent_spawn_workspace_fk_failure: a watched state card was
   // pruning the spawn's placeholder agent row mid-`git worktree add`,
   // surfacing as a confusing FOREIGN KEY constraint failure on the
   // subsequent vcs_workspaces INSERT).

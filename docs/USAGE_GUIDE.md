@@ -222,9 +222,10 @@ $ mu task list -w foo --json
 ```
 
 `count` is `items.length` pre-computed so `jq '.count'` is one less
-hop than `jq '.items | length'`. Future siblings (e.g. `baseRef` on
-`mu workspace commits`, `behindCount` on `mu workspace list`) layer
-on without breaking the existing two fields.
+hop than `jq '.items | length'`. Future siblings layer on without
+breaking the existing two fields. Today `mu workspace commits --json`
+also includes `vcs`, `baseRef`, and `workspacePath` siblings because
+that verb already computes the workspace's fork metadata.
 
 Applies to: `mu task list / next / owned-by / notes`,
 `mu workstream list`, `mu workstream destroy --empty` (dry-run),
@@ -985,7 +986,7 @@ while (( ${#in_flight[@]} > 0 )); do
   ws=${closed%%/*}
   # `mu workspace commits --json` knows the workspace's parent_ref
   # so this is one verb instead of `cd $(mu workspace path) && git log`.
-  sha=$(mu workspace commits "$worker" -w "$ws" --json | jq -r '.[-1].sha')
+  sha=$(mu workspace commits "$worker" -w "$ws" --json | jq -r '.items[-1].sha')
   git cherry-pick "$sha"
 
   # 2. Verify

@@ -276,7 +276,7 @@ describe("--json output on read verbs", () => {
     // number of object keys) regardless of agent count. The fix
     // matches mission-control's flat shape: agents is the array,
     // orphans is its own top-level key.
-    // Per merge_state_into_hud_render_mode (v0.3): mu state --json
+    // mu state --json emits the full static state-card shape.
     // emits the unified flat shape — { workstreamName, agents,
     // orphans, tracks, ready, blocked, inProgress, recentClosed,
     // workspaces, recent } (no nested `tasks` wrapper, no

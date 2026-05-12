@@ -163,9 +163,10 @@ independent tmux sessions, fully isolated.
 - **`mu agent attach`** → attach to the whole workstream's tmux session
 - **`mu agent attach <agent>`** → attach and focus that agent's window/pane
 - **`mu agent list`** shows only the current workstream's agents by default
-- **`mu agent list --all`** shows agents across all workstreams on the box
-- **`session_id`** is the partition key on the `agents` table; queries
-  filter to the active session unless `--all` is set
+- **`mu agent list`** is scoped to one workstream; list workstreams first,
+  then run `mu agent list -w <workstream>` for the scope you want
+- **`session_id`** is the partition key on the `agents` table; agent-list
+  queries filter to the active workstream
 - **`mu doctor`** warns about cross-session pollution (orphan panes,
   ghost rows, agents whose tmux session no longer exists)
 

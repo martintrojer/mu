@@ -674,7 +674,7 @@ export function buildProgram(): Command {
     // to a workstreams-discovery view instead of erroring. Accepts
     // --json so scripts can drive the same picture programmatically.
     // Bare `mu` is an alias for `mu state --mission` (the stripped
-    // 5-col glance card). Per merge_state_into_hud_render_mode (v0.3):
+    // 5-col glance card):
     // route through cmdState with mission=true so there's exactly one
     // implementation of the glance render. -w accepts the same
     // variadic shape every other render mode does.

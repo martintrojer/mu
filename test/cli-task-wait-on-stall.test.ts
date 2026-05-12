@@ -21,10 +21,10 @@
 // test/tasks.test.ts ("--on-stall exit: a beforePoll throw pre-empts
 // the stuck-check throw"). An integration version of that test is
 // unavoidably racy: tick 0 snapshot vs tmux's pane-death propagation
-// can land in either order depending on system load (a `mu state
-// --hud` background process running concurrently is enough to
-// trigger a spurious reaper-flip in the wait pipeline). The SDK
-// seam reaches the same assertion deterministically.
+// can land in either order depending on system load (a watched
+// state card running concurrently is enough to trigger a spurious
+// reaper-flip in the wait pipeline). The SDK seam reaches the same
+// assertion deterministically.
 
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -50,7 +50,7 @@ describe("mu task wait --on-stall warn|exit", () => {
   // tmux executor below reports them all as live (otherwise the
   // per-poll reconcile would treat them as ghosts and reap them —
   // exactly the failure mode that breaks integration runs of this
-  // test under load from a background `mu state --hud` or similar).
+  // test under load from a background watched state card or similar).
   const liveAgentPaneIds = new Set<string>();
 
   beforeEach(() => {

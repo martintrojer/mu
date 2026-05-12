@@ -221,7 +221,7 @@ export async function cmdRead(
 
 export async function cmdList(
   db: Db,
-  opts: { workstream?: string; all?: boolean; json?: boolean },
+  opts: { workstream?: string; json?: boolean },
 ): Promise<void> {
   const workstream = await resolveWorkstream(opts.workstream);
   const view = await listLiveAgents(db, { workstream });

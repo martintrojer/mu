@@ -17,6 +17,7 @@
 // test/workspace-backends.test.ts.
 
 import { execFileSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -30,6 +31,7 @@ import {
   listCommitsForWorkspace,
 } from "../src/workspace.js";
 import { ensureWorkstream } from "../src/workstream.js";
+import { runCli } from "./_runCli.js";
 
 let stateRoot: string;
 let projectRoot: string;
@@ -273,6 +275,43 @@ gitDescribe("listCommitsForWorkspace + git", () => {
     });
     expect(r.baseRef).toBe("HEAD");
     expect(r.commits).toEqual([]);
+  });
+
+  it("CLI --json keeps commits in collection envelope and includes workspace metadata", async () => {
+    const ws = await createWorkspace(db, {
+      agent: "worker-1",
+      workstream: "auth",
+      projectRoot,
+      backend: "git",
+    });
+    writeFileSync(join(ws.path, "z.txt"), "z\n");
+    execFileSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", "add", "."], {
+      cwd: ws.path,
+    });
+    execFileSync(
+      "git",
+      ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "draft"],
+      { cwd: ws.path },
+    );
+    const { stdout, exitCode, error } = await runCli(
+      ["workspace", "commits", "worker-1", "-w", "auth", "--json"],
+      join(dbDir, "mu.db"),
+    );
+    expect(error).toBeUndefined();
+    expect(exitCode).toBeNull();
+    const env = JSON.parse(stdout.trim()) as {
+      items: Array<{ subject: string }>;
+      count: number;
+      vcs: string;
+      baseRef: string;
+      workspacePath: string;
+    };
+    expect(env.count).toBe(1);
+    expect(env.items[0]?.subject).toBe("draft");
+    expect(env.vcs).toBe("git");
+    expect(env.baseRef).toBe(ws.parentRef);
+    expect(env.workspacePath).toBe(ws.path);
+    expect(existsSync(env.workspacePath)).toBe(true);
   });
 });
 

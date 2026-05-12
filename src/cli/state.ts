@@ -1,6 +1,6 @@
 // mu — `mu state` (canonical state card) + bare `mu` (mission control).
 //
-// One verb, three render modes (merge_state_into_hud_render_mode, v0.3):
+// One verb, three render modes:
 //
 //   mu state                    full card: agents + orphans + tracks +
 //                               ready/in-progress/blocked/recent-closed +
@@ -11,31 +11,26 @@
 //                               attention surface; SQL/raw verbs as the
 //                               escape hatch underneath).
 //
-//   mu state --hud              dynamic-fit render: greedy top-down table
-//                               layout that fills the terminal (or tmux
-//                               pane) height + width with as much useful
-//                               data as fits. Section ordering is fixed:
-//                               header / agents / ready / in-progress /
-//                               tracks / recent. Truncated tables get a
-//                               "… +N more (<verb>)" footer. Designed for
-//                               `watch -n 5 mu state --hud` /
-//                               `tmux display-popup -E 'mu state --hud'`.
+//   mu state --tui              interactive ink dashboard: glance cards,
+//                               fullscreen popups, live tick, read-only
+//                               act-intents that yank commands for the
+//                               user to run in a shell.
 //
 //   mu state --mission          stripped 5-column glance card: agents +
 //                               orphans + tracks + ready. The bare-`mu`
 //                               muscle-memory orient call ("what's going
 //                               on?"). Bare `mu` (no verb) is an alias.
 //
-// All three modes share the same data set (loaded once via
-// loadWorkstreamData); only the rendering strategy differs. --hud and
-// --mission are mutually exclusive.
+// Static modes share the same data set (loaded once via
+// loadWorkstreamSnapshot); only the rendering strategy differs. --tui
+// is mutually exclusive with --json and --mission.
 //
-// All three modes support variadic `-w X[,Y]...` / `-w X -w Y` and
-// `--all`. N=1 renders single-mode (legacy shape); N≥2 stacks per-
-// workstream cards (full / mission) or unions with a leading workstream
-// column (hud).
+// All modes support variadic `-w X[,Y]...` / `-w X -w Y` and `--all`.
+// In static modes N=1 renders single-mode (legacy shape) and N≥2
+// stacks per-workstream cards (full / mission). In TUI mode N≥2
+// switches workstreams via tabs.
 //
-// All three modes pass mode: "status-only" to listLiveAgents — refresh
+// All modes pass mode: "status-only" to listLiveAgents — refresh
 // status + pane title (the operator's primary signal) but skip prune
 // + reap, so the periodic poll never deletes mid-spawn placeholders
 // (bug_agent_spawn_workspace_fk_failure) and the pane border indicator
@@ -83,8 +78,8 @@ type PerWsData = WorkstreamSnapshot;
 //
 // N=1 (single -w value, --all on a single-workstream machine, or
 // auto-resolve) renders single-mode (legacy column shape + flat JSON).
-// N≥2 grows the workstream-summary table to N rows (hud) or stacks
-// per-ws cards (full / mission).
+// N≥2 stacks per-workstream cards in static modes or opens tabbed
+// per-workstream snapshots in TUI mode.
 
 export interface StateOpts {
   // Variadic on every render mode.
@@ -129,9 +124,8 @@ async function resolveWorkstreamSet(db: Db, opts: StateOpts): Promise<string[]> 
 
 // ─── JSON shape ─────────────────────────────────────────────────────
 //
-// Per merge_state_into_hud_render_mode (v0.3): unified single flat
-// shape across `mu state` and `mu state --hud`. `--mission` emits a
-// stripped subset for the muscle-memory glance use case.
+// Unified single flat shape for `mu state --json`. `--mission` emits
+// a stripped subset for the muscle-memory glance use case.
 
 function fullJsonShape(d: PerWsData): Record<string, unknown> {
   return {
@@ -265,9 +259,9 @@ export async function cmdState(db: Db, opts: StateOpts): Promise<void> {
   }
 
   // ── Interactive TUI branch (opt-in via --tui) ──
-  // The TUI replaces the old --hud render mode. It is OPT-IN: the
-  // legacy static card is the default for `mu state` so it stays
-  // visible to LLMs, screenshots, docs, and muscle-memory users.
+  // The TUI is OPT-IN: the legacy static card is the default for
+  // `mu state` so it stays visible to LLMs, screenshots, docs, and
+  // muscle-memory users.
   // See feat_resurrect_state_card (workstream `tui-impl`) for the
   // rationale on demoting the prior TTY auto-route. Mutual-exclusion
   // with --json / --mission is enforced earlier (above the JSON
@@ -455,7 +449,7 @@ export function wireStateCommands(program: Command): void {
   program
     .command("state")
     .description(
-      "Canonical state card: agents + orphans + tracks + ready/in-progress/blocked/recent-closed tasks + workspaces + recent events. The 'what does an LLM look at first?' verb. JSON-first. Default prints the static card; pass --tui to enter the interactive ink-based dashboard (replaces the old --hud). --mission emits the stripped 5-col glance card (agents + orphans + tracks + ready) — bare `mu` is an alias. -w accepts repeat or comma-separate (or both); --all is sugar for every workstream on this machine. N≥2 stacks per-workstream cards (full / mission).",
+      "Canonical state card: agents + orphans + tracks + ready/in-progress/blocked/recent-closed tasks + workspaces + recent events. The 'what does an LLM look at first?' verb. JSON-first. Default prints the static card; pass --tui to enter the interactive ink-based dashboard. --mission emits the stripped 5-col glance card (agents + orphans + tracks + ready) — bare `mu` is an alias. -w accepts repeat or comma-separate (or both); --all is sugar for every workstream on this machine. N≥2 stacks per-workstream cards (full / mission).",
     )
     .option(
       "-w, --workstream <names...>",
@@ -472,7 +466,7 @@ export function wireStateCommands(program: Command): void {
       "how many recent kind=event log entries to include (default 20)",
       parseLines,
     )
-    .option("-n, --lines <n>", "alias for --events (kept for --hud muscle memory)", parseLines)
+    .option("-n, --lines <n>", "alias for --events", parseLines)
     .option(...JSON_OPT)
     .action(function () {
       const opts = (this as Command).opts() as StateOpts;

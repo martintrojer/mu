@@ -742,7 +742,7 @@ export interface ListLiveAgentsOptions {
    * documented mutating behaviour `mu agent list` has always had).
    *
    * Read-only callers split two ways:
-   *   - `mu hud`, `mu state`, bare `mu`, `mu agent attach` →
+   *   - `mu state`, bare `mu`, `mu agent attach` →
    *     `"status-only"`: refresh status + title (writes to DB),
    *     skip prune + reap. The operator's primary signal
    *     (busy/needs_input) stays fresh without a periodic poll
@@ -776,10 +776,10 @@ export interface LiveAgentsView {
 /**
  * Return the live, reality-reconciled view of agents in a workstream.
  * `mu agent list` calls this with `mode: "full"` (mutating); status
- * pollers (`mu hud`, `mu state`, bare `mu`, `mu agent attach`) call
- * it with `mode: "status-only"` to refresh status without pruning;
- * read-only diagnostic / restore paths (`mu doctor`, `mu undo`)
- * call it with `mode: "report-only"` to mutate nothing at all.
+ * pollers (`mu state`, bare `mu`, `mu agent attach`) call it with
+ * `mode: "status-only"` to refresh status without pruning; read-only
+ * diagnostic / restore paths (`mu doctor`, `mu undo`) call it with
+ * `mode: "report-only"` to mutate nothing at all.
  */
 export async function listLiveAgents(db: Db, opts: ListLiveAgentsOptions): Promise<LiveAgentsView> {
   const report = await reconcile(db, {

@@ -1,20 +1,18 @@
-// Tests for the unified `mu state` verb (three render modes).
+// Tests for the unified `mu state` verb.
 //
-// Per merge_state_into_hud_render_mode (v0.3) `mu state` absorbed the
-// old `mu hud` verb and the bare-`mu` glance card. There is now ONE
-// verb with THREE render modes and ONE flat data shape:
+// `mu state` owns the static state card, the bare-`mu` glance card,
+// and the opt-in TUI:
 //
 //   mu state             default: full top-to-bottom card
-//   mu state --hud       dynamic-fit budget renderer (`watch` / popup)
+//   mu state --tui       interactive ink dashboard (read-only)
 //   mu state --mission   stripped 5-col glance card (bare-`mu` alias)
 //
-// `--hud` and `--mission` are mutually exclusive; the flag toggles
-// render strategy ONLY (the data set is identical). All three accept
-// variadic `-w X[,Y]...` / `-w X -w Y` and `--all`.
+// `--tui` is mutually exclusive with `--json` and `--mission`. All
+// modes accept variadic `-w X[,Y]...` / `-w X -w Y` and `--all`.
 //
-// Tests exercise: full render, hud render (incl. truncation +
-// MU_HUD_FORCE_SIZE plumbing), mission render, mutual-exclusion
-// error, cross-workstream handling, and JSON shapes per spec.
+// Tests exercise: full render, mission render, mutual-exclusion error,
+// cross-workstream handling, and JSON shapes per spec. TUI specifics
+// live in the `test/tui-*.test.ts` files.
 
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -189,7 +187,7 @@ describe("mu state --mission — stripped glance card", () => {
   });
 });
 
-// ── --hud + --mission mutually exclusive ───────────────────────────
+// ── mutual exclusion + cross-workstream ────────────────────────────
 
 describe("mu state — mutual-exclusion + cross-workstream", () => {
   let tempDir: string;
@@ -211,8 +209,6 @@ describe("mu state — mutual-exclusion + cross-workstream", () => {
     try {
       rmSync(tempDir, { recursive: true, force: true });
     } catch {}
-    const key = "MU_HUD_FORCE_SIZE";
-    delete process.env[key];
   });
 
   it("--all + -w errors as a UsageError (mutually exclusive)", async () => {
@@ -247,8 +243,8 @@ describe("mu state — mutual-exclusion + cross-workstream", () => {
 // ── classifyEventVerb regression: every emitter verb is recognised ──
 //
 // Per the TUI refactor (Wave 2 Task 10): the parsing half of the previous
-// HUD-mode `colorEventPayload` lives at src/logs.ts as `classifyEventVerb`
-// (verb extraction only; renderers apply their own colour). This block
+// event colourer lives at src/logs.ts as `classifyEventVerb` (verb
+// extraction only; renderers apply their own colour). This block
 // preserves the old guarantees verbatim, just without the cyan part:
 // (a) every entry in EVENT_VERB_PREFIXES round-trips, (b) every
 // emitEvent callsite under src/ uses a payload prefix that is

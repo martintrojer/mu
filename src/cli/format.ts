@@ -104,7 +104,7 @@ export function truncateFront(s: string, max: number): string {
  *  '12s', '3m', '1h', '2d', '3w'. Used by the task list table when
  *  `--sort recency`/`--sort age` is active so the timeframe the user
  *  is sorting by is visible. Mirrors the helper in src/cli/state.ts
- *  (hud render mode); kept in sync (the hud version omits weeks because it shows tighter
+ *  (TUI renderers); kept in sync (the TUI version omits weeks because it shows tighter
  *  windows, but for task list a 5w-old item is real and worth a tag).
  */
 export function relTime(ms: number): string {

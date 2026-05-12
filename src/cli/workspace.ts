@@ -208,7 +208,13 @@ export async function cmdWorkspaceCommits(
   if (opts.since !== undefined) listOpts.since = opts.since;
   const r = await listCommitsForWorkspace(db, agent, listOpts);
   if (opts.json) {
-    emitJsonCollection(r.commits);
+    emitJson({
+      items: r.commits,
+      count: r.commits.length,
+      vcs: r.vcs,
+      baseRef: r.baseRef,
+      workspacePath: r.workspacePath,
+    });
     return;
   }
   if (r.commits.length === 0) {
@@ -445,7 +451,7 @@ export function wireWorkspaceCommands(program: Command): void {
   workspace
     .command("commits <agent>")
     .description(
-      "Print commits the agent's workspace has on top of its recorded parent_ref (the fork point), oldest-first. Default text output is `<sha> <subject>` per line; --json emits the full array `[{sha, subject, body, authorDate}]` for piping. --since <ref> overrides the base. The `none` backend errors (no fork point to compare against).",
+      "Print commits the agent's workspace has on top of its recorded parent_ref (the fork point), oldest-first. Default text output is `<sha> <subject>` per line; --json emits `{items,count,vcs,baseRef,workspacePath}` for piping. --since <ref> overrides the base. The `none` backend errors (no fork point to compare against).",
     )
     .option("--since <ref>", "override the base ref (default: workspace's recorded parent_ref)")
     .option(...WORKSTREAM_OPT)

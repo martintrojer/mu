@@ -21,8 +21,8 @@ import picocolors from "picocolors";
  * inspection (NO_COLOR / FORCE_COLOR / isTTY) ONCE at module-load
  * time. That makes the function untestable without dynamic re-imports
  * — and worse, it loses colors whenever stdout is a pipe, most
- * painfully under `watch --color mu hud` and `tmux display-popup -E
- * mu hud | cat`, where the surrounding pane is a real terminal but
+ * painfully under `watch --color mu state` and `tmux display-popup -E
+ * 'mu state' | cat`, where the surrounding pane is a real terminal but
  * our own stdout is a pipe.
  *
  * We therefore re-implement the decision from scratch at call time,
@@ -46,7 +46,7 @@ import picocolors from "picocolors";
  *     TERM !== "dumb". This mirrors what picocolors itself does in
  *     `isColorSupported` for the happy-path case.
  *
- * See task hud_colors_stripped_under_watch_and for the full repro.
+ * See task hud_colors_stripped_under_watch_and for the original repro.
  */
 export function colorEnabled(): boolean {
   if (process.env.NO_COLOR !== undefined) return false;
@@ -120,13 +120,13 @@ export function printNextStepsTo(steps: readonly NextStep[], sink: "stdout" | "s
  * `wordWrap: false` (cells wider than their column truncate with `…`
  * instead of wrapping to a second visual row), per-column max widths
  * applied only where the caller asks (`null` = auto), and a default
- * borderless style mirroring the HUD/workspace/workstream tables.
+ * borderless style mirroring the state/workspace/workstream tables.
  *
  * Callers should pre-truncate values they care about via the
  * `truncate()` / `truncateFront()` helpers in cli.ts (the proactive
  * path); `wordWrap: false` is the safety belt for the cells they
- * miss. See HUD's `newHudTable` for the load-bearing rationale
- * (src/cli/state.ts — hud render mode).
+ * miss. This is load-bearing for renderers with fixed row budgets:
+ * a single wrapped cell silently blows out the promised section height.
  *
  * Surfaced live by `mu workspace list` blowing the terminal width on
  * the `path` column (tables_truncate_long_cols_audit). Don't try to

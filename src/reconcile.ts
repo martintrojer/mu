@@ -39,9 +39,9 @@ import { type TmuxPane, capturePane, listPanesInSession } from "./tmux.js";
  *                 pane title — desired side-effects of a refresh) and
  *                 orphan surface. Does NOT prune (so a dead pane's
  *                 row stays visible until a real `mu agent list`) and
- *                 does NOT reap. Used by `mu state`, `mu hud`, bare
- *                 `mu`, and `mu agent attach` — the verbs an operator
- *                 polls to answer "is worker-X busy or idle right
+ *                 does NOT reap. Used by `mu state`, bare `mu`, and
+ *                 `mu agent attach` — the verbs an operator polls to
+ *                 answer "is worker-X busy or idle right
  *                 now?". Status detection skips placeholder agents
  *                 whose pane id starts with `%pending-` (mid-spawn,
  *                 no usable scrollback yet).
@@ -57,7 +57,7 @@ import { type TmuxPane, capturePane, listPanesInSession } from "./tmux.js";
  *
  * Surfaced live by bug_pane_title_glyph_stuck_at_needs_input: the
  * old `dryRun: boolean` flag conflated "don't prune" with "don't
- * detect status", so `mu state` / `mu hud` showed stale status
+ * detect status", so state-card pollers showed stale status
  * indefinitely. Splitting prune-suppression from status-suppression
  * is the fix.
  */

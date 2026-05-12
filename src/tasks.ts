@@ -555,9 +555,9 @@ export function listGoals(db: Db, workstream: string): TaskRow[] {
 }
 
 /** All IN_PROGRESS tasks in a workstream, most-recently-touched first.
- *  Used by `mu state` and `mu hud` to populate their in-progress slice;
- *  exposed as a named SDK helper so those CLI verbs don't re-derive
- *  the row-shape conversion (review_code_raw_task_state_duplicate). */
+ *  Used by `mu state` to populate its in-progress slice; exposed as a
+ *  named SDK helper so CLI renderers don't re-derive the row-shape
+ *  conversion (review_code_raw_task_state_duplicate). */
 export function listInProgress(db: Db, workstream: string): TaskRow[] {
   const wsId = tryResolveWorkstreamId(db, workstream);
   if (wsId === null) return [];

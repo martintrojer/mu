@@ -221,8 +221,8 @@ export function emitEvent(
 //   task.claim<TAB><localId><TAB>actor=<actor><TAB>self=<0|1><TAB><prose>
 //
 // The trailing prose still starts with `task claim <localId> ...` so
-// the HUD's verb colourer (which strips the structured prefix via
-// displayEventPayload before colouring) keeps working unchanged.
+// event renderers (which strip the structured prefix via
+// displayEventPayload before colouring) keep working unchanged.
 //
 // See: review_code_last_claim_actor_brittle.
 
@@ -243,8 +243,8 @@ export function formatClaimEvent(opts: {
 
 /** Strip the structured `task.claim` prefix and return the human-prose
  *  tail. For non-claim payloads, returns the input unchanged. Used by
- *  `mu log` and HUD render so the user sees the prose, not the
- *  delimiter-noise. */
+ *  `mu log`, static state, and the TUI so the user sees the prose, not
+ *  the delimiter-noise. */
 export function displayEventPayload(payload: string): string {
   if (!payload.startsWith(`${CLAIM_EVENT_PREFIX}\t`)) return payload;
   // task.claim<TAB><id><TAB>actor=...<TAB>self=...<TAB><prose>
@@ -329,15 +329,15 @@ export function lastClaimEventAt(db: Db, workstream: string, localId: string): s
 
 /**
  * Canonical list of two-token verb prefixes that `emitEvent` callers
- * use as the leading words of a payload. Single source of truth: the
- * HUD's event-tail colourer (src/cli/state.ts colorEventPayload) reads
- * this so it can never drift away from the actual emitter sites.
+ * use as the leading words of a payload. Single source of truth for
+ * event renderers so they can never drift away from the actual emitter
+ * sites.
  *
  * Maintenance contract: when you add an `emitEvent(...)` call whose
  * payload starts with a new two-word verb, add the verb here. A
- * regression test in test/hud.test.ts walks every entry and asserts
- * the HUD recognises it; the test fails if you add an emitter without
- * adding its verb here.
+ * regression test walks every entry and asserts the classifier
+ * recognises it; the test fails if you add an emitter without adding
+ * its verb here.
  *
  * Audit (2026-05): every `emitEvent` callsite under src/ produces a
  * payload that starts with one of these. Verified by
@@ -350,8 +350,8 @@ export const EVENT_VERB_PREFIXES: readonly string[] = [
   "task status",
   // `task claim` is the prose-tail of a `task.claim\t...` structured
   // payload (see CLAIM_EVENT_PREFIX above); displayEventPayload
-  // strips the structured prefix before the HUD colourer runs, so
-  // the prose tail starting with `task claim` still matches.
+  // strips the structured prefix before renderers classify it, so the
+  // prose tail starting with `task claim` still matches.
   "task claim",
   "task release",
   "task update",
@@ -405,8 +405,8 @@ export interface ClassifiedEvent {
  * match; null otherwise. The verb-boundary check is `next is space, tab,
  * or end-of-string` so we don't false-match e.g. `task addnote`.
  *
- * Pure parser. Consumers (the static HUD, the ink Activity-log card)
- * apply their own colour to `verb` after matching.
+ * Pure parser. Consumers (the static state card, the ink Activity-log
+ * card) apply their own colour to `verb` after matching.
  */
 export function classifyEventVerb(payload: string): ClassifiedEvent | null {
   for (const verb of EVENT_VERB_PREFIXES) {

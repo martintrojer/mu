@@ -71,12 +71,12 @@ export class PaneNotFoundError extends Error implements HasNextSteps {
           "tmux list-panes -a -F '#{session_name}:#{window_id}.#{pane_id}\\t#{pane_title}\\t#{pane_current_command}'",
       },
       {
-        intent: "List mu-managed agents (registered)",
-        command: "mu agent list -w *",
+        intent: "List workstreams to choose the right scope",
+        command: "mu workstream list",
       },
       {
-        intent: "List orphan panes (look like agents, not registered)",
-        command: "mu agent list -w * --json | jq '.[] | .orphans'",
+        intent: "List registered agents and orphan panes in that scope",
+        command: "mu agent list -w <workstream>",
       },
     ];
   }
@@ -669,8 +669,7 @@ export async function enableMuPaneBordersForPane(paneId: string): Promise<void> 
  * The border is tmux chrome, not pane content: it doesn't scroll, it
  * survives copy-mode, and the inner CLI never sees it.
  *
- * Designed in roadmap-v0-2 hud_visual_cue_design (note #283); shipped
- * in hud_visual_cue_impl.
+ * Designed as the pane-border visual cue for mu-managed panes.
  */
 export async function enableMuPaneBorders(target: string): Promise<void> {
   if (muBannersDisabled()) return;
@@ -735,37 +734,6 @@ export async function currentPaneTitle(): Promise<string | undefined> {
   const paneId = process.env.TMUX_PANE;
   if (!paneId || !isValidPaneId(paneId)) return undefined;
   return getPaneTitle(paneId);
-}
-
-/**
- * Read the *current* pane's interior size (`pane_width` x `pane_height`)
- * via $TMUX_PANE. Returns undefined when not inside tmux or when the
- * tmux call fails. Used by `mu hud` to size its tables when stdout
- * isn't a TTY (e.g. when running under `watch -n 5 mu hud -w X` or
- * `tmux display-popup -E 'mu hud -w X'`, both of which strip TTY-ness
- * but still run inside a tmux pane whose dimensions matter).
- */
-export async function currentPaneSize(): Promise<{ width: number; height: number } | undefined> {
-  const paneId = process.env.TMUX_PANE;
-  if (!paneId || !isValidPaneId(paneId)) return undefined;
-  const result = await currentExecutor([
-    "display-message",
-    "-t",
-    paneId,
-    "-p",
-    "#{pane_width} #{pane_height}",
-  ]);
-  if (result.exitCode !== 0) return undefined;
-  const parts = result.stdout.trim().split(/\s+/);
-  if (parts.length !== 2) return undefined;
-  const [wStr, hStr] = parts;
-  if (wStr === undefined || hStr === undefined) return undefined;
-  const width = Number.parseInt(wStr, 10);
-  const height = Number.parseInt(hStr, 10);
-  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
-    return undefined;
-  }
-  return { width, height };
 }
 
 /**

@@ -1,6 +1,6 @@
-// Tracks card — parallel-track summary (the headline of the previous
-// `mu state --hud` view). One row per track: leading goal name +
-// counts (total tasks, ready) + diamond-merge marker if applicable.
+// Tracks card — parallel-track summary. One row per track: leading
+// goal name + counts (total tasks, ready) + diamond-merge marker if
+// applicable.
 //
 // Per design_card_tracks (workstream `tui`).
 //
