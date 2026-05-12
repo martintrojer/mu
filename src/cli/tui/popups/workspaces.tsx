@@ -65,7 +65,6 @@ import { runGitShow } from "../git-show.js";
 import { dispatchPopupKeyFromInk } from "../keys.js";
 import { ListRow } from "../list-row.js";
 import { PopupShell } from "../popup-shell.js";
-import { TitledBox } from "../titled-box.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
 import { DrillScrollView, useDrillKeymap } from "./drill.js";
 import { applyCursor, centredVisibleSlice, isNavAction } from "./scroll.js";
@@ -532,14 +531,23 @@ function renderDrillBody(
   const { visible } = centredVisibleSlice(filtered, cursor, viewport);
   const rows = visible.map((c) => [c.sha.slice(0, 12), c.subject]);
   const widths = layoutColumns(rows, DRILL_COLUMN_SPECS, contentWidth);
+  // Inline render — NO nested TitledBox here. The popup's PopupShell
+  // already drew the cyan rounded chrome; a nested magenta TitledBox
+  // at width=stdout.columns would overflow the popup's inner content
+  // area by 4 cols (popup chrome) and make rows wrap past the
+  // border. Mirrors the central fix in src/cli/tui/popups/drill.tsx
+  // (commit 5e334f6 — bug_tui_drill_text_no_width_pin).
   return (
-    <TitledBox
-      title={`${title} · ${cursor + 1}/${filtered.length}`}
-      borderColor="magenta"
-      titleColor="magenta"
-      bottomLabel={hint}
-      flexGrow={1}
-    >
+    <Box flexDirection="column" flexGrow={1}>
+      <Box>
+        <Text bold color="magenta">
+          {title}
+        </Text>
+        <Text dimColor>
+          {" "}
+          · {cursor + 1}/{filtered.length}
+        </Text>
+      </Box>
       <Box flexDirection="column" flexGrow={1}>
         {visible.map((c, i) => {
           const sel = filtered.indexOf(c) === cursor;
@@ -557,6 +565,9 @@ function renderDrillBody(
           );
         })}
       </Box>
-    </TitledBox>
+      <Box>
+        <Text dimColor>{hint}</Text>
+      </Box>
+    </Box>
   );
 }
