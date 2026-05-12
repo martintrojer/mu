@@ -519,6 +519,26 @@ is opt-in via the new `--tui` flag.
   zero width / single cell) plus a static-source regression guard
   asserting every list popup imports `CursorRow` AND no longer
   carries an `inverse=` attribute on any `<Text>`.
+- **TUI DrillScrollView body lines clip instead of wrapping**
+  (bug_tui_drill_scrollview_wraps_long_lines). Every drill consumer
+  (Tasks → notes, Workspaces → git show, Log → full payload, Agents
+  → scrollback, Doctor → remediation) was rendering body lines as
+  bare `<Text>`, which inherits ink's default `wrap="wrap"` and folds
+  long lines onto a second terminal row. Two visible breakages: (1)
+  the position counter (`L1-72/311`) counts logical lines, not
+  terminal rows, so the magenta drill paints 90+ rows for the
+  promised 8-line viewport and the bottom hint slides out of frame;
+  (2) `j`/`k` stride matches logical lines but the cursor visually
+  jumps multiple rows because previous wraps stretched the pane.
+  Fix: the body-line `<Text>` in `src/cli/tui/popups/drill.tsx` now
+  carries `wrap="truncate"` — TitledBox already pins the magenta
+  inner box's width via its border layout, so truncate engages
+  immediately. Completes the trio with sibling fixes
+  bug_tui_log_card_columns_misaligned (cards) and
+  bug_tui_log_popup_columns_misaligned (popup rows). Static-source
+  regression guard in new `test/tui-drill-scrollview.test.ts`
+  asserts the body-line `<Text>` carries `wrap="truncate"` (or
+  `truncate-end`).
 - **TUI card rows clip cleanly at contentWidth (was overflowing /
   wrapping due to gutter-accounting + ink-overflow bugs)**
   (bug_tui_log_card_columns_misaligned). Completes

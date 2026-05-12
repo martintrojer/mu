@@ -89,7 +89,9 @@ export function DrillScrollView({
       ) : (
         visible.map((ln, i) => (
           // eslint-disable-next-line react/no-array-index-key
-          <Text key={`${start + i}`}>{ln === "" ? " " : ln}</Text>
+          <Text key={`${start + i}`} wrap="truncate">
+            {ln === "" ? " " : ln}
+          </Text>
         ))
       )}
     </TitledBox>
