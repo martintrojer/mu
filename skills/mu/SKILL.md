@@ -322,7 +322,10 @@ running a wave.
   at 120 / 180 / 240 terminal columns with dynamic per-card row
   budgets; `g` opens the full workstream DAG popup (keybind-only;
   inside it, `o`/`i`/`c`/`r`/`d` toggle OPEN / IN_PROGRESS / CLOSED /
-  REJECTED / DEFERRED visibility, default all-on); `0`-`9` toggle
+  REJECTED / DEFERRED visibility, default all-on); `t` opens the
+  all-tasks list popup (keybind-only; `o`/`i`/`c`/`r`/`d` status
+  toggles, `s` cycles sort roi → recency → age → id, Enter opens
+  TaskDetailDrill, `y` yanks `mu task show <id>`); `0`-`9` toggle
   cards; `Shift+0`-`Shift+9` open popups,
   `Enter`
   drills (in the Activity log popup it opens the focused event's

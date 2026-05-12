@@ -91,6 +91,8 @@ describe("StatusBar", () => {
     // preference — layout-independent and self-explanatory.
     expect(text).toContain("g");
     expect(text).toContain("DAG");
+    expect(text).toContain("t");
+    expect(text).toContain("all-tasks");
     expect(text).toContain("0-9");
     expect(text).toContain("Shift 0-9");
     expect(text).not.toContain("l commits");
@@ -196,6 +198,22 @@ describe("StatusBar", () => {
     const text = renderToString(node);
     expect(text).toContain("o/i/c/r/d");
     expect(text).toContain("toggle status");
+  });
+
+  it("All tasks popup list-mode hint cluster advertises sort and status filters", () => {
+    const node = StatusBar({
+      mode: "popup",
+      tickMs: 1000,
+      footer: null,
+      cols: 200,
+      popupName: "All tasks",
+      popupMode: "list",
+    });
+    const text = renderToString(node);
+    expect(text).toContain("s");
+    expect(text).toContain("sort");
+    expect(text).toContain("o/i/c/r/d");
+    expect(text).toContain("filter");
   });
 
   it("popup-list-mode hint cluster advertises `/ filter`", () => {

@@ -9,6 +9,7 @@
 //   8           toggle Recent card
 //   9           toggle Doctor card (feat_card_9_doctor)
 //   g           open full DAG popup (graph mnemonic; keybind-only)
+//   t           open all-tasks popup (task-list mnemonic; keybind-only)
 //   Shift+0/)   open Commits popup
 //   ! @ # $     open fullscreen popup for that card  (Shift+1..Shift+4
 //               on US keyboards; bound by glyph because ink reports
@@ -30,7 +31,10 @@
 
 export type GlobalAction =
   | { kind: "toggleCard"; cardId: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 }
-  | { kind: "openPopup"; cardId: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | "dag" }
+  | {
+      kind: "openPopup";
+      cardId: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | "dag" | "allTasks";
+    }
   | { kind: "tickFaster" }
   | { kind: "tickSlower" }
   | { kind: "refreshNow" }
@@ -148,6 +152,7 @@ export function dispatchGlobalKey(input: string, key: KeyFlags): GlobalAction {
   }
 
   if (input === "g") return { kind: "openPopup", cardId: "dag" };
+  if (input === "t") return { kind: "openPopup", cardId: "allTasks" };
 
   // Popup openers !-) on US keyboards. Bound by glyph because ink
   // reports the post-shift character; key.shift is false.

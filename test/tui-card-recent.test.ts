@@ -25,6 +25,7 @@ const EMPTY_SNAPSHOT: WorkstreamSnapshot = {
   inProgress: [],
   blocked: [],
   recentClosed: [],
+  allTasks: [],
   workspaces: [],
   workspaceOrphans: [],
   recent: [],

@@ -1,6 +1,7 @@
-// waitForTasks (verb) + sortTasks / parseSortOption helpers from
-// src/tasks.ts and src/cli.ts. The wait suite is the bulk of this
-// file: poll-loop semantics, --any vs --all, timeout clamp, deletion
+// waitForTasks (verb). Sort-key helper tests live in
+// test/tasks-sort.test.ts and test/cli-task-sort.test.ts. The wait
+// suite is the bulk of this file: poll-loop semantics, --any vs
+// --all, timeout clamp, deletion
 // mid-wait, --on-stall, and the stuck-warn dedupe (one warning per
 // stuck task per call, not one per poll cycle).
 //
@@ -13,7 +14,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { insertAgent } from "../src/agents.js";
-import { TASK_SORT_KEYS, parseSortOption, sortTasks } from "../src/cli.js";
 import { type Db, openDb } from "../src/db.js";
 import { listLogs } from "../src/logs.js";
 import {
@@ -513,104 +513,5 @@ describe("waitForTasks", () => {
       setWaitStuckWarnForTests(restoreWarn);
       setWaitSleepForTests(restoreSleep);
     }
-  });
-});
-
-// ─── sortTasks (--sort key) ────────────────────────────────────────────
-//
-// Covers the four sort keys exposed by `mu task list / next / ready
-// --sort <key>`: roi, recency, age, id. The CLI surface is wired in
-// src/cli/tasks.ts and the verb modules (src/cli/tasks/queries.ts);
-// here we test the pure helper in isolation to keep the assertions
-// crisp (no DB-time-fudging needed).
-
-describe("sortTasks", () => {
-  // Build TaskRows by hand so we can pin createdAt / updatedAt
-  // deterministically (addTask stamps NOW, which we can't replay).
-  // Field shape mirrors src/tasks.ts TaskRow (no extra metadata).
-  function row(over: {
-    name: string;
-    impact: number;
-    effortDays: number;
-    createdAt: string;
-    updatedAt: string;
-  }) {
-    return {
-      name: over.name,
-      workstreamName: "ws",
-      title: over.name,
-      status: "OPEN" as const,
-      impact: over.impact,
-      effortDays: over.effortDays,
-      blockedBy: [],
-      blocks: [],
-      ownerName: null,
-      createdAt: over.createdAt,
-      updatedAt: over.updatedAt,
-    };
-  }
-
-  // a: low ROI (10/2 = 5), oldest, most recently touched
-  const rowA = row({
-    name: "a",
-    impact: 10,
-    effortDays: 2,
-    createdAt: "2026-01-01T00:00:00.000Z",
-    updatedAt: "2026-05-01T00:00:00.000Z",
-  });
-  // b: high ROI (90/1 = 90), middle, middle touched
-  const rowB = row({
-    name: "b",
-    impact: 90,
-    effortDays: 1,
-    createdAt: "2026-02-01T00:00:00.000Z",
-    updatedAt: "2026-03-01T00:00:00.000Z",
-  });
-  // c: med ROI (40/2 = 20), newest, least recently touched
-  const rowC = row({
-    name: "c",
-    impact: 40,
-    effortDays: 2,
-    createdAt: "2026-03-01T00:00:00.000Z",
-    updatedAt: "2026-01-01T00:00:00.000Z",
-  });
-  const rows = [rowA, rowB, rowC];
-
-  it("roi: highest impact/effort first (default for next/ready)", () => {
-    expect(sortTasks(rows, "roi").map((t) => t.name)).toEqual(["b", "c", "a"]);
-  });
-
-  it("recency: most-recently-updated first (updated_at DESC)", () => {
-    expect(sortTasks(rows, "recency").map((t) => t.name)).toEqual(["a", "b", "c"]);
-  });
-
-  it("age: oldest-first (created_at ASC) — surfaces stale work", () => {
-    expect(sortTasks(rows, "age").map((t) => t.name)).toEqual(["a", "b", "c"]);
-  });
-
-  it("id: local_id ASC — boring tiebreaker default for `task list`", () => {
-    // Shuffle relative to insertion order; sort should still be a,b,c.
-    expect(sortTasks([rowC, rowA, rowB], "id").map((t) => t.name)).toEqual(["a", "b", "c"]);
-  });
-
-  it("returns a copy (does not mutate the input array)", () => {
-    const input = [rowA, rowB, rowC];
-    const before = input.slice();
-    sortTasks(input, "roi");
-    expect(input).toEqual(before);
-  });
-});
-
-describe("parseSortOption", () => {
-  it("accepts every key in TASK_SORT_KEYS verbatim", () => {
-    for (const k of TASK_SORT_KEYS) {
-      expect(parseSortOption(k)).toBe(k);
-    }
-  });
-
-  it("rejects unknown keys with a UsageError naming every legal value", () => {
-    expect(() => parseSortOption("priority")).toThrow(/--sort must be one of/);
-    expect(() => parseSortOption("ROI")).toThrow(/--sort must be one of/);
-    expect(() => parseSortOption("")).toThrow(/--sort must be one of/);
   });
 });

@@ -457,7 +457,8 @@ mu                          # TTY: TUI across all workstreams; non-TTY: help
   In-progress, Blocked, Recent, Doctor) with rounded borders and inset section
   headers (lazygit / btop / k9s convention), matching fullscreen
   popups (Shift+0..Shift+9), plus `g` for the current workstream's
-  full task DAG popup,
+  full task DAG popup and `t` for the current workstream's all-tasks
+  list popup,
   live-updating every 1s (adjustable with
   `+/-/=`). The dashboard is responsive: cards stack below 120
   columns, then reflow into pair-aware 2 / 3 / 4-column layouts at
@@ -468,9 +469,13 @@ mu                          # TTY: TUI across all workstreams; non-TTY: help
   executes a mutation; the user runs the yanked command in their
   shell. Dashboard keymap: `0`-`9` toggle cards; `Shift+0` opens
   Commits, `Shift+1`-`Shift+9` open the remaining numbered popups,
-  and `g` opens the keybind-only DAG popup; inside the DAG popup,
+  `g` opens the keybind-only DAG popup, and `t` opens the keybind-only
+  all-tasks popup. Inside the DAG and all-tasks popups,
   `o`/`i`/`c`/`r`/`d` toggle OPEN / IN_PROGRESS / CLOSED / REJECTED /
-  DEFERRED visibility with default all-on; `?` shows the keymap;
+  DEFERRED visibility with default all-on. Inside all-tasks, `s`
+  cycles sort key (`roi` → `recency` → `age` → `id`), Enter drills
+  into the focused task's notes, and `y` yanks `mu task show <id>`;
+  `?` shows the keymap;
   `q` / `Ctrl-C` quits and restores the main scrollback.
 
   **Popup-drill recursion**: `Enter` in any popup drills into the

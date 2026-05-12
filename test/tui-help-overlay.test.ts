@@ -2,16 +2,20 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 describe("TUI help overlay", () => {
-  it("documents the dashboard DAG popup shortcut", () => {
+  it("documents the dashboard keybind-only popup shortcuts", () => {
     const src = readFileSync("./src/cli/tui/help.tsx", "utf8");
     expect(src).toContain('keys="g"');
     expect(src).toContain('effect="DAG popup"');
+    expect(src).toContain('keys="t"');
+    expect(src).toContain('effect="all-tasks popup"');
   });
 
-  it("documents the DAG popup status toggles", () => {
+  it("documents the DAG/all-tasks status toggles and all-tasks sort cycle", () => {
     const src = readFileSync("./src/cli/tui/help.tsx", "utf8");
     expect(src).toContain('keys="o/i/c/r/d"');
-    expect(src).toContain('effect="toggle DAG status filter (in DAG popup)"');
+    expect(src).toContain('effect="status filter toggles (DAG + all-tasks popups)"');
+    expect(src).toContain('keys="s"');
+    expect(src).toContain('effect="cycle sort key (roi/recency/age/id)"');
   });
 
   it("documents the dashboard card and popup digit ranges", () => {

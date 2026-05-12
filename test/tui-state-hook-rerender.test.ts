@@ -39,6 +39,7 @@ function makeSnap(overrides: Partial<WorkstreamSnapshot> = {}): WorkstreamSnapsh
     inProgress: [],
     blocked: [],
     recentClosed: [],
+    allTasks: [],
     workspaces: [],
     workspaceOrphans: [],
     recent: [],
@@ -223,6 +224,7 @@ describe("snapshotKey — visible-affecting field projection", () => {
     expect(Object.keys(k).sort()).toEqual(
       [
         "agents",
+        "allTasks",
         "blocked",
         "inProgress",
         "orphanPaneIds",

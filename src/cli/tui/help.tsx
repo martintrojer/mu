@@ -34,6 +34,7 @@ export function Help(): JSX.Element {
           keybind-only popups
         </Text>
         <HelpRow keys="g" effect="DAG popup" />
+        <HelpRow keys="t" effect="all-tasks popup" />
         <HelpRow keys="+/=" effect="tick faster (floor 100ms)" />
         <HelpRow keys="-" effect="tick slower (ceiling 10s)" />
         <HelpRow keys="r/F5" effect="refresh now" />
@@ -52,7 +53,8 @@ export function Help(): JSX.Element {
         <HelpRow keys="Ctrl-D / Ctrl-U" effect="half-page down / up" />
         <HelpRow keys="PgDn / PgUp" effect="full-page down / up" />
         <HelpRow keys="/" effect="filter (incremental substring; Esc cancel, Enter commit)" />
-        <HelpRow keys="o/i/c/r/d" effect="toggle DAG status filter (in DAG popup)" />
+        <HelpRow keys="s" effect="cycle sort key (roi/recency/age/id)" />
+        <HelpRow keys="o/i/c/r/d" effect="status filter toggles (DAG + all-tasks popups)" />
         <HelpRow keys="n / N" effect="next / prev match (v0.next)" />
         <HelpRow keys="y" effect="yank action for focused row" />
         <HelpRow keys="Esc / q" effect="close popup → return to dashboard" />

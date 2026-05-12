@@ -47,6 +47,7 @@ import {
   type TaskStatus,
   isTaskStatus,
 } from "./tasks.js";
+import { TASK_SORT_KEYS, type TaskSortKey, isTaskSortKey } from "./tasks/sort.js";
 import { listWorkstreams, resolveTmuxSessionWorkstreamName } from "./workstream.js";
 
 // ─── Re-exports for downstream cli/* modules ──────────────────────────
@@ -77,6 +78,14 @@ export {
   classifyError,
   handle,
 } from "./cli/handle.js";
+export {
+  TASK_SORT_KEYS,
+  type TaskSortKey,
+  byRoiDesc,
+  isTaskSortKey,
+  relTimeBasisForSort,
+  sortTasks,
+} from "./tasks/sort.js";
 
 // ─── Workstream resolution ─────────────────────────────────────────────
 
@@ -314,28 +323,6 @@ export function resolveSelf(db: Db): AgentRow {
 // task verbs moved to src/cli/tasks.ts but the helpers stay here so
 // every cli/*.ts module can import them from one canonical location.
 
-function roiOf(t: TaskRow): number {
-  return t.effortDays > 0 ? t.impact / t.effortDays : Number.POSITIVE_INFINITY;
-}
-
-export function byRoiDesc(a: TaskRow, b: TaskRow): number {
-  return roiOf(b) - roiOf(a);
-}
-
-// ─── Task list --sort ──────────────────────────────────────────────
-//
-// Four keys; default is `roi` (preserves prior behaviour). The two
-// time-based keys (`recency` = updated_at DESC, `age` = created_at ASC)
-// are the surface for "what did I touch most recently" and "what's
-// gone stale" — neither was queryable before. `id` is the boring
-// tiebreaker default for `mu task list` (local_id ASC).
-export const TASK_SORT_KEYS = ["roi", "recency", "age", "id"] as const;
-export type TaskSortKey = (typeof TASK_SORT_KEYS)[number];
-
-export function isTaskSortKey(s: string): s is TaskSortKey {
-  return (TASK_SORT_KEYS as readonly string[]).includes(s);
-}
-
 export function parseSortOption(raw: string, flag = "--sort"): TaskSortKey {
   if (!isTaskSortKey(raw)) {
     throw new UsageError(
@@ -343,31 +330,6 @@ export function parseSortOption(raw: string, flag = "--sort"): TaskSortKey {
     );
   }
   return raw;
-}
-
-/** Sort a copy of `tasks` by `key`. Pure (does not mutate input). */
-export function sortTasks(tasks: readonly TaskRow[], key: TaskSortKey): TaskRow[] {
-  const out = tasks.slice();
-  switch (key) {
-    case "roi":
-      return out.sort(byRoiDesc);
-    case "recency":
-      // updated_at DESC: most-recently-touched first.
-      return out.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-    case "age":
-      // created_at ASC: oldest first ("what's gone stale").
-      return out.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-    case "id":
-      return out.sort((a, b) => a.name.localeCompare(b.name));
-  }
-}
-
-/** Which timestamp basis the table's relative-time column should use
- *  for the active sort, or `null` if no time column should be shown. */
-export function relTimeBasisForSort(key: TaskSortKey): "updatedAt" | "createdAt" | null {
-  if (key === "recency") return "updatedAt";
-  if (key === "age") return "createdAt";
-  return null;
 }
 
 /**

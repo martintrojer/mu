@@ -37,6 +37,10 @@ describe("dispatchGlobalKey: popup openers (g + Shift+0..Shift+9 → ) ! @ # $ %
     expect(dispatchGlobalKey("g", NO_KEY)).toEqual({ kind: "openPopup", cardId: "dag" });
   });
 
+  it("t opens the all-tasks popup as a keybind-only string id", () => {
+    expect(dispatchGlobalKey("t", NO_KEY)).toEqual({ kind: "openPopup", cardId: "allTasks" });
+  });
+
   it("l/L no longer opens Commits", () => {
     expect(dispatchGlobalKey("l", NO_KEY)).toEqual({ kind: "noop" });
     expect(dispatchGlobalKey("L", NO_KEY)).toEqual({ kind: "noop" });
@@ -204,10 +208,11 @@ describe("dispatchPopupKey: in-popup convention", () => {
   });
   it("other letters bubble up as verbs", () => {
     expect(dispatchPopupKey("f", NO_KEY)).toEqual({ kind: "verb", key: "f" });
+    expect(dispatchPopupKey("s", NO_KEY)).toEqual({ kind: "verb", key: "s" });
     expect(dispatchPopupKey("x", NO_KEY)).toEqual({ kind: "verb", key: "x" });
     expect(dispatchPopupKey("t", NO_KEY)).toEqual({ kind: "verb", key: "t" });
   });
-  it("DAG status toggle letters still bubble up for non-DAG popups", () => {
+  it("DAG/all-tasks status toggle letters still bubble up for popup-local handling", () => {
     for (const input of ["o", "i", "c", "r", "d"] as const) {
       expect(dispatchPopupKey(input, NO_KEY)).toEqual({ kind: "verb", key: input });
     }

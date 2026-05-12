@@ -41,6 +41,7 @@ import {
   layoutColumns as layoutDashboardColumns,
 } from "./layout.js";
 import { AgentsPopup } from "./popups/agents.js";
+import { AllTasksPopup } from "./popups/all-tasks.js";
 import { BlockedPopup } from "./popups/blocked.js";
 import { CommitsPopup } from "./popups/commits.js";
 import { DagPopup } from "./popups/dag.js";
@@ -80,7 +81,7 @@ export interface FooterState {
   copied: boolean;
 }
 
-type PopupId = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | "dag" | null;
+type PopupId = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | "dag" | "allTasks" | null;
 export type PopupMode = "list" | "drill";
 
 export const DASHBOARD_MIN_ROWS = 5;
@@ -192,6 +193,7 @@ export function App({ db, workstreams, initialActive = 0 }: AppProps): JSX.Eleme
           (input >= "0" && input <= "9") ||
           "!@#$%^&*()".includes(input) ||
           input === "g" ||
+          input === "t" ||
           input === "c"
         ) {
           return;
@@ -410,6 +412,8 @@ export function App({ db, workstreams, initialActive = 0 }: AppProps): JSX.Eleme
         return <DoctorPopup {...props} />;
       case "dag":
         return <DagPopup {...props} />;
+      case "allTasks":
+        return <AllTasksPopup {...props} />;
     }
   }
 }
@@ -584,5 +588,7 @@ function popupNameForId(id: NonNullable<PopupId>): string {
       return "Doctor";
     case "dag":
       return "DAG";
+    case "allTasks":
+      return "All tasks";
   }
 }

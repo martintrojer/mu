@@ -121,6 +121,8 @@ function buildHints(
       return [
         { kind: "key", text: "g" },
         { kind: "dim", text: "DAG ·" },
+        { kind: "key", text: "t" },
+        { kind: "dim", text: "all-tasks ·" },
         { kind: "key", text: "0-9" },
         { kind: "dim", text: "toggle ·" },
         { kind: "key", text: "Shift 0-9" },
@@ -165,6 +167,25 @@ function buildHints(
           { kind: "dim", text: "help ·" },
           { kind: "key", text: "q" },
           { kind: "dim", text: "quit" },
+        ];
+      }
+      if (popupName === "All tasks") {
+        return [
+          ...popupLabel,
+          { kind: "key", text: "s" },
+          { kind: "dim", text: "sort ·" },
+          { kind: "key", text: "o/i/c/r/d" },
+          { kind: "dim", text: "filter ·" },
+          { kind: "key", text: "j/k" },
+          { kind: "dim", text: "nav ·" },
+          { kind: "key", text: "/" },
+          { kind: "dim", text: "search ·" },
+          { kind: "key", text: "Enter" },
+          { kind: "dim", text: "drill ·" },
+          { kind: "key", text: "y" },
+          { kind: "dim", text: "yank ·" },
+          { kind: "key", text: "Esc" },
+          { kind: "dim", text: "close" },
         ];
       }
       return [

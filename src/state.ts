@@ -16,6 +16,7 @@ import {
   listInProgress,
   listReady,
   listRecentClosed,
+  listTasks,
   listTasksByOwner,
 } from "./tasks.js";
 import { type Track, getParallelTracks } from "./tracks.js";
@@ -39,6 +40,10 @@ export interface WorkstreamSnapshot {
   inProgress: TaskRow[];
   blocked: TaskRow[];
   recentClosed: TaskRow[];
+  /** Populated when `loadWorkstreamSnapshot` is called with
+   *  `withAllTasks: true`. The TUI all-tasks popup opts in; static
+   *  state keeps the legacy cheap shape and leaves this empty. */
+  allTasks: TaskRow[];
   workspaces: WorkspaceRow[];
   workspaceOrphans: WorkspaceOrphan[];
   recent: LogRow[];
@@ -75,6 +80,8 @@ export interface LoadWorkstreamSnapshotOptions {
    *  (feat_card_9_doctor, workstream `tui-impl`) sets this; static
    *  callers leave it false. Mirrors the `withDirty` opt-in pattern. */
   withDoctor?: boolean;
+  /** Optional full task list for the TUI all-tasks popup. */
+  withAllTasks?: true;
   /** Optional recent-project-commits slice for the TUI Commits card /
    *  popup. Uses process.cwd() as the project root on purpose: the TUI
    *  is launched from the project checkout, while worker workspaces live
@@ -102,6 +109,7 @@ export async function loadWorkstreamSnapshot(
   const inProgress = listInProgress(db, workstream);
   const blocked = listBlocked(db, workstream);
   const recentClosed = listRecentClosed(db, workstream);
+  const allTasks = opts.withAllTasks === true ? listTasks(db, workstream) : [];
   let workspaces = await decorateWithStaleness(listWorkspaces(db, workstream));
   if (opts.withDirty === true) workspaces = await decorateWithDirty(workspaces);
   const workspaceOrphans = listWorkspaceOrphans(db, workstream);
@@ -117,6 +125,7 @@ export async function loadWorkstreamSnapshot(
     inProgress,
     blocked,
     recentClosed,
+    allTasks,
     workspaces,
     workspaceOrphans,
     recent,

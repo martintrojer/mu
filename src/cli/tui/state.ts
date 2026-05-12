@@ -175,6 +175,9 @@ export function useDashboardSnapshot(
           // pragmas + COUNT-shape SELECTs; ghosts/orphans come
           // straight from the snapshot we already built).
           withDoctor: true,
+          // All-tasks popup needs the exhaustive workstream task
+          // list. Keep it opt-in so static `mu state` stays cheap.
+          withAllTasks: true,
           // Commits card / popup need the project-root commit log.
           // Uses process.cwd() in loadWorkstreamSnapshot by design:
           // the TUI launches from the project checkout, not from a
@@ -287,6 +290,7 @@ export function snapshotKey(s: WorkstreamSnapshot): unknown {
     inProgress: s.inProgress.map(taskKey),
     blocked: s.blocked.map(taskKey),
     recentClosed: s.recentClosed.map(taskKey),
+    allTasks: s.allTasks.map(taskKey),
     commitsBackend: s.commitsBackend ?? null,
     recentCommits: s.recentCommits.map((c) => [c.sha, c.subject, c.author, c.relTime]),
     workspaces: s.workspaces.map((w) => [
@@ -309,8 +313,8 @@ export function snapshotKeyString(s: WorkstreamSnapshot): string {
 
 // One row of every visible-affecting task field. impact + effortDays
 // drive the ROI bucket / sort; status drives glyph + colour;
-// updatedAt drives the relative-time column (task cards such as
-// InProgress); ownerName + title are rendered verbatim.
+// createdAt / updatedAt drive the all-tasks popup's age / recency
+// sorts; ownerName + title are rendered verbatim.
 function taskKey(t: {
   name: string;
   status: string;
@@ -318,7 +322,17 @@ function taskKey(t: {
   effortDays: number;
   ownerName: string | null;
   title: string;
+  createdAt: string;
   updatedAt: string;
 }): (string | number)[] {
-  return [t.name, t.status, t.impact, t.effortDays, t.ownerName ?? "", t.title, t.updatedAt];
+  return [
+    t.name,
+    t.status,
+    t.impact,
+    t.effortDays,
+    t.ownerName ?? "",
+    t.title,
+    t.createdAt,
+    t.updatedAt,
+  ];
 }

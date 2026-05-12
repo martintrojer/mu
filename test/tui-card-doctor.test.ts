@@ -50,6 +50,7 @@ function snap(doctor: DoctorSummary | null): WorkstreamSnapshot {
     inProgress: [],
     blocked: [],
     recentClosed: [],
+    allTasks: [],
     workspaces: [],
     workspaceOrphans: [],
     recent: [],

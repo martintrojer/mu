@@ -108,6 +108,20 @@ describe("TUI end-to-end acceptance", () => {
       // In progress: nothing claimed yet.
       expect(snap.inProgress.length).toBe(0);
 
+      // All tasks is opt-in for the TUI all-tasks popup; static
+      // snapshot callers keep it empty unless requested.
+      expect(snap.allTasks).toEqual([]);
+      const snapWithAllTasks = await loadWorkstreamSnapshot(db, "demo", {
+        eventLimit: 50,
+        withAllTasks: true,
+      });
+      expect(snapWithAllTasks.allTasks.map((t) => t.name).sort()).toEqual([
+        "build_x",
+        "design_x",
+        "review_x",
+        "ship_x",
+      ]);
+
       // Recent events: workstream init + 4 task add + 3 task block = 8 events.
       expect(snap.recent.length).toBeGreaterThanOrEqual(8);
       expect(snap.recentCommits).toEqual([]);
