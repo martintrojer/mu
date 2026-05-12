@@ -288,7 +288,7 @@ describe("refreshNonce — wired into useDashboardSnapshot deps (static)", () =>
     // The effect's deps end with `refreshNonce]` so a bump from <App>
     // tears down + restarts the interval, which fires `tick()`
     // immediately.
-    expect(src).toMatch(/\[db,\s*workstream,\s*tickMs,\s*enabled,\s*refreshNonce\]/);
+    expect(src).toMatch(/\[db,\s*workstream,\s*tickMs,\s*enabled,\s*refreshNonce,\s*loaders\]/);
   });
 });
 

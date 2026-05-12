@@ -34,11 +34,19 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { Db } from "../../db.js";
-import { type WorkstreamSnapshot, loadWorkstreamSnapshot } from "../../state.js";
+import {
+  type LoadWorkstreamSnapshotOptions,
+  type WorkstreamSnapshot,
+  type WorkstreamSnapshotSlowFields,
+  loadWorkstreamSnapshotFast,
+  loadWorkstreamSnapshotSlow,
+  mergeSnapshotFastSlow,
+} from "../../state.js";
 
 export const TICK_DEFAULT_MS = 1000;
 export const TICK_FLOOR_MS = 100;
 export const TICK_CEILING_MS = 10_000;
+export const SLOW_TICK_MS = 10_000;
 
 export interface CardVisibility {
   agents: boolean;
@@ -81,13 +89,43 @@ export const DEFAULT_CARD_VISIBILITY: CardVisibility = {
 
 export interface DashboardSnapshot {
   data: WorkstreamSnapshot | null;
-  /** Measured fetch duration of the most recent tick (ms). Lives in
-   *  its OWN useState (Layer B); decoupled from `data` so the
+  /** Measured fetch duration of the most recent fast tick (ms). Lives
+   *  in its OWN useState (Layer B); decoupled from `data` so the
    *  StatusBar's tick display can refresh without re-rendering the
    *  cards. */
   lastTickMs: number;
   error: string | null;
 }
+
+export interface DashboardSnapshotLoaders {
+  fast: (
+    db: Db,
+    workstream: string,
+    opts?: LoadWorkstreamSnapshotOptions,
+  ) => Promise<WorkstreamSnapshot>;
+  slow: (
+    db: Db,
+    workstream: string,
+    opts?: LoadWorkstreamSnapshotOptions,
+    baseSnapshot?: WorkstreamSnapshot,
+  ) => Promise<WorkstreamSnapshotSlowFields>;
+}
+
+const DEFAULT_LOADERS: DashboardSnapshotLoaders = {
+  fast: loadWorkstreamSnapshotFast,
+  slow: loadWorkstreamSnapshotSlow,
+};
+
+const FAST_OPTS: LoadWorkstreamSnapshotOptions = {
+  eventLimit: 200,
+  withAllTasks: true,
+};
+
+const SLOW_OPTS: LoadWorkstreamSnapshotOptions = {
+  withDirty: true,
+  withDoctor: true,
+  withRecentCommits: { limit: 25 },
+};
 
 /**
  * Subscribe to the workstream snapshot via a setInterval-owned poll
@@ -112,6 +150,7 @@ export function useDashboardSnapshot(
   tickMs: number,
   enabled: boolean,
   refreshNonce = 0,
+  loaders: DashboardSnapshotLoaders = DEFAULT_LOADERS,
 ): DashboardSnapshot {
   // Layer A: data + error (the stuff the cards read).
   const [data, setData] = useState<{ data: WorkstreamSnapshot | null; error: string | null }>({
@@ -121,6 +160,8 @@ export function useDashboardSnapshot(
   // Layer B: tick duration lives by itself so its update doesn't
   // ripple into the card render path.
   const [lastTickMs, setLastTickMs] = useState(0);
+  const latestFastRef = useRef<WorkstreamSnapshot | null>(null);
+  const slowRef = useRef<WorkstreamSnapshotSlowFields | null>(null);
 
   // Snap-to-null on workstream change
   // (bug_tui_tab_switch_stale_render, workstream `tui-impl`).
@@ -146,6 +187,8 @@ export function useDashboardSnapshot(
   const lastWsRef = useRef(workstream);
   if (shouldDiscardForWorkstream(lastWsRef.current, workstream)) {
     lastWsRef.current = workstream;
+    slowRef.current = null;
+    latestFastRef.current = null;
     setData({ data: null, error: null });
     setLastTickMs(0);
   }
@@ -164,40 +207,13 @@ export function useDashboardSnapshot(
       if (cancelled) return;
       const t0 = performance.now();
       try {
-        const fresh = await loadWorkstreamSnapshot(db, workstream, {
-          eventLimit: 200,
-          // Workspaces card (feat_card_5_workspaces) needs the dirty
-          // marker; the cost is one `git status --porcelain` per row,
-          // capped at DECORATE_CONCURRENCY in workspace.ts.
-          withDirty: true,
-          // Doctor card (feat_card_9_doctor) needs the health-check
-          // summary. loadDoctorSummary is cheap (synchronous DB
-          // pragmas + COUNT-shape SELECTs; ghosts/orphans come
-          // straight from the snapshot we already built).
-          withDoctor: true,
-          // All-tasks popup needs the exhaustive workstream task
-          // list. Keep it opt-in so static `mu state` stays cheap.
-          withAllTasks: true,
-          // Commits card / popup need the project-root commit log.
-          // Uses process.cwd() in loadWorkstreamSnapshot by design:
-          // the TUI launches from the project checkout, not from a
-          // per-agent worker workspace.
-          withRecentCommits: { limit: 25 },
-        });
+        const fast = await loaders.fast(db, workstream, FAST_OPTS);
         if (cancelled) return;
+        latestFastRef.current = fast;
+        const fresh = mergeSnapshotFastSlow(fast, slowRef.current);
         const dur = performance.now() - t0;
         setLastTickMs(dur);
-        const freshKey = snapshotKeyString(fresh);
-        setData((prev) => {
-          const prevKey = prev.data === null ? "" : snapshotKeyString(prev.data);
-          if (prev.error === null && prevKey === freshKey) {
-            // Visible content unchanged — return the SAME object
-            // reference so React/ink skip the cascade. (`fresh` is
-            // discarded; that's the point.)
-            return prev;
-          }
-          return { data: fresh, error: null };
-        });
+        publishSnapshot(fresh, setData);
       } catch (err) {
         if (cancelled) return;
         const msg = String(err);
@@ -215,7 +231,38 @@ export function useDashboardSnapshot(
     // re-runs the effect, which fires `tick()` immediately. Without
     // this, the binding existed but never poked the poll loop
     // (review_dead_code_refresh_now).
-  }, [db, workstream, tickMs, enabled, refreshNonce]);
+  }, [db, workstream, tickMs, enabled, refreshNonce, loaders]);
+
+  useEffect(() => {
+    if (!enabled) return;
+    void refreshNonce;
+    let cancelled = false;
+    const slowTick = async () => {
+      if (cancelled) return;
+      try {
+        const slow = await loaders.slow(
+          db,
+          workstream,
+          SLOW_OPTS,
+          latestFastRef.current ?? undefined,
+        );
+        if (cancelled) return;
+        slowRef.current = slow;
+        const fast = latestFastRef.current;
+        if (fast !== null) publishSnapshot(mergeSnapshotFastSlow(fast, slow), setData);
+      } catch (err) {
+        if (cancelled) return;
+        const msg = String(err);
+        setData((prev) => (prev.error === msg ? prev : { ...prev, error: msg }));
+      }
+    };
+    void slowTick();
+    const id = setInterval(() => void slowTick(), SLOW_TICK_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [db, workstream, enabled, refreshNonce, loaders]);
 
   return { data: data.data, lastTickMs, error: data.error };
 }
@@ -230,6 +277,23 @@ export function useDashboardSnapshot(
  */
 export function shouldDiscardForWorkstream(prev: string, next: string): boolean {
   return prev !== next;
+}
+
+function publishSnapshot(
+  fresh: WorkstreamSnapshot,
+  writeData: (
+    updater: (prev: { data: WorkstreamSnapshot | null; error: string | null }) => {
+      data: WorkstreamSnapshot | null;
+      error: string | null;
+    },
+  ) => void,
+): void {
+  const freshKey = snapshotKeyString(fresh);
+  writeData((prev) => {
+    const prevKey = prev.data === null ? "" : snapshotKeyString(prev.data);
+    if (prev.error === null && prevKey === freshKey) return prev;
+    return { data: fresh, error: null };
+  });
 }
 
 /** Clamp a desired tick rate to [floor, ceiling]. */

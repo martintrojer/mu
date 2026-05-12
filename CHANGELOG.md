@@ -69,6 +69,16 @@ called out under "Breaking" in each entry.
   (`git`, `jj`, `sl`, or `(no vcs)`) so users can see which substrate
   won detection at a glance.
 
+### Performance
+
+- **TUI snapshot poll split into a fast SQL-only tick (1s) and a slow
+  subprocess tick (10s).** Tmux liveness, per-workspace dirty status,
+  and project recent-commits no longer block every fast tick. p50
+  snapshot cost dropped from ~385ms to <1ms; the 10s slow tick handles
+  the subprocess work in the background. `r`/F5 still refreshes
+  everything immediately. Workstream tab switch triggers an eager slow
+  tick so the new workstream's subprocess data is fresh within 1s.
+
 ### Fixed
 
 - **TUI mouse double-click hit-test no longer points at the wrong card.** Empty-state cards (for example Doctor with no warnings) now render at their allocated `chrome + rowBudget` height instead of shrinking to only their minimum padding, so dashboard hit-test rectangles stay aligned with the Ink-rendered card grid all the way down the pane.

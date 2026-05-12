@@ -520,6 +520,17 @@ mu                          # TTY: TUI across all workstreams; non-TTY: help
   navigation). Press `/` again on a committed filter to refine
   it. Filter state is per-popup and dies with the popup.
 
+  **Polling contract**: the dashboard has two refresh tiers. The
+  adjustable tick (`+` / `-` / `=` / `0`, default 1s) is SQL-only and
+  refreshes tasks, tracks, workspace registry rows, and the activity
+  log. Subprocess-backed data refreshes every 10s in the background:
+  tmux-derived agent liveness/orphans, workspace dirty flags, recent
+  project commits, and the Doctor summary. The last slow-tier result is
+  merged into every fast render so cards do not flicker through a
+  loading state. `r` / F5 refreshes both tiers immediately, and
+  Tab/Shift-Tab triggers an eager slow refresh for the newly active
+  workstream.
+
 `--tui` is mutually exclusive with `--json`. Multi-workstream `--tui`
 IS supported: tabs (Tab / Shift-Tab) cycle through the resolved set,
 one workstream visible at a time. Per-card rows always belong to the

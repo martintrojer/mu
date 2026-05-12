@@ -340,12 +340,16 @@ export {
 export {
   agentStatusHistogram,
   loadWorkstreamSnapshot,
+  loadWorkstreamSnapshotFast,
+  loadWorkstreamSnapshotSlow,
   type LoadWorkstreamSnapshotOptions,
+  mergeSnapshotFastSlow,
   type OwnedTasksSummary,
   type RoiBucket,
   roiBucket,
   summarizeOwnedTasks,
   type WorkstreamSnapshot,
+  type WorkstreamSnapshotSlowFields,
 } from "./state.js";
 export {
   countProblems,

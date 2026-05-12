@@ -40,9 +40,9 @@ export interface WorkstreamSnapshot {
   inProgress: TaskRow[];
   blocked: TaskRow[];
   recentClosed: TaskRow[];
-  /** Populated when `loadWorkstreamSnapshot` is called with
-   *  `withAllTasks: true`. The TUI all-tasks popup opts in; static
-   *  state keeps the legacy cheap shape and leaves this empty. */
+  /** Populated only when callers explicitly pass `withAllTasks: true`.
+   *  The TUI dashboard fast tick leaves this empty and the all-tasks
+   *  popup reads its exhaustive list directly from SQLite while open. */
   allTasks: TaskRow[];
   workspaces: WorkspaceRow[];
   workspaceOrphans: WorkspaceOrphan[];
@@ -66,19 +66,15 @@ export interface WorkstreamSnapshot {
 export interface LoadWorkstreamSnapshotOptions {
   /** Recent-events cap (default 200). */
   eventLimit?: number;
-  /** When true, also populate `WorkspaceRow.dirty` via
-   *  decorateWithDirty (one `git status --porcelain` shellout per row,
-   *  capped at DECORATE_CONCURRENCY). The static `mu state` card and
-   *  `mu workspace list` don't need this column today; the TUI's
-   *  Workspaces card (feat_card_5_workspaces, workstream `tui-impl`)
-   *  does. Defaults to false to keep the existing call sites cheap. */
+  /** When true, slow snapshot loading also populates `WorkspaceRow.dirty`
+   *  via decorateWithDirty (one `git status --porcelain` shellout per row,
+   *  capped at DECORATE_CONCURRENCY). The TUI caches this slow-tier value
+   *  and merges it into every fast SQL tick. */
   withDirty?: boolean;
-  /** When true, also populate `WorkstreamSnapshot.doctor` via
-   *  `loadDoctorSummary` (a handful of synchronous DB pragmas +
-   *  COUNT-shape SELECTs; reads ghosts / orphans / workspace-orphans
-   *  out of the just-built snapshot). The TUI's slot-9 Doctor card
-   *  (feat_card_9_doctor, workstream `tui-impl`) sets this; static
-   *  callers leave it false. Mirrors the `withDirty` opt-in pattern. */
+  /** When true, slow snapshot loading also populates
+   *  `WorkstreamSnapshot.doctor` via `loadDoctorSummary`. The summary is
+   *  cheap SQL, but it reports tmux/workspace drift from slow-tier fields,
+   *  so the TUI refreshes it with the subprocess tier. */
   withDoctor?: boolean;
   /** Optional full task list for the TUI all-tasks popup. */
   withAllTasks?: true;
@@ -89,54 +85,154 @@ export interface LoadWorkstreamSnapshotOptions {
   withRecentCommits?: { limit: number };
 }
 
+export interface WorkstreamSnapshotSlowFields {
+  view: LiveAgentsView;
+  /** Workspace rows decorated with slow-tier VCS observations
+   *  (`commitsBehindMain`, and `dirty` when requested). */
+  workspaces: WorkspaceRow[];
+  recentCommits: CommitSummary[];
+  commitsBackend?: VcsBackendName | null;
+  doctor: DoctorSummary | null;
+}
+
 /**
- * One synchronous-feeling read pass over the SDK for everything `mu state`
- * (static + TUI) needs to render. Lifted from the previous private
- * loadWorkstreamData in src/cli/state.ts; behaviour preserved verbatim.
+ * Fast TUI/state snapshot tier: pure SQLite reads only. Subprocess-backed
+ * fields are intentionally empty placeholders so callers can merge the last
+ * slow-tier values without blocking a 1s render tick on tmux or VCS probes.
+ */
+export async function loadWorkstreamSnapshotFast(
+  db: Db,
+  workstream: string,
+  opts: LoadWorkstreamSnapshotOptions = {},
+): Promise<WorkstreamSnapshot> {
+  const eventLimit = opts.eventLimit ?? 200;
+  return {
+    workstreamName: workstream,
+    view: emptyLiveAgentsView(),
+    tracks: getParallelTracks(db, workstream),
+    ready: listReady(db, workstream).sort(byRoiDesc),
+    inProgress: listInProgress(db, workstream),
+    blocked: listBlocked(db, workstream),
+    recentClosed: listRecentClosed(db, workstream),
+    allTasks: opts.withAllTasks === true ? listTasks(db, workstream) : [],
+    workspaces: listWorkspaces(db, workstream),
+    workspaceOrphans: listWorkspaceOrphans(db, workstream),
+    recent: listLogs(db, { workstream, kind: "event", limit: eventLimit }),
+    recentCommits: [],
+    commitsBackend: null,
+    doctor: null,
+  };
+}
+
+/**
+ * Slow snapshot tier: fields backed by tmux / VCS subprocess probes (plus
+ * doctor, which reports over those slow-tier observations). Returns only the
+ * fields the fast snapshot deliberately leaves empty or undecorated.
  *
  * status-only refresh: don't prune mid-spawn placeholders or reap
  * unreachable agents — every render-mode is a polling read surface.
+ */
+export async function loadWorkstreamSnapshotSlow(
+  db: Db,
+  workstream: string,
+  opts: LoadWorkstreamSnapshotOptions = {},
+  baseSnapshot?: WorkstreamSnapshot,
+): Promise<WorkstreamSnapshotSlowFields> {
+  const view = await listLiveAgents(db, { workstream, mode: "status-only" });
+  let workspaces = listWorkspaces(db, workstream);
+  if (opts.withDirty === true) workspaces = await decorateWithDirty(workspaces);
+  const commits = await loadRecentCommits(opts.withRecentCommits);
+  const slow: WorkstreamSnapshotSlowFields = {
+    view,
+    workspaces,
+    recentCommits: commits.items,
+    commitsBackend: commits.backend,
+    doctor: null,
+  };
+  if (opts.withDoctor === true) {
+    slow.doctor = loadDoctorSummary(
+      db,
+      mergeSnapshotFastSlow(baseSnapshot ?? minimalSnapshot(workstream), slow),
+    );
+  }
+  return slow;
+}
+
+/** Merge the latest slow-tier subprocess observations into a fresh fast tier. */
+export function mergeSnapshotFastSlow(
+  fast: WorkstreamSnapshot,
+  slow: WorkstreamSnapshotSlowFields | null,
+): WorkstreamSnapshot {
+  if (slow === null) return fast;
+  return {
+    ...fast,
+    view: slow.view,
+    workspaces: mergeWorkspaceSlowFields(fast.workspaces, slow.workspaces),
+    recentCommits: slow.recentCommits,
+    commitsBackend: slow.commitsBackend ?? null,
+    doctor: slow.doctor,
+  };
+}
+
+/**
+ * Back-compat wrapper for non-TUI callers: return the historical union shape
+ * by composing the new fast SQL tier with one slow subprocess tier.
  */
 export async function loadWorkstreamSnapshot(
   db: Db,
   workstream: string,
   opts: LoadWorkstreamSnapshotOptions = {},
 ): Promise<WorkstreamSnapshot> {
-  const eventLimit = opts.eventLimit ?? 200;
-  const view = await listLiveAgents(db, { workstream, mode: "status-only" });
-  const tracks = getParallelTracks(db, workstream);
-  const ready = listReady(db, workstream).sort(byRoiDesc);
-  const inProgress = listInProgress(db, workstream);
-  const blocked = listBlocked(db, workstream);
-  const recentClosed = listRecentClosed(db, workstream);
-  const allTasks = opts.withAllTasks === true ? listTasks(db, workstream) : [];
-  let workspaces = await decorateWithStaleness(listWorkspaces(db, workstream));
-  if (opts.withDirty === true) workspaces = await decorateWithDirty(workspaces);
-  const workspaceOrphans = listWorkspaceOrphans(db, workstream);
-  const recent = listLogs(db, { workstream, kind: "event", limit: eventLimit });
-  const commits = await loadRecentCommits(opts.withRecentCommits);
-  // Build the snapshot first (without doctor) so loadDoctorSummary
-  // can read the just-computed view + workspaceOrphans straight off it.
-  const snapshot: WorkstreamSnapshot = {
+  const fast = await loadWorkstreamSnapshotFast(db, workstream, opts);
+  const fastWithStaleness: WorkstreamSnapshot = {
+    ...fast,
+    workspaces: await decorateWithStaleness(fast.workspaces),
+  };
+  const slow = await loadWorkstreamSnapshotSlow(db, workstream, opts, fastWithStaleness);
+  return mergeSnapshotFastSlow(fastWithStaleness, slow);
+}
+
+function emptyLiveAgentsView(): LiveAgentsView {
+  return {
+    agents: [],
+    orphans: [],
+    report: { prunedGhosts: 0, statusChanges: 0, orphans: [], mode: "status-only" },
+  };
+}
+
+function minimalSnapshot(workstream: string): WorkstreamSnapshot {
+  return {
     workstreamName: workstream,
-    view,
-    tracks,
-    ready,
-    inProgress,
-    blocked,
-    recentClosed,
-    allTasks,
-    workspaces,
-    workspaceOrphans,
-    recent,
-    recentCommits: commits.items,
-    commitsBackend: commits.backend,
+    view: emptyLiveAgentsView(),
+    tracks: [],
+    ready: [],
+    inProgress: [],
+    blocked: [],
+    recentClosed: [],
+    allTasks: [],
+    workspaces: [],
+    workspaceOrphans: [],
+    recent: [],
+    recentCommits: [],
+    commitsBackend: null,
     doctor: null,
   };
-  if (opts.withDoctor === true) {
-    snapshot.doctor = loadDoctorSummary(db, snapshot);
-  }
-  return snapshot;
+}
+
+function mergeWorkspaceSlowFields(
+  fastRows: readonly WorkspaceRow[],
+  slowRows: readonly WorkspaceRow[],
+): WorkspaceRow[] {
+  const slowByAgent = new Map(slowRows.map((row) => [row.agentName, row]));
+  return fastRows.map((fast) => {
+    const slow = slowByAgent.get(fast.agentName);
+    if (slow === undefined) return fast;
+    return {
+      ...fast,
+      commitsBehindMain: slow.commitsBehindMain ?? fast.commitsBehindMain,
+      dirty: slow.dirty,
+    };
+  });
 }
 
 async function loadRecentCommits(

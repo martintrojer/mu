@@ -7,6 +7,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { insertAgent } from "../src/agents.js";
 import type { AgentRow } from "../src/agents.js";
 import { type Db, openDb } from "../src/db.js";
 import { classifyEventVerb } from "../src/logs.js";
@@ -14,11 +15,16 @@ import {
   type WorkstreamSnapshot,
   agentStatusHistogram,
   loadWorkstreamSnapshot,
+  loadWorkstreamSnapshotFast,
+  loadWorkstreamSnapshotSlow,
+  mergeSnapshotFastSlow,
   roiBucket,
   summarizeOwnedTasks,
 } from "../src/state.js";
-import type { TaskRow } from "../src/tasks.js";
+import { type TaskRow, addTask, claimTask } from "../src/tasks.js";
+import { resetTmuxExecutor, setTmuxExecutor } from "../src/tmux.js";
 import { ensureWorkstream } from "../src/workstream.js";
+import { freshMockState, mockTmux } from "./_verbs-mock.js";
 
 // Minimal TaskRow factory for the pure-function tests.
 function task(over: Partial<TaskRow> = {}): TaskRow {
@@ -179,11 +185,9 @@ describe("classifyEventVerb", () => {
 });
 
 describe("loadWorkstreamSnapshot", () => {
-  it("is exported and callable (smoke)", () => {
-    // Behaviour is exercised end-to-end by the existing state-render
-    // tests; this just guards against accidental removal of the
-    // export. A full SDK test would require a mu DB fixture (covered
-    // by test/state-render.test.ts).
+  it("exports the split loaders and back-compat wrapper", () => {
+    expect(typeof loadWorkstreamSnapshotFast).toBe("function");
+    expect(typeof loadWorkstreamSnapshotSlow).toBe("function");
     expect(typeof loadWorkstreamSnapshot).toBe("function");
   });
 
@@ -206,6 +210,92 @@ describe("loadWorkstreamSnapshot", () => {
       doctor: null,
     };
     expect(_example.workstreamName).toBe("demo");
+  });
+
+  it("splits fast SQL fields from slow subprocess fields", async () => {
+    const dbDir = tmp("mu-state-split-db-");
+    const db = openDb({ path: join(dbDir, "mu.db") });
+    const tmuxState = freshMockState();
+    tmuxState.sessions.add("mu-demo");
+    tmuxState.windows.set("mu-demo", [{ id: "@1", name: "worker-1" }]);
+    tmuxState.panes.set("%1", {
+      windowId: "@1",
+      paneId: "%1",
+      title: "worker-1",
+      command: "pi",
+      scrollback: "Working... (Esc to interrupt)\n",
+    });
+    const { executor } = mockTmux(tmuxState);
+    setTmuxExecutor(executor);
+    try {
+      ensureWorkstream(db, "demo");
+      insertAgent(db, {
+        name: "worker-1",
+        workstream: "demo",
+        paneId: "%1",
+        status: "needs_input",
+      });
+      addTask(db, {
+        localId: "ready",
+        workstream: "demo",
+        title: "Ready",
+        impact: 50,
+        effortDays: 1,
+      });
+      addTask(db, {
+        localId: "owned",
+        workstream: "demo",
+        title: "Owned",
+        impact: 40,
+        effortDays: 1,
+      });
+      claimTask(db, "owned", { agentName: "worker-1", workstream: "demo" });
+
+      const fast = await loadWorkstreamSnapshotFast(db, "demo", {
+        eventLimit: 20,
+        withAllTasks: true,
+      });
+      expect(fast.ready.map((t) => t.name)).toEqual(["ready"]);
+      expect(fast.inProgress.map((t) => t.name)).toEqual(["owned"]);
+      expect(fast.allTasks.map((t) => t.name).sort()).toEqual(["owned", "ready"]);
+      expect(fast.tracks.length).toBeGreaterThan(0);
+      expect(fast.workspaces).toEqual([]);
+      expect(fast.workspaceOrphans).toEqual([]);
+      expect(fast.recent.length).toBeGreaterThan(0);
+      expect(fast.view.agents).toEqual([]);
+      expect(fast.view.orphans).toEqual([]);
+      expect(fast.recentCommits).toEqual([]);
+      expect(fast.commitsBackend).toBeNull();
+      expect(fast.doctor).toBeNull();
+
+      const slow = await loadWorkstreamSnapshotSlow(db, "demo", { withDoctor: true }, fast);
+      expect(slow.view.agents).toEqual([
+        expect.objectContaining({ name: "worker-1", status: "busy" }),
+      ]);
+      expect(slow.view.orphans).toEqual([]);
+      expect(slow.workspaces).toEqual([]);
+      expect(slow.recentCommits).toEqual([]);
+      expect(slow.commitsBackend).toBeNull();
+      expect(slow.doctor?.checks.length).toBeGreaterThan(0);
+
+      const combined = mergeSnapshotFastSlow(fast, slow);
+      expect(combined.ready.map((t) => t.name)).toEqual(["ready"]);
+      expect(combined.view.agents[0]?.name).toBe("worker-1");
+      expect(combined.doctor?.checks.length).toBeGreaterThan(0);
+
+      const wrapper = await loadWorkstreamSnapshot(db, "demo", {
+        eventLimit: 20,
+        withDoctor: true,
+        withAllTasks: true,
+      });
+      expect(wrapper.ready.map((t) => t.name)).toEqual(["ready"]);
+      expect(wrapper.inProgress.map((t) => t.name)).toEqual(["owned"]);
+      expect(wrapper.view.agents[0]?.name).toBe("worker-1");
+      expect(wrapper.doctor?.checks.length).toBeGreaterThan(0);
+    } finally {
+      resetTmuxExecutor();
+      db.close();
+    }
   });
 
   (has("git") ? it : it.skip)("populates commitsBackend from the detected VCS", async () => {
