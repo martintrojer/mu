@@ -78,12 +78,19 @@ describe("RecentCard", () => {
 
 describe("RecentCard pure helpers", () => {
   it("glyphFor: every recently-closed row gets the heavy check glyph", () => {
-    const g = glyphFor(task());
+    // Argumentless per review_dead_code_glyph_for_unused: the glyph
+    // never depended on the row, so the previous TaskRow parameter
+    // was an anticipatory abstraction (AGENTS.md ban).
+    const g = glyphFor();
     expect(typeof g).toBe("string");
     expect(g.length).toBeGreaterThan(0);
     expect(g.length).toBeLessThanOrEqual(4);
     // Pin the actual codepoint — heavy check U+2713.
     expect(g).toBe("✓");
+  });
+
+  it("glyphFor: takes no arguments (review_dead_code_glyph_for_unused)", () => {
+    expect(glyphFor.length).toBe(0);
   });
 
   it("ageMs: returns the delta against `now`, never negative", () => {

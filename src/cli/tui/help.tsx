@@ -39,7 +39,6 @@ export function Help(): JSX.Element {
         <HelpRow keys="?" effect="toggle this overlay" />
         <HelpRow keys="q/Q" effect="quit (Ctrl-C also)" />
         <HelpRow keys="c" effect="clear footer (last yank)" />
-        <HelpRow keys="w" effect="workstream picker (v0.next)" />
         <HelpRow keys="Tab / Shift-Tab" effect="next / previous workstream tab (multi-ws)" />
       </Box>
       <Box borderStyle="round" borderColor="cyan" paddingX={1} flexDirection="column">

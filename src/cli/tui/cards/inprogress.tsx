@@ -50,7 +50,6 @@
 import { Text } from "ink";
 import { STATUS_EMOJI } from "../../../agents.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
-import type { TaskRow } from "../../../tasks.js";
 import {
   type ColumnSpec,
   contentWidthFromCols,
@@ -116,7 +115,7 @@ export function InProgressCard({ snapshot }: InProgressCardProps): JSX.Element {
   const more = inProgress.length - ROW_LIMIT;
   const bottomLabel = more > 0 ? `+${more} more · Shift+6` : undefined;
   const rows = shown.map((t, i) => [
-    glyphFor(t),
+    glyphFor(),
     t.name,
     t.ownerName ?? "—",
     formatSinceClaim(ages[i] ?? null),
@@ -151,8 +150,10 @@ export function InProgressCard({ snapshot }: InProgressCardProps): JSX.Element {
  *  STATUS_EMOJI.busy used in the Agents card so the operator reads
  *  it as "this thing is running" without learning a second
  *  vocabulary). Falls back to a literal cog if STATUS_EMOJI.busy is
- *  ever unset (defensive — the table is exhaustive today). */
-export function glyphFor(_t: TaskRow): string {
+ *  ever unset (defensive — the table is exhaustive today).
+ *  Argumentless because the glyph never depends on the row
+ *  (review_dead_code_glyph_for_unused). */
+export function glyphFor(): string {
   return STATUS_EMOJI.busy ?? "⚙";
 }
 

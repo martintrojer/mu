@@ -95,12 +95,20 @@ export interface DashboardSnapshot {
  * diff against the cards bottoms out cheaply. `lastTickMs` is in a
  * separate useState (Layer B) so its 1×/sec update does not force a
  * card re-render.
+ *
+ * `refreshNonce` is the optional refresh-now signal
+ * (review_dead_code_refresh_now): every distinct value forces an
+ * immediate re-fetch by re-running the effect. Wired through to the
+ * effect's dep list so bumping it from <App> on the `r` / F5
+ * keypress restarts the interval and runs `tick()` synchronously.
+ * Defaults to 0 when unwired so existing callers keep working.
  */
 export function useDashboardSnapshot(
   db: Db,
   workstream: string,
   tickMs: number,
   enabled: boolean,
+  refreshNonce = 0,
 ): DashboardSnapshot {
   // Layer A: data + error (the stuff the cards read).
   const [data, setData] = useState<{ data: WorkstreamSnapshot | null; error: string | null }>({
@@ -141,6 +149,13 @@ export function useDashboardSnapshot(
 
   useEffect(() => {
     if (!enabled) return;
+    // Touch refreshNonce so biome's useExhaustiveDependencies sees
+    // it as read-inside-effect; the actual purpose of listing it in
+    // the dep array is to force the effect to re-run on every bump
+    // from <App> (the `r` / F5 keypress), which tears down the
+    // setInterval and synchronously fires `tick()` below — i.e.
+    // an immediate refresh. (review_dead_code_refresh_now)
+    void refreshNonce;
     let cancelled = false;
     const tick = async () => {
       if (cancelled) return;
@@ -184,7 +199,12 @@ export function useDashboardSnapshot(
       cancelled = true;
       clearInterval(id);
     };
-  }, [db, workstream, tickMs, enabled]);
+    // `refreshNonce` participates in the dep list so the `r` / F5
+    // keypress (App bumps the nonce) tears down the interval and
+    // re-runs the effect, which fires `tick()` immediately. Without
+    // this, the binding existed but never poked the poll loop
+    // (review_dead_code_refresh_now).
+  }, [db, workstream, tickMs, enabled, refreshNonce]);
 
   return { data: data.data, lastTickMs, error: data.error };
 }

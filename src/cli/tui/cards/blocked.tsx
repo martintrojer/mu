@@ -63,7 +63,7 @@
 import { Text } from "ink";
 import type { Db } from "../../../db.js";
 import { type WorkstreamSnapshot, roiBucket } from "../../../state.js";
-import { type TaskEdgeWithStatus, type TaskRow, getTaskEdgesWithStatus } from "../../../tasks.js";
+import { type TaskEdgeWithStatus, getTaskEdgesWithStatus } from "../../../tasks.js";
 import {
   type ColumnSpec,
   contentWidthFromCols,
@@ -130,7 +130,7 @@ export function BlockedCard({ snapshot, db, workstream }: BlockedCardProps): JSX
     return { bucket, roiText };
   });
   const rows = shown.map((t, i) => [
-    glyphFor(t),
+    glyphFor(),
     t.name,
     t.status,
     String(blockerLists[i]?.length ?? 0),
@@ -162,10 +162,15 @@ export function BlockedCard({ snapshot, db, workstream }: BlockedCardProps): JSX
 
 // ─── pure helpers (exported for unit tests) ────────────────────────
 
-/** Glyph for a blocked row. Always the chain-link (⛓). The colour is
- *  applied at the call site; the function returns just the glyph so
- *  tests can assert on the codepoint without coupling to ink. */
-export function glyphFor(_t: TaskRow): string {
+/** Glyph for a blocked row. Always the chain-link (⛓). The colour
+ *  is applied at the call site; the function returns just the glyph
+ *  so tests can assert on the codepoint without coupling to ink.
+ *  Argumentless because the glyph never depends on the row
+ *  (review_dead_code_glyph_for_unused — was previously
+ *  `glyphFor(_t: TaskRow)` for plug-in symmetry that no caller
+ *  needed; the anticipatory parameter ran afoul of AGENTS.md's
+ *  no-anticipatory-abstraction pledge). */
+export function glyphFor(): string {
   return "⛓";
 }
 

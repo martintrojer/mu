@@ -243,3 +243,45 @@ describe("Layer B — lastTickMs decoupled from data state (static)", () => {
     expect(src).not.toMatch(/setSnap\s*\(\s*\{\s*data\s*,\s*lastTickMs/);
   });
 });
+
+// review_dead_code_refresh_now: the `r` / F5 binding bumps a
+// `refreshNonce` in <App>; the hook must list it as an effect dep so
+// the bump tears down the interval and re-runs the effect, which
+// fires `tick()` immediately. Without the dep the binding shipped
+// as a lie. Static-source assertion mirrors the Layer B pattern
+// above (the hook is awkward to drive without ink-testing-library).
+describe("refreshNonce — wired into useDashboardSnapshot deps (static)", () => {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const src = readFileSync(resolve(here, "..", "src", "cli", "tui", "state.ts"), "utf8");
+
+  it("useDashboardSnapshot accepts an optional refreshNonce parameter", () => {
+    expect(src).toMatch(/refreshNonce\s*=\s*0/);
+  });
+
+  it("refreshNonce is in the poll-loop effect's dep list", () => {
+    // The effect's deps end with `refreshNonce]` so a bump from <App>
+    // tears down + restarts the interval, which fires `tick()`
+    // immediately.
+    expect(src).toMatch(/\[db,\s*workstream,\s*tickMs,\s*enabled,\s*refreshNonce\]/);
+  });
+});
+
+// app.tsx side: the dead `void refreshNonce` useEffect that did
+// nothing was dropped, and the nonce is now passed through to
+// useDashboardSnapshot as the 5th argument. Static-source assertion
+// guards the wiring (catches a regression that re-introduces the
+// no-op effect or drops the hook arg).
+describe("app.tsx — refresh-now wiring (static)", () => {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const src = readFileSync(resolve(here, "..", "src", "cli", "tui", "app.tsx"), "utf8");
+
+  it("passes refreshNonce as the 5th arg to useDashboardSnapshot", () => {
+    expect(src).toMatch(
+      /useDashboardSnapshot\s*\(\s*db\s*,\s*workstream\s*,\s*tickMs\s*,\s*popup === null\s*,\s*refreshNonce\s*\)/,
+    );
+  });
+
+  it("does NOT keep a no-op `void refreshNonce` useEffect", () => {
+    expect(src).not.toMatch(/void\s+refreshNonce\s*;/);
+  });
+});

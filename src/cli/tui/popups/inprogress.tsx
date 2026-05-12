@@ -199,7 +199,7 @@ export function InProgressPopup({
   const now = Date.now();
   const ages = tasks.map((t) => ageMs(t, now));
   const rows = tasks.map((t, i) => [
-    glyphFor(t),
+    glyphFor(),
     t.name,
     t.status,
     t.ownerName ?? "—",

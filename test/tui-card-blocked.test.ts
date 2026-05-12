@@ -17,7 +17,7 @@ import {
   stillGating,
 } from "../src/cli/tui/cards/blocked.js";
 import type { Db } from "../src/db.js";
-import type { TaskEdgeWithStatus, TaskRow } from "../src/tasks.js";
+import type { TaskEdgeWithStatus } from "../src/tasks.js";
 
 const EMPTY_SNAPSHOT = {
   workstreamName: "demo",
@@ -31,21 +31,6 @@ const EMPTY_SNAPSHOT = {
   workspaceOrphans: [],
   recent: [],
 };
-
-function task(over: Partial<TaskRow> = {}): TaskRow {
-  return {
-    name: "review_x",
-    workstreamName: "demo",
-    title: "Review X",
-    status: "OPEN",
-    impact: 75,
-    effortDays: 1,
-    ownerName: null,
-    createdAt: "2026-05-11T00:00:00Z",
-    updatedAt: "2026-05-11T00:00:00Z",
-    ...over,
-  };
-}
 
 // Stub Db that returns a controllable per-task blocker list when the
 // card calls getTaskEdgesWithStatus(db, name, ws). We don't need to
@@ -77,12 +62,19 @@ describe("BlockedCard", () => {
 
 describe("BlockedCard pure helpers", () => {
   it("glyphFor: every blocked row gets the chain-link glyph", () => {
-    const g = glyphFor(task());
+    // Argumentless per review_dead_code_glyph_for_unused: the glyph
+    // never depended on the row, so the previous TaskRow parameter
+    // was an anticipatory abstraction (AGENTS.md ban).
+    const g = glyphFor();
     expect(typeof g).toBe("string");
     expect(g.length).toBeGreaterThan(0);
     expect(g.length).toBeLessThanOrEqual(4);
     // Pin the actual codepoint — chain link U+26D3.
     expect(g).toBe("⛓");
+  });
+
+  it("glyphFor: takes no arguments (review_dead_code_glyph_for_unused)", () => {
+    expect(glyphFor.length).toBe(0);
   });
 
   it("stillGating: drops CLOSED blockers; keeps OPEN/IN_PROGRESS/REJECTED/DEFERRED", () => {

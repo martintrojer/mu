@@ -104,8 +104,12 @@ describe("dispatchGlobalKey: refresh / quit / help / footer-clear", () => {
   it("c clearFooter (without ctrl)", () => {
     expect(dispatchGlobalKey("c", NO_KEY)).toEqual({ kind: "clearFooter" });
   });
-  it("w workstreamPicker (reserved)", () => {
-    expect(dispatchGlobalKey("w", NO_KEY)).toEqual({ kind: "workstreamPicker" });
+  it("w is a noop — workstream picker dropped per review_dead_code_workstream_picker", () => {
+    // The lie-with-toast `w` binding (was emitting a v0.next toast
+    // and nothing else) was dropped: multi-ws Tab/Shift-Tab covers
+    // the use case. If a real picker ever ships, restore the
+    // binding then.
+    expect(dispatchGlobalKey("w", NO_KEY)).toEqual({ kind: "noop" });
   });
 });
 

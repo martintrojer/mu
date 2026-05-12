@@ -353,6 +353,30 @@ is opt-in via the new `--tui` flag.
 
 ### TUI internals
 
+- **Dropped three TUI dead-code lies**
+  (review_dead_code_glyph_for_unused, review_dead_code_refresh_now,
+  review_dead_code_workstream_picker). (1) `glyphFor(_t: TaskRow)`
+  in `cards/{blocked,inprogress,recent}.tsx` was a const-returning
+  helper whose `TaskRow` arg existed purely for plug-in symmetry no
+  caller needed — exactly the anticipatory-abstraction pattern
+  AGENTS.md bans. Argument dropped; popup/card/test call sites
+  collapse to `glyphFor()`; the unused `TaskRow` import goes too.
+  (2) The `r` / F5 refresh-now binding bumped a `refreshNonce`
+  whose only consumer was a no-op `void refreshNonce` useEffect;
+  the snapshot poll loop in `useDashboardSnapshot` had no
+  refresh-now signal so the help-overlay-advertised binding did
+  nothing. Wired through: hook now takes an optional `refreshNonce`
+  param + lists it as an effect dep so a bump tears down the
+  interval and re-runs `tick()` synchronously; the dead useEffect
+  in `app.tsx` is gone. (3) The `w` workstream-picker binding
+  emitted a `workstream picker: v0.next` toast and otherwise did
+  nothing — a discoverable affordance shipping as a lie. Multi-ws
+  Tab/Shift-Tab (feat_tui_multi_workstream) covers the use case
+  now; the binding is gone from `keys.ts`, the suppression set in
+  `app.tsx`, the help overlay row, and the `tui-keys.test.ts`
+  expectation (replaced by a regression guard that pins `w` as a
+  noop). If a real picker ever ships, restore the binding then.
+
 - **Centralised pure formatters across cards/popups**
   (review_dedup_age_ms, review_dedup_color_for_bucket,
   review_dedup_format_roi, review_unify_format_when_since). Hoisted

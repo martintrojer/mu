@@ -104,7 +104,7 @@ export function App({ db, workstreams }: AppProps): JSX.Element {
   const safeActive = Math.max(0, Math.min(activeWs, workstreams.length - 1));
   const workstream = workstreams[safeActive] ?? "";
 
-  const snap = useDashboardSnapshot(db, workstream, tickMs, popup === null);
+  const snap = useDashboardSnapshot(db, workstream, tickMs, popup === null, refreshNonce);
 
   // Terminal-resize handling per design_resize. ink's stdout exposes
   // columns/rows; we only use them to render a 'too small' guard.
@@ -170,12 +170,7 @@ export function App({ db, workstreams }: AppProps): JSX.Element {
         // key (+/-/r/?/c/w) so they don't compete with the user's
         // filter typing.
         if (popupFilterEditing) return;
-        if (
-          (input >= "1" && input <= "9") ||
-          "!@#$%^&*()".includes(input) ||
-          input === "c" ||
-          input === "w"
-        ) {
+        if ((input >= "1" && input <= "9") || "!@#$%^&*()".includes(input) || input === "c") {
           return;
         }
         // Ctrl-C still quits (universal escape).
@@ -221,12 +216,6 @@ export function App({ db, workstreams }: AppProps): JSX.Element {
           setPopupMode("list");
           setPopup(action.cardId);
           return;
-        case "workstreamPicker":
-          setFooter({
-            command: "workstream picker: v0.next",
-            copied: false,
-          });
-          return;
         case "nextTab":
           if (popup !== null) return; // suppress while popup is open
           if (workstreams.length <= 1) return;
@@ -243,19 +232,6 @@ export function App({ db, workstreams }: AppProps): JSX.Element {
     },
     { isActive: true },
   );
-
-  // Force a refresh-now on nonce change (cheap; the snapshot hook
-  // re-runs because `tickMs` is unchanged so React just schedules
-  // the next interval — but we want one immediate fetch. Bumping
-  // tickMs by a no-op cycle is the simplest pattern that works
-  // without restructuring the hook.)
-  useEffect(() => {
-    // Touch refreshNonce so React tracks the dep; the actual
-    // re-fetch happens on the next setInterval tick. v0 accepts
-    // this latency; v0.next can wire a refresh-now signal into
-    // the hook.
-    void refreshNonce;
-  }, [refreshNonce]);
 
   // Help overlay covers everything else (still gets the global
   // status bar at the bottom for consistent navigation hints).

@@ -56,7 +56,6 @@
 
 import { Text } from "ink";
 import type { WorkstreamSnapshot } from "../../../state.js";
-import type { TaskRow } from "../../../tasks.js";
 import {
   type ColumnSpec,
   contentWidthFromCols,
@@ -115,7 +114,7 @@ export function RecentCard({ snapshot }: RecentCardProps): JSX.Element {
   const more = recentClosed.length - ROW_LIMIT;
   const bottomLabel = more > 0 ? `+${more} more · Shift+8` : undefined;
   const rows = shown.map((t, i) => [
-    glyphFor(t),
+    glyphFor(),
     t.name,
     t.status,
     formatWhen(ages[i] ?? null),
@@ -147,8 +146,9 @@ export function RecentCard({ snapshot }: RecentCardProps): JSX.Element {
 /** Glyph for a recently-closed row. Always the heavy check (✓,
  *  U+2713). The colour is applied at the call site; the function
  *  returns just the glyph so tests can pin the codepoint without
- *  coupling to ink. */
-export function glyphFor(_t: TaskRow): string {
+ *  coupling to ink. Argumentless because the glyph never depends on
+ *  the row (review_dead_code_glyph_for_unused). */
+export function glyphFor(): string {
   return "✓";
 }
 

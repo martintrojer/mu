@@ -83,13 +83,20 @@ describe("InProgressCard pure helpers", () => {
   });
 
   it("glyphFor: every IN_PROGRESS row gets the cog glyph", () => {
-    const g = glyphFor(task());
+    // Argumentless per review_dead_code_glyph_for_unused: the glyph
+    // never depended on the row, so the previous TaskRow parameter
+    // was an anticipatory abstraction (AGENTS.md ban).
+    const g = glyphFor();
     // The cog is a single visible character; we don't pin the exact
     // codepoint because STATUS_EMOJI may evolve, but it must be a
     // non-empty short string (≤ 4 bytes / 1-2 columns).
     expect(typeof g).toBe("string");
     expect(g.length).toBeGreaterThan(0);
     expect(g.length).toBeLessThanOrEqual(4);
+  });
+
+  it("glyphFor: takes no arguments (review_dead_code_glyph_for_unused)", () => {
+    expect(glyphFor.length).toBe(0);
   });
 
   it("ageMs: returns the delta against `now`, never negative", () => {

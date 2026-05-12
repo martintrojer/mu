@@ -23,7 +23,6 @@
 //   q / Q       quit
 //   Ctrl-C      quit (handled by ink's exitOnCtrlC)
 //   c           clear footer (most-recent-yank line)
-//   w           workstream picker (v0.next; emits a noop-with-toast)
 //   Tab         next workstream tab (multi-ws TUI; noop when N=1)
 //   Shift-Tab   previous workstream tab
 //
@@ -41,7 +40,6 @@ export type GlobalAction =
   | { kind: "toggleHelp" }
   | { kind: "quit" }
   | { kind: "clearFooter" }
-  | { kind: "workstreamPicker" }
   | { kind: "nextTab" }
   | { kind: "prevTab" }
   | { kind: "noop" };
@@ -117,9 +115,6 @@ export function dispatchGlobalKey(input: string, key: KeyFlags): GlobalAction {
 
   // Footer clear (last-yank line)
   if (input === "c") return { kind: "clearFooter" };
-
-  // Workstream picker (reserved; v0.next)
-  if (input === "w") return { kind: "workstreamPicker" };
 
   // Multi-workstream tab navigation. Tab cycles forward;
   // Shift-Tab cycles backward. Per feat_tui_multi_workstream

@@ -233,7 +233,7 @@ export function BlockedPopup({
     const blockers = blockerIndex.get(t.name) ?? [];
     const top = blockers[0] ?? "—";
     const roiText = formatRoi(t.impact, t.effortDays);
-    return [glyphFor(t), t.name, t.status, String(blockers.length), top, roiText, t.title];
+    return [glyphFor(), t.name, t.status, String(blockers.length), top, roiText, t.title];
   });
   const widths = layoutColumns(rows, COLUMN_SPECS, contentWidth);
 
