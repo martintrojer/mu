@@ -1,4 +1,4 @@
-// mu — `mu state` (canonical state card) + bare `mu` (mission control).
+// mu — `mu state` (canonical state card) and TUI back-compat dispatch.
 //
 // One verb, three render modes:
 //
@@ -17,9 +17,9 @@
 //                               user to run in a shell.
 //
 //   mu state --mission          stripped 5-column glance card: agents +
-//                               orphans + tracks + ready. The bare-`mu`
-//                               muscle-memory orient call ("what's going
-//                               on?"). Bare `mu` (no verb) is an alias.
+//                               orphans + tracks + ready. Kept as an
+//                               explicit static render mode; bare `mu`
+//                               now routes TTY-attached humans to the TUI.
 //
 // Static modes share the same data set (loaded once via
 // loadWorkstreamSnapshot); only the rendering strategy differs. --tui
@@ -156,9 +156,9 @@ function missionJsonShape(d: PerWsData): Record<string, unknown> {
 // ─── cmdState — dispatch ────────────────────────────────────────────
 
 export async function cmdState(db: Db, opts: StateOpts): Promise<void> {
-  // Mission is the only mode that survives a no-workstream context:
-  // bare `mu` outside a tmux session is a discovery moment, not an
-  // error. Default keeps today's "workstream required" failure
+  // Mission is the only state render mode that survives a no-workstream
+  // context: explicit `mu state --mission` outside a tmux session is a
+  // discovery moment, not an error. Default keeps today's "workstream required" failure
   // (resolveWorkstreamSet throws via the resolveWorkstream chain
   // inside the explicit branches).
   if (opts.mission === true && (opts.workstream === undefined || opts.workstream.length === 0)) {
@@ -257,14 +257,12 @@ export async function cmdState(db: Db, opts: StateOpts): Promise<void> {
     return;
   }
 
-  // ── Interactive TUI branch (opt-in via --tui) ──
-  // The TUI is OPT-IN: the legacy static card is the default for
-  // `mu state` so it stays visible to LLMs, screenshots, docs, and
-  // muscle-memory users.
-  // See feat_resurrect_state_card (workstream `tui-impl`) for the
-  // rationale on demoting the prior TTY auto-route. Mutual-exclusion
-  // with --json / --mission is enforced earlier (above the JSON
-  // branch). Multi-workstream TUI is supported via tabs as of
+  // ── Interactive TUI branch (explicit via --tui) ──
+  // The legacy static card remains the default for `mu state` so it
+  // stays visible to LLMs, screenshots, docs, and muscle-memory users.
+  // Bare `mu` owns the TTY auto-route for humans. Mutual-exclusion with
+  // --json / --mission is enforced earlier (above the JSON branch).
+  // Multi-workstream TUI is supported via tabs as of
   // feat_tui_multi_workstream (workstream `tui-impl`): the resolved
   // ws set is forwarded to <App>; Tab / Shift-Tab cycles tabs.
   if (opts.tui === true) {
@@ -368,7 +366,7 @@ function renderFullCard(d: PerWsData): void {
   }
 }
 
-// ─── Render: mission mode (bare `mu` / `mu state --mission`) ───────
+// ─── Render: mission mode (`mu state --mission`) ───────────────────
 
 function renderMissionMode(perWs: PerWsData[]): void {
   perWs.forEach((d, i) => {
@@ -400,12 +398,18 @@ function renderMissionCard(d: PerWsData): void {
 }
 
 /**
- * Mission fallback when bare `mu` runs but no workstream resolves —
+ * Mission fallback when `mu state --mission` runs but no workstream resolves —
  * not in a tmux session, no `$MU_SESSION`, no `-w` flag. Show what
  * workstreams exist on this machine and a hint at next steps. Exit 0
  * (orientation, not failure). For `--json`, emit a structured shape so
  * scripts can detect the case without parsing prose.
  */
+export function printBareNoWorkstreamsHint(): void {
+  console.log("");
+  console.log("Next:");
+  console.log("  Get started: mu workstream init <name>");
+}
+
 async function renderMissionNoWorkstream(db: Db, opts: StateOpts): Promise<void> {
   const summaries = await listWorkstreams(db);
   if (opts.json === true) {
@@ -448,7 +452,7 @@ export function wireStateCommands(program: Command): void {
   program
     .command("state")
     .description(
-      "Canonical state card: agents + orphans + tracks + ready/in-progress/blocked/recent-closed tasks + workspaces + recent events. The 'what does an LLM look at first?' verb. JSON-first. Default prints the static card; pass --tui to enter the interactive ink-based dashboard. --mission emits the stripped 5-col glance card (agents + orphans + tracks + ready) — bare `mu` is an alias. -w accepts repeat or comma-separate (or both); --all is sugar for every workstream on this machine. N≥2 stacks per-workstream cards (full / mission).",
+      "Canonical state card: agents + orphans + tracks + ready/in-progress/blocked/recent-closed tasks + workspaces + recent events. The agent/API-facing static state surface. Default prints the static card; pass --tui to enter the interactive ink-based dashboard. --mission emits the stripped 5-col glance card (agents + orphans + tracks + ready). -w accepts repeat or comma-separate (or both); --all is sugar for every workstream on this machine. N≥2 stacks per-workstream cards (full / mission).",
     )
     .option(
       "-w, --workstream <names...>",

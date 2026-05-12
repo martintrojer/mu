@@ -17,14 +17,19 @@ export interface RunTuiOptions {
    *  responsible for the resolution + validation; runTui just
    *  forwards the array. */
   workstreams: string[];
+  /** Initial active tab index. Bare `mu` seeds this from $MU_SESSION
+   *  when it names one of the loaded workstreams; explicit
+   *  `mu state --tui` keeps the default 0. <App> clamps defensively. */
+  initialActive?: number;
 }
 
 export async function runTui(db: Db, opts: RunTuiOptions): Promise<void> {
   process.stdout.write(ALT_SCREEN_ENTER);
   try {
-    const { waitUntilExit } = render(createElement(App, { db, workstreams: opts.workstreams }), {
-      exitOnCtrlC: true,
-    });
+    const { waitUntilExit } = render(
+      createElement(App, { db, workstreams: opts.workstreams, initialActive: opts.initialActive }),
+      { exitOnCtrlC: true },
+    );
     await waitUntilExit();
   } finally {
     process.stdout.write(ALT_SCREEN_EXIT);

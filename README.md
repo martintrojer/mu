@@ -16,14 +16,18 @@ mu agent spawn reviewer-1 --workspace --role read-only
 mu agent send worker-1 "Pick up the next ready task and design the auth module."
 
 tmux a -t mu-auth-refactor    # watch the whole crew live
-mu                            # mission control: ready tasks, parallel tracks, agent status
+mu                            # human home base: TUI with every workstream loaded
+mu state -w auth-refactor --json  # agent/script API: typed static state for jq
 mu log --tail                 # subscribe to every state change
 ```
 
 The crew is real (tmux panes you can attach to), the work graph is
 real (SQLite + a parallel-tracks algorithm with diamond-merge), the
 workspaces are real (jj workspace / sl share / git worktree), and
-**mu does not get in your model's way.**
+**mu does not get in your model's way.** Bare `mu` is the human front
+door when stdout is attached to a TTY: it launches the read-only TUI
+with every workstream loaded. Piped/scripted calls print help instead;
+use typed verbs plus `--json` (or `MU_NO_TUI=1`) for agent/API flows.
 
 ---
 
@@ -132,8 +136,11 @@ mu task add --title "Review auth"        --impact 60 --effort-days 1 --blocks bu
 mu agent spawn worker-1   --workspace
 mu agent spawn reviewer-1 --workspace --role read-only
 
-# Mission control: parallel tracks, ready tasks, agent status.
+# Human home base: interactive read-only TUI across every workstream.
 mu
+
+# Agent/script API: static state stays explicit and JSON-friendly.
+mu state -w auth-refactor --json
 
 # Inside an agent's pane, the agent claims and closes tasks
 # without ever knowing its own name (mu reads $TMUX_PANE).

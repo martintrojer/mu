@@ -10,6 +10,19 @@ called out under "Breaking" in each entry.
 
 ## [0.5.0] — unreleased
 
+### Added
+
+- **Bare `mu` launches the TUI when stdout is attached to a TTY**
+  (feat_mu_bare_launches_tui). The human entrypoint now opens the
+  read-only dashboard immediately with every workstream loaded as
+  tabs; `$MU_SESSION` seeds the initial active tab when it names one
+  of those workstreams, otherwise tab 0 wins. Non-TTY stdout, `--json`,
+  and `MU_NO_TUI=1` deliberately stay on the help path so agents,
+  scripts, pipes, and CI never boot Ink by surprise. An empty machine
+  prints `mu --help` plus `Get started: mu workstream init <name>`.
+  `mu state` remains the static card and `mu state --tui` remains the
+  explicit TUI selector for back-compat.
+
 ### TUI internals
 
 - **State/TUI dispatch + event-classifier tests are behaviour-backed**

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // mu — command-line interface.
 //
-// 10 verbs + mission control, each registered via commander as a thin
+// 10 verbs + a TTY-aware human entrypoint, each registered via commander as a thin
 // wrapper around the corresponding programmatic function in src/. The
 // real work happens in agents.ts, tasks.ts, tracks.ts, db.ts, tmux.ts;
 // this file is just argument parsing, output formatting, and error-to-
@@ -34,7 +34,7 @@ import {
 import { wireLogCommand } from "./cli/log.js";
 import { wireSnapshotCommands } from "./cli/snapshot.js";
 import { wireSqlCommand } from "./cli/sql.js";
-import { cmdState, wireStateCommands } from "./cli/state.js";
+import { printBareNoWorkstreamsHint, wireStateCommands } from "./cli/state.js";
 import { wireTaskCommands } from "./cli/tasks.js";
 import { wireWorkspaceCommands } from "./cli/workspace.js";
 import { wireWorkstreamCommands } from "./cli/workstream.js";
@@ -47,7 +47,7 @@ import {
   isTaskStatus,
 } from "./tasks.js";
 import { tmux } from "./tmux.js";
-import { RESERVED_WORKSTREAM_PREFIX } from "./workstream.js";
+import { RESERVED_WORKSTREAM_PREFIX, listWorkstreams } from "./workstream.js";
 
 // ─── Re-exports for downstream cli/* modules ──────────────────────────
 //
@@ -106,7 +106,7 @@ export async function resolveWorkstream(explicit?: string): Promise<string> {
 }
 
 /** Like resolveWorkstream but returns null instead of throwing on miss.
- *  Used by the read-permissive verbs (mu log, mu state, bare mu)
+ *  Used by read-permissive verbs (mu log, mu state).
  *  where 'no workstream' is a legitimate state to render. */
 export async function resolveOptionalWorkstream(): Promise<string | null> {
   try {
@@ -551,15 +551,15 @@ export function parseNonNegativeInt(value: string): number {
 // ─── Program definition ───────────────────────────────────────────────
 //
 // Three namespaces (`workstream`, `agent`, `task`) plus three top-level
-// utilities (`sql`, `doctor`, and the bare `mu` mission-control default).
+// utilities (`sql`, `doctor`, and the bare `mu` TTY-aware default).
 //
 // Every flag is declared on the subcommand that consumes it — there is
 // NO root --workstream that subcommands inherit via optsWithGlobals(),
 // which previously was the source of "flag at the wrong level" bugs.
 //
-// Bare `mu` (mission control) takes no flags. To target a different
-// workstream than the one the current shell is in, use `MU_SESSION=foo
-// mu` or `cd` into that workstream's tmux session.
+// Bare `mu` takes only the root `-w` / `--json` flags. In a TTY it
+// loads every workstream into the TUI; in non-TTY / --json / MU_NO_TUI
+// paths it prints help for script-friendly behaviour.
 
 // Reusable workstream flag declaration. Each subcommand that needs it
 // gets its own copy via `.option(...WORKSTREAM_OPT)` so there is no
@@ -626,6 +626,33 @@ export function emitJsonCollection<T>(items: readonly T[]): void {
   emitJson({ items, count: items.length });
 }
 
+async function cmdBareTui(db: Db, program: Command): Promise<void> {
+  const workstreams = await listWorkstreams(db);
+  if (workstreams.length === 0) {
+    program.outputHelp();
+    printBareNoWorkstreamsHint();
+    return;
+  }
+
+  const names = workstreams.map((w) => w.name);
+  const envWs = process.env.MU_SESSION;
+  const envIndex = envWs === undefined ? -1 : names.indexOf(envWs);
+  const initialActive = envIndex >= 0 ? envIndex : 0;
+  try {
+    const { runTui } = await import("./cli/tui/index.js");
+    await runTui(db, { workstreams: names, initialActive });
+  } catch (err) {
+    // If stdout is a TTY but stdin is not, ink can fail before rendering.
+    // Degrade to the non-TTY path instead of crashing a piped/scripted call.
+    // For an actual interactive stdin, surface the TUI error normally.
+    if (process.stdin.isTTY !== true) {
+      program.outputHelp();
+      return;
+    }
+    throw err;
+  }
+}
+
 /**
  * Read the package version from the shipped package.json. Works for
  * both source mode (src/cli.ts → ../package.json) and bundled mode
@@ -674,24 +701,23 @@ export function buildProgram(): Command {
     // options before a subcommand bind to the program; options after
     // bind to the subcommand. Subcommands inherit it automatically.
     .enablePositionalOptions()
-    // Default action when no subcommand is given: mission control.
-    // Workstream resolves via the standard chain (-w > $MU_SESSION >
-    // current tmux session); when none of those resolve, falls back
-    // to a workstreams-discovery view instead of erroring. Accepts
-    // --json so scripts can drive the same picture programmatically.
-    // Bare `mu` is an alias for `mu state --mission` (the stripped
-    // 5-col glance card):
-    // route through cmdState with mission=true so there's exactly one
-    // implementation of the glance render. -w accepts the same
-    // variadic shape every other render mode does.
+    // Default action when no subcommand is given. Human path (stdout
+    // attached to a TTY) opens the interactive TUI across every
+    // workstream; non-TTY / MU_NO_TUI / --json keeps the CLI-help path
+    // so scripts and agents do not accidentally enter ink.
     .option(
       "-w, --workstream <names...>",
       "workstream(s) to render (repeat or comma-separate; or both; defaults to $MU_SESSION or current tmux session)",
     )
     .option(...JSON_OPT)
     .action(function () {
-      const opts = (this as Command).opts() as { workstream?: string[]; json?: boolean };
-      return handle((db) => cmdState(db, { ...opts, mission: true }), this as Command)();
+      const command = this as Command;
+      const opts = command.opts() as { workstream?: string[]; json?: boolean };
+      if (process.stdout.isTTY !== true || process.env.MU_NO_TUI === "1" || opts.json === true) {
+        program.outputHelp();
+        return;
+      }
+      return handle((db) => cmdBareTui(db, program), command)();
     });
 
   wireWorkstreamCommands(program);
@@ -770,7 +796,7 @@ function applyExitOverride(cmd: Command): void {
  *    - that subcommand itself has its own subcommands (i.e. it's a
  *      namespace, not a leaf verb)
  *  In that case we append `--help` so commander routes through its
- *  help printer. Bare `mu` (mission control) is unaffected because
+ *  help printer. Bare `mu` is unaffected because
  *  the slice has length 0.
  */
 export function injectBareNamespaceHelp(

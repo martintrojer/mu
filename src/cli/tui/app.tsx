@@ -59,6 +59,9 @@ export interface AppProps {
    *  Tab/Shift-Tab cycles. Length 1 is the original single-ws TUI
    *  with no tab strip rendered. */
   workstreams: string[];
+  /** Initial active tab index. Clamped at render time so stale env
+   *  values or shrinking workstream arrays fall back safely. */
+  initialActive?: number;
 }
 
 export interface FooterState {
@@ -69,14 +72,14 @@ export interface FooterState {
 type PopupId = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | null;
 export type PopupMode = "list" | "drill";
 
-export function App({ db, workstreams }: AppProps): JSX.Element {
+export function App({ db, workstreams, initialActive = 0 }: AppProps): JSX.Element {
   const { exit } = useApp();
 
   const [visibility, setVisibility] = useState<CardVisibility>(DEFAULT_CARD_VISIBILITY);
   const [tickMs, setTickMs] = useState<number>(TICK_DEFAULT_MS);
   // Index of the active workstream tab. Tab / Shift-Tab cycles
   // through `workstreams`. Always in [0, workstreams.length).
-  const [activeWs, setActiveWs] = useState<number>(0);
+  const [activeWs, setActiveWs] = useState<number>(initialActive);
   const [popup, setPopup] = useState<PopupId>(null);
   // Per-popup-instance mode ("list" → list of rows; "drill" →
   // inline detail view inside the popup body). Owned by <App>

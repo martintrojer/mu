@@ -140,6 +140,27 @@ tmux       # if you're not already in one
 
 ## 2. Get oriented
 
+For a human at an interactive terminal, bare `mu` is the home base:
+it launches the read-only TUI with every workstream on the machine
+loaded as tabs. If no workstream exists yet, it prints help plus the
+one-paste start command:
+
+```bash
+mu
+# Get started: mu workstream init <name>
+```
+
+For scripts, agents, CI, and pipes, bare `mu` deliberately does NOT
+enter the TUI: when stdout is not a TTY it prints `mu --help`. Use
+explicit typed verbs and `--json` for the API surface:
+
+```bash
+mu state -w <workstream> --json
+MU_NO_TUI=1 mu             # force the non-TTY/help path even in a terminal
+```
+
+Run the diagnostic once to check tmux + DB health:
+
 ```bash
 mu doctor
 ```
@@ -367,11 +388,26 @@ workstream, mu refuses with a `CrossWorkstreamEdgeError`.
 
 ## 5. See the graph (mission control)
 
+For a human at a terminal, launch the TUI:
+
 ```bash
-mu --workstream auth-refactor
-# or, if your tmux session is mu-auth-refactor:
 mu
 ```
+
+It loads every workstream as tabs; use `Tab` / `Shift-Tab` to switch,
+`?` for the keymap, and `q` / `Ctrl-C` to quit. The dashboard is the
+answer to **"what should I look at next?"** without asking an LLM:
+Agents, Tracks, Ready, Activity log, Workspaces, In-progress,
+Blocked, Recent, and Doctor cards all update live.
+
+For an agent/script or a static capture, use explicit state verbs:
+
+```bash
+mu state --mission --workstream auth-refactor
+mu state --workstream auth-refactor --json
+```
+
+The stripped mission card looks like:
 
 ```
 mu-auth-refactor
@@ -390,8 +426,7 @@ Ready (1)
 └────────┴─────────────────────┴────────┴────────┴──────┴───────┘
 ```
 
-This is the answer to **"what should I work on next?"** without
-asking an LLM. Three sections:
+The mission card has three sections:
 
 - **Agents** — registry rows, status detected from each pane's
   scrollback, post-reconciliation
@@ -411,7 +446,7 @@ JSON shape (`--json`) follows render mode (full vs stripped).
 mu state                    # default: full top-to-bottom static card
 mu state --tui              # interactive ink-based dashboard (read-only; yanks commands)
 mu state --mission          # stripped 5-col glance card
-mu                          # bare alias for `mu state --mission`
+mu                          # TTY: TUI across all workstreams; non-TTY: help
 ```
 
 - **default (full card)** — every section: agents + orphans + tracks +
@@ -466,10 +501,9 @@ mu                          # bare alias for `mu state --mission`
   it. Filter state is per-popup and dies with the popup.
 
 - **`--mission`** — stripped 5-col glance card (agents + orphans +
-  tracks + ready). The bare-`mu` muscle-memory orient call
-  ("what's going on?"). The full card with blocked / recent-closed /
-  workspaces is too much for that intent; `--mission` is the
-  intentional minimum-viable orient view.
+  tracks + ready). This remains available as an explicit static
+  orient view. Bare `mu` is now the human TUI entrypoint when stdout
+  is attached to a TTY; non-TTY bare `mu` prints help for scripts.
 
 `--tui` is mutually exclusive with `--json` and `--mission`.
 Multi-workstream `--tui` IS supported: tabs (Tab / Shift-Tab) cycle
@@ -496,7 +530,8 @@ JSON shapes (per render mode):
   workspaces, recent }`.
 - `mu state --mission --json`: STRIPPED — only `{ workstreamName,
   agents, orphans, tracks, ready }`.
-- bare `mu --json`: same as `--mission --json`.
+- bare `mu --json`: prints help rather than entering the TUI; use
+  `mu state --mission --json` for the stripped JSON state shape.
 - `--tui` is render-only and incompatible with `--json` (the TUI
   has no JSON shape; pass `--json` without `--tui` for the static
   shape).

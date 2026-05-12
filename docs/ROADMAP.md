@@ -71,11 +71,11 @@ model-facing tool entropy).
   the orchestrator's first message are the only "definition."
 - Add a render layer beyond `cli-table3` + `picocolors`, EXCEPT
   `ink` confined to the interactive TUI subtree (`src/cli/tui/`),
-  lazy-imported by `mu state` only when the user passes the
-  opt-in `--tui` flag. The static `mu state` (default), `mu state
-  --mission`, `mu state --json`, `mu task list`, `mu agent show`,
-  and every other verb keep rendering with `cli-table3` +
-  `picocolors`. `ink` (and its transitive `react` /
+  lazy-imported only by `mu state --tui` and by bare `mu` when stdout
+  is attached to a TTY. The static `mu state` (default), `mu state
+  --mission`, `mu state --json`, bare `mu` on non-TTY stdout,
+  `mu task list`, `mu agent show`, and every other verb keep rendering
+  with `cli-table3` + `picocolors`. `ink` (and its transitive `react` /
   `react-reconciler` / `yoga-layout-prebuilt`) MUST NOT be imported
   from any module outside `src/cli/tui/`. The TUI is the only
   long-lived process mu ships; everything else stays short-lived.

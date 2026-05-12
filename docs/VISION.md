@@ -363,9 +363,10 @@ speaking for another.
 
    - `mu log --tail` — polls SQLite once per second; emits NDJSON
      until SIGINT or the parent closes stdin.
-   - `mu state --tui` — renders an ink-based dashboard until the
-     user quits with `q`/`Ctrl-C`. Opt-in via the `--tui` flag;
-     plain `mu state` keeps the static-card behaviour.
+   - the TUI dashboard — rendered by `mu state --tui` explicitly or
+     by bare `mu` when stdout is attached to a TTY, until the user
+     quits with `q`/`Ctrl-C`. Plain `mu state` keeps the static-card
+     behaviour; non-TTY bare `mu` prints help instead of entering Ink.
 
    Both share the same shape, and the shape is the predicate that
    bounds the exception:
@@ -384,10 +385,11 @@ speaking for another.
      services, no spawned subprocesses, no inter-process state
      beyond the SQLite reads any other CLI invocation already
      does.
-   - **Opt-in via flag, with a static fallback.** The TUI mode
-     only activates when `--tui` is passed; default `mu state`
-     prints the static card. Non-interactive callers (pipes, CI,
-     `--json`, `--mission`) never enter the TUI.
+   - **Human-TTY gated, with static/script fallbacks.** The TUI mode
+     activates when `--tui` is passed to `mu state` or when bare `mu`
+     sees `process.stdout.isTTY === true`. Default `mu state` prints
+     the static card. Non-interactive callers (pipes, CI, `--json`,
+     `--mission`, or `MU_NO_TUI=1`) never enter the TUI.
 
    This is not a precedent for any other long-lived process. The
    anti-feature pledges in [ROADMAP.md](ROADMAP.md) ("no daemon,

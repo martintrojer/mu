@@ -302,9 +302,9 @@ export function printLogRow(row: LogRow): void {
 
 /**
  * Workstreams summary table renderer. Used by `mu workstream list`
- * and `bare mu` (no-workstream discovery fallback). Both verbs render
- * the same shape; the helper lives here so cli/workstream.ts and
- * cli/state.ts can both import it without a lateral cli/* dependency.
+ * and the `mu state --mission` no-workstream discovery fallback. Both
+ * render the same shape; the helper lives here so cli/workstream.ts
+ * and cli/state.ts can both import it without a lateral cli/* dependency.
  */
 export function formatWorkstreamsTable(rows: WorkstreamSummary[]): string {
   // Workstream names are user-chosen free-form text; everything else

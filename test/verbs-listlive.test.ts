@@ -106,7 +106,7 @@ describe("listLiveAgents", () => {
     expect(getAgent(db, "ghost", "auth")).toBeUndefined();
   });
 
-  // mode propagation — status pollers (mu state / mu attach / bare mu)
+  // mode propagation — status pollers (mu state / mu attach)
   // MUST pass mode: "status-only" and read-only diagnostic verbs (mu
   // doctor / mu undo) MUST pass mode: "report-only" so the periodic
   // poll doesn't race a long-running spawn (see

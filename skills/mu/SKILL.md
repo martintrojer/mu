@@ -303,7 +303,9 @@ running a wave.
   <ws> [--destroy]` (idempotent; preserves task graph atomically),
   `remove`, `delete`, `search`, `export`. Labels globally unique.
 - **Escape hatch + state**: `mu sql "<query>"` for anything not yet
-  typed. `mu` alone = `mu state --mission`. `mu state` has `--tui`
+  typed. Humans in a TTY run bare `mu` to launch the all-workstream
+  TUI. Agents/scripts should use typed verbs plus `--json`; bare
+  `mu` on non-TTY stdout (or with `MU_NO_TUI=1`) prints help. `mu state` has `--tui`
   (interactive ink dashboard; read-only, yanks `mu` commands;
   `g` opens the full workstream DAG popup; `1`-`9` toggle cards;
   `Shift+1`-`Shift+9` open popups, `Enter`
@@ -378,7 +380,8 @@ mu task add -w <ws> --title "Build X"  --impact 70 --effort-days 5 --blocked-by 
 mu task add -w <ws> --title "Review X" --impact 60 --effort-days 1 --blocked-by build_x
 mu agent spawn worker-1   -w <ws> --workspace
 mu agent spawn reviewer-1 -w <ws> --workspace --role read-only
-mu -w <ws>    # mission control
+mu            # human TUI (all workstreams) when stdout is a TTY
+mu state -w <ws> --json  # agent/script state API
 ```
 
 IDs auto-derive from titles via slugify.

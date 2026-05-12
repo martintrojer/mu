@@ -39,7 +39,7 @@ import { type TmuxPane, capturePane, listPanesInSession } from "./tmux.js";
  *                 pane title — desired side-effects of a refresh) and
  *                 orphan surface. Does NOT prune (so a dead pane's
  *                 row stays visible until a real `mu agent list`) and
- *                 does NOT reap. Used by `mu state`, bare `mu`, and
+ *                 does NOT reap. Used by `mu state` and
  *                 `mu agent attach` — the verbs an operator polls to
  *                 answer "is worker-X busy or idle right
  *                 now?". Status detection skips placeholder agents

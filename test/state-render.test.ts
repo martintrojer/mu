@@ -5,7 +5,7 @@
 //
 //   mu state             default: full top-to-bottom card
 //   mu state --tui       interactive ink dashboard (read-only)
-//   mu state --mission   stripped 5-col glance card (bare-`mu` alias)
+//   mu state --mission   stripped 5-col glance card
 //
 // `--tui` is mutually exclusive with `--json` and `--mission`. All
 // modes accept variadic `-w X[,Y]...` / `-w X -w Y` and `--all`.
@@ -200,37 +200,19 @@ describe("mu state --mission — stripped glance card", () => {
     ]);
   });
 
-  it("bare `mu` (no verb) is an alias for `mu state --mission`", async () => {
-    // Bare-mu invokes cmdState({ mission: true }) — output should
-    // match the explicit --mission invocation (modulo any timing noise
-    // in the recent-events table; mission strips that section so the
-    // human render is deterministic).
-    const bare = await runCli(["-w", "ws"], dbPath);
-    const explicit = await runCli(["state", "--mission", "-w", "ws"], dbPath);
-    expect(bare.exitCode).toBeNull();
-    expect(explicit.exitCode).toBeNull();
-    // Both contain the same stripped section headings; neither
-    // contains the full-mode sections.
-    for (const out of [bare.stdout, explicit.stdout]) {
-      expect(out).toContain("mu-ws");
-      expect(out).toContain("Agents (");
-      expect(out).toContain("Tracks (");
-      expect(out).toContain("Ready (");
-      expect(out).not.toContain("Workspaces (");
-      expect(out).not.toContain("Recent events");
-    }
+  it("bare `mu` on the test harness non-TTY prints help, not the static state card", async () => {
+    const { stdout, exitCode } = await runCli(["-w", "ws"], dbPath);
+    expect(exitCode).toBeNull();
+    expect(stdout).toContain("Usage: mu [options] [command]");
+    expect(stdout).not.toContain("mu-ws");
+    expect(stdout).not.toContain("Ready (");
   });
 
-  it("bare `mu --json` emits the stripped --mission shape", async () => {
+  it("bare `mu --json` stays on the help path (does not emit state JSON)", async () => {
     const { stdout, exitCode } = await runCli(["-w", "ws", "--json"], dbPath);
     expect(exitCode).toBeNull();
-    const parsed = JSON.parse(stdout);
-    expect(Object.keys(parsed).sort()).toEqual(
-      ["agents", "orphans", "ready", "tracks", "workstreamName"].sort(),
-    );
-    expect(parsed.ready).toEqual([
-      expect.objectContaining({ name: "alpha", title: "A", status: "OPEN", roi: 50 }),
-    ]);
+    expect(stdout).toContain("Usage: mu [options] [command]");
+    expect(() => JSON.parse(stdout)).toThrow();
   });
 });
 
