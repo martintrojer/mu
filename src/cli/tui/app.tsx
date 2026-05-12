@@ -32,9 +32,11 @@ import { WorkspacesCard } from "./cards/workspaces.js";
 import { Help } from "./help.js";
 import { dispatchGlobalKeyFromInk } from "./keys.js";
 import {
+  CARD_CONFIGS,
   type CardId,
   allocateRowBudgets,
   columnWidths,
+  cullCardsForRows,
   dataCountForCard,
   layoutColumns as layoutDashboardColumns,
 } from "./layout.js";
@@ -81,6 +83,18 @@ export interface FooterState {
 type PopupId = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | "dag" | null;
 export type PopupMode = "list" | "drill";
 
+export const DASHBOARD_MIN_ROWS = 5;
+
+export function dashboardAvailableRows(
+  rows: number,
+  opts: { hasTabStrip: boolean; hasSnapshotError: boolean },
+): number {
+  const tabRows = opts.hasTabStrip ? 1 : 0;
+  const snapshotErrorRows = opts.hasSnapshotError ? 3 : 0;
+  const statusRows = 1;
+  return Math.max(1, rows - tabRows - snapshotErrorRows - statusRows);
+}
+
 export function App({ db, workstreams, initialActive = 0 }: AppProps): JSX.Element {
   const { exit } = useApp();
 
@@ -126,16 +140,7 @@ export function App({ db, workstreams, initialActive = 0 }: AppProps): JSX.Eleme
   const { stdout } = useStdout();
   const cols = stdout.columns ?? 80;
   const rows = stdout.rows ?? 24;
-  if (cols < 40 || rows < 10) {
-    return (
-      <Box borderStyle="round" borderColor="red" paddingX={1}>
-        <Text>
-          terminal too small ({cols}x{rows}) — need at least 40x10 for the TUI. Resize or run `mu
-          state` for the static card.
-        </Text>
-      </Box>
-    );
-  }
+  const terminalTooSmall = cols < 40 || rows < DASHBOARD_MIN_ROWS;
 
   // Yank callback handed down to popups (and used by the dashboard
   // for any direct yank in the future). The popup passes the command
@@ -247,6 +252,17 @@ export function App({ db, workstreams, initialActive = 0 }: AppProps): JSX.Eleme
     { isActive: true },
   );
 
+  if (terminalTooSmall) {
+    return (
+      <Box borderStyle="round" borderColor="red" paddingX={1}>
+        <Text>
+          terminal too small ({cols}x{rows}) — need at least 40x{DASHBOARD_MIN_ROWS} for the TUI.
+          Resize or run `mu state` for the static card.
+        </Text>
+      </Box>
+    );
+  }
+
   // Help overlay covers everything else (still gets the global
   // status bar at the bottom for consistent navigation hints).
   //
@@ -308,6 +324,10 @@ export function App({ db, workstreams, initialActive = 0 }: AppProps): JSX.Eleme
     );
   }
 
+  const hasTabStrip = workstreams.length > 1;
+  const hasSnapshotError = snap.error !== null;
+  const availableForCards = dashboardAvailableRows(rows, { hasTabStrip, hasSnapshotError });
+
   // Dashboard.
   //
   // overflow="hidden" pinned at the root: when total content
@@ -326,21 +346,21 @@ export function App({ db, workstreams, initialActive = 0 }: AppProps): JSX.Eleme
           parent so flexbox accounts for its 1-row height when
           allocating space to the cards below it. */}
       <TabStrip workstreams={workstreams} active={safeActive} terminalColumns={cols} />
-      {snap.error !== null && (
+      {hasSnapshotError && (
         <Box borderStyle="round" borderColor="red" paddingX={1}>
           <Text color="red">snapshot error: {snap.error}</Text>
         </Box>
       )}
-      <DashboardColumns
-        cols={cols}
-        rows={rows}
-        visibility={visibility}
-        snapshot={snap.data}
-        db={db}
-        workstream={workstream}
-        hasTabStrip={workstreams.length > 1}
-        hasSnapshotError={snap.error !== null}
-      />
+      <Box height={availableForCards} overflow="hidden" flexDirection="column">
+        <DashboardColumns
+          cols={cols}
+          rows={availableForCards}
+          visibility={visibility}
+          snapshot={snap.data}
+          db={db}
+          workstream={workstream}
+        />
+      </Box>
       <Box flexGrow={1} />
       <StatusBar
         mode="dashboard"
@@ -401,8 +421,6 @@ interface DashboardColumnsProps {
   snapshot: ReturnType<typeof useDashboardSnapshot>["data"];
   db: Db;
   workstream: string;
-  hasTabStrip: boolean;
-  hasSnapshotError: boolean;
 }
 
 function DashboardColumns({
@@ -412,33 +430,58 @@ function DashboardColumns({
   snapshot,
   db,
   workstream,
-  hasTabStrip,
-  hasSnapshotError,
 }: DashboardColumnsProps): JSX.Element {
   const visible = visibleCardIds(visibility);
-  const assignments = layoutDashboardColumns(cols, visible);
+  const firstCull = cullCardsForRows(visible, rows);
+  const cullBudget = firstCull.hidden.length > 0 ? Math.max(1, rows - 1) : rows;
+  const culled = cullBudget === rows ? firstCull : cullCardsForRows(visible, cullBudget);
+  const cardsRows = culled.hidden.length > 0 ? Math.max(1, rows - 1) : rows;
+  const assignments = layoutDashboardColumns(cols, culled.cards);
   const widths = columnWidths(cols, assignments.length);
-  const fixedRows = 1 + (hasTabStrip ? 1 : 0) + (hasSnapshotError ? 3 : 0);
-  const columnRows = Math.max(1, rows - fixedRows);
 
   return (
-    <Box flexDirection="row" gap={1}>
-      {assignments.map((assignment, i) => {
-        const width = widths[i]?.width ?? cols;
-        const budgets = allocateRowBudgets(
-          columnRows,
-          assignment.cards.map((id) => ({ id, dataCount: dataCountForCard(id, snapshot) })),
-        );
-        return (
-          <Box key={assignment.cards.join("-")} flexDirection="column" width={width}>
-            {assignment.cards.map((id) =>
-              renderCard(id, { snapshot, db, workstream, width, budgets }),
-            )}
-          </Box>
-        );
-      })}
+    <Box flexDirection="column" height={rows} overflow="hidden">
+      <Box flexDirection="row" gap={1} height={cardsRows} overflow="hidden">
+        {assignments.map((assignment, i) => {
+          const width = widths[i]?.width ?? cols;
+          const budgets = capRowBudgetsForColumn(
+            cardsRows,
+            assignment.cards,
+            allocateRowBudgets(
+              cardsRows,
+              assignment.cards.map((id) => ({ id, dataCount: dataCountForCard(id, snapshot) })),
+            ),
+          );
+          return (
+            <Box key={assignment.cards.join("-")} flexDirection="column" width={width}>
+              {assignment.cards.map((id) =>
+                renderCard(id, { snapshot, db, workstream, width, budgets }),
+              )}
+            </Box>
+          );
+        })}
+      </Box>
+      {culled.hidden.length > 0 ? (
+        <Text dimColor>+{culled.hidden.length} cards hidden · resize taller</Text>
+      ) : null}
     </Box>
   );
+}
+
+function capRowBudgetsForColumn(
+  availableRows: number,
+  cards: ReadonlyArray<CardId>,
+  budgets: ReturnType<typeof allocateRowBudgets>,
+): ReturnType<typeof allocateRowBudgets> {
+  const out: Record<CardId, number> = { ...budgets };
+  let remaining = Math.max(0, Math.floor(availableRows));
+  for (const id of cards) {
+    const chrome = CARD_CONFIGS[id].chrome;
+    const maxBody = Math.max(0, remaining - chrome);
+    out[id] = Math.min(out[id], maxBody);
+    remaining = Math.max(0, remaining - chrome - out[id]);
+  }
+  return out;
 }
 
 interface RenderCardContext {

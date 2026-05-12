@@ -132,6 +132,47 @@ export interface RowBudgetInput {
 
 export type RowBudgetMap = Readonly<Record<CardId, number>>;
 
+const CARD_CULL_PRIORITY: readonly CardId[] = [9, 8, 5, 2, 7, 6, 4, 0, 1, 3];
+const CARD_CULL_LAYOUT_COLS = 140;
+
+export interface CulledCards {
+  /** Surviving cards, preserving the caller's visible-set order after de-dupe. */
+  cards: CardId[];
+  /** Cards hidden because the pane is too short, in cull-priority order. */
+  hidden: CardId[];
+}
+
+/**
+ * Trim low-priority dashboard cards until the minimum stack fits.
+ *
+ * The user-controlled visible set is the ceiling: toggled-off cards
+ * never reappear here. We only cull further, keeping at least one
+ * card (the highest-priority visible card) so a tiny-but-not-panic
+ * pane still renders a useful dashboard plus the resize hint.
+ */
+export function cullCardsForRows(
+  visibleCardIds: ReadonlyArray<CardId>,
+  availableRows: number,
+): CulledCards {
+  const cards = normalizeVisible(visibleCardIds);
+  const hidden: CardId[] = [];
+  if (cards.length === 0) return { cards, hidden };
+
+  const remaining = new Set<CardId>(cards);
+  const budget = Math.max(0, Math.floor(availableRows));
+  const maxCardsForRows = Math.max(1, Math.floor(budget / CARD_CHROME_ROWS));
+  for (const id of CARD_CULL_PRIORITY) {
+    const surviving = cards.filter((card) => remaining.has(card));
+    if (surviving.length <= maxCardsForRows && tallestMinStackRows(surviving) <= budget) break;
+    if (!remaining.has(id)) continue;
+    if (remaining.size <= 1) break;
+    remaining.delete(id);
+    hidden.push(id);
+  }
+
+  return { cards: cards.filter((id) => remaining.has(id)), hidden };
+}
+
 /**
  * Allocate BODY rows among the cards in one dashboard column.
  *
@@ -260,6 +301,19 @@ function normalizeVisible(ids: ReadonlyArray<CardId>): CardId[] {
 
 function emptyBudgetMap(): Record<CardId, number> {
   return { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0, 8: 0, 9: 0 };
+}
+
+function tallestMinStackRows(ids: ReadonlyArray<CardId>): number {
+  let tallest = 0;
+  for (const assignment of layoutColumns(CARD_CULL_LAYOUT_COLS, ids)) {
+    let total = 0;
+    for (const id of assignment.cards) {
+      const config = CARD_CONFIGS[id];
+      total += Math.max(0, config.minRows) + Math.max(0, config.chrome);
+    }
+    tallest = Math.max(tallest, total);
+  }
+  return tallest;
 }
 
 function clamp(value: number, min: number, max: number): number {

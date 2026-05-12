@@ -407,7 +407,11 @@ In-progress, Blocked, Recent, and Doctor cards all update live. The dashboard
 reflows at wide terminal widths: stacked below 120 cols, then 2 / 3 /
 4 pair-aware columns at 120 / 180 / 240 cols, with each visible card
 getting a dynamic row budget so a noisy list cannot crowd out its
-siblings.
+siblings. On very short panes, the dashboard culls low-priority cards
+(Doctor, Recent, Workspaces, then other diagnostic cards) until the
+surviving cards fit and shows `+N cards hidden · resize taller` at the
+bottom; resize taller and those cards reappear without changing your
+manual card toggles.
 
 For an agent/script or a static capture, use explicit state verbs:
 

@@ -69,6 +69,8 @@ called out under "Breaking" in each entry.
 
 ### Fixed
 
+- **TUI dashboard no longer renders interleaved card borders / overlapping content on low-row-count panes.** The row-budget allocator now culls low-priority cards (Doctor → Recent → Workspaces → …) until the surviving set fits the available rows; a `+N cards hidden · resize taller` hint replaces them at the bottom. An outer height clip on the dashboard container is the final safety net.
+
 - **TUI dashboard 2-col layout no longer buries Commits**
   (bug_layout_slot_0_buried_after_slot_fix). Commits (slot 0) no
   longer lands below Recent (slot 8) in the middle of the right

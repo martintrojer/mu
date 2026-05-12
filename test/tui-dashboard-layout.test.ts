@@ -1,7 +1,11 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { Box, Text } from "ink";
+import { createElement } from "react";
 import { describe, expect, it } from "vitest";
-import { layoutColumns } from "../src/cli/tui/layout.js";
+import { type CardId, cullCardsForRows, layoutColumns } from "../src/cli/tui/layout.js";
+import { TitledBox } from "../src/cli/tui/titled-box.js";
+import { renderCardToText } from "./_card-render.js";
 
 const APP_SRC = readFileSync(
   join(import.meta.dirname, "..", "src", "cli", "tui", "app.tsx"),
@@ -15,8 +19,10 @@ const LAYOUT_SRC = readFileSync(
 describe("dashboard responsive-layout wiring", () => {
   it("dashboard renders a row of column boxes instead of a flat card stack", () => {
     expect(APP_SRC).toContain("function DashboardColumns");
-    expect(APP_SRC).toContain("layoutDashboardColumns(cols, visible)");
-    expect(APP_SRC).toContain('<Box flexDirection="row" gap={1}>');
+    expect(APP_SRC).toContain("layoutDashboardColumns(cols, culled.cards)");
+    expect(APP_SRC).toContain(
+      '<Box flexDirection="row" gap={1} height={cardsRows} overflow="hidden">',
+    );
     expect(APP_SRC).toContain(
       '<Box key={assignment.cards.join("-")} flexDirection="column" width={width}>',
     );
@@ -24,6 +30,8 @@ describe("dashboard responsive-layout wiring", () => {
 
   it("dashboard passes per-column width and row budgets to each card", () => {
     expect(APP_SRC).toContain("columnWidths(cols, assignments.length)");
+    expect(APP_SRC).toContain("cullCardsForRows(visible, rows)");
+    expect(APP_SRC).toContain("+{culled.hidden.length} cards hidden · resize taller");
     expect(APP_SRC).toContain("allocateRowBudgets(");
     for (const component of [
       "AgentsCard",
@@ -64,6 +72,25 @@ describe("dashboard responsive-layout wiring", () => {
     ]);
   });
 
+  it("small-pane dashboard walk renders surviving cards plus the hidden-card hint", () => {
+    const text = renderCardToText(smallDashboardTree(10));
+    expect(text).toContain("Agents");
+    expect(text).toContain("Ready");
+    expect(text).toContain("+8 cards hidden · resize taller");
+    for (const hiddenTitle of [
+      "Doctor",
+      "Recent",
+      "Workspaces",
+      "Tracks",
+      "Blocked",
+      "In-progress",
+      "Activity log",
+      "Commits",
+    ]) {
+      expect(text).not.toContain(hiddenTitle);
+    }
+  });
+
   it("pair-aware groups match the 0-9 card design", () => {
     expect(LAYOUT_SRC).toMatch(/0: \{[^}]*group: "stream"/);
     expect(LAYOUT_SRC).toMatch(/1: \{[^}]*group: "small-pair"/);
@@ -80,3 +107,50 @@ describe("dashboard responsive-layout wiring", () => {
     expect(LAYOUT_SRC).toContain("Recent");
   });
 });
+
+function smallDashboardTree(rows: number): JSX.Element {
+  const culled = cullCardsForRows([0, 1, 2, 3, 4, 5, 6, 7, 8, 9], rows);
+  return createElement(
+    Box,
+    { flexDirection: "column", height: rows, overflow: "hidden" },
+    culled.cards.map((id) =>
+      createElement(
+        TitledBox,
+        { key: id, title: titleForCard(id), cardId: id },
+        createElement(Text, null, `${titleForCard(id)} row`),
+      ),
+    ),
+    culled.hidden.length > 0
+      ? createElement(
+          Text,
+          { dimColor: true },
+          `+${culled.hidden.length} cards hidden · resize taller`,
+        )
+      : null,
+  );
+}
+
+function titleForCard(id: CardId): string {
+  switch (id) {
+    case 0:
+      return "Commits";
+    case 1:
+      return "Agents";
+    case 2:
+      return "Tracks";
+    case 3:
+      return "Ready";
+    case 4:
+      return "Activity log";
+    case 5:
+      return "Workspaces";
+    case 6:
+      return "In-progress";
+    case 7:
+      return "Blocked";
+    case 8:
+      return "Recent";
+    case 9:
+      return "Doctor";
+  }
+}

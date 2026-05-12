@@ -3,6 +3,7 @@ import {
   type CardId,
   allocateRowBudgets,
   columnWidths,
+  cullCardsForRows,
   dashboardColumnCount,
   layoutColumns,
 } from "../src/cli/tui/layout.js";
@@ -100,6 +101,41 @@ describe("dashboard responsive layout", () => {
     expect(columnWidths(140, 2).map((c) => c.width)).toEqual([70, 69]);
     expect(columnWidths(200, 3).map((c) => c.width)).toEqual([66, 66, 66]);
     expect(columnWidths(0, 0)).toEqual([]);
+  });
+});
+
+describe("dashboard low-row card culler", () => {
+  it("keeps all cards when their minimum stacks fit", () => {
+    expect(cullCardsForRows(ALL, 80)).toEqual({ cards: ALL, hidden: [] });
+  });
+
+  it("culls Doctor, Recent, and Workspaces first at 30 rows", () => {
+    expect(cullCardsForRows(ALL, 30)).toEqual({
+      cards: [0, 1, 2, 3, 4, 6, 7],
+      hidden: [9, 8, 5],
+    });
+  });
+
+  it("culls aggressively at 10 rows and keeps only the highest-priority cards", () => {
+    expect(cullCardsForRows(ALL, 10)).toEqual({
+      cards: [1, 3],
+      hidden: [9, 8, 5, 2, 7, 6, 4, 0],
+    });
+  });
+
+  it("keeps the highest-priority visible card even below its minimum stack", () => {
+    expect(cullCardsForRows(ALL, 4)).toEqual({
+      cards: [3],
+      hidden: [9, 8, 5, 2, 7, 6, 4, 0, 1],
+    });
+  });
+
+  it("returns empty arrays when every card is toggled off", () => {
+    expect(cullCardsForRows([], 10)).toEqual({ cards: [], hidden: [] });
+  });
+
+  it("does not resurrect cards that were explicitly toggled off", () => {
+    expect(cullCardsForRows([1, 3], 80)).toEqual({ cards: [1, 3], hidden: [] });
   });
 });
 
