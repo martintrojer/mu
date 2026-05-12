@@ -26,7 +26,7 @@
     "pi-package"
   ],
   "engines": {
-    "node": ">=20 <24"
+    "node": ">=20 <=24"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
