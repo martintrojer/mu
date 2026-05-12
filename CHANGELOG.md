@@ -464,6 +464,7 @@ is opt-in via the new `--tui` flag.
 
 ### Changed
 
+- TUI `?` help overlay re-rendered as a single vertical column with bold section headers (was: 6 side-by-side rounded boxes that squished every effect string into a long thin strip on typical terminal widths).
 - TUI status-bar hint clusters re-audited per mode (dashboard/popup-list/popup-drill/popup-filter/dag/all-tasks); each mode lists exactly the keys you can press in that mode. The `?` overlay is the superset. Drill and filter sub-modes get their own columns in the overlay (previously buried under "in popup"). Orphan-hint regression test enforces every key shown in the bar appears in the overlay.
 - Recent restored to dashboard card slot 8 (was demoted to popup-only when Commits took the slot in v0.5 alpha).
 - Commits promoted to dashboard card slot 0 (was reserved-by-convention).

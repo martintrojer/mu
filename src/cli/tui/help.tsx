@@ -7,21 +7,26 @@ import { Box, Text } from "ink";
 import { HELP_PANES } from "./keymap-spec.js";
 
 export function Help(): JSX.Element {
+  const cols = process.stdout.columns ?? 80;
+  const contentWidth = Math.max(1, cols - 4); // border + paddingX on both sides
+
   return (
-    <Box flexDirection="row" gap={2}>
-      {HELP_PANES.map((pane) => (
-        <Box
-          key={pane.title}
-          borderStyle="round"
-          borderColor="cyan"
-          paddingX={1}
-          flexDirection="column"
-        >
-          <Text bold color="cyan">
-            {pane.title}
-          </Text>
+    <Box borderStyle="round" borderColor="cyan" paddingX={1} flexDirection="column" width={cols}>
+      {HELP_PANES.map((pane, paneIdx) => (
+        <Box key={pane.title} flexDirection="column" width={contentWidth}>
+          {paneIdx > 0 && <Text> </Text>}
+          <Box width={contentWidth}>
+            <Text bold color="cyan">
+              {pane.title}
+            </Text>
+          </Box>
           {pane.rows.map((row) => (
-            <HelpRow key={`${pane.title}:${row.keys}`} keys={row.keys} effect={row.effect} />
+            <HelpRow
+              key={`${pane.title}:${row.keys}`}
+              keys={row.keys}
+              effect={row.effect}
+              contentWidth={contentWidth}
+            />
           ))}
         </Box>
       ))}
@@ -29,13 +34,23 @@ export function Help(): JSX.Element {
   );
 }
 
-function HelpRow({ keys, effect }: { keys: string; effect: string }): JSX.Element {
+function HelpRow({
+  keys,
+  effect,
+  contentWidth,
+}: {
+  keys: string;
+  effect: string;
+  contentWidth: number;
+}): JSX.Element {
   return (
-    <Box>
+    <Box width={contentWidth}>
       <Box width={18}>
         <Text color="yellow">{keys}</Text>
       </Box>
-      <Text dimColor>{effect}</Text>
+      <Box width={Math.max(1, contentWidth - 18)}>
+        <Text dimColor>{effect}</Text>
+      </Box>
     </Box>
   );
 }

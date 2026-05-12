@@ -1,5 +1,33 @@
 import { describe, expect, it } from "vitest";
 import { Help } from "../src/cli/tui/help.js";
+import { HELP_PANES } from "../src/cli/tui/keymap-spec.js";
+
+type ElementLike = { type?: unknown; props: Record<string, unknown> };
+
+function isElementLike(node: unknown): node is ElementLike {
+  return (
+    typeof node === "object" &&
+    node !== null &&
+    "props" in node &&
+    typeof (node as { props?: unknown }).props === "object" &&
+    (node as { props?: unknown }).props !== null
+  );
+}
+
+function childrenArray(children: unknown): unknown[] {
+  if (children === null || children === undefined || typeof children === "boolean") return [];
+  return Array.isArray(children) ? children.flatMap(childrenArray) : [children];
+}
+
+function visitElements(node: unknown, visit: (element: ElementLike) => void): void {
+  if (Array.isArray(node)) {
+    for (const child of node) visitElements(child, visit);
+    return;
+  }
+  if (!isElementLike(node)) return;
+  visit(node);
+  visitElements(node.props.children, visit);
+}
 
 function renderToString(node: unknown): string {
   function walk(n: unknown): string {
@@ -7,10 +35,12 @@ function renderToString(node: unknown): string {
     if (typeof n === "string") return n;
     if (typeof n === "number") return String(n);
     if (Array.isArray(n)) return n.map(walk).join("");
-    if (typeof n === "object" && n !== null && "props" in n) {
-      const element = n as { type?: unknown; props: { children?: unknown } };
-      if (typeof element.type === "function") return walk(element.type(element.props));
-      return walk(element.props.children);
+    if (isElementLike(n)) {
+      if (typeof n.type === "function") {
+        const component = n.type as (props: Record<string, unknown>) => unknown;
+        return walk(component(n.props));
+      }
+      return walk(n.props.children);
     }
     return "";
   }
@@ -18,6 +48,74 @@ function renderToString(node: unknown): string {
 }
 
 describe("TUI help overlay", () => {
+  it("renders as one rounded outer box instead of side-by-side bordered panes", () => {
+    const root = Help();
+    expect(isElementLike(root)).toBe(true);
+    if (!isElementLike(root)) throw new Error("Help() should return a JSX element");
+
+    expect(root.props.borderStyle).toBe("round");
+    expect(root.props.borderColor).toBe("cyan");
+    expect(root.props.paddingX).toBe(1);
+    expect(root.props.flexDirection).toBe("column");
+    expect(root.props.gap).toBeUndefined();
+
+    const roundBoxes: ElementLike[] = [];
+    visitElements(root, (element) => {
+      if (element.props.borderStyle === "round") roundBoxes.push(element);
+    });
+    expect(roundBoxes).toHaveLength(1);
+
+    const sideBySidePaneBoxes = childrenArray(root.props.children).filter(
+      (child) => isElementLike(child) && child.props.borderStyle === "round",
+    );
+    expect(sideBySidePaneBoxes).toHaveLength(0);
+  });
+
+  it("renders every section header in bold cyan", () => {
+    const root = Help();
+    const elements: ElementLike[] = [];
+    visitElements(root, (element) => elements.push(element));
+
+    for (const pane of HELP_PANES) {
+      const matchingHeaders = elements.filter(
+        (element) =>
+          element.props.children === pane.title &&
+          element.props.bold === true &&
+          element.props.color === "cyan",
+      );
+      expect(matchingHeaders, pane.title).toHaveLength(1);
+    }
+  });
+
+  it("renders one blank-line separator between each help section", () => {
+    const root = Help();
+    expect(isElementLike(root)).toBe(true);
+    if (!isElementLike(root)) throw new Error("Help() should return a JSX element");
+
+    const sections = childrenArray(root.props.children).filter(isElementLike);
+    expect(sections).toHaveLength(HELP_PANES.length);
+
+    for (const [idx, section] of sections.entries()) {
+      expect(section.props.flexDirection).toBe("column");
+      const sectionChildren = childrenArray(section.props.children);
+      const firstChild = sectionChildren[0];
+      if (idx === 0) {
+        expect(isElementLike(firstChild) && firstChild.props.children === " ").toBe(false);
+      } else {
+        expect(isElementLike(firstChild)).toBe(true);
+        if (!isElementLike(firstChild))
+          throw new Error("section separator should be a JSX element");
+        expect(firstChild.props.children).toBe(" ");
+      }
+    }
+
+    const blankTextNodes: ElementLike[] = [];
+    visitElements(root, (element) => {
+      if (element.props.children === " ") blankTextNodes.push(element);
+    });
+    expect(blankTextNodes).toHaveLength(HELP_PANES.length - 1);
+  });
+
   it("documents the dashboard keymap including omitted-from-bar keys", () => {
     const text = renderToString(Help());
     expect(text).toContain("keys · dashboard");
