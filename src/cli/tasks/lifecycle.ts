@@ -26,6 +26,8 @@ import {
   rejectTask,
   resolveActorIdentity,
 } from "../../tasks.js";
+import { backendByName } from "../../vcs.js";
+import { getWorkspaceForAgent } from "../../workspace.js";
 
 export async function cmdTaskClose(
   db: Db,
@@ -35,6 +37,7 @@ export async function cmdTaskClose(
   const { name: localId } = await resolveEntityRef(db, rawId, opts, "task");
   assertTaskInWorkstream(db, localId, opts.workstream);
   const ws = await resolveWorkstream(opts.workstream);
+  const actor = await resolveActorIdentity();
   const sdkOpts: {
     evidence?: string;
     ifReady?: boolean;
@@ -45,13 +48,13 @@ export async function cmdTaskClose(
   if (opts.ifReady) sdkOpts.ifReady = true;
   // mufeedback task_close_evidence_does_not_append_the: closeTask
   // auto-inserts a `CLOSE: <evidence>` note when --evidence is
-  // non-empty. Resolve the actor identity here so the note is
+  // non-empty. Resolve the actor identity once per close so the note is
   // attributed to the closing worker (mu-spawned worker via
   // MU_AGENT_NAME, adopted pane via title, otherwise $USER /
-  // 'orchestrator'). Skip the resolve when evidence is missing /
-  // empty since closeTask won't insert a note in that case anyway.
+  // 'orchestrator') and so the success Next: hints can inspect that
+  // actor's workspace without resolving identity a second time.
   if (opts.evidence !== undefined && opts.evidence !== "") {
-    sdkOpts.author = await resolveActorIdentity();
+    sdkOpts.author = actor;
   }
   // Capture the owner BEFORE closeTask so we can refresh their title
   // even though closeTask doesn't return owner info. owner won't
@@ -93,6 +96,9 @@ export async function cmdTaskClose(
     { intent: "Pick the next ready task", command: `mu task next -w ${ws}` },
     { intent: "See full state", command: `mu state -w ${ws}` },
   ];
+  if (r.changed && r.status === "CLOSED") {
+    await maybeAppendDirtyWorkspaceCommitHint(db, nextSteps, actor, ws, taskRow?.title ?? localId);
+  }
   if (opts.json) {
     emitJson({ taskName: localId, ...r, nextSteps });
     return;
@@ -106,6 +112,34 @@ export async function cmdTaskClose(
   console.log(`Closed ${pc.bold(localId)} ${pc.dim(`(${r.previousStatus} → ${r.status})`)}`);
   if (ev) console.log(ev);
   printNextSteps(nextSteps);
+}
+
+async function maybeAppendDirtyWorkspaceCommitHint(
+  db: Db,
+  nextSteps: NextStep[],
+  actor: string,
+  workstream: string,
+  taskTitle: string,
+): Promise<void> {
+  if (actor.length === 0) return;
+  try {
+    const row = getWorkspaceForAgent(db, actor, workstream);
+    if (row === undefined || row.backend === "none") return;
+    const backend = backendByName(row.backend);
+    const clean = await backend.isClean(row.path);
+    if (clean) return;
+    nextSteps.push({
+      intent: "Don't forget to commit",
+      command: `cd $(mu workspace path ${actor} -w ${workstream}) && git commit -am ${shellSingleQuote(taskTitle)}`,
+    });
+  } catch {
+    // Best-effort hint only: a VCS probe failure must never make
+    // `mu task close` fail after the task successfully closed.
+  }
+}
+
+function shellSingleQuote(value: string): string {
+  return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
 export async function cmdTaskOpen(

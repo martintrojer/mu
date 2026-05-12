@@ -714,6 +714,14 @@ is opt-in via the new `--tui` flag.
 
 ### Fixed
 
+- **`mu task close` now reminds workers to commit dirty workspace edits**
+  (fb_close_post_emit_commit_hint). After a real close (not an
+  idempotent no-op), if the closing actor has a per-agent workspace
+  with uncommitted edits, the success `Next:` block gains a best-effort
+  `cd $(mu workspace path <actor> -w <ws>) && git commit -am '<task-title>'`
+  hint. Clean workspaces, actors without a workspace, `none` backends,
+  and failed VCS dirty probes silently omit the hint; the same entry is
+  included in `--json` `nextSteps`.
 - **TUI card body rows no longer collapse into the rounded bottom
   border, and bottom-label cards no longer grow a phantom blank row**
   (bug_tui_card_body_collapses_into_bottom_border). Follow-up to

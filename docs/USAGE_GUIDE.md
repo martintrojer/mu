@@ -889,6 +889,18 @@ task re-enters the ready set (the canonical "hand it back to the
 pool" workflow). `--reopen` is the escape hatch for forcing `OPEN`
 from `CLOSED` / `REJECTED` / `DEFERRED`.
 
+When the closing actor has a per-agent workspace and that workspace
+has uncommitted edits, a successful close adds one extra `Next:` hint
+reminding the actor to commit before the next wave:
+
+```bash
+cd $(mu workspace path worker-1 -w auth-refactor) && git commit -am 'Design auth module'
+```
+
+The hint is best-effort: no workspace, a clean workspace, the `none`
+backend, or a failed VCS dirty check simply omit it. The same
+`nextSteps` entry is present in `--json` output.
+
 `--if-ready` is the umbrella-on-wave-done shape: an orchestrator
 fires `mu task close <umbrella> --if-ready` after each wave-task
 finishes (or unconditionally as a final action). It's a no-op while
