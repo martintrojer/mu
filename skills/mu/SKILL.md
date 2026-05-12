@@ -320,13 +320,15 @@ running a wave.
   (interactive ink dashboard; read-only, yanks `mu` commands;
   reflows from stacked cards to pair-aware 2 / 3 / 4-column layouts
   at 120 / 180 / 240 terminal columns with dynamic per-card row
-  budgets; `g` opens the full workstream DAG popup (keybind-only;
-  inside it, `o`/`i`/`c`/`r`/`d` toggle OPEN / IN_PROGRESS / CLOSED /
-  REJECTED / DEFERRED visibility, default all-on); `t` opens the
-  all-tasks list popup (keybind-only; `o`/`i`/`c`/`r`/`d` status
-  toggles, `s` cycles sort roi → recency → age → id, Enter opens
-  TaskDetailDrill, `y` yanks `mu task show <id>`); `0`-`9` toggle
-  cards; `Shift+0`-`Shift+9` open popups,
+  budgets; the status bar shows the always-available keys for the
+  current mode while `?` is the superset help overlay (paging,
+  refresh, tick, and sub-mode keys live there). `g` opens the full
+  workstream DAG popup (keybind-only; inside it, `o`/`i`/`c`/`r`/`d`
+  toggle OPEN / IN_PROGRESS / CLOSED / REJECTED / DEFERRED visibility,
+  default all-on); `t` opens the all-tasks list popup (keybind-only;
+  `o`/`i`/`c`/`r`/`d` status toggles, `s` cycles sort roi → recency →
+  age → id, Enter opens TaskDetailDrill, `y` yanks `mu task show
+  <id>`); `0`-`9` toggle cards; `Shift+0`-`Shift+9` open popups,
   `Enter`
   drills (in the Activity log popup it opens the focused event's
   full untruncated payload; the Workspaces popup chains `Enter`

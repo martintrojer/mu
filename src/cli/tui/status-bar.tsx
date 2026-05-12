@@ -27,6 +27,7 @@
 import { Box, Text } from "ink";
 import type { FooterState, PopupMode } from "./app.js";
 import { truncateCell } from "./columns.js";
+import { type StatusHintEntry, statusHintEntries } from "./keymap-spec.js";
 
 export type StatusMode = "dashboard" | "popup" | "popup-filter" | "help";
 
@@ -66,7 +67,7 @@ export function StatusBar({
   // - 4 chars of inter-zone padding. Hint cluster width is its
   // *plain* (non-coloured) length, derived from the same token list
   // that renders the JSX so the two cannot drift.
-  const hintTokens = buildHints(mode, popupName, popupMode);
+  const hintTokens = buildHints(mode, popupName, popupMode, activeWorkstream !== undefined);
   const hintsWidth = hintsPlain(hintTokens).length;
   const rightWidth = rightPlain.length;
   const padding = 4;
@@ -91,10 +92,10 @@ export function StatusBar({
   );
 }
 
-// Hint cluster as a single declarative token stream. Both the plain
-// text (used for sizing the LEFT zone's truncation budget) and the
-// JSX (used for rendering) are derived from this — there is no
-// second source of truth to keep in lockstep.
+// Hint cluster rendering is driven by keymap-spec.ts. That spec is
+// also consumed by the help overlay, making the contract explicit:
+// the status-bar cluster is the always-shown subset, and `?` is the
+// superset.
 //
 // Render order: tokens are space-separated. The plain text is
 // `tokens.map(t => t.text).join(" ")`; the JSX wraps each token in
@@ -109,122 +110,56 @@ function buildHints(
   mode: StatusMode,
   popupName: string | undefined,
   popupMode: PopupMode | undefined,
+  hasWorkstreamTabs: boolean,
 ): HintToken[] {
+  if (mode === "help") {
+    return [
+      { kind: "key", text: "Esc/?/q" },
+      { kind: "dim", text: "close help" },
+    ];
+  }
+
   const popupLabel: HintToken[] = popupName
     ? [
         { kind: "label", text: popupName, color: "cyan" },
         { kind: "dim", text: "·" },
       ]
     : [];
-  switch (mode) {
-    case "dashboard":
-      return [
-        { kind: "key", text: "g" },
-        { kind: "dim", text: "DAG ·" },
-        { kind: "key", text: "t" },
-        { kind: "dim", text: "all-tasks ·" },
-        { kind: "key", text: "0-9" },
-        { kind: "dim", text: "toggle ·" },
-        { kind: "key", text: "Shift 0-9" },
-        { kind: "dim", text: "popup ·" },
-        { kind: "key", text: "?" },
-        { kind: "dim", text: "help ·" },
-        { kind: "key", text: "q" },
-        { kind: "dim", text: "quit ·" },
-        { kind: "key", text: "+/-" },
-        { kind: "dim", text: "tick ·" },
-        { kind: "key", text: "r" },
-        { kind: "dim", text: "refresh" },
-      ];
-    case "popup":
-      if (popupMode === "drill") {
-        return [
-          ...popupLabel,
-          { kind: "label", text: "drill", color: "magenta" },
-          { kind: "dim", text: "·" },
-          { kind: "key", text: "j/k" },
-          { kind: "dim", text: "scroll ·" },
-          { kind: "key", text: "Esc" },
-          { kind: "dim", text: "back ·" },
-          { kind: "key", text: "?" },
-          { kind: "dim", text: "help ·" },
-          { kind: "key", text: "q" },
-          { kind: "dim", text: "back" },
-        ];
-      }
-      if (popupName === "DAG") {
-        return [
-          ...popupLabel,
-          { kind: "key", text: "o/i/c/r/d" },
-          { kind: "dim", text: "toggle status ·" },
-          { kind: "key", text: "j/k" },
-          { kind: "dim", text: "scroll ·" },
-          { kind: "key", text: "y" },
-          { kind: "dim", text: "yank ·" },
-          { kind: "key", text: "Esc" },
-          { kind: "dim", text: "close ·" },
-          { kind: "key", text: "?" },
-          { kind: "dim", text: "help ·" },
-          { kind: "key", text: "q" },
-          { kind: "dim", text: "quit" },
-        ];
-      }
-      if (popupName === "All tasks") {
-        return [
-          ...popupLabel,
-          { kind: "key", text: "s" },
-          { kind: "dim", text: "sort ·" },
-          { kind: "key", text: "o/i/c/r/d" },
-          { kind: "dim", text: "filter ·" },
-          { kind: "key", text: "j/k" },
-          { kind: "dim", text: "nav ·" },
-          { kind: "key", text: "/" },
-          { kind: "dim", text: "search ·" },
-          { kind: "key", text: "Enter" },
-          { kind: "dim", text: "drill ·" },
-          { kind: "key", text: "y" },
-          { kind: "dim", text: "yank ·" },
-          { kind: "key", text: "Esc" },
-          { kind: "dim", text: "close" },
-        ];
-      }
-      return [
-        ...popupLabel,
-        { kind: "key", text: "j/k" },
-        { kind: "dim", text: "nav ·" },
-        { kind: "key", text: "Shift 0-9" },
-        { kind: "dim", text: "switch popup ·" },
-        { kind: "key", text: "/" },
-        { kind: "dim", text: "filter ·" },
-        { kind: "key", text: "Enter" },
-        { kind: "dim", text: "drill ·" },
-        { kind: "key", text: "y" },
-        { kind: "dim", text: "yank ·" },
-        { kind: "key", text: "Esc" },
-        { kind: "dim", text: "close ·" },
-        { kind: "key", text: "?" },
-        { kind: "dim", text: "help ·" },
-        { kind: "key", text: "q" },
-        { kind: "dim", text: "quit" },
-      ];
-    case "popup-filter":
-      return [
-        ...popupLabel,
-        { kind: "label", text: "filter", color: "yellow" },
-        { kind: "dim", text: "·" },
-        { kind: "key", text: "Esc" },
-        { kind: "dim", text: "cancel ·" },
-        { kind: "key", text: "Enter" },
-        { kind: "dim", text: "commit ·" },
-        { kind: "key", text: "Bksp" },
-        { kind: "dim", text: "edit" },
-      ];
-    case "help":
-      return [
-        { kind: "key", text: "Esc/?/q" },
-        { kind: "dim", text: "close help" },
-      ];
-  }
+  const specMode =
+    mode === "dashboard"
+      ? "dashboard"
+      : mode === "popup-filter"
+        ? "popup-filter"
+        : popupMode === "drill"
+          ? "popup-drill"
+          : popupName === "DAG"
+            ? "dag"
+            : popupName === "All tasks"
+              ? "all-tasks"
+              : "popup-list";
+  const entries = statusHintEntries({ mode: specMode, hasWorkstreamTabs });
+  return [...(mode === "dashboard" ? [] : popupLabel), ...tokensFromSpec(entries)];
+}
+
+function tokensFromSpec(entries: readonly StatusHintEntry[]): HintToken[] {
+  const tokens: HintToken[] = [];
+  entries.forEach((entry, index) => {
+    if (entry.kind === "hint") {
+      if (entry.key !== undefined) tokens.push({ kind: "key", text: entry.key });
+      tokens.push({
+        kind: "dim",
+        text: `${entry.label}${index === entries.length - 1 ? "" : " ·"}`,
+      });
+      return;
+    }
+    if (entry.kind === "label") {
+      tokens.push({ kind: "label", text: entry.label, color: entry.color ?? "cyan" });
+    } else {
+      tokens.push({ kind: "dim", text: entry.label });
+    }
+    if (index !== entries.length - 1) tokens.push({ kind: "dim", text: "·" });
+  });
+  return tokens;
 }
 
 function hintsPlain(tokens: HintToken[]): string {

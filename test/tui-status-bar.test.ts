@@ -79,32 +79,44 @@ describe("StatusBar", () => {
     expect(text).toContain("1.00s");
   });
 
-  it("renders dashboard hints when mode=dashboard", () => {
+  it("renders the dashboard always-shown hint cluster", () => {
     const node = StatusBar({ mode: "dashboard", tickMs: 1000, footer: null, cols: 200 });
     const text = renderToString(node);
-    expect(text).toContain("toggle");
-    expect(text).toContain("popup");
-    expect(text).toContain("help");
-    expect(text).toContain("quit");
-    // Dashboard hint reflects 0-9 cards. Popup-opener label is plain
-    // English 'Shift 0-9' (no '+', no glyph cluster) per user
-    // preference — layout-independent and self-explanatory.
+    expect(text).toContain("0-9");
+    expect(text).toContain("cards");
+    expect(text).toContain("Shift 0-9");
+    expect(text).toContain("popups");
     expect(text).toContain("g");
     expect(text).toContain("DAG");
     expect(text).toContain("t");
-    expect(text).toContain("all-tasks");
-    expect(text).toContain("0-9");
-    expect(text).toContain("Shift 0-9");
+    expect(text).toContain("tasks");
+    expect(text).toContain("?");
+    expect(text).toContain("help");
+    expect(text).toContain("q");
+    expect(text).toContain("quit");
     expect(text).not.toContain("l commits");
+    expect(text).not.toContain("+/-");
+    expect(text).not.toContain("refresh");
     // F1 alias dropped per nit_tui_remove_f1_help_toggle.
     expect(text).not.toContain("F1");
     expect(text).not.toContain("!@#$");
   });
 
-  it("popup list-mode hint cluster surfaces `Shift 0-9 switch popup`", () => {
-    // Per nit_tui_status_bar_popup_shift_range: the popup-mode hint
-    // must advertise the cross-popup hop affordance (otherwise users
-    // can only discover it via the help overlay).
+  it("renders the dashboard Tab hint only for multi-workstream TUI", () => {
+    const single = StatusBar({ mode: "dashboard", tickMs: 1000, footer: null, cols: 200 });
+    const multi = StatusBar({
+      mode: "dashboard",
+      tickMs: 1000,
+      footer: null,
+      cols: 200,
+      activeWorkstream: "demo",
+    });
+    expect(renderToString(single)).not.toContain("Tab ws");
+    expect(renderToString(multi)).toContain("Tab");
+    expect(renderToString(multi)).toContain("ws");
+  });
+
+  it("popup list-mode hint cluster advertises the canonical list affordances", () => {
     const node = StatusBar({
       mode: "popup",
       tickMs: 1000,
@@ -112,66 +124,28 @@ describe("StatusBar", () => {
       cols: 200,
       popupName: "Tasks",
       popupMode: "list",
-    });
-    const text = renderToString(node);
-    expect(text).toContain("Shift 0-9");
-    expect(text).toContain("switch popup");
-  });
-
-  it("popup drill-mode hint cluster does NOT advertise `Shift 0-9` (transient view)", () => {
-    // Drill is a transient view that returns to the popup-list on Esc;
-    // switching popups from drill mode is unusual. Keep it terse.
-    const node = StatusBar({
-      mode: "popup",
-      tickMs: 1000,
-      footer: null,
-      cols: 200,
-      popupName: "Tasks",
-      popupMode: "drill",
-    });
-    expect(renderToString(node)).not.toContain("Shift 0-9");
-  });
-
-  it("popup-filter hint cluster does NOT advertise `Shift 0-9` (digits are filter input mid-edit)", () => {
-    const node = StatusBar({
-      mode: "popup-filter",
-      tickMs: 1000,
-      footer: null,
-      cols: 200,
-      popupName: "Tasks",
-    });
-    expect(renderToString(node)).not.toContain("Shift 0-9");
-  });
-
-  it("renders popup hints with the popup name when mode=popup (default = list)", () => {
-    const node = StatusBar({
-      mode: "popup",
-      tickMs: 1000,
-      footer: null,
-      cols: 200,
-      popupName: "Tasks",
     });
     const text = renderToString(node);
     expect(text).toContain("Tasks");
+    expect(text).toContain("j/k");
     expect(text).toContain("nav");
+    expect(text).toContain("/");
+    expect(text).toContain("filter");
+    expect(text).toContain("Enter");
+    expect(text).toContain("drill");
+    expect(text).toContain("y");
     expect(text).toContain("yank");
-    expect(text).toContain("close");
+    expect(text).toContain("Shift 0-9");
+    expect(text).toContain("switch");
+    expect(text).toContain("?");
+    expect(text).toContain("help");
+    expect(text).toContain("Esc");
+    expect(text).toContain("back");
+    expect(text).not.toContain("q");
+    expect(text).not.toContain("quit");
   });
 
-  it("popup list-mode hint cluster advertises `Enter drill`", () => {
-    const node = StatusBar({
-      mode: "popup",
-      tickMs: 1000,
-      footer: null,
-      cols: 200,
-      popupName: "Agents",
-      popupMode: "list",
-    });
-    expect(renderToString(node)).toContain("Enter");
-    expect(renderToString(node)).toContain("drill");
-  });
-
-  it("popup drill-mode hint cluster advertises scroll + back instead of nav + close", () => {
+  it("popup drill-mode hint cluster advertises scroll/page/filter/yank/help/back", () => {
     const node = StatusBar({
       mode: "popup",
       tickMs: 1000,
@@ -181,12 +155,22 @@ describe("StatusBar", () => {
       popupMode: "drill",
     });
     const text = renderToString(node);
+    expect(text).toContain("Tasks");
     expect(text).toContain("drill");
+    expect(text).toContain("j/k");
     expect(text).toContain("scroll");
+    expect(text).toContain("Ctrl-D/U");
+    expect(text).toContain("page");
+    expect(text).toContain("y");
+    expect(text).toContain("yank");
+    expect(text).toContain("?");
+    expect(text).toContain("help");
+    expect(text).toContain("Esc");
     expect(text).toContain("back");
+    expect(text).not.toContain("Shift 0-9");
   });
 
-  it("DAG popup list-mode hint cluster advertises status toggles", () => {
+  it("DAG popup has its own drill/status-filter hint cluster", () => {
     const node = StatusBar({
       mode: "popup",
       tickMs: 1000,
@@ -196,11 +180,21 @@ describe("StatusBar", () => {
       popupMode: "list",
     });
     const text = renderToString(node);
+    expect(text).toContain("DAG");
+    expect(text).toContain("drill");
+    expect(text).toContain("j/k");
+    expect(text).toContain("scroll");
     expect(text).toContain("o/i/c/r/d");
-    expect(text).toContain("toggle status");
+    expect(text).toContain("filter");
+    expect(text).toContain("y");
+    expect(text).toContain("yank");
+    expect(text).toContain("?");
+    expect(text).toContain("help");
+    expect(text).toContain("Esc");
+    expect(text).toContain("back");
   });
 
-  it("All tasks popup list-mode hint cluster advertises sort and status filters", () => {
+  it("All tasks popup has its own filter/sort/search/drill hint cluster", () => {
     const node = StatusBar({
       mode: "popup",
       tickMs: 1000,
@@ -210,27 +204,21 @@ describe("StatusBar", () => {
       popupMode: "list",
     });
     const text = renderToString(node);
-    expect(text).toContain("s");
-    expect(text).toContain("sort");
+    expect(text).toContain("All tasks");
+    expect(text).toContain("j/k");
+    expect(text).toContain("nav");
     expect(text).toContain("o/i/c/r/d");
     expect(text).toContain("filter");
-  });
-
-  it("popup-list-mode hint cluster advertises `/ filter`", () => {
-    // Per feat_popup_search_filter spec: the popup-mode hint must
-    // surface `/` so users discover the keybinding without opening
-    // the help overlay.
-    const node = StatusBar({
-      mode: "popup",
-      tickMs: 1000,
-      footer: null,
-      cols: 200,
-      popupName: "Agents",
-      popupMode: "list",
-    });
-    const text = renderToString(node);
+    expect(text).toContain("s");
+    expect(text).toContain("sort");
     expect(text).toContain("/");
-    expect(text).toContain("filter");
+    expect(text).toContain("search");
+    expect(text).toContain("Enter");
+    expect(text).toContain("drill");
+    expect(text).toContain("y");
+    expect(text).toContain("yank");
+    expect(text).toContain("Esc");
+    expect(text).toContain("back");
   });
 
   it("popup-filter mode renders the edit-time hint cluster", () => {
@@ -242,17 +230,15 @@ describe("StatusBar", () => {
       popupName: "Tasks",
     });
     const text = renderToString(node);
-    // Per spec: `Esc cancel · Enter commit · Bksp edit`.
-    expect(text).toContain("Esc");
-    expect(text).toContain("cancel");
-    expect(text).toContain("Enter");
-    expect(text).toContain("commit");
-    expect(text).toContain("Bksp");
-    expect(text).toContain("edit");
-    // The popup name stays in the cluster so the user sees which
-    // popup they're filtering inside.
     expect(text).toContain("Tasks");
     expect(text).toContain("filter");
+    expect(text).toContain("type to match");
+    expect(text).toContain("Enter");
+    expect(text).toContain("commit");
+    expect(text).toContain("Esc");
+    expect(text).toContain("cancel");
+    expect(text).not.toContain("Bksp");
+    expect(text).not.toContain("n/N");
   });
 
   it("popup-filter mode renders without a popupName too (defensive)", () => {

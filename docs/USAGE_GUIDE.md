@@ -467,9 +467,12 @@ mu                          # TTY: TUI across all workstreams; non-TTY: help
   act-intents `y`-yank
   the canonical `mu` command to the clipboard — the TUI never
   executes a mutation; the user runs the yanked command in their
-  shell. Dashboard keymap: `0`-`9` toggle cards; `Shift+0` opens
-  Commits, `Shift+1`-`Shift+9` open the remaining numbered popups,
-  `g` opens the keybind-only DAG popup, and `t` opens the keybind-only
+  shell. Status-bar hint clusters show the always-available keys for
+  the current mode; the `?` help overlay is the superset (including
+  less-common paging, refresh, tick-rate, and sub-mode keys). Dashboard
+  keymap: `0`-`9` toggle cards; `Shift+0` opens Commits,
+  `Shift+1`-`Shift+9` open the remaining numbered popups, `g` opens
+  the keybind-only DAG popup, and `t` opens the keybind-only
   all-tasks popup. Inside the DAG and all-tasks popups,
   `o`/`i`/`c`/`r`/`d` toggle OPEN / IN_PROGRESS / CLOSED / REJECTED /
   DEFERRED visibility with default all-on. Inside all-tasks, `s`

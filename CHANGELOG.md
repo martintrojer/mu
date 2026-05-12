@@ -449,6 +449,7 @@ is opt-in via the new `--tui` flag.
 
 ### Changed
 
+- TUI status-bar hint clusters re-audited per mode (dashboard/popup-list/popup-drill/popup-filter/dag/all-tasks); each mode lists exactly the keys you can press in that mode. The `?` overlay is the superset. Drill and filter sub-modes get their own columns in the overlay (previously buried under "in popup"). Orphan-hint regression test enforces every key shown in the bar appears in the overlay.
 - Recent restored to dashboard card slot 8 (was demoted to popup-only when Commits took the slot in v0.5 alpha).
 - Commits promoted to dashboard card slot 0 (was reserved-by-convention).
 - Dropped `l`/`L` alias for the Commits popup; Shift+0 ')' is the canonical key.
