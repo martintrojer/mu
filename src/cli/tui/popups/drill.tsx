@@ -32,9 +32,7 @@
 
 import { Box, Text } from "ink";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { contentWidthFromCols, termColsForLayout } from "../columns.js";
 import type { PopupAction } from "../keys.js";
-import { TitledBox } from "../titled-box.js";
 import { applyScroll, isNavAction } from "./scroll.js";
 
 // Re-export so existing `import { clampScrollTop } from "./drill.js"`
@@ -140,19 +138,25 @@ export function DrillScrollView({
   const positionLabel = showFallback
     ? "0/0"
     : `${start + 1}-${Math.min(totalLines, start + viewport)}/${totalLines}`;
-  const bottomLabel = hint !== undefined && hint !== "" ? hint : undefined;
-  const contentWidth = contentWidthFromCols(termColsForLayout());
+  const hasHint = hint !== undefined && hint !== "";
 
+  // Drill body renders inline inside the popup's existing chrome
+  // (cyan rounded border + paddingX). NO nested TitledBox here:
+  // a second rounded box at width=stdout.columns overflows the
+  // popup's inner content area by 4 cols (popup chrome) which made
+  // long lines wrap / spill past the popup's right border. Single
+  // border, single width budget, lines clip cleanly.
+  // (bug_tui_drill_text_no_width_pin — central fix replacing the
+  // earlier per-line width pin.)
   return (
-    <TitledBox
-      title={title}
-      subtitle={positionLabel}
-      borderColor="magenta"
-      titleColor="magenta"
-      bottomLabel={bottomLabel}
-      flexGrow={1}
-    >
-      <Box flexDirection="column" width={contentWidth}>
+    <Box flexDirection="column" flexGrow={1}>
+      <Box>
+        <Text bold color="magenta">
+          {title}
+        </Text>
+        <Text dimColor> · {positionLabel}</Text>
+      </Box>
+      <Box flexDirection="column" flexGrow={1}>
         {showFallback ? (
           <Text dimColor>{emptyText ?? "(empty)"}</Text>
         ) : (
@@ -164,6 +168,11 @@ export function DrillScrollView({
           ))
         )}
       </Box>
-    </TitledBox>
+      {hasHint ? (
+        <Box>
+          <Text dimColor>{hint}</Text>
+        </Box>
+      ) : null}
+    </Box>
   );
 }

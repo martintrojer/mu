@@ -1,11 +1,20 @@
 // Regression guard for bug_tui_drill_text_no_width_pin.
 //
-// Ink only applies <Text wrap="truncate"> against a finite parent
-// width. DrillScrollView already set wrap="truncate" on each body line,
-// but the visible.map lived directly under TitledBox's inner column, so
-// long logical lines still wrapped in every drill consumer (task notes,
-// git show, log payloads, agent scrollback, doctor remediation). The
-// drill body must live inside ONE width-pinned column Box.
+// Original symptom (ink-side): every long-text drill view (task notes,
+// git show, log payloads, agent scrollback, doctor remediation) wrapped
+// long lines past the popup's right border. The earlier per-line
+// width pin tried `<Box width={contentWidth}>` around the visible.map,
+// but `contentWidth = stdout.columns - 4` was DOUBLE-COUNTED: the
+// nested DrillScrollView TitledBox itself sat at width=cols and added
+// ANOTHER 4 cols of magenta border + paddingX, so the body was given
+// `cols - 4` cols of width but only `cols - 8` cols were actually
+// visible inside the cyan popup. Lines that fit `cols - 4` then spilled
+// past the cyan border; the terminal scrolled / wrapped.
+//
+// Central fix: drop the nested magenta TitledBox entirely. Render
+// title + position + body + hint inline inside the popup's existing
+// chrome. One border, one width budget, lines clip cleanly via
+// flex-grown column inheriting the popup's inner area width.
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -16,18 +25,25 @@ const DRILL_SRC = readFileSync(
   "utf8",
 );
 
-describe("DrillScrollView body has a definite width parent", () => {
-  it("derives contentWidth from the same terminal-column helpers as cards/popups", () => {
-    expect(DRILL_SRC).toMatch(/contentWidthFromCols\(termColsForLayout\(\)\)/);
+describe("DrillScrollView renders inline (no nested TitledBox)", () => {
+  it("does not import TitledBox", () => {
+    expect(DRILL_SRC).not.toMatch(/from\s+["']\.\.\/titled-box\.js["']/);
   });
 
-  it("wraps fallback + visible body lines in one column Box with width={contentWidth}", () => {
-    const match = DRILL_SRC.match(
-      /<Box\s+flexDirection=["']column["']\s+width=\{contentWidth\}>[\s\S]*?visible\.map\([\s\S]*?<Text\b[^>]*wrap=["']truncate["'][^>]*>[\s\S]*?ln\s*===\s*["']{2}\s*\?\s*["']\s["']\s*:\s*ln[\s\S]*?<\/Box>/,
-    );
-    expect(
-      match,
-      "DrillScrollView body lines must be inside <Box width={contentWidth}>",
-    ).not.toBeNull();
+  it("does not render a <TitledBox> wrapper", () => {
+    // Strip block + line comments so doc references to TitledBox
+    // (in the file's header / inline justification of the central
+    // fix) don't trip the assertion.
+    const stripped = DRILL_SRC.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+    expect(stripped).not.toMatch(/<TitledBox\b/);
+  });
+
+  it('body lines carry wrap="truncate" so they clip at the inherited parent width', () => {
+    expect(DRILL_SRC).toMatch(/<Text[^>]*\bwrap=["']truncate["']/);
+  });
+
+  it("title + position label render as a single inline header row", () => {
+    expect(DRILL_SRC).toMatch(/<Text[^>]*\bcolor=["']magenta["']/);
+    expect(DRILL_SRC).toMatch(/positionLabel/);
   });
 });
