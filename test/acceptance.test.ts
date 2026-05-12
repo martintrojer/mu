@@ -225,7 +225,7 @@ describeIfTmux("MVP acceptance — full demo end-to-end", () => {
     expect(getTask(db, "api", workstream)?.ownerName).toBe("bob");
     expect(getTask(db, "ui", workstream)?.ownerName).toBe("revv");
 
-    // ── Reconciliation: agent state visible in mission control ───────
+    // ── Reconciliation: agent state visible in the state view ───────
     // Poll until reconcile sees all 3 panes as alive with detected
     // status — freshly spawned panes start in `spawning` and only
     // transition once tmux scrollback is captured. Fixed sleeps here

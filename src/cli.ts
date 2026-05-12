@@ -696,8 +696,8 @@ export function buildProgram(): Command {
     // future subcommand groups added via .addCommand() do not inherit.
     .configureHelp({ sortSubcommands: true })
     // Without this, `mu task list --json` would bind --json to the
-    // program (where we declare it for the bare `mu --json` mission-
-    // control case) instead of the `list` subcommand. With it,
+    // program (where we declare it for the bare `mu --json` help path)
+    // instead of the `list` subcommand. With it,
     // options before a subcommand bind to the program; options after
     // bind to the subcommand. Subcommands inherit it automatically.
     .enablePositionalOptions()

@@ -1,6 +1,6 @@
 // mu — `mu state` (canonical state card) and TUI back-compat dispatch.
 //
-// One verb, three render modes:
+// One verb, two render modes:
 //
 //   mu state                    full card: agents + orphans + tracks +
 //                               ready/in-progress/blocked/recent-closed +
@@ -16,18 +16,13 @@
 //                               act-intents that yank commands for the
 //                               user to run in a shell.
 //
-//   mu state --mission          stripped 5-column glance card: agents +
-//                               orphans + tracks + ready. Kept as an
-//                               explicit static render mode; bare `mu`
-//                               now routes TTY-attached humans to the TUI.
-//
-// Static modes share the same data set (loaded once via
+// Static mode and TUI share the same data set (loaded once via
 // loadWorkstreamSnapshot); only the rendering strategy differs. --tui
-// is mutually exclusive with --json and --mission.
+// is mutually exclusive with --json.
 //
 // All modes support variadic `-w X[,Y]...` / `-w X -w Y` and `--all`.
 // In static modes N=1 renders single-mode (legacy shape) and N≥2
-// stacks per-workstream cards (full / mission). In TUI mode N≥2
+// stacks per-workstream full cards. In TUI mode N≥2
 // switches workstreams via tabs.
 //
 // All modes pass mode: "status-only" to listLiveAgents — refresh
@@ -42,11 +37,9 @@ import {
   UsageError,
   emitJson,
   formatAgentsTable,
-  formatReadyTable,
   formatTaskListTable,
   formatTracks,
   formatWorkspacesTable,
-  formatWorkstreamsTable,
   handle,
   parseCsvFlag,
   parseLines,
@@ -71,7 +64,7 @@ type PerWsData = WorkstreamSnapshot;
 
 // ─── Workstream-set resolution ─────────────────────────────────────
 //
-// All three render modes accept TWO mutually-exclusive shapes (plus
+// Both render modes accept TWO mutually-exclusive shapes (plus
 // auto-resolve):
 //   -w X         | -w X,Y     | -w X -w Y      explicit set (variadic + parseCsvFlag)
 //   --all                                       every workstream on this machine
@@ -87,7 +80,6 @@ export interface StateOpts {
   workstream?: string[];
   all?: boolean;
   json?: boolean;
-  mission?: boolean;
   tui?: boolean;
   events?: number; // recent-events cap (default 20)
 }
@@ -125,8 +117,7 @@ async function resolveWorkstreamSet(db: Db, opts: StateOpts): Promise<string[]> 
 
 // ─── JSON shape ─────────────────────────────────────────────────────
 //
-// Unified single flat shape for `mu state --json`. `--mission` emits
-// a stripped subset for the muscle-memory glance use case.
+// Unified single flat shape for `mu state --json`.
 
 function fullJsonShape(d: PerWsData): Record<string, unknown> {
   return {
@@ -145,46 +136,14 @@ function fullJsonShape(d: PerWsData): Record<string, unknown> {
   };
 }
 
-function missionJsonShape(d: PerWsData): Record<string, unknown> {
-  return {
-    workstreamName: d.workstreamName,
-    agents: d.view.agents,
-    orphans: d.view.orphans,
-    tracks: d.tracks,
-    ready: withRoiAll(d.ready),
-  };
-}
-
 // ─── cmdState — dispatch ────────────────────────────────────────────
 
 export async function cmdState(db: Db, opts: StateOpts): Promise<void> {
-  // Mission is the only state render mode that survives a no-workstream
-  // context: explicit `mu state --mission` outside a tmux session is a
-  // discovery moment, not an error. Default keeps today's "workstream required" failure
-  // (resolveWorkstreamSet throws via the resolveWorkstream chain
-  // inside the explicit branches).
-  if (opts.mission === true && (opts.workstream === undefined || opts.workstream.length === 0)) {
-    if (opts.all !== true) {
-      const auto = await resolveOptionalWorkstream();
-      if (auto === null) {
-        await renderMissionNoWorkstream(db, opts);
-        return;
-      }
-    }
-  }
-
   // --tui mutual-exclusion checks: enforce BEFORE the JSON / render
-  // branches so combining --tui with another render flag errors
-  // loudly instead of silently winning whichever branch ran first.
-  if (opts.tui === true) {
-    if (opts.json === true) {
-      throw new UsageError("--tui and --json are mutually exclusive (TUI is render-only)");
-    }
-    if (opts.mission === true) {
-      throw new UsageError(
-        "--tui and --mission are mutually exclusive (mission is a static glance card)",
-      );
-    }
+  // branches so combining --tui with JSON errors loudly instead of
+  // silently winning whichever branch ran first.
+  if (opts.tui === true && opts.json === true) {
+    throw new UsageError("--tui and --json are mutually exclusive (TUI is render-only)");
   }
 
   const workstreams = await resolveWorkstreamSet(db, opts);
@@ -239,17 +198,8 @@ export async function cmdState(db: Db, opts: StateOpts): Promise<void> {
   }
   const multi = workstreams.length > 1;
 
-  // ── JSON: render-mode-specific shape ──
+  // ── JSON: full static state shape ──
   if (opts.json === true) {
-    if (opts.mission === true) {
-      if (multi) emitJson({ workstreams: perWs.map(missionJsonShape) });
-      else {
-        const single = perWs[0];
-        if (single === undefined) throw new Error("invariant: workstreams non-empty");
-        emitJson(missionJsonShape(single));
-      }
-      return;
-    }
     if (multi) emitJson({ workstreams: perWs.map(fullJsonShape) });
     else {
       const single = perWs[0];
@@ -263,7 +213,7 @@ export async function cmdState(db: Db, opts: StateOpts): Promise<void> {
   // The legacy static card remains the default for `mu state` so it
   // stays visible to LLMs, screenshots, docs, and muscle-memory users.
   // Bare `mu` owns the TTY auto-route for humans. Mutual-exclusion with
-  // --json / --mission is enforced earlier (above the JSON branch).
+  // --json is enforced earlier (above the JSON branch).
   // Multi-workstream TUI is supported via tabs as of
   // feat_tui_multi_workstream (workstream `tui-impl`): the resolved
   // ws set is forwarded to <App>; Tab / Shift-Tab cycles tabs.
@@ -274,10 +224,6 @@ export async function cmdState(db: Db, opts: StateOpts): Promise<void> {
   }
 
   // ── Static human render ──
-  if (opts.mission === true) {
-    renderMissionMode(perWs);
-    return;
-  }
   renderFullMode(perWs);
 }
 
@@ -362,79 +308,10 @@ function renderFullCard(d: PerWsData): void {
   }
 }
 
-// ─── Render: mission mode (`mu state --mission`) ───────────────────
-
-function renderMissionMode(perWs: PerWsData[]): void {
-  perWs.forEach((d, i) => {
-    if (i > 0) console.log("");
-    renderMissionCard(d);
-  });
-}
-
-function renderMissionCard(d: PerWsData): void {
-  console.log(pc.bold(`mu-${d.workstreamName}`));
-  console.log("");
-  console.log(pc.bold(`Agents (${d.view.agents.length})`));
-  console.log(formatAgentsTable(d.view.agents));
-  if (d.view.orphans.length > 0) {
-    console.log("");
-    console.log(pc.yellow(`Orphan panes (${d.view.orphans.length})`));
-    for (const orphan of d.view.orphans) {
-      console.log(
-        `  ${pc.dim(orphan.paneId)} title=${pc.bold(orphan.title)} cli=${orphan.command}`,
-      );
-    }
-  }
-  console.log("");
-  console.log(pc.bold(`Tracks (${d.tracks.length})`));
-  console.log(formatTracks(d.tracks));
-  console.log("");
-  console.log(pc.bold(`Ready (${d.ready.length})`));
-  console.log(formatReadyTable(d.ready));
-}
-
-/**
- * Mission fallback when `mu state --mission` runs but no workstream resolves —
- * not in a tmux session, no `$MU_SESSION`, no `-w` flag. Show what
- * workstreams exist on this machine and a hint at next steps. Exit 0
- * (orientation, not failure). For `--json`, emit a structured shape so
- * scripts can detect the case without parsing prose.
- */
 export function printBareNoWorkstreamsHint(): void {
   console.log("");
   console.log("Next:");
   console.log("  Get started: mu workstream init <name>");
-}
-
-async function renderMissionNoWorkstream(db: Db, opts: StateOpts): Promise<void> {
-  const summaries = await listWorkstreams(db);
-  if (opts.json === true) {
-    emitJson({ workstreamName: null, workstreams: summaries });
-    return;
-  }
-  console.log(pc.dim("(no workstream resolved from $MU_SESSION or current tmux session)"));
-  console.log("");
-  if (summaries.length === 0) {
-    console.log("No workstreams exist yet.");
-    console.log("");
-    console.log("Create one with:");
-    console.log(`  ${pc.bold("mu workstream init <name>")}`);
-    console.log("");
-    console.log(
-      `Then ${pc.bold("tmux a -t mu-<name>")} to attach, or pass ${pc.bold("-w <name>")}`,
-    );
-    console.log("to subsequent commands.");
-    return;
-  }
-  console.log(pc.bold(`Workstreams on this machine (${summaries.length})`));
-  console.log(formatWorkstreamsTable(summaries));
-  console.log("");
-  console.log("Pick one with any of:");
-  console.log(`  ${pc.bold("tmux a -t mu-<name>")}        # attach to its tmux session`);
-  console.log(`  ${pc.bold("export MU_SESSION=<name>")}    # then bare \`mu\` resolves it`);
-  console.log(
-    `  ${pc.bold("mu -w <name>")} (and similarly: ${pc.bold("mu state -w <name>")}, etc.)`,
-  );
 }
 
 // ─── commander wiring ────────────────────────────────────────────────
@@ -448,14 +325,13 @@ export function wireStateCommands(program: Command): void {
   program
     .command("state")
     .description(
-      "Canonical state card: agents + orphans + tracks + ready/in-progress/blocked/recent-closed tasks + workspaces + recent events. The agent/API-facing static state surface. Default prints the static card; pass --tui to enter the interactive ink-based dashboard. --mission emits the stripped 5-col glance card (agents + orphans + tracks + ready). -w accepts repeat or comma-separate (or both); --all is sugar for every workstream on this machine. N≥2 stacks per-workstream cards (full / mission).",
+      "Canonical state card: agents + orphans + tracks + ready/in-progress/blocked/recent-closed tasks + workspaces + recent events. The agent/API-facing static state surface. Default prints the static card; pass --tui to enter the interactive ink-based dashboard. -w accepts repeat or comma-separate (or both); --all is sugar for every workstream on this machine. N≥2 stacks per-workstream cards.",
     )
     .option(
       "-w, --workstream <names...>",
       "workstream(s) to render (repeat or comma-separate; or both; defaults to $MU_SESSION or current tmux session)",
     )
     .option("--all", "include every workstream on this machine")
-    .option("--mission", "stripped 5-column glance card (agents + orphans + tracks + ready)")
     .option(
       "--tui",
       "interactive TUI (rounded-border dashboard with cards + popups; multi-ws via Tab/Shift-Tab tabs)",
@@ -465,7 +341,6 @@ export function wireStateCommands(program: Command): void {
       "how many recent kind=event log entries to include (default 20)",
       parseLines,
     )
-    .option("-n, --lines <n>", "alias for --events", parseLines)
     .option(...JSON_OPT)
     .action(function () {
       const opts = (this as Command).opts() as StateOpts;

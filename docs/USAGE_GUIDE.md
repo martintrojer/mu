@@ -1,26 +1,26 @@
 # mu — Usage Guide
 
-A practical, copy-pasteable tour of mu (current main; v0.3-track).
+A practical, copy-pasteable tour of mu (current main; v0.5-track).
 Everything below works against the built CLI. Terms are canonical
 — see [VOCABULARY.md](VOCABULARY.md) for definitions; the complete
 current verb list is in `## CLI — complete verb list` of
 [skills/mu/SKILL.md](../skills/mu/SKILL.md).
 
-> **Status:** v0.3 wave (pre-1.0). ~60 typed verbs across 8
+> **Status:** v0.5 wave (pre-1.0). ~60 typed verbs across 8
 > namespaces (`workstream`, `agent`, `task`, `workspace`, `log`,
 > `snapshot`, `archive`, `me`) plus bare top-level verbs
 > (`state`, `doctor`, `sql`, `undo`, `adopt`). Every verb accepts
 > `--json` (one allow-listed exception, `mu agent attach`),
 > per-agent VCS workspaces (jj/sl/git/none), activity log with
-> `--tail` subscription, canonical state card (`mu state` —
-> default / `--tui` / `--mission` render modes), whole-DB
+> `--tail` subscription, bare `mu` TTY dashboard, canonical static
+> state card (`mu state` default / `--tui` render modes), whole-DB
 > snapshots auto-captured before destructive verbs +
 > `mu undo` / `mu snapshot {list,show}`, evidence on lifecycle
 > verbs, schema v7 (v5 surrogate INTEGER PKs + per-workstream
 > UNIQUE on operator-facing names; v6 added the `archive_*`
 > family additively; v7 dropped the dead `approvals` table).
 > See [CHANGELOG.md](../CHANGELOG.md) for the release entry,
-> and [§ Not in 0.3.0](#whats-not-in-030-and-how-to-work-around-it)
+> and [§ Not in 0.5.0](#whats-not-in-050-and-how-to-work-around-it)
 > at the bottom for the gaps that still need workarounds.
 
 *If anything below disagrees with `mu --help`, trust `mu --help`.*
@@ -33,7 +33,7 @@ current verb list is in `## CLI — complete verb list` of
 2. [Get oriented (`mu doctor`)](#2-get-oriented)
 3. [Create a workstream (`mu workstream init`)](#3-create-a-workstream)
 4. [Plan some work as a DAG (`mu task add`)](#4-plan-some-work-as-a-dag)
-5. [See the graph (mission control)](#5-see-the-graph-mission-control)
+5. [See the graph (dashboard + state API)](#5-see-the-graph-dashboard--state-api)
 6. [Spawn a crew (`mu agent spawn`)](#6-spawn-a-crew)
 7. [Watch the crew live (`tmux attach`)](#7-watch-the-crew-live)
 8. [Send work to an agent (`mu agent send`)](#8-send-work-to-an-agent)
@@ -47,7 +47,7 @@ current verb list is in `## CLI — complete verb list` of
 15.5. [Archives — cross-workstream preservation](#155-archives--cross-workstream-preservation-of-task-graphs)
 16. [One-shot demo script](#16-one-shot-demo-script)
 17. [Mental model in three sentences](#mental-model-in-three-sentences)
-18. [What's NOT in 0.3.0](#whats-not-in-030-and-how-to-work-around-it)
+18. [What's NOT in 0.5.0](#whats-not-in-050-and-how-to-work-around-it)
 19. [Where to go from here](#where-to-go-from-here)
 
 ---
@@ -351,8 +351,8 @@ Tasks have **mandatory** `impact` (1–100) and `effort-days` (>0).
 Edges are blocks-relationships, modelled as **`--blocked-by`** on `mu
 task add` (and `mu task reparent`): `--blocked-by design` means "this
 task is blocked by `design`; it can't start until `design` closes."
-Tasks are **scoped to a workstream** — mission control only shows
-tasks for the workstream you're in.
+Tasks are **scoped to a workstream** — the dashboard and state views only show
+tasks for the workstream you're viewing.
 
 ```bash
 # --workstream can be omitted if you're inside the workstream's tmux
@@ -386,7 +386,7 @@ workstream, mu refuses with a `CrossWorkstreamEdgeError`.
 
 ---
 
-## 5. See the graph (mission control)
+## 5. See the graph (dashboard + state API)
 
 For a human at a terminal, launch the TUI:
 
@@ -403,49 +403,25 @@ Blocked, Commits, and Doctor cards all update live.
 For an agent/script or a static capture, use explicit state verbs:
 
 ```bash
-mu state --mission --workstream auth-refactor
+mu state --workstream auth-refactor
 mu state --workstream auth-refactor --json
 ```
 
-The stripped mission card looks like:
+The static state card includes every section the TUI cards summarize:
+agents + orphans + tracks + ready / in-progress / blocked /
+recent-closed tasks + workspaces + recent events. `--json` emits the
+same full snapshot for scripts and agents; it is the migration path for
+old `mu state --mission --json` callers.
 
-```
-mu-auth-refactor
+### `mu state` render modes (default, `--tui`)
 
-Agents (0)
-  (no agents)
-
-Tracks (1)
-  Track 1: review (3 tasks, 1 ready, track)
-
-Ready (1)
-┌────────┬─────────────────────┬────────┬────────┬──────┬───────┐
-│ id     │ title               │ impact │ effort │ ROI  │ owner │
-├────────┼─────────────────────┼────────┼────────┼──────┼───────┤
-│ design │ Design auth module  │ 80     │ 2      │ 40.0 │       │
-└────────┴─────────────────────┴────────┴────────┴──────┴───────┘
-```
-
-The mission card has three sections:
-
-- **Agents** — registry rows, status detected from each pane's
-  scrollback, post-reconciliation
-- **Tracks** — independent subtrees the parallel-track union-find
-  found. When two goals share a prerequisite, mu collapses them into
-  ONE track ("merged") so two agents are never assigned tasks that
-  share a dependency
-- **Ready** — actionable now, sorted by ROI (impact / effort)
-
-### `mu state` render modes (default, `--tui`, `--mission`)
-
-`mu state` is one verb with three render modes — same data set,
-different presentation strategy. The flag picks the renderer; the
-JSON shape (`--json`) follows render mode (full vs stripped).
+`mu state` is one verb with two render modes — same data set, different
+presentation strategy. The flag picks the renderer; `--json` always
+emits the full static snapshot shape.
 
 ```bash
 mu state                    # default: full top-to-bottom static card
 mu state --tui              # interactive ink-based dashboard (read-only; yanks commands)
-mu state --mission          # stripped 5-col glance card
 mu                          # TTY: TUI across all workstreams; non-TTY: help
 ```
 
@@ -468,8 +444,7 @@ mu                          # TTY: TUI across all workstreams; non-TTY: help
   shell. Dashboard keymap: `g` DAG popup; `l` commits popup;
   `1`-`9` toggle cards; `Shift+1`-`Shift+9` open card popups;
   `?` shows the keymap;
-  `q` / `Ctrl-C` quits and restores the main scrollback. Replaces
-  the previous `--hud`.
+  `q` / `Ctrl-C` quits and restores the main scrollback.
 
   **Popup-drill recursion**: `Enter` in any popup drills into the
   focused row. Where the row is itself an entity (a task), a
@@ -505,48 +480,41 @@ mu                          # TTY: TUI across all workstreams; non-TTY: help
   navigation). Press `/` again on a committed filter to refine
   it. Filter state is per-popup and dies with the popup.
 
-- **`--mission`** — stripped 5-col glance card (agents + orphans +
-  tracks + ready). This remains available as an explicit static
-  orient view. Bare `mu` is now the human TUI entrypoint when stdout
-  is attached to a TTY; non-TTY bare `mu` prints help for scripts.
-
-`--tui` is mutually exclusive with `--json` and `--mission`.
-Multi-workstream `--tui` IS supported: tabs (Tab / Shift-Tab) cycle
-through the resolved set, one workstream visible at a time. Per-card
-rows always belong to the active tab; cards/popups never gain a
-per-row workstream column (the active tab encodes ws identity).
+`--tui` is mutually exclusive with `--json`. Multi-workstream `--tui`
+IS supported: tabs (Tab / Shift-Tab) cycle through the resolved set,
+one workstream visible at a time. Per-card rows always belong to the
+active tab; cards/popups never gain a per-row workstream column (the
+active tab encodes ws identity).
 
 Multi-workstream: pass `-w` multiple values to render N workstreams
 in one card. `-w a,b,c`, `-w a -w b`, or any mix all work — see
 [CLI conventions](#cli-conventions-multi-value-flags). `--all` is
 sugar for "every workstream on this machine" (mutually exclusive with
-`-w`). In default + `--mission` modes N≥2 stacks one per-workstream
-card after another. In `--tui` mode N≥2 surfaces a one-row tab strip
-above the cards (`workstreams: ▸ active · next · …`); `Tab` /
-`Shift-Tab` cycles, the active tab name appears in the status bar's
-right zone next to the tick rate, and popups always operate on the
-active tab. The `--json` envelope wraps in `{ workstreams: [...] }`
-when N≥2.
+`-w`). In default mode N≥2 stacks one per-workstream card after
+another. In `--tui` mode N≥2 surfaces a one-row tab strip above the
+cards (`workstreams: ▸ active · next · …`); `Tab` / `Shift-Tab`
+cycles, the active tab name appears in the status bar's right zone
+next to the tick rate, and popups always operate on the active tab.
+The `--json` envelope wraps in `{ workstreams: [...] }` when N≥2.
 
-JSON shapes (per render mode):
+JSON shapes:
 
 - `mu state --json` (single-ws): flat `{ workstreamName, agents,
   orphans, tracks, ready, blocked, inProgress, recentClosed,
   workspaces, recent }`.
-- `mu state --mission --json`: STRIPPED — only `{ workstreamName,
-  agents, orphans, tracks, ready }`.
 - bare `mu --json`: prints help rather than entering the TUI; use
-  `mu state --mission --json` for the stripped JSON state shape.
+  `mu state --json` for the full state snapshot.
 - `--tui` is render-only and incompatible with `--json` (the TUI
   has no JSON shape; pass `--json` without `--tui` for the static
   shape).
 
-> **Migrating from `mu state --hud`**: removed in v0.4. Use
-> `mu state --tui` for the interactive replacement, or plain
-> `mu state` for the static card you used to use under `watch`.
-> `tmux display-popup -E 'mu state -w X'` keeps working unchanged
-> for popup-card use; the previous `mu hud` verb was removed in
-> v0.3.
+> **Migrating from old state surfaces**: `mu state --hud` was removed
+> in v0.4; use `mu state --tui` for the interactive replacement, or
+> plain `mu state` for the static card you used to use under `watch`.
+> `mu state --mission` was removed in v0.5; use `mu state --json` for
+> agent/script consumers (the full snapshot is a superset).
+> `tmux display-popup -E 'mu state -w X'` keeps working unchanged for
+> popup-card use; the previous `mu hud` verb was removed in v0.3.
 
 ---
 
@@ -1811,9 +1779,9 @@ service of those three.
 
 ---
 
-## What's NOT in 0.3.0 (and how to work around it)
+## What's NOT in 0.5.0 (and how to work around it)
 
-<a id="whats-not-in-030-and-how-to-work-around-it"></a>
+<a id="whats-not-in-050-and-how-to-work-around-it"></a>
 
 The full roadmap with promotion criteria lives in
 [ROADMAP.md](ROADMAP.md). The short list of gaps you might hit

@@ -335,7 +335,7 @@ Goal: delete the HUD code per `audit_state_ts`, add the TUI dispatch branch in `
 
 **Steps:**
 1. Delete `hudPaneSize`, `MU_HUD_FORCE_SIZE` env handling, `newHudTable`, `Tagged`/`tag`/`wsCell`, `formatHudAgentsTable`, `formatHudTasksTable`, `formatHudRecentTable`, `formatHudTracksTable`, `colorEventPayload` (the colour-render half — `classifyEventVerb` already replaced the parsing half), and `renderHudMode`.
-2. Remove `--hud` and `-n/--lines` from `wireStateCommands` option declarations.
+2. Remove `--hud` from `wireStateCommands` option declarations.
 3. Remove `StateOpts.hud` and `StateOpts.lines` fields.
 4. Remove the hud branch in `cmdState`.
 5. Update the regression test `test/state-render.test.ts:395-444` for `colorEventPayload` to test `classifyEventVerb` instead (assert non-null for every prefix).
@@ -374,7 +374,7 @@ npm run typecheck && npm run test
 ```ts
 export async function cmdState(db: Db, opts: StateOpts): Promise<void> {
   if (opts.json) return renderStateJson(db, opts);
-  if (process.stdout.isTTY && process.stdin.isTTY && !opts.mission) {
+  if (process.stdout.isTTY && process.stdin.isTTY) {
     const { runTui } = await import("./tui/index.js");
     return runTui(db, opts);
   }
@@ -401,7 +401,6 @@ echo '{}' | node dist/cli.js state -w tui --json
 
 **Steps:** mock `process.stdout.isTTY` and `process.stdin.isTTY`; assert:
 - `--json` always hits the JSON renderer regardless of TTY.
-- `--mission` always hits the static renderer regardless of TTY.
 - TTY + no flags hits the TUI dynamic-import (mock the `import()`).
 - non-TTY + no flags hits the static renderer.
 
@@ -410,7 +409,7 @@ echo '{}' | node dist/cli.js state -w tui --json
 npm run test -- state-dispatch
 ```
 
-**Commit:** `test: cover cmdState TTY/JSON/mission dispatch matrix`
+**Commit:** `test: cover cmdState TTY/JSON dispatch matrix`
 
 ---
 

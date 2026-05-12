@@ -388,8 +388,8 @@ speaking for another.
    - **Human-TTY gated, with static/script fallbacks.** The TUI mode
      activates when `--tui` is passed to `mu state` or when bare `mu`
      sees `process.stdout.isTTY === true`. Default `mu state` prints
-     the static card. Non-interactive callers (pipes, CI, `--json`,
-     `--mission`, or `MU_NO_TUI=1`) never enter the TUI.
+     the static card. Non-interactive callers (pipes, CI, `--json`, or
+     `MU_NO_TUI=1`) never enter the TUI.
 
    This is not a precedent for any other long-lived process. The
    anti-feature pledges in [ROADMAP.md](ROADMAP.md) ("no daemon,

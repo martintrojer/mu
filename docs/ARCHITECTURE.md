@@ -110,9 +110,10 @@ config identity: the agent doesn't have to know its own name.
 
 ### Scoped subtree views
 
-`mu task <id>` shows mission-control output filtered to that task's
-subtree. Enables recursive delegation: a sub-orchestrator agent runs
-`mu --scope feature_a` and sees only its slice of the graph.
+`mu task tree <id>` and task queries show the portion of the graph
+reachable from a task. This enables recursive delegation: a
+sub-orchestrator agent can inspect only its slice of the graph without
+asking an LLM to infer the scope.
 
 ### Why this is in the core
 
@@ -345,7 +346,7 @@ Each module is concrete and consumed today.
 4. **Executes the operation** — agent ops shell out to tmux (and to
    jj/sl/git for workspaces); task ops are pure SQL.
 5. **Reconciles with reality** — for read-paths that need accuracy
-   (`mu agent list`, mission control), queries tmux for live pane
+   (`mu agent list`, state views), queries tmux for live pane
    state and updates the DB (ghost prune + status detect).
 6. **Auto-emits a `kind='event'` row** to `agent_logs` for any
    state-changing verb, conditional on actual change. `mu log

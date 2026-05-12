@@ -295,7 +295,7 @@ describe("--json output on read verbs", () => {
     // Real footgun discovered in real use: state used to wrap agents in
     // `{ active, orphans }` so `.agents | length` returned 2 (the
     // number of object keys) regardless of agent count. The fix
-    // matches mission-control's flat shape: agents is the array,
+    // matches the state JSON flat shape: agents is the array,
     // orphans is its own top-level key.
     //
     // Keep this as a semantic contract, not just a shape check: a

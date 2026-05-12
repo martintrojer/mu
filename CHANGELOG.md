@@ -10,6 +10,18 @@ called out under "Breaking" in each entry.
 
 ## [0.5.0] — unreleased
 
+### Breaking
+
+- **Removed `mu state --mission`**. Bare `mu` is now the human TTY
+  entrypoint for the all-workstream TUI; agents and scripts should use
+  `mu state --json` instead. The full static snapshot is a superset of
+  the old stripped mission JSON shape.
+- **Removed the `mu state -n/--lines` alias for the recent-events cap**.
+  Use `mu state --events <n>` instead.
+- **Removed the dead `mu agent list --all` surface**. Agent listing stays
+  explicitly workstream-scoped; list workstreams first, then run
+  `mu agent list -w <workstream>`.
+
 ### Added
 
 - **`mu task claim --for` and `mu agent send` warn before dispatching to a stale workspace**
@@ -410,11 +422,12 @@ is opt-in via the new `--tui` flag.
 - Dropped the unused `zod` runtime dependency and refreshed the lockfile.
 - Removed dead `mu agent list --all` documentation/next-step residue:
   `mu agent list` remains explicitly workstream-scoped, and typed hints
-  now point users to `mu workstream list` before choosing a scope.
+  now point users to `mu workstream list` before choosing a scope. The
+  compatibility flag itself is removed in v0.5.0.
 - Purged vestigial HUD-era helpers/comments: deleted the unused
-  `currentPaneSize()` tmux helper, removed the HUD-only rationale from
-  the `mu state -n/--lines` alias, and updated stale internal comments
-  to the static-state/TUI model.
+  `currentPaneSize()` tmux helper, narrowed stale internal comments to
+  the static-state/TUI model, and queued the `mu state -n/--lines` alias
+  itself for v0.5 removal.
 - `mu workspace commits --json` now keeps the collection envelope while
   preserving the metadata the SDK already computes:
   `{items,count,vcs,baseRef,workspacePath}`.
@@ -3041,7 +3054,7 @@ public boundary; see git history for the per-step evolution.
 | **log** (1, overloaded)  | write, read, `--tail` subscription; auto-emits on every state change  |
 | **approve** (5)          | `add`, `list`, `grant`, `deny`, `wait` (exit 0/4/5 = granted/denied/timeout) |
 | **self-id** (3)          | `whoami`, `my-tasks`, `my-next` (resolves agent via `$TMUX_PANE`)     |
-| **utilities** (4)        | bare `mu` (quick mission control), `mu state` (canonical state card), `sql`, `doctor` |
+| **utilities** (4)        | bare `mu` (human dashboard), `mu state` (canonical state card), `sql`, `doctor` |
 
 ### Pillars (what makes mu mu)
 

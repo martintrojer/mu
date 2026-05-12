@@ -42,7 +42,7 @@ disagree. Verbs not in `--help` do not exist.
 - **note** — append-only context attached to a task; survives
   across sessions.
 - **track** — an independent subtree of the DAG (parallel-track
-  detection; visible in mission control).
+  detection; visible in the dashboard).
 - **workspace** — per-agent isolated VCS working copy under
   `<state-dir>/workspaces/<workstream>/<agent>/`.
 
@@ -323,7 +323,7 @@ running a wave.
   Commits popup shows recent project-root commits and `Enter` opens
   the backend show view: `git show`, `jj show`, or `sl show`), `/`
   filters list popups incrementally, `?` keymap, `q`/`Ctrl-C`
-  quits), `--mission`, `--all`, `--json`. `mu doctor` for health.
+  quits), `--all`, `--json`. `mu doctor` for health.
 
 ## `mu task wait` exits
 

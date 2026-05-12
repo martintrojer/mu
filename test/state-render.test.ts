@@ -1,16 +1,14 @@
 // Tests for the unified `mu state` verb.
 //
-// `mu state` owns the static state card, the bare-`mu` glance card,
-// and the opt-in TUI:
+// `mu state` owns the static state card and the opt-in TUI:
 //
 //   mu state             default: full top-to-bottom card
 //   mu state --tui       interactive ink dashboard (read-only)
-//   mu state --mission   stripped 5-col glance card
 //
-// `--tui` is mutually exclusive with `--json` and `--mission`. All
+// `--tui` is mutually exclusive with `--json`. All
 // modes accept variadic `-w X[,Y]...` / `-w X -w Y` and `--all`.
 //
-// Tests exercise: full render, mission render, mutual-exclusion error,
+// Tests exercise: full render, mutual-exclusion error,
 // cross-workstream handling, and JSON shapes per spec. TUI specifics
 // live in the `test/tui-*.test.ts` files.
 
@@ -150,74 +148,6 @@ describe("mu state — default (full) mode", () => {
   });
 });
 
-// ── --mission (stripped 5-col glance) ──────────────────────────────
-
-describe("mu state --mission — stripped glance card", () => {
-  let tempDir: string;
-  let dbPath: string;
-
-  beforeEach(async () => {
-    tempDir = mkdtempSync(join(tmpdir(), "mu-state-mission-"));
-    dbPath = join(tempDir, "mu.db");
-    await runCli(["workstream", "init", "ws", "--json"], dbPath);
-    await runCli(
-      ["task", "add", "alpha", "-w", "ws", "--title", "A", "-i", "50", "-e", "1", "--json"],
-      dbPath,
-    );
-  });
-
-  afterEach(() => {
-    try {
-      rmSync(tempDir, { recursive: true, force: true });
-    } catch {}
-  });
-
-  it("renders only the 5-col glance sections (agents + orphans + tracks + ready)", async () => {
-    const { stdout, exitCode } = await runCli(["state", "--mission", "-w", "ws"], dbPath);
-    expect(exitCode).toBeNull();
-    expect(stdout).toContain("mu-ws");
-    expect(stdout).toContain("Agents (");
-    expect(stdout).toContain("Tracks (");
-    expect(stdout).toContain("Ready (");
-    // Stripped: NOT in mission render.
-    expect(stdout).not.toContain("In progress (");
-    expect(stdout).not.toContain("Blocked (");
-    expect(stdout).not.toContain("Recent closed (");
-    expect(stdout).not.toContain("Workspaces (");
-    expect(stdout).not.toContain("Recent events");
-  });
-
-  it("--mission --json emits the stripped subset shape ONLY", async () => {
-    const { stdout, exitCode } = await runCli(["state", "--mission", "-w", "ws", "--json"], dbPath);
-    expect(exitCode).toBeNull();
-    const parsed = JSON.parse(stdout);
-    // Spec: { workstreamName, agents, orphans, tracks, ready }. No
-    // blocked / inProgress / recentClosed / workspaces / recent.
-    expect(Object.keys(parsed).sort()).toEqual(
-      ["agents", "orphans", "ready", "tracks", "workstreamName"].sort(),
-    );
-    expect(parsed.workstreamName).toBe("ws");
-    expect(parsed.ready).toEqual([
-      expect.objectContaining({ name: "alpha", title: "A", status: "OPEN", roi: 50 }),
-    ]);
-  });
-
-  it("bare `mu` on the test harness non-TTY prints help, not the static state card", async () => {
-    const { stdout, exitCode } = await runCli(["-w", "ws"], dbPath);
-    expect(exitCode).toBeNull();
-    expect(stdout).toContain("Usage: mu [options] [command]");
-    expect(stdout).not.toContain("mu-ws");
-    expect(stdout).not.toContain("Ready (");
-  });
-
-  it("bare `mu --json` stays on the help path (does not emit state JSON)", async () => {
-    const { stdout, exitCode } = await runCli(["-w", "ws", "--json"], dbPath);
-    expect(exitCode).toBeNull();
-    expect(stdout).toContain("Usage: mu [options] [command]");
-    expect(() => JSON.parse(stdout)).toThrow();
-  });
-});
-
 // ── mutual exclusion + cross-workstream ────────────────────────────
 
 describe("mu state — mutual-exclusion + cross-workstream", () => {
@@ -254,14 +184,6 @@ describe("mu state — mutual-exclusion + cross-workstream", () => {
     expect(stdout).toContain("State of mu-alpha");
     expect(stdout).toContain("State of mu-beta");
     expect(stdout).not.toContain("State of mu-gamma");
-  });
-
-  it("cross-workstream works in --mission mode (-w X,Y stacks per-ws cards)", async () => {
-    const { stdout, exitCode } = await runCli(["state", "--mission", "-w", "alpha,beta"], dbPath);
-    expect(exitCode).toBeNull();
-    expect(stdout).toContain("mu-alpha");
-    expect(stdout).toContain("mu-beta");
-    expect(stdout).not.toContain("mu-gamma");
   });
 
   it("-w with one bad name errors as WorkstreamNotFoundError", async () => {

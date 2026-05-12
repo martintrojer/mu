@@ -73,8 +73,8 @@ model-facing tool entropy).
   `ink` confined to the interactive TUI subtree (`src/cli/tui/`),
   lazy-imported only by `mu state --tui` and by bare `mu` when stdout
   is attached to a TTY. The static `mu state` (default), `mu state
-  --mission`, `mu state --json`, bare `mu` on non-TTY stdout,
-  `mu task list`, `mu agent show`, and every other verb keep rendering
+  --json`, bare `mu` on non-TTY stdout, `mu task list`, `mu agent
+  show`, and every other verb keep rendering
   with `cli-table3` + `picocolors`. `ink` (and its transitive `react` /
   `react-reconciler` / `yoga-layout-prebuilt`) MUST NOT be imported
   from any module outside `src/cli/tui/`. The TUI is the only
