@@ -57,29 +57,9 @@ afterEach(() => {
 // ─── detectBackend ────────────────────────────────────────────────────
 
 describe("detectBackend precedence", () => {
-  it("picks git when .git exists", async () => {
-    mkdirSync(join(projectRoot, ".git"));
-    const backend = await detectBackend(projectRoot);
-    expect(backend.name).toBe("git");
-  });
-
-  it("falls back to none when no VCS marker exists", async () => {
+  it("falls back to none when no VCS owns the directory", async () => {
     const backend = await detectBackend(projectRoot);
     expect(backend.name).toBe("none");
-  });
-
-  it("picks jj when .jj exists (precedence over git)", async () => {
-    mkdirSync(join(projectRoot, ".jj"));
-    mkdirSync(join(projectRoot, ".git"));
-    const backend = await detectBackend(projectRoot);
-    expect(backend.name).toBe("jj");
-  });
-
-  it("picks sl when .sl exists (precedence over git)", async () => {
-    mkdirSync(join(projectRoot, ".sl"));
-    mkdirSync(join(projectRoot, ".git"));
-    const backend = await detectBackend(projectRoot);
-    expect(backend.name).toBe("sl");
   });
 });
 

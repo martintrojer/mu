@@ -82,7 +82,7 @@ describe("mu state — default (full) mode", () => {
     const parsed = JSON.parse(stdout);
     // Spec: { workstreamName, agents, orphans, tracks, ready, blocked,
     //         inProgress, recentClosed, workspaces, recent,
-    //         recentCommits } (flat).
+    //         recentCommits, commitsBackend } (flat).
     expect(parsed.workstreamName).toBe("ws");
     expect(parsed.agents).toEqual([]);
     expect(parsed.orphans).toEqual([]);
@@ -105,6 +105,7 @@ describe("mu state — default (full) mode", () => {
     expect(parsed.recentClosed).toEqual([]);
     expect(parsed.workspaces).toEqual([]);
     expect(parsed.recentCommits).toEqual([]);
+    expect(parsed.commitsBackend).toBeNull();
     expect(parsed.recent).toEqual(
       expect.arrayContaining([
         expect.objectContaining({

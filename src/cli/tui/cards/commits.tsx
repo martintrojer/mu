@@ -51,9 +51,10 @@ export function CommitsCard({ snapshot, rowBudget, cols }: CommitsCardProps): JS
   }
 
   const { recentCommits } = snapshot;
+  const backendLabel = formatBackend(snapshot.commitsBackend ?? null);
   if (recentCommits.length === 0) {
     return (
-      <TitledBox width={cols} title="Commits" cardId={8}>
+      <TitledBox width={cols} title="Commits" subtitle={backendLabel} cardId={8}>
         <PaddedRows minRows={rowBudget ?? cardConfig.minRows}>
           <Text dimColor>no commits</Text>
         </PaddedRows>
@@ -64,7 +65,11 @@ export function CommitsCard({ snapshot, rowBudget, cols }: CommitsCardProps): JS
   const shown = recentCommits.slice(0, rowBudget ?? cardConfig.maxRows);
   const more = recentCommits.length - shown.length;
   const bottomLabel = more > 0 ? `+${more} more · Shift+8` : undefined;
-  const subtitle = formatSubtitle(recentCommits.length, recentCommits[0]?.relTime);
+  const subtitle = formatSubtitle(
+    recentCommits.length,
+    snapshot.commitsBackend ?? null,
+    recentCommits[0]?.relTime,
+  );
   const rows = shown.map((c) => [shortSha(c.sha), c.relTime, c.subject]);
   const widths = layoutColumns(rows, COLUMN_SPECS, contentWidth);
 
@@ -95,8 +100,16 @@ export function shortSha(sha: string): string {
   return sha.slice(0, 7);
 }
 
-export function formatSubtitle(total: number, newestRelTime: string | undefined): string {
-  return newestRelTime === undefined || newestRelTime.length === 0
-    ? String(total)
-    : `${total} · ${newestRelTime}`;
+export function formatBackend(backend: WorkstreamSnapshot["commitsBackend"]): string {
+  return backend ?? "(no vcs)";
+}
+
+export function formatSubtitle(
+  total: number,
+  backend: WorkstreamSnapshot["commitsBackend"],
+  newestRelTime: string | undefined,
+): string {
+  const parts = [String(total), formatBackend(backend)];
+  if (newestRelTime !== undefined && newestRelTime.length > 0) parts.push(newestRelTime);
+  return parts.join(" · ");
 }

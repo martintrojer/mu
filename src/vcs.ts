@@ -22,8 +22,8 @@
 
 import { execFile } from "node:child_process";
 import { existsSync, rmSync } from "node:fs";
-import { mkdir, stat } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { mkdir } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
 import { promisify } from "node:util";
 import type { HasNextSteps, NextStep } from "./output.js";
 
@@ -349,12 +349,24 @@ export interface VcsBackend {
 
 // ─── Helpers ─────────────────────────────────────────────────────────
 
-async function isDir(path: string): Promise<boolean> {
+async function probeVcsRootPath(cmd: string, args: string[], cwd: string): Promise<string | null> {
   try {
-    return (await stat(path)).isDirectory();
+    const stdout = await run(cmd, args, cwd);
+    const root = stdout.trim();
+    return root.length > 0 ? root : null;
   } catch {
-    return false;
+    // Tool not installed, or tool exited non-zero because cwd is not
+    // in that backend's repo type. Both mean "not this backend".
+    return null;
   }
+}
+
+async function probeVcsRoot(cmd: string, args: string[], cwd: string): Promise<boolean> {
+  return (await probeVcsRootPath(cmd, args, cwd)) !== null;
+}
+
+function isSaplingDotdir(dotdir: string): boolean {
+  return /(?:^|[\\/])\.(?:sl|hg)$/.test(dotdir);
 }
 
 async function ensureParent(path: string): Promise<void> {
@@ -516,7 +528,7 @@ export const gitBackend: VcsBackend = {
   name: "git",
 
   async detect(projectRoot) {
-    return isDir(join(projectRoot, ".git"));
+    return probeVcsRoot("git", ["rev-parse", "--show-toplevel"], projectRoot);
   },
 
   async createWorkspace(opts) {
@@ -869,7 +881,7 @@ export const jjBackend: VcsBackend = {
   name: "jj",
 
   async detect(projectRoot) {
-    return isDir(join(projectRoot, ".jj"));
+    return probeVcsRoot("jj", ["root"], projectRoot);
   },
 
   async createWorkspace(opts) {
@@ -1187,9 +1199,13 @@ export const slBackend: VcsBackend = {
   name: "sl",
 
   async detect(projectRoot) {
-    // Sapling uses `.sl` in newer mode and `.hg` in mercurial-compat
-    // mode. Both are valid sapling repos to `sl`. Accept either.
-    return (await isDir(join(projectRoot, ".sl"))) || (await isDir(join(projectRoot, ".hg")));
+    const root = await probeVcsRootPath("sl", ["root"], projectRoot);
+    if (root === null) return false;
+    // Meta's Sapling build can transparently operate in plain git repos
+    // by creating `.git/sl`. That should not beat git in BACKENDS order.
+    // `--dotdir` keeps true sl / hg-compat repos (`.sl` / `.hg`) distinct.
+    const dotdir = await probeVcsRootPath("sl", ["root", "--dotdir"], projectRoot);
+    return dotdir !== null && isSaplingDotdir(dotdir);
   },
 
   async createWorkspace(opts) {
@@ -1402,10 +1418,10 @@ async function slIsDirty(workspacePath: string): Promise<boolean> {
 
 /**
  * Detection precedence: jj > sl > git > none. The first backend whose
- * detect() returns true wins. `none` is always last.
- *
- * jj and sl are added in follow-up commits but this list is the
- * canonical order they'll prepend to.
+ * detect() returns true wins. `none` is always last. Detection shells
+ * out to each VCS's canonical root probe (`jj root`, `sl root`, `git
+ * rev-parse --show-toplevel`) so worktrees and gitdir-pointer files are
+ * handled by the owning tool instead of a brittle marker-dir heuristic.
  */
 const BACKENDS: readonly VcsBackend[] = [jjBackend, slBackend, gitBackend, noneBackend];
 

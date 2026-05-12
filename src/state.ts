@@ -19,7 +19,7 @@ import {
   listTasksByOwner,
 } from "./tasks.js";
 import { type Track, getParallelTracks } from "./tracks.js";
-import { type CommitSummary, detectBackend } from "./vcs.js";
+import { type CommitSummary, type VcsBackendName, detectBackend } from "./vcs.js";
 import {
   type WorkspaceOrphan,
   type WorkspaceRow,
@@ -46,6 +46,9 @@ export interface WorkstreamSnapshot {
    *  when `loadWorkstreamSnapshot` is called with withRecentCommits.
    *  This is intentionally NOT a per-agent workspace log. */
   recentCommits: CommitSummary[];
+  /** Backend that produced recentCommits. Null when recent commits were
+   *  not requested or no VCS backend was detected. */
+  commitsBackend?: VcsBackendName | null;
   /** Populated when `loadWorkstreamSnapshot` is called with
    *  `withDoctor: true`. Used by the TUI's slot-9 Doctor card to
    *  render a glanceable health badge on the dashboard
@@ -103,7 +106,7 @@ export async function loadWorkstreamSnapshot(
   if (opts.withDirty === true) workspaces = await decorateWithDirty(workspaces);
   const workspaceOrphans = listWorkspaceOrphans(db, workstream);
   const recent = listLogs(db, { workstream, kind: "event", limit: eventLimit });
-  const recentCommits = await loadRecentCommits(opts.withRecentCommits);
+  const commits = await loadRecentCommits(opts.withRecentCommits);
   // Build the snapshot first (without doctor) so loadDoctorSummary
   // can read the just-computed view + workspaceOrphans straight off it.
   const snapshot: WorkstreamSnapshot = {
@@ -117,7 +120,8 @@ export async function loadWorkstreamSnapshot(
     workspaces,
     workspaceOrphans,
     recent,
-    recentCommits,
+    recentCommits: commits.items,
+    commitsBackend: commits.backend,
     doctor: null,
   };
   if (opts.withDoctor === true) {
@@ -128,11 +132,12 @@ export async function loadWorkstreamSnapshot(
 
 async function loadRecentCommits(
   opt: LoadWorkstreamSnapshotOptions["withRecentCommits"],
-): Promise<CommitSummary[]> {
-  if (opt === undefined) return [];
+): Promise<{ backend: VcsBackendName | null; items: CommitSummary[] }> {
+  if (opt === undefined) return { backend: null, items: [] };
   const projectRoot = process.cwd();
   const backend = await detectBackend(projectRoot);
-  return backend.recentCommits(projectRoot, opt.limit);
+  if (backend.name === "none") return { backend: null, items: [] };
+  return { backend: backend.name, items: await backend.recentCommits(projectRoot, opt.limit) };
 }
 
 // ─── ROI helpers ───────────────────────────────────────────────────

@@ -58,6 +58,12 @@ called out under "Breaking" in each entry.
   `mu state` remains the static card and `mu state --tui` remains the
   explicit TUI selector for back-compat.
 
+- **Commits card and popup show the detected VCS backend**
+  (bug_vcs_detect_misses_git_worktrees). The TUI Commits card and
+  `l` popup now include the active backend in their header/subtitle
+  (`git`, `jj`, `sl`, or `(no vcs)`) so users can see which substrate
+  won detection at a glance.
+
 ### TUI internals
 
 - **State/TUI dispatch + event-classifier tests are behaviour-backed**
@@ -763,6 +769,13 @@ is opt-in via the new `--tui` flag.
 
 ### Fixed
 
+- **VCS backend detection now uses each tool's canonical root command**
+  (bug_vcs_detect_misses_git_worktrees). `detectBackend()` probes
+  `jj root`, `sl root`, then `git rev-parse --show-toplevel` instead
+  of checking whether `.jj` / `.sl` / `.git` is a directory. This
+  fixes git-worktree detection: worker workspaces use a `.git` FILE
+  (`gitdir:` pointer), so the old heuristic fell through to `none`
+  and left the TUI Commits card empty in every worker pane.
 - **`mu task wait --first --json` nextSteps no longer silently cherry-pick a worker's fork point**
   (`fb_wait_nextsteps_robust_no_commits`). The dispatch-pipeline hint
   now uses `mu workspace commits`' since-fork data before emitting an

@@ -43,6 +43,7 @@ function makeSnap(overrides: Partial<WorkstreamSnapshot> = {}): WorkstreamSnapsh
     workspaceOrphans: [],
     recent: [],
     recentCommits: [],
+    commitsBackend: null,
     ...overrides,
   } as WorkstreamSnapshot;
 }
@@ -163,6 +164,12 @@ describe("snapshotKey — visible-affecting field projection", () => {
     expect(snapshotKeyString(a)).not.toBe(snapshotKeyString(b));
   });
 
+  it("differs when the commits backend changes", () => {
+    const a = makeSnap({ commitsBackend: "git" });
+    const b = makeSnap({ commitsBackend: "jj" });
+    expect(snapshotKeyString(a)).not.toBe(snapshotKeyString(b));
+  });
+
   it("differs when a track's readyCount changes", () => {
     const a = makeSnap({
       tracks: [{ roots: [], taskIds: new Set(["a", "b"]), readyCount: 1 }],
@@ -222,6 +229,7 @@ describe("snapshotKey — visible-affecting field projection", () => {
         "ready",
         "recent",
         "recentClosed",
+        "commitsBackend",
         "recentCommits",
         "tracks",
         "workspaces",

@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   CommitsPopup,
   commitFilterBlob,
+  formatBackend,
   shortSha,
   showCommandForBackend,
 } from "../src/cli/tui/popups/commits.js";
@@ -33,6 +34,11 @@ describe("CommitsPopup export + pure helpers", () => {
 
   it("shortSha returns seven characters", () => {
     expect(shortSha("abcdef0123456789")).toBe("abcdef0");
+  });
+
+  it("formatBackend labels missing detection distinctly", () => {
+    expect(formatBackend("git")).toBe("git");
+    expect(formatBackend(null)).toBe("(no vcs)");
   });
 
   it("showCommandForBackend covers all VCS backends", () => {
@@ -68,10 +74,16 @@ describe("CommitsPopup source invariants", () => {
   });
 
   it("shows commits via the VcsBackend.showCommit seam, not git-only helper", () => {
-    expect(SRC).toContain("detectBackend(process.cwd())");
+    expect(SRC).toContain("detectBackend(projectRoot)");
     expect(SRC).toContain("backend.showCommit(projectRoot, sha)");
     expect(SRC).not.toContain("runGitShow");
     expect(SRC).not.toContain("node:child_process");
+  });
+
+  it("renders the detected backend in list, empty, and drill titles", () => {
+    expect(SRC).toContain("snapshot?.commitsBackend");
+    expect(SRC).toContain("formatBackend(backendName)");
+    expect(SRC).toContain('"(no vcs)"');
   });
 
   it("yank matrix yanks backend-specific show commands in list and drill modes", () => {

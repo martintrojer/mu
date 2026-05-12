@@ -2,8 +2,13 @@
 // the new ink-based TUI consumes alongside the static `mu state` renderer.
 // See design_sdk_seam in workstream `tui` (`mu task notes design_sdk_seam -w tui`).
 
-import { describe, expect, it } from "vitest";
+import { execFileSync, spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
 import type { AgentRow } from "../src/agents.js";
+import { type Db, openDb } from "../src/db.js";
 import { classifyEventVerb } from "../src/logs.js";
 import {
   type WorkstreamSnapshot,
@@ -13,6 +18,7 @@ import {
   summarizeOwnedTasks,
 } from "../src/state.js";
 import type { TaskRow } from "../src/tasks.js";
+import { ensureWorkstream } from "../src/workstream.js";
 
 // Minimal TaskRow factory for the pure-function tests.
 function task(over: Partial<TaskRow> = {}): TaskRow {
@@ -29,6 +35,36 @@ function task(over: Partial<TaskRow> = {}): TaskRow {
     closeKind: null,
     ...over,
   } as TaskRow;
+}
+
+let dirs: string[] = [];
+
+function tmp(prefix: string): string {
+  const d = mkdtempSync(join(tmpdir(), prefix));
+  dirs.push(d);
+  return d;
+}
+
+afterEach(() => {
+  for (const d of dirs) rmSync(d, { recursive: true, force: true });
+  dirs = [];
+});
+
+function has(bin: string): boolean {
+  return spawnSync(bin, ["--version"], { stdio: "ignore" }).status === 0;
+}
+
+function git(repo: string, ...args: string[]): string {
+  const env = {
+    ...process.env,
+    GIT_AUTHOR_NAME: "tester",
+    GIT_AUTHOR_EMAIL: "tester@example.com",
+    GIT_COMMITTER_NAME: "tester",
+    GIT_COMMITTER_EMAIL: "tester@example.com",
+    GIT_CONFIG_GLOBAL: "/dev/null",
+    GIT_CONFIG_SYSTEM: "/dev/null",
+  };
+  return execFileSync("git", ["-C", repo, ...args], { env, encoding: "utf8" }).trim();
 }
 
 function agent(over: Partial<AgentRow> = {}): AgentRow {
@@ -165,8 +201,35 @@ describe("loadWorkstreamSnapshot", () => {
       workspaceOrphans: [],
       recent: [],
       recentCommits: [],
+      commitsBackend: null,
       doctor: null,
     };
     expect(_example.workstreamName).toBe("demo");
+  });
+
+  (has("git") ? it : it.skip)("populates commitsBackend from the detected VCS", async () => {
+    const dbDir = tmp("mu-state-helper-db-");
+    const repo = tmp("mu-state-helper-repo-");
+    let db: Db | null = null;
+    const oldCwd = process.cwd();
+    try {
+      db = openDb({ path: join(dbDir, "mu.db") });
+      ensureWorkstream(db, "demo");
+      git(repo, "init", "-q", "-b", "main");
+      writeFileSync(join(repo, "README.md"), "hello\n");
+      git(repo, "add", ".");
+      git(repo, "commit", "-q", "-m", "init");
+      process.chdir(repo);
+
+      const snapshot = await loadWorkstreamSnapshot(db, "demo", {
+        withRecentCommits: { limit: 5 },
+      });
+
+      expect(snapshot.commitsBackend).toBe("git");
+      expect(snapshot.recentCommits[0]?.subject).toBe("init");
+    } finally {
+      process.chdir(oldCwd);
+      db?.close();
+    }
   });
 });

@@ -1,7 +1,7 @@
 // Commits popup (`l` or Shift+8 → `*`). Fullscreen lazygit-style
 // project commit log with '/' filtering and Enter → VCS show drill.
 //
-// Uses the project-root backend (detectBackend(process.cwd())) so git,
+// Uses the project-root backend (detectBackend(projectRoot)) so git,
 // jj, and sl all work through the shared VcsBackend.showCommit seam.
 // The popup never mutates: `y` yanks the backend-specific show command
 // for the focused commit.
@@ -61,7 +61,9 @@ export function CommitsPopup({
   const [showText, setShowText] = useState("");
   const [showLoading, setShowLoading] = useState(false);
   const [showErr, setShowErr] = useState<string | null>(null);
-  const [backendName, setBackendName] = useState<VcsBackendName | null>(null);
+  const [backendName, setBackendName] = useState<VcsBackendName | null>(
+    snapshot?.commitsBackend ?? null,
+  );
   const flt = usePopupFilter({ onEditingChange: onFilterEditingChange });
 
   const sourceCommits = snapshot?.recentCommits ?? [];
@@ -90,9 +92,8 @@ export function CommitsPopup({
   }, []);
 
   useEffect(() => {
-    if (backendName !== null) return;
-    void detectBackend(process.cwd()).then((backend) => setBackendName(backend.name));
-  }, [backendName]);
+    if (snapshot?.commitsBackend !== undefined) setBackendName(snapshot.commitsBackend);
+  }, [snapshot?.commitsBackend]);
 
   useEffect(() => {
     if (mode !== "drill") {
@@ -146,12 +147,12 @@ export function CommitsPopup({
   });
 
   if (snapshot === null) {
-    return <PopupShell title="Commits · popup">{<Text dimColor>loading…</Text>}</PopupShell>;
+    return <PopupShell title="Commits · loading">{<Text dimColor>loading…</Text>}</PopupShell>;
   }
   if (mode === "drill" && focused !== undefined) {
     const short = shortSha(focused.sha);
     return (
-      <PopupShell title={`Commits · ${short}`}>
+      <PopupShell title={`Commits · ${formatBackend(backendName)} · ${short}`}>
         <Box flexDirection="column" flexGrow={1}>
           <DrillScrollView
             title={`${showCommand ?? "show"} · ${focused.subject}`}
@@ -167,14 +168,14 @@ export function CommitsPopup({
   }
   if (sourceCommits.length === 0) {
     return (
-      <PopupShell title="Commits · popup">
+      <PopupShell title={`Commits · ${formatBackend(backendName)}`}>
         <Text dimColor>(no commits)</Text>
       </PopupShell>
     );
   }
   if (commits.length === 0) {
     return (
-      <PopupShell title="Commits · popup">
+      <PopupShell title={`Commits · ${formatBackend(backendName)}`}>
         <Box flexDirection="column" flexGrow={1}>
           <Text dimColor>(no matches for "{flt.query}")</Text>
         </Box>
@@ -189,7 +190,7 @@ export function CommitsPopup({
 
   return (
     <PopupShell
-      title={`Commits · popup (${safeCursor + 1}/${commits.length})`}
+      title={`Commits · ${formatBackend(backendName)} (${safeCursor + 1}/${commits.length})`}
       hint="y yanks VCS show command"
     >
       <Box flexDirection="column" flexGrow={1}>
@@ -221,6 +222,10 @@ export function CommitsPopup({
 
 export function shortSha(sha: string): string {
   return sha.slice(0, 7);
+}
+
+export function formatBackend(backend: VcsBackendName | null): string {
+  return backend ?? "(no vcs)";
 }
 
 export function showCommandForBackend(backend: VcsBackendName, sha: string): string {

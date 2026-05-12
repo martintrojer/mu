@@ -285,6 +285,7 @@ export function snapshotKey(s: WorkstreamSnapshot): unknown {
     inProgress: s.inProgress.map(taskKey),
     blocked: s.blocked.map(taskKey),
     recentClosed: s.recentClosed.map(taskKey),
+    commitsBackend: s.commitsBackend ?? null,
     recentCommits: s.recentCommits.map((c) => [c.sha, c.subject, c.author, c.relTime]),
     workspaces: s.workspaces.map((w) => [
       w.agentName,
