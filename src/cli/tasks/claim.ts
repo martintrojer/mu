@@ -37,6 +37,7 @@ import {
 } from "../../tasks.js";
 import { type CommitSummary, WorkspaceVcsRequiredError } from "../../vcs.js";
 import { WorkspaceNotFoundError, listCommitsForWorkspace } from "../../workspace.js";
+import { checkWorkspaceStalenessForDispatch } from "../staleness.js";
 
 export async function cmdTaskRelease(
   db: Db,
@@ -88,6 +89,7 @@ export async function cmdClaim(
     evidence?: string;
     workstream?: string;
     json?: boolean;
+    strictStaleness?: boolean;
   },
 ): Promise<void> {
   const { name: localId } = await resolveEntityRef(db, rawId, opts, "task");
@@ -144,6 +146,12 @@ export async function cmdClaim(
   if (opts.self) sdkOpts.self = true;
   if (opts.actor !== undefined) sdkOpts.actor = opts.actor;
   if (opts.evidence !== undefined) sdkOpts.evidence = opts.evidence;
+  const stalenessCheck =
+    forName !== undefined
+      ? await checkWorkspaceStalenessForDispatch(db, forName, forWorkstream ?? ws, {
+          strict: opts.strictStaleness === true,
+        })
+      : { staleness: null, warned: false, nextStep: null };
   const result = await claimTask(db, localId, sdkOpts);
   // Title push for the new owner. Anonymous claims (--self) leave
   // owner=null — nothing to refresh. Refresh in the agent's OWN
@@ -167,8 +175,11 @@ export async function cmdClaim(
     },
     { intent: "Release if blocked", command: `mu task release ${localId} -w ${ws}` },
   ];
+  if (stalenessCheck.warned && stalenessCheck.nextStep !== null) {
+    nextSteps.push(stalenessCheck.nextStep);
+  }
   if (opts.json) {
-    emitJson({ ...result, nextSteps });
+    emitJson({ ...result, staleness: stalenessCheck.staleness, nextSteps });
     return;
   }
   if (result.ownerName === null) {

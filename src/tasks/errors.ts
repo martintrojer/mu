@@ -16,6 +16,7 @@
 
 import type { HasNextSteps, NextStep } from "../output.js";
 import { sanitiseTaskId } from "../tasks.js";
+import { WORKSPACE_STALE_THRESHOLD, type WorkspaceStaleness } from "../workspace.js";
 
 export class TaskNotFoundError extends Error implements HasNextSteps {
   override readonly name = "TaskNotFoundError";
@@ -225,6 +226,23 @@ export class ClaimerNotRegisteredError extends Error implements HasNextSteps {
           },
     );
     return steps;
+  }
+}
+
+export class TaskClaimStaleWorkspaceError extends Error implements HasNextSteps {
+  override readonly name = "TaskClaimStaleWorkspaceError";
+  constructor(public readonly staleness: WorkspaceStaleness) {
+    super(
+      `${staleness.agentName} workspace is ${staleness.commitsBehindMain} commits behind main (≥${WORKSPACE_STALE_THRESHOLD} = stale); refresh before dispatch or rerun without --strict-staleness`,
+    );
+  }
+  errorNextSteps(): NextStep[] {
+    return [
+      {
+        intent: "Refresh first",
+        command: `mu workspace refresh ${this.staleness.agentName} -w ${this.staleness.workstreamName}`,
+      },
+    ];
   }
 }
 

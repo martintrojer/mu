@@ -181,6 +181,12 @@ running a wave.
   the cost of skipping it. Worker ships clean code against a stale
   parent otherwise; you find out at cherry-pick time.
 
+- **Claim/send warn on stale workspaces.** `mu task claim --for
+  <agent>` and `mu agent send <agent>` print a stderr warning when
+  the target workspace is ≥10 commits behind main. Refresh first:
+  `mu workspace refresh <agent> -w <ws>` (or pass
+  `--strict-staleness` in scripts to refuse instead of warn).
+
 - **Cherry-pick worker commits onto main, don't merge.** Stale-parent
   worker branches drag in re-reverts of everything they missed.
 

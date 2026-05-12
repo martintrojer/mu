@@ -12,6 +12,18 @@ called out under "Breaking" in each entry.
 
 ### Added
 
+- **`mu task claim --for` and `mu agent send` warn before dispatching to a stale workspace**
+  (feat_claim_warn_stale_workspace). Both dispatch surfaces now reuse
+  the Workspaces card's ≥10-commits-behind-main definition via the
+  shared `WORKSPACE_STALE_THRESHOLD`. Default behaviour is a yellow
+  stderr `WARN:` plus a `mu workspace refresh <agent> -w <ws>` Next:
+  hint while the claim/send still succeeds. Passing
+  `--strict-staleness` refuses instead with typed
+  `TaskClaimStaleWorkspaceError` (exit 4). JSON output includes a
+  `staleness` object (`agentName`, `workstreamName`,
+  `commitsBehindMain`, `isStale`) or `null` for agents without a
+  workspace.
+
 - **Bare `mu` launches the TUI when stdout is attached to a TTY**
   (feat_mu_bare_launches_tui). The human entrypoint now opens the
   read-only dashboard immediately with every workstream loaded as

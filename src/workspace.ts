@@ -23,6 +23,7 @@ import { type Db, defaultStateDir, tryResolveWorkstreamId } from "./db.js";
 import { emitEvent } from "./logs.js";
 import type { HasNextSteps, NextStep } from "./output.js";
 import { captureSnapshot } from "./snapshots.js";
+import { isWorkspaceStale } from "./staleness.js";
 import {
   type CommitSummary,
   type RebaseResult,
@@ -32,6 +33,8 @@ import {
   backendByName,
   detectBackend,
 } from "./vcs.js";
+
+export { WORKSPACE_STALE_THRESHOLD, isWorkspaceStale } from "./staleness.js";
 
 export interface WorkspaceRow {
   agentName: string;
@@ -357,6 +360,13 @@ export function listAllOrphanWorkspaces(db: Db): StrandedWorkspaceOrphan[] {
   return orphans;
 }
 
+export interface WorkspaceStaleness {
+  agentName: string;
+  workstreamName: string;
+  commitsBehindMain: number | null;
+  isStale: boolean;
+}
+
 export interface CreateWorkspaceOptions {
   agent: string;
   workstream: string;
@@ -540,6 +550,23 @@ export function listWorkspaces(db: Db, workstream?: string): WorkspaceRow[] {
     .prepare(`SELECT ${SELECT_WS_COLS} ${WS_FROM_JOIN} WHERE v.workstream_id = ? ORDER BY ag.name`)
     .all(wsId) as RawWorkspaceRow[];
   return rows.map(rowFromDb);
+}
+
+export async function getWorkspaceStaleness(
+  db: Db,
+  agentName: string,
+  workstreamName: string,
+): Promise<WorkspaceStaleness | null> {
+  const row = getWorkspaceForAgent(db, agentName, workstreamName);
+  if (row === undefined) return null;
+  const [decorated] = await decorateWithStaleness([row]);
+  const commitsBehindMain = decorated?.commitsBehindMain ?? null;
+  return {
+    agentName,
+    workstreamName,
+    commitsBehindMain,
+    isStale: isWorkspaceStale(commitsBehindMain),
+  };
 }
 
 /**

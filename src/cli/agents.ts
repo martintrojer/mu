@@ -54,6 +54,7 @@ import {
 } from "../tmux.js";
 import { type VcsBackendName, detectBackend } from "../vcs.js";
 import { getWorkspaceForAgent } from "../workspace.js";
+import { checkWorkspaceStalenessForDispatch } from "./staleness.js";
 
 interface SpawnOpts {
   cli?: string;
@@ -176,18 +177,29 @@ export async function cmdSend(
   db: Db,
   rawName: string,
   text: string,
-  opts: { workstream?: string; json?: boolean } = {},
+  opts: { workstream?: string; json?: boolean; strictStaleness?: boolean } = {},
 ): Promise<void> {
   const { name } = await resolveEntityRef(db, rawName, opts, "agent");
   assertAgentInWorkstream(db, name, opts.workstream);
   const ws = await resolveWorkstream(opts.workstream);
+  const stalenessCheck = await checkWorkspaceStalenessForDispatch(db, name, ws, {
+    strict: opts.strictStaleness === true,
+  });
   await sendToAgent(db, name, text, { workstream: ws });
   const nextSteps: NextStep[] = [
     { intent: "Read response", command: `mu agent read ${name} -n 50 -w ${ws}` },
     { intent: "Watch live events", command: `mu log -w ${ws} --tail` },
   ];
+  if (stalenessCheck.warned && stalenessCheck.nextStep !== null) {
+    nextSteps.push(stalenessCheck.nextStep);
+  }
   if (opts.json) {
-    emitJson({ agentName: name, sentBytes: text.length, nextSteps });
+    emitJson({
+      agentName: name,
+      sentBytes: text.length,
+      staleness: stalenessCheck.staleness,
+      nextSteps,
+    });
     return;
   }
   console.log(pc.dim(`sent ${text.length} bytes to ${name}`));
@@ -623,10 +635,18 @@ export function wireAgentCommands(program: Command): void {
   agent
     .command("send <name> <text>")
     .description("Send text to an agent's pane (bracketed-paste protocol)")
+    .option(
+      "--strict-staleness",
+      "refuse send when the target agent's workspace is stale (default: warn and proceed)",
+    )
     .option(...WORKSTREAM_OPT)
     .option(...JSON_OPT)
     .action(function (name: string, text: string) {
-      const opts = (this as Command).opts() as { workstream?: string; json?: boolean };
+      const opts = (this as Command).opts() as {
+        workstream?: string;
+        json?: boolean;
+        strictStaleness?: boolean;
+      };
       return handle((db) => cmdSend(db, name, text, opts), this as Command)();
     });
 

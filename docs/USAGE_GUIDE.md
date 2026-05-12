@@ -709,6 +709,28 @@ MU_SEND_DELAY_MS=300 mu agent send worker-1 "..."     # faster, less safe
 MU_SEND_DELAY_MS=1000 mu agent send worker-1 "..."    # slow remote
 ```
 
+If the target agent has a workspace that is **stale** (≥10 commits
+behind main — the same red bucket shown in `mu workspace list` and the
+TUI Workspaces card), `mu agent send` prints a yellow stderr warning
+but still sends by default:
+
+```bash
+WARN: worker-1 workspace is 14 commits behind main (≥10 = stale)
+Next:
+  Refresh first : mu workspace refresh worker-1 -w auth-refactor
+```
+
+Use `--strict-staleness` when a wrapper should refuse instead of
+warning:
+
+```bash
+mu agent send worker-1 "..." -w auth-refactor --strict-staleness
+```
+
+Agents without workspaces are skipped (common for read-only roles).
+`--json` output includes `staleness: null` or `{agentName,
+workstreamName, commitsBehindMain, isStale}`.
+
 ---
 
 ## 9. Read what an agent did
@@ -792,6 +814,29 @@ typed errors: `WorkstreamNotFoundError` (exit 3) on a missing
 workstream prefix, `AgentNotFoundError` (exit 3, message names the
 workstream) when the named worker doesn't live there. Nothing is
 written on either failure.
+
+When `--for` targets an agent with a stale workspace (≥10 commits
+behind main), `mu task claim` warns on stderr and appends a refresh
+hint, but the claim still succeeds by default:
+
+```bash
+mu task claim build -w auth-refactor --for worker-2
+# stderr: WARN: worker-2 workspace is 14 commits behind main (≥10 = stale)
+# Next: Refresh first : mu workspace refresh worker-2 -w auth-refactor
+```
+
+Pass `--strict-staleness` to refuse the claim instead with typed
+`TaskClaimStaleWorkspaceError` (exit 4). This is useful for scripts
+that should never dispatch work onto a stale parent:
+
+```bash
+mu task claim build -w auth-refactor --for worker-2 --strict-staleness
+```
+
+`--json` output includes `staleness: null` or `{agentName,
+workstreamName, commitsBehindMain, isStale}`. Bare in-pane claims and
+`--self` claims do not run this check because they do not assign work
+to a named agent via `--for`.
 
 ### The orchestrator pattern: `--self`
 

@@ -73,6 +73,7 @@ import {
   ReaperDetectedDuringWaitError,
   StallDetectedDuringWaitError,
   TaskAlreadyOwnedError,
+  TaskClaimStaleWorkspaceError,
   TaskExistsError,
   TaskHasOpenDependentsError,
   TaskIdInvalidError,
@@ -251,6 +252,7 @@ export function classifyError(err: unknown): { label: string; exitCode: number }
     err instanceof AgentExistsError ||
     err instanceof TaskExistsError ||
     err instanceof TaskAlreadyOwnedError ||
+    err instanceof TaskClaimStaleWorkspaceError ||
     err instanceof TaskNotInWorkstreamError ||
     err instanceof AgentNotInWorkstreamError ||
     err instanceof CycleError ||

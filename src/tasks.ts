@@ -39,6 +39,7 @@ export {
   StallDetectedDuringWaitError,
   TaskAlreadyOwnedError,
   TaskExistsError,
+  TaskClaimStaleWorkspaceError,
   TaskHasOpenDependentsError,
   TaskIdInvalidError,
   TaskNotFoundError,

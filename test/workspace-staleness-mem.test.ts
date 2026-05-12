@@ -15,7 +15,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { insertAgent } from "../src/agents.js";
 import { type Db, openDb } from "../src/db.js";
 import { gitBackend } from "../src/vcs.js";
-import { createWorkspace, decorateWithStaleness, listWorkspaces } from "../src/workspace.js";
+import {
+  createWorkspace,
+  decorateWithStaleness,
+  getWorkspaceStaleness,
+  listWorkspaces,
+} from "../src/workspace.js";
 import { ensureWorkstream } from "../src/workstream.js";
 
 let stateRoot: string;
@@ -86,6 +91,32 @@ describe("decorateWithStaleness", () => {
     const decorated = await decorateWithStaleness(listWorkspaces(db, "auth"));
     expect(decorated[0]?.parentRef).toBeNull();
     expect(decorated[0]?.commitsBehindMain).toBeNull();
+  });
+
+  it("getWorkspaceStaleness returns the shared shape and null when no workspace exists", async () => {
+    const spy = vi.spyOn(gitBackend, "commitsBehind").mockImplementation(async () => 10);
+    try {
+      const row = await createWorkspace(db, {
+        agent: "worker-1",
+        workstream: "auth",
+        projectRoot,
+        backend: "none",
+      });
+      db.prepare("UPDATE vcs_workspaces SET backend = 'git', parent_ref = ? WHERE path = ?").run(
+        "base-ref",
+        row.path,
+      );
+
+      await expect(getWorkspaceStaleness(db, "ghost", "auth")).resolves.toBeNull();
+      await expect(getWorkspaceStaleness(db, "worker-1", "auth")).resolves.toEqual({
+        agentName: "worker-1",
+        workstreamName: "auth",
+        commitsBehindMain: 10,
+        isStale: true,
+      });
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("memoizes commitsBehind by (backend, parentRef): N rows = 1 shellout", async () => {

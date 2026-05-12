@@ -33,7 +33,11 @@
 
 import { Text } from "ink";
 import type { WorkstreamSnapshot } from "../../../state.js";
-import type { WorkspaceRow } from "../../../workspace.js";
+import {
+  WORKSPACE_STALE_THRESHOLD,
+  type WorkspaceRow,
+  isWorkspaceStale,
+} from "../../../workspace.js";
 import {
   type ColumnSpec,
   contentWidthFromCols,
@@ -122,7 +126,7 @@ export function WorkspacesCard({ snapshot }: WorkspacesCardProps): JSX.Element {
  *  used by the static `mu workspace list` table). Kept in sync with
  *  formatBehind's thresholds below. */
 export function isStale(behind: number | null | undefined): boolean {
-  return typeof behind === "number" && behind >= 10;
+  return isWorkspaceStale(behind);
 }
 
 /** Render the behind count as a short token. "—" when unknown
@@ -139,7 +143,7 @@ export function formatBehind(n: number | null | undefined): string {
 export function colorForBehind(n: number | null | undefined): string | undefined {
   if (n === undefined || n === null) return undefined;
   if (n <= 2) return "green";
-  if (n <= 9) return "yellow";
+  if (n < WORKSPACE_STALE_THRESHOLD) return "yellow";
   return "red";
 }
 
