@@ -62,7 +62,7 @@
 
 import { Text } from "ink";
 import type { Db } from "../../../db.js";
-import { type RoiBucket, type WorkstreamSnapshot, roiBucket } from "../../../state.js";
+import { type WorkstreamSnapshot, roiBucket } from "../../../state.js";
 import { type TaskEdgeWithStatus, type TaskRow, getTaskEdgesWithStatus } from "../../../tasks.js";
 import {
   type ColumnSpec,
@@ -71,6 +71,7 @@ import {
   renderRow,
   termColsForLayout,
 } from "../columns.js";
+import { colorForBucket, formatRoi } from "../format-helpers.js";
 import { ListRow } from "../list-row.js";
 import { TitledBox } from "../titled-box.js";
 
@@ -125,8 +126,7 @@ export function BlockedCard({ snapshot, db, workstream }: BlockedCardProps): JSX
 
   const meta = shown.map((t) => {
     const bucket = roiBucket(t.impact, t.effortDays);
-    const roi = t.effortDays > 0 ? Math.round(t.impact / t.effortDays) : Number.POSITIVE_INFINITY;
-    const roiText = Number.isFinite(roi) ? String(roi) : "∞";
+    const roiText = formatRoi(t.impact, t.effortDays);
     return { bucket, roiText };
   });
   const rows = shown.map((t, i) => [
@@ -221,16 +221,4 @@ export function formatSubtitle(total: number, topBlocker: string | null): string
   const parts: string[] = [String(total)];
   if (topBlocker !== null) parts.push(`top blocker: ${topBlocker}`);
   return parts.join(" · ");
-}
-
-function colorForBucket(b: RoiBucket): string | undefined {
-  switch (b) {
-    case "high":
-    case "infinite":
-      return "green";
-    case "mid":
-      return "yellow";
-    case "low":
-      return undefined;
-  }
 }

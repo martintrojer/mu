@@ -119,6 +119,16 @@ export function relTime(ms: number): string {
   return `${Math.floor(day / 7)}w`;
 }
 
+/** Like {@link relTime} but with a trailing " ago" suffix. The TUI's
+ *  Recent card / popup wants past-tense formatting ("3m ago") while
+ *  the In-progress card / popup wants the bare token ("3m"); both
+ *  buckets share the rest of the arithmetic. Hoisted out of the TUI
+ *  cluster (review_unify_format_when_since) so the two formatters
+ *  can't drift the way they were starting to. */
+export function relTimeAgo(ms: number): string {
+  return `${relTime(ms)} ago`;
+}
+
 // ─── Table renderers ──────────────────────────────────────────────────
 
 export function formatAgentsTable(agents: readonly AgentRow[]): string {

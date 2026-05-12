@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { relTime } from "../src/cli.js";
+import { relTimeAgo } from "../src/cli/format.js";
 import { type Db, openDb } from "../src/db.js";
 import {
   TASK_STATUS_LIST,
@@ -274,5 +275,18 @@ describe("relTime", () => {
 
   it("clamps negative durations (clock skew safety)", () => {
     expect(relTime(-5_000)).toBe("0s");
+  });
+});
+
+// ─── relTimeAgo ──────────────────────────────────────────────────────
+
+describe("relTimeAgo", () => {
+  it("appends ` ago` to the relTime token (review_unify_format_when_since)", () => {
+    expect(relTimeAgo(0)).toBe("0s ago");
+    expect(relTimeAgo(45_000)).toBe("45s ago");
+    expect(relTimeAgo(5 * 60_000)).toBe("5m ago");
+    expect(relTimeAgo(3 * 3600_000)).toBe("3h ago");
+    expect(relTimeAgo(2 * 86_400_000)).toBe("2d ago");
+    expect(relTimeAgo(14 * 86_400_000)).toBe("2w ago");
   });
 });

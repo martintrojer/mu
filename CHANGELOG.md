@@ -353,6 +353,28 @@ is opt-in via the new `--tui` flag.
 
 ### TUI internals
 
+- **Centralised pure formatters across cards/popups**
+  (review_dedup_age_ms, review_dedup_color_for_bucket,
+  review_dedup_format_roi, review_unify_format_when_since). Hoisted
+  the four pure helpers that had quietly accumulated 12+ near-
+  identical copies across the TUI cluster: `ageMs` (4 consumers),
+  `colorForBucket` (3 byte-identical copies), `formatRoi` (3
+  exported helpers + 2 inline `Math.round / Number.isFinite`
+  duplicates), and the `formatSinceClaim` / `formatWhen` pair
+  (which were each hand-rolled twice over the same
+  `relTime`-shaped arithmetic). All four now live in one new
+  `src/cli/tui/format-helpers.ts`; `formatSinceClaim` and
+  `formatWhen` collapse onto `relTime` / new `relTimeAgo` in
+  `src/cli/format.ts` so the static-CLI relative-time formatter
+  and the TUI's are now the single source of truth. Cards
+  re-export the helpers they used to define for back-compat with
+  popup / test imports. Stale "intentionally duplicated; single
+  call site per card, not worth a shared helper" comments deleted
+  — they outlasted their truth as soon as the popups landed and
+  bumped consumer counts to 4. New `test/tui-format-helpers.test.ts`
+  pins the helpers directly so a future drift inside a card can't
+  quietly reintroduce the duplication this commit removed.
+
 - **Post-v0.4 audit pass** (review_tui_code_and_tests). Ran the
   canonical code-reviewer + test-reviewer skills across the entire
   TUI surface (`src/cli/tui/**` + `test/tui-*.test.ts`). 26 findings

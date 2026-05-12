@@ -12,7 +12,7 @@
 // CLIPPABLE.
 
 import { Text } from "ink";
-import { type RoiBucket, type WorkstreamSnapshot, roiBucket } from "../../../state.js";
+import { type WorkstreamSnapshot, roiBucket } from "../../../state.js";
 import {
   type ColumnSpec,
   contentWidthFromCols,
@@ -20,6 +20,7 @@ import {
   renderRow,
   termColsForLayout,
 } from "../columns.js";
+import { colorForBucket, formatRoi } from "../format-helpers.js";
 import { ListRow } from "../list-row.js";
 import { TitledBox } from "../titled-box.js";
 
@@ -63,8 +64,7 @@ export function ReadyCard({ snapshot }: ReadyCardProps): JSX.Element {
   const bottomLabel = more > 0 ? `+${more} more · Shift+3` : undefined;
   const meta = shown.map((t) => {
     const bucket = roiBucket(t.impact, t.effortDays);
-    const roi = t.effortDays > 0 ? Math.round(t.impact / t.effortDays) : Number.POSITIVE_INFINITY;
-    const roiText = Number.isFinite(roi) ? String(roi) : "∞";
+    const roiText = formatRoi(t.impact, t.effortDays);
     return { bucket, roiText };
   });
   const rows = shown.map((t, i) => [
@@ -92,16 +92,4 @@ export function ReadyCard({ snapshot }: ReadyCardProps): JSX.Element {
       })}
     </TitledBox>
   );
-}
-
-function colorForBucket(b: RoiBucket): string | undefined {
-  switch (b) {
-    case "high":
-    case "infinite":
-      return "green";
-    case "mid":
-      return "yellow";
-    case "low":
-      return undefined;
-  }
 }

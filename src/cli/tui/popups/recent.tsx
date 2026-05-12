@@ -26,7 +26,7 @@ import { Box, Text, useInput } from "ink";
 import { useEffect, useMemo, useState } from "react";
 import type { Db } from "../../../db.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
-import { ageMs, formatWhen, glyphFor } from "../cards/recent.js";
+import { glyphFor } from "../cards/recent.js";
 import {
   type ColumnSpec,
   contentWidthFromCols,
@@ -34,9 +34,15 @@ import {
   renderRow,
   termColsForLayout,
 } from "../columns.js";
+import { ageMs, formatRoi, formatWhen } from "../format-helpers.js";
 import { dispatchPopupKey } from "../keys.js";
 import { ListRow } from "../list-row.js";
 import { PopupShell } from "../popup-shell.js";
+
+// Re-exported for test back-compat (test/tui-popup-recent.test.ts
+// imports `formatRoi` from this module). Single source of truth lives
+// in ../format-helpers.ts.
+export { formatRoi };
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
 import { applyCursor, applyScroll, isNavAction } from "./scroll.js";
 import { TaskDetailDrill, renderNotes } from "./task-detail.js";
@@ -266,16 +272,4 @@ export function RecentPopup({
  */
 export function yankCommandForTask(taskName: string, workstream: string): string {
   return `mu task open ${taskName} -w ${workstream}`;
-}
-
-/**
- * Pure helper: render the ROI cell as a short integer, or "∞" when
- * effortDays is zero (matches the convention used by Card 7 —
- * cards/blocked.tsx — and popups/inprogress.tsx). Exported for
- * unit tests so the format stays pinned without booting ink.
- */
-export function formatRoi(impact: number, effortDays: number): string {
-  if (effortDays <= 0) return "∞";
-  const r = Math.round(impact / effortDays);
-  return Number.isFinite(r) ? String(r) : "∞";
 }

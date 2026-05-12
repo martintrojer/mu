@@ -64,8 +64,14 @@ import {
   renderRow,
   termColsForLayout,
 } from "../columns.js";
+import { ageMs, formatWhen } from "../format-helpers.js";
 import { ListRow } from "../list-row.js";
 import { TitledBox } from "../titled-box.js";
+
+// Re-exported for back-compat with consumers that previously imported
+// these helpers from this card (popups/recent, tests). The single
+// source of truth lives in ../format-helpers.ts.
+export { ageMs, formatWhen };
 
 export interface RecentCardProps {
   snapshot: WorkstreamSnapshot | null;
@@ -144,42 +150,6 @@ export function RecentCard({ snapshot }: RecentCardProps): JSX.Element {
  *  coupling to ink. */
 export function glyphFor(_t: TaskRow): string {
   return "✓";
-}
-
-/** Milliseconds since the task was last updated (proxy for "closed
- *  at" — see header comment). Returns null when updatedAt is
- *  unparseable (defensive — every row from SQLite will be a valid
- *  ISO-8601 string). The basis is `now` so tests can pin time
- *  without leaning on the wall clock. Mirrors ageMs in the
- *  In-progress card (intentionally duplicated; single call site
- *  per card, not worth a shared helper). */
-export function ageMs(t: TaskRow, now: number): number | null {
-  const ts = Date.parse(t.updatedAt);
-  if (Number.isNaN(ts)) return null;
-  return Math.max(0, now - ts);
-}
-
-/** Render an age in milliseconds as a short relative-time token
- *  with the trailing " ago" suffix:
- *    < 60s   → "Ns ago"
- *    < 60m   → "Nm ago"
- *    < 24h   → "Nh ago"
- *    < 7d    → "Nd ago"
- *    else    → "Nw ago"
- *  null / undefined → "—". The " ago" suffix is the differentiator
- *  vs the In-progress card's formatSinceClaim (which renders
- *  in-flight age with no suffix); here every row is past tense. */
-export function formatWhen(ms: number | null | undefined): string {
-  if (ms === null || ms === undefined) return "—";
-  const sec = Math.max(0, Math.floor(ms / 1000));
-  if (sec < 60) return `${sec}s ago`;
-  const min = Math.floor(sec / 60);
-  if (min < 60) return `${min}m ago`;
-  const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr}h ago`;
-  const day = Math.floor(hr / 24);
-  if (day < 7) return `${day}d ago`;
-  return `${Math.floor(day / 7)}w ago`;
 }
 
 /** Build the subtitle: total · last <when>. Suppresses the "last"

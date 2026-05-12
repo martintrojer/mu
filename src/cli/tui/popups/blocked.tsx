@@ -46,6 +46,7 @@ import {
   renderRow,
   termColsForLayout,
 } from "../columns.js";
+import { colorForBucket, formatRoi } from "../format-helpers.js";
 import { dispatchPopupKey } from "../keys.js";
 import { ListRow } from "../list-row.js";
 import { PopupShell } from "../popup-shell.js";
@@ -244,8 +245,7 @@ export function BlockedPopup({
   const rows = tasks.map((t) => {
     const blockers = blockerIndex.get(t.name) ?? [];
     const top = blockers[0] ?? "—";
-    const roi = t.effortDays > 0 ? Math.round(t.impact / t.effortDays) : Number.POSITIVE_INFINITY;
-    const roiText = Number.isFinite(roi) ? String(roi) : "∞";
+    const roiText = formatRoi(t.impact, t.effortDays);
     return [glyphFor(t), t.name, t.status, String(blockers.length), top, roiText, t.title];
   });
   const widths = layoutColumns(rows, COLUMN_SPECS, contentWidth);
@@ -282,18 +282,4 @@ export function BlockedPopup({
       <FilterPrompt state={flt} />
     </PopupShell>
   );
-}
-
-// ─── pure helpers ─────────────────────────────────────────────────
-
-function colorForBucket(b: ReturnType<typeof roiBucket>): string | undefined {
-  switch (b) {
-    case "high":
-    case "infinite":
-      return "green";
-    case "mid":
-      return "yellow";
-    case "low":
-      return undefined;
-  }
 }

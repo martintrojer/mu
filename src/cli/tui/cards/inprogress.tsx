@@ -58,8 +58,14 @@ import {
   renderRow,
   termColsForLayout,
 } from "../columns.js";
+import { ageMs, formatSinceClaim } from "../format-helpers.js";
 import { ListRow } from "../list-row.js";
 import { TitledBox } from "../titled-box.js";
+
+// Re-exported for back-compat with consumers that previously imported
+// these helpers from this card (popups/inprogress, tests). The single
+// source of truth lives in ../format-helpers.ts.
+export { ageMs, formatSinceClaim };
 
 export interface InProgressCardProps {
   snapshot: WorkstreamSnapshot | null;
@@ -150,42 +156,10 @@ export function glyphFor(_t: TaskRow): string {
   return STATUS_EMOJI.busy ?? "⚙";
 }
 
-/** Milliseconds since the task last had a lifecycle flip. Returns
- *  null when updatedAt is unparseable (defensive — every row from
- *  SQLite will be a valid ISO-8601 string). The basis is `now` so
- *  tests can pin time without leaning on the wall clock. */
-export function ageMs(t: TaskRow, now: number): number | null {
-  const ts = Date.parse(t.updatedAt);
-  if (Number.isNaN(ts)) return null;
-  return Math.max(0, now - ts);
-}
-
 /** True when `ms` is at or above the stale-claim threshold (5min).
  *  null / undefined → false (we never paint "stale" without data). */
 export function isStale(ms: number | null | undefined): boolean {
   return typeof ms === "number" && ms >= STALE_CLAIM_THRESHOLD_MS;
-}
-
-/** Render an age in milliseconds as a short relative-time token:
- *    < 60s   → "Ns"
- *    < 60m   → "Nm"
- *    < 24h   → "Nh"
- *    < 7d    → "Nd"
- *    else    → "Nw"
- *  null / undefined → "—". Mirrors src/cli/format.ts relTime exactly,
- *  inlined so the TUI cluster doesn't import a sibling cluster's
- *  helper just for one call site. */
-export function formatSinceClaim(ms: number | null | undefined): string {
-  if (ms === null || ms === undefined) return "—";
-  const sec = Math.max(0, Math.floor(ms / 1000));
-  if (sec < 60) return `${sec}s`;
-  const min = Math.floor(sec / 60);
-  if (min < 60) return `${min}m`;
-  const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr}h`;
-  const day = Math.floor(hr / 24);
-  if (day < 7) return `${day}d`;
-  return `${Math.floor(day / 7)}w`;
 }
 
 /** Build the subtitle: total · N stale. Suppresses the stale leg
