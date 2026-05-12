@@ -353,6 +353,21 @@ is opt-in via the new `--tui` flag.
 
 ### TUI internals
 
+- **Post-v0.4 audit pass** (review_tui_code_and_tests). Ran the
+  canonical code-reviewer + test-reviewer skills across the entire
+  TUI surface (`src/cli/tui/**` + `test/tui-*.test.ts`). 26 findings
+  filed as separate `review_*` tasks for triage — 15 code-reviewer
+  (mostly duplication candidates for the next centralisation wave —
+  popup `Shell` / `dispatchPopupKey` key-flag pack / drill keymap
+  / formatRoi / colorForBucket / ageMs / formatSinceClaim ↔
+  formatWhen ↔ relTime — plus two dead-code lies: `r` refresh-now
+  and `w` workstream picker that show in the help overlay but do
+  nothing) and 11 test-reviewer (the dominant theme is `expect(src).toContain(...)`
+  static-source assertions standing in for behaviour tests across
+  card/popup/acceptance suites; root cause is the missing
+  ink-testing-library install). No in-line fixes — implementation
+  ships per filed task.
+
 - **Centralised scroll/navigation dispatch**
   (feat_centralize_scroll_navigation). Every popup's `useInput`
   switch over `dispatchPopupKey` used to carry its own copy of the
