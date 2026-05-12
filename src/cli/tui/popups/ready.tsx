@@ -246,7 +246,7 @@ export function ReadyPopup({
             return <CursorRow key={t.name} cells={padded} contentWidth={contentWidth} />;
           const [name = "", status = "", owner = "", title = ""] = padded;
           return (
-            <Box key={t.name}>
+            <Box key={t.name} width={contentWidth}>
               <Text wrap="truncate">
                 <Text bold>{name}</Text>
                 {"  "}

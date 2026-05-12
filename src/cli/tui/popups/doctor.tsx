@@ -265,7 +265,7 @@ export function DoctorPopup({
             return <CursorRow key={c.name} cells={padded} contentWidth={contentWidth} />;
           const [glyph = "", name = "", status = "", detail = ""] = padded;
           return (
-            <Box key={c.name}>
+            <Box key={c.name} width={contentWidth}>
               <Text wrap="truncate">
                 <Text color={colorForStatus(c.status)}>{glyph}</Text>
                 {"  "}

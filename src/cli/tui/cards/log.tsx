@@ -83,7 +83,7 @@ export function LogCard({ snapshot }: LogCardProps): JSX.Element {
         const padded = renderRow(cells, widths, COLUMN_SPECS);
         const [ts = "", source = "", verb = "", rest = ""] = padded;
         return (
-          <Box key={row.seq}>
+          <Box key={row.seq} width={contentWidth}>
             <Text wrap="truncate">
               <Text dimColor>{ts}</Text>
               {"  "}

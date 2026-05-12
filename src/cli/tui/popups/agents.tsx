@@ -277,7 +277,7 @@ export function AgentsPopup({
           if (sel) return <CursorRow key={a.name} cells={padded} contentWidth={contentWidth} />;
           const [glyph = "", name = "", status = "", role = ""] = padded;
           return (
-            <Box key={a.name}>
+            <Box key={a.name} width={contentWidth}>
               <Text wrap="truncate">
                 <Text>{glyph}</Text>
                 {"  "}

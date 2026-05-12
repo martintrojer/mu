@@ -542,7 +542,7 @@ export function WorkspacesPopup({
             path = "",
           ] = padded;
           return (
-            <Box key={w.agentName}>
+            <Box key={w.agentName} width={contentWidth}>
               <Text wrap="truncate">
                 <Text color={colorForGlyph(w)}>{glyph}</Text>
                 {"  "}
@@ -660,7 +660,7 @@ function renderDrillBody(
         if (sel) return <CursorRow key={c.sha} cells={padded} contentWidth={contentWidth} />;
         const [sha = "", subject = ""] = padded;
         return (
-          <Box key={c.sha}>
+          <Box key={c.sha} width={contentWidth}>
             <Text wrap="truncate">
               <Text color="yellow">{sha}</Text>
               {"  "}

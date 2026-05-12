@@ -124,7 +124,7 @@ export function RecentCard({ snapshot }: RecentCardProps): JSX.Element {
         const padded = renderRow(row, widths, COLUMN_SPECS);
         const [glyph = "", id = "", status = "", when = "", title = ""] = padded;
         return (
-          <Box key={t.name}>
+          <Box key={t.name} width={contentWidth}>
             <Text wrap="truncate">
               <Text color="green">{glyph}</Text>
               {"  "}

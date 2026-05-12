@@ -269,7 +269,7 @@ export function RecentPopup({
             title = "",
           ] = padded;
           return (
-            <Box key={t.name}>
+            <Box key={t.name} width={contentWidth}>
               <Text inverse={selected} wrap="truncate">
                 <Text color="green">{glyph}</Text>
                 {"  "}

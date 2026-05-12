@@ -85,6 +85,30 @@ describe('every card/popup row uses wrap="truncate" on the outer <Text>', () => 
   }
 });
 
+describe("every card/popup row pins width on the per-row outer <Box>", () => {
+  // Per bug_tui_log_popup_columns_misaligned: ink's wrap="truncate"
+  // is a no-op unless the parent Box has a defined width — Box width
+  // defaults to its content's width, which IS the unbounded joined
+  // row, so there's nothing to truncate to. Every per-row outer <Box>
+  // produced by a renderRow consumer must therefore include a width
+  // prop (typically `width={contentWidth}`). Static-source assertion;
+  // accepts any width={...} value so future renames don't break it.
+  const files = loadRowSources();
+
+  for (const { name, src } of files) {
+    it(`${name}: every renderRow consumer pins width on the outer <Box>`, () => {
+      const blocks = [...src.matchAll(/renderRow\([^)]*\)[\s\S]*?<Box([^>]*)>\s*<Text/g)];
+      expect(blocks.length, `${name}: no renderRow→Box→Text block`).toBeGreaterThan(0);
+      for (const m of blocks) {
+        const boxAttrs = m[1] ?? "";
+        expect(boxAttrs, `${name}: outer <Box${boxAttrs}> missing width=`).toMatch(
+          /\bwidth=\{[^}]+\}/,
+        );
+      }
+    });
+  }
+});
+
 describe('every card/popup row uses the canonical {"  "} (2-space) gutter', () => {
   const files = loadRowSources();
 

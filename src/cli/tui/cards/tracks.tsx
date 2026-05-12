@@ -87,7 +87,7 @@ export function TracksCard({ snapshot }: TracksCardProps): JSX.Element {
         const trackKey = `${i}-${t.roots[0]?.name ?? "unknown"}`;
         const ready = t.readyCount;
         return (
-          <Box key={trackKey}>
+          <Box key={trackKey} width={contentWidth}>
             <Text wrap="truncate">
               <Text color="cyan">{trackLabel}</Text>
               {"  "}

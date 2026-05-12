@@ -372,7 +372,7 @@ export function TracksPopup({
             if (sel) return <CursorRow key={t.name} cells={padded} contentWidth={contentWidth} />;
             const [name = "", status = "", title = ""] = padded;
             return (
-              <Box key={t.name}>
+              <Box key={t.name} width={contentWidth}>
                 <Text wrap="truncate">
                   <Text bold>{name}</Text>
                   {"  "}
@@ -422,7 +422,7 @@ export function TracksPopup({
             );
           const [trackLabel = "", diamond = "", goals = "", counts = ""] = padded;
           return (
-            <Box key={`tr-${i}-${t.roots[0]?.name ?? "?"}`}>
+            <Box key={`tr-${i}-${t.roots[0]?.name ?? "?"}`} width={contentWidth}>
               <Text wrap="truncate">
                 <Text color="cyan">{trackLabel}</Text>
                 {"  "}

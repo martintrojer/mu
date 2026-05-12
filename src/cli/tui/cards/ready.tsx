@@ -83,7 +83,7 @@ export function ReadyCard({ snapshot }: ReadyCardProps): JSX.Element {
         const padded = renderRow(row, widths, COLUMN_SPECS);
         const [name = "", roi = "", title = "", owner = ""] = padded;
         return (
-          <Box key={t.name}>
+          <Box key={t.name} width={contentWidth}>
             <Text wrap="truncate">
               <Text bold>{name}</Text>
               {"  "}

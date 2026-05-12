@@ -295,7 +295,7 @@ export function BlockedPopup({
             padded;
           const bucket = roiBucket(t.impact, t.effortDays);
           return (
-            <Box key={t.name}>
+            <Box key={t.name} width={contentWidth}>
               <Text wrap="truncate">
                 <Text dimColor>{glyph}</Text>
                 {"  "}

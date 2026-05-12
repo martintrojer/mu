@@ -110,7 +110,7 @@ export function DoctorCard({ snapshot }: DoctorCardProps): JSX.Element {
         const padded = renderRow(row, widths, COLUMN_SPECS);
         const [glyph = "", name = "", status = "", detail = ""] = padded;
         return (
-          <Box key={c.name}>
+          <Box key={c.name} width={contentWidth}>
             <Text wrap="truncate">
               <Text color={colorForStatus(c.status)}>{glyph}</Text>
               {"  "}

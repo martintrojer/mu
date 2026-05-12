@@ -127,7 +127,7 @@ export function InProgressCard({ snapshot }: InProgressCardProps): JSX.Element {
         const rowAge = ages[i];
         const stale = isStale(rowAge ?? null);
         return (
-          <Box key={t.name}>
+          <Box key={t.name} width={contentWidth}>
             <Text wrap="truncate">
               <Text color="yellow">{glyph}</Text>
               {"  "}

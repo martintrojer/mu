@@ -102,7 +102,7 @@ export function WorkspacesCard({ snapshot }: WorkspacesCardProps): JSX.Element {
         const padded = renderRow(row, widths, COLUMN_SPECS);
         const [glyph = "", name = "", backend = "", behind = "", parent = ""] = padded;
         return (
-          <Box key={w.agentName}>
+          <Box key={w.agentName} width={contentWidth}>
             <Text wrap="truncate">
               <Text color={colorForGlyph(w)}>{glyph}</Text>
               {"  "}

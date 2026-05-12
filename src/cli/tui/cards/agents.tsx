@@ -79,7 +79,7 @@ export function AgentsCard({ snapshot }: AgentsCardProps): JSX.Element {
         const padded = renderRow(row, widths, COLUMN_SPECS);
         const [glyph = "", name = "", taskBit = "", idle = ""] = padded;
         return (
-          <Box key={a.name}>
+          <Box key={a.name} width={contentWidth}>
             <Text wrap="truncate">
               <Text>{glyph}</Text>
               {"  "}

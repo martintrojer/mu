@@ -282,7 +282,7 @@ export function LogPopup({
           if (sel) return <CursorRow key={e.seq} cells={padded} contentWidth={contentWidth} />;
           const [seq = "", ts = "", source = "", verb = "", rest = ""] = padded;
           return (
-            <Box key={e.seq}>
+            <Box key={e.seq} width={contentWidth}>
               <Text wrap="truncate">
                 <Text dimColor>{seq}</Text>
                 {"  "}

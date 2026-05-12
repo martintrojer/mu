@@ -598,6 +598,23 @@ is opt-in via the new `--tui` flag.
   aliases / case-insensitive matching). New `test/tui-state-tab-switch.test.ts`
   covers the helper plus a static-source assertion that the hook
   wires the snap-to-null branch.
+- **TUI per-row `<Box>` now pins `width={contentWidth}` so
+  `wrap="truncate"` actually clips** (bug_tui_log_popup_columns_misaligned).
+  Predecessor bug_tui_log_card_columns_misaligned added
+  `wrap="truncate"` to every outer row `<Text>`, but ink only
+  honours that prop when the parent `<Box>` has a defined width —
+  Box width defaults to its content's intrinsic width, which IS
+  the unbounded joined cells, so `truncate` had nothing to clip
+  to. The user-visible regression: `Shift+4` Activity-log popup
+  rows wrapping to a second terminal line and columns drifting
+  across rows whenever any cell overflowed. Fix: every per-row
+  outer `<Box key=...>` in `src/cli/tui/popups/*.tsx` (9 files)
+  and `src/cli/tui/cards/*.tsx` (9 files) now carries
+  `width={contentWidth}` so `wrap="truncate"` engages and rows
+  clip at the rounded-border right edge instead of wrapping.
+  Static-source regression guard added to
+  `test/tui-card-render-width.test.ts` asserts every `renderRow`
+  consumer's outer `<Box>` carries a `width={...}` attr.
 - **TUI popup body data fills the whole popup, not the first 20 rows**
   (bug_tui_popup_data_doesnt_fill). After bug_tui_popups_fill_pane
   added `flexGrow={1}` + `width={cols}` so the popup Shell occupies
