@@ -84,7 +84,7 @@ export function ReadyCard({ snapshot }: ReadyCardProps): JSX.Element {
         const [name = "", roi = "", title = "", owner = ""] = padded;
         return (
           <Box key={t.name}>
-            <Text>
+            <Text wrap="truncate">
               <Text bold>{name}</Text>
               {"  "}
               <Text color={colorForBucket(m.bucket)}>{roi}</Text>

@@ -148,7 +148,7 @@ export function BlockedCard({ snapshot, db, workstream }: BlockedCardProps): JSX
         const [glyph = "", id = "", status = "", blocks = "", roi = "", title = ""] = padded;
         return (
           <Box key={t.name}>
-            <Text>
+            <Text wrap="truncate">
               <Text dimColor>{glyph}</Text>
               {"  "}
               <Text bold>{id}</Text>

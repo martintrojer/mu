@@ -88,7 +88,7 @@ export function TracksCard({ snapshot }: TracksCardProps): JSX.Element {
         const ready = t.readyCount;
         return (
           <Box key={trackKey}>
-            <Text>
+            <Text wrap="truncate">
               <Text color="cyan">{trackLabel}</Text>
               {"  "}
               <Text>{diamond}</Text>

@@ -201,7 +201,7 @@ export function LogPopup({
           const [seq = "", ts = "", source = "", verb = "", rest = ""] = padded;
           return (
             <Box key={e.seq}>
-              <Text inverse={sel}>
+              <Text inverse={sel} wrap="truncate">
                 <Text dimColor>{seq}</Text>
                 {"  "}
                 <Text dimColor>{ts}</Text>

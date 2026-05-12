@@ -376,7 +376,7 @@ export function TracksPopup({
             const [name = "", status = "", title = ""] = padded;
             return (
               <Box key={t.name}>
-                <Text inverse={sel}>
+                <Text inverse={sel} wrap="truncate">
                   <Text bold>{name}</Text>
                   {"  "}
                   <Text dimColor>{status}</Text>
@@ -415,7 +415,7 @@ export function TracksPopup({
           const [trackLabel = "", diamond = "", goals = "", counts = ""] = padded;
           return (
             <Box key={`tr-${i}-${t.roots[0]?.name ?? "?"}`}>
-              <Text inverse={sel}>
+              <Text inverse={sel} wrap="truncate">
                 <Text color="cyan">{trackLabel}</Text>
                 {"  "}
                 <Text>{diamond}</Text>

@@ -278,7 +278,7 @@ export function AgentsPopup({
           const [glyph = "", name = "", status = "", role = ""] = padded;
           return (
             <Box key={a.name}>
-              <Text inverse={sel}>
+              <Text inverse={sel} wrap="truncate">
                 <Text>{glyph}</Text>
                 {"  "}
                 <Text bold>{name}</Text>

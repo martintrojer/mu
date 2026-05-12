@@ -80,7 +80,7 @@ export function AgentsCard({ snapshot }: AgentsCardProps): JSX.Element {
         const [glyph = "", name = "", taskBit = "", idle = ""] = padded;
         return (
           <Box key={a.name}>
-            <Text>
+            <Text wrap="truncate">
               <Text>{glyph}</Text>
               {"  "}
               <Text bold>{name}</Text>

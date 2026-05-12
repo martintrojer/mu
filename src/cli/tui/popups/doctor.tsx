@@ -264,7 +264,7 @@ export function DoctorPopup({
           const [glyph = "", name = "", status = "", detail = ""] = padded;
           return (
             <Box key={c.name}>
-              <Text inverse={selected}>
+              <Text inverse={selected} wrap="truncate">
                 <Text color={colorForStatus(c.status)}>{glyph}</Text>
                 {"  "}
                 <Text bold>{name}</Text>

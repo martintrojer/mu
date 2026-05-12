@@ -84,7 +84,7 @@ export function LogCard({ snapshot }: LogCardProps): JSX.Element {
         const [ts = "", source = "", verb = "", rest = ""] = padded;
         return (
           <Box key={row.seq}>
-            <Text>
+            <Text wrap="truncate">
               <Text dimColor>{ts}</Text>
               {"  "}
               <Text dimColor>{source}</Text>

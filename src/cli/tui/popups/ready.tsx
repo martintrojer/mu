@@ -246,7 +246,7 @@ export function ReadyPopup({
           const [name = "", status = "", owner = "", title = ""] = padded;
           return (
             <Box key={t.name}>
-              <Text inverse={selected}>
+              <Text inverse={selected} wrap="truncate">
                 <Text bold>{name}</Text>
                 {"  "}
                 <Text dimColor>{status}</Text>

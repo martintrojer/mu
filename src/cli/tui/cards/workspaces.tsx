@@ -103,7 +103,7 @@ export function WorkspacesCard({ snapshot }: WorkspacesCardProps): JSX.Element {
         const [glyph = "", name = "", backend = "", behind = "", parent = ""] = padded;
         return (
           <Box key={w.agentName}>
-            <Text>
+            <Text wrap="truncate">
               <Text color={colorForGlyph(w)}>{glyph}</Text>
               {"  "}
               <Text bold>{name}</Text>

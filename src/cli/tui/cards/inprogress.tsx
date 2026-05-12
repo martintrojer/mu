@@ -128,7 +128,7 @@ export function InProgressCard({ snapshot }: InProgressCardProps): JSX.Element {
         const stale = isStale(rowAge ?? null);
         return (
           <Box key={t.name}>
-            <Text>
+            <Text wrap="truncate">
               <Text color="yellow">{glyph}</Text>
               {"  "}
               <Text bold>{id}</Text>

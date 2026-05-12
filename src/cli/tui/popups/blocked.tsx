@@ -293,7 +293,7 @@ export function BlockedPopup({
           const bucket = roiBucket(t.impact, t.effortDays);
           return (
             <Box key={t.name}>
-              <Text inverse={selected}>
+              <Text inverse={selected} wrap="truncate">
                 <Text dimColor>{glyph}</Text>
                 {"  "}
                 <Text bold>{name}</Text>

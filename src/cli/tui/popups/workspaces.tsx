@@ -360,7 +360,7 @@ export function WorkspacesPopup({
           ] = padded;
           return (
             <Box key={w.agentName}>
-              <Text inverse={sel}>
+              <Text inverse={sel} wrap="truncate">
                 <Text color={colorForGlyph(w)}>{glyph}</Text>
                 {"  "}
                 <Text bold>{name}</Text>
@@ -481,7 +481,7 @@ function renderDrillBody(
         const [sha = "", subject = ""] = padded;
         return (
           <Box key={c.sha}>
-            <Text inverse={sel}>
+            <Text inverse={sel} wrap="truncate">
               <Text color="yellow">{sha}</Text>
               {"  "}
               <Text>{subject}</Text>

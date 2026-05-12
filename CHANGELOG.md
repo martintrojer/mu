@@ -348,6 +348,29 @@ is opt-in via the new `--tui` flag.
 
 ### Fixed
 
+- **TUI card rows clip cleanly at contentWidth (was overflowing /
+  wrapping due to gutter-accounting + ink-overflow bugs)**
+  (bug_tui_log_card_columns_misaligned). Completes
+  bug_tui_long_lines_overflow: even after every `layoutColumns` call
+  site started passing `contentWidth`, rows in the Activity-log card
+  (and to a lesser extent every other card / popup that renders
+  tabular rows via `renderRow`) were still observed wrapping to a
+  second terminal line / running past the rounded-border right edge.
+  Two layers behind the symptom: (1) the protect/clip allocator's
+  width math is correct, but consumers render padded cells joined by
+  a literal `{"  "}` two-space gutter and any drift from that
+  convention silently breaks alignment; (2) ink's default `<Text>`
+  overflow behaviour is to WRAP, not truncate, so any 1-2 cell
+  under-estimate by the allocator surfaces as a wrapped row instead
+  of a graceful clip. Fix: defensive belt — every outermost row
+  `<Text>` in `src/cli/tui/cards/*.tsx` and
+  `src/cli/tui/popups/*.tsx` now sets `wrap="truncate"` so ink clips
+  the joined row to the parent's width; static-source regression
+  guard in new `test/tui-card-render-width.test.ts` asserts every
+  `renderRow` consumer carries the prop AND uses the canonical
+  `{"  "}` (2-space) gutter. Extra unit test in
+  `test/tui-columns.test.ts` asserts `renderRow(...).join("  ")` ≤
+  `totalWidth` for a synthetic protect+clip mix.
 - **TUI popup body data fills the whole popup, not the first 20 rows**
   (bug_tui_popup_data_doesnt_fill). After bug_tui_popups_fill_pane
   added `flexGrow={1}` + `width={cols}` so the popup Shell occupies

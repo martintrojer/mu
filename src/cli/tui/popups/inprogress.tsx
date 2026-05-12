@@ -255,7 +255,7 @@ export function InProgressPopup({
           const stale = isStale(ages[i] ?? null);
           return (
             <Box key={t.name}>
-              <Text inverse={selected}>
+              <Text inverse={selected} wrap="truncate">
                 <Text color="yellow">{glyph}</Text>
                 {"  "}
                 <Text bold>{id}</Text>

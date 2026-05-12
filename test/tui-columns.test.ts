@@ -195,6 +195,43 @@ describe("every card/popup passes contentWidth to layoutColumns", () => {
   }
 });
 
+describe("renderRow joined by COL_GUTTER fits totalWidth", () => {
+  // Per bug_tui_log_card_columns_misaligned: the consumer renders
+  // padded cells joined by literal {"  "} (= COL_GUTTER spaces). The
+  // sum of the rendered cells + (ncols-1)*COL_GUTTER must be ≤ the
+  // totalWidth handed to layoutColumns, otherwise ink wraps the row
+  // to the next terminal line.
+  const COL_GUTTER = 2;
+  it("protect+clip mix: joined width ≤ totalWidth", () => {
+    const rows = [
+      ["a", "some long clippable title that overflows", "x"],
+      ["bb", "another even longer title that should be clipped", "yy"],
+    ];
+    const specs: ColumnSpec[] = [
+      { kind: "protect" },
+      { kind: "clip", min: 1 },
+      { kind: "protect" },
+    ];
+    const totalWidth = 30;
+    const widths = layoutColumns(rows, specs, totalWidth);
+    for (const r of rows) {
+      const padded = renderRow(r, widths, specs);
+      const joined = padded.join(" ".repeat(COL_GUTTER));
+      expect(cellWidth(joined)).toBeLessThanOrEqual(totalWidth);
+    }
+  });
+  it("narrow budget where clip cells are forced to 0", () => {
+    const rows = [["long-protected-id", "title"]];
+    const specs: ColumnSpec[] = [{ kind: "protect" }, { kind: "clip" }];
+    // Protected cell already overflows; clip should collapse to 0.
+    // Joined width is the protected cell's natural width — exceeds
+    // the budget, but that's the documented overflow path (the
+    // App.tsx terminal-too-small guard catches narrow terminals).
+    const widths = layoutColumns(rows, specs, 10);
+    expect(widths[1]).toBe(0);
+  });
+});
+
 describe("renderRow", () => {
   it("pads protected cells but does not clip them", () => {
     const widths = [3, 5];
