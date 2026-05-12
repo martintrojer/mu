@@ -14,35 +14,74 @@ function ids(cols: number, visible: CardId[] = ALL): CardId[][] {
 }
 
 describe("dashboard responsive layout", () => {
-  it("Cols=70: 1 column, all cards in it", () => {
+  it("Cols=70: 1 column, all cards sorted slot ASC with slot 0 trailing", () => {
     expect(dashboardColumnCount(70)).toBe(1);
-    expect(ids(70)).toEqual([ALL]);
+    expect(ids(70)).toEqual([[1, 2, 3, 4, 5, 6, 7, 8, 9, 0]]);
   });
 
-  it("Cols=140: 2 columns, small-pair left and task-list+stream right", () => {
+  it("Cols=140: 2 columns, streams split as column trailers for 5/5 balance", () => {
     expect(dashboardColumnCount(140)).toBe(2);
     expect(ids(140)).toEqual([
-      [1, 2, 5, 9],
-      [3, 6, 7, 8, 0, 4],
+      [1, 2, 5, 9, 4],
+      [3, 6, 7, 8, 0],
     ]);
   });
 
-  it("Cols=200: 3 columns", () => {
+  it("Cols=140: slot 0 off keeps Activity log as the left-column trailer", () => {
+    expect(ids(140, [1, 2, 3, 4, 5, 6, 7, 8, 9])).toEqual([
+      [1, 2, 5, 9, 4],
+      [3, 6, 7, 8],
+    ]);
+  });
+
+  it("Cols=140: slot 4 off keeps Commits as the right-column trailer", () => {
+    expect(ids(140, [0, 1, 2, 3, 5, 6, 7, 8, 9])).toEqual([
+      [1, 2, 5, 9],
+      [3, 6, 7, 8, 0],
+    ]);
+  });
+
+  it("Cols=140: both stream cards off leaves small-pair left and task-list right", () => {
+    expect(ids(140, [1, 2, 3, 5, 6, 7, 8, 9])).toEqual([
+      [1, 2, 5, 9],
+      [3, 6, 7, 8],
+    ]);
+  });
+
+  it("Cols=140: only slot 3 visible returns a single non-empty column", () => {
+    expect(ids(140, [3])).toEqual([[3]]);
+  });
+
+  it("Cols=200: 3 columns keep groups, sorted with slot 0 last", () => {
     expect(dashboardColumnCount(200)).toBe(3);
     expect(ids(200)).toEqual([
       [1, 2, 5, 9],
       [3, 6, 7, 8],
-      [0, 4],
+      [4, 0],
     ]);
   });
 
-  it("Cols=260: 4 columns split small pairs, task-list, and stream", () => {
+  it("Cols=260: 4 columns split small pairs, task-list, and stream sorted with slot 0 last", () => {
     expect(dashboardColumnCount(260)).toBe(4);
     expect(ids(260)).toEqual([
       [1, 2],
       [5, 9],
       [3, 6, 7, 8],
-      [0, 4],
+      [4, 0],
+    ]);
+  });
+
+  it("Cols=140: slot 0 alone in the stream group goes to the right column", () => {
+    expect(ids(140, [0, 1, 2, 3, 5, 6, 7, 8, 9])).toEqual([
+      [1, 2, 5, 9],
+      [3, 6, 7, 8, 0],
+    ]);
+  });
+
+  it("Cols=140: slot 4 alone in the stream group goes to the left column", () => {
+    expect(ids(140, [1, 2, 3, 4, 5, 6, 7, 8, 9])).toEqual([
+      [1, 2, 5, 9, 4],
+      [3, 6, 7, 8],
     ]);
   });
 

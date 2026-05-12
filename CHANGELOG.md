@@ -68,6 +68,16 @@ called out under "Breaking" in each entry.
 
 ### Fixed
 
+- **TUI dashboard 2-col layout no longer buries Commits**
+  (bug_layout_slot_0_buried_after_slot_fix). Commits (slot 0) no
+  longer lands below Recent (slot 8) in the middle of the right
+  column. Dashboard columns now follow a slot-stable order: normal
+  card runs are numeric, stream cards sit as natural trailers, and
+  slot 0 trails as the lowest-frequency stream card. The 2-col split
+  also rebalances stream cards across columns to 5/5 (was 4/6),
+  aligning bottom edges with Activity log trailing the left column and
+  Commits trailing the right column.
+
 - **TabStrip no longer crashes the TUI on small panes**
   (bug_tab_strip_conditional_hook_crash). The component called a
   helper that wrapped `useStdout()` and that helper was invoked

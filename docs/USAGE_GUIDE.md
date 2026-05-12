@@ -422,6 +422,14 @@ recent-closed tasks + workspaces + recent events. `--json` emits the
 same full snapshot for scripts and agents; it is the migration path for
 old `mu state --mission --json` callers.
 
+Dashboard ordering is intentionally slot-stable: within each rendered
+column, non-stream cards are ordered by toggle digit ascending while
+stream cards sit as natural trailers, with slot 0 (Commits) trailing
+last (`…, 0`). In the 2-column layout, stream cards are split as
+column trailers (Activity log on the left, Commits on the right when
+both are visible) so the all-cards view stacks evenly instead of
+producing a 4/6 lopsided split.
+
 ### `mu state` render modes (default, `--tui`)
 
 `mu state` is one verb with two render modes — same data set, different

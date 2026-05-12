@@ -63,8 +63,8 @@ export function dashboardColumnCount(cols: number): 1 | 2 | 3 | 4 {
 /**
  * Breakpoint + pair-aware card packer.
  *
- * - <120 cols: single stack, current behaviour.
- * - 120-179: small cards left; task-list + stream cards right.
+ * - <120 cols: single stack, sorted by slot with slot 0 last.
+ * - 120-179: small/task columns with stream cards split as trailers.
  * - 180-239: small cards / task-list / stream.
  * - 240+: split the two natural small pairs, then task-list, then stream.
  *
@@ -77,14 +77,31 @@ export function layoutColumns(
 ): ColumnAssignment[] {
   const visible = normalizeVisible(visibleCardIds);
   const target = dashboardColumnCount(cols);
-  if (target === 1) return visible.length === 0 ? [] : [{ cards: visible }];
+  if (target === 1) {
+    const cards = sortCards(visible);
+    return cards.length === 0 ? [] : [{ cards }];
+  }
 
-  const small = visible.filter((id) => CARD_CONFIGS[id].group === "small-pair");
-  const task = visible.filter((id) => CARD_CONFIGS[id].group === "task-list");
-  const stream = visible.filter((id) => CARD_CONFIGS[id].group === "stream");
+  const small = sortCards(visible.filter((id) => CARD_CONFIGS[id].group === "small-pair"));
+  const task = sortCards(visible.filter((id) => CARD_CONFIGS[id].group === "task-list"));
+  const stream = sortCards(visible.filter((id) => CARD_CONFIGS[id].group === "stream"));
 
   const columns = (() => {
-    if (target === 2) return [small, [...task, ...stream]];
+    if (target === 2) {
+      const leftStream: CardId[] = [];
+      const rightStream: CardId[] = [];
+      for (const [index, id] of stream.entries()) {
+        if (stream.length === 1 && id === 0) {
+          rightStream.push(id);
+          continue;
+        }
+        (index % 2 === 0 ? leftStream : rightStream).push(id);
+      }
+      return [
+        [...small, ...sortCards(leftStream)],
+        [...task, ...sortCards(rightStream)],
+      ];
+    }
     if (target === 3) return [small, task, stream];
     const topSmall = small.filter((id) => id === 1 || id === 2);
     const bottomSmall = small.filter((id) => id === 5 || id === 9);
@@ -218,6 +235,16 @@ export function dataCountForCard(id: CardId, snapshot: WorkstreamSnapshot | null
     case 9:
       return snapshot.doctor?.problemCount ?? 0;
   }
+}
+
+function compareSlot(a: CardId, b: CardId): number {
+  const ka = a === 0 ? 10 : a;
+  const kb = b === 0 ? 10 : b;
+  return ka - kb;
+}
+
+function sortCards(ids: ReadonlyArray<CardId>): CardId[] {
+  return [...ids].sort(compareSlot);
 }
 
 function normalizeVisible(ids: ReadonlyArray<CardId>): CardId[] {

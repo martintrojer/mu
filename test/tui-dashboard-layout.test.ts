@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { layoutColumns } from "../src/cli/tui/layout.js";
 
 const APP_SRC = readFileSync(
   join(import.meta.dirname, "..", "src", "cli", "tui", "app.tsx"),
@@ -40,6 +41,27 @@ describe("dashboard responsive-layout wiring", () => {
         new RegExp(`<${component}[\\s\\S]*?rowBudget=\\{rowBudget\\}[\\s\\S]*?cols=\\{width\\}`),
       );
     }
+  });
+
+  it("dashboard card order matches the expected responsive breakpoints", () => {
+    expect(layoutColumns(80, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]).map((c) => c.cards)).toEqual([
+      [1, 2, 3, 4, 5, 6, 7, 8, 9, 0],
+    ]);
+    expect(layoutColumns(140, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]).map((c) => c.cards)).toEqual([
+      [1, 2, 5, 9, 4],
+      [3, 6, 7, 8, 0],
+    ]);
+    expect(layoutColumns(200, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]).map((c) => c.cards)).toEqual([
+      [1, 2, 5, 9],
+      [3, 6, 7, 8],
+      [4, 0],
+    ]);
+    expect(layoutColumns(260, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]).map((c) => c.cards)).toEqual([
+      [1, 2],
+      [5, 9],
+      [3, 6, 7, 8],
+      [4, 0],
+    ]);
   });
 
   it("pair-aware groups match the 0-9 card design", () => {
