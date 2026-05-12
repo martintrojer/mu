@@ -10,8 +10,8 @@ describe("ReadyPopup (Tasks popup)", () => {
     expect(typeof ReadyPopup).toBe("function");
   });
 
-  // The yank-matrix is implemented in yankCommandForTask which is
-  // not exported. We verify it indirectly via static-source assertion.
+  // The full table-driven yank-matrix lives in tui-yank-matrix.test.ts.
+  // Keep this lightweight source guard so import drift is still visible.
   it("source contains yank cases for OPEN/IN_PROGRESS/CLOSED", async () => {
     const { readFileSync } = await import("node:fs");
     const src = readFileSync("./src/cli/tui/popups/ready.tsx", "utf-8");

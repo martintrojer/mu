@@ -216,7 +216,7 @@ export function ReadyPopup({
   );
 }
 
-function yankCommandForTask(
+export function yankCommandForTask(
   t: { name: string; status: string; ownerName: string | null },
   ws: string,
 ): string | null {

@@ -436,6 +436,14 @@ is opt-in via the new `--tui` flag.
   pins the helpers directly so a future drift inside a card can't
   quietly reintroduce the duplication this commit removed.
 
+- **Tasks-popup yank matrix tests** (review_tests_yank_matrix_per_state).
+  `popups/ready.tsx` now exports the pure `yankCommandForTask`
+  helper, and a table-driven regression test pins every row-state
+  act-intent (OPEN unowned → claim, OPEN owned → release,
+  IN_PROGRESS → close with evidence, CLOSED/REJECTED/DEFERRED →
+  open, unknown → no yank) so the user-visible `y` behaviour cannot
+  silently drift back to static source-only coverage.
+
 - **Behavioural card-render tests** (review_tests_card_truthy_assertions).
   The nine `test/tui-card-*.test.ts` files now use a shared
   `renderCardToText()` JSX-walker helper (same recursion pattern as
