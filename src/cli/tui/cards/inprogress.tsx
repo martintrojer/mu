@@ -47,7 +47,7 @@
 //         is exactly that primitive).
 //   Until then, Shift+6 stays a reserved noop in keys.ts.
 
-import { Box, Text } from "ink";
+import { Text } from "ink";
 import { STATUS_EMOJI } from "../../../agents.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
 import type { TaskRow } from "../../../tasks.js";
@@ -58,6 +58,7 @@ import {
   renderRow,
   termColsForLayout,
 } from "../columns.js";
+import { ListRow } from "../list-row.js";
 import { TitledBox } from "../titled-box.js";
 
 export interface InProgressCardProps {
@@ -123,26 +124,16 @@ export function InProgressCard({ snapshot }: InProgressCardProps): JSX.Element {
         const row = rows[i];
         if (row === undefined) return null;
         const padded = renderRow(row, widths, COLUMN_SPECS);
-        const [glyph = "", id = "", owner = "", since = "", title = ""] = padded;
         const rowAge = ages[i];
         const stale = isStale(rowAge ?? null);
-        return (
-          <Box key={t.name} width={contentWidth}>
-            <Text wrap="truncate">
-              <Text color="yellow">{glyph}</Text>
-              {"  "}
-              <Text bold>{id}</Text>
-              {"  "}
-              <Text dimColor>{owner}</Text>
-              {"  "}
-              <Text color={stale ? "yellow" : undefined} dimColor={!stale}>
-                {since}
-              </Text>
-              {"  "}
-              <Text dimColor>{title}</Text>
-            </Text>
-          </Box>
-        );
+        const colors = [
+          { color: "yellow" }, // glyph
+          { bold: true }, // id
+          { dimColor: true }, // owner
+          stale ? { color: "yellow" } : { dimColor: true }, // since
+          { dimColor: true }, // title
+        ];
+        return <ListRow key={t.name} cells={padded} contentWidth={contentWidth} colors={colors} />;
       })}
     </TitledBox>
   );

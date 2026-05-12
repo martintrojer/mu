@@ -11,7 +11,7 @@
 // feat_column_aligned_lists clipping policy: timestamp, source, verb
 // are PROTECTED (short, identity-bearing); the rest is CLIPPABLE.
 
-import { Box, Text } from "ink";
+import { Text } from "ink";
 import { classifyEventVerb } from "../../../logs.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
 import {
@@ -21,6 +21,7 @@ import {
   renderRow,
   termColsForLayout,
 } from "../columns.js";
+import { ListRow } from "../list-row.js";
 import { TitledBox } from "../titled-box.js";
 
 export interface LogCardProps {
@@ -81,20 +82,13 @@ export function LogCard({ snapshot }: LogCardProps): JSX.Element {
         if (cells === undefined) return null;
         const cls = classifyEventVerb(row.payload);
         const padded = renderRow(cells, widths, COLUMN_SPECS);
-        const [ts = "", source = "", verb = "", rest = ""] = padded;
-        return (
-          <Box key={row.seq} width={contentWidth}>
-            <Text wrap="truncate">
-              <Text dimColor>{ts}</Text>
-              {"  "}
-              <Text dimColor>{source}</Text>
-              {"  "}
-              {cls ? <Text color="cyan">{verb}</Text> : <Text dimColor>{verb}</Text>}
-              {"  "}
-              <Text>{rest}</Text>
-            </Text>
-          </Box>
-        );
+        const colors = [
+          { dimColor: true }, // ts
+          { dimColor: true }, // source
+          cls ? { color: "cyan" } : { dimColor: true }, // verb
+          undefined, // rest
+        ];
+        return <ListRow key={row.seq} cells={padded} contentWidth={contentWidth} colors={colors} />;
       })}
     </TitledBox>
   );

@@ -31,7 +31,7 @@
 //     (refresh / commits / free / path). Tracked by the parent
 //     feat_more_cards_umbrella; popup likely lands as a sibling task.
 
-import { Box, Text } from "ink";
+import { Text } from "ink";
 import type { WorkstreamSnapshot } from "../../../state.js";
 import type { WorkspaceRow } from "../../../workspace.js";
 import {
@@ -41,6 +41,7 @@ import {
   renderRow,
   termColsForLayout,
 } from "../columns.js";
+import { ListRow } from "../list-row.js";
 import { TitledBox } from "../titled-box.js";
 
 export interface WorkspacesCardProps {
@@ -100,21 +101,15 @@ export function WorkspacesCard({ snapshot }: WorkspacesCardProps): JSX.Element {
         const row = rows[i];
         if (row === undefined) return null;
         const padded = renderRow(row, widths, COLUMN_SPECS);
-        const [glyph = "", name = "", backend = "", behind = "", parent = ""] = padded;
+        const colors = [
+          { color: colorForGlyph(w) }, // glyph
+          { bold: true }, // name
+          { dimColor: true }, // backend
+          { color: colorForBehind(w.commitsBehindMain) }, // behind
+          { dimColor: true }, // parent
+        ];
         return (
-          <Box key={w.agentName} width={contentWidth}>
-            <Text wrap="truncate">
-              <Text color={colorForGlyph(w)}>{glyph}</Text>
-              {"  "}
-              <Text bold>{name}</Text>
-              {"  "}
-              <Text dimColor>{backend}</Text>
-              {"  "}
-              <Text color={colorForBehind(w.commitsBehindMain)}>{behind}</Text>
-              {"  "}
-              <Text dimColor>{parent}</Text>
-            </Text>
-          </Box>
+          <ListRow key={w.agentName} cells={padded} contentWidth={contentWidth} colors={colors} />
         );
       })}
     </TitledBox>

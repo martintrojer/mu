@@ -11,7 +11,7 @@
 // owner are PROTECTED (yank affordance / numeric); the title is
 // CLIPPABLE.
 
-import { Box, Text } from "ink";
+import { Text } from "ink";
 import { type RoiBucket, type WorkstreamSnapshot, roiBucket } from "../../../state.js";
 import {
   type ColumnSpec,
@@ -20,6 +20,7 @@ import {
   renderRow,
   termColsForLayout,
 } from "../columns.js";
+import { ListRow } from "../list-row.js";
 import { TitledBox } from "../titled-box.js";
 
 export interface ReadyCardProps {
@@ -81,20 +82,13 @@ export function ReadyCard({ snapshot }: ReadyCardProps): JSX.Element {
         const m = meta[i];
         if (row === undefined || m === undefined) return null;
         const padded = renderRow(row, widths, COLUMN_SPECS);
-        const [name = "", roi = "", title = "", owner = ""] = padded;
-        return (
-          <Box key={t.name} width={contentWidth}>
-            <Text wrap="truncate">
-              <Text bold>{name}</Text>
-              {"  "}
-              <Text color={colorForBucket(m.bucket)}>{roi}</Text>
-              {"  "}
-              <Text dimColor>{title}</Text>
-              {"  "}
-              <Text dimColor>{owner}</Text>
-            </Text>
-          </Box>
-        );
+        const colors = [
+          { bold: true }, // name
+          { color: colorForBucket(m.bucket) }, // roi
+          { dimColor: true }, // title
+          { dimColor: true }, // owner
+        ];
+        return <ListRow key={t.name} cells={padded} contentWidth={contentWidth} colors={colors} />;
       })}
     </TitledBox>
   );

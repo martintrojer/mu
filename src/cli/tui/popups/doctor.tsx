@@ -45,9 +45,9 @@ import {
   termColsForLayout,
 } from "../columns.js";
 import { dispatchPopupKey } from "../keys.js";
+import { ListRow } from "../list-row.js";
 import { TitledBox } from "../titled-box.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
-import { CursorRow } from "./cursor-row.js";
 import { DrillScrollView, clampScrollTop } from "./drill.js";
 import { usePopupViewport } from "./viewport.js";
 
@@ -261,21 +261,21 @@ export function DoctorPopup({
           const row = rows[i];
           if (row === undefined) return null;
           const padded = renderRow(row, widths, COLUMN_SPECS);
-          if (selected)
-            return <CursorRow key={c.name} cells={padded} contentWidth={contentWidth} />;
-          const [glyph = "", name = "", status = "", detail = ""] = padded;
+          const statusColor = colorForStatus(c.status);
+          const colors = [
+            { color: statusColor }, // glyph
+            { bold: true }, // name
+            { color: statusColor }, // status
+            { dimColor: true }, // detail
+          ];
           return (
-            <Box key={c.name} width={contentWidth}>
-              <Text wrap="truncate">
-                <Text color={colorForStatus(c.status)}>{glyph}</Text>
-                {"  "}
-                <Text bold>{name}</Text>
-                {"  "}
-                <Text color={colorForStatus(c.status)}>{status}</Text>
-                {"  "}
-                <Text dimColor>{detail}</Text>
-              </Text>
-            </Box>
+            <ListRow
+              key={c.name}
+              cells={padded}
+              contentWidth={contentWidth}
+              colors={colors}
+              selected={selected}
+            />
           );
         })}
       </Box>

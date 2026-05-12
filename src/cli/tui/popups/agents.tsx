@@ -30,9 +30,9 @@ import {
   termColsForLayout,
 } from "../columns.js";
 import { dispatchPopupKey } from "../keys.js";
+import { ListRow } from "../list-row.js";
 import { TitledBox } from "../titled-box.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
-import { CursorRow } from "./cursor-row.js";
 import { DrillScrollView, clampScrollTop } from "./drill.js";
 import { usePopupViewport } from "./viewport.js";
 
@@ -47,6 +47,13 @@ export interface PopupProps {
   db: Db;
   workstream: string;
 }
+
+const AGENT_COLORS = [
+  undefined, // glyph (plain)
+  { bold: true }, // name
+  { dimColor: true }, // status
+  { dimColor: true }, // role
+] as const;
 
 const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
   { kind: "protect" }, // glyph
@@ -274,20 +281,14 @@ export function AgentsPopup({
           const row = rows[i];
           if (row === undefined) return null;
           const padded = renderRow(row, widths, COLUMN_SPECS);
-          if (sel) return <CursorRow key={a.name} cells={padded} contentWidth={contentWidth} />;
-          const [glyph = "", name = "", status = "", role = ""] = padded;
           return (
-            <Box key={a.name} width={contentWidth}>
-              <Text wrap="truncate">
-                <Text>{glyph}</Text>
-                {"  "}
-                <Text bold>{name}</Text>
-                {"  "}
-                <Text dimColor>{status}</Text>
-                {"  "}
-                <Text dimColor>{role}</Text>
-              </Text>
-            </Box>
+            <ListRow
+              key={a.name}
+              cells={padded}
+              contentWidth={contentWidth}
+              colors={AGENT_COLORS}
+              selected={sel}
+            />
           );
         })}
       </Box>

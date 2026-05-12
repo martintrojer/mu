@@ -351,6 +351,28 @@ is opt-in via the new `--tui` flag.
   `--all` on a truly empty machine still prints a helpful hint.
   `--json` callers continue to get `{workstreams: []}` for back-compat.
 
+### TUI internals
+
+- **Centralised list-row rendering** (feat_centralize_list_row_render).
+  Every `popups/*.tsx` (9) and `cards/*.tsx` (9) row JSX block now
+  routes through a single new `<ListRow>` primitive
+  (`src/cli/tui/list-row.tsx`). The four invariants every row had to
+  hand-code — outer `<Box width={contentWidth}>` (was
+  bug_tui_log_popup_columns_misaligned), `wrap="truncate"` on the
+  outer `<Text>` (was bug_tui_log_card_columns_misaligned), the
+  canonical 2-space `COL_GUTTER` between cells, and the
+  selected-row→`<CursorRow>` delegation — are now owned by ONE
+  component. Per-cell colour palettes pass in declaratively as a
+  `colors` array, sibling of `COLUMN_SPECS`. The previously-failing
+  bug class (one popup forgets one attribute, the regression hides
+  in 1-of-18 panes until somebody opens it) is gone by construction:
+  no consumer can drift the gutter, forget the width pin, or skip
+  `wrap="truncate"`. `test/tui-card-render-width.test.ts` is
+  reframed to assert the new invariant ("every renderRow consumer
+  routes through ListRow or CursorRow; no hand-rolled
+  `<Box><Text wrap=...>` row remains"); `test/tui-list-row.test.ts`
+  is the new unit test for the primitive itself.
+
 ### Pillar amendments
 
 - **VISION.md Constraint #7 (new)**: "Every invocation is

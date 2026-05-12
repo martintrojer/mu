@@ -54,7 +54,7 @@
 //         into TaskDetailDrill (rows ARE tasks)
 //   Until then, Shift+8 (`*`) stays a reserved noop in keys.ts.
 
-import { Box, Text } from "ink";
+import { Text } from "ink";
 import type { WorkstreamSnapshot } from "../../../state.js";
 import type { TaskRow } from "../../../tasks.js";
 import {
@@ -64,6 +64,7 @@ import {
   renderRow,
   termColsForLayout,
 } from "../columns.js";
+import { ListRow } from "../list-row.js";
 import { TitledBox } from "../titled-box.js";
 
 export interface RecentCardProps {
@@ -122,22 +123,14 @@ export function RecentCard({ snapshot }: RecentCardProps): JSX.Element {
         const row = rows[i];
         if (row === undefined) return null;
         const padded = renderRow(row, widths, COLUMN_SPECS);
-        const [glyph = "", id = "", status = "", when = "", title = ""] = padded;
-        return (
-          <Box key={t.name} width={contentWidth}>
-            <Text wrap="truncate">
-              <Text color="green">{glyph}</Text>
-              {"  "}
-              <Text bold>{id}</Text>
-              {"  "}
-              <Text dimColor>{status}</Text>
-              {"  "}
-              <Text dimColor>{when}</Text>
-              {"  "}
-              <Text dimColor>{title}</Text>
-            </Text>
-          </Box>
-        );
+        const colors = [
+          { color: "green" }, // glyph
+          { bold: true }, // id
+          { dimColor: true }, // status
+          { dimColor: true }, // when
+          { dimColor: true }, // title
+        ];
+        return <ListRow key={t.name} cells={padded} contentWidth={contentWidth} colors={colors} />;
       })}
     </TitledBox>
   );

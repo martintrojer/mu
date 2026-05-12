@@ -13,7 +13,7 @@
 // summary is CLIPPABLE (it's a free-form string and the popup carries
 // the full version).
 
-import { Box, Text } from "ink";
+import { Text } from "ink";
 import { STATUS_EMOJI } from "../../../agents.js";
 import {
   type WorkstreamSnapshot,
@@ -27,6 +27,7 @@ import {
   renderRow,
   termColsForLayout,
 } from "../columns.js";
+import { ListRow } from "../list-row.js";
 import { TitledBox } from "../titled-box.js";
 
 export interface AgentsCardProps {
@@ -77,22 +78,13 @@ export function AgentsCard({ snapshot }: AgentsCardProps): JSX.Element {
         const row = rows[i];
         if (row === undefined) return null;
         const padded = renderRow(row, widths, COLUMN_SPECS);
-        const [glyph = "", name = "", taskBit = "", idle = ""] = padded;
-        return (
-          <Box key={a.name} width={contentWidth}>
-            <Text wrap="truncate">
-              <Text>{glyph}</Text>
-              {"  "}
-              <Text bold>{name}</Text>
-              {"  "}
-              <Text dimColor>{taskBit}</Text>
-              {"  "}
-              <Text color={a.idle ? "yellow" : undefined} dimColor={!a.idle}>
-                {idle}
-              </Text>
-            </Text>
-          </Box>
-        );
+        const colors = [
+          undefined, // glyph
+          { bold: true }, // name
+          { dimColor: true }, // taskBit
+          a.idle ? { color: "yellow" } : { dimColor: true }, // idle marker
+        ];
+        return <ListRow key={a.name} cells={padded} contentWidth={contentWidth} colors={colors} />;
       })}
     </TitledBox>
   );

@@ -100,24 +100,42 @@ describe("popups consume CursorRow for selected rows", () => {
     expect(files).toContain("cursor-row.tsx");
   });
 
+  // Post-feat_centralize_list_row_render: every list popup routes
+  // its rows through <ListRow .../>, which delegates to CursorRow
+  // when selected=true. The popups no longer import or instantiate
+  // CursorRow directly — ListRow is now the single owner of the
+  // selected/non-selected branch.
+  //
+  // What we still gate per popup: the leaky per-cell
+  // `<Text inverse={sel}>` pattern — the original bug class. The
+  // assertion below ensures CursorRow's solid-line replacement
+  // doesn't silently regress to the legacy nested-color pattern.
   for (const name of LIST_POPUPS) {
     const path = join(POPUPS_DIR, name);
     const src = readFileSync(path, "utf8");
 
-    it(`${name}: imports CursorRow from ./cursor-row.js`, () => {
-      expect(src).toMatch(/import\s*\{\s*CursorRow\s*\}\s*from\s*["']\.\/cursor-row\.js["']/);
-    });
-
-    it(`${name}: uses <CursorRow .../> in the selected-row branch`, () => {
-      expect(src).toMatch(/<CursorRow\b/);
+    it(`${name}: routes selected rows through ListRow (which delegates to CursorRow)`, () => {
+      // Either uses <ListRow ... selected=...> or imports CursorRow
+      // directly (legacy path that still flows through cursor-row.tsx).
+      // After the centralisation every popup uses the ListRow path;
+      // we keep CursorRow as a fallback so this test stays useful if
+      // a future popup author goes straight to the primitive.
+      const usesListRow =
+        /import\s*\{[^}]*\bListRow\b[^}]*\}\s*from\s*["']\.\.\/list-row\.js["']/.test(src) &&
+        /<ListRow\b/.test(src);
+      const usesCursorRow =
+        /import\s*\{\s*CursorRow\s*\}\s*from\s*["']\.\/cursor-row\.js["']/.test(src) &&
+        /<CursorRow\b/.test(src);
+      expect(usesListRow || usesCursorRow).toBe(true);
     });
 
     it(`${name}: no leaky per-cell inverse={...} pattern remains`, () => {
       // The whole bug was wrapping nested coloured <Text> in a
-      // single <Text inverse={sel}>. CursorRow replaces every such
-      // selected-row branch — there should be no `inverse=` on any
-      // <Text> in these popups (the inner CursorRow's <Text inverse>
-      // lives in cursor-row.tsx, NOT in any of these files).
+      // single <Text inverse={sel}>. CursorRow / ListRow replace
+      // every such selected-row branch — there should be no
+      // `inverse=` on any <Text> in these popups (the inner CursorRow's
+      // <Text inverse> lives in cursor-row.tsx, NOT in any of these
+      // files).
       expect(src).not.toMatch(/<Text[^>]*\binverse=/);
     });
   }

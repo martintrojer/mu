@@ -34,9 +34,9 @@ import {
   termColsForLayout,
 } from "../columns.js";
 import { dispatchPopupKey } from "../keys.js";
+import { ListRow } from "../list-row.js";
 import { TitledBox } from "../titled-box.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
-import { CursorRow } from "./cursor-row.js";
 import { clampScrollTop } from "./drill.js";
 import { TaskDetailDrill, renderNotes } from "./task-detail.js";
 import { usePopupViewport } from "./viewport.js";
@@ -253,31 +253,24 @@ export function InProgressPopup({
           const row = rows[i];
           if (row === undefined) return null;
           const padded = renderRow(row, widths, COLUMN_SPECS);
-          if (selected)
-            return <CursorRow key={t.name} cells={padded} contentWidth={contentWidth} />;
-          const [glyph = "", id = "", status = "", owner = "", since = "", roi = "", title = ""] =
-            padded;
           const stale = isStale(ages[i] ?? null);
+          const colors = [
+            { color: "yellow" }, // glyph
+            { bold: true }, // id
+            { dimColor: true }, // status
+            { dimColor: true }, // owner
+            stale ? { color: "yellow" } : { dimColor: true }, // since-claim
+            { dimColor: true }, // roi
+            undefined, // title
+          ];
           return (
-            <Box key={t.name} width={contentWidth}>
-              <Text wrap="truncate">
-                <Text color="yellow">{glyph}</Text>
-                {"  "}
-                <Text bold>{id}</Text>
-                {"  "}
-                <Text dimColor>{status}</Text>
-                {"  "}
-                <Text dimColor>{owner}</Text>
-                {"  "}
-                <Text color={stale ? "yellow" : undefined} dimColor={!stale}>
-                  {since}
-                </Text>
-                {"  "}
-                <Text dimColor>{roi}</Text>
-                {"  "}
-                <Text>{title}</Text>
-              </Text>
-            </Box>
+            <ListRow
+              key={t.name}
+              cells={padded}
+              contentWidth={contentWidth}
+              colors={colors}
+              selected={selected}
+            />
           );
         })}
       </Box>

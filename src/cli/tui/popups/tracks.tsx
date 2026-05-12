@@ -40,9 +40,9 @@ import {
   termColsForLayout,
 } from "../columns.js";
 import { dispatchPopupKey } from "../keys.js";
+import { ListRow } from "../list-row.js";
 import { TitledBox } from "../titled-box.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
-import { CursorRow } from "./cursor-row.js";
 import { clampScrollTop } from "./drill.js";
 import { TaskDetailDrill, renderNotes } from "./task-detail.js";
 import { usePopupViewport } from "./viewport.js";
@@ -71,6 +71,19 @@ const DRILL_COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
   { kind: "protect" }, // status
   { kind: "clip", min: 1 }, // title
 ];
+
+const TRACK_COLORS = [
+  { color: "cyan" }, // Track N
+  undefined, // diamond
+  undefined, // goals
+  { dimColor: true }, // counts
+] as const;
+
+const DRILL_COLORS = [
+  { bold: true }, // name
+  { dimColor: true }, // status
+  undefined, // title
+] as const;
 
 // Internal sub-state of the drill view. "task-list" = the visible
 // list of tasks for the focused track (where the prop `mode` is
@@ -369,18 +382,14 @@ export function TracksPopup({
             const row = rows[i];
             if (row === undefined) return null;
             const padded = renderRow(row, widths, DRILL_COLUMN_SPECS);
-            if (sel) return <CursorRow key={t.name} cells={padded} contentWidth={contentWidth} />;
-            const [name = "", status = "", title = ""] = padded;
             return (
-              <Box key={t.name} width={contentWidth}>
-                <Text wrap="truncate">
-                  <Text bold>{name}</Text>
-                  {"  "}
-                  <Text dimColor>{status}</Text>
-                  {"  "}
-                  <Text>{title}</Text>
-                </Text>
-              </Box>
+              <ListRow
+                key={t.name}
+                cells={padded}
+                contentWidth={contentWidth}
+                colors={DRILL_COLORS}
+                selected={sel}
+              />
             );
           })}
         </Box>
@@ -412,27 +421,14 @@ export function TracksPopup({
           const row = rows[i];
           if (row === undefined) return null;
           const padded = renderRow(row, widths, COLUMN_SPECS);
-          if (sel)
-            return (
-              <CursorRow
-                key={`tr-${i}-${t.roots[0]?.name ?? "?"}`}
-                cells={padded}
-                contentWidth={contentWidth}
-              />
-            );
-          const [trackLabel = "", diamond = "", goals = "", counts = ""] = padded;
           return (
-            <Box key={`tr-${i}-${t.roots[0]?.name ?? "?"}`} width={contentWidth}>
-              <Text wrap="truncate">
-                <Text color="cyan">{trackLabel}</Text>
-                {"  "}
-                <Text>{diamond}</Text>
-                {"  "}
-                <Text>{goals}</Text>
-                {"  "}
-                <Text dimColor>{counts}</Text>
-              </Text>
-            </Box>
+            <ListRow
+              key={`tr-${i}-${t.roots[0]?.name ?? "?"}`}
+              cells={padded}
+              contentWidth={contentWidth}
+              colors={TRACK_COLORS}
+              selected={sel}
+            />
           );
         })}
       </Box>

@@ -64,9 +64,9 @@ import {
   termColsForLayout,
 } from "../columns.js";
 import { dispatchPopupKey } from "../keys.js";
+import { ListRow } from "../list-row.js";
 import { TitledBox } from "../titled-box.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
-import { CursorRow } from "./cursor-row.js";
 import { DrillScrollView, clampScrollTop } from "./drill.js";
 import { usePopupViewport } from "./viewport.js";
 
@@ -106,6 +106,11 @@ const DRILL_COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
   { kind: "protect" }, // sha short
   { kind: "clip", min: 1 }, // subject
 ];
+
+const COMMIT_COLORS = [
+  { color: "yellow" }, // sha
+  undefined, // subject
+] as const;
 
 // Drill view renders an EXTRA in-body title + dim "(L-T/T)" indicator
 // pair on top of the default popup chrome — subtract 7 (default 6 + 1)
@@ -530,35 +535,23 @@ export function WorkspacesPopup({
           const row = rows[i];
           if (row === undefined) return null;
           const padded = renderRow(row, widths, COLUMN_SPECS);
-          if (sel)
-            return <CursorRow key={w.agentName} cells={padded} contentWidth={contentWidth} />;
-          const [
-            glyph = "",
-            name = "",
-            backend = "",
-            behind = "",
-            dirty = "",
-            parent = "",
-            path = "",
-          ] = padded;
+          const colors = [
+            { color: colorForGlyph(w) }, // glyph
+            { bold: true }, // name
+            { dimColor: true }, // backend
+            { color: colorForBehind(w.commitsBehindMain) }, // behind
+            { color: colorForDirty(w.dirty) }, // dirty
+            { dimColor: true }, // parent
+            { dimColor: true }, // path
+          ];
           return (
-            <Box key={w.agentName} width={contentWidth}>
-              <Text wrap="truncate">
-                <Text color={colorForGlyph(w)}>{glyph}</Text>
-                {"  "}
-                <Text bold>{name}</Text>
-                {"  "}
-                <Text dimColor>{backend}</Text>
-                {"  "}
-                <Text color={colorForBehind(w.commitsBehindMain)}>{behind}</Text>
-                {"  "}
-                <Text color={colorForDirty(w.dirty)}>{dirty}</Text>
-                {"  "}
-                <Text dimColor>{parent}</Text>
-                {"  "}
-                <Text dimColor>{path}</Text>
-              </Text>
-            </Box>
+            <ListRow
+              key={w.agentName}
+              cells={padded}
+              contentWidth={contentWidth}
+              colors={colors}
+              selected={sel}
+            />
           );
         })}
       </Box>
@@ -657,16 +650,14 @@ function renderDrillBody(
         const row = rows[i];
         if (row === undefined) return null;
         const padded = renderRow(row, widths, DRILL_COLUMN_SPECS);
-        if (sel) return <CursorRow key={c.sha} cells={padded} contentWidth={contentWidth} />;
-        const [sha = "", subject = ""] = padded;
         return (
-          <Box key={c.sha} width={contentWidth}>
-            <Text wrap="truncate">
-              <Text color="yellow">{sha}</Text>
-              {"  "}
-              <Text>{subject}</Text>
-            </Text>
-          </Box>
+          <ListRow
+            key={c.sha}
+            cells={padded}
+            contentWidth={contentWidth}
+            colors={COMMIT_COLORS}
+            selected={sel}
+          />
         );
       })}
     </Box>

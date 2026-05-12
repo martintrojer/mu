@@ -11,7 +11,7 @@
 // task counts are PROTECTED (identity / numeric); the goal-name list
 // is CLIPPABLE.
 
-import { Box, Text } from "ink";
+import { Text } from "ink";
 import type { WorkstreamSnapshot } from "../../../state.js";
 import {
   type ColumnSpec,
@@ -20,6 +20,7 @@ import {
   renderRow,
   termColsForLayout,
 } from "../columns.js";
+import { ListRow } from "../list-row.js";
 import { TitledBox } from "../titled-box.js";
 
 export interface TracksCardProps {
@@ -83,23 +84,16 @@ export function TracksCard({ snapshot }: TracksCardProps): JSX.Element {
         const row = rows[i];
         if (row === undefined) return null;
         const padded = renderRow(row, widths, COLUMN_SPECS);
-        const [trackLabel = "", diamond = "", goals = "", counts = ""] = padded;
         const trackKey = `${i}-${t.roots[0]?.name ?? "unknown"}`;
         const ready = t.readyCount;
+        const colors = [
+          { color: "cyan" }, // trackLabel
+          undefined, // diamond
+          undefined, // goals
+          ready > 0 ? { color: "green" } : { dimColor: true }, // counts
+        ];
         return (
-          <Box key={trackKey} width={contentWidth}>
-            <Text wrap="truncate">
-              <Text color="cyan">{trackLabel}</Text>
-              {"  "}
-              <Text>{diamond}</Text>
-              {"  "}
-              <Text>{goals}</Text>
-              {"  "}
-              <Text color={ready > 0 ? "green" : undefined} dimColor={ready === 0}>
-                {counts}
-              </Text>
-            </Text>
-          </Box>
+          <ListRow key={trackKey} cells={padded} contentWidth={contentWidth} colors={colors} />
         );
       })}
     </TitledBox>

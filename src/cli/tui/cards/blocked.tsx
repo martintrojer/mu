@@ -60,7 +60,7 @@
 //         into TaskDetailDrill (rows ARE tasks)
 //   Until then, Shift+7 (`&`) stays a reserved noop in keys.ts.
 
-import { Box, Text } from "ink";
+import { Text } from "ink";
 import type { Db } from "../../../db.js";
 import { type RoiBucket, type WorkstreamSnapshot, roiBucket } from "../../../state.js";
 import { type TaskEdgeWithStatus, type TaskRow, getTaskEdgesWithStatus } from "../../../tasks.js";
@@ -71,6 +71,7 @@ import {
   renderRow,
   termColsForLayout,
 } from "../columns.js";
+import { ListRow } from "../list-row.js";
 import { TitledBox } from "../titled-box.js";
 
 export interface BlockedCardProps {
@@ -145,24 +146,15 @@ export function BlockedCard({ snapshot, db, workstream }: BlockedCardProps): JSX
         const m = meta[i];
         if (row === undefined || m === undefined) return null;
         const padded = renderRow(row, widths, COLUMN_SPECS);
-        const [glyph = "", id = "", status = "", blocks = "", roi = "", title = ""] = padded;
-        return (
-          <Box key={t.name} width={contentWidth}>
-            <Text wrap="truncate">
-              <Text dimColor>{glyph}</Text>
-              {"  "}
-              <Text bold>{id}</Text>
-              {"  "}
-              <Text dimColor>{status}</Text>
-              {"  "}
-              <Text color="yellow">{blocks}</Text>
-              {"  "}
-              <Text color={colorForBucket(m.bucket)}>{roi}</Text>
-              {"  "}
-              <Text dimColor>{title}</Text>
-            </Text>
-          </Box>
-        );
+        const colors = [
+          { dimColor: true }, // glyph
+          { bold: true }, // id
+          { dimColor: true }, // status
+          { color: "yellow" }, // blocks
+          { color: colorForBucket(m.bucket) }, // roi
+          { dimColor: true }, // title
+        ];
+        return <ListRow key={t.name} cells={padded} contentWidth={contentWidth} colors={colors} />;
       })}
     </TitledBox>
   );

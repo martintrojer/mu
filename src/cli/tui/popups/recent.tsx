@@ -35,6 +35,7 @@ import {
   termColsForLayout,
 } from "../columns.js";
 import { dispatchPopupKey } from "../keys.js";
+import { ListRow } from "../list-row.js";
 import { TitledBox } from "../titled-box.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
 import { clampScrollTop } from "./drill.js";
@@ -63,6 +64,17 @@ const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
   { kind: "protect", align: "right" }, // ROI label
   { kind: "clip", min: 1 }, // title
 ];
+
+const RECENT_COLORS = [
+  { color: "green" }, // glyph
+  { bold: true }, // id
+  { dimColor: true }, // status
+  { dimColor: true }, // when
+  { dimColor: true }, // impact
+  { dimColor: true }, // effort
+  { dimColor: true }, // roi
+  undefined, // title
+] as const;
 
 export function RecentPopup({
   yank,
@@ -258,36 +270,14 @@ export function RecentPopup({
           const row = rows[i];
           if (row === undefined) return null;
           const padded = renderRow(row, widths, COLUMN_SPECS);
-          const [
-            glyph = "",
-            id = "",
-            status = "",
-            when = "",
-            impact = "",
-            effort = "",
-            roi = "",
-            title = "",
-          ] = padded;
           return (
-            <Box key={t.name} width={contentWidth}>
-              <Text inverse={selected} wrap="truncate">
-                <Text color="green">{glyph}</Text>
-                {"  "}
-                <Text bold>{id}</Text>
-                {"  "}
-                <Text dimColor>{status}</Text>
-                {"  "}
-                <Text dimColor>{when}</Text>
-                {"  "}
-                <Text dimColor>{impact}</Text>
-                {"  "}
-                <Text dimColor>{effort}</Text>
-                {"  "}
-                <Text dimColor>{roi}</Text>
-                {"  "}
-                <Text>{title}</Text>
-              </Text>
-            </Box>
+            <ListRow
+              key={t.name}
+              cells={padded}
+              contentWidth={contentWidth}
+              colors={RECENT_COLORS}
+              selected={selected}
+            />
           );
         })}
       </Box>

@@ -32,9 +32,9 @@ import {
   termColsForLayout,
 } from "../columns.js";
 import { dispatchPopupKey } from "../keys.js";
+import { ListRow } from "../list-row.js";
 import { TitledBox } from "../titled-box.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
-import { CursorRow } from "./cursor-row.js";
 import { clampScrollTop } from "./drill.js";
 import { TaskDetailDrill, renderNotes } from "./task-detail.js";
 import { usePopupViewport } from "./viewport.js";
@@ -50,6 +50,13 @@ export interface PopupProps {
   db: Db;
   workstream: string;
 }
+
+const READY_COLORS = [
+  { bold: true }, // name
+  { dimColor: true }, // status
+  { dimColor: true }, // owner
+  undefined, // title
+] as const;
 
 const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
   { kind: "protect" }, // task name
@@ -242,21 +249,14 @@ export function ReadyPopup({
           const row = rows[i];
           if (row === undefined) return null;
           const padded = renderRow(row, widths, COLUMN_SPECS);
-          if (selected)
-            return <CursorRow key={t.name} cells={padded} contentWidth={contentWidth} />;
-          const [name = "", status = "", owner = "", title = ""] = padded;
           return (
-            <Box key={t.name} width={contentWidth}>
-              <Text wrap="truncate">
-                <Text bold>{name}</Text>
-                {"  "}
-                <Text dimColor>{status}</Text>
-                {"  "}
-                <Text dimColor>{owner}</Text>
-                {"  "}
-                <Text>{title}</Text>
-              </Text>
-            </Box>
+            <ListRow
+              key={t.name}
+              cells={padded}
+              contentWidth={contentWidth}
+              colors={READY_COLORS}
+              selected={selected}
+            />
           );
         })}
       </Box>

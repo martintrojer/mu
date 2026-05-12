@@ -47,9 +47,9 @@ import {
   termColsForLayout,
 } from "../columns.js";
 import { dispatchPopupKey } from "../keys.js";
+import { ListRow } from "../list-row.js";
 import { TitledBox } from "../titled-box.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
-import { CursorRow } from "./cursor-row.js";
 import { clampScrollTop } from "./drill.js";
 import { TaskDetailDrill, renderNotes } from "./task-detail.js";
 import { usePopupViewport } from "./viewport.js";
@@ -289,29 +289,24 @@ export function BlockedPopup({
           const row = rows[i];
           if (row === undefined) return null;
           const padded = renderRow(row, widths, COLUMN_SPECS);
-          if (selected)
-            return <CursorRow key={t.name} cells={padded} contentWidth={contentWidth} />;
-          const [glyph = "", name = "", status = "", nblock = "", top = "", roi = "", title = ""] =
-            padded;
           const bucket = roiBucket(t.impact, t.effortDays);
+          const colors = [
+            { dimColor: true }, // glyph
+            { bold: true }, // name
+            { dimColor: true }, // status
+            { color: "yellow" }, // nblock
+            { dimColor: true }, // top
+            { color: colorForBucket(bucket) }, // roi
+            undefined, // title
+          ];
           return (
-            <Box key={t.name} width={contentWidth}>
-              <Text wrap="truncate">
-                <Text dimColor>{glyph}</Text>
-                {"  "}
-                <Text bold>{name}</Text>
-                {"  "}
-                <Text dimColor>{status}</Text>
-                {"  "}
-                <Text color="yellow">{nblock}</Text>
-                {"  "}
-                <Text dimColor>{top}</Text>
-                {"  "}
-                <Text color={colorForBucket(bucket)}>{roi}</Text>
-                {"  "}
-                <Text>{title}</Text>
-              </Text>
-            </Box>
+            <ListRow
+              key={t.name}
+              cells={padded}
+              contentWidth={contentWidth}
+              colors={colors}
+              selected={selected}
+            />
           );
         })}
       </Box>

@@ -44,7 +44,7 @@
 //   this check" or a one-line remediation hint; that's the popup
 //   task's call. Until then, Shift+9 (`(`) stays a reserved noop.
 
-import { Box, Text } from "ink";
+import { Text } from "ink";
 import type { DoctorCheck } from "../../../doctor-summary.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
 import {
@@ -54,6 +54,7 @@ import {
   renderRow,
   termColsForLayout,
 } from "../columns.js";
+import { ListRow } from "../list-row.js";
 import { TitledBox } from "../titled-box.js";
 
 export interface DoctorCardProps {
@@ -108,20 +109,14 @@ export function DoctorCard({ snapshot }: DoctorCardProps): JSX.Element {
         const row = rows[i];
         if (row === undefined) return null;
         const padded = renderRow(row, widths, COLUMN_SPECS);
-        const [glyph = "", name = "", status = "", detail = ""] = padded;
-        return (
-          <Box key={c.name} width={contentWidth}>
-            <Text wrap="truncate">
-              <Text color={colorForStatus(c.status)}>{glyph}</Text>
-              {"  "}
-              <Text bold>{name}</Text>
-              {"  "}
-              <Text color={colorForStatus(c.status)}>{status}</Text>
-              {"  "}
-              <Text dimColor>{detail}</Text>
-            </Text>
-          </Box>
-        );
+        const statusColor = colorForStatus(c.status);
+        const colors = [
+          { color: statusColor }, // glyph
+          { bold: true }, // name
+          { color: statusColor }, // status
+          { dimColor: true }, // detail
+        ];
+        return <ListRow key={c.name} cells={padded} contentWidth={contentWidth} colors={colors} />;
       })}
     </TitledBox>
   );

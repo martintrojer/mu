@@ -101,6 +101,7 @@ mu/
 │   │   │   ├── keys.ts     # pure dispatchGlobalKey + dispatchPopupKey
 │   │   │   ├── yank.ts     # clipboard probe + write (pbcopy/wl-copy/xclip/xsel/clip.exe + OSC-52)
 │   │   │   ├── titled-box.tsx  # rounded border with section header inset into top border
+│   │   │   ├── list-row.tsx  # centralised non-selected row primitive (width pin + COL_GUTTER + wrap=truncate + selected→CursorRow delegation)
 │   │   │   ├── columns.ts  # column-aligned row layout with protect/clip clipping
 │   │   │   ├── help.tsx    # ?/F1 keymap overlay
 │   │   │   ├── use-popup-filter.tsx  # shared '/' substring filter (hook + reducer + applyFilter + FilterPrompt)

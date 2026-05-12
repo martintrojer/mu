@@ -32,9 +32,9 @@ import {
   termColsForLayout,
 } from "../columns.js";
 import { dispatchPopupKey } from "../keys.js";
+import { ListRow } from "../list-row.js";
 import { TitledBox } from "../titled-box.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
-import { CursorRow } from "./cursor-row.js";
 import { DrillScrollView, clampScrollTop } from "./drill.js";
 import { usePopupViewport } from "./viewport.js";
 
@@ -279,22 +279,21 @@ export function LogPopup({
           const row = rows[i];
           if (row === undefined) return null;
           const padded = renderRow(row, widths, COLUMN_SPECS);
-          if (sel) return <CursorRow key={e.seq} cells={padded} contentWidth={contentWidth} />;
-          const [seq = "", ts = "", source = "", verb = "", rest = ""] = padded;
+          const colors = [
+            { dimColor: true }, // seq
+            { dimColor: true }, // ts
+            { dimColor: true }, // source
+            cls ? { color: "cyan" } : { dimColor: true }, // verb
+            undefined, // rest
+          ];
           return (
-            <Box key={e.seq} width={contentWidth}>
-              <Text wrap="truncate">
-                <Text dimColor>{seq}</Text>
-                {"  "}
-                <Text dimColor>{ts}</Text>
-                {"  "}
-                <Text dimColor>{source}</Text>
-                {"  "}
-                {cls ? <Text color="cyan">{verb}</Text> : <Text dimColor>{verb}</Text>}
-                {"  "}
-                <Text>{rest}</Text>
-              </Text>
-            </Box>
+            <ListRow
+              key={e.seq}
+              cells={padded}
+              contentWidth={contentWidth}
+              colors={colors}
+              selected={sel}
+            />
           );
         })}
       </Box>
