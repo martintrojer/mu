@@ -48,7 +48,8 @@ import { dispatchPopupKey } from "../keys.js";
 import { ListRow } from "../list-row.js";
 import { TitledBox } from "../titled-box.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
-import { DrillScrollView, clampScrollTop } from "./drill.js";
+import { DrillScrollView } from "./drill.js";
+import { applyCursor, applyScroll, isNavAction } from "./scroll.js";
 import { usePopupViewport } from "./viewport.js";
 
 export interface PopupProps {
@@ -131,40 +132,14 @@ export function DoctorPopup({
       pageDown: key.pageDown,
     });
     if (mode === "drill") {
+      if (isNavAction(action)) {
+        setScrollTop((s) => applyScroll(s, action, totalDrillLines, viewport));
+        return;
+      }
       switch (action.kind) {
         case "close":
           onModeChange("list");
           setScrollTop(0);
-          return;
-        case "moveDown":
-          setScrollTop((s) => clampScrollTop(s + 1, totalDrillLines, viewport));
-          return;
-        case "moveUp":
-          setScrollTop((s) => clampScrollTop(s - 1, totalDrillLines, viewport));
-          return;
-        case "jumpTop":
-          setScrollTop(0);
-          return;
-        case "jumpBottom":
-          setScrollTop(clampScrollTop(totalDrillLines, totalDrillLines, viewport));
-          return;
-        case "pageDown":
-          setScrollTop((s) =>
-            clampScrollTop(
-              s + Math.floor(viewport / (action.half ? 2 : 1)),
-              totalDrillLines,
-              viewport,
-            ),
-          );
-          return;
-        case "pageUp":
-          setScrollTop((s) =>
-            clampScrollTop(
-              s - Math.floor(viewport / (action.half ? 2 : 1)),
-              totalDrillLines,
-              viewport,
-            ),
-          );
           return;
         case "yank":
           if (!focused) return;
@@ -176,6 +151,10 @@ export function DoctorPopup({
         default:
           return;
       }
+    }
+    if (isNavAction(action)) {
+      setCursor((c) => applyCursor(c, action, checks.length, viewport));
+      return;
     }
     switch (action.kind) {
       case "close":
@@ -189,18 +168,6 @@ export function DoctorPopup({
           setScrollTop(0);
           onModeChange("drill");
         }
-        return;
-      case "moveDown":
-        setCursor((c) => Math.min(checks.length - 1, c + 1));
-        return;
-      case "moveUp":
-        setCursor((c) => Math.max(0, c - 1));
-        return;
-      case "jumpTop":
-        setCursor(0);
-        return;
-      case "jumpBottom":
-        setCursor(Math.max(0, checks.length - 1));
         return;
       case "yank":
         if (!focused) return;

@@ -34,6 +34,11 @@ import { Text } from "ink";
 import { useMemo } from "react";
 import { TitledBox } from "../titled-box.js";
 
+// Re-export so existing `import { clampScrollTop } from "./drill.js"`
+// callers stay valid until they migrate to the centralised
+// applyCursor / applyScroll helpers in popups/scroll.ts.
+export { clampScrollTop } from "./scroll.js";
+
 export interface DrillScrollViewProps {
   title: string;
   /** Already-rendered text — split on \n into lines. */
@@ -96,16 +101,4 @@ export function DrillScrollView({
       )}
     </TitledBox>
   );
-}
-
-/**
- * Shared scroll-state reducer logic. Caller maintains `scrollTop`
- * via useState and dispatches these primitives from its
- * dispatchPopupKey switch. Pure: returns the new scrollTop.
- */
-export function clampScrollTop(scrollTop: number, totalLines: number, viewport: number): number {
-  const max = Math.max(0, totalLines - viewport);
-  if (scrollTop < 0) return 0;
-  if (scrollTop > max) return max;
-  return scrollTop;
 }

@@ -353,6 +353,25 @@ is opt-in via the new `--tui` flag.
 
 ### TUI internals
 
+- **Centralised scroll/navigation dispatch**
+  (feat_centralize_scroll_navigation). Every popup's `useInput`
+  switch over `dispatchPopupKey` used to carry its own copy of the
+  same six `case` arms (`moveDown` / `moveUp` / `jumpTop` /
+  `jumpBottom` / `pageUp` / `pageDown`); ~60 near-duplicate arms
+  across 9 popups inevitably drifted (one consumer would forget
+  Ctrl-D / Ctrl-U; another would only support `g`/`G` in list mode
+  and not in drill mode; a third would lose the page-step formula).
+  All six arms now collapse into a single `applyCursor` /
+  `applyScroll` call (cursor-based vs scrollTop-based) wired
+  through new pure helpers in `src/cli/tui/popups/scroll.ts`. The
+  helper has zero ink/react imports and is covered exhaustively by
+  `test/tui-scroll.test.ts`. `clampScrollTop` relocates from
+  `popups/drill.tsx` into the new module (drill re-exports it for
+  back-compat). Every list-mode AND drill-mode in every popup now
+  trivially supports j/k/g/G/Ctrl-D/U/PgUp/PgDn with identical
+  semantics, and a future popup author can't drift the keymap by
+  re-implementing the switch.
+
 - **Centralised list-row rendering** (feat_centralize_list_row_render).
   Every `popups/*.tsx` (9) and `cards/*.tsx` (9) row JSX block now
   routes through a single new `<ListRow>` primitive

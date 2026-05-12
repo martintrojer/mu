@@ -121,7 +121,10 @@ describe("WorkspacesPopup: Enter on focused commit drills into git show diff (fe
     // shared primitive, same scroll-state pattern.
     expect(SRC).toContain('from "./drill.js"');
     expect(SRC).toContain("<DrillScrollView");
-    expect(SRC).toContain("clampScrollTop");
+    // Per feat_centralize_scroll_navigation the per-popup
+    // clampScrollTop arms collapsed into a single applyScroll
+    // call wired through the shared helper.
+    expect(SRC).toContain("applyScroll");
     expect(SRC).toContain("setShowScrollTop");
   });
 

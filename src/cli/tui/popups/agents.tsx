@@ -33,7 +33,8 @@ import { dispatchPopupKey } from "../keys.js";
 import { ListRow } from "../list-row.js";
 import { TitledBox } from "../titled-box.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
-import { DrillScrollView, clampScrollTop } from "./drill.js";
+import { DrillScrollView } from "./drill.js";
+import { applyCursor, applyScroll, isNavAction } from "./scroll.js";
 import { usePopupViewport } from "./viewport.js";
 
 export interface PopupProps {
@@ -147,39 +148,23 @@ export function AgentsPopup({
       pageDown: key.pageDown,
     });
     if (mode === "drill") {
-      // Drill-mode keymap: j/k scroll, Ctrl-D/U half-viewport,
-      // Esc/q back to list. Yank / verbs / drill are intentionally
-      // suppressed in drill (it's a read-only detail view).
+      // Drill-mode keymap: scroll-based view. Nav cluster funnels
+      // through applyScroll; Esc/q backs to list. Yank / verbs /
+      // drill are intentionally suppressed in drill (read-only).
       const totalLines = scrollback === "" ? 0 : scrollback.split("\n").length;
-      switch (action.kind) {
-        case "close":
-          onModeChange("list");
-          return;
-        case "moveDown":
-          setScrollTop((s) => clampScrollTop(s + 1, totalLines, viewport));
-          return;
-        case "moveUp":
-          setScrollTop((s) => clampScrollTop(s - 1, totalLines, viewport));
-          return;
-        case "jumpTop":
-          setScrollTop(0);
-          return;
-        case "jumpBottom":
-          setScrollTop(clampScrollTop(totalLines, totalLines, viewport));
-          return;
-        case "pageDown":
-          setScrollTop((s) =>
-            clampScrollTop(s + Math.floor(viewport / (action.half ? 2 : 1)), totalLines, viewport),
-          );
-          return;
-        case "pageUp":
-          setScrollTop((s) =>
-            clampScrollTop(s - Math.floor(viewport / (action.half ? 2 : 1)), totalLines, viewport),
-          );
-          return;
-        default:
-          return;
+      if (isNavAction(action)) {
+        setScrollTop((s) => applyScroll(s, action, totalLines, viewport));
+        return;
       }
+      if (action.kind === "close") {
+        onModeChange("list");
+        return;
+      }
+      return;
+    }
+    if (isNavAction(action)) {
+      setCursor((c) => applyCursor(c, action, agents.length, viewport));
+      return;
     }
     switch (action.kind) {
       case "close":
@@ -190,18 +175,6 @@ export function AgentsPopup({
         return;
       case "drill":
         if (focused) onModeChange("drill");
-        return;
-      case "moveDown":
-        setCursor((c) => Math.min(agents.length - 1, c + 1));
-        return;
-      case "moveUp":
-        setCursor((c) => Math.max(0, c - 1));
-        return;
-      case "jumpTop":
-        setCursor(0);
-        return;
-      case "jumpBottom":
-        setCursor(Math.max(0, agents.length - 1));
         return;
       case "yank": {
         const a = agents[safeCursor];

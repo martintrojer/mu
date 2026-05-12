@@ -43,7 +43,7 @@ import { dispatchPopupKey } from "../keys.js";
 import { ListRow } from "../list-row.js";
 import { TitledBox } from "../titled-box.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
-import { clampScrollTop } from "./drill.js";
+import { applyCursor, applyScroll, isNavAction } from "./scroll.js";
 import { TaskDetailDrill, renderNotes } from "./task-detail.js";
 import { usePopupViewport } from "./viewport.js";
 
@@ -175,40 +175,23 @@ export function TracksPopup({
       pageDown: key.pageDown,
     });
     if (mode === "drill" && drillSubMode === "task-detail") {
-      // Leaf: notes timeline. j/k/Ctrl-D/U scroll; y yanks `mu task
-      // notes`; Esc/q backs out one level (→ task-list). Enter is
-      // intentionally inert here — notes aren't entities.
+      // Leaf: notes timeline. Nav cluster funnels through
+      // applyScroll; y yanks `mu task notes`; Esc/q backs out one
+      // level (→ task-list). Enter is intentionally inert here —
+      // notes aren't entities.
       const focusedTask = drillTasks[drillCursor];
       // Re-derive line count for clamp on every keystroke. Cheap:
       // listNotes is a SQLite SELECT, and notes are small.
       const notesBody = focusedTask ? renderNotes(db, focusedTask.name, workstream) : "";
       const totalLines = notesBody === "" ? 0 : notesBody.split("\n").length;
+      if (isNavAction(action)) {
+        setTaskDetailScrollTop((s) => applyScroll(s, action, totalLines, viewport));
+        return;
+      }
       switch (action.kind) {
         case "close":
           setDrillSubMode("task-list");
           setTaskDetailScrollTop(0);
-          return;
-        case "moveDown":
-          setTaskDetailScrollTop((s) => clampScrollTop(s + 1, totalLines, viewport));
-          return;
-        case "moveUp":
-          setTaskDetailScrollTop((s) => clampScrollTop(s - 1, totalLines, viewport));
-          return;
-        case "jumpTop":
-          setTaskDetailScrollTop(0);
-          return;
-        case "jumpBottom":
-          setTaskDetailScrollTop(clampScrollTop(totalLines, totalLines, viewport));
-          return;
-        case "pageDown":
-          setTaskDetailScrollTop((s) =>
-            clampScrollTop(s + Math.floor(viewport / (action.half ? 2 : 1)), totalLines, viewport),
-          );
-          return;
-        case "pageUp":
-          setTaskDetailScrollTop((s) =>
-            clampScrollTop(s - Math.floor(viewport / (action.half ? 2 : 1)), totalLines, viewport),
-          );
           return;
         case "yank": {
           if (!focusedTask || !snapshot) return;
@@ -220,7 +203,10 @@ export function TracksPopup({
       }
     }
     if (mode === "drill") {
-      const last = Math.max(0, drillTasks.length - 1);
+      if (isNavAction(action)) {
+        setDrillCursor((c) => applyCursor(c, action, drillTasks.length, viewport));
+        return;
+      }
       switch (action.kind) {
         case "close":
           onModeChange("list");
@@ -236,28 +222,6 @@ export function TracksPopup({
           setDrillSubMode("task-detail");
           return;
         }
-        case "moveDown":
-          setDrillCursor((c) => Math.min(last, c + 1));
-          return;
-        case "moveUp":
-          setDrillCursor((c) => Math.max(0, c - 1));
-          return;
-        case "jumpTop":
-          setDrillCursor(0);
-          return;
-        case "jumpBottom":
-          setDrillCursor(last);
-          return;
-        case "pageDown":
-          setDrillCursor((c) =>
-            clampScrollTop(c + Math.floor(viewport / (action.half ? 2 : 1)), last + 1, 1),
-          );
-          return;
-        case "pageUp":
-          setDrillCursor((c) =>
-            clampScrollTop(c - Math.floor(viewport / (action.half ? 2 : 1)), last + 1, 1),
-          );
-          return;
         case "yank": {
           const t = drillTasks[drillCursor];
           if (!t || !snapshot) return;
@@ -267,6 +231,10 @@ export function TracksPopup({
         default:
           return;
       }
+    }
+    if (isNavAction(action)) {
+      setCursor((c) => applyCursor(c, action, tracks.length, viewport));
+      return;
     }
     switch (action.kind) {
       case "close":
@@ -280,18 +248,6 @@ export function TracksPopup({
           setDrillCursor(0);
           onModeChange("drill");
         }
-        return;
-      case "moveDown":
-        setCursor((c) => Math.min(tracks.length - 1, c + 1));
-        return;
-      case "moveUp":
-        setCursor((c) => Math.max(0, c - 1));
-        return;
-      case "jumpTop":
-        setCursor(0);
-        return;
-      case "jumpBottom":
-        setCursor(Math.max(0, tracks.length - 1));
         return;
       case "yank": {
         const t = tracks[safeCursor];

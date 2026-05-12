@@ -35,7 +35,8 @@ import { dispatchPopupKey } from "../keys.js";
 import { ListRow } from "../list-row.js";
 import { TitledBox } from "../titled-box.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
-import { DrillScrollView, clampScrollTop } from "./drill.js";
+import { DrillScrollView } from "./drill.js";
+import { applyCursor, applyScroll, isNavAction } from "./scroll.js";
 import { usePopupViewport } from "./viewport.js";
 
 export interface PopupProps {
@@ -112,39 +113,20 @@ export function LogPopup({
       pageDown: key.pageDown,
     });
     if (mode === "drill") {
-      // Drill-mode keymap: j/k scroll the payload, Ctrl-D/U / PgUp/PgDn
-      // half- or full-viewport, g/G jump top/bottom, y yanks the
-      // single-event lookup command, Esc/q back to list. Filter /
-      // verb / drill-again are intentionally suppressed in drill —
-      // it's a read-only payload view.
+      // Drill-mode payload view. Nav cluster funnels through
+      // applyScroll; Esc/q backs to list; y yanks single-event
+      // lookup. Filter / verb / drill-again are intentionally
+      // suppressed (read-only view).
       const totalLines =
         focused === undefined || focused.payload === "" ? 0 : focused.payload.split("\n").length;
+      if (isNavAction(action)) {
+        setDetailScrollTop((s) => applyScroll(s, action, totalLines, viewport));
+        return;
+      }
       switch (action.kind) {
         case "close":
           onModeChange("list");
           setDetailScrollTop(0);
-          return;
-        case "moveDown":
-          setDetailScrollTop((s) => clampScrollTop(s + 1, totalLines, viewport));
-          return;
-        case "moveUp":
-          setDetailScrollTop((s) => clampScrollTop(s - 1, totalLines, viewport));
-          return;
-        case "jumpTop":
-          setDetailScrollTop(0);
-          return;
-        case "jumpBottom":
-          setDetailScrollTop(clampScrollTop(totalLines, totalLines, viewport));
-          return;
-        case "pageDown":
-          setDetailScrollTop((s) =>
-            clampScrollTop(s + Math.floor(viewport / (action.half ? 2 : 1)), totalLines, viewport),
-          );
-          return;
-        case "pageUp":
-          setDetailScrollTop((s) =>
-            clampScrollTop(s - Math.floor(viewport / (action.half ? 2 : 1)), totalLines, viewport),
-          );
           return;
         case "yank": {
           if (!focused || !snapshot) return;
@@ -160,6 +142,10 @@ export function LogPopup({
           return;
       }
     }
+    if (isNavAction(action)) {
+      setCursor((c) => applyCursor(c, action, events.length, viewport));
+      return;
+    }
     switch (action.kind) {
       case "close":
         onClose();
@@ -172,18 +158,6 @@ export function LogPopup({
           setDetailScrollTop(0);
           onModeChange("drill");
         }
-        return;
-      case "moveDown":
-        setCursor((c) => Math.min(events.length - 1, c + 1));
-        return;
-      case "moveUp":
-        setCursor((c) => Math.max(0, c - 1));
-        return;
-      case "jumpTop":
-        setCursor(0);
-        return;
-      case "jumpBottom":
-        setCursor(Math.max(0, events.length - 1));
         return;
       case "yank": {
         const e = events[safeCursor];

@@ -67,7 +67,8 @@ import { dispatchPopupKey } from "../keys.js";
 import { ListRow } from "../list-row.js";
 import { TitledBox } from "../titled-box.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
-import { DrillScrollView, clampScrollTop } from "./drill.js";
+import { DrillScrollView } from "./drill.js";
+import { applyCursor, applyScroll, isNavAction } from "./scroll.js";
 import { usePopupViewport } from "./viewport.js";
 
 // Promisified execFile for the show-level git invocation (see
@@ -130,11 +131,14 @@ export function WorkspacesPopup({
   const contentWidth = contentWidthFromCols(termColsForLayout());
   // Per-render viewport from stdout.rows minus the popup chrome budget;
   // see popups/viewport.ts. Replaces the prior hardcoded VIEWPORT = 20.
-  // Workspaces popup only uses the viewport in the DRILL view
-  // (centring + page nav for the commits-since-fork list); the list
-  // view paginates by single-row cursor moves and never consults the
-  // viewport size. Drill subtracts an extra row for its in-body title
-  // indicator (see WORKSPACES_DRILL_CHROME above).
+  // Workspaces popup uses the viewport in the DRILL view (centring
+  // + page nav for the commits-since-fork list); list view
+  // paginates by single-row cursor moves under j/k AND also consumes
+  // the viewport for the centralised Ctrl-D/U / PgUp/PgDn page-step
+  // bindings (per feat_centralize_scroll_navigation). Drill subtracts
+  // an extra row for its in-body title indicator
+  // (see WORKSPACES_DRILL_CHROME above).
+  const viewport = usePopupViewport();
   const drillViewport = usePopupViewport(WORKSPACES_DRILL_CHROME);
   const [cursor, setCursor] = useState(0);
   // Drill-mode state. Owned here (not in <App>) because it's
@@ -306,47 +310,19 @@ export function WorkspacesPopup({
       pageDown: key.pageDown,
     });
     if (inShow) {
-      // Show-mode keymap: j/k scroll the captured diff, Ctrl-D/U /
-      // PgUp/PgDn half- or full-viewport, g/G jump top/bottom, y
-      // yanks `git show <sha>` (the COMMAND, per spec — operator
-      // wants the recipe, not the captured output), Esc/q back to
-      // the commits list. Filter / verb / drill-again are
-      // suppressed in show — it's a read-only diff view.
+      // Show-mode keymap: scroll-based view of the captured diff. Nav
+      // funnels through applyScroll; y yanks `git show <sha>` (the
+      // COMMAND, per spec); Esc/q back to commits. Filter / verb /
+      // drill-again are suppressed (read-only).
       const totalLines = showText === "" ? 0 : showText.split("\n").length;
+      if (isNavAction(action)) {
+        setShowScrollTop((s) => applyScroll(s, action, totalLines, drillViewport));
+        return;
+      }
       switch (action.kind) {
         case "close":
           setShowSha(null);
           setShowScrollTop(0);
-          return;
-        case "moveDown":
-          setShowScrollTop((s) => clampScrollTop(s + 1, totalLines, drillViewport));
-          return;
-        case "moveUp":
-          setShowScrollTop((s) => clampScrollTop(s - 1, totalLines, drillViewport));
-          return;
-        case "jumpTop":
-          setShowScrollTop(0);
-          return;
-        case "jumpBottom":
-          setShowScrollTop(clampScrollTop(totalLines, totalLines, drillViewport));
-          return;
-        case "pageDown":
-          setShowScrollTop((s) =>
-            clampScrollTop(
-              s + Math.floor(drillViewport / (action.half ? 2 : 1)),
-              totalLines,
-              drillViewport,
-            ),
-          );
-          return;
-        case "pageUp":
-          setShowScrollTop((s) =>
-            clampScrollTop(
-              s - Math.floor(drillViewport / (action.half ? 2 : 1)),
-              totalLines,
-              drillViewport,
-            ),
-          );
           return;
         case "yank":
           if (showSha !== null) void yank(`git show ${showSha}`);
@@ -356,12 +332,16 @@ export function WorkspacesPopup({
       }
     }
     if (mode === "drill") {
-      // Drill-mode keymap: j/k scroll the commits list, '/' filters
-      // the commits list, Enter drills ONE MORE LEVEL into the
-      // focused commit's `git show` diff (feat_workspaces_drill_git_show),
-      // Esc/q backs out to the workspace list. Yank in drill mode
-      // yanks `git show <sha>` for the focused commit (most useful
-      // when scanning for cherry-pick targets).
+      // Drill-mode commits list: nav funnels through applyCursor.
+      // '/' filters the commits list, Enter drills ONE MORE LEVEL
+      // into the focused commit's `git show` diff
+      // (feat_workspaces_drill_git_show), Esc/q backs out to the
+      // workspace list. Yank in drill mode yanks `git show <sha>`
+      // for the focused commit (cherry-pick target inspection).
+      if (isNavAction(action)) {
+        setDrillCursor((c) => applyCursor(c, action, filteredCommits.length, drillViewport));
+        return;
+      }
       switch (action.kind) {
         case "close":
           onModeChange("list");
@@ -376,29 +356,6 @@ export function WorkspacesPopup({
           void loadShow(focused.path, c.sha);
           return;
         }
-        case "moveDown":
-          setDrillCursor((c) => Math.min(filteredCommits.length - 1, c + 1));
-          return;
-        case "moveUp":
-          setDrillCursor((c) => Math.max(0, c - 1));
-          return;
-        case "jumpTop":
-          setDrillCursor(0);
-          return;
-        case "jumpBottom":
-          setDrillCursor(Math.max(0, filteredCommits.length - 1));
-          return;
-        case "pageDown":
-          setDrillCursor((c) =>
-            Math.min(
-              filteredCommits.length - 1,
-              c + Math.floor(drillViewport / (action.half ? 2 : 1)),
-            ),
-          );
-          return;
-        case "pageUp":
-          setDrillCursor((c) => Math.max(0, c - Math.floor(drillViewport / (action.half ? 2 : 1))));
-          return;
         case "yank": {
           const c = filteredCommits[safeDrillCursor];
           if (!c) return;
@@ -412,6 +369,10 @@ export function WorkspacesPopup({
           return;
       }
     }
+    if (isNavAction(action)) {
+      setCursor((c) => applyCursor(c, action, workspaces.length, viewport));
+      return;
+    }
     switch (action.kind) {
       case "close":
         onClose();
@@ -421,18 +382,6 @@ export function WorkspacesPopup({
         return;
       case "drill":
         if (focused) onModeChange("drill");
-        return;
-      case "moveDown":
-        setCursor((c) => Math.min(workspaces.length - 1, c + 1));
-        return;
-      case "moveUp":
-        setCursor((c) => Math.max(0, c - 1));
-        return;
-      case "jumpTop":
-        setCursor(0);
-        return;
-      case "jumpBottom":
-        setCursor(Math.max(0, workspaces.length - 1));
         return;
       case "yank": {
         const w = workspaces[safeCursor];

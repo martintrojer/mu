@@ -38,7 +38,7 @@ import { dispatchPopupKey } from "../keys.js";
 import { ListRow } from "../list-row.js";
 import { TitledBox } from "../titled-box.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
-import { clampScrollTop } from "./drill.js";
+import { applyCursor, applyScroll, isNavAction } from "./scroll.js";
 import { TaskDetailDrill, renderNotes } from "./task-detail.js";
 import { usePopupViewport } from "./viewport.js";
 
@@ -134,32 +134,14 @@ export function RecentPopup({
     });
     if (mode === "drill") {
       const totalLines = notesText === "" ? 0 : notesText.split("\n").length;
+      if (isNavAction(action)) {
+        setScrollTop((s) => applyScroll(s, action, totalLines, viewport));
+        return;
+      }
       switch (action.kind) {
         case "close":
           onModeChange("list");
           setScrollTop(0);
-          return;
-        case "moveDown":
-          setScrollTop((s) => clampScrollTop(s + 1, totalLines, viewport));
-          return;
-        case "moveUp":
-          setScrollTop((s) => clampScrollTop(s - 1, totalLines, viewport));
-          return;
-        case "jumpTop":
-          setScrollTop(0);
-          return;
-        case "jumpBottom":
-          setScrollTop(clampScrollTop(totalLines, totalLines, viewport));
-          return;
-        case "pageDown":
-          setScrollTop((s) =>
-            clampScrollTop(s + Math.floor(viewport / (action.half ? 2 : 1)), totalLines, viewport),
-          );
-          return;
-        case "pageUp":
-          setScrollTop((s) =>
-            clampScrollTop(s - Math.floor(viewport / (action.half ? 2 : 1)), totalLines, viewport),
-          );
           return;
         case "yank": {
           if (!focused || !snapshot) return;
@@ -169,6 +151,10 @@ export function RecentPopup({
         default:
           return;
       }
+    }
+    if (isNavAction(action)) {
+      setCursor((c) => applyCursor(c, action, tasks.length, viewport));
+      return;
     }
     switch (action.kind) {
       case "close":
@@ -182,18 +168,6 @@ export function RecentPopup({
           setScrollTop(0);
           onModeChange("drill");
         }
-        return;
-      case "moveDown":
-        setCursor((c) => Math.min(tasks.length - 1, c + 1));
-        return;
-      case "moveUp":
-        setCursor((c) => Math.max(0, c - 1));
-        return;
-      case "jumpTop":
-        setCursor(0);
-        return;
-      case "jumpBottom":
-        setCursor(Math.max(0, tasks.length - 1));
         return;
       case "yank": {
         const t = tasks[safeCursor];
