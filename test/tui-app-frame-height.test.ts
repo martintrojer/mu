@@ -70,3 +70,39 @@ describe("app.tsx root <Box> frame-height pin (anti-ghosting)", () => {
     expect(popupBranch).not.toMatch(/<Box\s+flexGrow=\{1\}\s*\/>/);
   });
 });
+
+// Layer-2 regression for bug_tui_tab_switch_stale_render: the
+// multi-ws TabStrip adds a row of vertical content. Without
+// overflow="hidden" on the height={rows}-pinned root Box, ink
+// emits any overflowing rows past the terminal bottom, the
+// terminal scrolls, and the topmost card's top border vanishes
+// off the top edge. Clipping at the root keeps the frame bounded
+// inside the viewport, so nothing escapes above row 1.
+describe("app.tsx root <Box> overflow clip (anti-scroll-off-top)", () => {
+  it('dashboard root <Box> sets overflow="hidden"', () => {
+    expect(dashboardBranch).toMatch(/<Box\b[^>]*\boverflow="hidden"/);
+  });
+
+  it('help root <Box> sets overflow="hidden"', () => {
+    expect(helpBranch).toMatch(/<Box\b[^>]*\boverflow="hidden"/);
+  });
+
+  it('popup root <Box> sets overflow="hidden"', () => {
+    expect(popupBranch).toMatch(/<Box\b[^>]*\boverflow="hidden"/);
+  });
+
+  it("TabStrip is INSIDE the dashboard's height-pinned + clipping root", () => {
+    // Anchored on the dashboard branch ONLY (the TabStrip MUST not
+    // be promoted above <Box height={rows} overflow="hidden">; if it
+    // were, flexbox wouldn't account for its row when sizing the
+    // cards below it, and the multi-ws frame would still scroll the
+    // top border off the viewport).
+    const root = dashboardBranch.indexOf(
+      '<Box flexDirection="column" height={rows} overflow="hidden">',
+    );
+    const strip = dashboardBranch.indexOf("<TabStrip");
+    expect(root, "dashboard root box not found").toBeGreaterThanOrEqual(0);
+    expect(strip, "TabStrip not found in dashboard branch").toBeGreaterThanOrEqual(0);
+    expect(strip).toBeGreaterThan(root);
+  });
+});

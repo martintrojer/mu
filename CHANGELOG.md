@@ -403,6 +403,22 @@ is opt-in via the new `--tui` flag.
   `{"  "}` (2-space) gutter. Extra unit test in
   `test/tui-columns.test.ts` asserts `renderRow(...).join("  ")` ≤
   `totalWidth` for a synthetic protect+clip mix.
+- **TUI multi-ws frame no longer eats the topmost card's top border**
+  (bug_tui_tab_switch_stale_render, layer 2). When the multi-ws
+  TabStrip rendered above the cards, the strip's 1-row consumption
+  pushed total content past the height-pinned root Box's `rows`
+  budget; ink emitted the overflow past the terminal bottom, the
+  terminal scrolled, and the topmost card's `╭─ ¹ Agents … ─╮`
+  top border vanished off the top edge — the user saw what looked
+  like a broken Agents card with naked body rows. `<Box height={rows}>`
+  in all three frame branches (dashboard / popup / help) now also
+  carries `overflow="hidden"`, instructing ink to clip children to
+  the box's computed bounds rather than overrun. Single-ws TUI is
+  byte-identical (the strip returns null, total height was already
+  ≤ rows). New regression coverage in `test/tui-app-frame-height.test.ts`
+  asserts every branch's root Box carries `overflow="hidden"` and
+  that TabStrip lives INSIDE the height-pinned + clipping root (so
+  flexbox accounts for its 1-row height when sizing the cards).
 - **TUI multi-ws Tab no longer renders a mixed frame** (bug_tui_tab_switch_stale_render,
   layer 1). On `mu state --tui -w A,B`, pressing `Tab` flipped the
   TabStrip to ws B but the cards rendered ws A's data for one tick

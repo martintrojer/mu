@@ -279,9 +279,17 @@ export function App({ db, workstreams }: AppProps): JSX.Element {
   // frame on card-toggle / branch-swap (see
   // bug_tui_render_ghosting_v2). The spacer also bottom-sticks the
   // status bar so it doesn't float up against a shorter body.
+  //
+  // overflow="hidden" instructs ink to CLIP children to the box's
+  // computed bounds rather than letting them overrun and emit
+  // escape sequences past row N (which scrolls the terminal up and
+  // chops the topmost row — see bug_tui_tab_switch_stale_render
+  // layer 2: the multi-ws TabStrip pushed total content to rows+1,
+  // and without clipping the terminal scrolled, eating the topmost
+  // card's top border).
   if (helpOpen) {
     return (
-      <Box flexDirection="column" height={rows}>
+      <Box flexDirection="column" height={rows} overflow="hidden">
         <Help />
         <Box flexGrow={1} />
         <StatusBar
@@ -305,7 +313,7 @@ export function App({ db, workstreams }: AppProps): JSX.Element {
   // when swapping between popup ↔ dashboard ↔ help.
   if (popup !== null) {
     return (
-      <Box flexDirection="column" height={rows}>
+      <Box flexDirection="column" height={rows} overflow="hidden">
         {renderPopup(popup)}
         <StatusBar
           mode={popupFilterEditing ? "popup-filter" : "popup"}
@@ -321,11 +329,22 @@ export function App({ db, workstreams }: AppProps): JSX.Element {
   }
 
   // Dashboard.
+  //
+  // overflow="hidden" pinned at the root: when total content
+  // exceeds `rows` (e.g. the multi-ws TabStrip adds a row that
+  // pushes the sum to rows+1), ink would otherwise emit the
+  // overflowing rows past the terminal bottom, scrolling the top
+  // off-screen — the user sees the topmost card lose its top
+  // border. Clipping inside the height-pinned box keeps the frame
+  // bounded to the terminal viewport so nothing is lost above row 1.
+  // (bug_tui_tab_switch_stale_render layer 2.)
   return (
-    <Box flexDirection="column" height={rows}>
+    <Box flexDirection="column" height={rows} overflow="hidden">
       {/* Tab strip — null when workstreams.length === 1, so the
           single-ws layout is byte-identical to the pre-multi-ws
-          frame. */}
+          frame. The strip lives INSIDE the height-pinned + clipping
+          parent so flexbox accounts for its 1-row height when
+          allocating space to the cards below it. */}
       <TabStrip workstreams={workstreams} active={safeActive} />
       {snap.error !== null && (
         <Box borderStyle="round" borderColor="red" paddingX={1}>
