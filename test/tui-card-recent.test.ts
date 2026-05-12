@@ -1,12 +1,5 @@
 // Tests for src/cli/tui/cards/recent.tsx (feat_card_8_recent,
-// workstream `tui-impl`). ink-testing-library is not installable in
-// this environment so we lean on:
-//   - calling the FC as a plain function (catches import-graph drift),
-//   - asserting on the pure helpers (glyphFor, ageMs, formatWhen,
-//     formatSubtitle).
-//
-// Mirrors test/tui-card-inprogress.test.ts and
-// test/tui-card-blocked.test.ts.
+// workstream `tui-impl`).
 
 import { describe, expect, it } from "vitest";
 import {
@@ -16,11 +9,17 @@ import {
   formatWhen,
   glyphFor,
 } from "../src/cli/tui/cards/recent.js";
+import type { WorkstreamSnapshot } from "../src/state.js";
 import type { TaskRow } from "../src/tasks.js";
+import { expectTextAbsent, expectTextOnce, renderCardToText } from "./_card-render.js";
 
-const EMPTY_SNAPSHOT = {
+const EMPTY_SNAPSHOT: WorkstreamSnapshot = {
   workstreamName: "demo",
-  view: { agents: [], orphans: [], report: { reaped: [], pruned: [] } },
+  view: {
+    agents: [],
+    orphans: [],
+    report: { prunedGhosts: 0, statusChanges: 0, orphans: [], mode: "status-only" },
+  },
   tracks: [],
   ready: [],
   inProgress: [],
@@ -29,6 +28,7 @@ const EMPTY_SNAPSHOT = {
   workspaces: [],
   workspaceOrphans: [],
   recent: [],
+  doctor: null,
 };
 
 function task(over: Partial<TaskRow> = {}): TaskRow {
@@ -51,28 +51,53 @@ describe("RecentCard", () => {
     expect(typeof RecentCard).toBe("function");
   });
 
-  it("renders a placeholder for null snapshot (loading state)", () => {
-    const result = RecentCard({ snapshot: null });
-    expect(result).toBeTruthy();
+  it("renders the loading title row", () => {
+    const text = renderCardToText(RecentCard({ snapshot: null }));
+    expect(text).toContain("Recent");
+    expect(text).toContain("loading…");
   });
 
-  it("renders the empty-state hint when no recently-closed tasks exist", () => {
-    const result = RecentCard({ snapshot: EMPTY_SNAPSHOT });
-    expect(result).toBeTruthy();
+  it("renders the empty-state hint text", () => {
+    const text = renderCardToText(RecentCard({ snapshot: EMPTY_SNAPSHOT }));
+    expect(text).toContain("Recent");
+    expect(text).toContain("(none recently closed)");
   });
 
-  it("renders rows for a populated recentClosed list", () => {
-    const result = RecentCard({
-      snapshot: {
-        ...EMPTY_SNAPSHOT,
-        recentClosed: [
-          task({ name: "feat_card_5", title: "FEAT: Card 5 — Workspaces" }),
-          task({ name: "feat_card_6", title: "FEAT: Card 6 — In-progress" }),
-          task({ name: "feat_card_7", title: "FEAT: Card 7 — Blocked" }),
-        ],
-      },
-    });
-    expect(result).toBeTruthy();
+  it("renders title subtitle plus every task name/status/glyph exactly once", () => {
+    const snapshot: WorkstreamSnapshot = {
+      ...EMPTY_SNAPSHOT,
+      recentClosed: [
+        task({ name: "feat_card_5", title: "FEAT: Card 5 — Workspaces" }),
+        task({ name: "feat_card_6", title: "FEAT: Card 6 — In-progress" }),
+        task({ name: "feat_card_7", title: "FEAT: Card 7 — Blocked" }),
+      ],
+    };
+
+    const text = renderCardToText(RecentCard({ snapshot }));
+    expect(text).toContain("Recent");
+    expect(text).toContain("3 · last");
+    for (const [name, title] of [
+      ["feat_card_5", "FEAT: Card 5 — Workspaces"],
+      ["feat_card_6", "FEAT: Card 6 — In-progress"],
+      ["feat_card_7", "FEAT: Card 7 — Blocked"],
+    ] as const) {
+      expectTextOnce(text, name);
+      expectTextOnce(text, title);
+    }
+    expect(text.split("CLOSED").length - 1).toBe(3);
+    expect(text.split("✓").length - 1).toBe(3);
+  });
+
+  it("truncates at ROW_LIMIT with the bottomLabel '+N more · Shift+8'", () => {
+    const recentClosed = Array.from({ length: 10 }, (_, i) =>
+      task({ name: `recent_${i + 1}`, title: `Recent ${i + 1}` }),
+    );
+    const text = renderCardToText(RecentCard({ snapshot: { ...EMPTY_SNAPSHOT, recentClosed } }));
+
+    expect(text).toContain("+2 more · Shift+8");
+    for (let i = 1; i <= 8; i++) expectTextOnce(text, `recent_${i}`);
+    expectTextAbsent(text, "recent_9");
+    expectTextAbsent(text, "recent_10");
   });
 });
 
@@ -85,7 +110,6 @@ describe("RecentCard pure helpers", () => {
     expect(typeof g).toBe("string");
     expect(g.length).toBeGreaterThan(0);
     expect(g.length).toBeLessThanOrEqual(4);
-    // Pin the actual codepoint — heavy check U+2713.
     expect(g).toBe("✓");
   });
 
@@ -97,7 +121,6 @@ describe("RecentCard pure helpers", () => {
     const t = task({ updatedAt: "2026-05-11T00:00:00Z" });
     const now = Date.parse("2026-05-11T00:01:30Z"); // +90s
     expect(ageMs(t, now)).toBe(90_000);
-    // future updatedAt (clock skew): clamp to 0
     expect(ageMs(t, Date.parse("2026-05-10T23:59:00Z"))).toBe(0);
   });
 

@@ -1,12 +1,5 @@
 // Tests for src/cli/tui/cards/doctor.tsx (feat_card_9_doctor,
-// workstream `tui-impl`). ink-testing-library is not installable in
-// this environment so we lean on:
-//   - calling the FC as a plain function (catches import-graph drift),
-//   - asserting on the pure helpers (glyphFor, colorForStatus,
-//     formatSubtitle).
-//
-// Mirrors test/tui-card-recent.test.ts and
-// test/tui-card-workspaces.test.ts.
+// workstream `tui-impl`).
 
 import { describe, expect, it } from "vitest";
 import {
@@ -16,6 +9,8 @@ import {
   glyphFor,
 } from "../src/cli/tui/cards/doctor.js";
 import type { DoctorCheck, DoctorSummary } from "../src/doctor-summary.js";
+import type { WorkstreamSnapshot } from "../src/state.js";
+import { expectTextAbsent, expectTextOnce, renderCardToText } from "./_card-render.js";
 
 const EMPTY_VIEW = {
   agents: [],
@@ -46,7 +41,7 @@ const PROBLEMS_DOCTOR: DoctorSummary = {
   problemCount: 3,
 };
 
-function snap(doctor: DoctorSummary | null) {
+function snap(doctor: DoctorSummary | null): WorkstreamSnapshot {
   return {
     workstreamName: "demo",
     view: EMPTY_VIEW,
@@ -67,24 +62,54 @@ describe("DoctorCard", () => {
     expect(typeof DoctorCard).toBe("function");
   });
 
-  it("renders a placeholder for null snapshot (loading state)", () => {
-    const result = DoctorCard({ snapshot: null });
-    expect(result).toBeTruthy();
+  it("renders the loading title row for null snapshot and missing doctor summary", () => {
+    for (const snapshot of [null, snap(null)] as const) {
+      const text = renderCardToText(DoctorCard({ snapshot }));
+      expect(text).toContain("Doctor");
+      expect(text).toContain("loading…");
+    }
   });
 
-  it("renders a placeholder when snapshot.doctor is null (withDoctor not requested)", () => {
-    const result = DoctorCard({ snapshot: snap(null) });
-    expect(result).toBeTruthy();
+  it("renders title subtitle and all-healthy line when problemCount === 0", () => {
+    const text = renderCardToText(DoctorCard({ snapshot: snap(HEALTHY_DOCTOR) }));
+    expect(text).toContain("Doctor");
+    expect(text).toContain("all healthy");
+    expect(text).toContain("✓");
+    expect(text).toContain("4 checks");
   });
 
-  it("renders the all-healthy line when problemCount === 0", () => {
-    const result = DoctorCard({ snapshot: snap(HEALTHY_DOCTOR) });
-    expect(result).toBeTruthy();
+  it("renders title subtitle plus every non-OK check and glyph exactly once", () => {
+    const text = renderCardToText(DoctorCard({ snapshot: snap(PROBLEMS_DOCTOR) }));
+    expect(text).toContain("Doctor");
+    expect(text).toContain("3");
+    for (const [name, detail] of [
+      ["journal_mode", "delete (expected wal)"],
+      ["agents", "2 ghost panes; run `mu agent list`"],
+      ["workspaces", "1 orphan dir; run `mu workspace orphans`"],
+    ] as const) {
+      expectTextOnce(text, name);
+      expectTextOnce(text, detail);
+    }
+    expect(text.split("warn").length - 1).toBe(2);
+    expectTextOnce(text, "fail");
+    expectTextOnce(text, "✗");
+    expect(text.split("⚠").length - 1).toBe(2);
+    expectTextAbsent(text, "schema_version");
+    expectTextAbsent(text, "foreign_keys");
   });
 
-  it("renders rows for a populated problems list", () => {
-    const result = DoctorCard({ snapshot: snap(PROBLEMS_DOCTOR) });
-    expect(result).toBeTruthy();
+  it("truncates at ROW_LIMIT with the bottomLabel '+N more · Shift+9'", () => {
+    const checks = Array.from({ length: 10 }, (_, i): DoctorCheck => {
+      const n = i + 1;
+      return { name: `check_${n}`, status: n % 2 === 0 ? "fail" : "warn", detail: `detail ${n}` };
+    });
+    const doctor: DoctorSummary = { checks, problemCount: checks.length };
+    const text = renderCardToText(DoctorCard({ snapshot: snap(doctor) }));
+
+    expect(text).toContain("+2 more · Shift+9");
+    for (let i = 1; i <= 8; i++) expectTextOnce(text, `check_${i}`);
+    expectTextAbsent(text, "check_9");
+    expectTextAbsent(text, "check_10");
   });
 });
 
@@ -125,9 +150,6 @@ describe("DoctorCard pure helpers", () => {
   });
 
   it("DoctorCheck shape stays compatible with the SDK type", () => {
-    // Type-level smoke: build a check inline and ensure it's
-    // assignable. If src/doctor-summary.ts ever renames a field,
-    // this fails at compile time.
     const c: DoctorCheck = { name: "schema", status: "ok", detail: "ok" };
     expect(c.name).toBe("schema");
   });

@@ -1,14 +1,10 @@
 // Tests for src/cli/tui/cards/blocked.tsx (feat_card_7_blocked,
-// workstream `tui-impl`). ink-testing-library is not installable in
-// this environment so we lean on:
-//   - calling the FC as a plain function (catches import-graph drift),
-//   - asserting on the pure helpers (glyphFor, stillGating,
-//     pickTopBlocker, formatSubtitle).
-//
-// Mirrors test/tui-card-inprogress.test.ts and
-// test/tui-card-workspaces.test.ts.
+// workstream `tui-impl`).
 
-import { describe, expect, it } from "vitest";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   BlockedCard,
   formatSubtitle,
@@ -16,12 +12,18 @@ import {
   pickTopBlocker,
   stillGating,
 } from "../src/cli/tui/cards/blocked.js";
-import type { Db } from "../src/db.js";
-import type { TaskEdgeWithStatus } from "../src/tasks.js";
+import { type Db, openDb } from "../src/db.js";
+import type { WorkstreamSnapshot } from "../src/state.js";
+import { type TaskEdgeWithStatus, type TaskRow, addBlockEdge, addTask } from "../src/tasks.js";
+import { expectTextAbsent, expectTextOnce, renderCardToText } from "./_card-render.js";
 
-const EMPTY_SNAPSHOT = {
+const EMPTY_SNAPSHOT: WorkstreamSnapshot = {
   workstreamName: "demo",
-  view: { agents: [], orphans: [], report: { reaped: [], pruned: [] } },
+  view: {
+    agents: [],
+    orphans: [],
+    report: { prunedGhosts: 0, statusChanges: 0, orphans: [], mode: "status-only" },
+  },
   tracks: [],
   ready: [],
   inProgress: [],
@@ -30,33 +32,136 @@ const EMPTY_SNAPSHOT = {
   workspaces: [],
   workspaceOrphans: [],
   recent: [],
+  doctor: null,
 };
 
-// Stub Db that returns a controllable per-task blocker list when the
-// card calls getTaskEdgesWithStatus(db, name, ws). We don't need to
-// actually plumb getTaskEdgesWithStatus through a stub: the FC is
-// allowed to call into the SDK, but here we exercise it ONLY for the
-// null-snapshot + empty-list branches (which never touch db). The
-// populated-rows branch is exercised via the pure helpers below.
-const STUB_DB = null as unknown as Db;
+function task(over: Partial<TaskRow> = {}): TaskRow {
+  return {
+    name: "review_x",
+    workstreamName: "demo",
+    title: "Review X",
+    status: "OPEN",
+    impact: 75,
+    effortDays: 1,
+    ownerName: null,
+    createdAt: "2026-05-11T00:00:00Z",
+    updatedAt: "2026-05-11T00:00:00Z",
+    ...over,
+  };
+}
+
+let openDbs: Db[] = [];
+
+afterEach(() => {
+  for (const db of openDbs) db.close();
+  openDbs = [];
+});
+
+function fixtureDb(): Db {
+  const dir = mkdtempSync(join(tmpdir(), "mu-tui-card-blocked-"));
+  const db = openDb({ path: join(dir, "mu.db") });
+  openDbs.push(db);
+  return db;
+}
+
+function addBlockedFixture(db: Db): void {
+  addTask(db, {
+    workstream: "demo",
+    localId: "design_x",
+    title: "Design X",
+    impact: 20,
+    effortDays: 1,
+  });
+  addTask(db, {
+    workstream: "demo",
+    localId: "spec_x",
+    title: "Spec X",
+    impact: 20,
+    effortDays: 1,
+  });
+  for (const id of ["review_x", "cherry_x", "ship_x"] as const) {
+    addTask(db, {
+      workstream: "demo",
+      localId: id,
+      title: id,
+      impact: 75,
+      effortDays: 1,
+    });
+    addBlockEdge(db, "demo", id, "design_x");
+  }
+  addBlockEdge(db, "demo", "review_x", "spec_x");
+}
 
 describe("BlockedCard", () => {
   it("is exported as a function", () => {
     expect(typeof BlockedCard).toBe("function");
   });
 
-  it("renders a placeholder for null snapshot (loading state)", () => {
-    const result = BlockedCard({ snapshot: null, db: STUB_DB, workstream: "demo" });
-    expect(result).toBeTruthy();
+  it("renders the loading title row", () => {
+    const text = renderCardToText(
+      BlockedCard({ snapshot: null, db: fixtureDb(), workstream: "demo" }),
+    );
+    expect(text).toContain("Blocked");
+    expect(text).toContain("loading…");
   });
 
-  it("renders the empty-state hint when no blocked tasks exist", () => {
-    const result = BlockedCard({
-      snapshot: EMPTY_SNAPSHOT,
-      db: STUB_DB,
+  it("renders the empty-state hint text", () => {
+    const text = renderCardToText(
+      BlockedCard({ snapshot: EMPTY_SNAPSHOT, db: fixtureDb(), workstream: "demo" }),
+    );
+    expect(text).toContain("Blocked");
+    expect(text).toContain("(none blocked)");
+  });
+
+  it("renders title subtitle plus every task name, ROI label, and glyph exactly once", () => {
+    const db = fixtureDb();
+    addBlockedFixture(db);
+    const blocked = [
+      task({ name: "review_x", title: "Review X", impact: 75, effortDays: 1 }),
+      task({ name: "cherry_x", title: "Cherry X", impact: 40, effortDays: 0.5 }),
+      task({ name: "ship_x", title: "Ship X", impact: 30, effortDays: 1 }),
+    ];
+    const text = renderCardToText(
+      BlockedCard({ snapshot: { ...EMPTY_SNAPSHOT, blocked }, db, workstream: "demo" }),
+    );
+
+    expect(text).toContain("Blocked");
+    expect(text).toContain("3 · top blocker: design_x");
+    for (const [name, title, roi] of [
+      ["review_x", "Review X", "75"],
+      ["cherry_x", "Cherry X", "80"],
+      ["ship_x", "Ship X", "30"],
+    ] as const) {
+      expectTextOnce(text, name);
+      expectTextOnce(text, title);
+      expectTextOnce(text, roi);
+    }
+    expect(text.split("⛓").length - 1).toBe(3);
+  });
+
+  it("truncates at ROW_LIMIT with the bottomLabel '+N more · Shift+7'", () => {
+    const db = fixtureDb();
+    addTask(db, {
       workstream: "demo",
+      localId: "blocker",
+      title: "Blocker",
+      impact: 20,
+      effortDays: 1,
     });
-    expect(result).toBeTruthy();
+    const blocked = Array.from({ length: 10 }, (_, i) => {
+      const name = `blocked_${i + 1}`;
+      addTask(db, { workstream: "demo", localId: name, title: name, impact: 50, effortDays: 1 });
+      addBlockEdge(db, "demo", name, "blocker");
+      return task({ name, title: `Blocked ${i + 1}` });
+    });
+    const text = renderCardToText(
+      BlockedCard({ snapshot: { ...EMPTY_SNAPSHOT, blocked }, db, workstream: "demo" }),
+    );
+
+    expect(text).toContain("+2 more · Shift+7");
+    for (let i = 1; i <= 8; i++) expectTextOnce(text, `blocked_${i}`);
+    expectTextAbsent(text, "blocked_9");
+    expectTextAbsent(text, "blocked_10");
   });
 });
 
@@ -69,7 +174,6 @@ describe("BlockedCard pure helpers", () => {
     expect(typeof g).toBe("string");
     expect(g.length).toBeGreaterThan(0);
     expect(g.length).toBeLessThanOrEqual(4);
-    // Pin the actual codepoint — chain link U+26D3.
     expect(g).toBe("⛓");
   });
 
@@ -115,7 +219,6 @@ describe("BlockedCard pure helpers", () => {
       [{ name: "alpha", status: "OPEN" }],
       [{ name: "mu", status: "OPEN" }],
     ];
-    // All three appear once → alphabetic min wins.
     expect(pickTopBlocker(lists)).toBe("alpha");
   });
 

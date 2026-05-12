@@ -416,6 +416,13 @@ is opt-in via the new `--tui` flag.
   pins the helpers directly so a future drift inside a card can't
   quietly reintroduce the duplication this commit removed.
 
+- **Behavioural card-render tests** (review_tests_card_truthy_assertions).
+  The nine `test/tui-card-*.test.ts` files now use a shared
+  `renderCardToText()` JSX-walker helper (same recursion pattern as
+  the status-bar and tab-strip tests) instead of truthy JSX smoke
+  assertions, pinning card titles/subtitles, populated row cells,
+  empty-state hints, and `+N more · Shift+X` truncation labels.
+
 - **Post-v0.4 audit pass** (review_tui_code_and_tests). Ran the
   canonical code-reviewer + test-reviewer skills across the entire
   TUI surface (`src/cli/tui/**` + `test/tui-*.test.ts`). 26 findings

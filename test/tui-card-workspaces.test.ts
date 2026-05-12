@@ -1,10 +1,5 @@
 // Tests for src/cli/tui/cards/workspaces.tsx (feat_card_5_workspaces,
-// workstream `tui-impl`). ink-testing-library is not installable in
-// this environment so we lean on:
-//   - calling the FC as a plain function (catches import-graph drift),
-//   - asserting on the pure helpers (glyph / colour / subtitle).
-//
-// Mirrors the test pattern of test/tui-card-agents.test.ts.
+// workstream `tui-impl`).
 
 import { describe, expect, it } from "vitest";
 import {
@@ -16,11 +11,17 @@ import {
   glyphFor,
   isStale,
 } from "../src/cli/tui/cards/workspaces.js";
+import type { WorkstreamSnapshot } from "../src/state.js";
 import type { WorkspaceRow } from "../src/workspace.js";
+import { expectTextAbsent, expectTextOnce, renderCardToText } from "./_card-render.js";
 
-const EMPTY_SNAPSHOT = {
+const EMPTY_SNAPSHOT: WorkstreamSnapshot = {
   workstreamName: "demo",
-  view: { agents: [], orphans: [], report: { reaped: [], pruned: [] } },
+  view: {
+    agents: [],
+    orphans: [],
+    report: { prunedGhosts: 0, statusChanges: 0, orphans: [], mode: "status-only" },
+  },
   tracks: [],
   ready: [],
   inProgress: [],
@@ -29,6 +30,7 @@ const EMPTY_SNAPSHOT = {
   workspaces: [],
   workspaceOrphans: [],
   recent: [],
+  doctor: null,
 };
 
 function row(over: Partial<WorkspaceRow> = {}): WorkspaceRow {
@@ -48,28 +50,47 @@ describe("WorkspacesCard", () => {
     expect(typeof WorkspacesCard).toBe("function");
   });
 
-  it("renders a placeholder for null snapshot (loading state)", () => {
-    const result = WorkspacesCard({ snapshot: null });
-    expect(result).toBeTruthy();
+  it("renders the loading title row", () => {
+    const text = renderCardToText(WorkspacesCard({ snapshot: null }));
+    expect(text).toContain("Workspaces");
+    expect(text).toContain("loading…");
   });
 
-  it("renders the empty-state hint when no workspaces exist", () => {
-    const result = WorkspacesCard({ snapshot: EMPTY_SNAPSHOT });
-    expect(result).toBeTruthy();
+  it("renders the empty-state hint text", () => {
+    const text = renderCardToText(WorkspacesCard({ snapshot: EMPTY_SNAPSHOT }));
+    expect(text).toContain("Workspaces");
+    expect(text).toContain("(no workspaces) try `mu agent spawn worker-1 -w demo --workspace`");
   });
 
-  it("renders rows for a populated workspaces list", () => {
-    const result = WorkspacesCard({
-      snapshot: {
-        ...EMPTY_SNAPSHOT,
-        workspaces: [
-          row({ agentName: "worker-1", commitsBehindMain: 1, dirty: false }),
-          row({ agentName: "worker-2", commitsBehindMain: 12, dirty: false }),
-          row({ agentName: "worker-3", commitsBehindMain: 0, dirty: true }),
-        ],
-      },
-    });
-    expect(result).toBeTruthy();
+  it("renders title subtitle plus every workspace agent and glyph exactly once", () => {
+    const workspaces = [
+      row({ agentName: "worker-1", commitsBehindMain: 1, dirty: false }),
+      row({ agentName: "worker-2", commitsBehindMain: 12, dirty: false, parentRef: "def456" }),
+      row({ agentName: "worker-3", commitsBehindMain: 0, dirty: true, parentRef: null }),
+    ];
+
+    const text = renderCardToText(WorkspacesCard({ snapshot: { ...EMPTY_SNAPSHOT, workspaces } }));
+    expect(text).toContain("Workspaces");
+    expect(text).toContain("3 · 1 stale · 1 dirty");
+    for (const agent of ["worker-1", "worker-2", "worker-3"] as const) {
+      expectTextOnce(text, agent);
+    }
+    expect(text).toContain("12");
+    expectTextOnce(text, "★");
+    expectTextOnce(text, "ⓘ");
+    expectTextOnce(text, "✓");
+  });
+
+  it("truncates at ROW_LIMIT with the bottomLabel '+N more · Shift+5'", () => {
+    const workspaces = Array.from({ length: 10 }, (_, i) =>
+      row({ agentName: `worker-${i + 1}`, commitsBehindMain: i }),
+    );
+    const text = renderCardToText(WorkspacesCard({ snapshot: { ...EMPTY_SNAPSHOT, workspaces } }));
+
+    expect(text).toContain("+2 more · Shift+5");
+    for (let i = 1; i <= 8; i++) expectTextOnce(text, `worker-${i}`);
+    expectTextAbsent(text, "worker-9");
+    expectTextAbsent(text, "worker-10");
   });
 });
 
@@ -103,17 +124,11 @@ describe("WorkspacesCard pure helpers", () => {
   });
 
   it("glyphFor: dirty wins over stale wins over clean", () => {
-    // dirty + stale → dirty (★)
     expect(glyphFor(row({ dirty: true, commitsBehindMain: 50 }))).toBe("★");
-    // dirty + fresh → dirty
     expect(glyphFor(row({ dirty: true, commitsBehindMain: 0 }))).toBe("★");
-    // not-dirty + stale → ⓘ
     expect(glyphFor(row({ dirty: false, commitsBehindMain: 12 }))).toBe("ⓘ");
-    // not-dirty + fresh → ✓
     expect(glyphFor(row({ dirty: false, commitsBehindMain: 0 }))).toBe("✓");
-    // unknown dirty + fresh → ✓ (we still paint clean when staleness is fresh)
     expect(glyphFor(row({ dirty: undefined, commitsBehindMain: 0 }))).toBe("✓");
-    // unknown dirty + stale → ⓘ
     expect(glyphFor(row({ dirty: null, commitsBehindMain: 50 }))).toBe("ⓘ");
   });
 

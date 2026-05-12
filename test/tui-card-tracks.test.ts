@@ -2,10 +2,18 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { TracksCard } from "../src/cli/tui/cards/tracks.js";
+import type { WorkstreamSnapshot } from "../src/state.js";
+import type { TaskRow } from "../src/tasks.js";
+import type { Track } from "../src/tracks.js";
+import { expectTextAbsent, expectTextOnce, renderCardToText } from "./_card-render.js";
 
-const EMPTY_SNAPSHOT = {
+const EMPTY_SNAPSHOT: WorkstreamSnapshot = {
   workstreamName: "demo",
-  view: { agents: [], orphans: [], report: { reaped: [], pruned: [] } },
+  view: {
+    agents: [],
+    orphans: [],
+    report: { prunedGhosts: 0, statusChanges: 0, orphans: [], mode: "status-only" },
+  },
   tracks: [],
   ready: [],
   inProgress: [],
@@ -14,19 +22,83 @@ const EMPTY_SNAPSHOT = {
   workspaces: [],
   workspaceOrphans: [],
   recent: [],
+  doctor: null,
 };
+
+function task(name: string): TaskRow {
+  return {
+    name,
+    workstreamName: "demo",
+    title: name,
+    status: "OPEN",
+    impact: 50,
+    effortDays: 1,
+    ownerName: null,
+    createdAt: "2026-05-11T00:00:00Z",
+    updatedAt: "2026-05-11T00:00:00Z",
+  };
+}
+
+function track(rootNames: readonly string[], over: Partial<Track> = {}): Track {
+  return {
+    roots: rootNames.map(task),
+    taskIds: new Set(rootNames),
+    readyCount: 1,
+    ...over,
+  };
+}
 
 describe("TracksCard", () => {
   it("is exported as a function", () => {
     expect(typeof TracksCard).toBe("function");
   });
 
-  it("renders placeholder for null snapshot", () => {
-    expect(TracksCard({ snapshot: null })).toBeTruthy();
+  it("renders the loading title row", () => {
+    const text = renderCardToText(TracksCard({ snapshot: null }));
+    expect(text).toContain("Tracks");
+    expect(text).toContain("loading…");
   });
 
-  it("renders empty state for no tracks", () => {
-    expect(TracksCard({ snapshot: EMPTY_SNAPSHOT })).toBeTruthy();
+  it("renders the empty-state hint text", () => {
+    const text = renderCardToText(TracksCard({ snapshot: EMPTY_SNAPSHOT }));
+    expect(text).toContain("Tracks");
+    expect(text).toContain('(no goals) try `mu task add -w demo --title "..."`');
+  });
+
+  it("renders title subtitle plus every visible track id/count/glyph exactly once", () => {
+    const tracks = [
+      track(["goal_alpha"], { taskIds: new Set(["goal_alpha", "leaf_alpha"]), readyCount: 2 }),
+      track(["goal_beta", "goal_gamma"], {
+        taskIds: new Set(["goal_beta", "goal_gamma", "shared"]),
+        readyCount: 0,
+      }),
+    ];
+    const text = renderCardToText(TracksCard({ snapshot: { ...EMPTY_SNAPSHOT, tracks } }));
+
+    expect(text).toContain("Tracks");
+    expect(text).toContain("2 · 2 ready");
+    expectTextOnce(text, "Track 1");
+    expectTextOnce(text, "Track 2");
+    expectTextOnce(text, "goal_alpha");
+    expectTextOnce(text, "goal_beta");
+    expectTextOnce(text, "goal_gamma");
+    expectTextOnce(text, "(2 tasks · 2 ready)");
+    expectTextOnce(text, "(3 tasks · 0 ready)");
+    expectTextOnce(text, "⋈");
+  });
+
+  it("truncates at ROW_LIMIT with the bottomLabel '+N more · Shift+2'", () => {
+    const tracks = Array.from({ length: 10 }, (_, i) => track([`goal_${i + 1}`]));
+    const text = renderCardToText(TracksCard({ snapshot: { ...EMPTY_SNAPSHOT, tracks } }));
+
+    expect(text).toContain("+2 more · Shift+2");
+    for (let i = 1; i <= 8; i++) {
+      expectTextOnce(text, `Track ${i}`);
+      expectTextOnce(text, `goal_${i}`);
+    }
+    expectTextAbsent(text, "Track 9");
+    expectTextAbsent(text, "goal_9");
+    expectTextAbsent(text, "goal_10");
   });
 });
 

@@ -1,11 +1,5 @@
 // Tests for src/cli/tui/cards/inprogress.tsx (feat_card_6_inprogress,
-// workstream `tui-impl`). ink-testing-library is not installable in
-// this environment so we lean on:
-//   - calling the FC as a plain function (catches import-graph drift),
-//   - asserting on the pure helpers (sinceClaim formatter, glyphFor,
-//     isStale, formatSubtitle, ageMs).
-//
-// Mirrors test/tui-card-workspaces.test.ts.
+// workstream `tui-impl`).
 
 import { describe, expect, it } from "vitest";
 import {
@@ -17,11 +11,17 @@ import {
   glyphFor,
   isStale,
 } from "../src/cli/tui/cards/inprogress.js";
+import type { WorkstreamSnapshot } from "../src/state.js";
 import type { TaskRow } from "../src/tasks.js";
+import { expectTextAbsent, expectTextOnce, renderCardToText } from "./_card-render.js";
 
-const EMPTY_SNAPSHOT = {
+const EMPTY_SNAPSHOT: WorkstreamSnapshot = {
   workstreamName: "demo",
-  view: { agents: [], orphans: [], report: { reaped: [], pruned: [] } },
+  view: {
+    agents: [],
+    orphans: [],
+    report: { prunedGhosts: 0, statusChanges: 0, orphans: [], mode: "status-only" },
+  },
   tracks: [],
   ready: [],
   inProgress: [],
@@ -30,6 +30,7 @@ const EMPTY_SNAPSHOT = {
   workspaces: [],
   workspaceOrphans: [],
   recent: [],
+  doctor: null,
 };
 
 function task(over: Partial<TaskRow> = {}): TaskRow {
@@ -52,28 +53,53 @@ describe("InProgressCard", () => {
     expect(typeof InProgressCard).toBe("function");
   });
 
-  it("renders a placeholder for null snapshot (loading state)", () => {
-    const result = InProgressCard({ snapshot: null });
-    expect(result).toBeTruthy();
+  it("renders the loading title row", () => {
+    const text = renderCardToText(InProgressCard({ snapshot: null }));
+    expect(text).toContain("In-progress");
+    expect(text).toContain("loading…");
   });
 
-  it("renders the empty-state hint when no IN_PROGRESS tasks exist", () => {
-    const result = InProgressCard({ snapshot: EMPTY_SNAPSHOT });
-    expect(result).toBeTruthy();
+  it("renders the empty-state hint text", () => {
+    const text = renderCardToText(InProgressCard({ snapshot: EMPTY_SNAPSHOT }));
+    expect(text).toContain("In-progress");
+    expect(text).toContain("(none in progress)");
   });
 
-  it("renders rows for a populated inProgress list", () => {
-    const result = InProgressCard({
-      snapshot: {
-        ...EMPTY_SNAPSHOT,
-        inProgress: [
-          task({ name: "design_x", ownerName: "worker-1" }),
-          task({ name: "review_x", ownerName: "reviewer-1", title: "Review X" }),
-          task({ name: "cherry_x", ownerName: null, title: "Cherry-pick X" }),
-        ],
-      },
-    });
-    expect(result).toBeTruthy();
+  it("renders title subtitle plus every task name and glyph exactly once", () => {
+    const snapshot: WorkstreamSnapshot = {
+      ...EMPTY_SNAPSHOT,
+      inProgress: [
+        task({ name: "design_x", ownerName: "worker-1", title: "Design X" }),
+        task({ name: "review_x", ownerName: "reviewer-1", title: "Review X" }),
+        task({ name: "cherry_x", ownerName: null, title: "Cherry-pick X" }),
+      ],
+    };
+
+    const text = renderCardToText(InProgressCard({ snapshot }));
+    expect(text).toContain("In-progress");
+    expect(text).toContain("3 · 3 stale");
+    for (const [name, owner, title] of [
+      ["design_x", "worker-1", "Design X"],
+      ["review_x", "reviewer-1", "Review X"],
+      ["cherry_x", "—", "Cherry-pick X"],
+    ] as const) {
+      expectTextOnce(text, name);
+      expectTextOnce(text, owner);
+      expectTextOnce(text, title);
+    }
+    expect(text.split("").length - 1).toBe(3);
+  });
+
+  it("truncates at ROW_LIMIT with the bottomLabel '+N more · Shift+6'", () => {
+    const inProgress = Array.from({ length: 10 }, (_, i) =>
+      task({ name: `progress_${i + 1}`, title: `Progress ${i + 1}` }),
+    );
+    const text = renderCardToText(InProgressCard({ snapshot: { ...EMPTY_SNAPSHOT, inProgress } }));
+
+    expect(text).toContain("+2 more · Shift+6");
+    for (let i = 1; i <= 8; i++) expectTextOnce(text, `progress_${i}`);
+    expectTextAbsent(text, "progress_9");
+    expectTextAbsent(text, "progress_10");
   });
 });
 
@@ -103,7 +129,6 @@ describe("InProgressCard pure helpers", () => {
     const t = task({ updatedAt: "2026-05-11T00:00:00Z" });
     const now = Date.parse("2026-05-11T00:01:30Z"); // +90s
     expect(ageMs(t, now)).toBe(90_000);
-    // future updatedAt (clock skew): clamp to 0
     expect(ageMs(t, Date.parse("2026-05-10T23:59:00Z"))).toBe(0);
   });
 
