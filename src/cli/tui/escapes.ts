@@ -15,3 +15,10 @@
 // On exit, mirror in reverse: show cursor, then restore the prior buffer.
 export const ALT_SCREEN_ENTER = "\x1b[?1049h\x1b[2J\x1b[H\x1b[?25l";
 export const ALT_SCREEN_EXIT = "\x1b[?25h\x1b[?1049l";
+
+// Mouse mode uses normal tracking + button-motion + SGR extended
+// coordinates. SGR reports arrive as ESC [ < button ; x ; y ; M/m.
+// Disable in the exact reverse order during TUI teardown so native
+// terminal selection works again after exit.
+export const MOUSE_MODE_ENTER = "\x1b[?1000h\x1b[?1002h\x1b[?1006h";
+export const MOUSE_MODE_EXIT = "\x1b[?1006l\x1b[?1002l\x1b[?1000l";

@@ -479,7 +479,12 @@ mu                          # TTY: TUI across all workstreams; non-TTY: help
   cycles sort key (`roi` → `recency` → `age` → `id`), Enter drills
   into the focused task's notes, and `y` yanks `mu task show <id>`;
   `?` shows the keymap;
-  `q` / `Ctrl-C` quits and restores the main scrollback.
+  `q` / `Ctrl-C` quits and restores the main scrollback. Mouse
+  support is navigation-in only: double-click a dashboard card to
+  open its popup, use the scroll wheel inside a popup list or drill
+  body to move the focused list, and double-click a popup row to
+  drill one level deeper. There is intentionally no mouse back
+  binding — use `Esc` / `q` to back out predictably.
 
   **Popup-drill recursion**: `Enter` in any popup drills into the
   focused row. Where the row is itself an entity (a task), a

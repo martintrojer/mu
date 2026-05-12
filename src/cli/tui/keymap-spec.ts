@@ -189,6 +189,15 @@ export const HELP_PANES: readonly HelpPaneSpec[] = [
       row("/", "all-tasks row search", ["/"]),
     ],
   },
+  {
+    title: "mouse",
+    rows: [
+      row("double-click card", "drill into popup", ["mouse:doubleclick-card"]),
+      row("double-click row", "drill into row detail", ["mouse:doubleclick-row"]),
+      row("scroll wheel", "scroll list / drill body", ["mouse:scroll"]),
+      row("back", "no mouse back; use Esc/q", ["mouse:no-back"]),
+    ],
+  },
 ];
 
 export function statusHintKeyIds(context: StatusHintContext): Set<KeyId> {

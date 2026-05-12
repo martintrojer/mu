@@ -8,6 +8,7 @@ import { createElement } from "react";
 import type { Db } from "../../db.js";
 import { App } from "./app.js";
 import { ALT_SCREEN_ENTER, ALT_SCREEN_EXIT } from "./escapes.js";
+import { disableMouseMode, enableMouseMode } from "./mouse.js";
 
 export interface RunTuiOptions {
   /** Resolved workstream set (≥1). Per feat_tui_multi_workstream
@@ -27,6 +28,7 @@ export interface RunTuiOptions {
 
 export async function runTui(db: Db, opts: RunTuiOptions): Promise<void> {
   process.stdout.write(ALT_SCREEN_ENTER);
+  enableMouseMode();
   try {
     const { waitUntilExit } = render(
       createElement(App, { db, workstreams: opts.workstreams, initialActive: opts.initialActive }),
@@ -34,6 +36,7 @@ export async function runTui(db: Db, opts: RunTuiOptions): Promise<void> {
     );
     await waitUntilExit();
   } finally {
+    disableMouseMode();
     process.stdout.write(ALT_SCREEN_EXIT);
   }
 }

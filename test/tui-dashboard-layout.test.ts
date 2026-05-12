@@ -21,7 +21,7 @@ describe("dashboard responsive-layout wiring", () => {
     expect(APP_SRC).toContain("function DashboardColumns");
     expect(APP_SRC).toContain("layoutDashboardColumns(cols, culled.cards)");
     expect(APP_SRC).toContain(
-      '<Box flexDirection="row" gap={1} height={cardsRows} overflow="hidden">',
+      '<Box flexDirection="row" gap={1} height={model.cardsRows} overflow="hidden">',
     );
     expect(APP_SRC).toContain(
       '<Box key={assignment.cards.join("-")} flexDirection="column" width={width}>',
@@ -31,7 +31,7 @@ describe("dashboard responsive-layout wiring", () => {
   it("dashboard passes per-column width and row budgets to each card", () => {
     expect(APP_SRC).toContain("columnWidths(cols, assignments.length)");
     expect(APP_SRC).toContain("cullCardsForRows(visible, rows)");
-    expect(APP_SRC).toContain("+{culled.hidden.length} cards hidden · resize taller");
+    expect(APP_SRC).toContain("+{model.hiddenCount} cards hidden · resize taller");
     expect(APP_SRC).toContain("allocateRowBudgets(");
     for (const component of [
       "AgentsCard",

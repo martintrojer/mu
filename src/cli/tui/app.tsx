@@ -16,7 +16,7 @@
 // visibility + tick rate + footer are preserved as a side effect of
 // living in <App> state, not the popup.
 
-import { Box, Text, useApp, useInput, useStdout } from "ink";
+import { Box, Text, useApp, useInput, useStdin, useStdout } from "ink";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Db } from "../../db.js";
 import { AgentsCard } from "./cards/agents.js";
@@ -34,12 +34,18 @@ import { dispatchGlobalKeyFromInk } from "./keys.js";
 import {
   CARD_CONFIGS,
   type CardId,
+  type ColumnAssignment,
+  type ColumnWidth,
+  type RowBudgetMap,
   allocateRowBudgets,
   columnWidths,
   cullCardsForRows,
+  dashboardCardHitRegions,
   dataCountForCard,
+  hitTestDashboardCard,
   layoutColumns as layoutDashboardColumns,
 } from "./layout.js";
+import { type MouseEvent, useMouse } from "./mouse.js";
 import { AgentsPopup } from "./popups/agents.js";
 import { AllTasksPopup } from "./popups/all-tasks.js";
 import { BlockedPopup } from "./popups/blocked.js";
@@ -98,6 +104,7 @@ export function dashboardAvailableRows(
 
 export function App({ db, workstreams, initialActive = 0 }: AppProps): JSX.Element {
   const { exit } = useApp();
+  const stdin = useStdin();
 
   const [visibility, setVisibility] = useState<CardVisibility>(DEFAULT_CARD_VISIBILITY);
   const [tickMs, setTickMs] = useState<number>(TICK_DEFAULT_MS);
@@ -118,6 +125,7 @@ export function App({ db, workstreams, initialActive = 0 }: AppProps): JSX.Eleme
   const [helpOpen, setHelpOpen] = useState<boolean>(false);
   const [footer, setFooter] = useState<FooterState | null>(null);
   const [refreshNonce, setRefreshNonce] = useState<number>(0);
+  const [popupMouseEvent, setPopupMouseEvent] = useState<MouseEvent | null>(null);
 
   // Probe clipboard backend once per session and memoise.
   const clipboardRef = useRef<ClipboardBackend | undefined>(undefined);
@@ -142,6 +150,17 @@ export function App({ db, workstreams, initialActive = 0 }: AppProps): JSX.Eleme
   const cols = stdout.columns ?? 80;
   const rows = stdout.rows ?? 24;
   const terminalTooSmall = cols < 40 || rows < DASHBOARD_MIN_ROWS;
+  const hasTabStrip = workstreams.length > 1;
+  const hasSnapshotError = snap.error !== null;
+  const availableForCards = dashboardAvailableRows(rows, { hasTabStrip, hasSnapshotError });
+  const dashboardModel = buildDashboardLayoutModel(cols, availableForCards, visibility, snap.data);
+  const dashboardTop = 1 + (hasTabStrip ? 1 : 0) + (hasSnapshotError ? 3 : 0);
+  const cardHitRegions = dashboardCardHitRegions(
+    dashboardModel.assignments,
+    dashboardModel.widths,
+    dashboardModel.budgetsByColumn,
+    { top: dashboardTop },
+  );
 
   // Yank callback handed down to popups (and used by the dashboard
   // for any direct yank in the future). The popup passes the command
@@ -152,6 +171,41 @@ export function App({ db, workstreams, initialActive = 0 }: AppProps): JSX.Eleme
     const r = await yank(command, clipboardRef.current ?? null);
     setFooter({ command, copied: r.copied });
   }, []);
+
+  useMouse((event) => {
+    if (helpOpen || terminalTooSmall) return;
+    if (popup === null) {
+      if (event.kind !== "doubleclick") return;
+      const hit = hitTestDashboardCard(cardHitRegions, event);
+      if (hit === null) return;
+      setPopupMode("list");
+      setPopup(hit);
+      return;
+    }
+    if (popupFilterEditing) return;
+    if (event.kind === "scroll" || event.kind === "doubleclick") setPopupMouseEvent(event);
+  });
+  useEffect(() => {
+    if (popup === null || popupFilterEditing || popupMouseEvent === null) return;
+    // Ink's public useInput hook is backed by this internal emitter;
+    // replay the same bytes keyboard users type so mouse scroll/drill
+    // stays routed through each popup's existing keymap switch.
+    const emitKey = (key: string, delayMs: number) => {
+      setTimeout(() => stdin.internal_eventEmitter.emit("input", Buffer.from(key)), delayMs);
+    };
+    if (popupMouseEvent.kind === "scroll") {
+      emitKey(popupMouseEvent.direction === "up" ? "k" : "j", 0);
+      return;
+    }
+    if (popupMouseEvent.kind === "doubleclick") {
+      const rowIndex = Math.max(0, popupMouseEvent.y - 2);
+      const keys = `g${"j".repeat(rowIndex)}\r`;
+      for (let i = 0; i < keys.length; i++) {
+        const key = keys[i];
+        if (key !== undefined) emitKey(key, i * 8);
+      }
+    }
+  }, [popup, popupFilterEditing, popupMouseEvent, stdin.internal_eventEmitter]);
 
   // Global keymap. Rendered before popup rendering so popups can
   // override Esc / q / y handling locally via their own useInput
@@ -326,10 +380,6 @@ export function App({ db, workstreams, initialActive = 0 }: AppProps): JSX.Eleme
     );
   }
 
-  const hasTabStrip = workstreams.length > 1;
-  const hasSnapshotError = snap.error !== null;
-  const availableForCards = dashboardAvailableRows(rows, { hasTabStrip, hasSnapshotError });
-
   // Dashboard.
   //
   // overflow="hidden" pinned at the root: when total content
@@ -355,9 +405,8 @@ export function App({ db, workstreams, initialActive = 0 }: AppProps): JSX.Eleme
       )}
       <Box height={availableForCards} overflow="hidden" flexDirection="column">
         <DashboardColumns
-          cols={cols}
           rows={availableForCards}
-          visibility={visibility}
+          model={dashboardModel}
           snapshot={snap.data}
           db={db}
           workstream={workstream}
@@ -418,23 +467,28 @@ export function App({ db, workstreams, initialActive = 0 }: AppProps): JSX.Eleme
   }
 }
 
+interface DashboardLayoutModel {
+  cardsRows: number;
+  assignments: ColumnAssignment[];
+  widths: ColumnWidth[];
+  budgetsByColumn: RowBudgetMap[];
+  hiddenCount: number;
+}
+
 interface DashboardColumnsProps {
-  cols: number;
   rows: number;
-  visibility: CardVisibility;
+  model: DashboardLayoutModel;
   snapshot: ReturnType<typeof useDashboardSnapshot>["data"];
   db: Db;
   workstream: string;
 }
 
-function DashboardColumns({
-  cols,
-  rows,
-  visibility,
-  snapshot,
-  db,
-  workstream,
-}: DashboardColumnsProps): JSX.Element {
+function buildDashboardLayoutModel(
+  cols: number,
+  rows: number,
+  visibility: CardVisibility,
+  snapshot: ReturnType<typeof useDashboardSnapshot>["data"],
+): DashboardLayoutModel {
   const visible = visibleCardIds(visibility);
   const firstCull = cullCardsForRows(visible, rows);
   const cullBudget = firstCull.hidden.length > 0 ? Math.max(1, rows - 1) : rows;
@@ -442,20 +496,33 @@ function DashboardColumns({
   const cardsRows = culled.hidden.length > 0 ? Math.max(1, rows - 1) : rows;
   const assignments = layoutDashboardColumns(cols, culled.cards);
   const widths = columnWidths(cols, assignments.length);
+  const budgetsByColumn = assignments.map((assignment) =>
+    capRowBudgetsForColumn(
+      cardsRows,
+      assignment.cards,
+      allocateRowBudgets(
+        cardsRows,
+        assignment.cards.map((id) => ({ id, dataCount: dataCountForCard(id, snapshot) })),
+      ),
+    ),
+  );
+  return { cardsRows, assignments, widths, budgetsByColumn, hiddenCount: culled.hidden.length };
+}
 
+function DashboardColumns({
+  rows,
+  model,
+  snapshot,
+  db,
+  workstream,
+}: DashboardColumnsProps): JSX.Element {
   return (
     <Box flexDirection="column" height={rows} overflow="hidden">
-      <Box flexDirection="row" gap={1} height={cardsRows} overflow="hidden">
-        {assignments.map((assignment, i) => {
-          const width = widths[i]?.width ?? cols;
-          const budgets = capRowBudgetsForColumn(
-            cardsRows,
-            assignment.cards,
-            allocateRowBudgets(
-              cardsRows,
-              assignment.cards.map((id) => ({ id, dataCount: dataCountForCard(id, snapshot) })),
-            ),
-          );
+      <Box flexDirection="row" gap={1} height={model.cardsRows} overflow="hidden">
+        {model.assignments.map((assignment, i) => {
+          const width = model.widths[i]?.width ?? 80;
+          const budgets = model.budgetsByColumn[i];
+          if (budgets === undefined) return null;
           return (
             <Box key={assignment.cards.join("-")} flexDirection="column" width={width}>
               {assignment.cards.map((id) =>
@@ -465,8 +532,8 @@ function DashboardColumns({
           );
         })}
       </Box>
-      {culled.hidden.length > 0 ? (
-        <Text dimColor>+{culled.hidden.length} cards hidden · resize taller</Text>
+      {model.hiddenCount > 0 ? (
+        <Text dimColor>+{model.hiddenCount} cards hidden · resize taller</Text>
       ) : null}
     </Box>
   );

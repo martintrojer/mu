@@ -24,6 +24,7 @@ called out under "Breaking" in each entry.
 
 ### Added
 
+- TUI mouse support: double-click a card to drill into its popup, scroll the mouse wheel inside a list/drill to navigate, double-click a row to drill into its detail. Esc/q remain the canonical 'back' (no mouse back binding by design).
 - DAG popup gains per-status toggle keys (o/i/c/r/d) so you can compose the visible task set without leaving the popup. Filter strip shows current toggle state. Default all-on; reopening resets.
 - TUI all-tasks popup (`t` keybind, no card slot — keybind-only like DAG). Per-status toggle keys (o/i/c/r/d) reuse the same useStatusFilter hook the DAG popup uses. Sort cycle key (`s`) walks roi → recency → age → id. Enter drills into TaskDetailDrill; `y` yanks `mu task show <id>`.
 - **TUI responsive multi-column dashboard + dynamic card row budgets**

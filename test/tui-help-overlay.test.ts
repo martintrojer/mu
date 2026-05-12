@@ -88,4 +88,18 @@ describe("TUI help overlay", () => {
     expect(text).not.toContain("(any letter)");
     expect(text).not.toContain("see popup footer");
   });
+
+  it("documents mouse bindings and the no-mouse-back rule", () => {
+    // Mouse bindings live in the canonical keymap spec; Help() iterates
+    // HELP_PANES from there so a single source-of-truth feeds both the
+    // overlay and the orphan-hint regression test.
+    const text = renderToString(Help());
+    expect(text).toContain("mouse");
+    expect(text).toContain("double-click card");
+    expect(text).toContain("drill into popup");
+    expect(text).toContain("double-click row");
+    expect(text).toContain("drill into row detail");
+    expect(text).toContain("scroll wheel");
+    expect(text).toContain("no mouse back; use Esc/q");
+  });
 });

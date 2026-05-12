@@ -53,6 +53,15 @@ export interface ColumnAssignment {
   cards: CardId[];
 }
 
+export interface CardHitRegion {
+  id: CardId;
+  column: number;
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+}
+
 export function dashboardColumnCount(cols: number): 1 | 2 | 3 | 4 {
   if (cols >= 240) return 4;
   if (cols >= 180) return 3;
@@ -122,6 +131,50 @@ export function columnWidths(totalCols: number, columnCount: number): ColumnWidt
   const base = Math.floor(usable / columnCount);
   const extra = usable - base * columnCount;
   return Array.from({ length: columnCount }, (_, i) => ({ width: base + (i < extra ? 1 : 0) }));
+}
+
+export function dashboardCardHitRegions(
+  assignments: ReadonlyArray<ColumnAssignment>,
+  widths: ReadonlyArray<ColumnWidth>,
+  budgets: ReadonlyArray<RowBudgetMap>,
+  opts: { top?: number; left?: number; columnGap?: number } = {},
+): CardHitRegion[] {
+  const topBase = opts.top ?? 1;
+  const leftBase = opts.left ?? 1;
+  const gap = opts.columnGap ?? 1;
+  const out: CardHitRegion[] = [];
+  let left = leftBase;
+  for (let column = 0; column < assignments.length; column++) {
+    const assignment = assignments[column];
+    const width = widths[column]?.width;
+    const budget = budgets[column];
+    if (assignment === undefined || width === undefined || budget === undefined) continue;
+    let top = topBase;
+    for (const id of assignment.cards) {
+      const height = CARD_CONFIGS[id].chrome + budget[id];
+      out.push({ id, column, left, right: left + width - 1, top, bottom: top + height - 1 });
+      top += height;
+    }
+    left += width + gap;
+  }
+  return out;
+}
+
+export function hitTestDashboardCard(
+  regions: ReadonlyArray<CardHitRegion>,
+  point: { x: number; y: number },
+): CardId | null {
+  for (const region of regions) {
+    if (
+      point.x >= region.left &&
+      point.x <= region.right &&
+      point.y >= region.top &&
+      point.y <= region.bottom
+    ) {
+      return region.id;
+    }
+  }
+  return null;
 }
 
 export interface RowBudgetInput {

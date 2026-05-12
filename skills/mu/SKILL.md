@@ -336,7 +336,11 @@ running a wave.
   view, with `y` yanking `git show <sha>` at every level; the
   Commits popup shows recent project-root commits and `Enter` opens
   the backend show view: `git show`, `jj show`, or `sl show`), `/`
-  filters list popups incrementally, `?` keymap, `q`/`Ctrl-C`
+  filters list popups incrementally, mouse support lets you
+  double-click a dashboard card to open its popup, scroll the mouse
+  wheel inside popup lists / drill bodies, and double-click a popup
+  row to drill one level deeper; there is deliberately no mouse
+  back binding, so use `Esc`/`q` for back, `?` keymap, `q`/`Ctrl-C`
   quits), `--all`, `--json`. `mu doctor` for health.
 
 ## `mu task wait` exits
