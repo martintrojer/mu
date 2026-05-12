@@ -1566,12 +1566,16 @@ Key properties:
 - **Globally-unique labels.** Archive labels live in their own
   namespace (separate from workstream names). Pick once, reuse
   across years.
-- **Additive accumulation.** `mu archive add <label> -w <ws>` is
-  idempotent at the (archive, source workstream) granularity.
-  Re-running on the same workstream is a no-op; adding a new task
-  to the source workstream and re-running picks up only the
-  delta. Two different workstreams under the same label coexist
-  as separate `(source_workstream, original_local_id)` rows.
+- **Snapshot-only accumulation.** `mu archive add <label> -w <ws>` is
+  idempotent at the (archive, source workstream) granularity and is
+  designed for end-of-milestone snapshot-and-destroy flows. Re-running
+  on the same workstream is task-incremental: newly-created tasks are
+  added, but notes and events for already-archived tasks stay pinned
+  to the original snapshot and are NOT refreshed. If you need a full
+  event-stream refresh for a source workstream, remove that source (or
+  delete/re-create the archive label) and add it again. Two different
+  workstreams under the same label coexist as separate
+  `(source_workstream, original_local_id)` rows.
 - **Outlives the source.** `archived_tasks.source_workstream` is
   TEXT (not an FK), so the source workstream can be destroyed and
   the archive's snapshot of it stays queryable forever.

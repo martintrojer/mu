@@ -391,9 +391,9 @@ export function deleteArchive(db: Db, label: string): void {
  * archived_tasks is the lever; we INSERT OR IGNORE and skip notes /
  * events for the (archive, source_workstream) pair entirely when the
  * task copy added zero new rows. This makes addToArchive
- * coarse-grained idempotent: the only way to get duplicate notes is
- * to add a NEW task to the source workstream and re-run, which
- * legitimately copies the new task's notes.
+ * coarse-grained idempotent for end-of-milestone snapshots: re-adds
+ * are task-incremental only. Notes and events for already-archived
+ * tasks are not refreshed on re-add.
  *
  * Throws:
  *   - `ArchiveNotFoundError` if the label doesn't exist (call
@@ -538,10 +538,9 @@ export function addToArchive(db: Db, label: string, workstream: string): AddToAr
     // addToArchive on the same workstream would duplicate every note
     // and event (notes have no natural unique key; events keyed on
     // (seq, archive) are also a duplicate of the same source row).
-    // The gate makes the SDK truly idempotent at the operator-
-    // visible "add this workstream" granularity: re-runs are no-ops;
-    // adding a new task and re-running picks up only the new task's
-    // notes and any new events.
+    // Archives are end-of-milestone snapshots, not incremental event
+    // mirrors: re-adds refresh the task set only, while notes/events
+    // for already-archived tasks stay pinned to the original snapshot.
     let addedNotes = 0;
     let addedEvents = 0;
     if (newArchivedIds.length > 0) {
@@ -606,11 +605,11 @@ export function addToArchive(db: Db, label: string, workstream: string): AddToAr
     }
 
     db.prepare("UPDATE archives SET last_added_at = ? WHERE id = ?").run(now, archiveId);
-    emitEvent(
-      db,
-      null,
-      `archive add ${label} -w ${workstream} (tasks=${addedTasks}, edges=${addedEdges}, notes=${addedNotes}, events=${addedEvents}, skipped_existing=${skippedTasks})`,
-    );
+    const eventSummary =
+      newArchivedIds.length === 0
+        ? `tasks=${addedTasks}, edges=${addedEdges}, notes=${addedNotes}, events=0 (snapshot-only; re-add is task-incremental, not event-incremental), skipped_existing=${skippedTasks}`
+        : `tasks=${addedTasks}, edges=${addedEdges}, notes=${addedNotes}, events=${addedEvents}, skipped_existing=${skippedTasks}`;
+    emitEvent(db, null, `archive add ${label} -w ${workstream} (${eventSummary})`);
 
     return { addedTasks, skippedTasks, addedEdges, addedNotes, addedEvents };
   })();

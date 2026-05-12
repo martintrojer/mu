@@ -672,6 +672,14 @@ is opt-in via the new `--tui` flag.
   existing TitledBox frame-height source guard. While there, the
   Tracks card now renders the singular `1 task` count instead of
   `1 tasks`.
+- **Archive re-adds now document their snapshot-only contract**
+  (review_repo_archive_events_not_incremental). `mu archive add`
+  still targets end-of-milestone snapshot-and-destroy flows rather
+  than incremental event mirroring; re-adding the same source is
+  task-incremental only, and notes/events for already-archived tasks
+  stay pinned to the original snapshot. The event payload and usage
+  guide now say this explicitly instead of implying an event-stream
+  refresh.
 - **TUI DrillScrollView body lines now clip at the drill content
   width instead of wrapping** (bug_tui_drill_text_no_width_pin).
   Follow-up to bug_tui_drill_scrollview_wraps_long_lines: the body
