@@ -32,7 +32,7 @@
 // Per ROADMAP pledge: ink/react import limited to src/cli/tui/*.
 
 import { Box, Text, useInput } from "ink";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { Db } from "../../../db.js";
 import { type DoctorCheck, loadDoctorChecks } from "../../../doctor-summary.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
@@ -86,7 +86,7 @@ export function DoctorPopup({
   // budget; see popups/viewport.ts.
   const viewport = usePopupViewport();
   const [cursor, setCursor] = useState(0);
-  const flt = usePopupFilter();
+  const flt = usePopupFilter({ onEditingChange: onFilterEditingChange });
 
   // Source rows: ALL checks (OK + warn + fail), NOT just the non-OK
   // subset Card 9 renders. We refresh on every render — the SDK
@@ -104,10 +104,6 @@ export function DoctorPopup({
       : applyFilter(sourceChecks, flt.query, (c) => `${c.name} ${c.status} ${c.detail}`);
   const safeCursor = checks.length === 0 ? 0 : Math.min(cursor, checks.length - 1);
   const focused = checks[safeCursor];
-
-  useEffect(() => {
-    onFilterEditingChange?.(flt.editing);
-  }, [flt.editing, onFilterEditingChange]);
 
   // Drill body: pre-formatted text rendered via DrillScrollView.
   // Pure derivation from the focused check; no DB call.

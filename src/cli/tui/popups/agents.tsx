@@ -83,7 +83,7 @@ export function AgentsPopup({
   const [scrollback, setScrollback] = useState<string>("");
   const [scrollbackErr, setScrollbackErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const flt = usePopupFilter();
+  const flt = usePopupFilter({ onEditingChange: onFilterEditingChange });
   // Filter is suppressed in drill mode (drill view is not a list).
   const sourceAgents = snapshot?.view.agents ?? [];
   const agents =
@@ -92,11 +92,6 @@ export function AgentsPopup({
       : applyFilter(sourceAgents, flt.query, (a) => `${a.name} ${a.status} ${a.cli} ${a.role}`);
   const safeCursor = agents.length === 0 ? 0 : Math.min(cursor, agents.length - 1);
   const focused = agents[safeCursor];
-  // Push the filter editing state up so StatusBar can flip its hint cluster.
-  useEffect(() => {
-    onFilterEditingChange?.(flt.editing);
-  }, [flt.editing, onFilterEditingChange]);
-
   // Load scrollback when entering drill mode (or when the focused
   // row changes while in drill mode). Read-only: capturePane is a
   // tmux read, never a write.

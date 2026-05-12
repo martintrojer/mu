@@ -12,6 +12,7 @@ import {
   type NavAction,
   applyCursor,
   applyScroll,
+  centredVisibleSlice,
   clampScrollTop,
   isNavAction,
 } from "../src/cli/tui/popups/scroll.js";
@@ -139,6 +140,85 @@ describe("applyScroll", () => {
   it("collapses to 0 when the body is empty or fits the viewport", () => {
     expect(applyScroll(0, { kind: "moveDown" }, 0, viewport)).toBe(0);
     expect(applyScroll(3, { kind: "jumpBottom" }, 5, viewport)).toBe(0);
+  });
+});
+
+describe("centredVisibleSlice", () => {
+  // 50 items, viewport of 10 — same shape every drill popup uses.
+  const items = Array.from({ length: 50 }, (_, i) => i);
+
+  it("empty items → start=0, visible=[]", () => {
+    expect(centredVisibleSlice([], 0, 10)).toEqual({ start: 0, visible: [] });
+    expect(centredVisibleSlice([], 5, 10)).toEqual({ start: 0, visible: [] });
+  });
+
+  it("viewport <= 0 → start=0, visible=[] (defensive against pathological terminals)", () => {
+    expect(centredVisibleSlice(items, 25, 0)).toEqual({ start: 0, visible: [] });
+    expect(centredVisibleSlice(items, 25, -3)).toEqual({ start: 0, visible: [] });
+  });
+
+  it("items.length <= viewport → start=0, visible=items.slice() (full list)", () => {
+    const small = items.slice(0, 8);
+    const out = centredVisibleSlice(small, 3, 10);
+    expect(out.start).toBe(0);
+    expect(out.visible).toEqual(small);
+    // Returns a fresh array, not the same reference — callers slice into it.
+    expect(out.visible).not.toBe(small);
+  });
+
+  it("cursor near top clamps start to 0", () => {
+    expect(centredVisibleSlice(items, 0, 10)).toEqual({
+      start: 0,
+      visible: items.slice(0, 10),
+    });
+    expect(centredVisibleSlice(items, 4, 10)).toEqual({
+      start: 0,
+      visible: items.slice(0, 10),
+    });
+  });
+
+  it("cursor near bottom clamps start to items.length - viewport", () => {
+    // total=50, viewport=10 → max start = 40.
+    expect(centredVisibleSlice(items, 49, 10)).toEqual({
+      start: 40,
+      visible: items.slice(40, 50),
+    });
+    expect(centredVisibleSlice(items, 47, 10)).toEqual({
+      start: 40,
+      visible: items.slice(40, 50),
+    });
+  });
+
+  it("cursor in the middle: start = cursor - floor(viewport / 2)", () => {
+    // cursor 25, viewport 10 → start = 25 - 5 = 20; visible = items[20..30).
+    const out = centredVisibleSlice(items, 25, 10);
+    expect(out.start).toBe(20);
+    expect(out.visible).toEqual(items.slice(20, 30));
+    expect(out.visible).toHaveLength(10);
+  });
+
+  it("odd viewport uses Math.floor (matches the pre-centralisation inline formula)", () => {
+    // cursor 25, viewport 11 → start = 25 - 5 = 20 (floor(11/2) === 5).
+    const out = centredVisibleSlice(items, 25, 11);
+    expect(out.start).toBe(20);
+    expect(out.visible).toHaveLength(11);
+  });
+
+  it("matches the legacy inline formula across a sweep of cursors", () => {
+    // The inline formula every popup used before this helper:
+    //   start = max(0, min(items.length - viewport, cursor - floor(viewport/2)))
+    // This test pins the helper's output to that exact formula so a
+    // future refactor (e.g. switching to ceil) gets caught.
+    const viewport = 7;
+    for (let cursor = 0; cursor < items.length; cursor++) {
+      const expectedStart = Math.max(
+        0,
+        Math.min(items.length - viewport, cursor - Math.floor(viewport / 2)),
+      );
+      const out = centredVisibleSlice(items, cursor, viewport);
+      expect(out.start).toBe(expectedStart);
+      expect(out.visible).toEqual(items.slice(expectedStart, expectedStart + viewport));
+    }
   });
 });
 

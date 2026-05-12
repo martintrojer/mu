@@ -21,7 +21,7 @@
 // are PROTECTED (yank-bearing tokens); the title is CLIPPABLE.
 
 import { Box, Text, useInput } from "ink";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import type { Db } from "../../../db.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
 import {
@@ -81,7 +81,7 @@ export function ReadyPopup({
   // see popups/viewport.ts. Replaces the prior hardcoded VIEWPORT = 20.
   const viewport = usePopupViewport();
   const [cursor, setCursor] = useState(0);
-  const flt = usePopupFilter();
+  const flt = usePopupFilter({ onEditingChange: onFilterEditingChange });
   const sourceTasks = snapshot ? [...snapshot.ready, ...snapshot.inProgress] : [];
   const tasks =
     mode === "drill"
@@ -93,9 +93,6 @@ export function ReadyPopup({
         );
   const safeCursor = tasks.length === 0 ? 0 : Math.min(cursor, tasks.length - 1);
   const focused = tasks[safeCursor];
-  useEffect(() => {
-    onFilterEditingChange?.(flt.editing);
-  }, [flt.editing, onFilterEditingChange]);
 
   // Resolve notes for the focused task on demand. Memoised on
   // (taskId, mode); we only hit SQLite when actually drilled in.

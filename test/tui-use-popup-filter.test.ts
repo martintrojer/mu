@@ -273,3 +273,58 @@ describe("usePopupFilter (hook export shape)", () => {
     expect(typeof classifyFilterKey).toBe("function");
   });
 });
+
+// Per review_dedup_filter_editing_effect: the bubble-up was
+// previously hand-rolled in eight popups. Now baked into the hook
+// itself via the optional `onEditingChange` callback. These
+// structural tests pin the contract — if a future refactor strips
+// the option or breaks the wiring in any of the eight popups, this
+// suite catches it before the StatusBar mode flip silently dies.
+describe("usePopupFilter onEditingChange wiring (structural)", () => {
+  it("every list popup wires onFilterEditingChange via the hook option (no hand-rolled useEffect)", async () => {
+    const { readFileSync } = await import("node:fs");
+    // The eight popups whose bubble-up was hand-rolled before this
+    // refactor. workspaces.tsx is intentionally NOT in this list —
+    // it has TWO filter instances (list + drill) and chooses which
+    // editing flag to surface based on the popup's sub-mode, so it
+    // hand-rolls. See use-popup-filter.tsx UsePopupFilterOpts JSDoc.
+    const popups = [
+      "agents",
+      "blocked",
+      "doctor",
+      "inprogress",
+      "log",
+      "ready",
+      "recent",
+      "tracks",
+    ];
+    for (const name of popups) {
+      const src = readFileSync(`./src/cli/tui/popups/${name}.tsx`, "utf-8");
+      // Must use the option form (one of usePopupFilter's two valid
+      // call shapes). The other valid shape is bare `usePopupFilter()`
+      // — used by workspaces.tsx, which is excluded from this list.
+      expect(src, `${name}.tsx should pass onEditingChange to usePopupFilter`).toContain(
+        "usePopupFilter({ onEditingChange: onFilterEditingChange })",
+      );
+      // Must NOT hand-roll the bubble-up useEffect. Catches a future
+      // refactor that adds back the duplicated three-line block.
+      expect(
+        src,
+        `${name}.tsx must not hand-roll onFilterEditingChange?.(flt.editing)`,
+      ).not.toContain("onFilterEditingChange?.(flt.editing)");
+    }
+  });
+
+  it("workspaces.tsx still hand-rolls (two filter instances) — baseline pin", async () => {
+    // Documents the intentional exception. If workspaces.tsx ever
+    // collapses to a single filter, this baseline can flip and it
+    // can adopt the option form. Until then the hand-roll is
+    // load-bearing because it picks between flt.editing and
+    // drillFlt.editing based on the sub-mode.
+    const { readFileSync } = await import("node:fs");
+    const src = readFileSync("./src/cli/tui/popups/workspaces.tsx", "utf-8");
+    expect(src).toContain("const flt = usePopupFilter();");
+    expect(src).toContain("const drillFlt = usePopupFilter();");
+    expect(src).toContain("onFilterEditingChange?.(activeFilterEditing)");
+  });
+});

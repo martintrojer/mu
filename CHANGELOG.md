@@ -444,6 +444,37 @@ is opt-in via the new `--tui` flag.
   now asserts each popup imports the shared shell rather than
   defining a local one.
 
+- **Centralised drill cursor-centring + filter-editing bubble-up**
+  (review_dedup_drill_centring_visible_slice,
+  review_dedup_filter_editing_effect). Two follow-ups from the
+  v0.4 audit pass that close out two more low-severity dedup
+  findings. (1) The `Math.max(0, Math.min(items.length - viewport,
+  cursor - Math.floor(viewport/2)))` cursor-centring formula was
+  duplicated across three drill views (log events list, tracks
+  task-list drill, workspaces commits-since-fork). Sibling helpers
+  in `popups/scroll.ts` already owned `applyCursor` /
+  `applyScroll`, but NOT the visible-slice math — obvious drift
+  surface (`floor` vs `ceil`, half-window vs explicit). New pure
+  `centredVisibleSlice(items, cursor, viewport): {start, visible}`
+  in `popups/scroll.ts` collapses all three to one line each;
+  `tui-scroll.test.ts` adds 7 cases pinning the boundary semantics
+  including a sweep-test that locks the helper to the legacy
+  inline formula. (2) The bubble-up `useEffect(() =>
+  onFilterEditingChange?.(flt.editing), [flt.editing,
+  onFilterEditingChange])` block that flips the StatusBar into
+  popup-filter mode was hand-rolled identically in 8 popups
+  (agents/blocked/doctor/inprogress/log/ready/recent/tracks). Now
+  baked into `usePopupFilter` itself via an optional
+  `onEditingChange` callback option; the 8 useEffect blocks
+  collapse and `useEffect` import drops from 6 of them.
+  workspaces.tsx still hand-rolls because it has TWO filter
+  instances (list + drill) and chooses which `editing` flag to
+  surface based on sub-mode; that exception is documented in the
+  hook's JSDoc and pinned by a baseline test in
+  `tui-use-popup-filter.test.ts`. The new test also enforces the
+  no-hand-roll invariant across the eight collapsed popups so a
+  future refactor can't quietly reintroduce the duplicated block.
+
 - **Centralised scroll/navigation dispatch**
   (feat_centralize_scroll_navigation). Every popup's `useInput`
   switch over `dispatchPopupKey` used to carry its own copy of the

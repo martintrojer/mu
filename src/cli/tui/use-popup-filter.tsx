@@ -16,7 +16,7 @@
 // Per ROADMAP pledge: ink/react import limited to src/cli/tui/*.
 
 import { Box, Text } from "ink";
-import { useCallback, useReducer } from "react";
+import { useCallback, useEffect, useReducer } from "react";
 import type { KeyFlags } from "./keys.js";
 
 /** Filter state owned by each popup. Resets on popup unmount. */
@@ -170,8 +170,31 @@ export interface PopupFilter {
   reset(): void;
 }
 
-export function usePopupFilter(): PopupFilter {
+/**
+ * Optional hook options. Per review_dedup_filter_editing_effect:
+ * eight list popups had the IDENTICAL `useEffect(() =>
+ * onFilterEditingChange?.(flt.editing), [flt.editing,
+ * onFilterEditingChange])` block immediately after `const flt =
+ * usePopupFilter()`. Baking the bubble-up into the hook itself
+ * collapses each call site by 3 lines and means the next popup
+ * author can't forget to wire the StatusBar mode flip.
+ *
+ * `onEditingChange` is a callback the popup wires to its parent
+ * `<App>`'s `setPopupFilterEditing`. Called WHENEVER the editing
+ * flag changes (and once on mount when the initial value differs
+ * from undefined-default). When omitted, the hook is silent —
+ * callers that have a more complex bubble-up policy (e.g.
+ * workspaces.tsx, which has TWO filter instances and chooses
+ * which one's editing state to surface based on the popup's
+ * sub-mode) hand-roll their own useEffect and pass nothing here.
+ */
+export interface UsePopupFilterOpts {
+  onEditingChange?: (editing: boolean) => void;
+}
+
+export function usePopupFilter(opts: UsePopupFilterOpts = {}): PopupFilter {
   const [state, dispatch] = useReducer(popupFilterReducer, INITIAL_FILTER_STATE);
+  const { onEditingChange } = opts;
   const onKey = useCallback(
     (input: string, key: KeyFlags): "consumed" | "passthrough" => {
       const action = classifyFilterKey(state, input, key);
@@ -183,6 +206,12 @@ export function usePopupFilter(): PopupFilter {
   );
   const startEdit = useCallback(() => dispatch({ kind: "startEdit" }), []);
   const reset = useCallback(() => dispatch({ kind: "reset" }), []);
+  // Bubble the editing flag up to the parent (StatusBar uses it to
+  // flip its hint cluster into popup-filter mode). No-op when the
+  // caller doesn't pass a callback.
+  useEffect(() => {
+    onEditingChange?.(state.editing);
+  }, [state.editing, onEditingChange]);
   return { query: state.query, editing: state.editing, onKey, startEdit, reset };
 }
 

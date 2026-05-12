@@ -69,7 +69,7 @@ import { PopupShell } from "../popup-shell.js";
 import { TitledBox } from "../titled-box.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
 import { DrillScrollView, useDrillKeymap } from "./drill.js";
-import { applyCursor, isNavAction } from "./scroll.js";
+import { applyCursor, centredVisibleSlice, isNavAction } from "./scroll.js";
 import { usePopupViewport } from "./viewport.js";
 
 // Promisified execFile for the show-level git invocation (see
@@ -549,11 +549,7 @@ function renderDrillBody(
     return <DrillScrollView title={title} body="(no matches)" viewport={viewport} scrollTop={0} />;
   }
 
-  const start = Math.max(
-    0,
-    Math.min(filtered.length - viewport, cursor - Math.floor(viewport / 2)),
-  );
-  const visible = filtered.slice(start, start + viewport);
+  const { visible } = centredVisibleSlice(filtered, cursor, viewport);
   const rows = visible.map((c) => [c.sha.slice(0, 12), c.subject]);
   const widths = layoutColumns(rows, DRILL_COLUMN_SPECS, contentWidth);
   return (

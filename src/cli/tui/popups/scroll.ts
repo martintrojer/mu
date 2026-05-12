@@ -138,6 +138,42 @@ export function applyCursor(
 }
 
 /**
+ * Compute the visible slice of `items` that centres `cursor` in a
+ * `viewport`-sized window. Returns the start index AND the sliced
+ * array, so callers don't repeat the `.slice(start, start +
+ * viewport)` step.
+ *
+ * Per review_dedup_drill_centring_visible_slice: three drill views
+ * (log events list, tracks task-list, workspaces commits-since-fork)
+ * had the IDENTICAL inline `Math.max(0, Math.min(items.length -
+ * viewport, cursor - Math.floor(viewport/2)))` formula. Sibling
+ * helpers (applyCursor / applyScroll) own the cursor-update math
+ * but NOT the visible-slice math, so the formula was drifting
+ * between popups (`Math.floor` vs `Math.ceil`, half-window vs
+ * explicit). One source of truth here, three callers collapse to
+ * one line each.
+ *
+ * Boundary semantics (kept identical to the prior inline formula):
+ *   - empty items → start=0, visible=[]
+ *   - items.length <= viewport → start=0, visible=items.slice()
+ *   - cursor near top → start clamps to 0
+ *   - cursor near bottom → start clamps to items.length - viewport
+ *   - else → start = cursor - floor(viewport/2)
+ *
+ * The viewport must be > 0; a viewport of 0 (no rows visible)
+ * yields start=0 and visible=[].
+ */
+export function centredVisibleSlice<T>(
+  items: readonly T[],
+  cursor: number,
+  viewport: number,
+): { start: number; visible: T[] } {
+  if (viewport <= 0 || items.length === 0) return { start: 0, visible: [] };
+  const start = Math.max(0, Math.min(items.length - viewport, cursor - Math.floor(viewport / 2)));
+  return { start, visible: items.slice(start, start + viewport) };
+}
+
+/**
  * Apply a navigation action to a scrollTop-based view (e.g.
  * DrillScrollView). Returns the new scrollTop, clamped via
  * clampScrollTop so the bottom of the body never scrolls past the

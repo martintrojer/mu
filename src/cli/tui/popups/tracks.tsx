@@ -44,7 +44,7 @@ import { ListRow } from "../list-row.js";
 import { PopupShell } from "../popup-shell.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
 import { useDrillKeymap } from "./drill.js";
-import { applyCursor, isNavAction } from "./scroll.js";
+import { applyCursor, centredVisibleSlice, isNavAction } from "./scroll.js";
 import { TaskDetailDrill, renderNotes } from "./task-detail.js";
 import { usePopupViewport } from "./viewport.js";
 
@@ -115,7 +115,7 @@ export function TracksPopup({
   // per spec MATCHING RULES (Tracks blob = head_id + head_title).
   // Drill sub-views own their own navigation; widening the filter
   // to the task-list drill is a follow-up.
-  const flt = usePopupFilter();
+  const flt = usePopupFilter({ onEditingChange: onFilterEditingChange });
   const sourceTracks = snapshot?.tracks ?? [];
   const tracks =
     mode === "list"
@@ -126,9 +126,6 @@ export function TracksPopup({
       : sourceTracks;
   const safeCursor = tracks.length === 0 ? 0 : Math.min(cursor, tracks.length - 1);
   const focusedTrack = tracks[safeCursor];
-  useEffect(() => {
-    onFilterEditingChange?.(flt.editing);
-  }, [flt.editing, onFilterEditingChange]);
 
   // Reset sub-mode + leaf scroll whenever the popup itself flips
   // out of drill mode (e.g. user pressed Esc in the task-list view
@@ -296,11 +293,7 @@ export function TracksPopup({
         </PopupShell>
       );
     }
-    const start = Math.max(
-      0,
-      Math.min(drillTasks.length - viewport, drillCursor - Math.floor(viewport / 2)),
-    );
-    const visible = drillTasks.slice(start, start + viewport);
+    const { visible } = centredVisibleSlice(drillTasks, drillCursor, viewport);
     const rows = visible.map((t) => [t.name, t.status, t.title]);
     const widths = layoutColumns(rows, DRILL_COLUMN_SPECS, contentWidth);
     return (

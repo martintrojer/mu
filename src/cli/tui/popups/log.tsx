@@ -20,7 +20,7 @@
 // is CLIPPABLE.
 
 import { Box, Text, useInput } from "ink";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { Db } from "../../../db.js";
 import { classifyEventVerb } from "../../../logs.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
@@ -36,7 +36,7 @@ import { ListRow } from "../list-row.js";
 import { PopupShell } from "../popup-shell.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
 import { DrillScrollView, useDrillKeymap } from "./drill.js";
-import { applyCursor, isNavAction } from "./scroll.js";
+import { applyCursor, centredVisibleSlice, isNavAction } from "./scroll.js";
 import { usePopupViewport } from "./viewport.js";
 
 export interface PopupProps {
@@ -73,7 +73,7 @@ export function LogPopup({
   // — used for BOTH the slice size AND the cursor-centring half-window.
   const viewport = usePopupViewport();
   const [cursor, setCursor] = useState(0);
-  const flt = usePopupFilter();
+  const flt = usePopupFilter({ onEditingChange: onFilterEditingChange });
   const sourceEvents = snapshot?.recent ?? [];
   // Per spec: blob = `${verb} ${rest} ${source}` — we classify the
   // event payload to extract the same verb/rest the row renders, so
@@ -86,9 +86,6 @@ export function LogPopup({
   });
   const safeCursor = events.length === 0 ? 0 : Math.min(cursor, events.length - 1);
   const focused = events[safeCursor];
-  useEffect(() => {
-    onFilterEditingChange?.(flt.editing);
-  }, [flt.editing, onFilterEditingChange]);
 
   const drillBody = focused?.payload ?? "";
   const drill = useDrillKeymap({
@@ -192,11 +189,7 @@ export function LogPopup({
   // Centre the cursor in the viewport. `viewport` is BOTH the slice
   // size and the half-window for centring — must use the per-render
   // value consistently (see CAVEAT in bug_tui_popup_data_doesnt_fill).
-  const start = Math.max(
-    0,
-    Math.min(events.length - viewport, safeCursor - Math.floor(viewport / 2)),
-  );
-  const visible = events.slice(start, start + viewport);
+  const { visible } = centredVisibleSlice(events, safeCursor, viewport);
 
   const rows = visible.map((e) => {
     const cls = classifyEventVerb(e.payload);

@@ -34,7 +34,7 @@
 // Per ROADMAP pledge: ink/react import limited to src/cli/tui/*.
 
 import { Box, Text, useInput } from "ink";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import type { Db } from "../../../db.js";
 import { type WorkstreamSnapshot, roiBucket } from "../../../state.js";
 import { getTaskEdgesWithStatus } from "../../../tasks.js";
@@ -93,7 +93,7 @@ export function BlockedPopup({
   // see popups/viewport.ts. Replaces the prior hardcoded VIEWPORT = 20.
   const viewport = usePopupViewport();
   const [cursor, setCursor] = useState(0);
-  const flt = usePopupFilter();
+  const flt = usePopupFilter({ onEditingChange: onFilterEditingChange });
 
   const sourceTasks = snapshot?.blocked ?? [];
 
@@ -123,9 +123,6 @@ export function BlockedPopup({
         });
   const safeCursor = tasks.length === 0 ? 0 : Math.min(cursor, tasks.length - 1);
   const focused = tasks[safeCursor];
-  useEffect(() => {
-    onFilterEditingChange?.(flt.editing);
-  }, [flt.editing, onFilterEditingChange]);
 
   // Resolve notes for the focused task on demand. Memoised on
   // (taskId, mode); we only hit SQLite when actually drilled in.
