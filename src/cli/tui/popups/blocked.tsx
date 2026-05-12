@@ -48,7 +48,7 @@ import {
 } from "../columns.js";
 import { dispatchPopupKey } from "../keys.js";
 import { ListRow } from "../list-row.js";
-import { TitledBox } from "../titled-box.js";
+import { PopupShell } from "../popup-shell.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
 import { applyCursor, applyScroll, isNavAction } from "./scroll.js";
 import { TaskDetailDrill, renderNotes } from "./task-detail.js";
@@ -205,29 +205,29 @@ export function BlockedPopup({
   });
 
   if (snapshot === null) {
-    return <Shell title="Blocked · popup">{<Text dimColor>loading…</Text>}</Shell>;
+    return <PopupShell title="Blocked · popup">{<Text dimColor>loading…</Text>}</PopupShell>;
   }
   if (sourceTasks.length === 0) {
     return (
-      <Shell title="Blocked · popup">
+      <PopupShell title="Blocked · popup">
         <Text dimColor>(no blocked tasks — every OPEN task is ready)</Text>
-      </Shell>
+      </PopupShell>
     );
   }
   if (tasks.length === 0) {
     return (
-      <Shell title="Blocked · popup">
+      <PopupShell title="Blocked · popup">
         <Box flexDirection="column" flexGrow={1}>
           <Text dimColor>(no matches for "{flt.query}")</Text>
         </Box>
         <FilterPrompt state={flt} />
-      </Shell>
+      </PopupShell>
     );
   }
 
   if (mode === "drill" && focused) {
     return (
-      <Shell title={`Blocked · ${focused.name} (notes)`}>
+      <PopupShell title={`Blocked · ${focused.name} (notes)`}>
         <Box flexDirection="column" flexGrow={1}>
           <TaskDetailDrill
             task={focused}
@@ -237,7 +237,7 @@ export function BlockedPopup({
             viewport={viewport}
           />
         </Box>
-      </Shell>
+      </PopupShell>
     );
   }
 
@@ -251,7 +251,7 @@ export function BlockedPopup({
   const widths = layoutColumns(rows, COLUMN_SPECS, contentWidth);
 
   return (
-    <Shell title={`Blocked · popup (${safeCursor + 1}/${tasks.length})`}>
+    <PopupShell title={`Blocked · popup (${safeCursor + 1}/${tasks.length})`}>
       <Box flexDirection="column" flexGrow={1}>
         {tasks.map((t, i) => {
           const selected = i === safeCursor;
@@ -280,7 +280,7 @@ export function BlockedPopup({
         })}
       </Box>
       <FilterPrompt state={flt} />
-    </Shell>
+    </PopupShell>
   );
 }
 
@@ -296,24 +296,4 @@ function colorForBucket(b: ReturnType<typeof roiBucket>): string | undefined {
     case "low":
       return undefined;
   }
-}
-
-function Shell({
-  title,
-  hint,
-  children,
-}: {
-  title: string;
-  /** Per-popup hint inset into the bottom border (Layer 1 of
-   *  nit_tui_drill_inset_title_and_hints). List-mode only;
-   *  drill-mode callers omit and let Layer 2's DrillScrollView
-   *  carry its own bottomLabel. */
-  hint?: string;
-  children: React.ReactNode;
-}): JSX.Element {
-  return (
-    <TitledBox title={title} borderColor="cyan" titleColor="cyan" bottomLabel={hint} flexGrow={1}>
-      {children}
-    </TitledBox>
-  );
 }

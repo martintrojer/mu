@@ -33,7 +33,7 @@ import {
 } from "../columns.js";
 import { dispatchPopupKey } from "../keys.js";
 import { ListRow } from "../list-row.js";
-import { TitledBox } from "../titled-box.js";
+import { PopupShell } from "../popup-shell.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
 import { applyCursor, applyScroll, isNavAction } from "./scroll.js";
 import { TaskDetailDrill, renderNotes } from "./task-detail.js";
@@ -257,32 +257,4 @@ function yankCommandForTask(
     default:
       return null;
   }
-}
-
-function PopupShell({
-  title,
-  hint,
-  children,
-}: {
-  title: string;
-  /** Per-popup hint inset into the bottom border (Layer 1 of
-   *  nit_tui_drill_inset_title_and_hints). The Tasks popup's hint
-   *  is the resolved yank-matrix recipe for the focused row; null
-   *  / undefined → no bottom-label render (drill-mode passes
-   *  undefined and Layer 2's DrillScrollView carries its own
-   *  bottomLabel). */
-  hint?: string | null;
-  children: React.ReactNode;
-}): JSX.Element {
-  return (
-    <TitledBox
-      title={title}
-      borderColor="cyan"
-      titleColor="cyan"
-      bottomLabel={hint ?? undefined}
-      flexGrow={1}
-    >
-      {children}
-    </TitledBox>
-  );
 }

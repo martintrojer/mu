@@ -367,6 +367,15 @@ is opt-in via the new `--tui` flag.
   card/popup/acceptance suites; root cause is the missing
   ink-testing-library install). No in-line fixes — implementation
   ships per filed task.
+- **Shared popup shell extraction** (review_dedup_popup_shell).
+  The nine fullscreen popup modules now import one
+  `src/cli/tui/popup-shell.tsx` `<PopupShell>` wrapper instead of
+  carrying eight byte-identical local `Shell` components plus the
+  near-identical `ready.tsx` `PopupShell` copy. The shared wrapper
+  owns the cyan `<TitledBox>` chrome, `flexGrow={1}` fill invariant,
+  and nullable bottom hint mapping; `test/tui-popup-shells.test.ts`
+  now asserts each popup imports the shared shell rather than
+  defining a local one.
 
 - **Centralised scroll/navigation dispatch**
   (feat_centralize_scroll_navigation). Every popup's `useInput`

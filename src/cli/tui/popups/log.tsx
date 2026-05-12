@@ -33,7 +33,7 @@ import {
 } from "../columns.js";
 import { dispatchPopupKey } from "../keys.js";
 import { ListRow } from "../list-row.js";
-import { TitledBox } from "../titled-box.js";
+import { PopupShell } from "../popup-shell.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
 import { DrillScrollView } from "./drill.js";
 import { applyCursor, applyScroll, isNavAction } from "./scroll.js";
@@ -187,11 +187,11 @@ export function LogPopup({
   });
 
   if (snapshot === null) {
-    return <Shell title="Activity log · popup">{<Text dimColor>loading…</Text>}</Shell>;
+    return <PopupShell title="Activity log · popup">{<Text dimColor>loading…</Text>}</PopupShell>;
   }
   if (mode === "drill" && focused !== undefined) {
     return (
-      <Shell title={`Activity log · #${focused.seq} (${focused.createdAt.slice(11, 19)})`}>
+      <PopupShell title={`Activity log · #${focused.seq} (${focused.createdAt.slice(11, 19)})`}>
         <Box flexDirection="column" flexGrow={1}>
           <DrillScrollView
             title="event payload"
@@ -202,24 +202,24 @@ export function LogPopup({
             hint="y yanks `mu log --since N -n 1`"
           />
         </Box>
-      </Shell>
+      </PopupShell>
     );
   }
   if (sourceEvents.length === 0) {
     return (
-      <Shell title="Activity log · popup">
+      <PopupShell title="Activity log · popup">
         <Text dimColor>(no events yet)</Text>
-      </Shell>
+      </PopupShell>
     );
   }
   if (events.length === 0) {
     return (
-      <Shell title="Activity log · popup">
+      <PopupShell title="Activity log · popup">
         <Box flexDirection="column" flexGrow={1}>
           <Text dimColor>(no matches for "{flt.query}")</Text>
         </Box>
         <FilterPrompt state={flt} />
-      </Shell>
+      </PopupShell>
     );
   }
 
@@ -242,7 +242,7 @@ export function LogPopup({
   const widths = layoutColumns(rows, COLUMN_SPECS, contentWidth);
 
   return (
-    <Shell
+    <PopupShell
       title={`Activity log · popup (${safeCursor + 1}/${events.length})`}
       hint="y yanks the related `mu task/agent show` command"
     >
@@ -272,26 +272,6 @@ export function LogPopup({
         })}
       </Box>
       <FilterPrompt state={flt} />
-    </Shell>
-  );
-}
-
-function Shell({
-  title,
-  hint,
-  children,
-}: {
-  title: string;
-  /** Per-popup hint inset into the bottom border (Layer 1 of
-   *  nit_tui_drill_inset_title_and_hints). List-mode only;
-   *  drill-mode callers omit and let Layer 2's DrillScrollView
-   *  carry its own bottomLabel. */
-  hint?: string;
-  children: React.ReactNode;
-}): JSX.Element {
-  return (
-    <TitledBox title={title} borderColor="cyan" titleColor="cyan" bottomLabel={hint} flexGrow={1}>
-      {children}
-    </TitledBox>
+    </PopupShell>
   );
 }

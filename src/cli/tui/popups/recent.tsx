@@ -36,7 +36,7 @@ import {
 } from "../columns.js";
 import { dispatchPopupKey } from "../keys.js";
 import { ListRow } from "../list-row.js";
-import { TitledBox } from "../titled-box.js";
+import { PopupShell } from "../popup-shell.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
 import { applyCursor, applyScroll, isNavAction } from "./scroll.js";
 import { TaskDetailDrill, renderNotes } from "./task-detail.js";
@@ -180,29 +180,29 @@ export function RecentPopup({
   });
 
   if (snapshot === null) {
-    return <Shell title="Recent · popup">{<Text dimColor>loading…</Text>}</Shell>;
+    return <PopupShell title="Recent · popup">{<Text dimColor>loading…</Text>}</PopupShell>;
   }
   if (sourceTasks.length === 0) {
     return (
-      <Shell title="Recent · popup">
+      <PopupShell title="Recent · popup">
         <Text dimColor>(none recently closed)</Text>
-      </Shell>
+      </PopupShell>
     );
   }
   if (tasks.length === 0) {
     return (
-      <Shell title="Recent · popup">
+      <PopupShell title="Recent · popup">
         <Box flexDirection="column" flexGrow={1}>
           <Text dimColor>(no matches for "{flt.query}")</Text>
         </Box>
         <FilterPrompt state={flt} />
-      </Shell>
+      </PopupShell>
     );
   }
 
   if (mode === "drill" && focused) {
     return (
-      <Shell title={`Recent · ${focused.name} (notes)`}>
+      <PopupShell title={`Recent · ${focused.name} (notes)`}>
         <Box flexDirection="column" flexGrow={1}>
           <TaskDetailDrill
             task={focused}
@@ -212,7 +212,7 @@ export function RecentPopup({
             viewport={viewport}
           />
         </Box>
-      </Shell>
+      </PopupShell>
     );
   }
 
@@ -231,7 +231,7 @@ export function RecentPopup({
   const widths = layoutColumns(rows, COLUMN_SPECS, contentWidth);
 
   return (
-    <Shell
+    <PopupShell
       title={`Recent · popup (${safeCursor + 1}/${tasks.length})`}
       hint="Enter notes · y yanks `mu task open` · / filter · Esc/q close"
     >
@@ -253,7 +253,7 @@ export function RecentPopup({
         })}
       </Box>
       <FilterPrompt state={flt} />
-    </Shell>
+    </PopupShell>
   );
 }
 
@@ -278,24 +278,4 @@ export function formatRoi(impact: number, effortDays: number): string {
   if (effortDays <= 0) return "∞";
   const r = Math.round(impact / effortDays);
   return Number.isFinite(r) ? String(r) : "∞";
-}
-
-function Shell({
-  title,
-  hint,
-  children,
-}: {
-  title: string;
-  /** Per-popup hint inset into the bottom border (Layer 1 of
-   *  nit_tui_drill_inset_title_and_hints). List-mode only;
-   *  drill-mode callers omit and let Layer 2's DrillScrollView
-   *  carry its own bottomLabel. */
-  hint?: string;
-  children: React.ReactNode;
-}): JSX.Element {
-  return (
-    <TitledBox title={title} borderColor="cyan" titleColor="cyan" bottomLabel={hint} flexGrow={1}>
-      {children}
-    </TitledBox>
-  );
 }

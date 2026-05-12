@@ -31,7 +31,7 @@ import {
 } from "../columns.js";
 import { dispatchPopupKey } from "../keys.js";
 import { ListRow } from "../list-row.js";
-import { TitledBox } from "../titled-box.js";
+import { PopupShell } from "../popup-shell.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
 import { DrillScrollView } from "./drill.js";
 import { applyCursor, applyScroll, isNavAction } from "./scroll.js";
@@ -213,29 +213,29 @@ export function AgentsPopup({
   });
 
   if (snapshot === null) {
-    return <Shell title="Agents · popup">{<Text dimColor>loading…</Text>}</Shell>;
+    return <PopupShell title="Agents · popup">{<Text dimColor>loading…</Text>}</PopupShell>;
   }
   if (sourceAgents.length === 0) {
     return (
-      <Shell title="Agents · popup">
+      <PopupShell title="Agents · popup">
         <Text dimColor>(no agents)</Text>
-      </Shell>
+      </PopupShell>
     );
   }
   if (agents.length === 0) {
     return (
-      <Shell title="Agents · popup">
+      <PopupShell title="Agents · popup">
         <Box flexDirection="column" flexGrow={1}>
           <Text dimColor>(no matches for "{flt.query}")</Text>
         </Box>
         <FilterPrompt state={flt} />
-      </Shell>
+      </PopupShell>
     );
   }
 
   if (mode === "drill" && focused) {
     return (
-      <Shell title={`Agents · ${focused.name} (scrollback)`}>
+      <PopupShell title={`Agents · ${focused.name} (scrollback)`}>
         <Box flexDirection="column" flexGrow={1}>
           <DrillScrollView
             title={`mu agent read ${focused.name} -n ${SCROLLBACK_LINES}`}
@@ -246,7 +246,7 @@ export function AgentsPopup({
             emptyText={loading ? "loading…" : "(no scrollback yet)"}
           />
         </Box>
-      </Shell>
+      </PopupShell>
     );
   }
 
@@ -254,7 +254,7 @@ export function AgentsPopup({
   const widths = layoutColumns(rows, COLUMN_SPECS, contentWidth);
 
   return (
-    <Shell
+    <PopupShell
       title={`Agents · popup (${safeCursor + 1}/${agents.length})`}
       hint="f free · x close · y yanks `mu agent send`"
     >
@@ -276,26 +276,6 @@ export function AgentsPopup({
         })}
       </Box>
       <FilterPrompt state={flt} />
-    </Shell>
-  );
-}
-
-function Shell({
-  title,
-  hint,
-  children,
-}: {
-  title: string;
-  /** Per-popup hint inset into the bottom border (Layer 1 of
-   *  nit_tui_drill_inset_title_and_hints). List-mode only;
-   *  drill-mode callers omit and let Layer 2's DrillScrollView
-   *  carry its own bottomLabel. */
-  hint?: string;
-  children: React.ReactNode;
-}): JSX.Element {
-  return (
-    <TitledBox title={title} borderColor="cyan" titleColor="cyan" bottomLabel={hint} flexGrow={1}>
-      {children}
-    </TitledBox>
+    </PopupShell>
   );
 }

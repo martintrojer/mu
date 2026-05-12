@@ -46,7 +46,7 @@ import {
 } from "../columns.js";
 import { dispatchPopupKey } from "../keys.js";
 import { ListRow } from "../list-row.js";
-import { TitledBox } from "../titled-box.js";
+import { PopupShell } from "../popup-shell.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
 import { DrillScrollView } from "./drill.js";
 import { applyCursor, applyScroll, isNavAction } from "./scroll.js";
@@ -177,29 +177,29 @@ export function DoctorPopup({
   });
 
   if (snapshot === null) {
-    return <Shell title="Doctor · popup">{<Text dimColor>loading…</Text>}</Shell>;
+    return <PopupShell title="Doctor · popup">{<Text dimColor>loading…</Text>}</PopupShell>;
   }
   if (sourceChecks.length === 0) {
     return (
-      <Shell title="Doctor · popup">
+      <PopupShell title="Doctor · popup">
         <Text dimColor>(no checks ran — `mu doctor` should always return ≥ 1 row)</Text>
-      </Shell>
+      </PopupShell>
     );
   }
   if (checks.length === 0) {
     return (
-      <Shell title="Doctor · popup">
+      <PopupShell title="Doctor · popup">
         <Box flexDirection="column" flexGrow={1}>
           <Text dimColor>(no matches for "{flt.query}")</Text>
         </Box>
         <FilterPrompt state={flt} />
-      </Shell>
+      </PopupShell>
     );
   }
 
   if (mode === "drill" && focused) {
     return (
-      <Shell title={`Doctor · ${focused.name} (detail)`}>
+      <PopupShell title={`Doctor · ${focused.name} (detail)`}>
         <Box flexDirection="column" flexGrow={1}>
           <DrillScrollView
             title={`${focused.name} · ${focused.status}`}
@@ -210,7 +210,7 @@ export function DoctorPopup({
             hint={`y yanks \`${yankCommandForCheck(focused)}\``}
           />
         </Box>
-      </Shell>
+      </PopupShell>
     );
   }
 
@@ -218,7 +218,7 @@ export function DoctorPopup({
   const widths = layoutColumns(rows, COLUMN_SPECS, contentWidth);
 
   return (
-    <Shell
+    <PopupShell
       title={`Doctor · popup (${safeCursor + 1}/${checks.length})`}
       hint="y yanks remediation hint (informational)"
     >
@@ -247,7 +247,7 @@ export function DoctorPopup({
         })}
       </Box>
       <FilterPrompt state={flt} />
-    </Shell>
+    </PopupShell>
   );
 }
 
@@ -385,24 +385,4 @@ export function remediationParagraph(check: DoctorCheck): readonly string[] {
     default:
       return ["See `mu doctor` for the canonical textual diagnostic."];
   }
-}
-
-function Shell({
-  title,
-  hint,
-  children,
-}: {
-  title: string;
-  /** Per-popup hint inset into the bottom border (Layer 1 of
-   *  nit_tui_drill_inset_title_and_hints). List-mode only;
-   *  drill-mode callers omit and let Layer 2's DrillScrollView
-   *  carry its own bottomLabel. */
-  hint?: string;
-  children: React.ReactNode;
-}): JSX.Element {
-  return (
-    <TitledBox title={title} borderColor="cyan" titleColor="cyan" bottomLabel={hint} flexGrow={1}>
-      {children}
-    </TitledBox>
-  );
 }

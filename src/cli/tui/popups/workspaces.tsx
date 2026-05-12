@@ -65,6 +65,7 @@ import {
 } from "../columns.js";
 import { dispatchPopupKey } from "../keys.js";
 import { ListRow } from "../list-row.js";
+import { PopupShell } from "../popup-shell.js";
 import { TitledBox } from "../titled-box.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
 import { DrillScrollView } from "./drill.js";
@@ -397,13 +398,13 @@ export function WorkspacesPopup({
   });
 
   if (snapshot === null) {
-    return <Shell title="Workspaces · popup">{<Text dimColor>loading…</Text>}</Shell>;
+    return <PopupShell title="Workspaces · popup">{<Text dimColor>loading…</Text>}</PopupShell>;
   }
   if (inShow && showSha !== null && focused) {
     const shortSha = showSha.slice(0, 12);
     const body = showErr !== null ? `error: ${showErr}` : showText;
     return (
-      <Shell title={`Workspaces · git show ${shortSha}`}>
+      <PopupShell title={`Workspaces · git show ${shortSha}`}>
         <Box flexDirection="column" flexGrow={1}>
           <DrillScrollView
             title={`git show ${shortSha} (${focused.agentName})`}
@@ -414,32 +415,32 @@ export function WorkspacesPopup({
             emptyText={showLoading ? "loading…" : "(empty diff)"}
           />
         </Box>
-      </Shell>
+      </PopupShell>
     );
   }
   if (sourceWorkspaces.length === 0) {
     return (
-      <Shell title="Workspaces · popup">
+      <PopupShell title="Workspaces · popup">
         <Text dimColor>
           (no workspaces) try `mu agent spawn worker-1 -w {snapshot.workstreamName} --workspace`
         </Text>
-      </Shell>
+      </PopupShell>
     );
   }
   if (mode !== "drill" && workspaces.length === 0) {
     return (
-      <Shell title="Workspaces · popup">
+      <PopupShell title="Workspaces · popup">
         <Box flexDirection="column" flexGrow={1}>
           <Text dimColor>(no matches for "{flt.query}")</Text>
         </Box>
         <FilterPrompt state={flt} />
-      </Shell>
+      </PopupShell>
     );
   }
 
   if (mode === "drill" && focused) {
     return (
-      <Shell title={`Workspaces · ${focused.agentName} (commits since fork)`}>
+      <PopupShell title={`Workspaces · ${focused.agentName} (commits since fork)`}>
         <Box flexDirection="column" flexGrow={1}>
           {renderDrillBody(
             commits,
@@ -453,7 +454,7 @@ export function WorkspacesPopup({
           )}
         </Box>
         <FilterPrompt state={drillFlt} />
-      </Shell>
+      </PopupShell>
     );
   }
 
@@ -469,7 +470,7 @@ export function WorkspacesPopup({
   const widths = layoutColumns(rows, COLUMN_SPECS, contentWidth);
 
   return (
-    <Shell
+    <PopupShell
       title={`Workspaces · popup (${safeCursor + 1}/${workspaces.length})`}
       hint="y yanks `cd $(mu workspace path <agent>)`"
     >
@@ -500,7 +501,7 @@ export function WorkspacesPopup({
         })}
       </Box>
       <FilterPrompt state={flt} />
-    </Shell>
+    </PopupShell>
   );
 }
 
@@ -606,28 +607,6 @@ function renderDrillBody(
           );
         })}
       </Box>
-    </TitledBox>
-  );
-}
-
-function Shell({
-  title,
-  hint,
-  children,
-}: {
-  title: string;
-  /** Per-popup hint inset into the bottom border (Layer 1 of
-   *  nit_tui_drill_inset_title_and_hints). List-mode only;
-   *  drill-mode callers omit and let Layer 2's DrillScrollView
-   *  carry its own bottomLabel (workspaces drill uses an ad-hoc
-   *  list renderer rather than DrillScrollView, so its drill hint
-   *  remains in-body for now). */
-  hint?: string;
-  children: React.ReactNode;
-}): JSX.Element {
-  return (
-    <TitledBox title={title} borderColor="cyan" titleColor="cyan" bottomLabel={hint} flexGrow={1}>
-      {children}
     </TitledBox>
   );
 }

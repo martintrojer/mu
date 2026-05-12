@@ -41,7 +41,7 @@ import {
 } from "../columns.js";
 import { dispatchPopupKey } from "../keys.js";
 import { ListRow } from "../list-row.js";
-import { TitledBox } from "../titled-box.js";
+import { PopupShell } from "../popup-shell.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
 import { applyCursor, applyScroll, isNavAction } from "./scroll.js";
 import { TaskDetailDrill, renderNotes } from "./task-detail.js";
@@ -262,23 +262,23 @@ export function TracksPopup({
   });
 
   if (snapshot === null) {
-    return <Shell title="Tracks · popup">{<Text dimColor>loading…</Text>}</Shell>;
+    return <PopupShell title="Tracks · popup">{<Text dimColor>loading…</Text>}</PopupShell>;
   }
   if (sourceTracks.length === 0) {
     return (
-      <Shell title="Tracks · popup">
+      <PopupShell title="Tracks · popup">
         <Text dimColor>(no goals — `mu task add ... --impact ...`)</Text>
-      </Shell>
+      </PopupShell>
     );
   }
   if (mode === "list" && tracks.length === 0) {
     return (
-      <Shell title="Tracks · popup">
+      <PopupShell title="Tracks · popup">
         <Box flexDirection="column" flexGrow={1}>
           <Text dimColor>(no matches for "{flt.query}")</Text>
         </Box>
         <FilterPrompt state={flt} />
-      </Shell>
+      </PopupShell>
     );
   }
 
@@ -290,13 +290,13 @@ export function TracksPopup({
       // task-list once setDrillSubMode runs.
       setDrillSubMode("task-list");
       return (
-        <Shell title={`Track ${cursor + 1} · (resyncing)`}>
+        <PopupShell title={`Track ${cursor + 1} · (resyncing)`}>
           <Text dimColor>(refocusing…)</Text>
-        </Shell>
+        </PopupShell>
       );
     }
     return (
-      <Shell title={`Track ${cursor + 1} · task: ${t.name} (notes)`}>
+      <PopupShell title={`Track ${cursor + 1} · task: ${t.name} (notes)`}>
         <Box flexDirection="column" flexGrow={1}>
           <TaskDetailDrill
             task={t}
@@ -306,7 +306,7 @@ export function TracksPopup({
             viewport={viewport}
           />
         </Box>
-      </Shell>
+      </PopupShell>
     );
   }
 
@@ -315,9 +315,9 @@ export function TracksPopup({
     const goalSummary = focusedTrack.roots.map((r) => r.name).join(", ");
     if (drillTasks.length === 0) {
       return (
-        <Shell title={`${trackLabel} · ${goalSummary}`}>
+        <PopupShell title={`${trackLabel} · ${goalSummary}`}>
           <Text dimColor>(no tasks resolved)</Text>
-        </Shell>
+        </PopupShell>
       );
     }
     const start = Math.max(
@@ -328,7 +328,9 @@ export function TracksPopup({
     const rows = visible.map((t) => [t.name, t.status, t.title]);
     const widths = layoutColumns(rows, DRILL_COLUMN_SPECS, contentWidth);
     return (
-      <Shell title={`${trackLabel} · ${goalSummary} (${drillCursor + 1}/${drillTasks.length})`}>
+      <PopupShell
+        title={`${trackLabel} · ${goalSummary} (${drillCursor + 1}/${drillTasks.length})`}
+      >
         <Box flexDirection="column" flexGrow={1}>
           {visible.map((t, i) => {
             const sel = drillTasks.indexOf(t) === drillCursor;
@@ -349,7 +351,7 @@ export function TracksPopup({
         <Box marginTop={1}>
           <Text dimColor>y yanks `mu task show`</Text>
         </Box>
-      </Shell>
+      </PopupShell>
     );
   }
 
@@ -362,7 +364,7 @@ export function TracksPopup({
   const widths = layoutColumns(rows, COLUMN_SPECS, contentWidth);
 
   return (
-    <Shell
+    <PopupShell
       title={`Tracks · popup (${safeCursor + 1}/${tracks.length})`}
       hint="y yanks `mu task tree <head-id>`"
     >
@@ -384,7 +386,7 @@ export function TracksPopup({
         })}
       </Box>
       <FilterPrompt state={flt} />
-    </Shell>
+    </PopupShell>
   );
 }
 
@@ -403,25 +405,4 @@ function statusRank(status: string): number {
     default:
       return 5;
   }
-}
-
-function Shell({
-  title,
-  hint,
-  children,
-}: {
-  title: string;
-  /** Per-popup hint inset into the bottom border (Layer 1 of
-   *  nit_tui_drill_inset_title_and_hints). Top-level list-of-
-   *  tracks only; drill (task-list) and task-detail callers omit
-   *  and let Layer 2's DrillScrollView carry its own bottomLabel
-   *  (or leave the in-body hint where DrillScrollView isn't used). */
-  hint?: string;
-  children: React.ReactNode;
-}): JSX.Element {
-  return (
-    <TitledBox title={title} borderColor="cyan" titleColor="cyan" bottomLabel={hint} flexGrow={1}>
-      {children}
-    </TitledBox>
-  );
 }
