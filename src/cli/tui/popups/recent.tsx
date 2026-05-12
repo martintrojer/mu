@@ -22,7 +22,7 @@
 //
 // Per ROADMAP pledge: ink/react import limited to src/cli/tui/*.
 
-import { Box, Text, useInput, useStdout } from "ink";
+import { Box, Text, useInput } from "ink";
 import { useEffect, useMemo, useState } from "react";
 import type { Db } from "../../../db.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
@@ -35,6 +35,7 @@ import {
   termColsForLayout,
 } from "../columns.js";
 import { dispatchPopupKey } from "../keys.js";
+import { TitledBox } from "../titled-box.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
 import { clampScrollTop } from "./drill.js";
 import { TaskDetailDrill, renderNotes } from "./task-detail.js";
@@ -212,7 +213,10 @@ export function RecentPopup({
 
   if (mode === "drill" && focused) {
     return (
-      <Shell title={`Recent · ${focused.name} (notes)`}>
+      <Shell
+        title={`Recent · ${focused.name} (notes)`}
+        hint="j/k scroll · Ctrl-D/U half page · y yanks `mu task notes` · Esc/q back to list"
+      >
         <Box flexDirection="column" flexGrow={1}>
           <TaskDetailDrill
             task={focused}
@@ -221,11 +225,6 @@ export function RecentPopup({
             scrollTop={scrollTop}
             viewport={VIEWPORT}
           />
-        </Box>
-        <Box marginTop={1}>
-          <Text dimColor>
-            j/k scroll · Ctrl-D/U half page · y yanks `mu task notes` · Esc/q back to list
-          </Text>
         </Box>
       </Shell>
     );
@@ -246,7 +245,10 @@ export function RecentPopup({
   const widths = layoutColumns(rows, COLUMN_SPECS, contentWidth);
 
   return (
-    <Shell title={`Recent · popup (${safeCursor + 1}/${tasks.length})`}>
+    <Shell
+      title={`Recent · popup (${safeCursor + 1}/${tasks.length})`}
+      hint="Enter notes · y yanks `mu task open` · / filter · Esc/q close"
+    >
       <Box flexDirection="column" flexGrow={1}>
         {tasks.map((t, i) => {
           const selected = i === safeCursor;
@@ -286,9 +288,6 @@ export function RecentPopup({
           );
         })}
       </Box>
-      <Box marginTop={1}>
-        <Text dimColor>Enter notes · y yanks `mu task open` · / filter · Esc/q close</Text>
-      </Box>
       <FilterPrompt state={flt} />
     </Shell>
   );
@@ -317,25 +316,22 @@ export function formatRoi(impact: number, effortDays: number): string {
   return Number.isFinite(r) ? String(r) : "∞";
 }
 
-function Shell({ title, children }: { title: string; children: React.ReactNode }): JSX.Element {
-  // width={cols} + flexGrow={1} ensure the popup fills the pane edge-to-edge
-  // (see bug_tui_popups_fill_pane). Without these, ink's Yoga layout sizes
-  // this Box to its content and the popup renders as a narrow strip.
-  const { stdout } = useStdout();
-  const cols = stdout.columns ?? 80;
+function Shell({
+  title,
+  hint,
+  children,
+}: {
+  title: string;
+  /** Per-popup hint inset into the bottom border (Layer 1 of
+   *  nit_tui_drill_inset_title_and_hints). List-mode only;
+   *  drill-mode callers omit and let Layer 2's DrillScrollView
+   *  carry its own bottomLabel. */
+  hint?: string;
+  children: React.ReactNode;
+}): JSX.Element {
   return (
-    <Box
-      borderStyle="round"
-      borderColor="cyan"
-      paddingX={1}
-      flexDirection="column"
-      flexGrow={1}
-      width={cols}
-    >
-      <Text bold color="cyan">
-        {title}
-      </Text>
+    <TitledBox title={title} borderColor="cyan" titleColor="cyan" bottomLabel={hint} flexGrow={1}>
       {children}
-    </Box>
+    </TitledBox>
   );
 }
