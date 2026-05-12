@@ -237,11 +237,6 @@ export function BlockedPopup({
             viewport={viewport}
           />
         </Box>
-        <Box marginTop={1}>
-          <Text dimColor>
-            j/k scroll · Ctrl-D/U half page · y yanks `mu task notes` · Esc/q back to list
-          </Text>
-        </Box>
       </Shell>
     );
   }

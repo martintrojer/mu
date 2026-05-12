@@ -129,3 +129,33 @@ describe("popup body region wraps content in flexGrow={1} (sticky bottom hint)",
     });
   }
 });
+
+function stripComments(src: string): string {
+  return src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+}
+
+describe("drill-mode bottom hints stay yank-only (no duplicate StatusBar nav cluster)", () => {
+  const cases: ReadonlyArray<{ name: string; src: string }> = [
+    { name: "agents.tsx", src: AGENTS },
+    { name: "blocked.tsx", src: BLOCKED },
+    { name: "doctor.tsx", src: DOCTOR },
+    { name: "inprogress.tsx", src: INPROGRESS },
+    { name: "log.tsx", src: LOG },
+    { name: "ready.tsx", src: READY },
+    { name: "recent.tsx", src: RECENT },
+    { name: "tracks.tsx", src: TRACKS },
+    { name: "workspaces.tsx", src: WORKSPACES },
+  ];
+
+  for (const { name, src } of cases) {
+    it(`${name} drill-mode hint text does not repeat navigation keys`, () => {
+      // List-mode hints are intentionally untouched, so don't ban
+      // e.g. Recent's list-mode "Esc/q close" recipe. The duplicate
+      // bug was specifically the drill-mode nav cluster: j/k scroll,
+      // Ctrl-D/U half-page, and Esc/q back. Comments may document the
+      // keymap, but renderable hint/text strings must not carry it.
+      const renderable = stripComments(src);
+      expect(renderable).not.toMatch(/j\/k\s+(?:scroll|nav)|Ctrl-D|Esc\/?q? back/);
+    });
+  }
+});

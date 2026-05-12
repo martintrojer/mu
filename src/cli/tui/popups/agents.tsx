@@ -149,18 +149,28 @@ export function AgentsPopup({
     });
     if (mode === "drill") {
       // Drill-mode keymap: scroll-based view. Nav cluster funnels
-      // through applyScroll; Esc/q backs to list. Yank / verbs /
-      // drill are intentionally suppressed in drill (read-only).
+      // through applyScroll; Esc/q backs to list; y yanks the
+      // scrollback-read recipe. Verb keys / drill-again are
+      // intentionally suppressed in drill (read-only).
       const totalLines = scrollback === "" ? 0 : scrollback.split("\n").length;
       if (isNavAction(action)) {
         setScrollTop((s) => applyScroll(s, action, totalLines, viewport));
         return;
       }
-      if (action.kind === "close") {
-        onModeChange("list");
-        return;
+      switch (action.kind) {
+        case "close":
+          onModeChange("list");
+          return;
+        case "yank": {
+          if (!focused || !snapshot) return;
+          void yank(
+            `mu agent read ${focused.name} -n ${SCROLLBACK_LINES} -w ${snapshot.workstreamName}`,
+          );
+          return;
+        }
+        default:
+          return;
       }
-      return;
     }
     if (isNavAction(action)) {
       setCursor((c) => applyCursor(c, action, agents.length, viewport));
@@ -232,8 +242,8 @@ export function AgentsPopup({
             body={scrollbackErr !== null ? `error: ${scrollbackErr}` : scrollback}
             viewport={viewport}
             scrollTop={scrollTop}
-            hint={loading ? "loading…" : undefined}
-            emptyText="(no scrollback yet)"
+            hint={`y yanks \`mu agent read -n ${SCROLLBACK_LINES}\``}
+            emptyText={loading ? "loading…" : "(no scrollback yet)"}
           />
         </Box>
       </Shell>

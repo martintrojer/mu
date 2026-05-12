@@ -317,9 +317,6 @@ export function TracksPopup({
       return (
         <Shell title={`${trackLabel} · ${goalSummary}`}>
           <Text dimColor>(no tasks resolved)</Text>
-          <Box marginTop={1}>
-            <Text dimColor>Esc/q back to list</Text>
-          </Box>
         </Shell>
       );
     }
@@ -350,9 +347,7 @@ export function TracksPopup({
           })}
         </Box>
         <Box marginTop={1}>
-          <Text dimColor>
-            j/k nav · Enter task notes · y yanks `mu task show` · Esc/q back to list
-          </Text>
+          <Text dimColor>y yanks `mu task show`</Text>
         </Box>
       </Shell>
     );

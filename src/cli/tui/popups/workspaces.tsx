@@ -410,14 +410,9 @@ export function WorkspacesPopup({
             body={body}
             viewport={drillViewport}
             scrollTop={showScrollTop}
-            hint={showLoading ? "loading…" : undefined}
+            hint={`y yanks \`git show ${shortSha}\``}
             emptyText={showLoading ? "loading…" : "(empty diff)"}
           />
-        </Box>
-        <Box marginTop={1}>
-          <Text dimColor>
-            j/k scroll · Ctrl-D/U half page · y yanks `git show {shortSha}` · Esc/q back to commits
-          </Text>
         </Box>
       </Shell>
     );
@@ -539,41 +534,44 @@ function renderDrillBody(
   contentWidth: number,
   viewport: number,
 ): JSX.Element {
+  const title = `commits for ${focused.agentName}`;
+  const hint = "y yanks `git show <sha>`";
   if (loading) {
-    return <Text dimColor>▸ loading commits for {focused.agentName} …</Text>;
+    return (
+      <DrillScrollView
+        title={title}
+        body="loading…"
+        viewport={viewport}
+        scrollTop={0}
+        hint={hint}
+      />
+    );
   }
   if (err !== null) {
     return (
-      <Box flexDirection="column">
-        <Text bold color="magenta">
-          ▸ commits for {focused.agentName}
-        </Text>
-        <Text color="red">error: {err}</Text>
-      </Box>
+      <DrillScrollView
+        title={title}
+        body={`error: ${err}`}
+        viewport={viewport}
+        scrollTop={0}
+        hint={hint}
+      />
     );
   }
   if (source.length === 0) {
+    const parent = focused.parentRef ? focused.parentRef.slice(0, 12) : "(none)";
     return (
-      <Box flexDirection="column">
-        <Text bold color="magenta">
-          ▸ commits for {focused.agentName}
-        </Text>
-        <Text dimColor>
-          (no commits since fork — workspace is at parent_ref{" "}
-          {focused.parentRef ? focused.parentRef.slice(0, 12) : "(none)"})
-        </Text>
-      </Box>
+      <DrillScrollView
+        title={title}
+        body={`(no commits since fork — workspace is at parent_ref ${parent})`}
+        viewport={viewport}
+        scrollTop={0}
+        hint={hint}
+      />
     );
   }
   if (filtered.length === 0) {
-    return (
-      <Box flexDirection="column">
-        <Text bold color="magenta">
-          ▸ commits for {focused.agentName}
-        </Text>
-        <Text dimColor>(no matches)</Text>
-      </Box>
-    );
+    return <DrillScrollView title={title} body="(no matches)" viewport={viewport} scrollTop={0} />;
   }
 
   const start = Math.max(
@@ -584,32 +582,31 @@ function renderDrillBody(
   const rows = visible.map((c) => [c.sha.slice(0, 12), c.subject]);
   const widths = layoutColumns(rows, DRILL_COLUMN_SPECS, contentWidth);
   return (
-    <Box flexDirection="column">
-      <Box>
-        <Text bold color="magenta">
-          ▸ commits for {focused.agentName}
-        </Text>
-        <Text dimColor>
-          {" "}
-          ({cursor + 1}/{filtered.length})
-        </Text>
+    <TitledBox
+      title={`${title} · ${cursor + 1}/${filtered.length}`}
+      borderColor="magenta"
+      titleColor="magenta"
+      bottomLabel={hint}
+      flexGrow={1}
+    >
+      <Box flexDirection="column" flexGrow={1}>
+        {visible.map((c, i) => {
+          const sel = filtered.indexOf(c) === cursor;
+          const row = rows[i];
+          if (row === undefined) return null;
+          const padded = renderRow(row, widths, DRILL_COLUMN_SPECS);
+          return (
+            <ListRow
+              key={c.sha}
+              cells={padded}
+              contentWidth={contentWidth}
+              colors={COMMIT_COLORS}
+              selected={sel}
+            />
+          );
+        })}
       </Box>
-      {visible.map((c, i) => {
-        const sel = filtered.indexOf(c) === cursor;
-        const row = rows[i];
-        if (row === undefined) return null;
-        const padded = renderRow(row, widths, DRILL_COLUMN_SPECS);
-        return (
-          <ListRow
-            key={c.sha}
-            cells={padded}
-            contentWidth={contentWidth}
-            colors={COMMIT_COLORS}
-            selected={sel}
-          />
-        );
-      })}
-    </Box>
+    </TitledBox>
   );
 }
 

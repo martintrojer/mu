@@ -411,6 +411,19 @@ is opt-in via the new `--tui` flag.
 
 ### Fixed
 
+- **TUI drill-mode bottom labels are yank-only again**
+  (bug_tui_drill_double_hints). The Layer-2 contract from
+  nit_tui_drill_inset_title_and_hints said `DrillScrollView`'s
+  magenta bottom label should carry only the drill-specific yank
+  recipe, while the j/k / Ctrl-D/U / Esc navigation cluster lives
+  in the global StatusBar. Several popup drill views drifted and
+  rendered the full nav recipe in their nested TitledBox, producing
+  two stacked hint surfaces. All nine popup files now keep drill
+  bottom labels to the yank recipe only (including Workspaces'
+  commits and git-show drill levels); list-mode hints are
+  unchanged. Static coverage in `test/tui-popup-shells.test.ts`
+  bans renderable drill hints containing `j/k`, `Ctrl-D`, or
+  `Esc back` so the duplication does not regress.
 - **TUI dashboard topmost card no longer scrolls its top border
   off-screen on the single-ws dashboard**
   (bug_tui_dashboard_top_card_scrolls_off). Sibling of

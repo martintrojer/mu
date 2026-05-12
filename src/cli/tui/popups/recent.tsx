@@ -202,10 +202,7 @@ export function RecentPopup({
 
   if (mode === "drill" && focused) {
     return (
-      <Shell
-        title={`Recent · ${focused.name} (notes)`}
-        hint="j/k scroll · Ctrl-D/U half page · y yanks `mu task notes` · Esc/q back to list"
-      >
+      <Shell title={`Recent · ${focused.name} (notes)`}>
         <Box flexDirection="column" flexGrow={1}>
           <TaskDetailDrill
             task={focused}
