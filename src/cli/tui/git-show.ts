@@ -19,12 +19,14 @@
 
 import { execFile as nodeExecFile } from "node:child_process";
 import { promisify } from "node:util";
+import { SHOW_COMMIT_MAX_CHARS, gitBackend } from "../../vcs.js";
 
 /** Cap the captured `git show` output so a giant merge commit can't
  *  blow the popup's render budget or eat memory. 100_000 chars is
  *  ~1300 wrapped lines at 80 cols; well above the viewport, well
- *  below "runaway". */
-export const SHOW_MAX_CHARS = 100_000;
+ *  below "runaway". Kept as a TUI-helper export for test/back-compat;
+ *  production show execution delegates to VcsBackend.showCommit. */
+export const SHOW_MAX_CHARS = SHOW_COMMIT_MAX_CHARS;
 
 /** The exact arg vector passed to git for the show drill. Exported
  *  for test assertions ("the popup must NOT swap --color=never for
@@ -52,16 +54,19 @@ export type ExecFileFn = (
 
 const defaultExecFile: ExecFileFn = promisify(nodeExecFile) as ExecFileFn;
 
-/** Shell out to `git -C <path> show <sha> --stat -p --color=never`
- *  and capture stdout. Caps output at SHOW_MAX_CHARS and converts
- *  any throw into a `error` field rather than re-throwing — the
- *  popup uses both fields to switch between the diff body and an
- *  inline error line. */
+/** Show a commit from a git repo. Production callers delegate to
+ *  VcsBackend.showCommit so the TUI's show path shares the same seam
+ *  as jj/sl. The optional execFile injection remains for this helper's
+ *  older unit tests that pin git's exact arg vector. */
 export async function runGitShow(
   path: string,
   sha: string,
   opts: { execFile?: ExecFileFn } = {},
 ): Promise<RunGitShowResult> {
+  if (opts.execFile === undefined) {
+    const r = await gitBackend.showCommit(path, sha);
+    return { text: r.text, truncated: r.truncated, error: r.error ?? null };
+  }
   const exec = opts.execFile ?? defaultExecFile;
   try {
     const { stdout } = await exec("git", gitShowArgs(path, sha), {

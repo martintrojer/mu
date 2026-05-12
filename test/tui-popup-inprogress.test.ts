@@ -119,7 +119,7 @@ describe("popups/inprogress.tsx ↔ App / keys wiring", () => {
     const app = readFileSync("./src/cli/tui/app.tsx", "utf-8");
     // Union widens as more popups land (slots 5/7/8 etc); we only
     // assert 6 is in.
-    expect(app).toMatch(/type PopupId = [\d| ]*\b6\b[\d| ]*\| null/);
+    expect(app).toMatch(/type PopupId = [^\n]*\b6\b[^\n]*null/);
   });
 
   it("keys.ts maps Shift+6 (^) to openPopup(6)", () => {

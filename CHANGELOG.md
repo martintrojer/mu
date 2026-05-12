@@ -23,7 +23,7 @@ called out under "Breaking" in each entry.
   `staleness` object (`agentName`, `workstreamName`,
   `commitsBehindMain`, `isStale`) or `null` for agents without a
   workspace.
-
+- **TUI Commits card + `l` commits popup** (feat_tui_commits_card). Slot 8 now shows a lazygit-style recent-project-commits card (`<sha-7> <relTime> <subject>`) sourced from the project root where the TUI was launched, not from any per-agent worker workspace. `l` / `L` opens the fullscreen Commits popup with `/` filtering, cursor navigation, and `Enter` drilling into the backend's show view; `y` yanks the show command. The VCS seam now supports git, jj, and sl via `VcsBackend.recentCommits(projectRoot, limit)` and `VcsBackend.showCommit(projectRoot, sha)`, with the `none` backend rendering a graceful empty state. Shift+8 still opens the old Recent popup as popup-only.
 - **Bare `mu` launches the TUI when stdout is attached to a TTY**
   (feat_mu_bare_launches_tui). The human entrypoint now opens the
   read-only dashboard immediately with every workstream loaded as

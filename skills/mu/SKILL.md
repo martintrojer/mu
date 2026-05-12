@@ -313,12 +313,15 @@ running a wave.
   TUI. Agents/scripts should use typed verbs plus `--json`; bare
   `mu` on non-TTY stdout (or with `MU_NO_TUI=1`) prints help. `mu state` has `--tui`
   (interactive ink dashboard; read-only, yanks `mu` commands;
-  `g` opens the full workstream DAG popup; `1`-`9` toggle cards;
-  `Shift+1`-`Shift+9` open popups, `Enter`
+  `g` opens the full workstream DAG popup; `l` opens the commits
+  popup; `1`-`9` toggle cards; `Shift+1`-`Shift+9` open popups,
+  `Enter`
   drills (in the Activity log popup it opens the focused event's
   full untruncated payload; the Workspaces popup chains `Enter`
   three levels deep → commits-since-fork → `git show <sha>` diff
-  view, with `y` yanking `git show <sha>` at every level), `/`
+  view, with `y` yanking `git show <sha>` at every level; the
+  Commits popup shows recent project-root commits and `Enter` opens
+  the backend show view: `git show`, `jj show`, or `sl show`), `/`
   filters list popups incrementally, `?` keymap, `q`/`Ctrl-C`
   quits), `--mission`, `--all`, `--json`. `mu doctor` for health.
 

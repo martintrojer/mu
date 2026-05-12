@@ -17,6 +17,7 @@ function loadPopup(name: string): string {
 const DRILL_POPUP_CASES: ReadonlyArray<{ name: string; src: string }> = [
   { name: "agents.tsx", src: loadPopup("agents.tsx") },
   { name: "blocked.tsx", src: loadPopup("blocked.tsx") },
+  { name: "commits.tsx", src: loadPopup("commits.tsx") },
   { name: "doctor.tsx", src: loadPopup("doctor.tsx") },
   { name: "inprogress.tsx", src: loadPopup("inprogress.tsx") },
   { name: "log.tsx", src: loadPopup("log.tsx") },

@@ -19,6 +19,7 @@ import {
   listTasksByOwner,
 } from "./tasks.js";
 import { type Track, getParallelTracks } from "./tracks.js";
+import { type CommitSummary, detectBackend } from "./vcs.js";
 import {
   type WorkspaceOrphan,
   type WorkspaceRow,
@@ -41,6 +42,10 @@ export interface WorkstreamSnapshot {
   workspaces: WorkspaceRow[];
   workspaceOrphans: WorkspaceOrphan[];
   recent: LogRow[];
+  /** Last N commits from the project root (process.cwd()), populated
+   *  when `loadWorkstreamSnapshot` is called with withRecentCommits.
+   *  This is intentionally NOT a per-agent workspace log. */
+  recentCommits: CommitSummary[];
   /** Populated when `loadWorkstreamSnapshot` is called with
    *  `withDoctor: true`. Used by the TUI's slot-9 Doctor card to
    *  render a glanceable health badge on the dashboard
@@ -67,6 +72,11 @@ export interface LoadWorkstreamSnapshotOptions {
    *  (feat_card_9_doctor, workstream `tui-impl`) sets this; static
    *  callers leave it false. Mirrors the `withDirty` opt-in pattern. */
   withDoctor?: boolean;
+  /** Optional recent-project-commits slice for the TUI Commits card /
+   *  popup. Uses process.cwd() as the project root on purpose: the TUI
+   *  is launched from the project checkout, while worker workspaces live
+   *  elsewhere under the mu state dir. */
+  withRecentCommits?: { limit: number };
 }
 
 /**
@@ -93,6 +103,7 @@ export async function loadWorkstreamSnapshot(
   if (opts.withDirty === true) workspaces = await decorateWithDirty(workspaces);
   const workspaceOrphans = listWorkspaceOrphans(db, workstream);
   const recent = listLogs(db, { workstream, kind: "event", limit: eventLimit });
+  const recentCommits = await loadRecentCommits(opts.withRecentCommits);
   // Build the snapshot first (without doctor) so loadDoctorSummary
   // can read the just-computed view + workspaceOrphans straight off it.
   const snapshot: WorkstreamSnapshot = {
@@ -106,12 +117,22 @@ export async function loadWorkstreamSnapshot(
     workspaces,
     workspaceOrphans,
     recent,
+    recentCommits,
     doctor: null,
   };
   if (opts.withDoctor === true) {
     snapshot.doctor = loadDoctorSummary(db, snapshot);
   }
   return snapshot;
+}
+
+async function loadRecentCommits(
+  opt: LoadWorkstreamSnapshotOptions["withRecentCommits"],
+): Promise<CommitSummary[]> {
+  if (opt === undefined) return [];
+  const projectRoot = process.cwd();
+  const backend = await detectBackend(projectRoot);
+  return backend.recentCommits(projectRoot, opt.limit);
 }
 
 // ─── ROI helpers ───────────────────────────────────────────────────

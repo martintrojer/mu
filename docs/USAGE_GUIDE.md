@@ -398,7 +398,7 @@ It loads every workstream as tabs; use `Tab` / `Shift-Tab` to switch,
 `?` for the keymap, and `q` / `Ctrl-C` to quit. The dashboard is the
 answer to **"what should I look at next?"** without asking an LLM:
 Agents, Tracks, Ready, Activity log, Workspaces, In-progress,
-Blocked, Recent, and Doctor cards all update live.
+Blocked, Commits, and Doctor cards all update live.
 
 For an agent/script or a static capture, use explicit state verbs:
 
@@ -457,15 +457,17 @@ mu                          # TTY: TUI across all workstreams; non-TTY: help
 
 - **`--tui`** — interactive ink-based dashboard: 9 toggleable cards
   (Agents, Tracks, Ready, Activity log, Workspaces, In-progress,
-  Blocked, Recent, Doctor) with rounded borders and inset section
+  Blocked, Commits, Doctor) with rounded borders and inset section
   headers (lazygit / btop / k9s convention), matching fullscreen
   popups (Shift+1..Shift+9), plus `g` for the current workstream's
-  full task DAG popup, live-updating every 1s (adjustable with
+  full task DAG popup and `l` for the project commits popup,
+  live-updating every 1s (adjustable with
   `+/-/=/0`). **Read-only**: act-intents `y`-yank
   the canonical `mu` command to the clipboard — the TUI never
   executes a mutation; the user runs the yanked command in their
-  shell. Dashboard keymap: `g` DAG popup; `1`-`9` toggle cards;
-  `Shift+1`-`Shift+9` open card popups; `?` shows the keymap;
+  shell. Dashboard keymap: `g` DAG popup; `l` commits popup;
+  `1`-`9` toggle cards; `Shift+1`-`Shift+9` open card popups;
+  `?` shows the keymap;
   `q` / `Ctrl-C` quits and restores the main scrollback. Replaces
   the previous `--hud`.
 
@@ -487,7 +489,10 @@ mu                          # TTY: TUI across all workstreams; non-TTY: help
   the commits-since-fork list → `Enter` on a focused commit opens
   a read-only inline view of `git show <sha> --stat -p` (j/k
   scroll, Ctrl-D/U half page, `y` yanks the bare `git show <sha>`
-  command, Esc/q backs out one level).
+  command, Esc/q backs out one level). The Commits popup (`l`)
+  lists the recent project-root commits (git / jj / sl) and `Enter`
+  opens the backend's show view (`git show`, `jj show`, or `sl show`);
+  `y` yanks that show command.
 
   **Popup search/filter**: `/` inside any list popup enters an
   incremental case-insensitive substring filter (lazygit / k9s

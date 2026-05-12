@@ -121,6 +121,8 @@ function buildHints(
       return [
         { kind: "key", text: "g" },
         { kind: "dim", text: "DAG ·" },
+        { kind: "key", text: "l" },
+        { kind: "dim", text: "commits ·" },
         { kind: "key", text: "1-9" },
         { kind: "dim", text: "toggle ·" },
         { kind: "key", text: "Shift 1-9" },

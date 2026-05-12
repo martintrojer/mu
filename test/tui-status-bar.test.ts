@@ -92,6 +92,8 @@ describe("StatusBar", () => {
     // preference — layout-independent and self-explanatory.
     expect(text).toContain("g");
     expect(text).toContain("DAG");
+    expect(text).toContain("l");
+    expect(text).toContain("commits");
     expect(text).toContain("1-9");
     expect(text).toContain("Shift 1-9");
     // F1 alias dropped per nit_tui_remove_f1_help_toggle.

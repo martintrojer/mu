@@ -110,6 +110,7 @@ describe("TUI end-to-end acceptance", () => {
 
       // Recent events: workstream init + 4 task add + 3 task block = 8 events.
       expect(snap.recent.length).toBeGreaterThanOrEqual(8);
+      expect(snap.recentCommits).toEqual([]);
     } finally {
       db.close();
     }

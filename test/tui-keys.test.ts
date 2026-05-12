@@ -38,6 +38,11 @@ describe("dispatchGlobalKey: popup openers (g + Shift+0..Shift+9 → ) ! @ # $ %
     expect(dispatchGlobalKey("g", NO_KEY)).toEqual({ kind: "openPopup", cardId: 0 });
   });
 
+  it("l/L opens the Commits popup", () => {
+    expect(dispatchGlobalKey("l", NO_KEY)).toEqual({ kind: "openPopup", cardId: "commits" });
+    expect(dispatchGlobalKey("L", NO_KEY)).toEqual({ kind: "openPopup", cardId: "commits" });
+  });
+
   it.each([
     [")", 0],
     ["!", 1],

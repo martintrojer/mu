@@ -26,6 +26,7 @@ const POPUPS_DIR = join(import.meta.dirname, "..", "src", "cli", "tui", "popups"
 const POPUP_FILES = [
   "agents.tsx",
   "blocked.tsx",
+  "commits.tsx",
   "doctor.tsx",
   "inprogress.tsx",
   "log.tsx",

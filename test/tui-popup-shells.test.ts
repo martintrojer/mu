@@ -43,6 +43,7 @@ const TRACKS = loadPopup("tracks.tsx");
 const WORKSPACES = loadPopup("workspaces.tsx");
 const INPROGRESS = loadPopup("inprogress.tsx");
 const BLOCKED = loadPopup("blocked.tsx");
+const COMMITS = loadPopup("commits.tsx");
 const RECENT = loadPopup("recent.tsx");
 const DOCTOR = loadPopup("doctor.tsx");
 const POPUP_SHELL = loadTui("popup-shell.tsx");
@@ -55,6 +56,7 @@ const POPUP_CASES: ReadonlyArray<{ name: string; src: string }> = [
   { name: "workspaces.tsx", src: WORKSPACES },
   { name: "inprogress.tsx", src: INPROGRESS },
   { name: "blocked.tsx", src: BLOCKED },
+  { name: "commits.tsx", src: COMMITS },
   { name: "recent.tsx", src: RECENT },
   { name: "doctor.tsx", src: DOCTOR },
 ];

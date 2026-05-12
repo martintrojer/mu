@@ -62,9 +62,25 @@ export interface CommitSummary {
   subject: string;
   /** Remainder of the commit message (may be empty). */
   body: string;
+  /** Author display name, when the backend exposes one. */
+  author: string;
   /** ISO-8601 author / commit timestamp. */
   authorDate: string;
+  /** Compact relative author time (e.g. "3m", "2d"). */
+  relTime: string;
 }
+
+export interface ShowCommitResult {
+  /** Captured VCS show output (possibly truncated). Empty string on error. */
+  text: string;
+  /** True when stdout exceeded SHOW_COMMIT_MAX_CHARS and was clipped. */
+  truncated: boolean;
+  /** Human-readable error message; omitted on success. */
+  error?: string;
+}
+
+/** Cap captured `show` output so giant merge commits can't eat the TUI. */
+export const SHOW_COMMIT_MAX_CHARS = 100_000;
 
 /**
  * Thrown by `rebaseTo` / `commitsSinceBase` on the `none` backend
@@ -299,6 +315,15 @@ export interface VcsBackend {
    */
   commitsSinceBase(workspacePath: string, baseRef: string): Promise<CommitSummary[]>;
 
+  /** Last N commits on the project root, newest-first. Used by the
+   *  TUI Commits card / popup. Unlike commitsSinceBase, this is NOT
+   *  a per-workspace since-fork query. */
+  recentCommits(projectRoot: string, limit: number): Promise<CommitSummary[]>;
+
+  /** Show one commit / change from the project root, capped for TUI
+   *  rendering. Backend-specific equivalent of `git show <sha>`. */
+  showCommit(projectRoot: string, sha: string): Promise<ShowCommitResult>;
+
   /**
    * Return the list of dirty (uncommitted / unstaged / untracked-not-
    * ignored) paths in the workspace. Empty array = clean.
@@ -356,6 +381,61 @@ async function run(bin: string, args: readonly string[], cwd?: string): Promise<
   }
 }
 
+async function runShow(
+  bin: string,
+  args: readonly string[],
+  cwd?: string,
+): Promise<ShowCommitResult> {
+  try {
+    const { stdout } = await exec(bin, [...args], {
+      cwd,
+      maxBuffer: SHOW_COMMIT_MAX_CHARS * 2,
+    });
+    if (stdout.length > SHOW_COMMIT_MAX_CHARS) {
+      return {
+        text: `${stdout.slice(0, SHOW_COMMIT_MAX_CHARS)}\n…(truncated at ${SHOW_COMMIT_MAX_CHARS} chars)`,
+        truncated: true,
+      };
+    }
+    return { text: stdout, truncated: false };
+  } catch (err) {
+    return {
+      text: "",
+      truncated: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+function relTimeFromIso(iso: string): string {
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return "—";
+  const sec = Math.max(0, Math.floor((Date.now() - t) / 1000));
+  if (sec < 60) return `${sec}s`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h`;
+  const day = Math.floor(hr / 24);
+  if (day < 7) return `${day}d`;
+  return `${Math.floor(day / 7)}w`;
+}
+
+function commitSummary(
+  sha: string,
+  subject: string,
+  body: string,
+  authorDate: string,
+  author = "",
+): CommitSummary {
+  return { sha, subject, body, author, authorDate, relTime: relTimeFromIso(authorDate) };
+}
+
+function saneLimit(limit: number): number {
+  if (!Number.isFinite(limit)) return 25;
+  return Math.max(0, Math.min(200, Math.floor(limit)));
+}
+
 // ─── none backend ────────────────────────────────────────────────────
 //
 // The fallback for projects that aren't under any VCS we recognise.
@@ -409,6 +489,14 @@ export const noneBackend: VcsBackend = {
   // doesn't track history. Same typed error as rebaseTo.
   async commitsSinceBase(workspacePath, _baseRef) {
     throw new WorkspaceVcsRequiredError("commits", workspacePath);
+  },
+
+  async recentCommits(_projectRoot, _limit) {
+    return [];
+  },
+
+  async showCommit(_projectRoot, _sha) {
+    return { text: "", truncated: false, error: "vcs none: no commits to show" };
   },
 
   // No VCS → nothing to compare against; "dirty" is unanswerable.
@@ -598,9 +686,27 @@ export const gitBackend: VcsBackend = {
       const body = fields[i + 2] ?? "";
       const authorDate = fields[i + 3] ?? "";
       if (sha.length === 0) continue;
-      records.push({ sha, subject, body, authorDate });
+      records.push(commitSummary(sha, subject, body, authorDate));
     }
     return records;
+  },
+
+  async recentCommits(projectRoot, limit) {
+    if (!existsSync(projectRoot)) {
+      throw new Error(`vcs git: project root missing: ${projectRoot}`);
+    }
+    const n = saneLimit(limit);
+    if (n === 0) return [];
+    const out = await run(
+      "git",
+      ["log", `--max-count=${n}`, "-z", "--format=%H%x00%s%x00%b%x00%aI%x00%an"],
+      projectRoot,
+    );
+    return parseGitZRecords(out);
+  },
+
+  async showCommit(projectRoot, sha) {
+    return runShow("git", ["show", sha, "--stat", "-p", "--color=never"], projectRoot);
   },
 
   async freeWorkspace(opts) {
@@ -963,17 +1069,41 @@ export const jjBackend: VcsBackend = {
         "never",
         "--reversed",
         "--template",
-        // commit_id\0subject\0body\0iso-date\x1e per record. The
-        // outer string is jj-template syntax; \\x00 / \\x1e are
-        // jj-template literal escape sequences. body = full
-        // description (jj has no portable "rest of message" template,
-        // and a small duplication of the first line beats a brittle
-        // string-slicing template that breaks across jj versions).
-        'commit_id ++ "\\x00" ++ description.first_line() ++ "\\x00" ++ description ++ "\\x00" ++ author.timestamp().format("%Y-%m-%dT%H:%M:%S%:z") ++ "\\x1e"',
+        jjCommitSummaryTemplate,
       ],
       workspacePath,
     );
     return parseNulRecords(out);
+  },
+
+  async recentCommits(projectRoot, limit) {
+    if (!existsSync(projectRoot)) {
+      throw new Error(`vcs jj: project root missing: ${projectRoot}`);
+    }
+    const n = saneLimit(limit);
+    if (n === 0) return [];
+    const out = await run(
+      "jj",
+      [
+        "log",
+        "--no-graph",
+        "--no-pager",
+        "--color",
+        "never",
+        "-r",
+        "::@",
+        "--limit",
+        String(n),
+        "--template",
+        jjCommitSummaryTemplate,
+      ],
+      projectRoot,
+    );
+    return parseNulRecords(out);
+  },
+
+  async showCommit(projectRoot, sha) {
+    return runShow("jj", ["show", sha, "--color", "never"], projectRoot);
   },
 
   // jj is always-snapshotted: there is no "uncommitted" state. The
@@ -998,15 +1128,35 @@ function parseNulRecords(raw: string): CommitSummary[] {
     const fields = rec.split("\x00");
     const sha = fields[0] ?? "";
     if (sha.length === 0) continue;
-    records.push({
-      sha,
-      subject: fields[1] ?? "",
-      body: fields[2] ?? "",
-      authorDate: fields[3] ?? "",
-    });
+    records.push(
+      commitSummary(sha, fields[1] ?? "", fields[2] ?? "", fields[3] ?? "", fields[4] ?? ""),
+    );
   }
   return records;
 }
+
+function parseGitZRecords(raw: string): CommitSummary[] {
+  if (raw.length === 0) return [];
+  const fields = raw.split("\x00");
+  const records: CommitSummary[] = [];
+  for (let i = 0; i + 4 < fields.length; i += 5) {
+    const sha = fields[i] ?? "";
+    if (sha.length === 0) continue;
+    records.push(
+      commitSummary(
+        sha,
+        fields[i + 1] ?? "",
+        fields[i + 2] ?? "",
+        fields[i + 3] ?? "",
+        fields[i + 4] ?? "",
+      ),
+    );
+  }
+  return records;
+}
+
+const jjCommitSummaryTemplate =
+  'commit_id ++ "\\x00" ++ description.first_line() ++ "\\x00" ++ description ++ "\\x00" ++ author.timestamp().format("%Y-%m-%dT%H:%M:%S%:z") ++ "\\x00" ++ author.name() ++ "\\x1e"';
 
 function jjWorkspaceName(workspacePath: string): string {
   // basename of /foo/bar/worker-1 → worker-1
@@ -1173,18 +1323,30 @@ export const slBackend: VcsBackend = {
     }
     const out = await run(
       "sl",
-      [
-        "log",
-        "-r",
-        `${baseRef}::. - ${baseRef}`,
-        "--template",
-        "{node}\\0{desc|firstline}\\0{desc}\\0{date|isodatesec}\\x1e",
-      ],
+      ["log", "-r", `${baseRef}::. - ${baseRef}`, "--template", slCommitSummaryTemplate],
       workspacePath,
     );
     // sl emits oldest-last by default; reverse to oldest-first to match
     // the git/jj contract.
     return parseNulRecords(out).reverse();
+  },
+
+  async recentCommits(projectRoot, limit) {
+    if (!existsSync(projectRoot)) {
+      throw new Error(`vcs sl: project root missing: ${projectRoot}`);
+    }
+    const n = saneLimit(limit);
+    if (n === 0) return [];
+    const out = await run(
+      "sl",
+      ["log", "-l", String(n), "--template", slCommitSummaryTemplate],
+      projectRoot,
+    );
+    return parseNulRecords(out);
+  },
+
+  async showCommit(projectRoot, sha) {
+    return runShow("sl", ["show", sha], projectRoot);
   },
 
   async listDirtyFiles(workspacePath) {
@@ -1222,6 +1384,9 @@ async function listSlUnresolved(workspacePath: string): Promise<string[]> {
     return [];
   }
 }
+
+const slCommitSummaryTemplate =
+  "{node}\\0{desc|firstline}\\0{desc}\\0{date|isodatesec}\\0{author|user}\\x1e";
 
 async function slCommitId(workspacePath: string): Promise<string> {
   return run("sl", ["log", "-r", ".", "--template", "{node}"], workspacePath);

@@ -52,6 +52,7 @@ function loadCardSources(): Source[] {
 // fixed-shape body and have no overflow concept.
 const FOOTER_INSET_CARDS = new Set([
   "cards/blocked.tsx",
+  "cards/commits.tsx",
   "cards/doctor.tsx",
   "cards/inprogress.tsx",
   "cards/ready.tsx",

@@ -29,6 +29,7 @@ function emptySnapshot(over: Partial<WorkstreamSnapshot> = {}): WorkstreamSnapsh
     workspaces: [],
     workspaceOrphans: [],
     recent: [],
+    recentCommits: [],
     doctor: null,
     ...over,
   };

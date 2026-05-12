@@ -54,9 +54,10 @@ export interface CardVisibility {
    *  blocker counts come from getTaskEdgesWithStatus (≤8 cheap sync reads
    *  per tick). No SDK extension. */
   blocked: boolean;
-  /** Card 8 — recently-CLOSED tasks (feat_card_8_recent, workstream
-   *  `tui-impl`). Reads snapshot.recentClosed directly; no SDK extension. */
-  recent: boolean;
+  /** Card 8 — recent project commits (feat_tui_commits_card,
+   *  workstream `tui-impl`). Reads snapshot.recentCommits populated
+   *  by the withRecentCommits opt-in. */
+  commits: boolean;
   /** Card 9 — doctor health-check summary (feat_card_9_doctor,
    *  workstream `tui-impl`). Reads `snapshot.doctor` (populated by
    *  loadWorkstreamSnapshot when called with `withDoctor: true`).
@@ -72,7 +73,7 @@ export const DEFAULT_CARD_VISIBILITY: CardVisibility = {
   workspaces: true,
   inProgress: true,
   blocked: true,
-  recent: true,
+  commits: true,
   doctor: true,
 };
 
@@ -172,6 +173,11 @@ export function useDashboardSnapshot(
           // pragmas + COUNT-shape SELECTs; ghosts/orphans come
           // straight from the snapshot we already built).
           withDoctor: true,
+          // Commits card / popup need the project-root commit log.
+          // Uses process.cwd() in loadWorkstreamSnapshot by design:
+          // the TUI launches from the project checkout, not from a
+          // per-agent worker workspace.
+          withRecentCommits: { limit: 25 },
         });
         if (cancelled) return;
         const dur = performance.now() - t0;
@@ -279,6 +285,7 @@ export function snapshotKey(s: WorkstreamSnapshot): unknown {
     inProgress: s.inProgress.map(taskKey),
     blocked: s.blocked.map(taskKey),
     recentClosed: s.recentClosed.map(taskKey),
+    recentCommits: s.recentCommits.map((c) => [c.sha, c.subject, c.author, c.relTime]),
     workspaces: s.workspaces.map((w) => [
       w.agentName,
       w.backend,
@@ -299,8 +306,8 @@ export function snapshotKeyString(s: WorkstreamSnapshot): string {
 
 // One row of every visible-affecting task field. impact + effortDays
 // drive the ROI bucket / sort; status drives glyph + colour;
-// updatedAt drives the relative-time column (RecentCard,
-// InProgressCard); ownerName + title are rendered verbatim.
+// updatedAt drives the relative-time column (task cards such as
+// InProgress); ownerName + title are rendered verbatim.
 function taskKey(t: {
   name: string;
   status: string;

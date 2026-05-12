@@ -141,6 +141,7 @@ function fullJsonShape(d: PerWsData): Record<string, unknown> {
     workspaces: d.workspaces,
     workspaceOrphans: d.workspaceOrphans,
     recent: d.recent,
+    recentCommits: d.recentCommits,
   };
 }
 

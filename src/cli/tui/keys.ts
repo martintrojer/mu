@@ -5,17 +5,15 @@
 //   5           toggle Workspaces card (feat_card_5_workspaces)
 //   6           toggle In-progress card (feat_card_6_inprogress)
 //   7           toggle Blocked card (feat_card_7_blocked)
-//   8           toggle Recent card (feat_card_8_recent)
+//   8           toggle Commits card (feat_tui_commits_card)
 //   9           toggle Doctor card (feat_card_9_doctor)
 //   g           open full DAG popup (graph mnemonic)
+//   l / L       open Commits popup (log mnemonic; lazygit/k9s convention)
 //   ! @ # $     open fullscreen popup for that card  (Shift+1..Shift+4
 //               on US keyboards; bound by glyph because ink reports
 //               the post-shift character, not the modifier).
-//   ^           open In-progress popup (Shift+6 / slot 6; promoted by
-//               feat_popup_6_inprogress).
-//               Slot-5 (`%`), slot-7 (`&`), slot-8 (`*`), and slot-9
-//               (`(`) popups stay noops until their popup tasks land
-//               (umbrella feat_more_cards_umbrella).
+//   Shift+8/*   open Recent popup (popup-only after Commits takes
+//               Card 8)
 //   + / =       tick faster (floor 100ms); = is the unshifted alias
 //   -           tick slower (ceiling 10s)
 //   0           reset tick to default 1s
@@ -33,7 +31,7 @@
 
 export type GlobalAction =
   | { kind: "toggleCard"; cardId: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 }
-  | { kind: "openPopup"; cardId: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 }
+  | { kind: "openPopup"; cardId: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | "commits" }
   | { kind: "tickFaster" }
   | { kind: "tickSlower" }
   | { kind: "tickReset" }
@@ -137,7 +135,7 @@ export function dispatchGlobalKey(input: string, key: KeyFlags): GlobalAction {
   // Card toggles 1-9. All reserved slots from design_global_keymap
   // are now filled: slot 5 by feat_card_5_workspaces, slot 6 by
   // feat_card_6_inprogress, slot 7 by feat_card_7_blocked, slot 8
-  // by feat_card_8_recent, slot 9 by feat_card_9_doctor (all
+  // by feat_tui_commits_card, slot 9 by feat_card_9_doctor (all
   // workstream `tui-impl`). Slot 0 stays reserved by convention
   // (no promotion task today).
   if (input >= "1" && input <= "9") {
@@ -146,15 +144,13 @@ export function dispatchGlobalKey(input: string, key: KeyFlags): GlobalAction {
   }
 
   if (input === "g") return { kind: "openPopup", cardId: 0 };
+  if (input === "l" || input === "L") return { kind: "openPopup", cardId: "commits" };
 
   // Popup openers !-) on US keyboards. Bound by glyph because ink
   // reports the post-shift character; key.shift is false.
   // Layout-dependent — see design_global_keymap ODDITY for non-US
-  // keymaps. ALL nine slots are now promoted: slot-5 (`%`) by
-  // feat_popup_5_workspaces; slot-6 (`^`) by feat_popup_6_inprogress;
-  // slot-7 (`&`) by feat_popup_7_blocked; slot-8 (`*`) by
-  // feat_popup_8_recent; slot-9 (`(`) by feat_popup_9_doctor
-  // (all workstream `tui-impl`).
+  // keymaps. Slot 8 still opens the Recent popup, even though Card 8
+  // is now Commits; the Commits popup uses the mnemonic `l`/`L`.
   const glyphMap: Record<string, 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9> = {
     ")": 0,
     "!": 1,

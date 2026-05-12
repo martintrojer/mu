@@ -136,7 +136,7 @@ describe("App import graph", () => {
     const { WorkspacesCard } = await import("../src/cli/tui/cards/workspaces.js");
     const { InProgressCard } = await import("../src/cli/tui/cards/inprogress.js");
     const { BlockedCard } = await import("../src/cli/tui/cards/blocked.js");
-    const { RecentCard } = await import("../src/cli/tui/cards/recent.js");
+    const { CommitsCard } = await import("../src/cli/tui/cards/commits.js");
     const { DoctorCard } = await import("../src/cli/tui/cards/doctor.js");
     const { AgentsPopup } = await import("../src/cli/tui/popups/agents.js");
     const { TracksPopup } = await import("../src/cli/tui/popups/tracks.js");
@@ -145,6 +145,7 @@ describe("App import graph", () => {
     const { WorkspacesPopup } = await import("../src/cli/tui/popups/workspaces.js");
     const { InProgressPopup } = await import("../src/cli/tui/popups/inprogress.js");
     const { BlockedPopup } = await import("../src/cli/tui/popups/blocked.js");
+    const { CommitsPopup } = await import("../src/cli/tui/popups/commits.js");
     const { DoctorPopup } = await import("../src/cli/tui/popups/doctor.js");
     expect(typeof AgentsCard).toBe("function");
     expect(typeof TracksCard).toBe("function");
@@ -153,7 +154,7 @@ describe("App import graph", () => {
     expect(typeof WorkspacesCard).toBe("function");
     expect(typeof InProgressCard).toBe("function");
     expect(typeof BlockedCard).toBe("function");
-    expect(typeof RecentCard).toBe("function");
+    expect(typeof CommitsCard).toBe("function");
     expect(typeof DoctorCard).toBe("function");
     expect(typeof AgentsPopup).toBe("function");
     expect(typeof TracksPopup).toBe("function");
@@ -162,6 +163,7 @@ describe("App import graph", () => {
     expect(typeof WorkspacesPopup).toBe("function");
     expect(typeof InProgressPopup).toBe("function");
     expect(typeof BlockedPopup).toBe("function");
+    expect(typeof CommitsPopup).toBe("function");
     expect(typeof DoctorPopup).toBe("function");
   });
 });

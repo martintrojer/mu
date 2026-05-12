@@ -19,6 +19,7 @@ const EMPTY_SNAPSHOT: WorkstreamSnapshot = {
   workspaces: [],
   workspaceOrphans: [],
   recent: [],
+  recentCommits: [],
   doctor: null,
 };
 

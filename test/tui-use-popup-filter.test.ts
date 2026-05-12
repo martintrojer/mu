@@ -291,6 +291,7 @@ describe("usePopupFilter onEditingChange wiring (structural)", () => {
     const popups = [
       "agents",
       "blocked",
+      "commits",
       "doctor",
       "inprogress",
       "log",

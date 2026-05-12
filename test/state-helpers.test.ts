@@ -164,6 +164,8 @@ describe("loadWorkstreamSnapshot", () => {
       workspaces: [],
       workspaceOrphans: [],
       recent: [],
+      recentCommits: [],
+      doctor: null,
     };
     expect(_example.workstreamName).toBe("demo");
   });

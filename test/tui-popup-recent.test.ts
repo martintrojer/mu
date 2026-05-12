@@ -106,24 +106,16 @@ describe("popups/recent.tsx static-source invariants", () => {
 });
 
 describe("popups/recent.tsx ↔ App / keys wiring", () => {
-  it("App.tsx renders RecentPopup for popup id 8", () => {
+  it("App.tsx still renders RecentPopup for popup id 8 (popup-only)", () => {
     const app = readFileSync("./src/cli/tui/app.tsx", "utf-8");
     expect(app).toContain("RecentPopup");
     expect(app).toMatch(/case 8:\s*\n\s*return <RecentPopup/);
     expect(app).toMatch(/popupNameForId[\s\S]*case 8:[\s\S]*return "Recent"/);
   });
 
-  it("App.tsx PopupId union includes 8", () => {
-    const app = readFileSync("./src/cli/tui/app.tsx", "utf-8");
-    // Union widens as more popups land (worker-3 may widen to
-    // include 9 in parallel); we only assert 8 is in.
-    expect(app).toMatch(/type PopupId = [\d| ]*\b8\b[\d| ]*\| null/);
-  });
-
   it("keys.ts maps Shift+8 (*) to openPopup(8)", () => {
     const keys = readFileSync("./src/cli/tui/keys.ts", "utf-8");
-    expect(keys).toMatch(/"\*": 8/);
-    // Union widens as more popups land; we only assert 8 is in.
-    expect(keys).toMatch(/openPopup"; cardId:[\d| ]*\b8\b/);
+    expect(keys).toMatch(/"\*":\s*8/);
+    expect(keys).toMatch(/openPopup"; cardId:[\s\S]*\b8\b/);
   });
 });

@@ -21,17 +21,18 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Db } from "../../db.js";
 import { AgentsCard } from "./cards/agents.js";
 import { BlockedCard } from "./cards/blocked.js";
+import { CommitsCard } from "./cards/commits.js";
 import { DoctorCard } from "./cards/doctor.js";
 import { InProgressCard } from "./cards/inprogress.js";
 import { LogCard } from "./cards/log.js";
 import { ReadyCard } from "./cards/ready.js";
-import { RecentCard } from "./cards/recent.js";
 import { TracksCard } from "./cards/tracks.js";
 import { WorkspacesCard } from "./cards/workspaces.js";
 import { Help } from "./help.js";
 import { dispatchGlobalKeyFromInk } from "./keys.js";
 import { AgentsPopup } from "./popups/agents.js";
 import { BlockedPopup } from "./popups/blocked.js";
+import { CommitsPopup } from "./popups/commits.js";
 import { DagPopup } from "./popups/dag.js";
 import { DoctorPopup } from "./popups/doctor.js";
 import { InProgressPopup } from "./popups/inprogress.js";
@@ -69,7 +70,7 @@ export interface FooterState {
   copied: boolean;
 }
 
-type PopupId = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | null;
+type PopupId = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | "commits" | null;
 export type PopupMode = "list" | "drill";
 
 export function App({ db, workstreams, initialActive = 0 }: AppProps): JSX.Element {
@@ -178,6 +179,8 @@ export function App({ db, workstreams, initialActive = 0 }: AppProps): JSX.Eleme
           (input >= "1" && input <= "9") ||
           "!@#$%^&*()".includes(input) ||
           input === "g" ||
+          input === "l" ||
+          input === "L" ||
           input === "c"
         ) {
           return;
@@ -333,7 +336,7 @@ export function App({ db, workstreams, initialActive = 0 }: AppProps): JSX.Eleme
       {visibility.workspaces && <WorkspacesCard snapshot={snap.data} />}
       {visibility.inProgress && <InProgressCard snapshot={snap.data} />}
       {visibility.blocked && <BlockedCard snapshot={snap.data} db={db} workstream={workstream} />}
-      {visibility.recent && <RecentCard snapshot={snap.data} />}
+      {visibility.commits && <CommitsCard snapshot={snap.data} />}
       {visibility.doctor && <DoctorCard snapshot={snap.data} />}
       <Box flexGrow={1} />
       <StatusBar
@@ -346,7 +349,7 @@ export function App({ db, workstreams, initialActive = 0 }: AppProps): JSX.Eleme
     </Box>
   );
 
-  function renderPopup(id: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9): JSX.Element {
+  function renderPopup(id: NonNullable<PopupId>): JSX.Element {
     const props = {
       yank: yankFn,
       onClose: () => {
@@ -382,6 +385,8 @@ export function App({ db, workstreams, initialActive = 0 }: AppProps): JSX.Eleme
         return <RecentPopup {...props} />;
       case 9:
         return <DoctorPopup {...props} />;
+      case "commits":
+        return <CommitsPopup {...props} />;
     }
   }
 }
@@ -403,13 +408,13 @@ function cardKeyFromId(id: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9): keyof CardVisibil
     case 7:
       return "blocked";
     case 8:
-      return "recent";
+      return "commits";
     case 9:
       return "doctor";
   }
 }
 
-function popupNameForId(id: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9): string {
+function popupNameForId(id: NonNullable<PopupId>): string {
   switch (id) {
     case 0:
       return "DAG";
@@ -431,5 +436,7 @@ function popupNameForId(id: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9): string {
       return "Recent";
     case 9:
       return "Doctor";
+    case "commits":
+      return "Commits";
   }
 }
