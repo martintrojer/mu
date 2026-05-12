@@ -12,17 +12,18 @@
 //
 // The fix: each popup reads `useStdout().rows` at render time and
 // calls `popupViewport(rows[, chromeOverride])` to get the slice
-// size. The default `POPUP_CHROME_ROWS` budget (6) accounts for:
+// size. The default `POPUP_CHROME_ROWS` budget (3) accounts for:
 //
 //   - 2 rows: Shell rounded border (top + bottom)
-//   - 1 row: Shell title text
-//   - 1 row: marginTop={1} between body and the popup-specific hint
-//   - 1 row: the popup-specific hint line
 //   - 1 row: <FilterPrompt> when filter is editing OR has a query
 //
-// (StatusBar at the bottom of <App> is OUTSIDE the popup region —
-// `App` height-pins the popup branch above it — so it's not part
-// of the popup chrome budget.)
+// Title + per-popup hint no longer cost body rows after
+// nit_tui_drill_inset_title_and_hints — both inset into the top
+// and bottom border lines respectively (Layer 1 of that fix), so
+// the budget drops from 6 to 3. Drill bodies pick up ~3 extra
+// visible rows for free. (StatusBar at the bottom of <App> is
+// OUTSIDE the popup region — `App` height-pins the popup branch
+// above it — so it's not part of the popup chrome budget.)
 //
 // Per-popup overrides: callers that render extra in-body chrome
 // (e.g. Workspaces drill's title + dim "(L-T/T)" indicator) pass
@@ -38,8 +39,11 @@
 // time without growing a separate module per popup.
 
 /** Default rows of chrome consumed inside a popup Shell.
- *  Subtracted from `stdout.rows` to get the body slice budget. */
-export const POPUP_CHROME_ROWS = 6;
+ *  Subtracted from `stdout.rows` to get the body slice budget.
+ *  Was 6 before nit_tui_drill_inset_title_and_hints; dropped to 3
+ *  once the title (top border) and per-popup hint (bottom border)
+ *  stopped costing body rows. */
+export const POPUP_CHROME_ROWS = 3;
 
 /** Minimum body rows. Keeps very-small terminals usable: at 12
  *  rows we'd otherwise compute 6 → users couldn't see the cursor. */
@@ -55,7 +59,7 @@ export const POPUP_VIEWPORT_FLOOR = 8;
  *
  * @param rows  total terminal rows (NOT popup rows — caller passes
  *              `stdout.rows` directly; we own the chrome subtraction)
- * @param chromeOverride  override for `POPUP_CHROME_ROWS` (default 6)
+ * @param chromeOverride  override for `POPUP_CHROME_ROWS` (default 3)
  */
 export function popupViewport(rows: number, chromeOverride?: number): number {
   const chrome = chromeOverride ?? POPUP_CHROME_ROWS;

@@ -50,6 +50,7 @@ import {
   termColsForLayout,
 } from "../columns.js";
 import { dispatchPopupKey } from "../keys.js";
+import { TitledBox } from "../titled-box.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
 import { CursorRow } from "./cursor-row.js";
 import { popupViewport } from "./viewport.js";
@@ -321,11 +322,6 @@ export function WorkspacesPopup({
             drillViewport,
           )}
         </Box>
-        <Box marginTop={1}>
-          <Text dimColor>
-            j/k scroll · / filter · y yanks `git show &lt;sha&gt;` · Esc/q back to list
-          </Text>
-        </Box>
         <FilterPrompt state={drillFlt} />
       </Shell>
     );
@@ -343,7 +339,10 @@ export function WorkspacesPopup({
   const widths = layoutColumns(rows, COLUMN_SPECS, contentWidth);
 
   return (
-    <Shell title={`Workspaces · popup (${safeCursor + 1}/${workspaces.length})`}>
+    <Shell
+      title={`Workspaces · popup (${safeCursor + 1}/${workspaces.length})`}
+      hint="y yanks `cd $(mu workspace path <agent>)`"
+    >
       <Box flexDirection="column" flexGrow={1}>
         {workspaces.map((w, i) => {
           const sel = i === safeCursor;
@@ -381,10 +380,6 @@ export function WorkspacesPopup({
             </Box>
           );
         })}
-      </Box>
-      <Box marginTop={1}>
-        {/* Popup-specific verb only; navigation hints live in the global status bar. */}
-        <Text dimColor>Enter commits · y yanks `cd $(mu workspace path …)`</Text>
       </Box>
       <FilterPrompt state={flt} />
     </Shell>
@@ -497,25 +492,24 @@ function renderDrillBody(
   );
 }
 
-function Shell({ title, children }: { title: string; children: React.ReactNode }): JSX.Element {
-  // width={cols} + flexGrow={1} ensure the popup fills the pane edge-to-edge
-  // (see bug_tui_popups_fill_pane). Without these, ink's Yoga layout sizes
-  // this Box to its content and the popup renders as a narrow strip.
-  const { stdout } = useStdout();
-  const cols = stdout.columns ?? 80;
+function Shell({
+  title,
+  hint,
+  children,
+}: {
+  title: string;
+  /** Per-popup hint inset into the bottom border (Layer 1 of
+   *  nit_tui_drill_inset_title_and_hints). List-mode only;
+   *  drill-mode callers omit and let Layer 2's DrillScrollView
+   *  carry its own bottomLabel (workspaces drill uses an ad-hoc
+   *  list renderer rather than DrillScrollView, so its drill hint
+   *  remains in-body for now). */
+  hint?: string;
+  children: React.ReactNode;
+}): JSX.Element {
   return (
-    <Box
-      borderStyle="round"
-      borderColor="cyan"
-      paddingX={1}
-      flexDirection="column"
-      flexGrow={1}
-      width={cols}
-    >
-      <Text bold color="cyan">
-        {title}
-      </Text>
+    <TitledBox title={title} borderColor="cyan" titleColor="cyan" bottomLabel={hint} flexGrow={1}>
       {children}
-    </Box>
+    </TitledBox>
   );
 }

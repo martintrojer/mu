@@ -34,22 +34,23 @@ describe("popupViewport", () => {
   });
 
   it("subtracts an explicit chromeOverride when provided", () => {
-    // Workspaces drill subtracts 7 (default + 1 for the drill's
-    // in-body title indicator).
+    // Workspaces drill subtracts an explicit budget for its in-body
+    // title indicator. The exact number is the popup's choice; the
+    // helper just honours the override.
     expect(popupViewport(60, 7)).toBe(53);
     expect(popupViewport(40, 7)).toBe(33);
   });
 
   it("floors at POPUP_VIEWPORT_FLOOR for very small terminals", () => {
-    // 12 rows - 6 chrome = 6 → would be too cramped; floor lifts to 8.
-    expect(popupViewport(12)).toBe(POPUP_VIEWPORT_FLOOR);
+    // 10 rows - 3 chrome = 7 → would be too cramped; floor lifts to 8.
+    expect(popupViewport(10)).toBe(POPUP_VIEWPORT_FLOOR);
     // Even when chromeOverride would push us negative.
     expect(popupViewport(5, 10)).toBe(POPUP_VIEWPORT_FLOOR);
     expect(popupViewport(0)).toBe(POPUP_VIEWPORT_FLOOR);
   });
 
   it("returns at least the floor exactly at the boundary", () => {
-    // floor + chrome = 8 + 6 = 14 → at 14 rows we should compute
+    // floor + chrome = 8 + 3 = 11 → at 11 rows we should compute
     // exactly the floor, not below it.
     expect(popupViewport(POPUP_CHROME_ROWS + POPUP_VIEWPORT_FLOOR)).toBe(POPUP_VIEWPORT_FLOOR);
   });

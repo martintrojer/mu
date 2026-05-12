@@ -32,6 +32,7 @@ import {
   termColsForLayout,
 } from "../columns.js";
 import { dispatchPopupKey } from "../keys.js";
+import { TitledBox } from "../titled-box.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
 import { CursorRow } from "./cursor-row.js";
 import { clampScrollTop } from "./drill.js";
@@ -224,11 +225,6 @@ export function ReadyPopup({
             viewport={viewport}
           />
         </Box>
-        <Box marginTop={1}>
-          <Text dimColor>
-            j/k scroll · Ctrl-D/U half page · y yanks `mu task notes` · Esc/q back to list
-          </Text>
-        </Box>
       </PopupShell>
     );
   }
@@ -237,7 +233,10 @@ export function ReadyPopup({
   const widths = layoutColumns(rows, COLUMN_SPECS, contentWidth);
 
   return (
-    <PopupShell title={`Tasks · popup (${safeCursor + 1}/${tasks.length})`}>
+    <PopupShell
+      title={`Tasks · popup (${safeCursor + 1}/${tasks.length})`}
+      hint={focused && snapshot ? yankCommandForTask(focused, snapshot.workstreamName) : undefined}
+    >
       <Box flexDirection="column" flexGrow={1}>
         {tasks.map((t, i) => {
           const selected = i === safeCursor;
@@ -261,9 +260,6 @@ export function ReadyPopup({
             </Box>
           );
         })}
-      </Box>
-      <Box marginTop={1}>
-        <Text dimColor>Enter notes · y yanks the per-status `mu task …`</Text>
       </Box>
       <FilterPrompt state={flt} />
     </PopupShell>
@@ -292,29 +288,28 @@ function yankCommandForTask(
 
 function PopupShell({
   title,
+  hint,
   children,
 }: {
   title: string;
+  /** Per-popup hint inset into the bottom border (Layer 1 of
+   *  nit_tui_drill_inset_title_and_hints). The Tasks popup's hint
+   *  is the resolved yank-matrix recipe for the focused row; null
+   *  / undefined → no bottom-label render (drill-mode passes
+   *  undefined and Layer 2's DrillScrollView carries its own
+   *  bottomLabel). */
+  hint?: string | null;
   children: React.ReactNode;
 }): JSX.Element {
-  // width={cols} + flexGrow={1} ensure the popup fills the pane edge-to-edge
-  // (see bug_tui_popups_fill_pane). Without these, ink's Yoga layout sizes
-  // this Box to its content and the popup renders as a narrow strip.
-  const { stdout } = useStdout();
-  const cols = stdout.columns ?? 80;
   return (
-    <Box
-      borderStyle="round"
+    <TitledBox
+      title={title}
       borderColor="cyan"
-      paddingX={1}
-      flexDirection="column"
+      titleColor="cyan"
+      bottomLabel={hint ?? undefined}
       flexGrow={1}
-      width={cols}
     >
-      <Text bold color="cyan">
-        {title}
-      </Text>
       {children}
-    </Box>
+    </TitledBox>
   );
 }

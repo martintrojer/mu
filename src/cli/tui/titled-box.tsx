@@ -82,6 +82,14 @@ export interface TitledBoxProps {
    *  correction — the bottom-edge convention is a literal keystroke
    *  hint ("Shift+3"), not a toggle affordance. */
   bottomLabel?: string;
+  /** Optional Yoga flex-grow factor. Applied to BOTH the outer
+   *  column container AND the inner border-body Box so popup
+   *  Shells (which previously hand-rolled their own rounded box
+   *  with `flexGrow={1}` per bug_tui_popups_fill_pane) can flex
+   *  vertically inside an App-level height-pinned region without
+   *  collapsing to content size. Cards omit it (default behaviour
+   *  unchanged: outer Box sizes to content). */
+  flexGrow?: number;
   children?: ReactNode;
 }
 
@@ -144,6 +152,7 @@ export function TitledBox({
   borderColor = "gray",
   titleColor = "cyan",
   bottomLabel,
+  flexGrow,
   children,
 }: TitledBoxProps): JSX.Element {
   const { stdout } = useStdout();
@@ -157,7 +166,7 @@ export function TitledBox({
   const bottomFill = ROUND.horizontal.repeat(bottomDashes);
 
   return (
-    <Box flexDirection="column" width={cols}>
+    <Box flexDirection="column" width={cols} flexGrow={flexGrow}>
       <Text color={borderColor}>
         {ROUND.topLeft}
         {ROUND.horizontal}{" "}
@@ -187,6 +196,7 @@ export function TitledBox({
         borderBottom={!hasBottomLabel}
         paddingX={1}
         flexDirection="column"
+        flexGrow={flexGrow}
       >
         {children}
       </Box>

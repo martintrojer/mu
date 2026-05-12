@@ -1,13 +1,23 @@
 // Static-source assertion that every popup's local Shell/PopupShell
-// component fills the popup pane on BOTH axes:
+// component fills the popup pane on BOTH axes by delegating to
+// TitledBox with `flexGrow={1}`:
 //   - flexGrow={1}    → vertical: occupy room granted by App's
 //                       height-pinned popup branch.
-//   - width={cols}    → horizontal: edge-to-edge, mirroring
-//                       titled-box.tsx's cols-from-useStdout pattern.
+//   - width={cols}    → horizontal: TitledBox derives this internally
+//                       from useStdout().columns (titled-box.tsx).
 //
 // Without either, ink's Yoga layout sizes the Shell to its content
 // and the popup renders as a narrow strip in the upper-left of the
 // pane (the symptom of bug_tui_popups_fill_pane).
+//
+// Pre-nit_tui_drill_inset_title_and_hints each Shell hand-rolled a
+// `<Box borderStyle="round">` with explicit `flexGrow={1}` /
+// `width={cols}` / `useStdout()`. Layer 1 of that nit collapsed
+// every Shell into a TitledBox-only delegate so the popup's title
+// inset into the top border (lazygit/btop convention) and a
+// per-popup hint can inset into the bottom border. The horizontal-
+// fill + edge-to-edge invariants now live inside TitledBox; we just
+// verify the Shell wires `flexGrow={1}` through.
 //
 // We also assert that for popups with a "viewport + bottom hint"
 // layout, the body region is itself wrapped in a flexGrow={1} box
@@ -68,25 +78,26 @@ describe("popup Shell / PopupShell fills the pane (anti-narrow-strip)", () => {
     describe(name, () => {
       const shell = shellSource(src, fn);
 
-      it(`${fn}'s outer <Box> sets flexGrow={1} (vertical fill)`, () => {
+      it(`${fn} delegates to <TitledBox> (no hand-rolled rounded box)`, () => {
+        // Post-Layer-1 each Shell renders a single TitledBox.
+        // The hand-rolled `<Box borderStyle="round">` from the
+        // pre-nit era is gone; if it ever comes back, this
+        // assertion catches it.
+        expect(shell).toMatch(/<TitledBox\b/);
+        expect(shell).not.toMatch(/borderStyle="round"/);
+      });
+
+      it(`${fn} passes flexGrow={1} into TitledBox (vertical fill)`, () => {
         expect(shell).toMatch(/flexGrow=\{1\}/);
       });
 
-      it(`${fn}'s outer <Box> sets width={cols} (horizontal fill)`, () => {
-        expect(shell).toMatch(/width=\{cols\}/);
+      it(`${fn} passes the title through unchanged`, () => {
+        expect(shell).toMatch(/title=\{title\}/);
       });
 
-      it(`${fn} derives cols from useStdout()`, () => {
-        // Mirrors titled-box.tsx's pattern. We accept either
-        // `stdout.columns` or `stdout?.columns` to leave room for
-        // small idiomatic variation.
-        expect(shell).toMatch(/useStdout\(\)/);
-        expect(shell).toMatch(/stdout\??\.columns/);
-      });
-
-      it(`${name} imports useStdout from "ink"`, () => {
-        expect(src).toMatch(/from "ink";/);
-        expect(src).toMatch(/\buseStdout\b/);
+      it(`${name} imports TitledBox from titled-box`, () => {
+        expect(src).toMatch(/from "\.\.\/titled-box\.js"/);
+        expect(src).toMatch(/\bTitledBox\b/);
       });
     });
   }

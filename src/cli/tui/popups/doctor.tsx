@@ -45,6 +45,7 @@ import {
   termColsForLayout,
 } from "../columns.js";
 import { dispatchPopupKey } from "../keys.js";
+import { TitledBox } from "../titled-box.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
 import { CursorRow } from "./cursor-row.js";
 import { DrillScrollView, clampScrollTop } from "./drill.js";
@@ -242,11 +243,6 @@ export function DoctorPopup({
             emptyText="(no detail)"
           />
         </Box>
-        <Box marginTop={1}>
-          <Text dimColor>
-            j/k scroll · Ctrl-D/U half page · y yanks remediation hint · Esc/q back to list
-          </Text>
-        </Box>
       </Shell>
     );
   }
@@ -255,7 +251,10 @@ export function DoctorPopup({
   const widths = layoutColumns(rows, COLUMN_SPECS, contentWidth);
 
   return (
-    <Shell title={`Doctor · popup (${safeCursor + 1}/${checks.length})`}>
+    <Shell
+      title={`Doctor · popup (${safeCursor + 1}/${checks.length})`}
+      hint="y yanks remediation hint (informational)"
+    >
       <Box flexDirection="column" flexGrow={1}>
         {checks.map((c, i) => {
           const selected = i === safeCursor;
@@ -279,9 +278,6 @@ export function DoctorPopup({
             </Box>
           );
         })}
-      </Box>
-      <Box marginTop={1}>
-        <Text dimColor>Enter detail · y yanks remediation hint (informational)</Text>
       </Box>
       <FilterPrompt state={flt} />
     </Shell>
@@ -424,26 +420,22 @@ export function remediationParagraph(check: DoctorCheck): readonly string[] {
   }
 }
 
-function Shell({ title, children }: { title: string; children: React.ReactNode }): JSX.Element {
-  // width={cols} + flexGrow={1} ensure the popup fills the pane
-  // edge-to-edge (see bug_tui_popups_fill_pane). Without these,
-  // ink's Yoga layout sizes this Box to its content and the popup
-  // renders as a narrow strip.
-  const { stdout } = useStdout();
-  const cols = stdout.columns ?? 80;
+function Shell({
+  title,
+  hint,
+  children,
+}: {
+  title: string;
+  /** Per-popup hint inset into the bottom border (Layer 1 of
+   *  nit_tui_drill_inset_title_and_hints). List-mode only;
+   *  drill-mode callers omit and let Layer 2's DrillScrollView
+   *  carry its own bottomLabel. */
+  hint?: string;
+  children: React.ReactNode;
+}): JSX.Element {
   return (
-    <Box
-      borderStyle="round"
-      borderColor="cyan"
-      paddingX={1}
-      flexDirection="column"
-      flexGrow={1}
-      width={cols}
-    >
-      <Text bold color="cyan">
-        {title}
-      </Text>
+    <TitledBox title={title} borderColor="cyan" titleColor="cyan" bottomLabel={hint} flexGrow={1}>
       {children}
-    </Box>
+    </TitledBox>
   );
 }

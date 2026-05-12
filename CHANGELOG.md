@@ -352,6 +352,40 @@ is opt-in via the new `--tui` flag.
 
 ### Fixed
 
+- **TUI popup chrome insets into the rounded border (was rendered
+  as body rows)** (nit_tui_drill_inset_title_and_hints, Layer 1).
+  Every popup's local `Shell` / `PopupShell` previously rendered
+  the popup-level title (e.g. `Tasks · popup (3/12)`) as the
+  first body row inside its rounded box AND the per-popup hint
+  (e.g. ``y yanks `mu task claim <id>` ``) as another body row
+  near the bottom — two rows of chrome rendered as content inside
+  the visible border, plus an extra dim margin between body and
+  hint. The Shell now delegates to `<TitledBox>` (the same
+  primitive the cards use) so the title insets into the top
+  border line (`╭─ Tasks · popup (3/12) ─────╮`) and the
+  per-popup hint insets into the bottom border line
+  (`╰─ y yanks `mu task claim <id>` ─────╯`), matching the
+  visual language already established for the dashboard cards via
+  feat_card_footer_inset. TitledBox grows an optional
+  `flexGrow?: number` prop applied to BOTH its outer column
+  container and inner border-body Box so the popup Shells (which
+  previously hand-rolled their own `<Box flexGrow={1} width={cols}>`
+  per bug_tui_popups_fill_pane) keep filling the App-pinned popup
+  region edge-to-edge through the delegate. All nine popup files
+  (agents, blocked, doctor, inprogress, log, ready, tracks,
+  workspaces) drop their hand-rolled rounded-box render and the
+  in-body `Enter … · y yanks …` hint block. `popups/viewport.ts`'s
+  `POPUP_CHROME_ROWS` budget drops from 6 to 3 (border 2 + filter
+  prompt 1) since title and hint no longer cost body rows; popup
+  bodies pick up ~3 extra visible rows for free on tall panes.
+  Coverage: `test/tui-popup-shells.test.ts` flips its assertions
+  from "Shell renders `<Box borderStyle="round">` with
+  `flexGrow={1} width={cols}`" to "Shell delegates to `<TitledBox>`
+  with `flexGrow={1}`"; `test/tui-popup-viewport.test.ts` updates
+  the boundary cases for the new chrome budget. The Tasks-popup
+  hint (yank-matrix per row state) re-resolves on cursor move so
+  the bottom-border label stays in lockstep with the focused row.
+  Layer 2 (DrillScrollView chrome insets too) ships separately.
 - **TUI popup cursor-row highlight is now a solid full-width
   inverse line (was patchy — per-cell colours leaked through the
   outer `inverse`)** (bug_tui_popup_cursor_highlight_color_leak).
