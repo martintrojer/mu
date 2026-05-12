@@ -6,7 +6,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type Db, openDb } from "../src/db.js";
-import { addTask } from "../src/tasks.js";
+import { listLogs } from "../src/logs.js";
+import { addTask, closeTask, getTask, listNotes } from "../src/tasks.js";
 import { getParallelTracks } from "../src/tracks.js";
 
 let tempDir: string;
@@ -41,7 +42,7 @@ describe("getParallelTracks — trivial cases", () => {
   it("ignores CLOSED goals", () => {
     addTask(db, { localId: "a", workstream: "test", title: "A", impact: 50, effortDays: 1 });
     addTask(db, { localId: "b", workstream: "test", title: "B", impact: 50, effortDays: 1 });
-    db.prepare("UPDATE tasks SET status='CLOSED' WHERE local_id='a'").run();
+    closeTask(db, "a", { workstream: "test" });
     const tracks = getParallelTracks(db, "test");
     expect(tracks).toHaveLength(1);
     expect(tracks[0]?.roots.map((r) => r.name)).toEqual(["b"]);
@@ -365,7 +366,7 @@ describe("getParallelTracks — MVP acceptance graph (10 tasks, 1 diamond)", () 
     // schema's `goals` view ("tasks with no outgoing edges"). With the
     // only goal CLOSED, getParallelTracks returns nothing — a
     // graph-modeling smell the orchestrator should surface to the user.
-    db.prepare("UPDATE tasks SET status='CLOSED' WHERE local_id='launch'").run();
+    closeTask(db, "launch", { workstream: "test" });
     expect(getParallelTracks(db, "test")).toEqual([]);
   });
 
@@ -390,7 +391,20 @@ describe("getParallelTracks — MVP acceptance graph (10 tasks, 1 diamond)", () 
 
   it("readyCount tracks ROI eligibility correctly after a partial close", () => {
     // Close specs → api and ui both become ready.
-    db.prepare("UPDATE tasks SET status='CLOSED' WHERE local_id='specs'").run();
+    const oldUpdatedAt = "2000-01-01T00:00:00.000Z";
+    db.prepare("UPDATE tasks SET updated_at = ? WHERE local_id = 'specs'").run(oldUpdatedAt);
+    closeTask(db, "specs", {
+      evidence: "tracks: specs complete",
+      workstream: "test",
+    });
+    expect(getTask(db, "specs", "test")?.updatedAt).not.toBe(oldUpdatedAt);
+    expect(listNotes(db, "specs", "test").map((n) => n.content)).toContain(
+      "CLOSE: tracks: specs complete",
+    );
+    const statusEvent = listLogs(db, { workstream: "test", kind: "event" })
+      .reverse()
+      .find((row) => row.payload.includes("task status specs"));
+    expect(statusEvent?.payload).toContain('evidence="tracks: specs complete"');
     const tracks = getParallelTracks(db, "test");
     expect(tracks).toHaveLength(1);
     // 2 ready (api, ui); specs is CLOSED so doesn't count as ready.
@@ -411,7 +425,7 @@ describe("getParallelTracks — MVP acceptance graph (10 tasks, 1 diamond)", () 
       "docs",
       "deploy",
     ]) {
-      db.prepare("UPDATE tasks SET status='CLOSED' WHERE local_id=?").run(id);
+      closeTask(db, id, { workstream: "test" });
     }
     const tracks = getParallelTracks(db, "test");
     expect(tracks).toHaveLength(1);

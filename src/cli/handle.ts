@@ -93,6 +93,19 @@ export class UsageError extends Error {
   override readonly name = "UsageError";
 }
 
+/**
+ * Internal CLI-control sentinel for handlers that already rendered their
+ * success/partial-success payload and only need `handle()` to exit with a
+ * non-zero code AFTER its DB-close finally has run. Unlike `UsageError` it
+ * emits no stderr text; it is a return-code mechanism owned by handle().
+ */
+export class CliExitError extends Error {
+  override readonly name = "CliExitError";
+  constructor(public readonly exitCode: number) {
+    super(`exit ${exitCode}`);
+  }
+}
+
 // ─── Active-command tracking for the validation-error contract ──────
 //
 // `setActiveCommand` is called by `handle()` at the entry of every
@@ -322,6 +335,8 @@ export function classifyError(err: unknown): { label: string; exitCode: number }
  *  UsageError + typed *Invalid*) ALSO emit the failing subcommand's
  *  --help (human path) or a structured `usage` field (JSON path). */
 function emitError(err: unknown): number {
+  if (err instanceof CliExitError) return err.exitCode;
+
   // Commander's --help / --version success-exits arrive as CommanderError
   // with exitCode 0. helpInformation() has already been written by
   // commander itself; nothing more to do.
@@ -375,13 +390,13 @@ function emitError(err: unknown): number {
 export function handle(fn: (db: Db) => Promise<void>, command?: Command): () => Promise<void> {
   return async () => {
     let db: Db | undefined;
+    let exitCode: number | undefined;
     activeCommand = command;
     try {
       db = openDb();
       await fn(db);
     } catch (err) {
-      const exitCode = emitError(err);
-      process.exit(exitCode);
+      exitCode = emitError(err);
     } finally {
       activeCommand = undefined;
       try {
@@ -390,6 +405,7 @@ export function handle(fn: (db: Db) => Promise<void>, command?: Command): () => 
         // best effort
       }
     }
+    if (exitCode !== undefined) process.exit(exitCode);
   };
 }
 

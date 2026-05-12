@@ -23,10 +23,21 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const originalNoColor = vi.hoisted(() => process.env.NO_COLOR);
 
 vi.hoisted(() => {
   process.env.NO_COLOR = "1";
+});
+
+afterAll(() => {
+  if (originalNoColor === undefined) {
+    const key = "NO_COLOR";
+    delete process.env[key];
+  } else {
+    process.env.NO_COLOR = originalNoColor;
+  }
 });
 
 import { runCli } from "./_runCli.js";

@@ -18,7 +18,16 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { closeAgent, insertAgent, listAgents, listLiveAgents, spawnAgent } from "../src/agents.js";
 import { type Db, openDb } from "../src/db.js";
-import { addNote, addTask, claimTask, getTask, listReady } from "../src/tasks.js";
+import { listLogs } from "../src/logs.js";
+import {
+  addNote,
+  addTask,
+  claimTask,
+  closeTask,
+  getTask,
+  listNotes,
+  listReady,
+} from "../src/tasks.js";
 import { killPane, killSession, paneExists, resetTmuxExecutor } from "../src/tmux.js";
 import { getParallelTracks } from "../src/tracks.js";
 import { pollUntil } from "./_env.js";
@@ -183,8 +192,26 @@ describeIfTmux("MVP acceptance — full demo end-to-end", () => {
       workstream,
     });
 
-    // Close specs by direct SQL (the escape hatch underneath the typed verbs).
-    db.prepare("UPDATE tasks SET status='CLOSED' WHERE local_id='specs'").run();
+    const beforeCloseSpecs = getTask(db, "specs", workstream);
+    expect(beforeCloseSpecs?.status).toBe("IN_PROGRESS");
+    const oldUpdatedAt = "2000-01-01T00:00:00.000Z";
+    db.prepare("UPDATE tasks SET updated_at = ? WHERE local_id = 'specs'").run(oldUpdatedAt);
+
+    closeTask(db, "specs", {
+      author: "alice",
+      evidence: "acceptance: specs complete",
+      workstream,
+    });
+    const closedSpecsNow = getTask(db, "specs", workstream);
+    expect(closedSpecsNow?.status).toBe("CLOSED");
+    expect(closedSpecsNow?.updatedAt).not.toBe(oldUpdatedAt);
+    const specsNotes = listNotes(db, "specs", workstream).map((n) => n.content);
+    expect(specsNotes).toContain("DECISION: API will be REST + JSON, no GraphQL");
+    expect(specsNotes).toContain("CLOSE: acceptance: specs complete");
+    const specsStatusEvent = listLogs(db, { workstream, kind: "event" })
+      .reverse()
+      .find((row) => row.payload.includes("task status specs"));
+    expect(specsStatusEvent?.payload).toContain('evidence="acceptance: specs complete"');
 
     // ── After closing specs: api and ui both become ready ────────────
     const readyAfterSpecs = listReady(db, workstream)

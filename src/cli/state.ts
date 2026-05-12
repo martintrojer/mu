@@ -227,8 +227,7 @@ export async function cmdState(db: Db, opts: StateOpts): Promise<void> {
       "  mu state --all              # render every workstream",
       "  mu --help                   # full verb list",
     ];
-    process.stderr.write(`${lines.join("\n")}\n`);
-    process.exit(2);
+    throw new UsageError(lines.join("\n"));
   }
 
   const eventLimit = opts.events ?? 20;

@@ -13,18 +13,22 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { insertAgent } from "../src/agents.js";
 import { type Db, openDb } from "../src/db.js";
+import { listLogs } from "../src/logs.js";
 import {
   addNote,
   addTask,
   claimTask,
   closeTask,
+  getTask,
   listBlocked,
   listGoals,
+  listNotes,
   listReady,
   listTasks,
   listTasksByOwner,
   listTasksByOwnerCrossWorkstream,
   searchTasks,
+  setTaskStatus,
 } from "../src/tasks.js";
 import { resetTmuxExecutor } from "../src/tmux.js";
 
@@ -136,7 +140,22 @@ describe("listReady / listBlocked / listGoals", () => {
   });
 
   it("ready promotes after a blocker closes", () => {
-    db.prepare("UPDATE tasks SET status='CLOSED' WHERE local_id='specs'").run();
+    const oldUpdatedAt = "2000-01-01T00:00:00.000Z";
+    db.prepare("UPDATE tasks SET updated_at = ? WHERE local_id = 'specs'").run(oldUpdatedAt);
+
+    closeTask(db, "specs", {
+      evidence: "views: specs complete",
+      workstream: "test",
+    });
+
+    expect(getTask(db, "specs", "test")?.updatedAt).not.toBe(oldUpdatedAt);
+    expect(listNotes(db, "specs", "test").map((n) => n.content)).toContain(
+      "CLOSE: views: specs complete",
+    );
+    const statusEvent = listLogs(db, { workstream: "test", kind: "event" })
+      .reverse()
+      .find((row) => row.payload.includes("task status specs"));
+    expect(statusEvent?.payload).toContain('evidence="views: specs complete"');
     expect(
       listReady(db, "test")
         .map((t) => t.name)
@@ -328,8 +347,8 @@ describe("listTasks --status filter", () => {
     addTask(db, { localId: "open2", workstream: "auth", title: "y", impact: 50, effortDays: 1 });
     addTask(db, { localId: "ip1", workstream: "auth", title: "z", impact: 50, effortDays: 1 });
     addTask(db, { localId: "done1", workstream: "auth", title: "w", impact: 50, effortDays: 1 });
-    db.prepare("UPDATE tasks SET status='IN_PROGRESS' WHERE local_id='ip1'").run();
-    db.prepare("UPDATE tasks SET status='CLOSED' WHERE local_id='done1'").run();
+    setTaskStatus(db, "ip1", "IN_PROGRESS", { workstream: "auth" });
+    closeTask(db, "done1", { workstream: "auth" });
   });
 
   it("returns all tasks when status omitted (existing behaviour)", () => {

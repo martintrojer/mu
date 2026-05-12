@@ -70,7 +70,13 @@ export {
   truncate,
   truncateFront,
 } from "./cli/format.js";
-export { NameAmbiguousError, UsageError, classifyError, handle } from "./cli/handle.js";
+export {
+  CliExitError,
+  NameAmbiguousError,
+  UsageError,
+  classifyError,
+  handle,
+} from "./cli/handle.js";
 
 // ─── Workstream resolution ─────────────────────────────────────────────
 

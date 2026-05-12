@@ -100,14 +100,10 @@ export async function runCli(argv: readonly string[], dbPath: string): Promise<C
   // intercept so the test process keeps running. Throw a sentinel so
   // the parseAsync awaits don't stall.
   //
-  // We capture the FIRST exit code only — a verb that calls
-  // `process.exit(5)` directly (e.g. cmdTaskWait on timeout) gets
-  // wrapped by handle() which catches the shim Error, runs
-  // emitError(), and calls process.exit(1). The first exit code is
-  // the one the verb intended; the second is handle's fallback for
-  // an "unknown error" that's actually our own shim. Without this,
-  // tests asserting `exit 5` would see `1`. (task_wait_cross_workstream
-  // surfaced this when the --json timeout test was added.)
+  // Capture the first exit code only. handle() owns non-zero exits and
+  // now calls process.exit only after its DB-close finally has run; a
+  // future regression that reintroduces nested process.exit calls should
+  // not overwrite the verb's intended code in this shim.
   // biome-ignore lint/suspicious/noExplicitAny: shim signature matches what we need
   (process as any).exit = (code?: number) => {
     if (exitCode === null) exitCode = code ?? 0;

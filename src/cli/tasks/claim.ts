@@ -13,6 +13,7 @@
 import { refreshAgentTitle } from "../../agents.js";
 import { AgentNotFoundError } from "../../agents/errors.js";
 import {
+  CliExitError,
   UsageError,
   assertTaskInWorkstream,
   emitJson,
@@ -473,7 +474,7 @@ export async function cmdTaskWait(
       timedOut: timedOutArray,
       nextSteps,
     });
-    if (result.timedOut) process.exit(5);
+    if (result.timedOut) throw new CliExitError(5);
     return;
   }
 
@@ -501,5 +502,5 @@ export async function cmdTaskWait(
     console.log(`  ${marker} ${pc.bold(label)} ${pc.dim(`(${t.status})`)}`);
   }
   printNextSteps(nextSteps);
-  if (result.timedOut) process.exit(5);
+  if (result.timedOut) throw new CliExitError(5);
 }

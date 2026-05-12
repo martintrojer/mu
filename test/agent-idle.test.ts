@@ -15,7 +15,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   type AgentRow,
   computeAgentIdle,
@@ -35,9 +35,20 @@ import {
   setTmuxExecutor,
 } from "../src/tmux.js";
 
+const originalNoColor = process.env.NO_COLOR;
+
 // Force colorless output so literal-substring assertions vs ANSI escapes
 // are stable. Mirrors test/state-render.test.ts.
 process.env.NO_COLOR = "1";
+
+afterAll(() => {
+  if (originalNoColor === undefined) {
+    const key = "NO_COLOR";
+    delete process.env[key];
+  } else {
+    process.env.NO_COLOR = originalNoColor;
+  }
+});
 
 let tempDir: string;
 let db: Db;

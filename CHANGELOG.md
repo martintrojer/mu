@@ -344,6 +344,15 @@ is opt-in via the new `--tui` flag.
 
 ### Changed
 
+- **CLI handler exits are centralised in `handle()`**
+  (review_repo_process_exit_inside_handlers). Leaf command handlers
+  no longer call `process.exit()` themselves: bare `mu state` with no
+  auto-resolvable workstream now throws `UsageError`, and `mu task
+  wait` timeouts throw a small internal `CliExitError(5)` sentinel
+  after rendering their normal stdout/JSON payload. `handle()` records
+  the exit code, runs its `finally` block (including `db.close()`),
+  then exits exactly once. This keeps typed-error exit-code mapping
+  and cleanup in one place.
 - Bare `mu state` outside a tmux session no longer prints the
   silent `(no workstreams)` line. With workstreams on the machine
   it now errors with the workstream list and three suggested fixes
@@ -502,6 +511,22 @@ is opt-in via the new `--tui` flag.
   bumped consumer counts to 4. New `test/tui-format-helpers.test.ts`
   pins the helpers directly so a future drift inside a card can't
   quietly reintroduce the duplication this commit removed.
+
+- **Lifecycle-backed graph/acceptance tests**
+  (testreview_acceptance_bypasses_lifecycle). The canonical
+  acceptance test and graph-view/track tests no longer mark tasks
+  `CLOSED` via raw SQL. They drive `closeTask()` instead and assert
+  the side effects raw SQL skipped: status-event evidence, synthetic
+  `CLOSE:` notes, and `updated_at` movement before checking ready /
+  track projections. Status-filter setup now uses `setTaskStatus()` /
+  `closeTask()` except where a test is intentionally constructing a
+  corrupt or otherwise impossible DB state.
+
+- **Colour-env test hygiene** (testreview_env_leak_no_color). The
+  three colourless render test files that set `NO_COLOR=1` at module
+  load now restore the original value in `afterAll`, preventing a
+  Vitest worker from leaking the opt-out into later output-colour
+  matrix tests.
 
 - **Tasks-popup yank matrix tests** (review_tests_yank_matrix_per_state).
   `popups/ready.tsx` now exports the pure `yankCommandForTask`
