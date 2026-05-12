@@ -25,13 +25,14 @@ describe("LogPopup", () => {
     // Drill-mode body is rendered via the shared primitive with
     // the focused event's full untruncated payload.
     expect(src).toContain("<DrillScrollView");
-    expect(src).toContain("body={focused.payload}");
+    expect(src).toContain("body={drillBody}");
+    expect(src).toContain("focused?.payload");
     // Drill-mode keymap: scroll, jump, yank-by-seq, esc/q back.
-    // Per feat_centralize_scroll_navigation the per-popup
-    // clampScrollTop arms collapsed into a single applyScroll
-    // call; the consumer wires its setter via the shared helper.
-    expect(src).toContain("setDetailScrollTop");
-    expect(src).toContain("applyScroll");
+    // Per review_dedup_drill_keymap the per-popup applyScroll /
+    // setDetailScrollTop skeleton now lives in useDrillKeymap.
+    expect(src).toContain("useDrillKeymap");
+    expect(src).toContain("drill.dispatch(action)");
+    expect(src).not.toContain("setDetailScrollTop");
     // Yank target in drill mode points at the single-event
     // lookup command (mu log --since <seq-1> -n 1).
     expect(src).toContain("mu log --since");

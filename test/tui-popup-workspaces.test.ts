@@ -121,11 +121,11 @@ describe("WorkspacesPopup: Enter on focused commit drills into git show diff (fe
     // shared primitive, same scroll-state pattern.
     expect(SRC).toContain('from "./drill.js"');
     expect(SRC).toContain("<DrillScrollView");
-    // Per feat_centralize_scroll_navigation the per-popup
-    // clampScrollTop arms collapsed into a single applyScroll
-    // call wired through the shared helper.
-    expect(SRC).toContain("applyScroll");
-    expect(SRC).toContain("setShowScrollTop");
+    // Per review_dedup_drill_keymap the per-popup applyScroll /
+    // setShowScrollTop skeleton now lives in useDrillKeymap.
+    expect(SRC).toContain("useDrillKeymap");
+    expect(SRC).toContain("showDrill.scrollTop");
+    expect(SRC).not.toContain("setShowScrollTop");
   });
 
   it("Enter in drill mode triggers the show-fetch (loadShow + setShowSha)", () => {
@@ -162,15 +162,15 @@ describe("WorkspacesPopup: Enter on focused commit drills into git show diff (fe
   });
 
   it("Esc/q in show mode backs out to commits list (does NOT close popup)", () => {
-    // The show-mode close branch clears showSha but does NOT call
+    // The show-mode close callback clears showSha but does NOT call
     // onClose / onModeChange("list") — dropping showSha back-rolls
     // to the commits-drill view, exactly like log.tsx's drill back
     // returns to the events list.
-    const showCloseBlock = SRC.match(/if \(inShow\) \{[\s\S]*?case "close":[\s\S]*?return;/);
-    expect(showCloseBlock).not.toBeNull();
-    expect(showCloseBlock?.[0]).toContain("setShowSha(null)");
-    expect(showCloseBlock?.[0]).not.toContain("onClose()");
-    expect(showCloseBlock?.[0]).not.toContain('onModeChange("list")');
+    const showHookBlock = SRC.match(/const showDrill = useDrillKeymap\(\{[\s\S]*?\}\);/);
+    expect(showHookBlock).not.toBeNull();
+    expect(showHookBlock?.[0]).toContain("onClose: () => setShowSha(null)");
+    expect(showHookBlock?.[0]).not.toContain("onClose()");
+    expect(showHookBlock?.[0]).not.toContain('onModeChange("list")');
   });
 });
 

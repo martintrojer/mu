@@ -35,8 +35,8 @@ import { dispatchPopupKeyFromInk } from "../keys.js";
 import { ListRow } from "../list-row.js";
 import { PopupShell } from "../popup-shell.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
-import { DrillScrollView } from "./drill.js";
-import { applyCursor, applyScroll, isNavAction } from "./scroll.js";
+import { DrillScrollView, useDrillKeymap } from "./drill.js";
+import { applyCursor, isNavAction } from "./scroll.js";
 import { usePopupViewport } from "./viewport.js";
 
 export interface PopupProps {
@@ -86,48 +86,28 @@ export function LogPopup({
   });
   const safeCursor = events.length === 0 ? 0 : Math.min(cursor, events.length - 1);
   const focused = events[safeCursor];
-  // Drill-mode body scroll. Reset to 0 when entering drill (see the
-  // `case "drill"` branch below) and on backing out, mirroring the
-  // ready.tsx / agents.tsx pattern — callers own the reset; we don't
-  // need a useEffect-on-cursor (which lints under
-  // useExhaustiveDependencies because safeCursor is derived).
-  const [detailScrollTop, setDetailScrollTop] = useState(0);
   useEffect(() => {
     onFilterEditingChange?.(flt.editing);
   }, [flt.editing, onFilterEditingChange]);
+
+  const drillBody = focused?.payload ?? "";
+  const drill = useDrillKeymap({
+    body: drillBody,
+    viewport,
+    onClose: () => onModeChange("list"),
+    onYank: () => {
+      if (!focused || !snapshot) return;
+      const since = Math.max(0, focused.seq - 1);
+      return yank(`mu log --since ${since} -n 1 -w ${snapshot.workstreamName}`);
+    },
+  });
 
   useInput((input, key) => {
     if (mode !== "drill" && flt.onKey(input, key) === "consumed") return;
     const action = dispatchPopupKeyFromInk(input, key);
     if (mode === "drill") {
-      // Drill-mode payload view. Nav cluster funnels through
-      // applyScroll; Esc/q backs to list; y yanks single-event
-      // lookup. Filter / verb / drill-again are intentionally
-      // suppressed (read-only view).
-      const totalLines =
-        focused === undefined || focused.payload === "" ? 0 : focused.payload.split("\n").length;
-      if (isNavAction(action)) {
-        setDetailScrollTop((s) => applyScroll(s, action, totalLines, viewport));
-        return;
-      }
-      switch (action.kind) {
-        case "close":
-          onModeChange("list");
-          setDetailScrollTop(0);
-          return;
-        case "yank": {
-          if (!focused || !snapshot) return;
-          // Show exactly that single event by seq: --since <seq-1>
-          // -n 1 returns just the entry whose seq is `focused.seq`.
-          // The CLI has no native single-seq filter; this is the
-          // smallest composable equivalent.
-          const since = Math.max(0, focused.seq - 1);
-          void yank(`mu log --since ${since} -n 1 -w ${snapshot.workstreamName}`);
-          return;
-        }
-        default:
-          return;
-      }
+      drill.dispatch(action);
+      return;
     }
     if (isNavAction(action)) {
       setCursor((c) => applyCursor(c, action, events.length, viewport));
@@ -142,7 +122,6 @@ export function LogPopup({
         return;
       case "drill":
         if (focused !== undefined) {
-          setDetailScrollTop(0);
           onModeChange("drill");
         }
         return;
@@ -182,9 +161,9 @@ export function LogPopup({
         <Box flexDirection="column" flexGrow={1}>
           <DrillScrollView
             title="event payload"
-            body={focused.payload}
+            body={drillBody}
             viewport={viewport}
-            scrollTop={detailScrollTop}
+            scrollTop={drill.scrollTop}
             emptyText="(empty payload)"
             hint="y yanks `mu log --since N -n 1`"
           />

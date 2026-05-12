@@ -68,8 +68,8 @@ import { ListRow } from "../list-row.js";
 import { PopupShell } from "../popup-shell.js";
 import { TitledBox } from "../titled-box.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
-import { DrillScrollView } from "./drill.js";
-import { applyCursor, applyScroll, isNavAction } from "./scroll.js";
+import { DrillScrollView, useDrillKeymap } from "./drill.js";
+import { applyCursor, isNavAction } from "./scroll.js";
 import { usePopupViewport } from "./viewport.js";
 
 // Promisified execFile for the show-level git invocation (see
@@ -167,7 +167,6 @@ export function WorkspacesPopup({
   const [showText, setShowText] = useState("");
   const [showLoading, setShowLoading] = useState(false);
   const [showErr, setShowErr] = useState<string | null>(null);
-  const [showScrollTop, setShowScrollTop] = useState(0);
 
   const sourceWorkspaces = snapshot?.workspaces ?? [];
   const workspaces =
@@ -202,7 +201,6 @@ export function WorkspacesPopup({
     setShowLoading(true);
     setShowErr(null);
     setShowText("");
-    setShowScrollTop(0);
     try {
       const { stdout } = await execFileAsync(
         "git",
@@ -275,7 +273,6 @@ export function WorkspacesPopup({
       setShowSha(null);
       setShowText("");
       setShowErr(null);
-      setShowScrollTop(0);
       setShowLoading(false);
     }
   }, [mode]);
@@ -284,9 +281,18 @@ export function WorkspacesPopup({
     setShowSha(null);
     setShowText("");
     setShowErr(null);
-    setShowScrollTop(0);
     setShowLoading(false);
   }, [focused?.agentName]);
+
+  const showBody = showErr !== null ? `error: ${showErr}` : showText;
+  const showDrill = useDrillKeymap({
+    body: showBody,
+    viewport: drillViewport,
+    onClose: () => setShowSha(null),
+    onYank: () => {
+      if (showSha !== null) return yank(`git show ${showSha}`);
+    },
+  });
 
   useInput((input, key) => {
     // Filter-mode keystrokes consume printable + Esc/Enter/Bksp.
@@ -298,26 +304,8 @@ export function WorkspacesPopup({
     if (!inShow && activeFlt.onKey(input, key) === "consumed") return;
     const action = dispatchPopupKeyFromInk(input, key);
     if (inShow) {
-      // Show-mode keymap: scroll-based view of the captured diff. Nav
-      // funnels through applyScroll; y yanks `git show <sha>` (the
-      // COMMAND, per spec); Esc/q back to commits. Filter / verb /
-      // drill-again are suppressed (read-only).
-      const totalLines = showText === "" ? 0 : showText.split("\n").length;
-      if (isNavAction(action)) {
-        setShowScrollTop((s) => applyScroll(s, action, totalLines, drillViewport));
-        return;
-      }
-      switch (action.kind) {
-        case "close":
-          setShowSha(null);
-          setShowScrollTop(0);
-          return;
-        case "yank":
-          if (showSha !== null) void yank(`git show ${showSha}`);
-          return;
-        default:
-          return;
-      }
+      showDrill.dispatch(action);
+      return;
     }
     if (mode === "drill") {
       // Drill-mode commits list: nav funnels through applyCursor.
@@ -389,15 +377,14 @@ export function WorkspacesPopup({
   }
   if (inShow && showSha !== null && focused) {
     const shortSha = showSha.slice(0, 12);
-    const body = showErr !== null ? `error: ${showErr}` : showText;
     return (
       <PopupShell title={`Workspaces · git show ${shortSha}`}>
         <Box flexDirection="column" flexGrow={1}>
           <DrillScrollView
             title={`git show ${shortSha} (${focused.agentName})`}
-            body={body}
+            body={showBody}
             viewport={drillViewport}
-            scrollTop={showScrollTop}
+            scrollTop={showDrill.scrollTop}
             hint={`y yanks \`git show ${shortSha}\``}
             emptyText={showLoading ? "loading…" : "(empty diff)"}
           />

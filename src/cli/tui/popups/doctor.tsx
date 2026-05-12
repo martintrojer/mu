@@ -48,8 +48,8 @@ import { dispatchPopupKeyFromInk } from "../keys.js";
 import { ListRow } from "../list-row.js";
 import { PopupShell } from "../popup-shell.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
-import { DrillScrollView } from "./drill.js";
-import { applyCursor, applyScroll, isNavAction } from "./scroll.js";
+import { DrillScrollView, useDrillKeymap } from "./drill.js";
+import { applyCursor, isNavAction } from "./scroll.js";
 import { usePopupViewport } from "./viewport.js";
 
 export interface PopupProps {
@@ -86,7 +86,6 @@ export function DoctorPopup({
   // budget; see popups/viewport.ts.
   const viewport = usePopupViewport();
   const [cursor, setCursor] = useState(0);
-  const [scrollTop, setScrollTop] = useState(0);
   const flt = usePopupFilter();
 
   // Source rows: ALL checks (OK + warn + fail), NOT just the non-OK
@@ -113,31 +112,22 @@ export function DoctorPopup({
   // Drill body: pre-formatted text rendered via DrillScrollView.
   // Pure derivation from the focused check; no DB call.
   const drillBody = focused ? renderDrillBody(focused) : "";
-  const totalDrillLines = drillBody === "" ? 0 : drillBody.split("\n").length;
+  const drill = useDrillKeymap({
+    body: drillBody,
+    viewport,
+    onClose: () => onModeChange("list"),
+    onYank: () => {
+      if (!focused) return;
+      return yank(yankCommandForCheck(focused));
+    },
+  });
 
   useInput((input, key) => {
     if (mode !== "drill" && flt.onKey(input, key) === "consumed") return;
     const action = dispatchPopupKeyFromInk(input, key);
     if (mode === "drill") {
-      if (isNavAction(action)) {
-        setScrollTop((s) => applyScroll(s, action, totalDrillLines, viewport));
-        return;
-      }
-      switch (action.kind) {
-        case "close":
-          onModeChange("list");
-          setScrollTop(0);
-          return;
-        case "yank":
-          if (!focused) return;
-          // Drill-mode yank matches the list-mode recipe — the
-          // operator is reading the same check, so the yank stays
-          // stable (no surprise verb swap on Enter).
-          void yank(yankCommandForCheck(focused));
-          return;
-        default:
-          return;
-      }
+      drill.dispatch(action);
+      return;
     }
     if (isNavAction(action)) {
       setCursor((c) => applyCursor(c, action, checks.length, viewport));
@@ -152,7 +142,6 @@ export function DoctorPopup({
         return;
       case "drill":
         if (focused) {
-          setScrollTop(0);
           onModeChange("drill");
         }
         return;
@@ -192,7 +181,7 @@ export function DoctorPopup({
             title={`${focused.name} · ${focused.status}`}
             body={drillBody}
             viewport={viewport}
-            scrollTop={scrollTop}
+            scrollTop={drill.scrollTop}
             emptyText="(no detail)"
             hint={`y yanks \`${yankCommandForCheck(focused)}\``}
           />

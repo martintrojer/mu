@@ -51,7 +51,8 @@ import { dispatchPopupKeyFromInk } from "../keys.js";
 import { ListRow } from "../list-row.js";
 import { PopupShell } from "../popup-shell.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
-import { applyCursor, applyScroll, isNavAction } from "./scroll.js";
+import { useDrillKeymap } from "./drill.js";
+import { applyCursor, isNavAction } from "./scroll.js";
 import { TaskDetailDrill, renderNotes } from "./task-detail.js";
 import { usePopupViewport } from "./viewport.js";
 
@@ -92,7 +93,6 @@ export function BlockedPopup({
   // see popups/viewport.ts. Replaces the prior hardcoded VIEWPORT = 20.
   const viewport = usePopupViewport();
   const [cursor, setCursor] = useState(0);
-  const [scrollTop, setScrollTop] = useState(0);
   const flt = usePopupFilter();
 
   const sourceTasks = snapshot?.blocked ?? [];
@@ -130,38 +130,30 @@ export function BlockedPopup({
   // Resolve notes for the focused task on demand. Memoised on
   // (taskId, mode); we only hit SQLite when actually drilled in.
   // Identical to the TaskDetailDrill render path — we duplicate
-  // the call here only because the keymap needs `totalLines` to
-  // clamp scroll. The shared formatter (renderNotes) is the single
-  // source of truth.
+  // the call here only because useDrillKeymap needs the rendered
+  // body to clamp scroll. The shared formatter (renderNotes) is
+  // the single source of truth.
   const notesText = useMemo<string>(() => {
     if (mode !== "drill" || !focused) return "";
     return renderNotes(db, focused.name, workstream);
   }, [mode, focused, db, workstream]);
 
+  const drill = useDrillKeymap({
+    body: notesText,
+    viewport,
+    onClose: () => onModeChange("list"),
+    onYank: () => {
+      if (!focused || !snapshot) return;
+      return yank(`mu task notes ${focused.name} -w ${snapshot.workstreamName}`);
+    },
+  });
+
   useInput((input, key) => {
     if (mode !== "drill" && flt.onKey(input, key) === "consumed") return;
     const action = dispatchPopupKeyFromInk(input, key);
     if (mode === "drill") {
-      const totalLines = notesText === "" ? 0 : notesText.split("\n").length;
-      if (isNavAction(action)) {
-        setScrollTop((s) => applyScroll(s, action, totalLines, viewport));
-        return;
-      }
-      switch (action.kind) {
-        case "close":
-          onModeChange("list");
-          setScrollTop(0);
-          return;
-        case "yank": {
-          if (!focused || !snapshot) return;
-          // Drill yank matches the TaskDetailDrill leaf the user is
-          // reading: `mu task notes` is the canonical recipe.
-          void yank(`mu task notes ${focused.name} -w ${snapshot.workstreamName}`);
-          return;
-        }
-        default:
-          return;
-      }
+      drill.dispatch(action);
+      return;
     }
     if (isNavAction(action)) {
       setCursor((c) => applyCursor(c, action, tasks.length, viewport));
@@ -176,7 +168,6 @@ export function BlockedPopup({
         return;
       case "drill":
         if (focused) {
-          setScrollTop(0);
           onModeChange("drill");
         }
         return;
@@ -221,7 +212,7 @@ export function BlockedPopup({
             task={focused}
             db={db}
             workstream={workstream}
-            scrollTop={scrollTop}
+            scrollTop={drill.scrollTop}
             viewport={viewport}
           />
         </Box>

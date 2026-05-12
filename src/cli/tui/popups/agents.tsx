@@ -33,8 +33,8 @@ import { dispatchPopupKeyFromInk } from "../keys.js";
 import { ListRow } from "../list-row.js";
 import { PopupShell } from "../popup-shell.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
-import { DrillScrollView } from "./drill.js";
-import { applyCursor, applyScroll, isNavAction } from "./scroll.js";
+import { DrillScrollView, useDrillKeymap } from "./drill.js";
+import { applyCursor, isNavAction } from "./scroll.js";
 import { usePopupViewport } from "./viewport.js";
 
 export interface PopupProps {
@@ -80,7 +80,6 @@ export function AgentsPopup({
   // see popups/viewport.ts. Replaces the prior hardcoded VIEWPORT = 20.
   const viewport = usePopupViewport();
   const [cursor, setCursor] = useState(0);
-  const [scrollTop, setScrollTop] = useState(0);
   const [scrollback, setScrollback] = useState<string>("");
   const [scrollbackErr, setScrollbackErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -111,7 +110,6 @@ export function AgentsPopup({
           lines: SCROLLBACK_LINES,
         });
         setScrollback(text);
-        setScrollTop(0);
       } catch (e) {
         setScrollbackErr(e instanceof Error ? e.message : String(e));
         setScrollback("");
@@ -128,6 +126,19 @@ export function AgentsPopup({
     }
   }, [mode, focused, loadScrollback]);
 
+  const drillBody = scrollbackErr !== null ? `error: ${scrollbackErr}` : scrollback;
+  const drill = useDrillKeymap({
+    body: drillBody,
+    viewport,
+    onClose: () => onModeChange("list"),
+    onYank: () => {
+      if (!focused || !snapshot) return;
+      return yank(
+        `mu agent read ${focused.name} -n ${SCROLLBACK_LINES} -w ${snapshot.workstreamName}`,
+      );
+    },
+  });
+
   useInput((input, key) => {
     // Filter-mode keystrokes (when the prompt is editing) consume
     // every printable + Esc/Enter/Bksp; the popup's own dispatchPopupKey
@@ -135,29 +146,8 @@ export function AgentsPopup({
     if (mode !== "drill" && flt.onKey(input, key) === "consumed") return;
     const action = dispatchPopupKeyFromInk(input, key);
     if (mode === "drill") {
-      // Drill-mode keymap: scroll-based view. Nav cluster funnels
-      // through applyScroll; Esc/q backs to list; y yanks the
-      // scrollback-read recipe. Verb keys / drill-again are
-      // intentionally suppressed in drill (read-only).
-      const totalLines = scrollback === "" ? 0 : scrollback.split("\n").length;
-      if (isNavAction(action)) {
-        setScrollTop((s) => applyScroll(s, action, totalLines, viewport));
-        return;
-      }
-      switch (action.kind) {
-        case "close":
-          onModeChange("list");
-          return;
-        case "yank": {
-          if (!focused || !snapshot) return;
-          void yank(
-            `mu agent read ${focused.name} -n ${SCROLLBACK_LINES} -w ${snapshot.workstreamName}`,
-          );
-          return;
-        }
-        default:
-          return;
-      }
+      drill.dispatch(action);
+      return;
     }
     if (isNavAction(action)) {
       setCursor((c) => applyCursor(c, action, agents.length, viewport));
@@ -226,9 +216,9 @@ export function AgentsPopup({
         <Box flexDirection="column" flexGrow={1}>
           <DrillScrollView
             title={`mu agent read ${focused.name} -n ${SCROLLBACK_LINES}`}
-            body={scrollbackErr !== null ? `error: ${scrollbackErr}` : scrollback}
+            body={drillBody}
             viewport={viewport}
-            scrollTop={scrollTop}
+            scrollTop={drill.scrollTop}
             hint={`y yanks \`mu agent read -n ${SCROLLBACK_LINES}\``}
             emptyText={loading ? "loading…" : "(no scrollback yet)"}
           />

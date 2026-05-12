@@ -43,7 +43,8 @@ import { dispatchPopupKeyFromInk } from "../keys.js";
 import { ListRow } from "../list-row.js";
 import { PopupShell } from "../popup-shell.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
-import { applyCursor, applyScroll, isNavAction } from "./scroll.js";
+import { useDrillKeymap } from "./drill.js";
+import { applyCursor, isNavAction } from "./scroll.js";
 import { TaskDetailDrill, renderNotes } from "./task-detail.js";
 import { usePopupViewport } from "./viewport.js";
 
@@ -110,7 +111,6 @@ export function TracksPopup({
   const [cursor, setCursor] = useState(0);
   const [drillCursor, setDrillCursor] = useState(0);
   const [drillSubMode, setDrillSubMode] = useState<DrillSubMode>("task-list");
-  const [taskDetailScrollTop, setTaskDetailScrollTop] = useState(0);
   // Filter is only active at the top-level (list-of-tracks) view
   // per spec MATCHING RULES (Tracks blob = head_id + head_title).
   // Drill sub-views own their own navigation; widening the filter
@@ -138,7 +138,6 @@ export function TracksPopup({
   useEffect(() => {
     if (mode !== "drill") {
       setDrillSubMode("task-list");
-      setTaskDetailScrollTop(0);
     }
   }, [mode]);
 
@@ -158,36 +157,27 @@ export function TracksPopup({
     return out;
   }, [mode, focusedTrack, db, workstream]);
 
+  const focusedTask = drillTasks[drillCursor];
+  const notesBody =
+    mode === "drill" && drillSubMode === "task-detail" && focusedTask
+      ? renderNotes(db, focusedTask.name, workstream)
+      : "";
+  const taskDetailDrill = useDrillKeymap({
+    body: notesBody,
+    viewport,
+    onClose: () => setDrillSubMode("task-list"),
+    onYank: () => {
+      if (!focusedTask || !snapshot) return;
+      return yank(`mu task notes ${focusedTask.name} -w ${snapshot.workstreamName}`);
+    },
+  });
+
   useInput((input, key) => {
     if (mode === "list" && flt.onKey(input, key) === "consumed") return;
     const action = dispatchPopupKeyFromInk(input, key);
     if (mode === "drill" && drillSubMode === "task-detail") {
-      // Leaf: notes timeline. Nav cluster funnels through
-      // applyScroll; y yanks `mu task notes`; Esc/q backs out one
-      // level (→ task-list). Enter is intentionally inert here —
-      // notes aren't entities.
-      const focusedTask = drillTasks[drillCursor];
-      // Re-derive line count for clamp on every keystroke. Cheap:
-      // listNotes is a SQLite SELECT, and notes are small.
-      const notesBody = focusedTask ? renderNotes(db, focusedTask.name, workstream) : "";
-      const totalLines = notesBody === "" ? 0 : notesBody.split("\n").length;
-      if (isNavAction(action)) {
-        setTaskDetailScrollTop((s) => applyScroll(s, action, totalLines, viewport));
-        return;
-      }
-      switch (action.kind) {
-        case "close":
-          setDrillSubMode("task-list");
-          setTaskDetailScrollTop(0);
-          return;
-        case "yank": {
-          if (!focusedTask || !snapshot) return;
-          void yank(`mu task notes ${focusedTask.name} -w ${snapshot.workstreamName}`);
-          return;
-        }
-        default:
-          return;
-      }
+      taskDetailDrill.dispatch(action);
+      return;
     }
     if (mode === "drill") {
       if (isNavAction(action)) {
@@ -205,7 +195,6 @@ export function TracksPopup({
           // opens the same notes view the Tasks popup drill renders.
           const t = drillTasks[drillCursor];
           if (!t) return;
-          setTaskDetailScrollTop(0);
           setDrillSubMode("task-detail");
           return;
         }
@@ -289,7 +278,7 @@ export function TracksPopup({
             task={t}
             db={db}
             workstream={workstream}
-            scrollTop={taskDetailScrollTop}
+            scrollTop={taskDetailDrill.scrollTop}
             viewport={viewport}
           />
         </Box>

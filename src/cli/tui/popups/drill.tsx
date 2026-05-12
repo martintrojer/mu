@@ -31,13 +31,74 @@
 // Per ROADMAP pledge: ink/react import limited to src/cli/tui/*.
 
 import { Text } from "ink";
-import { useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import type { PopupAction } from "../keys.js";
 import { TitledBox } from "../titled-box.js";
+import { applyScroll, isNavAction } from "./scroll.js";
 
 // Re-export so existing `import { clampScrollTop } from "./drill.js"`
 // callers stay valid until they migrate to the centralised
 // applyCursor / applyScroll helpers in popups/scroll.ts.
 export { clampScrollTop } from "./scroll.js";
+
+export interface DrillKeymapOptions {
+  /** Already-rendered text — split on \n for scroll clamping. */
+  body: string;
+  /** Visible lines. Matches the DrillScrollView viewport. */
+  viewport: number;
+  /** Called for Esc/q. The hook resets scrollTop before invoking it. */
+  onClose: () => void;
+  /** Optional y action for this drill view. */
+  onYank?: () => void | Promise<void>;
+}
+
+export interface DrillKeymap {
+  scrollTop: number;
+  dispatch: (action: PopupAction) => void;
+}
+
+/**
+ * Shared keymap for read-only DrillScrollView leaves. Centralises the
+ * common drill skeleton: clamp scroll from the rendered body, Esc/q
+ * backs out one level, y delegates to the caller's read-only yank.
+ */
+export function useDrillKeymap({
+  body,
+  viewport,
+  onClose,
+  onYank,
+}: DrillKeymapOptions): DrillKeymap {
+  const [scrollTop, setScrollTop] = useState(0);
+  const totalLines = useMemo(() => (body === "" ? 0 : body.split("\n").length), [body]);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: scroll resets when the rendered drill body changes, even if the new body has the same line count.
+  useEffect(() => {
+    setScrollTop(0);
+  }, [body]);
+
+  const dispatch = useCallback(
+    (action: PopupAction) => {
+      if (isNavAction(action)) {
+        setScrollTop((s) => applyScroll(s, action, totalLines, viewport));
+        return;
+      }
+      switch (action.kind) {
+        case "close":
+          setScrollTop(0);
+          onClose();
+          return;
+        case "yank":
+          void onYank?.();
+          return;
+        default:
+          return;
+      }
+    },
+    [onClose, onYank, totalLines, viewport],
+  );
+
+  return { scrollTop, dispatch };
+}
 
 export interface DrillScrollViewProps {
   title: string;

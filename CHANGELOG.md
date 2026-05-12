@@ -413,6 +413,18 @@ is opt-in via the new `--tui` flag.
   card/popup/acceptance suites; root cause is the missing
   ink-testing-library install). No in-line fixes — implementation
   ships per filed task.
+- **Shared drill-mode keymap hook** (review_dedup_drill_keymap).
+  `src/cli/tui/popups/drill.tsx` now exports `useDrillKeymap({body,
+  viewport, onClose, onYank})`, centralising the repeated
+  DrillScrollView leaf skeleton (body line count → `applyScroll`,
+  Esc/q back, y delegate). The seven direct text drills
+  (Agents/Ready/In-progress/Blocked/Recent/Log/Doctor) now simply
+  call `drill.dispatch(action)` in drill mode; Tracks' task-detail
+  leaf and Workspaces' git-show leaf use the same hook for their
+  deeper scroll-based drill levels. Coverage in
+  `test/tui-drill-keymap.test.ts` keeps future popups from
+  reintroducing local `applyScroll` / `totalLines` drill switches.
+
 - **Shared ink-key normalisation for TUI dispatchers**
   (review_dedup_popup_useinput). `src/cli/tui/keys.ts` now exports
   `dispatchPopupKeyFromInk(input, key)` and
