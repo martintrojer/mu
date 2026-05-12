@@ -93,6 +93,19 @@ export interface TitledBoxProps {
   children?: ReactNode;
 }
 
+/** Default for the outer Box's flexShrink. Yoga's default is 0
+ *  (unlike CSS's 1), so when the dashboard's nine cards' summed
+ *  natural height exceeds the height-pinned root <Box height={rows}>,
+ *  Yoga keeps every child at its natural size and the overflow is
+ *  emitted past the terminal's bottom — which (because ink writes
+ *  the whole frame in one go and the cursor starts at row 1) makes
+ *  the terminal scroll and silently drops the TOPMOST border row.
+ *  See bug_tui_dashboard_top_card_scrolls_off for the long-form
+ *  diagnosis. Setting flexShrink=1 lets Yoga distribute the deficit
+ *  proportionally across cards, so the bottom card's body clips
+ *  instead of the topmost card's chrome scrolling off-screen. */
+const TITLED_BOX_FLEX_SHRINK = 1;
+
 /**
  * Generic geometry helper for ANY border row that insets a single
  * label between the corner+dash prefix and the dash-fill+corner
@@ -166,7 +179,13 @@ export function TitledBox({
   const bottomFill = ROUND.horizontal.repeat(bottomDashes);
 
   return (
-    <Box flexDirection="column" width={cols} flexGrow={flexGrow}>
+    <Box
+      flexDirection="column"
+      width={cols}
+      flexGrow={flexGrow}
+      flexShrink={TITLED_BOX_FLEX_SHRINK}
+      overflow="hidden"
+    >
       <Text color={borderColor}>
         {ROUND.topLeft}
         {ROUND.horizontal}{" "}

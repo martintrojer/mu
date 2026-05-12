@@ -352,6 +352,56 @@ is opt-in via the new `--tui` flag.
 
 ### Fixed
 
+- **TUI dashboard topmost card no longer scrolls its top border
+  off-screen on the single-ws dashboard**
+  (bug_tui_dashboard_top_card_scrolls_off). Sibling of
+  bug_tui_tab_switch_stale_render Layer 2: that fix added
+  `overflow="hidden"` to the height-pinned root `<Box>` of all
+  three frame branches (dashboard / popup / help), which catches
+  the multi-ws case where the TabStrip adds one row over the nine
+  cards and pushes total content to `rows+1`. The single-ws case
+  has no TabStrip, but the nine cards' SUMMED natural height
+  (especially Card 8 — Recent and Card 9 — Doctor, both with
+  multi-row bodies) can still exceed `rows` on normal terminal
+  sizes. Even with `overflow="hidden"` pinned, ink (via Yoga) gave
+  every card its natural height first because Yoga's default
+  `flexShrink` is **0** (unlike CSS's 1) — so the topmost card's
+  chrome scrolled off the top of the terminal anyway. Fix: pin
+  `flexShrink={1}` (named `TITLED_BOX_FLEX_SHRINK` for the
+  next reader) on the outer `<Box>` of `TitledBox`, so Yoga
+  distributes the deficit proportionally across cards and the
+  bottommost card's body clips instead of the topmost card's
+  chrome being lost. Outer Box also gains `overflow="hidden"` so
+  the inner border-body Box clips cleanly when shrunk (otherwise
+  the inner content overruns the now-shrunken outer slot and the
+  visible artifact comes back even though Yoga did the math
+  right). Belt-and-braces with the existing dashboard-root
+  `overflow="hidden"`: the per-card `flexShrink` tells Yoga it MAY
+  shrink cards, the root pin tells ink to clip if Yoga still
+  didn't (e.g. a card with a hardcoded `height` prop). Coverage:
+  `test/tui-app-frame-height.test.ts` grows two regression
+  assertions — TitledBox's outer Box pins `flexShrink` AND
+  `overflow="hidden"`, so a future refactor of TitledBox doesn't
+  silently regress. The bottommost card already carries its own
+  `+M more · Shift+N` truncation hint inset into its bottom border
+  (feat_card_footer_inset) so the operator gets a visual cue when
+  any card's body has been clipped.
+- **TUI dashboard / popup / help frames clip overflow at the
+  height-pinned root** (bug_tui_tab_switch_stale_render Layer 2).
+  Multi-ws repro (`mu state --tui -w A,B`): the TabStrip adds one
+  row above the nine cards; total content becomes `rows+1`. Ink's
+  default overflow is "visible", so the overflowing row was
+  emitted past the terminal bottom, the terminal scrolled, and
+  the topmost card's `╭─ ¹ Agents … ─╮` top border vanished off
+  the top edge. Fix: add `overflow="hidden"` to all three frame
+  branches' height-pinned root `<Box>` (dashboard, popup, help).
+  Ink then clips children to the box's computed bounds instead
+  of overrunning, so nothing escapes above row 1. Single-ws TUI
+  is byte-identical (no TabStrip → no overflow); the
+  belt-and-braces sibling
+  bug_tui_dashboard_top_card_scrolls_off above also covers the
+  per-card variant where the cards' summed natural height alone
+  beats `rows`.
 - **TUI drill chrome insets into nested magenta border (was rendered
   as body rows nested inside the popup's cyan box)**
   (nit_tui_drill_inset_title_and_hints, Layer 2).

@@ -280,13 +280,16 @@ export function App({ db, workstreams }: AppProps): JSX.Element {
   // bug_tui_render_ghosting_v2). The spacer also bottom-sticks the
   // status bar so it doesn't float up against a shorter body.
   //
-  // overflow="hidden" instructs ink to CLIP children to the box's
-  // computed bounds rather than letting them overrun and emit
-  // escape sequences past row N (which scrolls the terminal up and
-  // chops the topmost row — see bug_tui_tab_switch_stale_render
-  // layer 2: the multi-ws TabStrip pushed total content to rows+1,
-  // and without clipping the terminal scrolled, eating the topmost
-  // card's top border).
+  // overflow="hidden" pinned at the root (all three branches): when
+  // total content exceeds rows ink would otherwise emit the
+  // overflowing rows past the terminal bottom, scrolling the top
+  // off-screen and silently dropping the topmost row's bytes (see
+  // bug_tui_tab_switch_stale_render layer 2 + the single-ws sibling
+  // bug_tui_dashboard_top_card_scrolls_off where the nine cards'
+  // summed natural height beats `rows`). Belt-and-braces with the
+  // per-card flexShrink=1 in TitledBox: that one tells Yoga it MAY
+  // shrink cards, this one tells ink to clip if Yoga still didn't
+  // (e.g. a card with a hardcoded `height` prop).
   if (helpOpen) {
     return (
       <Box flexDirection="column" height={rows} overflow="hidden">
