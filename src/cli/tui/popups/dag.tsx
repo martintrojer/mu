@@ -7,10 +7,10 @@
 
 import { Box, Text, useInput } from "ink";
 import { useMemo, useState } from "react";
-import { colorStatus } from "../../../cli.js";
 import { loadFullDag, renderForest } from "../../../dag.js";
 import type { Db } from "../../../db.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
+import { colorStatus } from "../../format.js";
 import { dispatchPopupKeyFromInk } from "../keys.js";
 import { PopupShell } from "../popup-shell.js";
 import { DrillScrollView, useDrillKeymap } from "./drill.js";
