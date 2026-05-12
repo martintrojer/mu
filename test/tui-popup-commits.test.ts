@@ -97,15 +97,16 @@ describe("CommitsPopup source invariants", () => {
 });
 
 describe("App / keys wiring for Commits popup", () => {
-  it("App imports and renders CommitsPopup via mnemonic popup id", () => {
+  it("App imports and renders CommitsPopup via numeric popup id 0", () => {
     expect(APP_SRC).toContain('from "./popups/commits.js"');
-    expect(APP_SRC).toMatch(/case "commits":\s*\n\s*return <CommitsPopup/);
-    expect(APP_SRC).toMatch(/case "commits":\s*\n\s*return "Commits"/);
+    expect(APP_SRC).toMatch(/case 0:\s*\n\s*return <CommitsPopup/);
+    expect(APP_SRC).toMatch(/case 0:\s*\n\s*return "Commits"/);
   });
 
-  it("keys maps l/L to openPopup('commits') while Shift+8 (*) remains Recent", () => {
-    expect(KEYS_SRC).toMatch(/input === "l" \|\| input === "L"/);
-    expect(KEYS_SRC).toMatch(/cardId: "commits"/);
+  it("keys maps Shift+0 ')' to openPopup(0), drops l/L, and keeps Shift+8 (*) as Recent", () => {
+    expect(KEYS_SRC).toMatch(/"\)":\s*0/);
+    expect(KEYS_SRC).not.toMatch(/input === "l" \|\| input === "L"/);
+    expect(KEYS_SRC).not.toMatch(/cardId: "commits"/);
     expect(KEYS_SRC).toMatch(/"\*":\s*8/);
   });
 });

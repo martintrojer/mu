@@ -1,4 +1,4 @@
-// Full task-DAG popup (`g` / Shift+0 → `)`).
+// Full task-DAG popup (`g`). Keybind-only; no dashboard card slot.
 //
 // Read-only forest of the current workstream: every root task (no
 // incoming blocks edge) is rendered with the same ASCII tree machinery

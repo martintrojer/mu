@@ -318,8 +318,8 @@ running a wave.
   (interactive ink dashboard; read-only, yanks `mu` commands;
   reflows from stacked cards to pair-aware 2 / 3 / 4-column layouts
   at 120 / 180 / 240 terminal columns with dynamic per-card row
-  budgets; `g` opens the full workstream DAG popup; `l` opens the commits
-  popup; `1`-`9` toggle cards; `Shift+1`-`Shift+9` open popups,
+  budgets; `g` opens the full workstream DAG popup (keybind-only);
+  `0`-`9` toggle cards; `Shift+0`-`Shift+9` open popups,
   `Enter`
   drills (in the Activity log popup it opens the focused event's
   full untruncated payload; the Workspaces popup chains `Enter`

@@ -7,7 +7,7 @@ import {
   layoutColumns,
 } from "../src/cli/tui/layout.js";
 
-const ALL: CardId[] = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+const ALL: CardId[] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
 
 function ids(cols: number, visible: CardId[] = ALL): CardId[][] {
   return layoutColumns(cols, visible).map((c) => c.cards);
@@ -23,7 +23,7 @@ describe("dashboard responsive layout", () => {
     expect(dashboardColumnCount(140)).toBe(2);
     expect(ids(140)).toEqual([
       [1, 2, 5, 9],
-      [3, 6, 7, 4, 8],
+      [3, 6, 7, 8, 0, 4],
     ]);
   });
 
@@ -31,8 +31,8 @@ describe("dashboard responsive layout", () => {
     expect(dashboardColumnCount(200)).toBe(3);
     expect(ids(200)).toEqual([
       [1, 2, 5, 9],
-      [3, 6, 7],
-      [4, 8],
+      [3, 6, 7, 8],
+      [0, 4],
     ]);
   });
 
@@ -41,8 +41,8 @@ describe("dashboard responsive layout", () => {
     expect(ids(260)).toEqual([
       [1, 2],
       [5, 9],
-      [3, 6, 7],
-      [4, 8],
+      [3, 6, 7, 8],
+      [0, 4],
     ]);
   });
 

@@ -106,7 +106,7 @@ describe("popups/recent.tsx static-source invariants", () => {
 });
 
 describe("popups/recent.tsx ↔ App / keys wiring", () => {
-  it("App.tsx still renders RecentPopup for popup id 8 (popup-only)", () => {
+  it("App.tsx still renders RecentPopup for popup id 8", () => {
     const app = readFileSync("./src/cli/tui/app.tsx", "utf-8");
     expect(app).toContain("RecentPopup");
     expect(app).toMatch(/case 8:\s*\n\s*return <RecentPopup/);

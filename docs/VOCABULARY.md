@@ -74,10 +74,10 @@ defined here, fix the doc. If you need a new term, add it here first.
 | **pi-subagents**      | A different package by Nico Bailon for in-pi focused delegation. Mu and pi-subagents are complementary, not competing. | conflating with mu                                 |
 | **TUI**               | The interactive ink-based dashboard launched by `mu state --tui`. Lives in `src/cli/tui/`. Read-only against SQLite (yanks, never executes). | "GUI", "interactive mode"                         |
 | **dashboard**         | The TUI's main screen — the grid of cards above the status bar. | "home screen", "main view"                         |
-| **card**              | A glanceable summary tile on the dashboard, identified by its toggle digit (1-9). Wrapped in a TitledBox. | "panel", "section" (overloaded)                    |
-| **popup**             | A fullscreen drill-down opened with `Shift+1`-`Shift+9`; single-popup invariant. Closed with `Esc`/`q`. | "modal", "dialog", "detail view"                   |
+| **card**              | A glanceable summary tile on the dashboard, identified by its toggle digit (0-9). Wrapped in a TitledBox. | "panel", "section" (overloaded)                    |
+| **popup**             | A fullscreen drill-down opened with `Shift+0`-`Shift+9` or a keybind-only shortcut such as `g` for DAG; single-popup invariant. Closed with `Esc`/`q`. | "modal", "dialog", "detail view"                   |
 | **TitledBox**         | The `<TitledBox>` component (`src/cli/tui/titled-box.tsx`) that renders a rounded border with the section header inset into the top border line. The visual primitive used by every card / popup / help overlay. | "header box", "box" (alone)                       |
-| **tick**              | The TUI's periodic data refresh (default 1s; `+/-/=/0` adjusts). Owned by a single `setInterval` in `<App>`. | "poll", "refresh" (verb sense), "frame"            |
+| **tick**              | The TUI's periodic data refresh (default 1s; `+/-/=` adjusts). Owned by a single `setInterval` in `<App>`. | "poll", "refresh" (verb sense), "frame"            |
 | **yank**              | Copy the canonical `mu` command for the focused row to the clipboard. Bound to `y` in every popup. | "copy", "export command"                           |
 | **footer**            | The persistent bottom line on the dashboard showing the last yank. Cleared with `c`. | "status line" (reserved for status bar), "toast"   |
 | **toast**             | Transient in-popup message (e.g. "tick floor 100ms" when `+` hits floor). | "notification", "banner"                           |

@@ -1,22 +1,21 @@
 // Global keymap dispatcher for the TUI dashboard. Per
 // design_global_keymap (workstream `tui`):
 //
+//   0           toggle Commits card
 //   1-4         toggle Agents/Tracks/Ready/Log card
 //   5           toggle Workspaces card (feat_card_5_workspaces)
 //   6           toggle In-progress card (feat_card_6_inprogress)
 //   7           toggle Blocked card (feat_card_7_blocked)
-//   8           toggle Commits card (feat_tui_commits_card)
+//   8           toggle Recent card
 //   9           toggle Doctor card (feat_card_9_doctor)
-//   g           open full DAG popup (graph mnemonic)
-//   l / L       open Commits popup (log mnemonic; lazygit/k9s convention)
+//   g           open full DAG popup (graph mnemonic; keybind-only)
+//   Shift+0/)   open Commits popup
 //   ! @ # $     open fullscreen popup for that card  (Shift+1..Shift+4
 //               on US keyboards; bound by glyph because ink reports
 //               the post-shift character, not the modifier).
-//   Shift+8/*   open Recent popup (popup-only after Commits takes
-//               Card 8)
+//   Shift+8/*   open Recent popup
 //   + / =       tick faster (floor 100ms); = is the unshifted alias
 //   -           tick slower (ceiling 10s)
-//   0           reset tick to default 1s
 //   r / F5      refresh now (poke poll loop)
 //   ?           toggle help overlay
 //   q / Q       quit
@@ -30,11 +29,10 @@
 // (the <App> component in app.tsx) maps actions to state mutations.
 
 export type GlobalAction =
-  | { kind: "toggleCard"; cardId: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 }
-  | { kind: "openPopup"; cardId: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | "commits" }
+  | { kind: "toggleCard"; cardId: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 }
+  | { kind: "openPopup"; cardId: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | "dag" }
   | { kind: "tickFaster" }
   | { kind: "tickSlower" }
-  | { kind: "tickReset" }
   | { kind: "refreshNow" }
   | { kind: "toggleHelp" }
   | { kind: "quit" }
@@ -127,30 +125,34 @@ export function dispatchGlobalKey(input: string, key: KeyFlags): GlobalAction {
 
   // Tick rate adjust. `+` arrives as `+` (Shift+= on US); `=` is the
   // unshifted alias for users who don't bother shifting; `-` is the
-  // plain minus key; `0` resets.
+  // plain minus key. Digit 0 is now a card slot (Commits), so tick
+  // reset is intentionally not bound to a dashboard key.
   if (input === "+" || input === "=") return { kind: "tickFaster" };
   if (input === "-") return { kind: "tickSlower" };
-  if (input === "0") return { kind: "tickReset" };
 
-  // Card toggles 1-9. All reserved slots from design_global_keymap
-  // are now filled: slot 5 by feat_card_5_workspaces, slot 6 by
-  // feat_card_6_inprogress, slot 7 by feat_card_7_blocked, slot 8
-  // by feat_tui_commits_card, slot 9 by feat_card_9_doctor (all
-  // workstream `tui-impl`). Slot 0 stays reserved by convention
-  // (no promotion task today).
-  if (input >= "1" && input <= "9") {
-    const cardId = (input.charCodeAt(0) - "0".charCodeAt(0)) as 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
+  // Card toggles 0-9. Slot 0 is Commits; slot 8 is Recent. DAG stays
+  // a keybind-only popup on `g` so it does not consume a card slot.
+  if (input >= "0" && input <= "9") {
+    const cardId = (input.charCodeAt(0) - "0".charCodeAt(0)) as
+      | 0
+      | 1
+      | 2
+      | 3
+      | 4
+      | 5
+      | 6
+      | 7
+      | 8
+      | 9;
     return { kind: "toggleCard", cardId };
   }
 
-  if (input === "g") return { kind: "openPopup", cardId: 0 };
-  if (input === "l" || input === "L") return { kind: "openPopup", cardId: "commits" };
+  if (input === "g") return { kind: "openPopup", cardId: "dag" };
 
   // Popup openers !-) on US keyboards. Bound by glyph because ink
   // reports the post-shift character; key.shift is false.
   // Layout-dependent — see design_global_keymap ODDITY for non-US
-  // keymaps. Slot 8 still opens the Recent popup, even though Card 8
-  // is now Commits; the Commits popup uses the mnemonic `l`/`L`.
+  // keymaps. Shift+0 opens Commits; Shift+8 opens Recent.
   const glyphMap: Record<string, 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9> = {
     ")": 0,
     "!": 1,
@@ -188,8 +190,8 @@ export function dispatchGlobalKey(input: string, key: KeyFlags): GlobalAction {
 //   Enter        drill into the focused row (popup decides what to render)
 //   ?            toggleHelp
 //
-// Tick-rate keys (+/-/=/0), refresh (r/F5), and Ctrl-C remain live in
-// popups (they're global). Card toggles (1-4) and popup openers (!-$)
+// Tick-rate keys (+/-/=), refresh (r/F5), and Ctrl-C remain live in
+// popups (they're global). Card toggles (0-9) and popup openers (!-))
 // are SUPPRESSED by <App>.
 
 export type PopupAction =

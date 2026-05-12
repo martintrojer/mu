@@ -17,7 +17,7 @@
 
 import type { WorkstreamSnapshot } from "../../state.js";
 
-export type CardId = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
+export type CardId = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
 
 export type CardGroup = "small-pair" | "task-list" | "stream";
 
@@ -37,6 +37,7 @@ export type CardConfigMap = Readonly<Record<CardId, CardRowConfig>>;
 const CARD_CHROME_ROWS = 4;
 
 export const CARD_CONFIGS: CardConfigMap = {
+  0: { minRows: 3, maxRows: 12, chrome: CARD_CHROME_ROWS, group: "stream" }, // Commits
   1: { minRows: 2, maxRows: 10, chrome: CARD_CHROME_ROWS, group: "small-pair" }, // Agents
   2: { minRows: 2, maxRows: 8, chrome: CARD_CHROME_ROWS, group: "small-pair" }, // Tracks
   3: { minRows: 3, maxRows: 15, chrome: CARD_CHROME_ROWS, group: "task-list" }, // Ready
@@ -44,7 +45,7 @@ export const CARD_CONFIGS: CardConfigMap = {
   5: { minRows: 2, maxRows: 8, chrome: CARD_CHROME_ROWS, group: "small-pair" }, // Workspaces
   6: { minRows: 3, maxRows: 12, chrome: CARD_CHROME_ROWS, group: "task-list" }, // In-progress
   7: { minRows: 3, maxRows: 12, chrome: CARD_CHROME_ROWS, group: "task-list" }, // Blocked
-  8: { minRows: 3, maxRows: 12, chrome: CARD_CHROME_ROWS, group: "stream" }, // Commits
+  8: { minRows: 3, maxRows: 12, chrome: CARD_CHROME_ROWS, group: "task-list" }, // Recent
   9: { minRows: 2, maxRows: 8, chrome: CARD_CHROME_ROWS, group: "small-pair" }, // Doctor
 };
 
@@ -196,6 +197,8 @@ export function allocateRowBudgets(
 export function dataCountForCard(id: CardId, snapshot: WorkstreamSnapshot | null): number {
   if (snapshot === null) return 0;
   switch (id) {
+    case 0:
+      return snapshot.recentCommits.length;
     case 1:
       return snapshot.view.agents.length;
     case 2:
@@ -211,7 +214,7 @@ export function dataCountForCard(id: CardId, snapshot: WorkstreamSnapshot | null
     case 7:
       return snapshot.blocked.length;
     case 8:
-      return snapshot.recentCommits.length;
+      return snapshot.recentClosed.length;
     case 9:
       return snapshot.doctor?.problemCount ?? 0;
   }
@@ -229,7 +232,7 @@ function normalizeVisible(ids: ReadonlyArray<CardId>): CardId[] {
 }
 
 function emptyBudgetMap(): Record<CardId, number> {
-  return { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0, 8: 0, 9: 0 };
+  return { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0, 8: 0, 9: 0 };
 }
 
 function clamp(value: number, min: number, max: number): number {

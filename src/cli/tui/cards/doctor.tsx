@@ -5,8 +5,8 @@
 // is warn or fail, the failing rows surface the moment they appear.
 //
 // Per feat_card_9_doctor (workstream `tui-impl`), promoted from the
-// LAST reserved slot in design_global_keymap. After this all 1-9
-// slots are filled; slot 0 stays reserved by convention.
+// LAST reserved non-zero slot in design_global_keymap. Slot 0 is now
+// Commits; DAG is keybind-only.
 //
 // CARD LAYOUT
 //   glyph  check        STATUS   detail

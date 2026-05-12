@@ -54,10 +54,11 @@ export interface CardVisibility {
    *  blocker counts come from getTaskEdgesWithStatus (≤8 cheap sync reads
    *  per tick). No SDK extension. */
   blocked: boolean;
-  /** Card 8 — recent project commits (feat_tui_commits_card,
-   *  workstream `tui-impl`). Reads snapshot.recentCommits populated
-   *  by the withRecentCommits opt-in. */
+  /** Card 0 — recent project commits. Reads snapshot.recentCommits
+   *  populated by the withRecentCommits opt-in. */
   commits: boolean;
+  /** Card 8 — recently CLOSED tasks. Reads snapshot.recentClosed. */
+  recent: boolean;
   /** Card 9 — doctor health-check summary (feat_card_9_doctor,
    *  workstream `tui-impl`). Reads `snapshot.doctor` (populated by
    *  loadWorkstreamSnapshot when called with `withDoctor: true`).
@@ -74,6 +75,7 @@ export const DEFAULT_CARD_VISIBILITY: CardVisibility = {
   inProgress: true,
   blocked: true,
   commits: true,
+  recent: true,
   doctor: true,
 };
 

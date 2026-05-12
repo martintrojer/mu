@@ -90,11 +90,13 @@ describe("RecentCard", () => {
     expect(text.split("✓").length - 1).toBe(3);
   });
 
-  it("truncates at ROW_LIMIT with the bottomLabel '+N more · Shift+8'", () => {
+  it("truncates at the dynamic row budget with the bottomLabel '+N more · Shift+8'", () => {
     const recentClosed = Array.from({ length: 10 }, (_, i) =>
       task({ name: `recent_${i + 1}`, title: `Recent ${i + 1}` }),
     );
-    const text = renderCardToText(RecentCard({ snapshot: { ...EMPTY_SNAPSHOT, recentClosed } }));
+    const text = renderCardToText(
+      RecentCard({ snapshot: { ...EMPTY_SNAPSHOT, recentClosed }, rowBudget: 8 }),
+    );
 
     expect(text).toContain("+2 more · Shift+8");
     for (let i = 1; i <= 8; i++) expectTextOnce(text, `recent_${i}`);

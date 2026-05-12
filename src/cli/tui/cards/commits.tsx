@@ -1,9 +1,8 @@
 // Commits card — lazygit-style recent project commit log.
 //
-// Slot choice: Card 8 is now Commits. The previous Recent card stays
-// available as popup-only via Shift+8 (`*`), because recent task
-// events are already visible through the Activity-log card/popup while
-// project commits were not visible anywhere on the dashboard.
+// Slot choice: Card 0 is now Commits. Recent is restored to Card 8;
+// the DAG remains a keybind-only popup on `g` instead of consuming
+// numeric slot 0.
 //
 // Data comes from snapshot.recentCommits, populated by
 // loadWorkstreamSnapshot(..., { withRecentCommits }) against
@@ -30,7 +29,7 @@ export interface CommitsCardProps {
   cols?: number;
 }
 
-export const cardConfig = CARD_CONFIGS[8];
+export const cardConfig = CARD_CONFIGS[0];
 
 const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
   { kind: "protect" }, // sha short
@@ -42,7 +41,7 @@ export function CommitsCard({ snapshot, rowBudget, cols }: CommitsCardProps): JS
   const contentWidth = contentWidthFromCols(cols ?? termColsForLayout());
   if (snapshot === null) {
     return (
-      <TitledBox width={cols} title="Commits" cardId={8}>
+      <TitledBox width={cols} title="Commits" cardId={0}>
         <PaddedRows minRows={rowBudget ?? cardConfig.minRows}>
           <Text dimColor>loading…</Text>
         </PaddedRows>
@@ -54,7 +53,7 @@ export function CommitsCard({ snapshot, rowBudget, cols }: CommitsCardProps): JS
   const backendLabel = formatBackend(snapshot.commitsBackend ?? null);
   if (recentCommits.length === 0) {
     return (
-      <TitledBox width={cols} title="Commits" subtitle={backendLabel} cardId={8}>
+      <TitledBox width={cols} title="Commits" subtitle={backendLabel} cardId={0}>
         <PaddedRows minRows={rowBudget ?? cardConfig.minRows}>
           <Text dimColor>no commits</Text>
         </PaddedRows>
@@ -64,7 +63,7 @@ export function CommitsCard({ snapshot, rowBudget, cols }: CommitsCardProps): JS
 
   const shown = recentCommits.slice(0, rowBudget ?? cardConfig.maxRows);
   const more = recentCommits.length - shown.length;
-  const bottomLabel = more > 0 ? `+${more} more · Shift+8` : undefined;
+  const bottomLabel = more > 0 ? `+${more} more · Shift+0` : undefined;
   const subtitle = formatSubtitle(
     recentCommits.length,
     snapshot.commitsBackend ?? null,
@@ -78,7 +77,7 @@ export function CommitsCard({ snapshot, rowBudget, cols }: CommitsCardProps): JS
       width={cols}
       title="Commits"
       subtitle={subtitle}
-      cardId={8}
+      cardId={0}
       bottomLabel={bottomLabel}
     >
       {shown.map((c, i) => {

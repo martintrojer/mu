@@ -48,7 +48,7 @@ called out under "Breaking" in each entry.
   `staleness` object (`agentName`, `workstreamName`,
   `commitsBehindMain`, `isStale`) or `null` for agents without a
   workspace.
-- **TUI Commits card + `l` commits popup** (feat_tui_commits_card). Slot 8 now shows a lazygit-style recent-project-commits card (`<sha-7> <relTime> <subject>`) sourced from the project root where the TUI was launched, not from any per-agent worker workspace. `l` / `L` opens the fullscreen Commits popup with `/` filtering, cursor navigation, and `Enter` drilling into the backend's show view; `y` yanks the show command. The VCS seam now supports git, jj, and sl via `VcsBackend.recentCommits(projectRoot, limit)` and `VcsBackend.showCommit(projectRoot, sha)`, with the `none` backend rendering a graceful empty state. Shift+8 still opens the old Recent popup as popup-only.
+- **TUI Commits card + popup** (feat_tui_commits_card). The dashboard now has a lazygit-style recent-project-commits card (`<sha-7> <relTime> <subject>`) sourced from the project root where the TUI was launched, not from any per-agent worker workspace. The fullscreen Commits popup supports `/` filtering, cursor navigation, and `Enter` drilling into the backend's show view; `y` yanks the show command. The VCS seam now supports git, jj, and sl via `VcsBackend.recentCommits(projectRoot, limit)` and `VcsBackend.showCommit(projectRoot, sha)`, with the `none` backend rendering a graceful empty state. Current slot/key assignments are documented under Changed.
 - **Bare `mu` launches the TUI when stdout is attached to a TTY**
   (feat_mu_bare_launches_tui). The human entrypoint now opens the
   read-only dashboard immediately with every workstream loaded as
@@ -62,7 +62,7 @@ called out under "Breaking" in each entry.
 
 - **Commits card and popup show the detected VCS backend**
   (bug_vcs_detect_misses_git_worktrees). The TUI Commits card and
-  `l` popup now include the active backend in their header/subtitle
+  popup now include the active backend in their header/subtitle
   (`git`, `jj`, `sl`, or `(no vcs)`) so users can see which substrate
   won detection at a glance.
 
@@ -93,7 +93,7 @@ is opt-in via the new `--tui` flag.
 
 ### Added
 
-- **TUI DAG popup (`g`, also Shift+0 / `)`)** — the dashboard now has a popup-only full task-DAG view for the active workstream. It renders every root task (no incoming `blocks` edge) as a `mu task tree --down`-style ASCII subtree, with blank lines between roots and diamond repeats collapsed with the existing `↻ already shown above` marker. New SDK/data seam `loadFullDag(db, workstream)` plus shared `renderForest(...)` keep the CLI tree renderer and TUI popup on the same box-drawing implementation. The popup is read-only and yanks `mu task tree <root-id> -w <ws>` for the root closest to the current scroll position (TODO: refine from scroll-root approximation to exact cursor-line task lookup when the text drill grows cursor-row plumbing).
+- **TUI DAG popup (`g`)** — the dashboard now has a keybind-only full task-DAG view for the active workstream. It renders every root task (no incoming `blocks` edge) as a `mu task tree --down`-style ASCII subtree, with blank lines between roots and diamond repeats collapsed with the existing `↻ already shown above` marker. New SDK/data seam `loadFullDag(db, workstream)` plus shared `renderForest(...)` keep the CLI tree renderer and TUI popup on the same box-drawing implementation. The popup is read-only and yanks `mu task tree <root-id> -w <ws>` for the root closest to the current scroll position (TODO: refine from scroll-root approximation to exact cursor-line task lookup when the text drill grows cursor-row plumbing).
 - **TUI multi-workstream tabs (`mu state --tui -w A,B,C`)** — the
   TUI now accepts the same multi-value `-w` set the static card
   has always supported (and `--all`). N≥2 surfaces a one-row tab
@@ -419,6 +419,10 @@ is opt-in via the new `--tui` flag.
   `WorkstreamSnapshot` in `src/state.ts`.
 
 ### Changed
+
+- Recent restored to dashboard card slot 8 (was demoted to popup-only when Commits took the slot in v0.5 alpha).
+- Commits promoted to dashboard card slot 0 (was reserved-by-convention).
+- Dropped `l`/`L` alias for the Commits popup; Shift+0 ')' is the canonical key.
 
 - **CLI handler exits are centralised in `handle()`**
   (review_repo_process_exit_inside_handlers). Leaf command handlers

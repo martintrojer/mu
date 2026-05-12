@@ -86,22 +86,20 @@ describe("StatusBar", () => {
     expect(text).toContain("popup");
     expect(text).toContain("help");
     expect(text).toContain("quit");
-    // Dashboard hint reflects 1-9 cards (was 1-4 in v0) per
-    // nit_tui_status_bar_card_range. Popup-opener label is plain
-    // English 'Shift 1-9' (no '+', no glyph cluster) per user
+    // Dashboard hint reflects 0-9 cards. Popup-opener label is plain
+    // English 'Shift 0-9' (no '+', no glyph cluster) per user
     // preference — layout-independent and self-explanatory.
     expect(text).toContain("g");
     expect(text).toContain("DAG");
-    expect(text).toContain("l");
-    expect(text).toContain("commits");
-    expect(text).toContain("1-9");
-    expect(text).toContain("Shift 1-9");
+    expect(text).toContain("0-9");
+    expect(text).toContain("Shift 0-9");
+    expect(text).not.toContain("l commits");
     // F1 alias dropped per nit_tui_remove_f1_help_toggle.
     expect(text).not.toContain("F1");
     expect(text).not.toContain("!@#$");
   });
 
-  it("popup list-mode hint cluster surfaces `Shift 1-9 switch popup`", () => {
+  it("popup list-mode hint cluster surfaces `Shift 0-9 switch popup`", () => {
     // Per nit_tui_status_bar_popup_shift_range: the popup-mode hint
     // must advertise the cross-popup hop affordance (otherwise users
     // can only discover it via the help overlay).
@@ -114,11 +112,11 @@ describe("StatusBar", () => {
       popupMode: "list",
     });
     const text = renderToString(node);
-    expect(text).toContain("Shift 1-9");
+    expect(text).toContain("Shift 0-9");
     expect(text).toContain("switch popup");
   });
 
-  it("popup drill-mode hint cluster does NOT advertise `Shift 1-9` (transient view)", () => {
+  it("popup drill-mode hint cluster does NOT advertise `Shift 0-9` (transient view)", () => {
     // Drill is a transient view that returns to the popup-list on Esc;
     // switching popups from drill mode is unusual. Keep it terse.
     const node = StatusBar({
@@ -129,10 +127,10 @@ describe("StatusBar", () => {
       popupName: "Tasks",
       popupMode: "drill",
     });
-    expect(renderToString(node)).not.toContain("Shift 1-9");
+    expect(renderToString(node)).not.toContain("Shift 0-9");
   });
 
-  it("popup-filter hint cluster does NOT advertise `Shift 1-9` (digits are filter input mid-edit)", () => {
+  it("popup-filter hint cluster does NOT advertise `Shift 0-9` (digits are filter input mid-edit)", () => {
     const node = StatusBar({
       mode: "popup-filter",
       tickMs: 1000,
@@ -140,7 +138,7 @@ describe("StatusBar", () => {
       cols: 200,
       popupName: "Tasks",
     });
-    expect(renderToString(node)).not.toContain("Shift 1-9");
+    expect(renderToString(node)).not.toContain("Shift 0-9");
   });
 
   it("renders popup hints with the popup name when mode=popup (default = list)", () => {

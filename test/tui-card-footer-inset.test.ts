@@ -48,8 +48,7 @@ function loadCardSources(): Source[] {
 
 // Cards that participate in the truncation contract — they slice to
 // a dynamic rowBudget and surface the overflow count via TitledBox's
-// bottomLabel. Recent is popup-only now, but its source still carries
-// the same contract for its direct card tests.
+// bottomLabel.
 const FOOTER_INSET_CARDS = new Set([
   "cards/agents.tsx",
   "cards/blocked.tsx",
@@ -97,15 +96,9 @@ describe("feat_card_footer_inset: in-body '+M more' line lifted to TitledBox.bot
       );
     });
 
-    if (name !== "cards/recent.tsx") {
-      it(`${name}: slices visible rows with the dynamic rowBudget fallback`, () => {
-        expect(src).toMatch(/slice\(0,\s*rowBudget\s*\?\?\s*cardConfig\.maxRows\)/);
-      });
-    } else {
-      it(`${name}: remains popup-only legacy card source`, () => {
-        expect(src).toContain("const ROW_LIMIT = 8");
-      });
-    }
+    it(`${name}: slices visible rows with the dynamic rowBudget fallback`, () => {
+      expect(src).toMatch(/slice\(0,\s*rowBudget\s*\?\?\s*cardConfig\.maxRows\)/);
+    });
 
     it(`${name}: passes bottomLabel through to TitledBox`, () => {
       // Cheap, but kept (in addition to the tighter computation check)

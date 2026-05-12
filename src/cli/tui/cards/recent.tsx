@@ -46,13 +46,9 @@
 //   updated_at today (notes have their own created_at), so in
 //   practice this is "time since close". Verified in src/tasks.ts.
 //
-// POPUP / FUTURE OBLIGATIONS (when slot-8 popup ships)
-//   Out of scope NOW. When the popup is added under
-//   feat_more_cards_umbrella, it MUST consume:
-//     (a) feat_popup_search_filter — '/' filter via usePopupFilter
-//     (b) feat_track_drill_chains_to_task_drill — Enter chains rows
-//         into TaskDetailDrill (rows ARE tasks)
-//   Until then, Shift+8 (`*`) stays a reserved noop in keys.ts.
+// POPUP
+//   Shift+8 (`*`) opens the matching Recent popup. Card slot 8 and
+//   popup slot 8 now point at the same task-recent view again.
 
 import { Text } from "ink";
 import type { WorkstreamSnapshot } from "../../../state.js";
@@ -64,7 +60,9 @@ import {
   termColsForLayout,
 } from "../columns.js";
 import { ageMs, formatWhen } from "../format-helpers.js";
+import { CARD_CONFIGS } from "../layout.js";
 import { ListRow } from "../list-row.js";
+import { PaddedRows } from "../padded-rows.js";
 import { TitledBox } from "../titled-box.js";
 
 // Re-exported for back-compat with consumers that previously imported
@@ -74,9 +72,11 @@ export { ageMs, formatWhen };
 
 export interface RecentCardProps {
   snapshot: WorkstreamSnapshot | null;
+  rowBudget?: number;
+  cols?: number;
 }
 
-const ROW_LIMIT = 8;
+export const cardConfig = CARD_CONFIGS[8];
 
 const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
   { kind: "protect" }, // glyph
@@ -86,12 +86,14 @@ const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
   { kind: "clip", min: 1 }, // title
 ];
 
-export function RecentCard({ snapshot }: RecentCardProps): JSX.Element {
-  const contentWidth = contentWidthFromCols(termColsForLayout());
+export function RecentCard({ snapshot, rowBudget, cols }: RecentCardProps): JSX.Element {
+  const contentWidth = contentWidthFromCols(cols ?? termColsForLayout());
   if (snapshot === null) {
     return (
-      <TitledBox title="Recent" cardId={8}>
-        <Text dimColor>loading…</Text>
+      <TitledBox width={cols} title="Recent" cardId={8}>
+        <PaddedRows minRows={rowBudget ?? cardConfig.minRows}>
+          <Text dimColor>loading…</Text>
+        </PaddedRows>
       </TitledBox>
     );
   }
@@ -100,8 +102,10 @@ export function RecentCard({ snapshot }: RecentCardProps): JSX.Element {
 
   if (recentClosed.length === 0) {
     return (
-      <TitledBox title="Recent" cardId={8}>
-        <Text dimColor>(none recently closed)</Text>
+      <TitledBox width={cols} title="Recent" cardId={8}>
+        <PaddedRows minRows={rowBudget ?? cardConfig.minRows}>
+          <Text dimColor>(none recently closed)</Text>
+        </PaddedRows>
       </TitledBox>
     );
   }
@@ -110,8 +114,8 @@ export function RecentCard({ snapshot }: RecentCardProps): JSX.Element {
   const ages = recentClosed.map((t) => ageMs(t, now));
   const subtitle = formatSubtitle(recentClosed.length, ages[0] ?? null);
 
-  const shown = recentClosed.slice(0, ROW_LIMIT);
-  const more = recentClosed.length - ROW_LIMIT;
+  const shown = recentClosed.slice(0, rowBudget ?? cardConfig.maxRows);
+  const more = recentClosed.length - shown.length;
   const bottomLabel = more > 0 ? `+${more} more · Shift+8` : undefined;
   const rows = shown.map((t, i) => [
     glyphFor(),
@@ -123,7 +127,7 @@ export function RecentCard({ snapshot }: RecentCardProps): JSX.Element {
   const widths = layoutColumns(rows, COLUMN_SPECS, contentWidth);
 
   return (
-    <TitledBox title="Recent" subtitle={subtitle} cardId={8} bottomLabel={bottomLabel}>
+    <TitledBox width={cols} title="Recent" subtitle={subtitle} cardId={8} bottomLabel={bottomLabel}>
       {shown.map((t, i) => {
         const row = rows[i];
         if (row === undefined) return null;

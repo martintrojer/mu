@@ -33,6 +33,7 @@ describe("dashboard responsive-layout wiring", () => {
       "InProgressCard",
       "BlockedCard",
       "CommitsCard",
+      "RecentCard",
       "DoctorCard",
     ]) {
       expect(APP_SRC).toMatch(
@@ -41,7 +42,8 @@ describe("dashboard responsive-layout wiring", () => {
     }
   });
 
-  it("pair-aware groups match the Commits-card design", () => {
+  it("pair-aware groups match the 0-9 card design", () => {
+    expect(LAYOUT_SRC).toMatch(/0: \{[^}]*group: "stream"/);
     expect(LAYOUT_SRC).toMatch(/1: \{[^}]*group: "small-pair"/);
     expect(LAYOUT_SRC).toMatch(/2: \{[^}]*group: "small-pair"/);
     expect(LAYOUT_SRC).toMatch(/5: \{[^}]*group: "small-pair"/);
@@ -50,7 +52,9 @@ describe("dashboard responsive-layout wiring", () => {
     expect(LAYOUT_SRC).toMatch(/6: \{[^}]*group: "task-list"/);
     expect(LAYOUT_SRC).toMatch(/7: \{[^}]*group: "task-list"/);
     expect(LAYOUT_SRC).toMatch(/4: \{[^}]*group: "stream"/);
-    expect(LAYOUT_SRC).toMatch(/8: \{[^}]*group: "stream"/);
-    expect(LAYOUT_SRC).not.toContain("Recent");
+    expect(LAYOUT_SRC).toMatch(/8: \{[^}]*group: "task-list"/);
+    expect(APP_SRC).toMatch(/case 0:\s*\n\s*return <CommitsCard/);
+    expect(APP_SRC).toMatch(/case 8:\s*\n\s*return <RecentCard/);
+    expect(LAYOUT_SRC).toContain("Recent");
   });
 });

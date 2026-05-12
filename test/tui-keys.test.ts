@@ -14,8 +14,9 @@ import {
 
 const NO_KEY = {};
 
-describe("dispatchGlobalKey: card toggles 1-9", () => {
+describe("dispatchGlobalKey: card toggles 0-9", () => {
   it.each([
+    ["0", 0],
     ["1", 1],
     ["2", 2],
     ["3", 3],
@@ -28,19 +29,16 @@ describe("dispatchGlobalKey: card toggles 1-9", () => {
   ] as const)("%s toggles card %d", (input, cardId) => {
     expect(dispatchGlobalKey(input, NO_KEY)).toEqual({ kind: "toggleCard", cardId });
   });
-
-  // (digit 0 is bound to tickReset — covered in the tick-rate suite
-  // below; not re-asserted here.)
 });
 
 describe("dispatchGlobalKey: popup openers (g + Shift+0..Shift+9 → ) ! @ # $ % ^ & * ()", () => {
-  it("g opens the DAG popup slot", () => {
-    expect(dispatchGlobalKey("g", NO_KEY)).toEqual({ kind: "openPopup", cardId: 0 });
+  it("g opens the DAG popup as a keybind-only string id", () => {
+    expect(dispatchGlobalKey("g", NO_KEY)).toEqual({ kind: "openPopup", cardId: "dag" });
   });
 
-  it("l/L opens the Commits popup", () => {
-    expect(dispatchGlobalKey("l", NO_KEY)).toEqual({ kind: "openPopup", cardId: "commits" });
-    expect(dispatchGlobalKey("L", NO_KEY)).toEqual({ kind: "openPopup", cardId: "commits" });
+  it("l/L no longer opens Commits", () => {
+    expect(dispatchGlobalKey("l", NO_KEY)).toEqual({ kind: "noop" });
+    expect(dispatchGlobalKey("L", NO_KEY)).toEqual({ kind: "noop" });
   });
 
   it.each([
@@ -68,9 +66,6 @@ describe("dispatchGlobalKey: tick rate adjust", () => {
   });
   it("- tickSlower", () => {
     expect(dispatchGlobalKey("-", NO_KEY)).toEqual({ kind: "tickSlower" });
-  });
-  it("0 tickReset", () => {
-    expect(dispatchGlobalKey("0", NO_KEY)).toEqual({ kind: "tickReset" });
   });
 });
 

@@ -399,8 +399,8 @@ mu
 It loads every workstream as tabs; use `Tab` / `Shift-Tab` to switch,
 `?` for the keymap, and `q` / `Ctrl-C` to quit. The dashboard is the
 answer to **"what should I look at next?"** without asking an LLM:
-Agents, Tracks, Ready, Activity log, Workspaces, In-progress,
-Blocked, Commits, and Doctor cards all update live. The dashboard
+Commits, Agents, Tracks, Ready, Activity log, Workspaces,
+In-progress, Blocked, Recent, and Doctor cards all update live. The dashboard
 reflows at wide terminal widths: stacked below 120 cols, then 2 / 3 /
 4 pair-aware columns at 120 / 180 / 240 cols, with each visible card
 getting a dynamic row budget so a noisy list cannot crowd out its
@@ -437,23 +437,23 @@ mu                          # TTY: TUI across all workstreams; non-TTY: help
   cards as the default attention surface; SQL/raw verbs as the
   escape hatch underneath).
 
-- **`--tui`** — interactive ink-based dashboard: 9 toggleable cards
-  (Agents, Tracks, Ready, Activity log, Workspaces, In-progress,
-  Blocked, Commits, Doctor) with rounded borders and inset section
+- **`--tui`** — interactive ink-based dashboard: 10 toggleable cards
+  (Commits, Agents, Tracks, Ready, Activity log, Workspaces,
+  In-progress, Blocked, Recent, Doctor) with rounded borders and inset section
   headers (lazygit / btop / k9s convention), matching fullscreen
-  popups (Shift+1..Shift+9), plus `g` for the current workstream's
-  full task DAG popup and `l` for the project commits popup,
+  popups (Shift+0..Shift+9), plus `g` for the current workstream's
+  full task DAG popup,
   live-updating every 1s (adjustable with
-  `+/-/=/0`). The dashboard is responsive: cards stack below 120
+  `+/-/=`). The dashboard is responsive: cards stack below 120
   columns, then reflow into pair-aware 2 / 3 / 4-column layouts at
   120 / 180 / 240 columns, and each card gets a dynamic body-row
   budget before showing its `+N more · Shift+N` footer. **Read-only**:
   act-intents `y`-yank
   the canonical `mu` command to the clipboard — the TUI never
   executes a mutation; the user runs the yanked command in their
-  shell. Dashboard keymap: `g` DAG popup; `l` commits popup;
-  `1`-`9` toggle cards; `Shift+1`-`Shift+9` open card popups;
-  `?` shows the keymap;
+  shell. Dashboard keymap: `0`-`9` toggle cards; `Shift+0` opens
+  Commits, `Shift+1`-`Shift+9` open the remaining numbered popups,
+  and `g` opens the keybind-only DAG popup; `?` shows the keymap;
   `q` / `Ctrl-C` quits and restores the main scrollback.
 
   **Popup-drill recursion**: `Enter` in any popup drills into the
@@ -474,7 +474,7 @@ mu                          # TTY: TUI across all workstreams; non-TTY: help
   the commits-since-fork list → `Enter` on a focused commit opens
   a read-only inline view of `git show <sha> --stat -p` (j/k
   scroll, Ctrl-D/U half page, `y` yanks the bare `git show <sha>`
-  command, Esc/q backs out one level). The Commits popup (`l`)
+  command, Esc/q backs out one level). The Commits popup (`Shift+0`)
   lists the recent project-root commits (git / jj / sl) and `Enter`
   opens the backend's show view (`git show`, `jj show`, or `sl show`);
   `y` yanks that show command.

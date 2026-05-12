@@ -137,6 +137,7 @@ describe("App import graph", () => {
     const { InProgressCard } = await import("../src/cli/tui/cards/inprogress.js");
     const { BlockedCard } = await import("../src/cli/tui/cards/blocked.js");
     const { CommitsCard } = await import("../src/cli/tui/cards/commits.js");
+    const { RecentCard } = await import("../src/cli/tui/cards/recent.js");
     const { DoctorCard } = await import("../src/cli/tui/cards/doctor.js");
     const { AgentsPopup } = await import("../src/cli/tui/popups/agents.js");
     const { TracksPopup } = await import("../src/cli/tui/popups/tracks.js");
@@ -155,6 +156,7 @@ describe("App import graph", () => {
     expect(typeof InProgressCard).toBe("function");
     expect(typeof BlockedCard).toBe("function");
     expect(typeof CommitsCard).toBe("function");
+    expect(typeof RecentCard).toBe("function");
     expect(typeof DoctorCard).toBe("function");
     expect(typeof AgentsPopup).toBe("function");
     expect(typeof TracksPopup).toBe("function");

@@ -74,7 +74,7 @@ describe("CommitsCard", () => {
     expect(text).toContain("2h");
   });
 
-  it("truncates at the default row budget with bottomLabel '+N more · Shift+8'", () => {
+  it("truncates at the default row budget with bottomLabel '+N more · Shift+0'", () => {
     const recentCommits = Array.from({ length: 10 }, (_, i) =>
       commit({ sha: `${i + 1}`.repeat(40).slice(0, 40), subject: `Commit ${i + 1}` }),
     );
@@ -84,7 +84,7 @@ describe("CommitsCard", () => {
         rowBudget: 8,
       }),
     );
-    expect(text).toContain("+2 more · Shift+8");
+    expect(text).toContain("+2 more · Shift+0");
     for (let i = 1; i <= 8; i++) expectTextOnce(text, `Commit ${i}`);
     expectTextAbsent(text, "Commit 9");
     expectTextAbsent(text, "Commit 10");

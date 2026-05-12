@@ -2,8 +2,8 @@
 //
 // Owns:
 //   - The dashboard snapshot poll (via useDashboardSnapshot)
-//   - Card visibility flags (1-4 toggle)
-//   - Tick rate (+/-/=/0 adjust)
+//   - Card visibility flags (0-9 toggle)
+//   - Tick rate (+/-/= adjust)
 //   - Single-popup invariant + state-restore on close
 //   - Help overlay (?)
 //   - Footer line (last yanked command + [copied]/[no clipboard])
@@ -26,6 +26,7 @@ import { DoctorCard } from "./cards/doctor.js";
 import { InProgressCard } from "./cards/inprogress.js";
 import { LogCard } from "./cards/log.js";
 import { ReadyCard } from "./cards/ready.js";
+import { RecentCard } from "./cards/recent.js";
 import { TracksCard } from "./cards/tracks.js";
 import { WorkspacesCard } from "./cards/workspaces.js";
 import { Help } from "./help.js";
@@ -77,7 +78,7 @@ export interface FooterState {
   copied: boolean;
 }
 
-type PopupId = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | "commits" | null;
+type PopupId = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | "dag" | null;
 export type PopupMode = "list" | "drill";
 
 export function App({ db, workstreams, initialActive = 0 }: AppProps): JSX.Element {
@@ -162,7 +163,7 @@ export function App({ db, workstreams, initialActive = 0 }: AppProps): JSX.Eleme
       // confusing footgun) or Esc (would race with the popup's own
       // Esc handler). The popup's onClose callback flips popup back
       // to null; App resumes ownership on the next render.
-      // Tick keys (+/-/=/0), refresh (r), and help (?) still bubble
+      // Tick keys (+/-/=), refresh (r), and help (?) still bubble
       // up so they remain global even inside a popup.
       if (popup !== null) {
         // Popups now own their own close (Esc/q routed through
@@ -183,11 +184,9 @@ export function App({ db, workstreams, initialActive = 0 }: AppProps): JSX.Eleme
         // filter typing.
         if (popupFilterEditing) return;
         if (
-          (input >= "1" && input <= "9") ||
+          (input >= "0" && input <= "9") ||
           "!@#$%^&*()".includes(input) ||
           input === "g" ||
-          input === "l" ||
-          input === "L" ||
           input === "c"
         ) {
           return;
@@ -216,9 +215,6 @@ export function App({ db, workstreams, initialActive = 0 }: AppProps): JSX.Eleme
         case "tickSlower":
           setTickMs((t) => slowerTick(t));
           return;
-        case "tickReset":
-          setTickMs(TICK_DEFAULT_MS);
-          return;
         case "clearFooter":
           setFooter(null);
           return;
@@ -229,7 +225,6 @@ export function App({ db, workstreams, initialActive = 0 }: AppProps): JSX.Eleme
             [cardKeyFromId(action.cardId)]: !v[cardKeyFromId(action.cardId)],
           }));
           return;
-        // (slot 6/7/8 have no popup yet — see feat_more_cards_umbrella)
         case "openPopup":
           if (popup !== null) return; // single-popup invariant
           setPopupMode("list");
@@ -374,7 +369,7 @@ export function App({ db, workstreams, initialActive = 0 }: AppProps): JSX.Eleme
     };
     switch (id) {
       case 0:
-        return <DagPopup {...props} />;
+        return <CommitsPopup {...props} />;
       case 1:
         return <AgentsPopup {...props} />;
       case 2:
@@ -393,8 +388,8 @@ export function App({ db, workstreams, initialActive = 0 }: AppProps): JSX.Eleme
         return <RecentPopup {...props} />;
       case 9:
         return <DoctorPopup {...props} />;
-      case "commits":
-        return <CommitsPopup {...props} />;
+      case "dag":
+        return <DagPopup {...props} />;
     }
   }
 }
@@ -457,6 +452,8 @@ interface RenderCardContext {
 function renderCard(id: CardId, { snapshot, db, workstream, width, budgets }: RenderCardContext) {
   const rowBudget = budgets[id];
   switch (id) {
+    case 0:
+      return <CommitsCard key={id} snapshot={snapshot} rowBudget={rowBudget} cols={width} />;
     case 1:
       return <AgentsCard key={id} snapshot={snapshot} rowBudget={rowBudget} cols={width} />;
     case 2:
@@ -481,7 +478,7 @@ function renderCard(id: CardId, { snapshot, db, workstream, width, budgets }: Re
         />
       );
     case 8:
-      return <CommitsCard key={id} snapshot={snapshot} rowBudget={rowBudget} cols={width} />;
+      return <RecentCard key={id} snapshot={snapshot} rowBudget={rowBudget} cols={width} />;
     case 9:
       return <DoctorCard key={id} snapshot={snapshot} rowBudget={rowBudget} cols={width} />;
   }
@@ -489,7 +486,7 @@ function renderCard(id: CardId, { snapshot, db, workstream, width, budgets }: Re
 
 function visibleCardIds(visibility: CardVisibility): CardId[] {
   const ids: CardId[] = [];
-  for (const id of [1, 2, 3, 4, 5, 6, 7, 8, 9] as const) {
+  for (const id of [0, 1, 2, 3, 4, 5, 6, 7, 8, 9] as const) {
     if (visibility[cardKeyFromId(id)]) ids.push(id);
   }
   return ids;
@@ -497,6 +494,8 @@ function visibleCardIds(visibility: CardVisibility): CardId[] {
 
 function cardKeyFromId(id: CardId): keyof CardVisibility {
   switch (id) {
+    case 0:
+      return "commits";
     case 1:
       return "agents";
     case 2:
@@ -512,7 +511,7 @@ function cardKeyFromId(id: CardId): keyof CardVisibility {
     case 7:
       return "blocked";
     case 8:
-      return "commits";
+      return "recent";
     case 9:
       return "doctor";
   }
@@ -521,7 +520,7 @@ function cardKeyFromId(id: CardId): keyof CardVisibility {
 function popupNameForId(id: NonNullable<PopupId>): string {
   switch (id) {
     case 0:
-      return "DAG";
+      return "Commits";
     case 1:
       return "Agents";
     case 2:
@@ -540,7 +539,7 @@ function popupNameForId(id: NonNullable<PopupId>): string {
       return "Recent";
     case 9:
       return "Doctor";
-    case "commits":
-      return "Commits";
+    case "dag":
+      return "DAG";
   }
 }

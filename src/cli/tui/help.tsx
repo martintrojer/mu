@@ -12,13 +12,10 @@
 import { Box, Text } from "ink";
 import { superscriptDigit } from "./glyphs.js";
 
-// Cards 1..9 visualised the same way they appear in each card's top
-// border line (per feat_card_header_digit_prefix). Slots 5/6/7/8/9
-// were promoted by feat_card_5_workspaces, feat_card_6_inprogress,
-// feat_card_7_blocked, feat_tui_commits_card, and feat_card_9_doctor;
-// all reserved digit slots are now filled (slot 0 stays reserved by
-// convention, no promotion task today).
-const CARD_DIGITS = `${superscriptDigit(1)}${superscriptDigit(2)}${superscriptDigit(3)}${superscriptDigit(4)}${superscriptDigit(5)}${superscriptDigit(6)}${superscriptDigit(7)}${superscriptDigit(8)}${superscriptDigit(9)}`;
+// Cards 0..9 visualised the same way they appear in each card's top
+// border line (per feat_card_header_digit_prefix). Slot 0 is Commits;
+// slot 8 is Recent; DAG stays a keybind-only popup.
+const CARD_DIGITS = `${superscriptDigit(0)}${superscriptDigit(1)}${superscriptDigit(2)}${superscriptDigit(3)}${superscriptDigit(4)}${superscriptDigit(5)}${superscriptDigit(6)}${superscriptDigit(7)}${superscriptDigit(8)}${superscriptDigit(9)}`;
 
 export function Help(): JSX.Element {
   return (
@@ -29,14 +26,16 @@ export function Help(): JSX.Element {
         </Text>
         <HelpRow
           keys={CARD_DIGITS}
-          effect="toggle Agents/Tracks/Ready/Log/Workspaces/In-progress/Blocked/Commits/Doctor (1-9)"
+          effect="toggle Commits/Agents/Tracks/Ready/Log/Workspaces/In-progress/Blocked/Recent/Doctor (0-9)"
         />
+        <HelpRow keys="Shift 0 ')'" effect="Commits popup" />
+        <HelpRow keys="Shift 1-9" effect="open numbered popups (Shift+8 '*' = Recent)" />
+        <Text bold color="cyan">
+          keybind-only popups
+        </Text>
         <HelpRow keys="g" effect="DAG popup" />
-        <HelpRow keys="l" effect="commits popup" />
-        <HelpRow keys="Shift 1-9" effect="open numbered popup (Shift+8 = Recent)" />
         <HelpRow keys="+/=" effect="tick faster (floor 100ms)" />
         <HelpRow keys="-" effect="tick slower (ceiling 10s)" />
-        <HelpRow keys="0" effect="reset tick to 1s" />
         <HelpRow keys="r/F5" effect="refresh now" />
         <HelpRow keys="?" effect="toggle this overlay" />
         <HelpRow keys="q/Q" effect="quit (Ctrl-C also)" />

@@ -1,5 +1,5 @@
-// Commits popup (`l` or Shift+8 → `*`). Fullscreen lazygit-style
-// project commit log with '/' filtering and Enter → VCS show drill.
+// Commits popup (Shift+0 → `)`). Fullscreen lazygit-style project
+// commit log with '/' filtering and Enter → VCS show drill.
 //
 // Uses the project-root backend (detectBackend(projectRoot)) so git,
 // jj, and sl all work through the shared VcsBackend.showCommit seam.
