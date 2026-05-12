@@ -21,7 +21,7 @@ import {
   renderRow,
   termColsForLayout,
 } from "../columns.js";
-import { CARD_CONFIGS } from "../layout.js";
+import { CARD_CONFIGS, cardRenderHeight } from "../layout.js";
 import { ListRow } from "../list-row.js";
 import { PaddedRows } from "../padded-rows.js";
 import { TitledBox } from "../titled-box.js";
@@ -45,8 +45,13 @@ export function LogCard({ snapshot, rowBudget, cols }: LogCardProps): JSX.Elemen
   const contentWidth = contentWidthFromCols(cols ?? termColsForLayout());
   if (snapshot === null) {
     return (
-      <TitledBox width={cols} title="Activity log" cardId={4}>
-        <PaddedRows minRows={rowBudget ?? cardConfig.minRows}>
+      <TitledBox
+        height={cardRenderHeight(cardConfig, rowBudget)}
+        width={cols}
+        title="Activity log"
+        cardId={4}
+      >
+        <PaddedRows rows={rowBudget ?? cardConfig.minRows}>
           <Text dimColor>loading…</Text>
         </PaddedRows>
       </TitledBox>
@@ -57,8 +62,13 @@ export function LogCard({ snapshot, rowBudget, cols }: LogCardProps): JSX.Elemen
 
   if (recent.length === 0) {
     return (
-      <TitledBox width={cols} title="Activity log" cardId={4}>
-        <PaddedRows minRows={rowBudget ?? cardConfig.minRows}>
+      <TitledBox
+        height={cardRenderHeight(cardConfig, rowBudget)}
+        width={cols}
+        title="Activity log"
+        cardId={4}
+      >
+        <PaddedRows rows={rowBudget ?? cardConfig.minRows}>
           <Text dimColor>(no events yet)</Text>
         </PaddedRows>
       </TitledBox>
@@ -81,7 +91,13 @@ export function LogCard({ snapshot, rowBudget, cols }: LogCardProps): JSX.Elemen
   const widths = layoutColumns(cellRows, COLUMN_SPECS, contentWidth);
 
   return (
-    <TitledBox width={cols} title="Activity log" subtitle={`last ↑${tail.length}`} cardId={4}>
+    <TitledBox
+      height={cardRenderHeight(cardConfig, rowBudget)}
+      width={cols}
+      title="Activity log"
+      subtitle={`last ↑${tail.length}`}
+      cardId={4}
+    >
       {tail.map((row, i) => {
         const cells = cellRows[i];
         if (cells === undefined) return null;

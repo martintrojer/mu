@@ -72,7 +72,7 @@ import {
   termColsForLayout,
 } from "../columns.js";
 import { colorForBucket, formatRoi } from "../format-helpers.js";
-import { CARD_CONFIGS } from "../layout.js";
+import { CARD_CONFIGS, cardRenderHeight } from "../layout.js";
 import { ListRow } from "../list-row.js";
 import { PaddedRows } from "../padded-rows.js";
 import { TitledBox } from "../titled-box.js";
@@ -106,8 +106,13 @@ export function BlockedCard({
   const contentWidth = contentWidthFromCols(cols ?? termColsForLayout());
   if (snapshot === null) {
     return (
-      <TitledBox width={cols} title="Blocked" cardId={7}>
-        <PaddedRows minRows={rowBudget ?? cardConfig.minRows}>
+      <TitledBox
+        height={cardRenderHeight(cardConfig, rowBudget)}
+        width={cols}
+        title="Blocked"
+        cardId={7}
+      >
+        <PaddedRows rows={rowBudget ?? cardConfig.minRows}>
           <Text dimColor>loading…</Text>
         </PaddedRows>
       </TitledBox>
@@ -118,8 +123,13 @@ export function BlockedCard({
 
   if (blocked.length === 0) {
     return (
-      <TitledBox width={cols} title="Blocked" cardId={7}>
-        <PaddedRows minRows={rowBudget ?? cardConfig.minRows}>
+      <TitledBox
+        height={cardRenderHeight(cardConfig, rowBudget)}
+        width={cols}
+        title="Blocked"
+        cardId={7}
+      >
+        <PaddedRows rows={rowBudget ?? cardConfig.minRows}>
           <Text dimColor>(none blocked)</Text>
         </PaddedRows>
       </TitledBox>
@@ -155,6 +165,7 @@ export function BlockedCard({
 
   return (
     <TitledBox
+      height={cardRenderHeight(cardConfig, rowBudget)}
       width={cols}
       title="Blocked"
       subtitle={subtitle}

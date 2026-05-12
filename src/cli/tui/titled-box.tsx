@@ -82,6 +82,12 @@ export interface TitledBoxProps {
    *  correction — the bottom-edge convention is a literal keystroke
    *  hint ("Shift+3"), not a toggle affordance. */
   bottomLabel?: string;
+  /** Optional fixed outer height in rows. Cards pass
+   *  `chrome + rowBudget` so dashboard hit-test rectangles and Ink
+   *  render geometry stay identical even when the body has fewer rows
+   *  than its allocated budget (empty-state cards are the common
+   *  case). Popups omit it and flex vertically instead. */
+  height?: number;
   /** Optional Yoga flex-grow factor. Applied to BOTH the outer
    *  column container AND the inner border-body Box so popup
    *  Shells (which previously hand-rolled their own rounded box
@@ -168,6 +174,7 @@ export function TitledBox({
   borderColor = "gray",
   titleColor = "cyan",
   bottomLabel,
+  height,
   flexGrow,
   width,
   children,
@@ -186,6 +193,7 @@ export function TitledBox({
     <Box
       flexDirection="column"
       width={cols}
+      height={height}
       flexGrow={flexGrow}
       flexShrink={TITLED_BOX_FLEX_SHRINK}
       overflow="hidden"

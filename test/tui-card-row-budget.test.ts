@@ -1,7 +1,17 @@
 import { describe, expect, it } from "vitest";
 import type { AgentRow } from "../src/agents.js";
 import { AgentsCard } from "../src/cli/tui/cards/agents.js";
+import { BlockedCard } from "../src/cli/tui/cards/blocked.js";
+import { CommitsCard } from "../src/cli/tui/cards/commits.js";
+import { DoctorCard } from "../src/cli/tui/cards/doctor.js";
+import { InProgressCard } from "../src/cli/tui/cards/inprogress.js";
+import { LogCard } from "../src/cli/tui/cards/log.js";
 import { ReadyCard } from "../src/cli/tui/cards/ready.js";
+import { RecentCard } from "../src/cli/tui/cards/recent.js";
+import { TracksCard } from "../src/cli/tui/cards/tracks.js";
+import { WorkspacesCard } from "../src/cli/tui/cards/workspaces.js";
+import { CARD_CONFIGS, type CardId } from "../src/cli/tui/layout.js";
+import type { Db } from "../src/db.js";
 import type { WorkstreamSnapshot } from "../src/state.js";
 import type { TaskRow } from "../src/tasks.js";
 import { renderCardToText } from "./_card-render.js";
@@ -26,6 +36,72 @@ const EMPTY_SNAPSHOT: WorkstreamSnapshot = {
   commitsBackend: null,
   doctor: null,
 };
+
+const UNUSED_DB = undefined as unknown as Db;
+
+interface CardCase {
+  id: CardId;
+  name: string;
+  render: (rowBudget: number) => JSX.Element;
+}
+
+const CARD_CASES: CardCase[] = [
+  {
+    id: 0,
+    name: "Commits",
+    render: (rowBudget) => CommitsCard({ snapshot: null, rowBudget, cols: 80 }),
+  },
+  {
+    id: 1,
+    name: "Agents",
+    render: (rowBudget) => AgentsCard({ snapshot: null, rowBudget, cols: 80 }),
+  },
+  {
+    id: 2,
+    name: "Tracks",
+    render: (rowBudget) => TracksCard({ snapshot: null, rowBudget, cols: 80 }),
+  },
+  {
+    id: 3,
+    name: "Ready",
+    render: (rowBudget) => ReadyCard({ snapshot: null, rowBudget, cols: 80 }),
+  },
+  {
+    id: 4,
+    name: "Activity log",
+    render: (rowBudget) => LogCard({ snapshot: null, rowBudget, cols: 80 }),
+  },
+  {
+    id: 5,
+    name: "Workspaces",
+    render: (rowBudget) => WorkspacesCard({ snapshot: null, rowBudget, cols: 80 }),
+  },
+  {
+    id: 6,
+    name: "In-progress",
+    render: (rowBudget) => InProgressCard({ snapshot: null, rowBudget, cols: 80 }),
+  },
+  {
+    id: 7,
+    name: "Blocked",
+    render: (rowBudget) =>
+      BlockedCard({ snapshot: null, db: UNUSED_DB, workstream: "demo", rowBudget, cols: 80 }),
+  },
+  {
+    id: 8,
+    name: "Recent",
+    render: (rowBudget) => RecentCard({ snapshot: null, rowBudget, cols: 80 }),
+  },
+  {
+    id: 9,
+    name: "Doctor",
+    render: (rowBudget) => DoctorCard({ snapshot: null, rowBudget, cols: 80 }),
+  },
+];
+
+function numberTokens(text: string): string[] {
+  return text.match(/\d+/g) ?? [];
+}
 
 function agent(over: Partial<AgentRow> = {}): AgentRow {
   return {
@@ -58,10 +134,22 @@ function task(over: Partial<TaskRow> = {}): TaskRow {
 }
 
 describe("card row budgets", () => {
-  it("cards with empty data still render their min-row padding", () => {
+  for (const card of CARD_CASES) {
+    it(`${card.name} passes exactly chrome + rowBudget as its fixed height`, () => {
+      const rowBudget = CARD_CONFIGS[card.id].minRows + 4;
+      const text = renderCardToText(card.render(rowBudget));
+      const tokens = numberTokens(text);
+      expect(tokens).toContain(String(CARD_CONFIGS[card.id].chrome + rowBudget));
+      expect(tokens).toContain(String(rowBudget));
+    });
+  }
+
+  it("cards with empty data still expose their dynamic row budget in the render tree", () => {
     const text = renderCardToText(ReadyCard({ snapshot: EMPTY_SNAPSHOT, rowBudget: 3 }));
     expect(text).toContain("(no ready tasks)");
-    expect(text).toContain("3");
+    const tokens = numberTokens(text);
+    expect(tokens).toContain(String(CARD_CONFIGS[3].chrome + 3));
+    expect(tokens).toContain("3");
   });
 
   it("populated cards slice to the dynamic row budget", () => {

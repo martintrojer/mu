@@ -177,6 +177,14 @@ export function App({ db, workstreams, initialActive = 0 }: AppProps): JSX.Eleme
     if (popup === null) {
       if (event.kind !== "doubleclick") return;
       const hit = hitTestDashboardCard(cardHitRegions, event);
+      if (process.env.MU_TUI_DEBUG_MOUSE === "1") {
+        process.stderr.write(`mouse @ (${event.x},${event.y}) → card ${hit ?? "MISS"}\n`);
+        for (const region of cardHitRegions) {
+          process.stderr.write(
+            `  region ${region.id}: top=${region.top} bottom=${region.bottom} left=${region.left} right=${region.right}\n`,
+          );
+        }
+      }
       if (hit === null) return;
       setPopupMode("list");
       setPopup(hit);

@@ -22,7 +22,9 @@ export function renderCardToText(node: unknown): string {
         walk(props.subtitle),
         walk(props.bottomLabel),
         walk(props.cells),
-        walk(props.minRows),
+        props.minRows === undefined ? "" : ` minRows=${walk(props.minRows)} `,
+        props.rows === undefined ? "" : ` rows=${walk(props.rows)} `,
+        props.height === undefined ? "" : ` height=${walk(props.height)} `,
         walk(props.children),
       ].join("");
     }
@@ -37,6 +39,8 @@ interface RenderableProps {
   bottomLabel?: unknown;
   cells?: unknown;
   minRows?: unknown;
+  rows?: unknown;
+  height?: unknown;
   children?: unknown;
 }
 

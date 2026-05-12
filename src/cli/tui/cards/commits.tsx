@@ -18,7 +18,7 @@ import {
   renderRow,
   termColsForLayout,
 } from "../columns.js";
-import { CARD_CONFIGS } from "../layout.js";
+import { CARD_CONFIGS, cardRenderHeight } from "../layout.js";
 import { ListRow } from "../list-row.js";
 import { PaddedRows } from "../padded-rows.js";
 import { TitledBox } from "../titled-box.js";
@@ -41,8 +41,13 @@ export function CommitsCard({ snapshot, rowBudget, cols }: CommitsCardProps): JS
   const contentWidth = contentWidthFromCols(cols ?? termColsForLayout());
   if (snapshot === null) {
     return (
-      <TitledBox width={cols} title="Commits" cardId={0}>
-        <PaddedRows minRows={rowBudget ?? cardConfig.minRows}>
+      <TitledBox
+        height={cardRenderHeight(cardConfig, rowBudget)}
+        width={cols}
+        title="Commits"
+        cardId={0}
+      >
+        <PaddedRows rows={rowBudget ?? cardConfig.minRows}>
           <Text dimColor>loading…</Text>
         </PaddedRows>
       </TitledBox>
@@ -53,8 +58,14 @@ export function CommitsCard({ snapshot, rowBudget, cols }: CommitsCardProps): JS
   const backendLabel = formatBackend(snapshot.commitsBackend ?? null);
   if (recentCommits.length === 0) {
     return (
-      <TitledBox width={cols} title="Commits" subtitle={backendLabel} cardId={0}>
-        <PaddedRows minRows={rowBudget ?? cardConfig.minRows}>
+      <TitledBox
+        height={cardRenderHeight(cardConfig, rowBudget)}
+        width={cols}
+        title="Commits"
+        subtitle={backendLabel}
+        cardId={0}
+      >
+        <PaddedRows rows={rowBudget ?? cardConfig.minRows}>
           <Text dimColor>no commits</Text>
         </PaddedRows>
       </TitledBox>
@@ -74,6 +85,7 @@ export function CommitsCard({ snapshot, rowBudget, cols }: CommitsCardProps): JS
 
   return (
     <TitledBox
+      height={cardRenderHeight(cardConfig, rowBudget)}
       width={cols}
       title="Commits"
       subtitle={subtitle}

@@ -27,7 +27,7 @@ import {
   renderRow,
   termColsForLayout,
 } from "../columns.js";
-import { CARD_CONFIGS } from "../layout.js";
+import { CARD_CONFIGS, cardRenderHeight } from "../layout.js";
 import { ListRow } from "../list-row.js";
 import { PaddedRows } from "../padded-rows.js";
 import { TitledBox } from "../titled-box.js";
@@ -51,8 +51,13 @@ export function AgentsCard({ snapshot, rowBudget, cols }: AgentsCardProps): JSX.
   const contentWidth = contentWidthFromCols(cols ?? termColsForLayout());
   if (snapshot === null) {
     return (
-      <TitledBox width={cols} title="Agents" cardId={1}>
-        <PaddedRows minRows={rowBudget ?? cardConfig.minRows}>
+      <TitledBox
+        height={cardRenderHeight(cardConfig, rowBudget)}
+        width={cols}
+        title="Agents"
+        cardId={1}
+      >
+        <PaddedRows rows={rowBudget ?? cardConfig.minRows}>
           <Text dimColor>loading…</Text>
         </PaddedRows>
       </TitledBox>
@@ -65,8 +70,13 @@ export function AgentsCard({ snapshot, rowBudget, cols }: AgentsCardProps): JSX.
 
   if (agents.length === 0) {
     return (
-      <TitledBox width={cols} title="Agents" cardId={1}>
-        <PaddedRows minRows={rowBudget ?? cardConfig.minRows}>
+      <TitledBox
+        height={cardRenderHeight(cardConfig, rowBudget)}
+        width={cols}
+        title="Agents"
+        cardId={1}
+      >
+        <PaddedRows rows={rowBudget ?? cardConfig.minRows}>
           <Text dimColor>
             (no agents) try `mu agent spawn worker-1 -w {snapshot.workstreamName}`
           </Text>
@@ -90,6 +100,7 @@ export function AgentsCard({ snapshot, rowBudget, cols }: AgentsCardProps): JSX.
 
   return (
     <TitledBox
+      height={cardRenderHeight(cardConfig, rowBudget)}
       width={cols}
       title="Agents"
       subtitle={histLabel}

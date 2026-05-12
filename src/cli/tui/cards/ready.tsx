@@ -21,7 +21,7 @@ import {
   termColsForLayout,
 } from "../columns.js";
 import { colorForBucket, formatRoi } from "../format-helpers.js";
-import { CARD_CONFIGS } from "../layout.js";
+import { CARD_CONFIGS, cardRenderHeight } from "../layout.js";
 import { ListRow } from "../list-row.js";
 import { PaddedRows } from "../padded-rows.js";
 import { TitledBox } from "../titled-box.js";
@@ -45,8 +45,13 @@ export function ReadyCard({ snapshot, rowBudget, cols }: ReadyCardProps): JSX.El
   const contentWidth = contentWidthFromCols(cols ?? termColsForLayout());
   if (snapshot === null) {
     return (
-      <TitledBox width={cols} title="Ready" cardId={3}>
-        <PaddedRows minRows={rowBudget ?? cardConfig.minRows}>
+      <TitledBox
+        height={cardRenderHeight(cardConfig, rowBudget)}
+        width={cols}
+        title="Ready"
+        cardId={3}
+      >
+        <PaddedRows rows={rowBudget ?? cardConfig.minRows}>
           <Text dimColor>loading…</Text>
         </PaddedRows>
       </TitledBox>
@@ -57,8 +62,13 @@ export function ReadyCard({ snapshot, rowBudget, cols }: ReadyCardProps): JSX.El
 
   if (ready.length === 0) {
     return (
-      <TitledBox width={cols} title="Ready" cardId={3}>
-        <PaddedRows minRows={rowBudget ?? cardConfig.minRows}>
+      <TitledBox
+        height={cardRenderHeight(cardConfig, rowBudget)}
+        width={cols}
+        title="Ready"
+        cardId={3}
+      >
+        <PaddedRows rows={rowBudget ?? cardConfig.minRows}>
           <Text dimColor>
             (no ready tasks) every blocker is OPEN/IN_PROGRESS or every task is closed
           </Text>
@@ -85,6 +95,7 @@ export function ReadyCard({ snapshot, rowBudget, cols }: ReadyCardProps): JSX.El
 
   return (
     <TitledBox
+      height={cardRenderHeight(cardConfig, rowBudget)}
       width={cols}
       title="Ready"
       subtitle={String(ready.length)}

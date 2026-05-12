@@ -54,7 +54,7 @@ import {
   renderRow,
   termColsForLayout,
 } from "../columns.js";
-import { CARD_CONFIGS } from "../layout.js";
+import { CARD_CONFIGS, cardRenderHeight } from "../layout.js";
 import { ListRow } from "../list-row.js";
 import { PaddedRows } from "../padded-rows.js";
 import { TitledBox } from "../titled-box.js";
@@ -78,8 +78,13 @@ export function DoctorCard({ snapshot, rowBudget, cols }: DoctorCardProps): JSX.
   const contentWidth = contentWidthFromCols(cols ?? termColsForLayout());
   if (snapshot === null || snapshot.doctor === null) {
     return (
-      <TitledBox width={cols} title="Doctor" cardId={9}>
-        <PaddedRows minRows={rowBudget ?? cardConfig.minRows}>
+      <TitledBox
+        height={cardRenderHeight(cardConfig, rowBudget)}
+        width={cols}
+        title="Doctor"
+        cardId={9}
+      >
+        <PaddedRows rows={rowBudget ?? cardConfig.minRows}>
           <Text dimColor>loading…</Text>
         </PaddedRows>
       </TitledBox>
@@ -93,8 +98,14 @@ export function DoctorCard({ snapshot, rowBudget, cols }: DoctorCardProps): JSX.
   // operator can confirm the card ran (vs. simply being empty).
   if (problemCount === 0) {
     return (
-      <TitledBox width={cols} title="Doctor" subtitle={subtitle} cardId={9}>
-        <PaddedRows minRows={rowBudget ?? cardConfig.minRows}>
+      <TitledBox
+        height={cardRenderHeight(cardConfig, rowBudget)}
+        width={cols}
+        title="Doctor"
+        subtitle={subtitle}
+        cardId={9}
+      >
+        <PaddedRows rows={rowBudget ?? cardConfig.minRows}>
           <Text dimColor>
             <Text color="green">✓</Text> {checks.length} check
             {checks.length === 1 ? "" : "s"}
@@ -112,7 +123,14 @@ export function DoctorCard({ snapshot, rowBudget, cols }: DoctorCardProps): JSX.
   const widths = layoutColumns(rows, COLUMN_SPECS, contentWidth);
 
   return (
-    <TitledBox width={cols} title="Doctor" subtitle={subtitle} cardId={9} bottomLabel={bottomLabel}>
+    <TitledBox
+      height={cardRenderHeight(cardConfig, rowBudget)}
+      width={cols}
+      title="Doctor"
+      subtitle={subtitle}
+      cardId={9}
+      bottomLabel={bottomLabel}
+    >
       {shown.map((c, i) => {
         const row = rows[i];
         if (row === undefined) return null;

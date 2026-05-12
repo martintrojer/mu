@@ -60,7 +60,7 @@ import {
   termColsForLayout,
 } from "../columns.js";
 import { ageMs, formatWhen } from "../format-helpers.js";
-import { CARD_CONFIGS } from "../layout.js";
+import { CARD_CONFIGS, cardRenderHeight } from "../layout.js";
 import { ListRow } from "../list-row.js";
 import { PaddedRows } from "../padded-rows.js";
 import { TitledBox } from "../titled-box.js";
@@ -90,8 +90,13 @@ export function RecentCard({ snapshot, rowBudget, cols }: RecentCardProps): JSX.
   const contentWidth = contentWidthFromCols(cols ?? termColsForLayout());
   if (snapshot === null) {
     return (
-      <TitledBox width={cols} title="Recent" cardId={8}>
-        <PaddedRows minRows={rowBudget ?? cardConfig.minRows}>
+      <TitledBox
+        height={cardRenderHeight(cardConfig, rowBudget)}
+        width={cols}
+        title="Recent"
+        cardId={8}
+      >
+        <PaddedRows rows={rowBudget ?? cardConfig.minRows}>
           <Text dimColor>loading…</Text>
         </PaddedRows>
       </TitledBox>
@@ -102,8 +107,13 @@ export function RecentCard({ snapshot, rowBudget, cols }: RecentCardProps): JSX.
 
   if (recentClosed.length === 0) {
     return (
-      <TitledBox width={cols} title="Recent" cardId={8}>
-        <PaddedRows minRows={rowBudget ?? cardConfig.minRows}>
+      <TitledBox
+        height={cardRenderHeight(cardConfig, rowBudget)}
+        width={cols}
+        title="Recent"
+        cardId={8}
+      >
+        <PaddedRows rows={rowBudget ?? cardConfig.minRows}>
           <Text dimColor>(none recently closed)</Text>
         </PaddedRows>
       </TitledBox>
@@ -127,7 +137,14 @@ export function RecentCard({ snapshot, rowBudget, cols }: RecentCardProps): JSX.
   const widths = layoutColumns(rows, COLUMN_SPECS, contentWidth);
 
   return (
-    <TitledBox width={cols} title="Recent" subtitle={subtitle} cardId={8} bottomLabel={bottomLabel}>
+    <TitledBox
+      height={cardRenderHeight(cardConfig, rowBudget)}
+      width={cols}
+      title="Recent"
+      subtitle={subtitle}
+      cardId={8}
+      bottomLabel={bottomLabel}
+    >
       {shown.map((t, i) => {
         const row = rows[i];
         if (row === undefined) return null;

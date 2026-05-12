@@ -160,6 +160,13 @@ export function dashboardCardHitRegions(
   return out;
 }
 
+export function cardRenderHeight(
+  config: CardRowConfig,
+  rowBudget: number | undefined,
+): number | undefined {
+  return rowBudget === undefined ? undefined : config.chrome + rowBudget;
+}
+
 export function hitTestDashboardCard(
   regions: ReadonlyArray<CardHitRegion>,
   point: { x: number; y: number },

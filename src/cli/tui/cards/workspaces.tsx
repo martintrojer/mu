@@ -45,7 +45,7 @@ import {
   renderRow,
   termColsForLayout,
 } from "../columns.js";
-import { CARD_CONFIGS } from "../layout.js";
+import { CARD_CONFIGS, cardRenderHeight } from "../layout.js";
 import { ListRow } from "../list-row.js";
 import { PaddedRows } from "../padded-rows.js";
 import { TitledBox } from "../titled-box.js";
@@ -70,8 +70,13 @@ export function WorkspacesCard({ snapshot, rowBudget, cols }: WorkspacesCardProp
   const contentWidth = contentWidthFromCols(cols ?? termColsForLayout());
   if (snapshot === null) {
     return (
-      <TitledBox width={cols} title="Workspaces" cardId={5}>
-        <PaddedRows minRows={rowBudget ?? cardConfig.minRows}>
+      <TitledBox
+        height={cardRenderHeight(cardConfig, rowBudget)}
+        width={cols}
+        title="Workspaces"
+        cardId={5}
+      >
+        <PaddedRows rows={rowBudget ?? cardConfig.minRows}>
           <Text dimColor>loading…</Text>
         </PaddedRows>
       </TitledBox>
@@ -85,8 +90,13 @@ export function WorkspacesCard({ snapshot, rowBudget, cols }: WorkspacesCardProp
 
   if (workspaces.length === 0) {
     return (
-      <TitledBox width={cols} title="Workspaces" cardId={5}>
-        <PaddedRows minRows={rowBudget ?? cardConfig.minRows}>
+      <TitledBox
+        height={cardRenderHeight(cardConfig, rowBudget)}
+        width={cols}
+        title="Workspaces"
+        cardId={5}
+      >
+        <PaddedRows rows={rowBudget ?? cardConfig.minRows}>
           <Text dimColor>
             (no workspaces) try `mu agent spawn worker-1 -w {workstreamName} --workspace`
           </Text>
@@ -109,6 +119,7 @@ export function WorkspacesCard({ snapshot, rowBudget, cols }: WorkspacesCardProp
 
   return (
     <TitledBox
+      height={cardRenderHeight(cardConfig, rowBudget)}
       width={cols}
       title="Workspaces"
       subtitle={subtitle}

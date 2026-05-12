@@ -71,6 +71,8 @@ called out under "Breaking" in each entry.
 
 ### Fixed
 
+- **TUI mouse double-click hit-test no longer points at the wrong card.** Empty-state cards (for example Doctor with no warnings) now render at their allocated `chrome + rowBudget` height instead of shrinking to only their minimum padding, so dashboard hit-test rectangles stay aligned with the Ink-rendered card grid all the way down the pane.
+
 - **All-tasks popup (`t`) now properly windows large lists.** Previously it rendered every task and let the cursor move off-screen because the rendered slice never advanced. Now uses `centredVisibleSlice` so the cursor stays mid-window and j/k/Ctrl-D/scroll-wheel actually move the visible window. Title gains a percent indicator (e.g. `23%`) when the list overflows the viewport.
 
 - **TUI dashboard no longer renders interleaved card borders / overlapping content on low-row-count panes.** The row-budget allocator now culls low-priority cards (Doctor → Recent → Workspaces → …) until the surviving set fits the available rows; a `+N cards hidden · resize taller` hint replaces them at the bottom. An outer height clip on the dashboard container is the final safety net.

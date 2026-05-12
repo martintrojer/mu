@@ -20,7 +20,7 @@ import {
   renderRow,
   termColsForLayout,
 } from "../columns.js";
-import { CARD_CONFIGS } from "../layout.js";
+import { CARD_CONFIGS, cardRenderHeight } from "../layout.js";
 import { ListRow } from "../list-row.js";
 import { PaddedRows } from "../padded-rows.js";
 import { TitledBox } from "../titled-box.js";
@@ -44,8 +44,13 @@ export function TracksCard({ snapshot, rowBudget, cols }: TracksCardProps): JSX.
   const contentWidth = contentWidthFromCols(cols ?? termColsForLayout());
   if (snapshot === null) {
     return (
-      <TitledBox width={cols} title="Tracks" cardId={2}>
-        <PaddedRows minRows={rowBudget ?? cardConfig.minRows}>
+      <TitledBox
+        height={cardRenderHeight(cardConfig, rowBudget)}
+        width={cols}
+        title="Tracks"
+        cardId={2}
+      >
+        <PaddedRows rows={rowBudget ?? cardConfig.minRows}>
           <Text dimColor>loading…</Text>
         </PaddedRows>
       </TitledBox>
@@ -57,8 +62,13 @@ export function TracksCard({ snapshot, rowBudget, cols }: TracksCardProps): JSX.
 
   if (tracks.length === 0) {
     return (
-      <TitledBox width={cols} title="Tracks" cardId={2}>
-        <PaddedRows minRows={rowBudget ?? cardConfig.minRows}>
+      <TitledBox
+        height={cardRenderHeight(cardConfig, rowBudget)}
+        width={cols}
+        title="Tracks"
+        cardId={2}
+      >
+        <PaddedRows rows={rowBudget ?? cardConfig.minRows}>
           <Text dimColor>
             (no goals) try `mu task add -w {snapshot.workstreamName} --title "..."`
           </Text>
@@ -84,6 +94,7 @@ export function TracksCard({ snapshot, rowBudget, cols }: TracksCardProps): JSX.
 
   return (
     <TitledBox
+      height={cardRenderHeight(cardConfig, rowBudget)}
       width={cols}
       title="Tracks"
       subtitle={`${tracks.length} · ${totalReady} ready`}
