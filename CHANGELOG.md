@@ -353,6 +353,30 @@ is opt-in via the new `--tui` flag.
 
 ### TUI internals
 
+- **Yank OSC-52 branch + platform-conditional probe now have real
+  coverage** (review_tests_yank_osc52_unverified). `src/cli/tui/yank.ts`
+  had four backends — CLI (pbcopy/wl-copy/xclip/xsel/clip.exe), OSC-52,
+  and null — but the OSC-52 path (the actual fallback for SSH users
+  without an X server) wasn't exercised by ANY test, and the
+  platform-conditional `probeClipboardBackend` only ran the host's
+  branch (so a regression in the WSL or Wayland branch would be
+  invisible). Added two narrow injection seams:
+  (1) `yank(text, backend, { osc52Writer? })` accepts a stub writer
+  for the OSC-52 branch (default still writes to `/dev/tty`), plus a
+  new exported `osc52Sequence(text)` helper so the byte sequence is
+  testable directly. (2) `probeClipboardBackend({ platform?, wayland?,
+  x11?, isWsl?, hasCommand? })` accepts a synthetic env so every
+  branch can run on any host (defaults still read `process.platform`
+  / `WAYLAND_DISPLAY` / `DISPLAY` / `/proc/version` / `command -v`).
+  `test/tui-yank.test.ts` grows: OSC-52 sequence framing
+  (`ESC ] 52 ; c ; <base64> BEL`, base64 round-trip, BEL not ST
+  terminator), writer-throws → `{copied:false,error}`, exactly-one-
+  invocation, and 9 platform-conditional probe cases (darwin±pbcopy,
+  WSL, linux+Wayland+wl-copy, linux+X11+xclip, linux+X11+xsel-only,
+  Wayland-prefers-wl-copy-over-xclip, xclip-wins-over-xsel,
+  linux-no-display → OSC-52, unknown platform → OSC-52). 21 tests
+  total (up from 5); no production behaviour change.
+
 - **Workspaces popup `git show` invocation extracted to a testable
   helper** (review_tests_workspaces_show_loadshow_unmocked). The
   `loadShow` callback in `src/cli/tui/popups/workspaces.tsx` previously
