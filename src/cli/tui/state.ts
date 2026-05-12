@@ -1,6 +1,6 @@
 // React hook + tick-rate constants for the TUI's poll loop.
 //
-// Per design_poll_loop (workstream `tui`): F1 simple poll, single
+// Per design_poll_loop (workstream `tui`): simple poll, single
 // setInterval owned by <Dashboard>, synchronous better-sqlite3 reads
 // (no race possible by construction), tick rate adjustable live with
 // +/- (floor 100ms, ceiling 10s, default 1s), no persistence.

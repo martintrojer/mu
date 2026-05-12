@@ -11,6 +11,7 @@
 // to refactor_split_large_src_files.
 
 import { assertTaskInWorkstream, colorStatus, emitJson, resolveEntityRef } from "../../cli.js";
+import { renderTaskTree } from "../../dag.js";
 import type { Db } from "../../db.js";
 import { pc } from "../../output.js";
 import { TaskNotFoundError, type TaskRow, getTask, getTaskEdges } from "../../tasks.js";
@@ -56,13 +57,11 @@ export async function cmdTaskTree(db: Db, rawId: string, opts: TreeOpts): Promis
   const direction = down ? "dependents" : "blockers";
   const swapHint = down ? "swap to --no-down for blockers" : "--down for dependents";
   console.log(pc.bold(`Tree of ${rootId}  ${pc.dim(`(${direction} below; ${swapHint})`)}`));
-  console.log(formatTreeNodeLabel(root));
-  // Global "already rendered" set: a node visited once gets its full
-  // subtree drawn; subsequent visits (in a DAG diamond) print a one-line
-  // recurrence marker and don't recurse. Schema forbids cycles, so this
-  // only fires on diamonds in practice; double-edged as defence against
-  // future bugs.
-  renderTree(db, ws, rootId, "", down, seen);
+  console.log(
+    renderTaskTree(db, ws, root, down ? "dependents" : "blockers", (task) =>
+      colorStatus(task.status),
+    ),
+  );
 }
 
 function buildJsonTree(
@@ -86,48 +85,4 @@ function buildJsonTree(
     out.push({ task: child, children: buildJsonTree(db, workstream, childId, down, seen) });
   }
   return out;
-}
-
-function renderTree(
-  db: Db,
-  workstream: string,
-  taskId: string,
-  prefix: string,
-  down: boolean,
-  seen: Set<string>,
-): void {
-  const edges = getTaskEdges(db, taskId, workstream);
-  const children = down ? edges.dependents : edges.blockers;
-  if (children.length === 0) return;
-
-  for (let i = 0; i < children.length; i++) {
-    const childId = children[i];
-    if (childId === undefined) continue;
-    const isLast = i === children.length - 1;
-    const branch = isLast ? "└── " : "├── ";
-    const childPrefix = prefix + (isLast ? "    " : "│   ");
-
-    const child = getTask(db, childId, workstream);
-    if (!child) {
-      // Defensive: schema FKs prevent this, but the cascade-on-delete
-      // could in theory race a sibling read. Render a clear marker.
-      console.log(`${prefix}${branch}${pc.red(`${childId}  (missing!)`)}`);
-      continue;
-    }
-
-    if (seen.has(childId)) {
-      console.log(
-        `${prefix}${branch}${formatTreeNodeLabel(child)}  ${pc.dim("(↻ already shown above)")}`,
-      );
-      continue;
-    }
-
-    console.log(`${prefix}${branch}${formatTreeNodeLabel(child)}`);
-    seen.add(childId);
-    renderTree(db, workstream, childId, childPrefix, down, seen);
-  }
-}
-
-function formatTreeNodeLabel(t: TaskRow): string {
-  return `${pc.bold(t.name)}  ${colorStatus(t.status)}  ${pc.dim(t.title)}`;
 }

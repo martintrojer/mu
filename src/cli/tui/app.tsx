@@ -32,6 +32,7 @@ import { Help } from "./help.js";
 import { dispatchGlobalKeyFromInk } from "./keys.js";
 import { AgentsPopup } from "./popups/agents.js";
 import { BlockedPopup } from "./popups/blocked.js";
+import { DagPopup } from "./popups/dag.js";
 import { DoctorPopup } from "./popups/doctor.js";
 import { InProgressPopup } from "./popups/inprogress.js";
 import { LogPopup } from "./popups/log.js";
@@ -65,7 +66,7 @@ export interface FooterState {
   copied: boolean;
 }
 
-type PopupId = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | null;
+type PopupId = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | null;
 export type PopupMode = "list" | "drill";
 
 export function App({ db, workstreams }: AppProps): JSX.Element {
@@ -170,7 +171,12 @@ export function App({ db, workstreams }: AppProps): JSX.Element {
         // key (+/-/r/?/c/w) so they don't compete with the user's
         // filter typing.
         if (popupFilterEditing) return;
-        if ((input >= "1" && input <= "9") || "!@#$%^&*()".includes(input) || input === "c") {
+        if (
+          (input >= "1" && input <= "9") ||
+          "!@#$%^&*()".includes(input) ||
+          input === "g" ||
+          input === "c"
+        ) {
           return;
         }
         // Ctrl-C still quits (universal escape).
@@ -337,7 +343,7 @@ export function App({ db, workstreams }: AppProps): JSX.Element {
     </Box>
   );
 
-  function renderPopup(id: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9): JSX.Element {
+  function renderPopup(id: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9): JSX.Element {
     const props = {
       yank: yankFn,
       onClose: () => {
@@ -353,6 +359,8 @@ export function App({ db, workstreams }: AppProps): JSX.Element {
       workstream,
     };
     switch (id) {
+      case 0:
+        return <DagPopup {...props} />;
       case 1:
         return <AgentsPopup {...props} />;
       case 2:
@@ -398,8 +406,10 @@ function cardKeyFromId(id: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9): keyof CardVisibil
   }
 }
 
-function popupNameForId(id: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9): string {
+function popupNameForId(id: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9): string {
   switch (id) {
+    case 0:
+      return "DAG";
     case 1:
       return "Agents";
     case 2:

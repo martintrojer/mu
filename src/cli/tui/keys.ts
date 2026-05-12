@@ -7,6 +7,7 @@
 //   7           toggle Blocked card (feat_card_7_blocked)
 //   8           toggle Recent card (feat_card_8_recent)
 //   9           toggle Doctor card (feat_card_9_doctor)
+//   g           open full DAG popup (graph mnemonic)
 //   ! @ # $     open fullscreen popup for that card  (Shift+1..Shift+4
 //               on US keyboards; bound by glyph because ink reports
 //               the post-shift character, not the modifier).
@@ -32,7 +33,7 @@
 
 export type GlobalAction =
   | { kind: "toggleCard"; cardId: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 }
-  | { kind: "openPopup"; cardId: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 }
+  | { kind: "openPopup"; cardId: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 }
   | { kind: "tickFaster" }
   | { kind: "tickSlower" }
   | { kind: "tickReset" }
@@ -144,7 +145,9 @@ export function dispatchGlobalKey(input: string, key: KeyFlags): GlobalAction {
     return { kind: "toggleCard", cardId };
   }
 
-  // Popup openers !-( on US keyboards. Bound by glyph because ink
+  if (input === "g") return { kind: "openPopup", cardId: 0 };
+
+  // Popup openers !-) on US keyboards. Bound by glyph because ink
   // reports the post-shift character; key.shift is false.
   // Layout-dependent — see design_global_keymap ODDITY for non-US
   // keymaps. ALL nine slots are now promoted: slot-5 (`%`) by
@@ -152,7 +155,8 @@ export function dispatchGlobalKey(input: string, key: KeyFlags): GlobalAction {
   // slot-7 (`&`) by feat_popup_7_blocked; slot-8 (`*`) by
   // feat_popup_8_recent; slot-9 (`(`) by feat_popup_9_doctor
   // (all workstream `tui-impl`).
-  const glyphMap: Record<string, 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9> = {
+  const glyphMap: Record<string, 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9> = {
+    ")": 0,
     "!": 1,
     "@": 2,
     "#": 3,

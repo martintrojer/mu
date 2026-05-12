@@ -31,6 +31,7 @@ export function Help(): JSX.Element {
           keys={CARD_DIGITS}
           effect="toggle Agents/Tracks/Ready/Log/Workspaces/In-progress/Blocked/Recent/Doctor (1-9)"
         />
+        <HelpRow keys="g" effect="DAG popup" />
         <HelpRow keys="Shift 1-9" effect="open card popup (layout-dependent on non-US)" />
         <HelpRow keys="+/=" effect="tick faster (floor 100ms)" />
         <HelpRow keys="-" effect="tick slower (ceiling 10s)" />

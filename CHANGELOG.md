@@ -37,6 +37,7 @@ is opt-in via the new `--tui` flag.
 
 ### Added
 
+- **TUI DAG popup (`g`, also Shift+0 / `)`)** — the dashboard now has a popup-only full task-DAG view for the active workstream. It renders every root task (no incoming `blocks` edge) as a `mu task tree --down`-style ASCII subtree, with blank lines between roots and diamond repeats collapsed with the existing `↻ already shown above` marker. New SDK/data seam `loadFullDag(db, workstream)` plus shared `renderForest(...)` keep the CLI tree renderer and TUI popup on the same box-drawing implementation. The popup is read-only and yanks `mu task tree <root-id> -w <ws>` for the root closest to the current scroll position (TODO: refine from scroll-root approximation to exact cursor-line task lookup when the text drill grows cursor-row plumbing).
 - **TUI multi-workstream tabs (`mu state --tui -w A,B,C`)** — the
   TUI now accepts the same multi-value `-w` set the static card
   has always supported (and `--all`). N≥2 surfaces a one-row tab
@@ -137,7 +138,7 @@ is opt-in via the new `--tui` flag.
     pure `popupFilterReducer` + `applyFilter<T>` + `<FilterPrompt>`)
     so the cards 5-9 popups under `feat_more_cards_umbrella` consume
     it in ~5 LOC each.
-  - **Help overlay**: `?` / `F1` shows the global + in-popup keymap.
+  - **Help overlay**: `?` shows the global + in-popup keymap.
   - **Alt-screen**: enters `\x1b[?1049h` on launch, restores on
     quit. Dashboard is flush with row 0; main scrollback is preserved.
   - **Column-aligned rows** with protect/clip clipping policy: task

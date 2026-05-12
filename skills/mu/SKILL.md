@@ -305,12 +305,13 @@ running a wave.
 - **Escape hatch + state**: `mu sql "<query>"` for anything not yet
   typed. `mu` alone = `mu state --mission`. `mu state` has `--tui`
   (interactive ink dashboard; read-only, yanks `mu` commands;
-  `1`-`5` toggle cards, `!`/`@`/`#`/`$` open list popups, `Enter`
+  `g` opens the full workstream DAG popup; `1`-`9` toggle cards;
+  `Shift+1`-`Shift+9` open popups, `Enter`
   drills (in the Activity log popup it opens the focused event's
   full untruncated payload; the Workspaces popup chains `Enter`
   three levels deep → commits-since-fork → `git show <sha>` diff
   view, with `y` yanking `git show <sha>` at every level), `/`
-  filters list popups incrementally, `?`/`F1` keymap, `q`/`Ctrl-C`
+  filters list popups incrementally, `?` keymap, `q`/`Ctrl-C`
   quits), `--mission`, `--all`, `--json`. `mu doctor` for health.
 
 ## `mu task wait` exits

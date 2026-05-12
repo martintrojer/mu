@@ -420,15 +420,19 @@ mu                          # bare alias for `mu state --mission`
   cards as the default attention surface; SQL/raw verbs as the
   escape hatch underneath).
 
-- **`--tui`** — interactive ink-based dashboard: 4 toggleable cards
-  (Agents, Tracks, Ready, Activity log) with rounded borders and
-  inset section headers (lazygit / btop / k9s convention), 4
-  fullscreen popups (Shift+1..Shift+4), live-updating every 1s
-  (adjustable with `+/-/=/0`). **Read-only**: act-intents `y`-yank
+- **`--tui`** — interactive ink-based dashboard: 9 toggleable cards
+  (Agents, Tracks, Ready, Activity log, Workspaces, In-progress,
+  Blocked, Recent, Doctor) with rounded borders and inset section
+  headers (lazygit / btop / k9s convention), matching fullscreen
+  popups (Shift+1..Shift+9), plus `g` for the current workstream's
+  full task DAG popup, live-updating every 1s (adjustable with
+  `+/-/=/0`). **Read-only**: act-intents `y`-yank
   the canonical `mu` command to the clipboard — the TUI never
   executes a mutation; the user runs the yanked command in their
-  shell. `?` / `F1` shows the keymap. `q` / `Ctrl-C` quits and
-  restores the main scrollback. Replaces the previous `--hud`.
+  shell. Dashboard keymap: `g` DAG popup; `1`-`9` toggle cards;
+  `Shift+1`-`Shift+9` open card popups; `?` shows the keymap;
+  `q` / `Ctrl-C` quits and restores the main scrollback. Replaces
+  the previous `--hud`.
 
   **Popup-drill recursion**: `Enter` in any popup drills into the
   focused row. Where the row is itself an entity (a task), a
