@@ -66,6 +66,21 @@ called out under "Breaking" in each entry.
   (`git`, `jj`, `sl`, or `(no vcs)`) so users can see which substrate
   won detection at a glance.
 
+### Fixed
+
+- **TabStrip no longer crashes the TUI on small panes**
+  (bug_tab_strip_conditional_hook_crash). The component called a
+  helper that wrapped `useStdout()` and that helper was invoked
+  CONDITIONALLY (skipped when the `terminalColumns` prop was
+  provided). React's rules of hooks then crashed ink with `Rendered
+  fewer hooks than expected. This may be caused by an accidental
+  early return statement.` whenever the prop flipped between defined
+  and undefined across renders — the typical trigger was running
+  bare `mu` in a small tmux pane. Fix: TabStrip is now a pure
+  presentational component; the parent `<App>` reads `useStdout`
+  once for its own column count and threads that down via the
+  `terminalColumns` prop (now required, not optional).
+
 ### TUI internals
 
 - **State/TUI dispatch + event-classifier tests are behaviour-backed**

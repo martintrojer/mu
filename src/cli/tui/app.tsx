@@ -325,7 +325,7 @@ export function App({ db, workstreams, initialActive = 0 }: AppProps): JSX.Eleme
           frame. The strip lives INSIDE the height-pinned + clipping
           parent so flexbox accounts for its 1-row height when
           allocating space to the cards below it. */}
-      <TabStrip workstreams={workstreams} active={safeActive} />
+      <TabStrip workstreams={workstreams} active={safeActive} terminalColumns={cols} />
       {snap.error !== null && (
         <Box borderStyle="round" borderColor="red" paddingX={1}>
           <Text color="red">snapshot error: {snap.error}</Text>

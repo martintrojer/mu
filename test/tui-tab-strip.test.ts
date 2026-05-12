@@ -39,12 +39,12 @@ describe("TabStrip", () => {
     // The single-ws case must render null so the frame is identical
     // to the pre-multi-ws build. Any visual change there would
     // regress every snapshot / acceptance assertion.
-    const node = TabStrip({ workstreams: ["alpha"], active: 0 });
+    const node = TabStrip({ workstreams: ["alpha"], active: 0, terminalColumns: 200 });
     expect(node).toBeNull();
   });
 
   it("renders nothing for an empty workstream list (defensive)", () => {
-    const node = TabStrip({ workstreams: [], active: 0 });
+    const node = TabStrip({ workstreams: [], active: 0, terminalColumns: 200 });
     expect(node).toBeNull();
   });
 
@@ -128,5 +128,24 @@ describe("TabStrip", () => {
     expect(text).toContain("▸ ws-06");
     expect(text).toMatch(/›\d+/);
     expect(text).not.toContain("ws-01 · ws-02 · ws-03");
+  });
+
+  it("is hook-free — callable from any context without an ink render tree (regression for bug_tab_strip_conditional_hook_crash)", () => {
+    // Previously TabStrip called a `useStdout()`-backed helper that
+    // sometimes ran and sometimes didn't depending on the
+    // `terminalColumns` prop. On small panes (where the prop flipped
+    // between defined and undefined across renders) ink crashed with
+    // 'Rendered fewer hooks than expected'. The fix made the
+    // component pure: terminalColumns is required, the parent <App>
+    // reads useStdout once and threads it down. This test pins that
+    // contract by calling TabStrip outside any React context — it
+    // must not throw, and must not require a React render tree.
+    expect(() =>
+      TabStrip({ workstreams: ["alpha", "beta"], active: 0, terminalColumns: 200 }),
+    ).not.toThrow();
+    expect(() =>
+      TabStrip({ workstreams: ["alpha", "beta"], active: 0, terminalColumns: 20 }),
+    ).not.toThrow();
+    expect(() => TabStrip({ workstreams: ["only"], active: 0, terminalColumns: 20 })).not.toThrow();
   });
 });

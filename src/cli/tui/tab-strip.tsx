@@ -2,10 +2,15 @@
 // the TUI is launched with multiple workstreams.
 //
 // The pure layout algorithm lives in tab-strip-layout.ts. This
-// component only reads the terminal width, asks for a layout spec, and
-// renders that spec with the existing dim/cyan styling.
+// component is a PURE presentational component: it takes the
+// terminal column count as a prop (the parent <App> reads useStdout
+// once for its own use and threads `cols` down). No hooks here —
+// previously a `useStdout()` helper was called from this module,
+// which produced a 'Rendered fewer hooks than expected' crash on
+// small panes because the early-return guard upstairs caused the
+// hook to be called on some renders and skipped on others.
 
-import { Box, Text, useStdout } from "ink";
+import { Box, Text } from "ink";
 
 import { layoutTabStrip } from "./tab-strip-layout.js";
 
@@ -15,8 +20,11 @@ export interface TabStripProps {
   workstreams: readonly string[];
   /** Index of the active tab. Caller guarantees 0 ≤ active < workstreams.length. */
   active: number;
-  /** Test seam; runtime reads ink's stdout columns. */
-  terminalColumns?: number;
+  /** Terminal columns. Required: the parent <App> reads ink's
+   *  useStdout() once and threads this down so the strip can stay
+   *  hook-free (and therefore safe to call from outside an ink
+   *  render tree, e.g. unit tests). */
+  terminalColumns: number;
 }
 
 export function TabStrip({
@@ -25,7 +33,7 @@ export function TabStrip({
   terminalColumns,
 }: TabStripProps): JSX.Element | null {
   if (workstreams.length <= 1) return null;
-  const layout = layoutTabStrip(workstreams, active, terminalColumns ?? stdoutColumns());
+  const layout = layoutTabStrip(workstreams, active, terminalColumns);
   if (layout === null) return null;
   const tabs: JSX.Element[] = [];
   for (let i = 0; i < layout.visible.length; i++) {
@@ -67,9 +75,4 @@ export function TabStrip({
       )}
     </Box>
   );
-}
-
-function stdoutColumns(): number {
-  const { stdout } = useStdout();
-  return stdout.columns ?? 80;
 }
