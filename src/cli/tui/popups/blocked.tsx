@@ -48,6 +48,7 @@ import {
 } from "../columns.js";
 import { dispatchPopupKey } from "../keys.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
+import { CursorRow } from "./cursor-row.js";
 import { clampScrollTop } from "./drill.js";
 import { TaskDetailDrill, renderNotes } from "./task-detail.js";
 import { popupViewport } from "./viewport.js";
@@ -288,12 +289,14 @@ export function BlockedPopup({
           const row = rows[i];
           if (row === undefined) return null;
           const padded = renderRow(row, widths, COLUMN_SPECS);
+          if (selected)
+            return <CursorRow key={t.name} cells={padded} contentWidth={contentWidth} />;
           const [glyph = "", name = "", status = "", nblock = "", top = "", roi = "", title = ""] =
             padded;
           const bucket = roiBucket(t.impact, t.effortDays);
           return (
             <Box key={t.name}>
-              <Text inverse={selected} wrap="truncate">
+              <Text wrap="truncate">
                 <Text dimColor>{glyph}</Text>
                 {"  "}
                 <Text bold>{name}</Text>

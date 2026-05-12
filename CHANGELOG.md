@@ -348,6 +348,34 @@ is opt-in via the new `--tui` flag.
 
 ### Fixed
 
+- **TUI popup cursor-row highlight is now a solid full-width
+  inverse line (was patchy — per-cell colours leaked through the
+  outer `inverse`)** (bug_tui_popup_cursor_highlight_color_leak).
+  Every list popup (`agents`, `blocked`, `doctor`, `inprogress`,
+  `log`, `ready`, `tracks`, `workspaces`) used to render the
+  cursor row by wrapping per-cell coloured `<Text>` chunks (color,
+  bold, dimColor) inside a single `<Text inverse={sel}>`. ink
+  emits an independent ANSI sequence per nested `<Text>`, and
+  inner SGR sequences (color/bold/dim) RESET the outer `inverse`
+  state — so cursor rows showed inverse video only on the bare
+  whitespace cells while every coloured cell broke the highlight.
+  Plus the row `<Box>` was content-sized, so the highlight ended
+  at the last character of content rather than spanning the popup
+  width. Fix: new `src/cli/tui/popups/cursor-row.tsx` exports a
+  tiny `<CursorRow cells contentWidth>` helper that joins the
+  already-padded cells with the canonical 2-space gutter
+  (`COL_GUTTER`), padEnds to `contentWidth`, and wraps in a single
+  `<Text inverse wrap="truncate">` on a width-pinned `<Box>` —
+  the lazygit / k9s / btop convention (cursor row trades its
+  per-cell palette for a solid full-width inverse line). Each
+  popup's selected-row branch becomes a single `<CursorRow .../>`
+  use; non-selected rows keep their per-cell palette unchanged.
+  Tests: new `test/tui-cursor-row.test.ts` covers the helper
+  (cells join with `COL_GUTTER`, padEnd to width, single `<Text
+  inverse>` with no per-cell styling, edge cases for short cells /
+  zero width / single cell) plus a static-source regression guard
+  asserting every list popup imports `CursorRow` AND no longer
+  carries an `inverse=` attribute on any `<Text>`.
 - **TUI card rows clip cleanly at contentWidth (was overflowing /
   wrapping due to gutter-accounting + ink-overflow bugs)**
   (bug_tui_log_card_columns_misaligned). Completes

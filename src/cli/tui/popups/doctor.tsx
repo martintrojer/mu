@@ -46,6 +46,7 @@ import {
 } from "../columns.js";
 import { dispatchPopupKey } from "../keys.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
+import { CursorRow } from "./cursor-row.js";
 import { DrillScrollView, clampScrollTop } from "./drill.js";
 import { popupViewport } from "./viewport.js";
 
@@ -261,10 +262,12 @@ export function DoctorPopup({
           const row = rows[i];
           if (row === undefined) return null;
           const padded = renderRow(row, widths, COLUMN_SPECS);
+          if (selected)
+            return <CursorRow key={c.name} cells={padded} contentWidth={contentWidth} />;
           const [glyph = "", name = "", status = "", detail = ""] = padded;
           return (
             <Box key={c.name}>
-              <Text inverse={selected} wrap="truncate">
+              <Text wrap="truncate">
                 <Text color={colorForStatus(c.status)}>{glyph}</Text>
                 {"  "}
                 <Text bold>{name}</Text>

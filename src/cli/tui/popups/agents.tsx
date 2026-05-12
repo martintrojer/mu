@@ -31,6 +31,7 @@ import {
 } from "../columns.js";
 import { dispatchPopupKey } from "../keys.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
+import { CursorRow } from "./cursor-row.js";
 import { DrillScrollView, clampScrollTop } from "./drill.js";
 import { popupViewport } from "./viewport.js";
 
@@ -275,10 +276,11 @@ export function AgentsPopup({
           const row = rows[i];
           if (row === undefined) return null;
           const padded = renderRow(row, widths, COLUMN_SPECS);
+          if (sel) return <CursorRow key={a.name} cells={padded} contentWidth={contentWidth} />;
           const [glyph = "", name = "", status = "", role = ""] = padded;
           return (
             <Box key={a.name}>
-              <Text inverse={sel} wrap="truncate">
+              <Text wrap="truncate">
                 <Text>{glyph}</Text>
                 {"  "}
                 <Text bold>{name}</Text>

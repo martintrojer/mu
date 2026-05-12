@@ -29,6 +29,7 @@ import {
 } from "../columns.js";
 import { dispatchPopupKey } from "../keys.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
+import { CursorRow } from "./cursor-row.js";
 import { popupViewport } from "./viewport.js";
 
 export interface PopupProps {
@@ -198,10 +199,11 @@ export function LogPopup({
           const row = rows[i];
           if (row === undefined) return null;
           const padded = renderRow(row, widths, COLUMN_SPECS);
+          if (sel) return <CursorRow key={e.seq} cells={padded} contentWidth={contentWidth} />;
           const [seq = "", ts = "", source = "", verb = "", rest = ""] = padded;
           return (
             <Box key={e.seq}>
-              <Text inverse={sel} wrap="truncate">
+              <Text wrap="truncate">
                 <Text dimColor>{seq}</Text>
                 {"  "}
                 <Text dimColor>{ts}</Text>

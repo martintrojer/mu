@@ -51,6 +51,7 @@ import {
 } from "../columns.js";
 import { dispatchPopupKey } from "../keys.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
+import { CursorRow } from "./cursor-row.js";
 import { popupViewport } from "./viewport.js";
 
 export interface PopupProps {
@@ -349,6 +350,8 @@ export function WorkspacesPopup({
           const row = rows[i];
           if (row === undefined) return null;
           const padded = renderRow(row, widths, COLUMN_SPECS);
+          if (sel)
+            return <CursorRow key={w.agentName} cells={padded} contentWidth={contentWidth} />;
           const [
             glyph = "",
             name = "",
@@ -360,7 +363,7 @@ export function WorkspacesPopup({
           ] = padded;
           return (
             <Box key={w.agentName}>
-              <Text inverse={sel} wrap="truncate">
+              <Text wrap="truncate">
                 <Text color={colorForGlyph(w)}>{glyph}</Text>
                 {"  "}
                 <Text bold>{name}</Text>
@@ -478,10 +481,11 @@ function renderDrillBody(
         const row = rows[i];
         if (row === undefined) return null;
         const padded = renderRow(row, widths, DRILL_COLUMN_SPECS);
+        if (sel) return <CursorRow key={c.sha} cells={padded} contentWidth={contentWidth} />;
         const [sha = "", subject = ""] = padded;
         return (
           <Box key={c.sha}>
-            <Text inverse={sel} wrap="truncate">
+            <Text wrap="truncate">
               <Text color="yellow">{sha}</Text>
               {"  "}
               <Text>{subject}</Text>

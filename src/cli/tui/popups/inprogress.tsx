@@ -35,6 +35,7 @@ import {
 } from "../columns.js";
 import { dispatchPopupKey } from "../keys.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
+import { CursorRow } from "./cursor-row.js";
 import { clampScrollTop } from "./drill.js";
 import { TaskDetailDrill, renderNotes } from "./task-detail.js";
 
@@ -250,12 +251,14 @@ export function InProgressPopup({
           const row = rows[i];
           if (row === undefined) return null;
           const padded = renderRow(row, widths, COLUMN_SPECS);
+          if (selected)
+            return <CursorRow key={t.name} cells={padded} contentWidth={contentWidth} />;
           const [glyph = "", id = "", status = "", owner = "", since = "", roi = "", title = ""] =
             padded;
           const stale = isStale(ages[i] ?? null);
           return (
             <Box key={t.name}>
-              <Text inverse={selected} wrap="truncate">
+              <Text wrap="truncate">
                 <Text color="yellow">{glyph}</Text>
                 {"  "}
                 <Text bold>{id}</Text>

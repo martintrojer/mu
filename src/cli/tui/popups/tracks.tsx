@@ -41,6 +41,7 @@ import {
 } from "../columns.js";
 import { dispatchPopupKey } from "../keys.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
+import { CursorRow } from "./cursor-row.js";
 import { clampScrollTop } from "./drill.js";
 import { TaskDetailDrill, renderNotes } from "./task-detail.js";
 import { popupViewport } from "./viewport.js";
@@ -373,10 +374,11 @@ export function TracksPopup({
             const row = rows[i];
             if (row === undefined) return null;
             const padded = renderRow(row, widths, DRILL_COLUMN_SPECS);
+            if (sel) return <CursorRow key={t.name} cells={padded} contentWidth={contentWidth} />;
             const [name = "", status = "", title = ""] = padded;
             return (
               <Box key={t.name}>
-                <Text inverse={sel} wrap="truncate">
+                <Text wrap="truncate">
                   <Text bold>{name}</Text>
                   {"  "}
                   <Text dimColor>{status}</Text>
@@ -412,10 +414,18 @@ export function TracksPopup({
           const row = rows[i];
           if (row === undefined) return null;
           const padded = renderRow(row, widths, COLUMN_SPECS);
+          if (sel)
+            return (
+              <CursorRow
+                key={`tr-${i}-${t.roots[0]?.name ?? "?"}`}
+                cells={padded}
+                contentWidth={contentWidth}
+              />
+            );
           const [trackLabel = "", diamond = "", goals = "", counts = ""] = padded;
           return (
             <Box key={`tr-${i}-${t.roots[0]?.name ?? "?"}`}>
-              <Text inverse={sel} wrap="truncate">
+              <Text wrap="truncate">
                 <Text color="cyan">{trackLabel}</Text>
                 {"  "}
                 <Text>{diamond}</Text>
