@@ -45,7 +45,7 @@ import { PopupShell } from "../popup-shell.js";
 export { formatRoi };
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
 import { useDrillKeymap } from "./drill.js";
-import { applyCursor, isNavAction } from "./scroll.js";
+import { applyCursor, centredVisibleSlice, isNavAction } from "./scroll.js";
 import { TaskDetailDrill, renderNotes } from "./task-detail.js";
 import { usePopupViewport } from "./viewport.js";
 
@@ -201,16 +201,20 @@ export function RecentPopup({
 
   const now = Date.now();
   const ages = tasks.map((t) => ageMs(t, now));
-  const rows = tasks.map((t, i) => [
-    glyphFor(),
-    t.name,
-    t.status,
-    formatWhen(ages[i] ?? null),
-    String(t.impact),
-    String(t.effortDays),
-    formatRoi(t.impact, t.effortDays),
-    t.title,
-  ]);
+  const { start, visible } = centredVisibleSlice(tasks, safeCursor, viewport);
+  const rows = visible.map((t, i) => {
+    const absoluteIndex = start + i;
+    return [
+      glyphFor(),
+      t.name,
+      t.status,
+      formatWhen(ages[absoluteIndex] ?? null),
+      String(t.impact),
+      String(t.effortDays),
+      formatRoi(t.impact, t.effortDays),
+      t.title,
+    ];
+  });
   const widths = layoutColumns(rows, COLUMN_SPECS, contentWidth);
 
   return (
@@ -219,8 +223,8 @@ export function RecentPopup({
       hint="Enter notes · y yanks `mu task open` · / filter · Esc/q close"
     >
       <Box flexDirection="column" flexGrow={1}>
-        {tasks.map((t, i) => {
-          const selected = i === safeCursor;
+        {visible.map((t, i) => {
+          const selected = start + i === safeCursor;
           const row = rows[i];
           if (row === undefined) return null;
           const padded = renderRow(row, widths, COLUMN_SPECS);

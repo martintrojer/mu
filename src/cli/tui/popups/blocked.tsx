@@ -52,7 +52,7 @@ import { ListRow } from "../list-row.js";
 import { PopupShell } from "../popup-shell.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
 import { useDrillKeymap } from "./drill.js";
-import { applyCursor, isNavAction } from "./scroll.js";
+import { applyCursor, centredVisibleSlice, isNavAction } from "./scroll.js";
 import { TaskDetailDrill, renderNotes } from "./task-detail.js";
 import { usePopupViewport } from "./viewport.js";
 
@@ -217,7 +217,8 @@ export function BlockedPopup({
     );
   }
 
-  const rows = tasks.map((t) => {
+  const { start, visible } = centredVisibleSlice(tasks, safeCursor, viewport);
+  const rows = visible.map((t) => {
     const blockers = blockerIndex.get(t.name) ?? [];
     const top = blockers[0] ?? "—";
     const roiText = formatRoi(t.impact, t.effortDays);
@@ -228,8 +229,8 @@ export function BlockedPopup({
   return (
     <PopupShell title={`Blocked · popup (${safeCursor + 1}/${tasks.length})`}>
       <Box flexDirection="column" flexGrow={1}>
-        {tasks.map((t, i) => {
-          const selected = i === safeCursor;
+        {visible.map((t, i) => {
+          const selected = start + i === safeCursor;
           const row = rows[i];
           if (row === undefined) return null;
           const padded = renderRow(row, widths, COLUMN_SPECS);

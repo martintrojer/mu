@@ -34,7 +34,7 @@ import { ListRow } from "../list-row.js";
 import { PopupShell } from "../popup-shell.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
 import { DrillScrollView, useDrillKeymap } from "./drill.js";
-import { applyCursor, isNavAction } from "./scroll.js";
+import { applyCursor, centredVisibleSlice, isNavAction } from "./scroll.js";
 import { usePopupViewport } from "./viewport.js";
 
 export interface PopupProps {
@@ -222,7 +222,8 @@ export function AgentsPopup({
     );
   }
 
-  const rows = agents.map((a) => [STATUS_EMOJI[a.status] ?? "?", a.name, a.status, a.role]);
+  const { start, visible } = centredVisibleSlice(agents, safeCursor, viewport);
+  const rows = visible.map((a) => [STATUS_EMOJI[a.status] ?? "?", a.name, a.status, a.role]);
   const widths = layoutColumns(rows, COLUMN_SPECS, contentWidth);
 
   return (
@@ -231,8 +232,8 @@ export function AgentsPopup({
       hint="f free · x close · y yanks `mu agent send`"
     >
       <Box flexDirection="column" flexGrow={1}>
-        {agents.map((a, i) => {
-          const sel = i === safeCursor;
+        {visible.map((a, i) => {
+          const sel = start + i === safeCursor;
           const row = rows[i];
           if (row === undefined) return null;
           const padded = renderRow(row, widths, COLUMN_SPECS);

@@ -44,7 +44,7 @@ import { PopupShell } from "../popup-shell.js";
 export { formatRoi };
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
 import { useDrillKeymap } from "./drill.js";
-import { applyCursor, isNavAction } from "./scroll.js";
+import { applyCursor, centredVisibleSlice, isNavAction } from "./scroll.js";
 import { TaskDetailDrill, renderNotes } from "./task-detail.js";
 import { usePopupViewport } from "./viewport.js";
 
@@ -188,15 +188,19 @@ export function InProgressPopup({
 
   const now = Date.now();
   const ages = tasks.map((t) => ageMs(t, now));
-  const rows = tasks.map((t, i) => [
-    glyphFor(),
-    t.name,
-    t.status,
-    t.ownerName ?? "—",
-    formatSinceClaim(ages[i] ?? null),
-    formatRoi(t.impact, t.effortDays),
-    t.title,
-  ]);
+  const { start, visible } = centredVisibleSlice(tasks, safeCursor, viewport);
+  const rows = visible.map((t, i) => {
+    const absoluteIndex = start + i;
+    return [
+      glyphFor(),
+      t.name,
+      t.status,
+      t.ownerName ?? "—",
+      formatSinceClaim(ages[absoluteIndex] ?? null),
+      formatRoi(t.impact, t.effortDays),
+      t.title,
+    ];
+  });
   const widths = layoutColumns(rows, COLUMN_SPECS, contentWidth);
 
   return (
@@ -205,12 +209,13 @@ export function InProgressPopup({
       hint="y yanks `mu task close <id> --evidence ...`"
     >
       <Box flexDirection="column" flexGrow={1}>
-        {tasks.map((t, i) => {
-          const selected = i === safeCursor;
+        {visible.map((t, i) => {
+          const absoluteIndex = start + i;
+          const selected = absoluteIndex === safeCursor;
           const row = rows[i];
           if (row === undefined) return null;
           const padded = renderRow(row, widths, COLUMN_SPECS);
-          const stale = isStale(ages[i] ?? null);
+          const stale = isStale(ages[absoluteIndex] ?? null);
           const colors = [
             { color: "yellow" }, // glyph
             { bold: true }, // id

@@ -36,7 +36,7 @@ import { ListRow } from "../list-row.js";
 import { PopupShell } from "../popup-shell.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
 import { useDrillKeymap } from "./drill.js";
-import { applyCursor, isNavAction } from "./scroll.js";
+import { applyCursor, centredVisibleSlice, isNavAction } from "./scroll.js";
 import { TaskDetailDrill, renderNotes } from "./task-detail.js";
 import { usePopupViewport } from "./viewport.js";
 
@@ -186,7 +186,8 @@ export function ReadyPopup({
     );
   }
 
-  const rows = tasks.map((t) => [t.name, t.status, t.ownerName ?? "—", t.title]);
+  const { start, visible } = centredVisibleSlice(tasks, safeCursor, viewport);
+  const rows = visible.map((t) => [t.name, t.status, t.ownerName ?? "—", t.title]);
   const widths = layoutColumns(rows, COLUMN_SPECS, contentWidth);
 
   return (
@@ -195,8 +196,8 @@ export function ReadyPopup({
       hint={focused && snapshot ? yankCommandForTask(focused, snapshot.workstreamName) : undefined}
     >
       <Box flexDirection="column" flexGrow={1}>
-        {tasks.map((t, i) => {
-          const selected = i === safeCursor;
+        {visible.map((t, i) => {
+          const selected = start + i === safeCursor;
           const row = rows[i];
           if (row === undefined) return null;
           const padded = renderRow(row, widths, COLUMN_SPECS);

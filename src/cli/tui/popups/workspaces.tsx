@@ -411,7 +411,8 @@ export function WorkspacesPopup({
     );
   }
 
-  const rows = workspaces.map((w) => [
+  const { start, visible } = centredVisibleSlice(workspaces, safeCursor, viewport);
+  const rows = visible.map((w) => [
     glyphFor(w),
     w.agentName,
     w.backend,
@@ -428,8 +429,8 @@ export function WorkspacesPopup({
       hint="y yanks `cd $(mu workspace path <agent>)`"
     >
       <Box flexDirection="column" flexGrow={1}>
-        {workspaces.map((w, i) => {
-          const sel = i === safeCursor;
+        {visible.map((w, i) => {
+          const sel = start + i === safeCursor;
           const row = rows[i];
           if (row === undefined) return null;
           const padded = renderRow(row, widths, COLUMN_SPECS);

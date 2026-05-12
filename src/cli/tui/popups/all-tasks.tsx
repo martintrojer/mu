@@ -30,7 +30,7 @@ import { PopupShell } from "../popup-shell.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
 import { StatusFilterStrip, useStatusFilter } from "../use-status-filter.js";
 import { useDrillKeymap } from "./drill.js";
-import { applyCursor, isNavAction } from "./scroll.js";
+import { applyCursor, centredVisibleSlice, isNavAction } from "./scroll.js";
 import { TaskDetailDrill, renderNotes } from "./task-detail.js";
 import { usePopupViewport } from "./viewport.js";
 
@@ -61,6 +61,12 @@ const ALL_TASKS_COLORS = [
   undefined, // title
 ] as const;
 
+// The list view renders two extra in-body chrome rows above the data
+// window: StatusFilterStrip + SortStrip. Account for those through
+// the central viewport hook's chrome override so the popup's top
+// border does not get clipped on shorter panes.
+const ALL_TASKS_CHROME_ROWS = 5;
+
 export function AllTasksPopup({
   yank,
   onClose,
@@ -72,7 +78,7 @@ export function AllTasksPopup({
   workstream,
 }: PopupProps): JSX.Element {
   const contentWidth = contentWidthFromCols(termColsForLayout());
-  const viewport = usePopupViewport();
+  const viewport = usePopupViewport(ALL_TASKS_CHROME_ROWS);
   const [cursor, setCursor] = useState(0);
   const [sortKey, setSortKey] = useState<TaskSortKey>("roi");
   const flt = usePopupFilter({ onEditingChange: onFilterEditingChange });
@@ -192,7 +198,8 @@ export function AllTasksPopup({
     );
   }
 
-  const rows = visibleTasks.map((t) => [
+  const { start, visible: windowed } = centredVisibleSlice(visibleTasks, safeCursor, viewport);
+  const rows = windowed.map((t) => [
     t.name,
     t.status,
     t.ownerName ?? "—",
@@ -203,13 +210,13 @@ export function AllTasksPopup({
 
   return (
     <PopupShell
-      title={`All tasks · popup (${safeCursor + 1}/${visibleTasks.length})`}
+      title={allTasksListTitle(safeCursor, visibleTasks.length, viewport)}
       hint={focused ? allTasksYankCommand(focused.name, workstream) : undefined}
     >
       <Box flexDirection="column" flexGrow={1}>
         <StatusFilterStrip statuses={statusFilter.statuses} />
         <SortStrip sortKey={sortKey} visible={visibleTasks.length} total={sourceTasks.length} />
-        {visibleTasks.map((t, i) => {
+        {windowed.map((t, i) => {
           const row = rows[i];
           if (row === undefined) return null;
           const padded = renderRow(row, widths, COLUMN_SPECS);
@@ -219,7 +226,7 @@ export function AllTasksPopup({
               cells={padded}
               contentWidth={contentWidth}
               colors={ALL_TASKS_COLORS}
-              selected={i === safeCursor}
+              selected={start + i === safeCursor}
             />
           );
         })}
@@ -253,6 +260,21 @@ export function sortIndicator(sortKey: TaskSortKey): string {
   return `sort: [s]ort=${sortKey} ↓${detail}`;
 }
 
+export function allTasksScrollPercent(
+  cursor: number,
+  total: number,
+  viewport: number,
+): number | null {
+  if (total <= viewport) return null;
+  return Math.round((cursor / Math.max(1, total - 1)) * 100);
+}
+
+export function allTasksListTitle(cursor: number, total: number, viewport: number): string {
+  const percent = allTasksScrollPercent(cursor, total, viewport);
+  const indicator = percent === null ? "" : ` · ${percent}%`;
+  return `All tasks · popup (${cursor + 1}/${total})${indicator}`;
+}
+
 function SortStrip({
   sortKey,
   visible,
@@ -261,7 +283,7 @@ function SortStrip({
   return (
     <Box>
       <Text dimColor>
-        {sortIndicator(sortKey)} ({visible} visible / {total} total)
+        {sortIndicator(sortKey)} (filter: {visible} of {total})
       </Text>
     </Box>
   );

@@ -324,11 +324,13 @@ export function TracksPopup({
     );
   }
 
-  const rows = tracks.map((t, i) => {
+  const { start, visible } = centredVisibleSlice(tracks, safeCursor, viewport);
+  const rows = visible.map((t, i) => {
+    const absoluteIndex = start + i;
     const goalNames = t.roots.map((r) => r.name).join(", ");
     const diamond = t.roots.length > 1 ? "⋈" : " ";
     const counts = `(${t.taskIds.size} tasks · ${t.readyCount} ready)`;
-    return [`Track ${i + 1}`, diamond, goalNames, counts];
+    return [`Track ${absoluteIndex + 1}`, diamond, goalNames, counts];
   });
   const widths = layoutColumns(rows, COLUMN_SPECS, contentWidth);
 
@@ -338,14 +340,14 @@ export function TracksPopup({
       hint="y yanks `mu task tree <head-id>`"
     >
       <Box flexDirection="column" flexGrow={1}>
-        {tracks.map((t, i) => {
-          const sel = i === safeCursor;
+        {visible.map((t, i) => {
+          const sel = start + i === safeCursor;
           const row = rows[i];
           if (row === undefined) return null;
           const padded = renderRow(row, widths, COLUMN_SPECS);
           return (
             <ListRow
-              key={`tr-${i}-${t.roots[0]?.name ?? "?"}`}
+              key={`tr-${start + i}-${t.roots[0]?.name ?? "?"}`}
               cells={padded}
               contentWidth={contentWidth}
               colors={TRACK_COLORS}
