@@ -35,7 +35,7 @@
 //
 // Per ROADMAP pledge: ink/react import limited to src/cli/tui/*.
 
-import { Box, Text, useInput, useStdout } from "ink";
+import { Box, Text, useInput } from "ink";
 import { useCallback, useEffect, useState } from "react";
 import type { Db } from "../../../db.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
@@ -53,7 +53,7 @@ import { dispatchPopupKey } from "../keys.js";
 import { TitledBox } from "../titled-box.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
 import { CursorRow } from "./cursor-row.js";
-import { popupViewport } from "./viewport.js";
+import { usePopupViewport } from "./viewport.js";
 
 export interface PopupProps {
   yank: (command: string) => Promise<void>;
@@ -105,8 +105,7 @@ export function WorkspacesPopup({
   // view paginates by single-row cursor moves and never consults the
   // viewport size. Drill subtracts an extra row for its in-body title
   // indicator (see WORKSPACES_DRILL_CHROME above).
-  const { stdout } = useStdout();
-  const drillViewport = popupViewport(stdout?.rows ?? 24, WORKSPACES_DRILL_CHROME);
+  const drillViewport = usePopupViewport(WORKSPACES_DRILL_CHROME);
   const [cursor, setCursor] = useState(0);
   // Drill-mode state. Owned here (not in <App>) because it's
   // popup-local: <App> only tracks the list/drill mode flag for

@@ -17,7 +17,7 @@
 // feat_column_aligned_lists clipping policy: glyph, agent name,
 // status are PROTECTED; the role description is CLIPPABLE.
 
-import { Box, Text, useInput, useStdout } from "ink";
+import { Box, Text, useInput } from "ink";
 import { useCallback, useEffect, useState } from "react";
 import { STATUS_EMOJI, readAgent } from "../../../agents.js";
 import type { Db } from "../../../db.js";
@@ -34,7 +34,7 @@ import { TitledBox } from "../titled-box.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
 import { CursorRow } from "./cursor-row.js";
 import { DrillScrollView, clampScrollTop } from "./drill.js";
-import { popupViewport } from "./viewport.js";
+import { usePopupViewport } from "./viewport.js";
 
 export interface PopupProps {
   yank: (command: string) => Promise<void>;
@@ -70,8 +70,7 @@ export function AgentsPopup({
   const contentWidth = contentWidthFromCols(termColsForLayout());
   // Per-render viewport from stdout.rows minus the popup chrome budget;
   // see popups/viewport.ts. Replaces the prior hardcoded VIEWPORT = 20.
-  const { stdout } = useStdout();
-  const viewport = popupViewport(stdout?.rows ?? 24);
+  const viewport = usePopupViewport();
   const [cursor, setCursor] = useState(0);
   const [scrollTop, setScrollTop] = useState(0);
   const [scrollback, setScrollback] = useState<string>("");

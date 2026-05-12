@@ -1,7 +1,12 @@
 // Pure-function tests for popups/viewport.ts plus a static-source
-// regression assertion that no popup file still hardcodes
-// `const VIEWPORT = 20` at module scope (the bug fixed by
-// bug_tui_popup_data_doesnt_fill).
+// regression assertion that every popup uses the centralised
+// `usePopupViewport()` hook instead of a module-scope `const
+// VIEWPORT = 20` (the bug originally fixed by
+// bug_tui_popup_data_doesnt_fill, then re-asserted across all 9
+// popups by bug_tui_inprogress_recent_drill_viewport_clipped —
+// inprogress + recent had been missed in the first sweep, and the
+// hook was introduced so the next regression can't slip through
+// the same way).
 //
 // The boundary tests live alongside the regression scan because
 // both protect the same invariant: every popup must size its body
@@ -21,8 +26,11 @@ const POPUPS_DIR = join(import.meta.dirname, "..", "src", "cli", "tui", "popups"
 const POPUP_FILES = [
   "agents.tsx",
   "blocked.tsx",
+  "doctor.tsx",
+  "inprogress.tsx",
   "log.tsx",
   "ready.tsx",
+  "recent.tsx",
   "tracks.tsx",
   "workspaces.tsx",
 ] as const;
@@ -78,17 +86,23 @@ describe("no popup file still hardcodes `const VIEWPORT = 20`", () => {
   }
 });
 
-describe("each popup reads useStdout().rows for its viewport", () => {
-  // Companion check: every popup must call popupViewport with
-  // stdout.rows (or stdout?.rows) so live terminal-resize events
-  // actually re-flow the body. The bug was that flexGrow={1} grew
-  // the Shell box, but the data slice still used the stale 20.
+describe("each popup uses the centralised usePopupViewport() hook", () => {
+  // Companion check: every popup must call usePopupViewport() so
+  // live terminal-resize events actually re-flow the body. The
+  // original bug was that flexGrow={1} grew the Shell box, but the
+  // data slice still used the stale 20. The hook centralises the
+  // useStdout()+popupViewport() pair so the next popup can't be
+  // born with another hardcoded constant.
   for (const name of POPUP_FILES) {
-    it(`${name} imports popupViewport and feeds it stdout.rows`, () => {
+    it(`${name} imports and calls usePopupViewport()`, () => {
       const src = readFileSync(join(POPUPS_DIR, name), "utf8");
-      expect(src).toMatch(/popupViewport/);
-      // Accept stdout.rows or stdout?.rows for idiomatic variation.
-      expect(src).toMatch(/popupViewport\(\s*stdout\??\.rows[^)]*\)/);
+      expect(src).toMatch(
+        /import\s*\{[^}]*\busePopupViewport\b[^}]*\}\s*from\s*"\.\/viewport\.js"/,
+      );
+      expect(src).toMatch(/usePopupViewport\(/);
+      // And the raw escape hatch is gone: no popup should still
+      // wire `popupViewport(stdout?.rows ?? 24)` by hand.
+      expect(src).not.toMatch(/popupViewport\(\s*stdout\??\.rows/);
     });
   }
 });

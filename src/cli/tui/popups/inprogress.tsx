@@ -39,6 +39,7 @@ import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.j
 import { CursorRow } from "./cursor-row.js";
 import { clampScrollTop } from "./drill.js";
 import { TaskDetailDrill, renderNotes } from "./task-detail.js";
+import { usePopupViewport } from "./viewport.js";
 
 export interface PopupProps {
   yank: (command: string) => Promise<void>;
@@ -62,8 +63,6 @@ const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
   { kind: "clip", min: 1 }, // title
 ];
 
-const VIEWPORT = 20;
-
 export function InProgressPopup({
   yank,
   onClose,
@@ -75,6 +74,10 @@ export function InProgressPopup({
   workstream,
 }: PopupProps): JSX.Element {
   const contentWidth = contentWidthFromCols(termColsForLayout());
+  // Per-render viewport from stdout.rows minus the popup chrome budget;
+  // see popups/viewport.ts. Replaces the prior hardcoded VIEWPORT = 20
+  // (bug_tui_inprogress_recent_drill_viewport_clipped).
+  const viewport = usePopupViewport();
   const [cursor, setCursor] = useState(0);
   const [scrollTop, setScrollTop] = useState(0);
   const flt = usePopupFilter();
@@ -124,25 +127,25 @@ export function InProgressPopup({
           setScrollTop(0);
           return;
         case "moveDown":
-          setScrollTop((s) => clampScrollTop(s + 1, totalLines, VIEWPORT));
+          setScrollTop((s) => clampScrollTop(s + 1, totalLines, viewport));
           return;
         case "moveUp":
-          setScrollTop((s) => clampScrollTop(s - 1, totalLines, VIEWPORT));
+          setScrollTop((s) => clampScrollTop(s - 1, totalLines, viewport));
           return;
         case "jumpTop":
           setScrollTop(0);
           return;
         case "jumpBottom":
-          setScrollTop(clampScrollTop(totalLines, totalLines, VIEWPORT));
+          setScrollTop(clampScrollTop(totalLines, totalLines, viewport));
           return;
         case "pageDown":
           setScrollTop((s) =>
-            clampScrollTop(s + Math.floor(VIEWPORT / (action.half ? 2 : 1)), totalLines, VIEWPORT),
+            clampScrollTop(s + Math.floor(viewport / (action.half ? 2 : 1)), totalLines, viewport),
           );
           return;
         case "pageUp":
           setScrollTop((s) =>
-            clampScrollTop(s - Math.floor(VIEWPORT / (action.half ? 2 : 1)), totalLines, VIEWPORT),
+            clampScrollTop(s - Math.floor(viewport / (action.half ? 2 : 1)), totalLines, viewport),
           );
           return;
         case "yank": {
@@ -219,7 +222,7 @@ export function InProgressPopup({
             db={db}
             workstream={workstream}
             scrollTop={scrollTop}
-            viewport={VIEWPORT}
+            viewport={viewport}
           />
         </Box>
       </Shell>

@@ -31,7 +31,7 @@
 //
 // Per ROADMAP pledge: ink/react import limited to src/cli/tui/*.
 
-import { Box, Text, useInput, useStdout } from "ink";
+import { Box, Text, useInput } from "ink";
 import { useEffect, useState } from "react";
 import type { Db } from "../../../db.js";
 import { type DoctorCheck, loadDoctorChecks } from "../../../doctor-summary.js";
@@ -49,7 +49,7 @@ import { TitledBox } from "../titled-box.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
 import { CursorRow } from "./cursor-row.js";
 import { DrillScrollView, clampScrollTop } from "./drill.js";
-import { popupViewport } from "./viewport.js";
+import { usePopupViewport } from "./viewport.js";
 
 export interface PopupProps {
   yank: (command: string) => Promise<void>;
@@ -83,8 +83,7 @@ export function DoctorPopup({
   const contentWidth = contentWidthFromCols(termColsForLayout());
   // Per-render viewport from stdout.rows minus the popup chrome
   // budget; see popups/viewport.ts.
-  const { stdout } = useStdout();
-  const viewport = popupViewport(stdout?.rows ?? 24);
+  const viewport = usePopupViewport();
   const [cursor, setCursor] = useState(0);
   const [scrollTop, setScrollTop] = useState(0);
   const flt = usePopupFilter();

@@ -30,13 +30,23 @@
 // `chromeOverride`. The floor (`POPUP_VIEWPORT_FLOOR`) keeps very
 // small terminals usable at the cost of some hint clipping.
 //
-// Pure helper: no ink/react imports — re-exported separately so
-// unit tests can assert boundaries without booting a render tree.
+// `popupViewport(rows[, chromeOverride])` is a PURE helper (no ink,
+// no globals) so unit tests can assert the chrome math without
+// booting a render tree. The matching `usePopupViewport()` ink hook
+// (below) wraps it so every popup is one line:
+//
+//     const viewport = usePopupViewport();
+//
+// instead of the boilerplate trio of `useStdout`, `stdout?.rows ??
+// 24`, and a `popupViewport(...)` call. Both ship from the same
+// module because the hook IS the centralisation seam — splitting
+// them would just make every popup import twice.
 //
 // Per ROADMAP pledge: ink/react import limited to src/cli/tui/*.
-// This module is in src/cli/tui/popups/ but uses NO ink primitives;
-// it's the seam that lets each popup compute its viewport at render
-// time without growing a separate module per popup.
+// This module is in src/cli/tui/popups/, so the hook's `useStdout`
+// import is in-bounds.
+
+import { useStdout } from "ink";
 
 /** Default rows of chrome consumed inside a popup Shell.
  *  Subtracted from `stdout.rows` to get the body slice budget.
@@ -64,4 +74,25 @@ export const POPUP_VIEWPORT_FLOOR = 8;
 export function popupViewport(rows: number, chromeOverride?: number): number {
   const chrome = chromeOverride ?? POPUP_CHROME_ROWS;
   return Math.max(POPUP_VIEWPORT_FLOOR, rows - chrome);
+}
+
+/**
+ * Ink hook: returns the popup body viewport for the current render.
+ * Wraps `useStdout()` + the `stdout?.rows ?? 24` fallback + the
+ * `popupViewport()` chrome math so every popup is one line:
+ *
+ *     const viewport = usePopupViewport();
+ *
+ * Pass `chromeOverride` when the popup renders extra in-body chrome
+ * (e.g. Workspaces drill's title + indicator pair); otherwise the
+ * default `POPUP_CHROME_ROWS` budget applies.
+ *
+ * Replaces the prior per-popup boilerplate AND fixes the
+ * inprogress + recent drill regression where a stale module-scope
+ * `const VIEWPORT = 20` was clipping notes below the popup's full
+ * pane height (bug_tui_inprogress_recent_drill_viewport_clipped).
+ */
+export function usePopupViewport(chromeOverride?: number): number {
+  const { stdout } = useStdout();
+  return popupViewport(stdout?.rows ?? 24, chromeOverride);
 }

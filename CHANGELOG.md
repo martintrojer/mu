@@ -474,6 +474,33 @@ is opt-in via the new `--tui` flag.
   `{"  "}` (2-space) gutter. Extra unit test in
   `test/tui-columns.test.ts` asserts `renderRow(...).join("  ")` ≤
   `totalWidth` for a synthetic protect+clip mix.
+- **TUI in-progress + recent drill viewports no longer clip notes
+  to 20 rows** (bug_tui_inprogress_recent_drill_viewport_clipped).
+  When bug_tui_popup_data_doesnt_fill landed the dynamic
+  `popupViewport(rows)` seam, six of the eight then-existing popups
+  migrated; `inprogress.tsx` and `recent.tsx` were missed in the
+  copy-paste sweep and kept their module-scope `const VIEWPORT = 20`,
+  so on any pane taller than ~25 rows the drill body filled exactly
+  20 visible lines and the rest of the popup chrome (cyan border)
+  reached the pane bottom over a band of dead space — what the user
+  saw as "popup covers viewport, content clipped". Both popups now
+  use the dynamic viewport, and the centralisation work the user
+  asked for ships alongside the bug fix: new `usePopupViewport()`
+  ink hook in `src/cli/tui/popups/viewport.ts` wraps the
+  `useStdout()` + `stdout?.rows ?? 24` + `popupViewport(...)` trio
+  so every popup body is now one line (`const viewport =
+  usePopupViewport()`) instead of three. All nine popups (`agents`,
+  `blocked`, `doctor`, `inprogress`, `log`, `ready`, `recent`,
+  `tracks`, `workspaces`) migrate in this commit; Workspaces drill
+  passes its `WORKSPACES_DRILL_CHROME` override through the hook's
+  optional argument. New `test/tui-popup-viewport-no-hardcode.test.ts`
+  glob-walks `src/cli/tui/popups/*.tsx` (no curated list — that's
+  exactly how the previous regression hid) and asserts no file
+  re-introduces a `const VIEWPORT = …` literal; the existing
+  `tui-popup-viewport.test.ts` was extended to cover the two
+  previously-missed popups and to assert every popup imports the
+  hook (not the raw helper) so the next regression can't slip
+  through the same way.
 - **TUI multi-ws frame no longer eats the topmost card's top border**
   (bug_tui_tab_switch_stale_render, layer 2). When the multi-ws
   TabStrip rendered above the cards, the strip's 1-row consumption
