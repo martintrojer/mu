@@ -12,7 +12,7 @@
 // are PROTECTED (short, identity-bearing); the rest is CLIPPABLE.
 
 import { Text } from "ink";
-import { classifyEventVerb } from "../../../logs.js";
+import { classifyEventVerb, displayEventPayload } from "../../../logs.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
 import {
   type ColumnSpec,
@@ -63,10 +63,11 @@ export function LogCard({ snapshot }: LogCardProps): JSX.Element {
   const tail = recent.slice(0, ROW_LIMIT).reverse();
 
   const cellRows = tail.map((row) => {
-    const cls = classifyEventVerb(row.payload);
+    const payload = displayEventPayload(row.payload);
+    const cls = classifyEventVerb(payload);
     const ts = row.createdAt.slice(11, 19);
     const verb = cls?.verb ?? "·";
-    const rest = cls?.rest ?? row.payload;
+    const rest = cls?.rest ?? payload;
     return [ts, row.source, verb, rest];
   });
   const widths = layoutColumns(cellRows, COLUMN_SPECS, contentWidth);
@@ -80,7 +81,7 @@ export function LogCard({ snapshot }: LogCardProps): JSX.Element {
       {tail.map((row, i) => {
         const cells = cellRows[i];
         if (cells === undefined) return null;
-        const cls = classifyEventVerb(row.payload);
+        const cls = classifyEventVerb(displayEventPayload(row.payload));
         const padded = renderRow(cells, widths, COLUMN_SPECS);
         const colors = [
           { dimColor: true }, // ts

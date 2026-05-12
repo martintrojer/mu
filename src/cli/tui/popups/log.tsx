@@ -22,7 +22,7 @@
 import { Box, Text, useInput } from "ink";
 import { useState } from "react";
 import type { Db } from "../../../db.js";
-import { classifyEventVerb } from "../../../logs.js";
+import { classifyEventVerb, displayEventPayload } from "../../../logs.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
 import {
   type ColumnSpec,
@@ -79,15 +79,16 @@ export function LogPopup({
   // event payload to extract the same verb/rest the row renders, so
   // searching for e.g. "task close" matches what the user sees.
   const events = applyFilter(sourceEvents, flt.query, (e) => {
-    const cls = classifyEventVerb(e.payload);
+    const payload = displayEventPayload(e.payload);
+    const cls = classifyEventVerb(payload);
     const verb = cls?.verb ?? "";
-    const rest = cls?.rest ?? e.payload;
+    const rest = cls?.rest ?? payload;
     return `${verb} ${rest} ${e.source}`;
   });
   const safeCursor = events.length === 0 ? 0 : Math.min(cursor, events.length - 1);
   const focused = events[safeCursor];
 
-  const drillBody = focused?.payload ?? "";
+  const drillBody = focused ? displayEventPayload(focused.payload) : "";
   const drill = useDrillKeymap({
     body: drillBody,
     viewport,
@@ -128,9 +129,10 @@ export function LogPopup({
         // Yank the show-related-task / show-related-agent if we
         // can classify; else just yank the raw payload as a
         // reference.
-        const cls = classifyEventVerb(e.payload);
+        const payload = displayEventPayload(e.payload);
+        const cls = classifyEventVerb(payload);
         if (cls === null) {
-          void yank(`# event: ${e.payload}`);
+          void yank(`# event: ${payload}`);
           return;
         }
         // Pull the first whitespace-separated token from `rest` —
@@ -142,7 +144,7 @@ export function LogPopup({
         } else if (cls.verb.startsWith("agent ")) {
           void yank(`mu agent show ${id} -w ${snapshot.workstreamName}`);
         } else {
-          void yank(`# event: ${e.payload}`);
+          void yank(`# event: ${payload}`);
         }
         return;
       }
@@ -192,10 +194,11 @@ export function LogPopup({
   const { visible } = centredVisibleSlice(events, safeCursor, viewport);
 
   const rows = visible.map((e) => {
-    const cls = classifyEventVerb(e.payload);
+    const payload = displayEventPayload(e.payload);
+    const cls = classifyEventVerb(payload);
     const ts = e.createdAt.slice(11, 19);
     const verb = cls?.verb ?? "·";
-    const rest = cls?.rest ?? e.payload;
+    const rest = cls?.rest ?? payload;
     return [`#${e.seq}`, ts, e.source, verb, rest];
   });
   const widths = layoutColumns(rows, COLUMN_SPECS, contentWidth);
@@ -208,7 +211,7 @@ export function LogPopup({
       <Box flexDirection="column" flexGrow={1}>
         {visible.map((e, i) => {
           const sel = events.indexOf(e) === safeCursor;
-          const cls = classifyEventVerb(e.payload);
+          const cls = classifyEventVerb(displayEventPayload(e.payload));
           const row = rows[i];
           if (row === undefined) return null;
           const padded = renderRow(row, widths, COLUMN_SPECS);

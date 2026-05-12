@@ -23,10 +23,12 @@ describe("LogPopup", () => {
     expect(src).toContain('case "drill":');
     expect(src).toContain('onModeChange("drill")');
     // Drill-mode body is rendered via the shared primitive with
-    // the focused event's full untruncated payload.
+    // the focused event's full untruncated human-display payload
+    // (structured task.claim payloads strip their tab-delimited
+    // sentinel before display).
     expect(src).toContain("<DrillScrollView");
     expect(src).toContain("body={drillBody}");
-    expect(src).toContain("focused?.payload");
+    expect(src).toContain("focused ? displayEventPayload(focused.payload) :");
     // Drill-mode keymap: scroll, jump, yank-by-seq, esc/q back.
     // Per review_dedup_drill_keymap the per-popup applyScroll /
     // setDetailScrollTop skeleton now lives in useDrillKeymap.

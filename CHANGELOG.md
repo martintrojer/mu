@@ -635,6 +635,23 @@ is opt-in via the new `--tui` flag.
 
 ### Fixed
 
+- **TUI DrillScrollView body lines now clip at the drill content
+  width instead of wrapping** (bug_tui_drill_text_no_width_pin).
+  Follow-up to bug_tui_drill_scrollview_wraps_long_lines: the body
+  `<Text wrap="truncate">` was necessary but not sufficient because
+  ink only truncates against a definite parent width. DrillScrollView
+  now derives `contentWidth` from the same `termColsForLayout()` /
+  `contentWidthFromCols()` helpers as cards and popups, and wraps the
+  fallback plus `visible.map(...)` body lines in a single
+  `<Box flexDirection="column" width={contentWidth}>`. That completes
+  the width-pin trio with bug_tui_log_card_columns_misaligned and
+  bug_tui_log_popup_columns_misaligned, covering every long-text drill
+  (task notes, Workspaces git-show, Activity-log payload, agent
+  scrollback, and Doctor remediation). While diagnosing the sibling
+  Activity-log card report, the TUI log card/popup now run structured
+  `task.claim\t...` events through `displayEventPayload()` before
+  classification so the visible verb column is `task claim` instead
+  of the raw `task.claim` sentinel.
 - **TUI drill-mode bottom labels are yank-only again**
   (bug_tui_drill_double_hints). The Layer-2 contract from
   nit_tui_drill_inset_title_and_hints said `DrillScrollView`'s

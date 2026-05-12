@@ -12,7 +12,8 @@
 //
 // Static-source assertion: the body-line <Text> in
 // src/cli/tui/popups/drill.tsx must carry wrap="truncate" (or
-// wrap="truncate-end" — both clip at parent width).
+// wrap="truncate-end" — both clip at parent width). A sibling guard
+// in tui-drill-no-wrap.test.ts pins the required parent-width Box.
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";

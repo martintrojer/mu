@@ -30,8 +30,9 @@
 //
 // Per ROADMAP pledge: ink/react import limited to src/cli/tui/*.
 
-import { Text } from "ink";
+import { Box, Text } from "ink";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { contentWidthFromCols, termColsForLayout } from "../columns.js";
 import type { PopupAction } from "../keys.js";
 import { TitledBox } from "../titled-box.js";
 import { applyScroll, isNavAction } from "./scroll.js";
@@ -140,6 +141,7 @@ export function DrillScrollView({
     ? "0/0"
     : `${start + 1}-${Math.min(totalLines, start + viewport)}/${totalLines}`;
   const bottomLabel = hint !== undefined && hint !== "" ? hint : undefined;
+  const contentWidth = contentWidthFromCols(termColsForLayout());
 
   return (
     <TitledBox
@@ -150,16 +152,18 @@ export function DrillScrollView({
       bottomLabel={bottomLabel}
       flexGrow={1}
     >
-      {showFallback ? (
-        <Text dimColor>{emptyText ?? "(empty)"}</Text>
-      ) : (
-        visible.map((ln, i) => (
-          // eslint-disable-next-line react/no-array-index-key
-          <Text key={`${start + i}`} wrap="truncate">
-            {ln === "" ? " " : ln}
-          </Text>
-        ))
-      )}
+      <Box flexDirection="column" width={contentWidth}>
+        {showFallback ? (
+          <Text dimColor>{emptyText ?? "(empty)"}</Text>
+        ) : (
+          visible.map((ln, i) => (
+            // eslint-disable-next-line react/no-array-index-key
+            <Text key={`${start + i}`} wrap="truncate">
+              {ln === "" ? " " : ln}
+            </Text>
+          ))
+        )}
+      </Box>
     </TitledBox>
   );
 }

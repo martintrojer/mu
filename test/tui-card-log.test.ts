@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { LogCard } from "../src/cli/tui/cards/log.js";
-import type { LogRow } from "../src/logs.js";
+import { type LogRow, formatClaimEvent } from "../src/logs.js";
 import type { WorkstreamSnapshot } from "../src/state.js";
 import { expectTextAbsent, expectTextOnce, renderCardToText } from "./_card-render.js";
 
@@ -83,5 +83,25 @@ describe("LogCard", () => {
     }
     expectTextAbsent(text, "task_9");
     expectTextAbsent(text, "task_10");
+  });
+
+  it("renders structured task.claim events through the human-display payload", () => {
+    const recent = [
+      logRow(
+        1,
+        formatClaimEvent({
+          localId: "build_x",
+          actor: "worker-1",
+          anonymous: false,
+          prose: "task claim build_x by worker-1 (was owner=none)",
+        }),
+      ),
+    ];
+    const text = renderCardToText(LogCard({ snapshot: { ...EMPTY_SNAPSHOT, recent } }));
+
+    expectTextOnce(text, "task claim");
+    expect(text).toContain("build_x by worker-1");
+    expectTextAbsent(text, "task.claim");
+    expectTextAbsent(text, "actor=worker-1");
   });
 });
