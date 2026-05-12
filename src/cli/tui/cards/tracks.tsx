@@ -20,14 +20,18 @@ import {
   renderRow,
   termColsForLayout,
 } from "../columns.js";
+import { CARD_CONFIGS } from "../layout.js";
 import { ListRow } from "../list-row.js";
+import { PaddedRows } from "../padded-rows.js";
 import { TitledBox } from "../titled-box.js";
 
 export interface TracksCardProps {
   snapshot: WorkstreamSnapshot | null;
+  rowBudget?: number;
+  cols?: number;
 }
 
-const ROW_LIMIT = 8;
+export const cardConfig = CARD_CONFIGS[2];
 
 const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
   { kind: "protect" }, // "Track N"
@@ -36,12 +40,14 @@ const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
   { kind: "protect" }, // counts "(N tasks · M ready)"
 ];
 
-export function TracksCard({ snapshot }: TracksCardProps): JSX.Element {
-  const contentWidth = contentWidthFromCols(termColsForLayout());
+export function TracksCard({ snapshot, rowBudget, cols }: TracksCardProps): JSX.Element {
+  const contentWidth = contentWidthFromCols(cols ?? termColsForLayout());
   if (snapshot === null) {
     return (
-      <TitledBox title="Tracks" cardId={2}>
-        <Text dimColor>loading…</Text>
+      <TitledBox width={cols} title="Tracks" cardId={2}>
+        <PaddedRows minRows={rowBudget ?? cardConfig.minRows}>
+          <Text dimColor>loading…</Text>
+        </PaddedRows>
       </TitledBox>
     );
   }
@@ -51,16 +57,18 @@ export function TracksCard({ snapshot }: TracksCardProps): JSX.Element {
 
   if (tracks.length === 0) {
     return (
-      <TitledBox title="Tracks" cardId={2}>
-        <Text dimColor>
-          (no goals) try `mu task add -w {snapshot.workstreamName} --title "..."`
-        </Text>
+      <TitledBox width={cols} title="Tracks" cardId={2}>
+        <PaddedRows minRows={rowBudget ?? cardConfig.minRows}>
+          <Text dimColor>
+            (no goals) try `mu task add -w {snapshot.workstreamName} --title "..."`
+          </Text>
+        </PaddedRows>
       </TitledBox>
     );
   }
 
-  const shown = tracks.slice(0, ROW_LIMIT);
-  const more = tracks.length - ROW_LIMIT;
+  const shown = tracks.slice(0, rowBudget ?? cardConfig.maxRows);
+  const more = tracks.length - shown.length;
   const bottomLabel = more > 0 ? `+${more} more · Shift+2` : undefined;
   const rows = shown.map((t, i) => {
     const goalNames = t.roots
@@ -76,6 +84,7 @@ export function TracksCard({ snapshot }: TracksCardProps): JSX.Element {
 
   return (
     <TitledBox
+      width={cols}
       title="Tracks"
       subtitle={`${tracks.length} · ${totalReady} ready`}
       cardId={2}

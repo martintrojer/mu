@@ -22,6 +22,7 @@ export function renderCardToText(node: unknown): string {
         walk(props.subtitle),
         walk(props.bottomLabel),
         walk(props.cells),
+        walk(props.minRows),
         walk(props.children),
       ].join("");
     }
@@ -35,6 +36,7 @@ interface RenderableProps {
   subtitle?: unknown;
   bottomLabel?: unknown;
   cells?: unknown;
+  minRows?: unknown;
   children?: unknown;
 }
 

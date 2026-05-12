@@ -72,7 +72,9 @@ describe("TracksCard", () => {
         readyCount: 0,
       }),
     ];
-    const text = renderCardToText(TracksCard({ snapshot: { ...EMPTY_SNAPSHOT, tracks } }));
+    const text = renderCardToText(
+      TracksCard({ snapshot: { ...EMPTY_SNAPSHOT, tracks }, rowBudget: 8 }),
+    );
 
     expect(text).toContain("Tracks");
     expect(text).toContain("2 · 1 ready");
@@ -86,9 +88,11 @@ describe("TracksCard", () => {
     expectTextOnce(text, "⋈");
   });
 
-  it("truncates at ROW_LIMIT with the bottomLabel '+N more · Shift+2'", () => {
+  it("truncates at the default row budget with the bottomLabel '+N more · Shift+2'", () => {
     const tracks = Array.from({ length: 10 }, (_, i) => track([`goal_${i + 1}`]));
-    const text = renderCardToText(TracksCard({ snapshot: { ...EMPTY_SNAPSHOT, tracks } }));
+    const text = renderCardToText(
+      TracksCard({ snapshot: { ...EMPTY_SNAPSHOT, tracks }, rowBudget: 8 }),
+    );
 
     expect(text).toContain("+2 more · Shift+2");
     for (let i = 1; i <= 8; i++) {

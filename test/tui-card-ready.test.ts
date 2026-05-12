@@ -81,12 +81,14 @@ describe("ReadyCard", () => {
     }
   });
 
-  it("truncates at ROW_LIMIT with the bottomLabel '+N more · Shift+3'", () => {
+  it("truncates at the default row budget with the bottomLabel '+N more · Shift+3'", () => {
     const ready = Array.from({ length: 12 }, (_, i) => {
       const n = String(i + 1).padStart(2, "0");
       return task({ name: `ready_${n}`, title: `Ready ${n}`, impact: 80 + i, effortDays: 1 });
     });
-    const text = renderCardToText(ReadyCard({ snapshot: { ...EMPTY_SNAPSHOT, ready } }));
+    const text = renderCardToText(
+      ReadyCard({ snapshot: { ...EMPTY_SNAPSHOT, ready }, rowBudget: 10 }),
+    );
 
     expect(text).toContain("+2 more · Shift+3");
     for (let i = 1; i <= 10; i++) {

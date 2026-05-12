@@ -54,14 +54,18 @@ import {
   renderRow,
   termColsForLayout,
 } from "../columns.js";
+import { CARD_CONFIGS } from "../layout.js";
 import { ListRow } from "../list-row.js";
+import { PaddedRows } from "../padded-rows.js";
 import { TitledBox } from "../titled-box.js";
 
 export interface DoctorCardProps {
   snapshot: WorkstreamSnapshot | null;
+  rowBudget?: number;
+  cols?: number;
 }
 
-const ROW_LIMIT = 8;
+export const cardConfig = CARD_CONFIGS[9];
 
 const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
   { kind: "protect" }, // glyph
@@ -70,12 +74,14 @@ const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
   { kind: "clip", min: 1 }, // detail (free-form)
 ];
 
-export function DoctorCard({ snapshot }: DoctorCardProps): JSX.Element {
-  const contentWidth = contentWidthFromCols(termColsForLayout());
+export function DoctorCard({ snapshot, rowBudget, cols }: DoctorCardProps): JSX.Element {
+  const contentWidth = contentWidthFromCols(cols ?? termColsForLayout());
   if (snapshot === null || snapshot.doctor === null) {
     return (
-      <TitledBox title="Doctor" cardId={9}>
-        <Text dimColor>loading…</Text>
+      <TitledBox width={cols} title="Doctor" cardId={9}>
+        <PaddedRows minRows={rowBudget ?? cardConfig.minRows}>
+          <Text dimColor>loading…</Text>
+        </PaddedRows>
       </TitledBox>
     );
   }
@@ -87,24 +93,26 @@ export function DoctorCard({ snapshot }: DoctorCardProps): JSX.Element {
   // operator can confirm the card ran (vs. simply being empty).
   if (problemCount === 0) {
     return (
-      <TitledBox title="Doctor" subtitle={subtitle} cardId={9}>
-        <Text dimColor>
-          <Text color="green">✓</Text> {checks.length} check
-          {checks.length === 1 ? "" : "s"}
-        </Text>
+      <TitledBox width={cols} title="Doctor" subtitle={subtitle} cardId={9}>
+        <PaddedRows minRows={rowBudget ?? cardConfig.minRows}>
+          <Text dimColor>
+            <Text color="green">✓</Text> {checks.length} check
+            {checks.length === 1 ? "" : "s"}
+          </Text>
+        </PaddedRows>
       </TitledBox>
     );
   }
 
   const problems = checks.filter((c) => c.status !== "ok");
-  const shown = problems.slice(0, ROW_LIMIT);
-  const more = problems.length - ROW_LIMIT;
+  const shown = problems.slice(0, rowBudget ?? cardConfig.maxRows);
+  const more = problems.length - shown.length;
   const bottomLabel = more > 0 ? `+${more} more · Shift+9` : undefined;
   const rows = shown.map((c) => [glyphFor(c), c.name, c.status, c.detail]);
   const widths = layoutColumns(rows, COLUMN_SPECS, contentWidth);
 
   return (
-    <TitledBox title="Doctor" subtitle={subtitle} cardId={9} bottomLabel={bottomLabel}>
+    <TitledBox width={cols} title="Doctor" subtitle={subtitle} cardId={9} bottomLabel={bottomLabel}>
       {shown.map((c, i) => {
         const row = rows[i];
         if (row === undefined) return null;

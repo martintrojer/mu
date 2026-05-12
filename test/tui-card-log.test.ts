@@ -73,9 +73,11 @@ describe("LogCard", () => {
     expect(text).toContain("build_x (IN_PROGRESS → CLOSED)");
   });
 
-  it("truncates at ROW_LIMIT by rendering only the 8 newest visible events", () => {
+  it("truncates at the default row budget by rendering only the visible events", () => {
     const recent = Array.from({ length: 10 }, (_, i) => logRow(i + 1, `task claim task_${i + 1}`));
-    const text = renderCardToText(LogCard({ snapshot: { ...EMPTY_SNAPSHOT, recent } }));
+    const text = renderCardToText(
+      LogCard({ snapshot: { ...EMPTY_SNAPSHOT, recent }, rowBudget: 8 }),
+    );
 
     expect(text).toContain("Activity log");
     expect(text).toContain("last ↑8");

@@ -45,14 +45,18 @@ import {
   renderRow,
   termColsForLayout,
 } from "../columns.js";
+import { CARD_CONFIGS } from "../layout.js";
 import { ListRow } from "../list-row.js";
+import { PaddedRows } from "../padded-rows.js";
 import { TitledBox } from "../titled-box.js";
 
 export interface WorkspacesCardProps {
   snapshot: WorkstreamSnapshot | null;
+  rowBudget?: number;
+  cols?: number;
 }
 
-const ROW_LIMIT = 8;
+export const cardConfig = CARD_CONFIGS[5];
 
 const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
   { kind: "protect" }, // status glyph
@@ -62,12 +66,14 @@ const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
   { kind: "protect" }, // parent_ref short
 ];
 
-export function WorkspacesCard({ snapshot }: WorkspacesCardProps): JSX.Element {
-  const contentWidth = contentWidthFromCols(termColsForLayout());
+export function WorkspacesCard({ snapshot, rowBudget, cols }: WorkspacesCardProps): JSX.Element {
+  const contentWidth = contentWidthFromCols(cols ?? termColsForLayout());
   if (snapshot === null) {
     return (
-      <TitledBox title="Workspaces" cardId={5}>
-        <Text dimColor>loading…</Text>
+      <TitledBox width={cols} title="Workspaces" cardId={5}>
+        <PaddedRows minRows={rowBudget ?? cardConfig.minRows}>
+          <Text dimColor>loading…</Text>
+        </PaddedRows>
       </TitledBox>
     );
   }
@@ -79,16 +85,18 @@ export function WorkspacesCard({ snapshot }: WorkspacesCardProps): JSX.Element {
 
   if (workspaces.length === 0) {
     return (
-      <TitledBox title="Workspaces" cardId={5}>
-        <Text dimColor>
-          (no workspaces) try `mu agent spawn worker-1 -w {workstreamName} --workspace`
-        </Text>
+      <TitledBox width={cols} title="Workspaces" cardId={5}>
+        <PaddedRows minRows={rowBudget ?? cardConfig.minRows}>
+          <Text dimColor>
+            (no workspaces) try `mu agent spawn worker-1 -w {workstreamName} --workspace`
+          </Text>
+        </PaddedRows>
       </TitledBox>
     );
   }
 
-  const shown = workspaces.slice(0, ROW_LIMIT);
-  const more = workspaces.length - ROW_LIMIT;
+  const shown = workspaces.slice(0, rowBudget ?? cardConfig.maxRows);
+  const more = workspaces.length - shown.length;
   const bottomLabel = more > 0 ? `+${more} more · Shift+5` : undefined;
   const rows = shown.map((w) => [
     glyphFor(w),
@@ -100,7 +108,13 @@ export function WorkspacesCard({ snapshot }: WorkspacesCardProps): JSX.Element {
   const widths = layoutColumns(rows, COLUMN_SPECS, contentWidth);
 
   return (
-    <TitledBox title="Workspaces" subtitle={subtitle} cardId={5} bottomLabel={bottomLabel}>
+    <TitledBox
+      width={cols}
+      title="Workspaces"
+      subtitle={subtitle}
+      cardId={5}
+      bottomLabel={bottomLabel}
+    >
       {shown.map((w, i) => {
         const row = rows[i];
         if (row === undefined) return null;

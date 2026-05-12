@@ -58,7 +58,9 @@ import {
   termColsForLayout,
 } from "../columns.js";
 import { ageMs, formatSinceClaim } from "../format-helpers.js";
+import { CARD_CONFIGS } from "../layout.js";
 import { ListRow } from "../list-row.js";
+import { PaddedRows } from "../padded-rows.js";
 import { TitledBox } from "../titled-box.js";
 
 // Re-exported for back-compat with consumers that previously imported
@@ -68,9 +70,11 @@ export { ageMs, formatSinceClaim };
 
 export interface InProgressCardProps {
   snapshot: WorkstreamSnapshot | null;
+  rowBudget?: number;
+  cols?: number;
 }
 
-const ROW_LIMIT = 8;
+export const cardConfig = CARD_CONFIGS[6];
 
 /** ≥5min since the last lifecycle flip → "stale claim". Matches the
  *  default value of MU_IDLE_THRESHOLD_MS (300_000ms / 5min) used by
@@ -86,12 +90,14 @@ const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
   { kind: "clip", min: 1 }, // title
 ];
 
-export function InProgressCard({ snapshot }: InProgressCardProps): JSX.Element {
-  const contentWidth = contentWidthFromCols(termColsForLayout());
+export function InProgressCard({ snapshot, rowBudget, cols }: InProgressCardProps): JSX.Element {
+  const contentWidth = contentWidthFromCols(cols ?? termColsForLayout());
   if (snapshot === null) {
     return (
-      <TitledBox title="In-progress" cardId={6}>
-        <Text dimColor>loading…</Text>
+      <TitledBox width={cols} title="In-progress" cardId={6}>
+        <PaddedRows minRows={rowBudget ?? cardConfig.minRows}>
+          <Text dimColor>loading…</Text>
+        </PaddedRows>
       </TitledBox>
     );
   }
@@ -100,8 +106,10 @@ export function InProgressCard({ snapshot }: InProgressCardProps): JSX.Element {
 
   if (inProgress.length === 0) {
     return (
-      <TitledBox title="In-progress" cardId={6}>
-        <Text dimColor>(none in progress)</Text>
+      <TitledBox width={cols} title="In-progress" cardId={6}>
+        <PaddedRows minRows={rowBudget ?? cardConfig.minRows}>
+          <Text dimColor>(none in progress)</Text>
+        </PaddedRows>
       </TitledBox>
     );
   }
@@ -111,8 +119,8 @@ export function InProgressCard({ snapshot }: InProgressCardProps): JSX.Element {
   const stale = ages.filter((ms) => isStale(ms)).length;
   const subtitle = formatSubtitle(inProgress.length, stale);
 
-  const shown = inProgress.slice(0, ROW_LIMIT);
-  const more = inProgress.length - ROW_LIMIT;
+  const shown = inProgress.slice(0, rowBudget ?? cardConfig.maxRows);
+  const more = inProgress.length - shown.length;
   const bottomLabel = more > 0 ? `+${more} more · Shift+6` : undefined;
   const rows = shown.map((t, i) => [
     glyphFor(),
@@ -124,7 +132,13 @@ export function InProgressCard({ snapshot }: InProgressCardProps): JSX.Element {
   const widths = layoutColumns(rows, COLUMN_SPECS, contentWidth);
 
   return (
-    <TitledBox title="In-progress" subtitle={subtitle} cardId={6} bottomLabel={bottomLabel}>
+    <TitledBox
+      width={cols}
+      title="In-progress"
+      subtitle={subtitle}
+      cardId={6}
+      bottomLabel={bottomLabel}
+    >
       {shown.map((t, i) => {
         const row = rows[i];
         if (row === undefined) return null;

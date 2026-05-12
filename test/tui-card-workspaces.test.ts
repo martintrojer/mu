@@ -70,7 +70,9 @@ describe("WorkspacesCard", () => {
       row({ agentName: "worker-3", commitsBehindMain: 0, dirty: true, parentRef: null }),
     ];
 
-    const text = renderCardToText(WorkspacesCard({ snapshot: { ...EMPTY_SNAPSHOT, workspaces } }));
+    const text = renderCardToText(
+      WorkspacesCard({ snapshot: { ...EMPTY_SNAPSHOT, workspaces }, rowBudget: 8 }),
+    );
     expect(text).toContain("Workspaces");
     expect(text).toContain("3 · 1 stale · 1 dirty");
     for (const agent of ["worker-1", "worker-2", "worker-3"] as const) {
@@ -82,11 +84,13 @@ describe("WorkspacesCard", () => {
     expectTextOnce(text, "✓");
   });
 
-  it("truncates at ROW_LIMIT with the bottomLabel '+N more · Shift+5'", () => {
+  it("truncates at the default row budget with the bottomLabel '+N more · Shift+5'", () => {
     const workspaces = Array.from({ length: 10 }, (_, i) =>
       row({ agentName: `worker-${i + 1}`, commitsBehindMain: i }),
     );
-    const text = renderCardToText(WorkspacesCard({ snapshot: { ...EMPTY_SNAPSHOT, workspaces } }));
+    const text = renderCardToText(
+      WorkspacesCard({ snapshot: { ...EMPTY_SNAPSHOT, workspaces }, rowBudget: 8 }),
+    );
 
     expect(text).toContain("+2 more · Shift+5");
     for (let i = 1; i <= 8; i++) expectTextOnce(text, `worker-${i}`);

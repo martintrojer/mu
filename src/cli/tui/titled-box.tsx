@@ -90,6 +90,9 @@ export interface TitledBoxProps {
    *  collapsing to content size. Cards omit it (default behaviour
    *  unchanged: outer Box sizes to content). */
   flexGrow?: number;
+  /** Outer width in terminal columns. Defaults to the full stdout
+   *  width; responsive dashboard columns pass their per-column width. */
+  width?: number;
   children?: ReactNode;
 }
 
@@ -166,10 +169,11 @@ export function TitledBox({
   titleColor = "cyan",
   bottomLabel,
   flexGrow,
+  width,
   children,
 }: TitledBoxProps): JSX.Element {
   const { stdout } = useStdout();
-  const cols = stdout?.columns ?? 80;
+  const cols = width ?? stdout?.columns ?? 80;
   const dashes = computeTopRowDashes(cols, title, subtitle, cardId);
   const fill = ROUND.horizontal.repeat(dashes);
   const hasSubtitle = subtitle !== undefined && subtitle.length > 0;

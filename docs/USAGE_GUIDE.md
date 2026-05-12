@@ -398,7 +398,11 @@ It loads every workstream as tabs; use `Tab` / `Shift-Tab` to switch,
 `?` for the keymap, and `q` / `Ctrl-C` to quit. The dashboard is the
 answer to **"what should I look at next?"** without asking an LLM:
 Agents, Tracks, Ready, Activity log, Workspaces, In-progress,
-Blocked, Commits, and Doctor cards all update live.
+Blocked, Commits, and Doctor cards all update live. The dashboard
+reflows at wide terminal widths: stacked below 120 cols, then 2 / 3 /
+4 pair-aware columns at 120 / 180 / 240 cols, with each visible card
+getting a dynamic row budget so a noisy list cannot crowd out its
+siblings.
 
 For an agent/script or a static capture, use explicit state verbs:
 
@@ -438,7 +442,11 @@ mu                          # TTY: TUI across all workstreams; non-TTY: help
   popups (Shift+1..Shift+9), plus `g` for the current workstream's
   full task DAG popup and `l` for the project commits popup,
   live-updating every 1s (adjustable with
-  `+/-/=/0`). **Read-only**: act-intents `y`-yank
+  `+/-/=/0`). The dashboard is responsive: cards stack below 120
+  columns, then reflow into pair-aware 2 / 3 / 4-column layouts at
+  120 / 180 / 240 columns, and each card gets a dynamic body-row
+  budget before showing its `+N more · Shift+N` footer. **Read-only**:
+  act-intents `y`-yank
   the canonical `mu` command to the clipboard — the TUI never
   executes a mutation; the user runs the yanked command in their
   shell. Dashboard keymap: `g` DAG popup; `l` commits popup;

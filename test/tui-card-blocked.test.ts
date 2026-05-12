@@ -140,7 +140,7 @@ describe("BlockedCard", () => {
     expect(text.split("⛓").length - 1).toBe(3);
   });
 
-  it("truncates at ROW_LIMIT with the bottomLabel '+N more · Shift+7'", () => {
+  it("truncates at the default row budget with the bottomLabel '+N more · Shift+7'", () => {
     const db = fixtureDb();
     addTask(db, {
       workstream: "demo",
@@ -156,7 +156,12 @@ describe("BlockedCard", () => {
       return task({ name, title: `Blocked ${i + 1}` });
     });
     const text = renderCardToText(
-      BlockedCard({ snapshot: { ...EMPTY_SNAPSHOT, blocked }, db, workstream: "demo" }),
+      BlockedCard({
+        snapshot: { ...EMPTY_SNAPSHOT, blocked },
+        db,
+        workstream: "demo",
+        rowBudget: 8,
+      }),
     );
 
     expect(text).toContain("+2 more · Shift+7");

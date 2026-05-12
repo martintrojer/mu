@@ -27,12 +27,18 @@ import {
   renderRow,
   termColsForLayout,
 } from "../columns.js";
+import { CARD_CONFIGS } from "../layout.js";
 import { ListRow } from "../list-row.js";
+import { PaddedRows } from "../padded-rows.js";
 import { TitledBox } from "../titled-box.js";
 
 export interface AgentsCardProps {
   snapshot: WorkstreamSnapshot | null;
+  rowBudget?: number;
+  cols?: number;
 }
+
+export const cardConfig = CARD_CONFIGS[1];
 
 const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
   { kind: "protect" }, // status glyph
@@ -41,12 +47,14 @@ const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
   { kind: "protect" }, // idle marker
 ];
 
-export function AgentsCard({ snapshot }: AgentsCardProps): JSX.Element {
-  const contentWidth = contentWidthFromCols(termColsForLayout());
+export function AgentsCard({ snapshot, rowBudget, cols }: AgentsCardProps): JSX.Element {
+  const contentWidth = contentWidthFromCols(cols ?? termColsForLayout());
   if (snapshot === null) {
     return (
-      <TitledBox title="Agents" cardId={1}>
-        <Text dimColor>loading…</Text>
+      <TitledBox width={cols} title="Agents" cardId={1}>
+        <PaddedRows minRows={rowBudget ?? cardConfig.minRows}>
+          <Text dimColor>loading…</Text>
+        </PaddedRows>
       </TitledBox>
     );
   }
@@ -57,14 +65,22 @@ export function AgentsCard({ snapshot }: AgentsCardProps): JSX.Element {
 
   if (agents.length === 0) {
     return (
-      <TitledBox title="Agents" cardId={1}>
-        <Text dimColor>(no agents) try `mu agent spawn worker-1 -w {snapshot.workstreamName}`</Text>
+      <TitledBox width={cols} title="Agents" cardId={1}>
+        <PaddedRows minRows={rowBudget ?? cardConfig.minRows}>
+          <Text dimColor>
+            (no agents) try `mu agent spawn worker-1 -w {snapshot.workstreamName}`
+          </Text>
+        </PaddedRows>
       </TitledBox>
     );
   }
 
-  // Build the cell matrix once so column widths consider every row.
-  const rows = agents.map((a) => {
+  const shown = agents.slice(0, rowBudget ?? cardConfig.maxRows);
+  const more = agents.length - shown.length;
+  const bottomLabel = more > 0 ? `+${more} more · Shift+1` : undefined;
+
+  // Build the cell matrix once so column widths consider every visible row.
+  const rows = shown.map((a) => {
     const owned = snapshot.inProgress.filter((t) => t.ownerName === a.name);
     const taskBit = summarizeOwnedTasks(owned).bit;
     const idle = a.idle ? "⚠ idle" : "";
@@ -73,8 +89,14 @@ export function AgentsCard({ snapshot }: AgentsCardProps): JSX.Element {
   const widths = layoutColumns(rows, COLUMN_SPECS, contentWidth);
 
   return (
-    <TitledBox title="Agents" subtitle={histLabel} cardId={1}>
-      {agents.map((a, i) => {
+    <TitledBox
+      width={cols}
+      title="Agents"
+      subtitle={histLabel}
+      cardId={1}
+      bottomLabel={bottomLabel}
+    >
+      {shown.map((a, i) => {
         const row = rows[i];
         if (row === undefined) return null;
         const padded = renderRow(row, widths, COLUMN_SPECS);

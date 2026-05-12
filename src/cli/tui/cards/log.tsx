@@ -21,14 +21,18 @@ import {
   renderRow,
   termColsForLayout,
 } from "../columns.js";
+import { CARD_CONFIGS } from "../layout.js";
 import { ListRow } from "../list-row.js";
+import { PaddedRows } from "../padded-rows.js";
 import { TitledBox } from "../titled-box.js";
 
 export interface LogCardProps {
   snapshot: WorkstreamSnapshot | null;
+  rowBudget?: number;
+  cols?: number;
 }
 
-const ROW_LIMIT = 8;
+export const cardConfig = CARD_CONFIGS[4];
 
 const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
   { kind: "protect" }, // ts (HH:MM:SS)
@@ -37,12 +41,14 @@ const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
   { kind: "clip", min: 1 }, // rest / payload
 ];
 
-export function LogCard({ snapshot }: LogCardProps): JSX.Element {
-  const contentWidth = contentWidthFromCols(termColsForLayout());
+export function LogCard({ snapshot, rowBudget, cols }: LogCardProps): JSX.Element {
+  const contentWidth = contentWidthFromCols(cols ?? termColsForLayout());
   if (snapshot === null) {
     return (
-      <TitledBox title="Activity log" cardId={4}>
-        <Text dimColor>loading…</Text>
+      <TitledBox width={cols} title="Activity log" cardId={4}>
+        <PaddedRows minRows={rowBudget ?? cardConfig.minRows}>
+          <Text dimColor>loading…</Text>
+        </PaddedRows>
       </TitledBox>
     );
   }
@@ -51,8 +57,10 @@ export function LogCard({ snapshot }: LogCardProps): JSX.Element {
 
   if (recent.length === 0) {
     return (
-      <TitledBox title="Activity log" cardId={4}>
-        <Text dimColor>(no events yet)</Text>
+      <TitledBox width={cols} title="Activity log" cardId={4}>
+        <PaddedRows minRows={rowBudget ?? cardConfig.minRows}>
+          <Text dimColor>(no events yet)</Text>
+        </PaddedRows>
       </TitledBox>
     );
   }
@@ -60,7 +68,7 @@ export function LogCard({ snapshot }: LogCardProps): JSX.Element {
   // Show the LAST N events (newest at the bottom). listLogs returns
   // them descending-by-seq via afterSeq cursor semantics; we slice
   // the head and reverse for "newest at bottom" reading.
-  const tail = recent.slice(0, ROW_LIMIT).reverse();
+  const tail = recent.slice(0, rowBudget ?? cardConfig.maxRows).reverse();
 
   const cellRows = tail.map((row) => {
     const payload = displayEventPayload(row.payload);
@@ -73,11 +81,7 @@ export function LogCard({ snapshot }: LogCardProps): JSX.Element {
   const widths = layoutColumns(cellRows, COLUMN_SPECS, contentWidth);
 
   return (
-    <TitledBox
-      title="Activity log"
-      subtitle={`last ↑${Math.min(recent.length, ROW_LIMIT)}`}
-      cardId={4}
-    >
+    <TitledBox width={cols} title="Activity log" subtitle={`last ↑${tail.length}`} cardId={4}>
       {tail.map((row, i) => {
         const cells = cellRows[i];
         if (cells === undefined) return null;

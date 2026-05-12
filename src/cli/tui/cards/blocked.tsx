@@ -72,16 +72,20 @@ import {
   termColsForLayout,
 } from "../columns.js";
 import { colorForBucket, formatRoi } from "../format-helpers.js";
+import { CARD_CONFIGS } from "../layout.js";
 import { ListRow } from "../list-row.js";
+import { PaddedRows } from "../padded-rows.js";
 import { TitledBox } from "../titled-box.js";
 
 export interface BlockedCardProps {
   snapshot: WorkstreamSnapshot | null;
   db: Db;
   workstream: string;
+  rowBudget?: number;
+  cols?: number;
 }
 
-const ROW_LIMIT = 8;
+export const cardConfig = CARD_CONFIGS[7];
 
 const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
   { kind: "protect" }, // glyph
@@ -92,12 +96,20 @@ const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
   { kind: "clip", min: 1 }, // title
 ];
 
-export function BlockedCard({ snapshot, db, workstream }: BlockedCardProps): JSX.Element {
-  const contentWidth = contentWidthFromCols(termColsForLayout());
+export function BlockedCard({
+  snapshot,
+  db,
+  workstream,
+  rowBudget,
+  cols,
+}: BlockedCardProps): JSX.Element {
+  const contentWidth = contentWidthFromCols(cols ?? termColsForLayout());
   if (snapshot === null) {
     return (
-      <TitledBox title="Blocked" cardId={7}>
-        <Text dimColor>loading…</Text>
+      <TitledBox width={cols} title="Blocked" cardId={7}>
+        <PaddedRows minRows={rowBudget ?? cardConfig.minRows}>
+          <Text dimColor>loading…</Text>
+        </PaddedRows>
       </TitledBox>
     );
   }
@@ -106,14 +118,16 @@ export function BlockedCard({ snapshot, db, workstream }: BlockedCardProps): JSX
 
   if (blocked.length === 0) {
     return (
-      <TitledBox title="Blocked" cardId={7}>
-        <Text dimColor>(none blocked)</Text>
+      <TitledBox width={cols} title="Blocked" cardId={7}>
+        <PaddedRows minRows={rowBudget ?? cardConfig.minRows}>
+          <Text dimColor>(none blocked)</Text>
+        </PaddedRows>
       </TitledBox>
     );
   }
 
-  const shown = blocked.slice(0, ROW_LIMIT);
-  const more = blocked.length - ROW_LIMIT;
+  const shown = blocked.slice(0, rowBudget ?? cardConfig.maxRows);
+  const more = blocked.length - shown.length;
   const bottomLabel = more > 0 ? `+${more} more · Shift+7` : undefined;
   // One getTaskEdgesWithStatus call per visible row. Cap at 8 →
   // synchronous better-sqlite3 reads on a join, vastly cheaper than
@@ -140,7 +154,13 @@ export function BlockedCard({ snapshot, db, workstream }: BlockedCardProps): JSX
   const widths = layoutColumns(rows, COLUMN_SPECS, contentWidth);
 
   return (
-    <TitledBox title="Blocked" subtitle={subtitle} cardId={7} bottomLabel={bottomLabel}>
+    <TitledBox
+      width={cols}
+      title="Blocked"
+      subtitle={subtitle}
+      cardId={7}
+      bottomLabel={bottomLabel}
+    >
       {shown.map((t, i) => {
         const row = rows[i];
         const m = meta[i];

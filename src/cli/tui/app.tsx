@@ -30,6 +30,13 @@ import { TracksCard } from "./cards/tracks.js";
 import { WorkspacesCard } from "./cards/workspaces.js";
 import { Help } from "./help.js";
 import { dispatchGlobalKeyFromInk } from "./keys.js";
+import {
+  type CardId,
+  allocateRowBudgets,
+  columnWidths,
+  dataCountForCard,
+  layoutColumns as layoutDashboardColumns,
+} from "./layout.js";
 import { AgentsPopup } from "./popups/agents.js";
 import { BlockedPopup } from "./popups/blocked.js";
 import { CommitsPopup } from "./popups/commits.js";
@@ -329,15 +336,16 @@ export function App({ db, workstreams, initialActive = 0 }: AppProps): JSX.Eleme
           <Text color="red">snapshot error: {snap.error}</Text>
         </Box>
       )}
-      {visibility.agents && <AgentsCard snapshot={snap.data} />}
-      {visibility.tracks && <TracksCard snapshot={snap.data} />}
-      {visibility.ready && <ReadyCard snapshot={snap.data} />}
-      {visibility.log && <LogCard snapshot={snap.data} />}
-      {visibility.workspaces && <WorkspacesCard snapshot={snap.data} />}
-      {visibility.inProgress && <InProgressCard snapshot={snap.data} />}
-      {visibility.blocked && <BlockedCard snapshot={snap.data} db={db} workstream={workstream} />}
-      {visibility.commits && <CommitsCard snapshot={snap.data} />}
-      {visibility.doctor && <DoctorCard snapshot={snap.data} />}
+      <DashboardColumns
+        cols={cols}
+        rows={rows}
+        visibility={visibility}
+        snapshot={snap.data}
+        db={db}
+        workstream={workstream}
+        hasTabStrip={workstreams.length > 1}
+        hasSnapshotError={snap.error !== null}
+      />
       <Box flexGrow={1} />
       <StatusBar
         mode="dashboard"
@@ -391,7 +399,103 @@ export function App({ db, workstreams, initialActive = 0 }: AppProps): JSX.Eleme
   }
 }
 
-function cardKeyFromId(id: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9): keyof CardVisibility {
+interface DashboardColumnsProps {
+  cols: number;
+  rows: number;
+  visibility: CardVisibility;
+  snapshot: ReturnType<typeof useDashboardSnapshot>["data"];
+  db: Db;
+  workstream: string;
+  hasTabStrip: boolean;
+  hasSnapshotError: boolean;
+}
+
+function DashboardColumns({
+  cols,
+  rows,
+  visibility,
+  snapshot,
+  db,
+  workstream,
+  hasTabStrip,
+  hasSnapshotError,
+}: DashboardColumnsProps): JSX.Element {
+  const visible = visibleCardIds(visibility);
+  const assignments = layoutDashboardColumns(cols, visible);
+  const widths = columnWidths(cols, assignments.length);
+  const fixedRows = 1 + (hasTabStrip ? 1 : 0) + (hasSnapshotError ? 3 : 0);
+  const columnRows = Math.max(1, rows - fixedRows);
+
+  return (
+    <Box flexDirection="row" gap={1}>
+      {assignments.map((assignment, i) => {
+        const width = widths[i]?.width ?? cols;
+        const budgets = allocateRowBudgets(
+          columnRows,
+          assignment.cards.map((id) => ({ id, dataCount: dataCountForCard(id, snapshot) })),
+        );
+        return (
+          <Box key={assignment.cards.join("-")} flexDirection="column" width={width}>
+            {assignment.cards.map((id) =>
+              renderCard(id, { snapshot, db, workstream, width, budgets }),
+            )}
+          </Box>
+        );
+      })}
+    </Box>
+  );
+}
+
+interface RenderCardContext {
+  snapshot: ReturnType<typeof useDashboardSnapshot>["data"];
+  db: Db;
+  workstream: string;
+  width: number;
+  budgets: ReturnType<typeof allocateRowBudgets>;
+}
+
+function renderCard(id: CardId, { snapshot, db, workstream, width, budgets }: RenderCardContext) {
+  const rowBudget = budgets[id];
+  switch (id) {
+    case 1:
+      return <AgentsCard key={id} snapshot={snapshot} rowBudget={rowBudget} cols={width} />;
+    case 2:
+      return <TracksCard key={id} snapshot={snapshot} rowBudget={rowBudget} cols={width} />;
+    case 3:
+      return <ReadyCard key={id} snapshot={snapshot} rowBudget={rowBudget} cols={width} />;
+    case 4:
+      return <LogCard key={id} snapshot={snapshot} rowBudget={rowBudget} cols={width} />;
+    case 5:
+      return <WorkspacesCard key={id} snapshot={snapshot} rowBudget={rowBudget} cols={width} />;
+    case 6:
+      return <InProgressCard key={id} snapshot={snapshot} rowBudget={rowBudget} cols={width} />;
+    case 7:
+      return (
+        <BlockedCard
+          key={id}
+          snapshot={snapshot}
+          db={db}
+          workstream={workstream}
+          rowBudget={rowBudget}
+          cols={width}
+        />
+      );
+    case 8:
+      return <CommitsCard key={id} snapshot={snapshot} rowBudget={rowBudget} cols={width} />;
+    case 9:
+      return <DoctorCard key={id} snapshot={snapshot} rowBudget={rowBudget} cols={width} />;
+  }
+}
+
+function visibleCardIds(visibility: CardVisibility): CardId[] {
+  const ids: CardId[] = [];
+  for (const id of [1, 2, 3, 4, 5, 6, 7, 8, 9] as const) {
+    if (visibility[cardKeyFromId(id)]) ids.push(id);
+  }
+  return ids;
+}
+
+function cardKeyFromId(id: CardId): keyof CardVisibility {
   switch (id) {
     case 1:
       return "agents";

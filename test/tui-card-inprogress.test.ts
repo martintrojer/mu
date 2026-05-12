@@ -91,11 +91,13 @@ describe("InProgressCard", () => {
     expect(text.split("").length - 1).toBe(3);
   });
 
-  it("truncates at ROW_LIMIT with the bottomLabel '+N more · Shift+6'", () => {
+  it("truncates at the default row budget with the bottomLabel '+N more · Shift+6'", () => {
     const inProgress = Array.from({ length: 10 }, (_, i) =>
       task({ name: `progress_${i + 1}`, title: `Progress ${i + 1}` }),
     );
-    const text = renderCardToText(InProgressCard({ snapshot: { ...EMPTY_SNAPSHOT, inProgress } }));
+    const text = renderCardToText(
+      InProgressCard({ snapshot: { ...EMPTY_SNAPSHOT, inProgress }, rowBudget: 8 }),
+    );
 
     expect(text).toContain("+2 more · Shift+6");
     for (let i = 1; i <= 8; i++) expectTextOnce(text, `progress_${i}`);

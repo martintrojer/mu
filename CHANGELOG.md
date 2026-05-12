@@ -24,6 +24,17 @@ called out under "Breaking" in each entry.
 
 ### Added
 
+- **TUI responsive multi-column dashboard + dynamic card row budgets**
+  (feat_responsive_layout). The dashboard now reads the live terminal
+  width and reflows cards from the narrow stacked view into pair-aware
+  2 / 3 / 4-column layouts at 120 / 180 / 240 columns: small cards
+  (Agents, Tracks, Workspaces, Doctor), task-list cards (Ready,
+  In-progress, Blocked), and stream cards (Activity log, Commits)
+  stay visually stable as the pane resizes or cards are toggled.
+  Each column also runs a pure row-budget allocator so every visible
+  card gets its minimum body rows, large lists cap at their declared
+  max, and overflow remains discoverable via the existing `+N more ·
+  Shift+N` footer-inset hint.
 - **`mu task claim --for` and `mu agent send` warn before dispatching to a stale workspace**
   (feat_claim_warn_stale_workspace). Both dispatch surfaces now reuse
   the Workspaces card's ≥10-commits-behind-main definition via the

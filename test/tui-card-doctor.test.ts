@@ -98,13 +98,13 @@ describe("DoctorCard", () => {
     expectTextAbsent(text, "foreign_keys");
   });
 
-  it("truncates at ROW_LIMIT with the bottomLabel '+N more · Shift+9'", () => {
+  it("truncates at the default row budget with the bottomLabel '+N more · Shift+9'", () => {
     const checks = Array.from({ length: 10 }, (_, i): DoctorCheck => {
       const n = i + 1;
       return { name: `check_${n}`, status: n % 2 === 0 ? "fail" : "warn", detail: `detail ${n}` };
     });
     const doctor: DoctorSummary = { checks, problemCount: checks.length };
-    const text = renderCardToText(DoctorCard({ snapshot: snap(doctor) }));
+    const text = renderCardToText(DoctorCard({ snapshot: snap(doctor), rowBudget: 8 }));
 
     expect(text).toContain("+2 more · Shift+9");
     for (let i = 1; i <= 8; i++) expectTextOnce(text, `check_${i}`);

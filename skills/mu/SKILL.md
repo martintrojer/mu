@@ -313,7 +313,9 @@ running a wave.
   TUI. Agents/scripts should use typed verbs plus `--json`; bare
   `mu` on non-TTY stdout (or with `MU_NO_TUI=1`) prints help. `mu state` has `--tui`
   (interactive ink dashboard; read-only, yanks `mu` commands;
-  `g` opens the full workstream DAG popup; `l` opens the commits
+  reflows from stacked cards to pair-aware 2 / 3 / 4-column layouts
+  at 120 / 180 / 240 terminal columns with dynamic per-card row
+  budgets; `g` opens the full workstream DAG popup; `l` opens the commits
   popup; `1`-`9` toggle cards; `Shift+1`-`Shift+9` open popups,
   `Enter`
   drills (in the Activity log popup it opens the focused event's

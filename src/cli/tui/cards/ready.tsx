@@ -21,14 +21,18 @@ import {
   termColsForLayout,
 } from "../columns.js";
 import { colorForBucket, formatRoi } from "../format-helpers.js";
+import { CARD_CONFIGS } from "../layout.js";
 import { ListRow } from "../list-row.js";
+import { PaddedRows } from "../padded-rows.js";
 import { TitledBox } from "../titled-box.js";
 
 export interface ReadyCardProps {
   snapshot: WorkstreamSnapshot | null;
+  rowBudget?: number;
+  cols?: number;
 }
 
-const ROW_LIMIT = 10;
+export const cardConfig = CARD_CONFIGS[3];
 
 const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
   { kind: "protect" }, // task name
@@ -37,12 +41,14 @@ const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
   { kind: "protect" }, // owner (or "—")
 ];
 
-export function ReadyCard({ snapshot }: ReadyCardProps): JSX.Element {
-  const contentWidth = contentWidthFromCols(termColsForLayout());
+export function ReadyCard({ snapshot, rowBudget, cols }: ReadyCardProps): JSX.Element {
+  const contentWidth = contentWidthFromCols(cols ?? termColsForLayout());
   if (snapshot === null) {
     return (
-      <TitledBox title="Ready" cardId={3}>
-        <Text dimColor>loading…</Text>
+      <TitledBox width={cols} title="Ready" cardId={3}>
+        <PaddedRows minRows={rowBudget ?? cardConfig.minRows}>
+          <Text dimColor>loading…</Text>
+        </PaddedRows>
       </TitledBox>
     );
   }
@@ -51,16 +57,18 @@ export function ReadyCard({ snapshot }: ReadyCardProps): JSX.Element {
 
   if (ready.length === 0) {
     return (
-      <TitledBox title="Ready" cardId={3}>
-        <Text dimColor>
-          (no ready tasks) every blocker is OPEN/IN_PROGRESS or every task is closed
-        </Text>
+      <TitledBox width={cols} title="Ready" cardId={3}>
+        <PaddedRows minRows={rowBudget ?? cardConfig.minRows}>
+          <Text dimColor>
+            (no ready tasks) every blocker is OPEN/IN_PROGRESS or every task is closed
+          </Text>
+        </PaddedRows>
       </TitledBox>
     );
   }
 
-  const shown = ready.slice(0, ROW_LIMIT);
-  const more = ready.length - ROW_LIMIT;
+  const shown = ready.slice(0, rowBudget ?? cardConfig.maxRows);
+  const more = ready.length - shown.length;
   const bottomLabel = more > 0 ? `+${more} more · Shift+3` : undefined;
   const meta = shown.map((t) => {
     const bucket = roiBucket(t.impact, t.effortDays);
@@ -76,7 +84,13 @@ export function ReadyCard({ snapshot }: ReadyCardProps): JSX.Element {
   const widths = layoutColumns(rows, COLUMN_SPECS, contentWidth);
 
   return (
-    <TitledBox title="Ready" subtitle={String(ready.length)} cardId={3} bottomLabel={bottomLabel}>
+    <TitledBox
+      width={cols}
+      title="Ready"
+      subtitle={String(ready.length)}
+      cardId={3}
+      bottomLabel={bottomLabel}
+    >
       {shown.map((t, i) => {
         const row = rows[i];
         const m = meta[i];
