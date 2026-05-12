@@ -3,12 +3,16 @@
 // v0: list all snapshot.recent (newest at top), with j/k navigation.
 // Auto-tail with scroll-pause + filters are deferred to v0.next.
 //
-// Enter is intentionally UNBOUND on this popup. Log entries are
-// already a single line each — there's no "detail view" to drill
-// into. The dispatchPopupKey returns {kind:"drill"}; we silently
-// drop it so the user gets a no-op (no mode flip, no toast). All
-// other popups treat Enter as drill; document the divergence here
-// rather than carrying it as a special case in the dispatcher.
+// Enter on a focused row drills into a read-only inline view of the
+// event's full untruncated payload. Long payloads (workspace-refresh
+// events, multi-field task.claim notes, multi-line task notes
+// summaries) clip in the list view per
+// bug_tui_log_card_columns_misaligned; the drill is the
+// single-source affordance for reading the full text. j/k scroll the
+// drilled payload; q/Esc back to list. (Earlier versions of this
+// popup left Enter UNBOUND on the assumption rows were always
+// single-line atoms; user feedback proved that wrong — wrapped
+// payloads needed the explicit drill-out.)
 //
 // Rows are column-aligned via src/cli/tui/columns.ts. Per
 // feat_column_aligned_lists clipping policy: seq, ts, source, verb
@@ -30,15 +34,13 @@ import {
 import { dispatchPopupKey } from "../keys.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
 import { CursorRow } from "./cursor-row.js";
+import { DrillScrollView, clampScrollTop } from "./drill.js";
 import { popupViewport } from "./viewport.js";
 
 export interface PopupProps {
   yank: (command: string) => Promise<void>;
   onClose: () => void;
   snapshot: WorkstreamSnapshot | null;
-  // Log popup never enters drill mode (see header). The fields are
-  // accepted to satisfy the uniform popup-props contract <App>
-  // hands every popup; we don't read them.
   mode: "list" | "drill";
   onModeChange: (mode: "list" | "drill") => void;
   /** Bubbles the filter-prompt edit state up to <App> for StatusBar mode. */
@@ -59,6 +61,8 @@ export function LogPopup({
   yank,
   onClose,
   snapshot,
+  mode,
+  onModeChange,
   onFilterEditingChange,
 }: PopupProps): JSX.Element {
   const contentWidth = contentWidthFromCols(termColsForLayout());
@@ -80,14 +84,19 @@ export function LogPopup({
     return `${verb} ${rest} ${e.source}`;
   });
   const safeCursor = events.length === 0 ? 0 : Math.min(cursor, events.length - 1);
-  // mode/onModeChange/db/workstream are part of the uniform popup
-  // contract; LogPopup never drills. See header comment.
+  const focused = events[safeCursor];
+  // Drill-mode body scroll. Reset to 0 when entering drill (see the
+  // `case "drill"` branch below) and on backing out, mirroring the
+  // ready.tsx / agents.tsx pattern — callers own the reset; we don't
+  // need a useEffect-on-cursor (which lints under
+  // useExhaustiveDependencies because safeCursor is derived).
+  const [detailScrollTop, setDetailScrollTop] = useState(0);
   useEffect(() => {
     onFilterEditingChange?.(flt.editing);
   }, [flt.editing, onFilterEditingChange]);
 
   useInput((input, key) => {
-    if (flt.onKey(input, key) === "consumed") return;
+    if (mode !== "drill" && flt.onKey(input, key) === "consumed") return;
     const action = dispatchPopupKey(input, {
       ctrl: key.ctrl,
       shift: key.shift,
@@ -102,6 +111,55 @@ export function LogPopup({
       pageUp: key.pageUp,
       pageDown: key.pageDown,
     });
+    if (mode === "drill") {
+      // Drill-mode keymap: j/k scroll the payload, Ctrl-D/U / PgUp/PgDn
+      // half- or full-viewport, g/G jump top/bottom, y yanks the
+      // single-event lookup command, Esc/q back to list. Filter /
+      // verb / drill-again are intentionally suppressed in drill —
+      // it's a read-only payload view.
+      const totalLines =
+        focused === undefined || focused.payload === "" ? 0 : focused.payload.split("\n").length;
+      switch (action.kind) {
+        case "close":
+          onModeChange("list");
+          setDetailScrollTop(0);
+          return;
+        case "moveDown":
+          setDetailScrollTop((s) => clampScrollTop(s + 1, totalLines, viewport));
+          return;
+        case "moveUp":
+          setDetailScrollTop((s) => clampScrollTop(s - 1, totalLines, viewport));
+          return;
+        case "jumpTop":
+          setDetailScrollTop(0);
+          return;
+        case "jumpBottom":
+          setDetailScrollTop(clampScrollTop(totalLines, totalLines, viewport));
+          return;
+        case "pageDown":
+          setDetailScrollTop((s) =>
+            clampScrollTop(s + Math.floor(viewport / (action.half ? 2 : 1)), totalLines, viewport),
+          );
+          return;
+        case "pageUp":
+          setDetailScrollTop((s) =>
+            clampScrollTop(s - Math.floor(viewport / (action.half ? 2 : 1)), totalLines, viewport),
+          );
+          return;
+        case "yank": {
+          if (!focused || !snapshot) return;
+          // Show exactly that single event by seq: --since <seq-1>
+          // -n 1 returns just the entry whose seq is `focused.seq`.
+          // The CLI has no native single-seq filter; this is the
+          // smallest composable equivalent.
+          const since = Math.max(0, focused.seq - 1);
+          void yank(`mu log --since ${since} -n 1 -w ${snapshot.workstreamName}`);
+          return;
+        }
+        default:
+          return;
+      }
+    }
     switch (action.kind) {
       case "close":
         onClose();
@@ -110,7 +168,10 @@ export function LogPopup({
         flt.startEdit();
         return;
       case "drill":
-        // Intentional no-op (see header). Log rows are atomic.
+        if (focused !== undefined) {
+          setDetailScrollTop(0);
+          onModeChange("drill");
+        }
         return;
       case "moveDown":
         setCursor((c) => Math.min(events.length - 1, c + 1));
@@ -153,6 +214,26 @@ export function LogPopup({
 
   if (snapshot === null) {
     return <Shell title="Activity log · popup">{<Text dimColor>loading…</Text>}</Shell>;
+  }
+  if (mode === "drill" && focused !== undefined) {
+    return (
+      <Shell title={`Activity log · #${focused.seq} (${focused.createdAt.slice(11, 19)})`}>
+        <Box flexDirection="column" flexGrow={1}>
+          <DrillScrollView
+            title="event payload"
+            body={focused.payload}
+            viewport={viewport}
+            scrollTop={detailScrollTop}
+            emptyText="(empty payload)"
+          />
+        </Box>
+        <Box marginTop={1}>
+          <Text dimColor>
+            j/k scroll · Ctrl-D/U half page · y yanks `mu log --since N -n 1` · Esc/q back to list
+          </Text>
+        </Box>
+      </Shell>
+    );
   }
   if (sourceEvents.length === 0) {
     return (

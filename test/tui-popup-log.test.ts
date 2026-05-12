@@ -11,12 +11,26 @@ describe("LogPopup", () => {
     expect(src).toContain("mu task show");
     expect(src).toContain("mu agent show");
   });
-  it("source documents the Enter no-op (drill is intentionally unbound)", async () => {
+  it("Enter drills into a read-only full-payload view of the focused event", async () => {
     const { readFileSync } = await import("node:fs");
     const src = readFileSync("./src/cli/tui/popups/log.tsx", "utf-8");
-    // Comment + handler both present so the next agent doesn't
-    // "fix" the missing drill case.
-    expect(src).toMatch(/Enter[^\n]*UNBOUND/i);
+    // Header comment explains the drill (replaces the prior
+    // "intentionally UNBOUND" no-op rationale; we keep that word
+    // in the same paragraph as historical context so future
+    // readers don't try to revert).
+    expect(src).toMatch(/Enter[^\n]*drills/i);
+    // The drill case is wired (not a silent return).
     expect(src).toContain('case "drill":');
+    expect(src).toContain('onModeChange("drill")');
+    // Drill-mode body is rendered via the shared primitive with
+    // the focused event's full untruncated payload.
+    expect(src).toContain("<DrillScrollView");
+    expect(src).toContain("body={focused.payload}");
+    // Drill-mode keymap: scroll, jump, yank-by-seq, esc/q back.
+    expect(src).toContain("setDetailScrollTop");
+    expect(src).toContain("clampScrollTop");
+    // Yank target in drill mode points at the single-event
+    // lookup command (mu log --since <seq-1> -n 1).
+    expect(src).toContain("mu log --since");
   });
 });

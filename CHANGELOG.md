@@ -63,8 +63,12 @@ is opt-in via the new `--tui` flag.
     Agents popup → inline scrollback view (`mu agent read -n 80`
     rendered with j/k scroll). Tracks popup → inline list of every
     task in that track's prerequisite subgraph. Tasks popup →
-    inline rendering of all task notes. Log popup → intentional
-    no-op (rows are already atomic). Esc / q from the drill view
+    inline rendering of all task notes. Log popup → inline view of
+    the focused event's full untruncated payload (long
+    workspace-refresh / claim / multi-line note payloads clip in the
+    list view; the drill is the affordance for reading the full
+    text); `y` yanks the single-event lookup
+    `mu log --since <seq-1> -n 1 -w <ws>`. Esc / q from the drill view
     pops one level back to the popup list; a second Esc / q closes
     the popup back to the dashboard. The status bar surfaces the
     drill sub-mode (`drill · j/k scroll · Esc back`) so the

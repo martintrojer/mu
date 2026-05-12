@@ -306,7 +306,8 @@ running a wave.
   typed. `mu` alone = `mu state --mission`. `mu state` has `--tui`
   (interactive ink dashboard; read-only, yanks `mu` commands;
   `1`-`5` toggle cards, `!`/`@`/`#`/`$` open list popups, `Enter`
-  drills, `/` filters list popups incrementally, `?`/`F1` keymap,
+  drills (in the Activity log popup it opens the focused event's
+  full untruncated payload), `/` filters list popups incrementally, `?`/`F1` keymap,
   `q`/`Ctrl-C` quits), `--mission`, `--all`, `--json`. `mu doctor`
   for health.
 

@@ -434,7 +434,13 @@ mu                          # bare alias for `mu state --mission`
   further `Enter` chains into the SAME read-only task-detail leaf
   (notes timeline). Concretely: Tracks popup (`@`) → `Enter` opens
   the track's task list → `Enter` opens that task's notes timeline
-  — identical to the Tasks popup (`#`) drill on the same task.
+  — identical to the Tasks popup (`#`) drill on the same task. In
+  the Activity log popup (`$`), `Enter` drills into a read-only view
+  of the focused event's full untruncated payload (long
+  workspace-refresh / claim / multi-line note payloads clip in the
+  list view; the drill is the affordance for reading the full text);
+  `j/k` / `Ctrl-D/U` scroll the payload, `y` yanks the
+  single-event lookup `mu log --since <seq-1> -n 1 -w <ws>`.
   One `Esc` / `q` backs out per recursion level (notes → task
   list → list of tracks → popup closed).
 
