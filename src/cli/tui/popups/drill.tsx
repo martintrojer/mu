@@ -145,9 +145,18 @@ export function DrillScrollView({
   // a second rounded box at width=stdout.columns overflows the
   // popup's inner content area by 4 cols (popup chrome) which made
   // long lines wrap / spill past the popup's right border. Single
-  // border, single width budget, lines clip cleanly.
+  // border, single width budget.
   // (bug_tui_drill_text_no_width_pin — central fix replacing the
   // earlier per-line width pin.)
+  //
+  // Long lines WRAP within the popup's inner width (no `wrap` prop
+  // on body Text — ink's default is wrap-on-overflow). The user's
+  // expectation: "long strings should wrap so you can read all of
+  // them, but wrap within the borders." The position counter still
+  // counts LOGICAL lines (split-on-\n), so a viewport of 8 may
+  // visually consume more terminal rows when some logical lines
+  // wrap; the user keeps scrolling with j/k. That's the accepted
+  // trade-off vs. computing wrap-aware viewport sizing.
   return (
     <Box flexDirection="column" flexGrow={1}>
       <Box>
@@ -162,9 +171,7 @@ export function DrillScrollView({
         ) : (
           visible.map((ln, i) => (
             // eslint-disable-next-line react/no-array-index-key
-            <Text key={`${start + i}`} wrap="truncate">
-              {ln === "" ? " " : ln}
-            </Text>
+            <Text key={`${start + i}`}>{ln === "" ? " " : ln}</Text>
           ))
         )}
       </Box>
