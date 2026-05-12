@@ -26,7 +26,7 @@ import {
 import { emitEvent } from "./logs.js";
 import type { HasNextSteps, NextStep } from "./output.js";
 import { captureSnapshot } from "./snapshots.js";
-import { killSession, listSessions, sessionExists } from "./tmux.js";
+import { killSession, listSessions, sessionExists, tmux } from "./tmux.js";
 import { type VcsBackend, type VcsBackendName, backendByName } from "./vcs.js";
 import { listWorkspaces } from "./workspace.js";
 
@@ -50,6 +50,19 @@ const WORKSTREAM_NAME_RE = /^[a-z][a-z0-9_-]{0,31}$/;
  *  which the user almost certainly didn't intend. Fail loud rather
  *  than silently double-prefix. */
 export const RESERVED_WORKSTREAM_PREFIX = "mu-";
+
+export async function resolveTmuxSessionWorkstreamName(): Promise<string | null> {
+  if (!process.env.TMUX) return null;
+  try {
+    const name = (await tmux(["display-message", "-p", "#S"])).trim();
+    if (name.startsWith(RESERVED_WORKSTREAM_PREFIX)) {
+      return name.slice(RESERVED_WORKSTREAM_PREFIX.length);
+    }
+  } catch {
+    // fall through: tmux context is best-effort for workstream resolution
+  }
+  return null;
+}
 
 export function isValidWorkstreamName(name: string): boolean {
   if (!WORKSTREAM_NAME_RE.test(name)) return false;

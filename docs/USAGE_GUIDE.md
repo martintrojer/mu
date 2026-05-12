@@ -142,10 +142,13 @@ tmux       # if you're not already in one
 
 For a human at an interactive terminal, bare `mu` is the home base:
 it launches the read-only TUI with every workstream on the machine
-loaded as tabs. Initial tab focus is `$MU_SESSION` when it names a
-loaded workstream, then best-effort cwd detection against registered
-workspace paths, then tab 0. If no workstream exists yet, it prints
-help plus the one-paste start command:
+loaded as tabs. Initial tab focus uses this ladder: `$MU_SESSION` when
+it names a loaded workstream; then the current tmux session name when
+it is `mu-<workstream>`; then best-effort cwd detection against
+registered workspace paths; then cwd equal to the VCS-derived project
+root of any loaded workstream's workspaces (ties broken by most-recent
+workstream activity); then tab 0. If no workstream exists yet, it
+prints help plus the one-paste start command:
 
 ```bash
 mu
@@ -506,10 +509,12 @@ above the cards (`workstreams: ▸ active · next · …`); `Tab` /
 `Shift-Tab` cycles, the active tab name appears in the status bar's
 right zone next to the tick rate, and popups always operate on the
 active tab. Initial focus follows the same precedence as bare `mu`:
-`$MU_SESSION`, then cwd inside a registered workspace path, then tab
-0. When the workstream set is too wide for the terminal, the strip
-windows around the active tab and shows `‹N` / `›N` counters for
-hidden workstreams.
+`$MU_SESSION`, then current tmux session name (`mu-<workstream>`), then
+cwd inside a registered workspace path, then cwd equal to a
+VCS-derived project root for registered workspaces (most-recent
+workstream activity breaks ties), then tab 0. When the workstream set
+is too wide for the terminal, the strip windows around the active tab
+and shows `‹N` / `›N` counters for hidden workstreams.
 The `--json` envelope wraps in `{ workstreams: [...] }` when N≥2.
 
 JSON shapes:

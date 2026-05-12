@@ -46,6 +46,7 @@ afterAll(() => {
 
 import { insertAgent } from "../src/agents.js";
 import { openDb } from "../src/db.js";
+import { resetTmuxExecutor, setTmuxExecutor } from "../src/tmux.js";
 import { withEnv } from "./_env.js";
 import { runCli } from "./_runCli.js";
 
@@ -84,6 +85,13 @@ describe("cmdState dispatch", () => {
     tempDir = mkdtempSync(join(tmpdir(), "mu-state-dispatch-"));
     dbPath = join(tempDir, "mu.db");
     runTuiMock.mockReset();
+    setTmuxExecutor(async (args) => {
+      if (args[0] === "list-sessions") {
+        return { exitCode: 1, stdout: "", stderr: "no server running" };
+      }
+      if (args[0] === "has-session") return { exitCode: 1, stdout: "", stderr: "no session" };
+      return { exitCode: 0, stdout: "", stderr: "" };
+    });
     await runCli(["workstream", "init", "ws"], dbPath);
     await runCli(
       [
@@ -106,6 +114,7 @@ describe("cmdState dispatch", () => {
 
   afterEach(() => {
     chdir(originalCwd);
+    resetTmuxExecutor();
     try {
       rmSync(tempDir, { recursive: true, force: true });
     } catch {}

@@ -35,7 +35,7 @@ called out under "Breaking" in each entry.
   card gets its minimum body rows, large lists cap at their declared
   max, and overflow remains discoverable via the existing `+N more ·
   Shift+N` footer-inset hint.
-- Bare `mu` and `mu state --tui` now seed initial tab focus from `$MU_SESSION` when it names a resolved workstream, then best-effort focus the workstream whose workspace path contains the current cwd, then fall back to tab 0.
+- TUI initial-tab focus now uses a richer ladder: `$MU_SESSION` → tmux session name (`mu-<ws>`) → cwd inside a workspace → cwd equals the project root of any workstream's workspaces (tiebreak by most-recent activity) → tab 0. Means bare `mu` from the project root in any tmux pane lands on the most-relevant workstream instead of always tab 0.
 - Tab strip is compact: it shows a windowed view around the active workstream with `‹N` / `›N` indicators when workstreams overflow the available width.
 - **`mu task claim --for` and `mu agent send` warn before dispatching to a stale workspace**
   (feat_claim_warn_stale_workspace). Both dispatch surfaces now reuse

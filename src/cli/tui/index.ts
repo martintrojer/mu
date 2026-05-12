@@ -17,9 +17,11 @@ export interface RunTuiOptions {
    *  responsible for the resolution + validation; runTui just
    *  forwards the array. */
   workstreams: string[];
-  /** Initial active tab index. Bare `mu` seeds this from $MU_SESSION
-   *  when it names one of the loaded workstreams; explicit
-   *  `mu state --tui` keeps the default 0. <App> clamps defensively. */
+  /** Initial active tab index. Bare `mu` and `mu state --tui` share
+   *  the launch-focus ladder: $MU_SESSION, then tmux session name,
+   *  then cwd inside a workspace, then cwd equal to a workspace's
+   *  VCS-derived project root (latest activity breaks ties), then 0.
+   *  <App> clamps defensively. */
   initialActive?: number;
 }
 

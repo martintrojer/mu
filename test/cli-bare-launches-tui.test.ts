@@ -29,6 +29,7 @@ function registerWorkspace(
   workstream: string,
   agent: string,
   workspacePath: string,
+  backend = "none",
 ): void {
   mkdirSync(workspacePath, { recursive: true });
   const db = openDb({ path: dbPath });
@@ -43,8 +44,8 @@ function registerWorkspace(
     if (ws === undefined || ag === undefined) throw new Error("failed to seed workspace fixture");
     db.prepare(
       `INSERT INTO vcs_workspaces (agent_id, workstream_id, backend, path, parent_ref, created_at)
-       VALUES (?, ?, 'none', ?, NULL, ?)`,
-    ).run(ag.id, ws.id, workspacePath, new Date().toISOString());
+       VALUES (?, ?, ?, ?, NULL, ?)`,
+    ).run(ag.id, ws.id, backend, workspacePath, new Date().toISOString());
   } finally {
     db.close();
   }
@@ -181,6 +182,37 @@ describe("bare mu TTY dispatch", () => {
       expect(exitCode).toBeNull();
       expect(runTuiMock).not.toHaveBeenCalled();
       expect(stdout).toContain("Usage: mu [options] [command]");
+    } finally {
+      restoreTty();
+    }
+  });
+
+  it("tmux session match launches TUI with matching initial tab when $MU_SESSION is unset", async () => {
+    for (const ws of ["a", "b", "c"]) await runCli(["workstream", "init", ws, "--json"], dbPath);
+    setTmuxExecutor(async (args) => {
+      if (args.join(" ") === "display-message -p #S") {
+        return { exitCode: 0, stdout: "mu-c\n", stderr: "" };
+      }
+      if (args[0] === "list-sessions") {
+        return { exitCode: 0, stdout: "mu-a\nmu-b\nmu-c\n", stderr: "" };
+      }
+      if (args[0] === "has-session") return { exitCode: 1, stdout: "", stderr: "no session" };
+      return { exitCode: 0, stdout: "", stderr: "" };
+    });
+
+    const restoreTty = setStdoutTty(true);
+    try {
+      await withEnv("MU_SESSION", undefined, async () => {
+        await withEnv("TMUX", "/tmp/tmux", async () => {
+          const { exitCode, error } = await runCli([], dbPath);
+          expect(error).toBeUndefined();
+          expect(exitCode).toBeNull();
+          expect(runTuiMock.mock.calls[0]?.[1]).toEqual({
+            workstreams: ["a", "b", "c"],
+            initialActive: 2,
+          });
+        });
+      });
     } finally {
       restoreTty();
     }

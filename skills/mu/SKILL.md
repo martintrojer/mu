@@ -310,8 +310,10 @@ running a wave.
   `remove`, `delete`, `search`, `export`. Labels globally unique.
 - **Escape hatch + state**: `mu sql "<query>"` for anything not yet
   typed. Humans in a TTY run bare `mu` to launch the all-workstream
-  TUI. Initial tab focus is `$MU_SESSION`, then cwd inside a
-  registered workspace path, then tab 0; overflowing workstream tabs
+  TUI. Initial tab focus is `$MU_SESSION`, then current tmux session
+  name (`mu-<ws>`), then cwd inside a registered workspace path, then
+  cwd equal to the VCS-derived project root for registered workspaces
+  (ties by most-recent workstream activity), then tab 0; overflowing workstream tabs
   render as a compact active-centred window with `‹N` / `›N` hidden
   counts. Agents/scripts should use typed verbs plus `--json`; bare
   `mu` on non-TTY stdout (or with `MU_NO_TUI=1`) prints help. `mu state` has `--tui`

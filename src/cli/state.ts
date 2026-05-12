@@ -222,7 +222,7 @@ export async function cmdState(db: Db, opts: StateOpts): Promise<void> {
   if (opts.tui === true) {
     const names = perWs.map((d) => d.workstreamName);
     const { runTui } = await import("./tui/index.js");
-    await runTui(db, { workstreams: names, initialActive: resolveInitialTab(names, db) });
+    await runTui(db, { workstreams: names, initialActive: await resolveInitialTab(names, db) });
     return;
   }
 

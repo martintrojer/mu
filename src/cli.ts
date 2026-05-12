@@ -47,8 +47,7 @@ import {
   type TaskStatus,
   isTaskStatus,
 } from "./tasks.js";
-import { tmux } from "./tmux.js";
-import { RESERVED_WORKSTREAM_PREFIX, listWorkstreams } from "./workstream.js";
+import { listWorkstreams, resolveTmuxSessionWorkstreamName } from "./workstream.js";
 
 // ─── Re-exports for downstream cli/* modules ──────────────────────────
 //
@@ -92,15 +91,8 @@ export {
 export async function resolveWorkstream(explicit?: string): Promise<string> {
   if (explicit) return explicit;
   if (process.env.MU_SESSION) return process.env.MU_SESSION;
-  if (process.env.TMUX) {
-    try {
-      const name = (await tmux(["display-message", "-p", "#S"])).trim();
-      if (name.startsWith(RESERVED_WORKSTREAM_PREFIX))
-        return name.slice(RESERVED_WORKSTREAM_PREFIX.length);
-    } catch {
-      // fall through
-    }
-  }
+  const tmuxWorkstream = await resolveTmuxSessionWorkstreamName();
+  if (tmuxWorkstream !== null) return tmuxWorkstream;
   throw new UsageError(
     "workstream required: pass --workstream <name>, set $MU_SESSION, or run inside an mu-<name> tmux session",
   );
@@ -645,7 +637,7 @@ async function cmdBareTui(
   for (const name of names) {
     if (!allNames.includes(name)) throw new WorkstreamNotFoundError(name);
   }
-  const initialActive = resolveInitialTab(names, db);
+  const initialActive = await resolveInitialTab(names, db);
   try {
     const { runTui } = await import("./cli/tui/index.js");
     await runTui(db, { workstreams: names, initialActive });
