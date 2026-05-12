@@ -68,7 +68,8 @@ export function TracksCard({ snapshot }: TracksCardProps): JSX.Element {
       .map((r) => r.name)
       .join(", ");
     const diamond = t.roots.length > 1 ? "⋈" : " ";
-    const counts = `(${t.taskIds.size} tasks · ${t.readyCount} ready)`;
+    const taskNoun = t.taskIds.size === 1 ? "task" : "tasks";
+    const counts = `(${t.taskIds.size} ${taskNoun} · ${t.readyCount} ready)`;
     return [`Track ${i + 1}`, diamond, goalNames, counts];
   });
   const widths = layoutColumns(rows, COLUMN_SPECS, contentWidth);

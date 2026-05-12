@@ -65,7 +65,7 @@ describe("TracksCard", () => {
 
   it("renders title subtitle plus every visible track id/count/glyph exactly once", () => {
     const tracks = [
-      track(["goal_alpha"], { taskIds: new Set(["goal_alpha", "leaf_alpha"]), readyCount: 2 }),
+      track(["goal_alpha"], { taskIds: new Set(["goal_alpha"]), readyCount: 1 }),
       track(["goal_beta", "goal_gamma"], {
         taskIds: new Set(["goal_beta", "goal_gamma", "shared"]),
         readyCount: 0,
@@ -74,13 +74,13 @@ describe("TracksCard", () => {
     const text = renderCardToText(TracksCard({ snapshot: { ...EMPTY_SNAPSHOT, tracks } }));
 
     expect(text).toContain("Tracks");
-    expect(text).toContain("2 · 2 ready");
+    expect(text).toContain("2 · 1 ready");
     expectTextOnce(text, "Track 1");
     expectTextOnce(text, "Track 2");
     expectTextOnce(text, "goal_alpha");
     expectTextOnce(text, "goal_beta");
     expectTextOnce(text, "goal_gamma");
-    expectTextOnce(text, "(2 tasks · 2 ready)");
+    expectTextOnce(text, "(1 task · 1 ready)");
     expectTextOnce(text, "(3 tasks · 0 ready)");
     expectTextOnce(text, "⋈");
   });

@@ -216,6 +216,7 @@ export function TitledBox({
         paddingX={1}
         flexDirection="column"
         flexGrow={flexGrow}
+        flexShrink={0}
       >
         {children}
       </Box>

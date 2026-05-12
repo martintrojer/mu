@@ -105,11 +105,23 @@ describe("TitledBox card-shrink (anti-topmost-scroll)", () => {
     expect(TITLED_BOX_SRC).toMatch(/const TITLED_BOX_FLEX_SHRINK = 1;/);
   });
 
-  it("TitledBox outer Box pins overflow=hidden so the inner border-body clips when shrunk", () => {
-    // Without this the inner bordered Box overruns the now-shrunken
-    // outer slot and the visible artifact (topmost border lost) comes
-    // back even though Yoga did the math correctly.
+  it("TitledBox outer Box pins overflow=hidden so the card clips when shrunk", () => {
+    // The outer slot is still the dashboard-level safety net: when
+    // total card height beats rows, the whole card may clip at the
+    // root/outer boundary instead of scrolling the terminal.
     expect(TITLED_BOX_SRC).toMatch(/<Box\b[\s\S]{0,200}overflow="hidden"/);
+  });
+
+  it("TitledBox inner border-body refuses flex shrink (anti-body/border overlap)", () => {
+    // bug_tui_card_body_collapses_into_bottom_border: if Yoga is
+    // allowed to shrink the INNER border-body Box below its content
+    // height, ink draws the rounded bottom border on top of the
+    // overflowing child row (`╰─row text──╯`). Keep flexShrink on
+    // the OUTER card only; the app-level height pin + overflow clip
+    // remains the fallback when the full dashboard is too tall.
+    expect(TITLED_BOX_SRC).toMatch(
+      /<Box\b[\s\S]{0,260}borderStyle="round"[\s\S]{0,260}flexShrink=\{0\}/,
+    );
   });
 });
 

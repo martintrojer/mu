@@ -635,6 +635,26 @@ is opt-in via the new `--tui` flag.
 
 ### Fixed
 
+- **TUI card body rows no longer collapse into the rounded bottom
+  border, and bottom-label cards no longer grow a phantom blank row**
+  (bug_tui_card_body_collapses_into_bottom_border). Follow-up to
+  bug_tui_dashboard_top_card_scrolls_off: that fix correctly kept
+  `flexShrink={1}` on the OUTER TitledBox so Yoga may shrink cards
+  instead of scrolling the topmost card's chrome off-screen, but it
+  also let the INNER border-body Box shrink below its body-row
+  content. When the inner body under-allocated, ink painted the
+  rounded bottom border on top of an overflowing child row
+  (`╰─task text──╯`); when it over-allocated, cards with an inset
+  `bottomLabel` showed a blank body row immediately above the
+  `╰─ +N more · Shift+N ─╯` border. Fix: keep the outer shrink +
+  app-level `overflow="hidden"` safety net, but pin the inner
+  border-body Box to `flexShrink={0}` so its height stays tied to
+  content and clipping happens at the card/dashboard boundary rather
+  than inside the border chrome. Coverage adds an ink render
+  regression in `test/tui-titled-box-render.test.ts` plus the
+  existing TitledBox frame-height source guard. While there, the
+  Tracks card now renders the singular `1 task` count instead of
+  `1 tasks`.
 - **TUI DrillScrollView body lines now clip at the drill content
   width instead of wrapping** (bug_tui_drill_text_no_width_pin).
   Follow-up to bug_tui_drill_scrollview_wraps_long_lines: the body
