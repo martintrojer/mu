@@ -8,6 +8,25 @@ called out under "Breaking" in each entry.
 
 ---
 
+## [0.5.0] — unreleased
+
+### TUI internals
+
+- **State/TUI dispatch + event-classifier tests are behaviour-backed**
+  (testreview_static_source_assertions). `test/state-dispatch.test.ts`
+  no longer reads `src/cli/state.ts` looking for the legacy
+  multi-workstream TUI guard or a `runTui({workstreams: ...})`
+  source shape. It lazy-mocks `runTui` and drives the real in-process
+  CLI path (`mu state --tui -w ws,ws2`), asserting the TUI branch is
+  invoked once with every resolved workstream and without booting Ink.
+  `test/state-render.test.ts` drops the TypeScript-AST audit of every
+  `emitEvent(...)` callsite; the replacement drives representative
+  SDK mutating verbs, captures the actual `agent_logs` payloads they
+  emit, passes the user-visible payloads through `classifyEventVerb`,
+  and asserts every emitted verb prefix is recognised. The tests now
+  fail on broken runtime dispatch/classification rather than harmless
+  source refactors.
+
 ## [0.4.0] — unreleased
 
 Feature theme: **interactive TUI**. `mu state --tui` opens an

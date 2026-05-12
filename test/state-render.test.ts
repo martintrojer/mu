@@ -287,15 +287,14 @@ describe("mu state — mutual-exclusion + cross-workstream", () => {
   });
 });
 
-// ── classifyEventVerb regression: every emitter verb is recognised ──
+// ── classifyEventVerb regression: emitted SDK events are recognised ──
 //
 // Per the TUI refactor (Wave 2 Task 10): the parsing half of the previous
 // event colourer lives at src/logs.ts as `classifyEventVerb` (verb
-// extraction only; renderers apply their own colour). This block
-// preserves the old guarantees verbatim, just without the cyan part:
-// (a) every entry in EVENT_VERB_PREFIXES round-trips, (b) every
-// emitEvent callsite under src/ uses a payload prefix that is
-// recognised. Plus the false-positive guard.
+// extraction only; renderers apply their own colour). These tests pin the
+// parser contract and then drive representative SDK verbs that emit every
+// known event prefix, asserting the payloads users actually see in
+// agent_logs classify successfully.
 describe("classifyEventVerb", () => {
   it("recognises every verb in EVENT_VERB_PREFIXES", async () => {
     const { EVENT_VERB_PREFIXES, classifyEventVerb } = await import("../src/logs.js");
@@ -321,151 +320,319 @@ describe("classifyEventVerb", () => {
     }
   });
 
-  // AST-based audit of every emitEvent callsite under src/. The
-  // earlier regex-grep version (review_eventprefix_grep_test_brittle)
-  // had three loopholes that silently let drift through:
-  //   1. Variable third args (`emitEvent(db, ws, msg)`) never matched.
-  //   2. Template literals starting with interpolation (`\`${kind}
-  //      foo\``) collapsed to empty head and were skipped.
-  //   3. The `words.length === 2` filter dropped any single-word
-  //      payload outright.
-  // Walking the AST removes the regex altogether: every CallExpression
-  // named `emitEvent` is examined, the payload-shape is resolved by
-  // syntax (string literal / no-substitution template / template
-  // expression / `formatClaimEvent({prose: ...})`), and any payload we
-  // can't extract is itself a failure. That makes the test airtight
-  // — the property it claims to enforce.
-  it("every emitEvent callsite under src/ uses a payload prefix in EVENT_VERB_PREFIXES", async () => {
-    const { EVENT_VERB_PREFIXES } = await import("../src/logs.js");
-    const { readFileSync, readdirSync, statSync } = await import("node:fs");
-    const { join: pj } = await import("node:path");
-    const ts = await import("typescript");
+  it("recognises payloads emitted by representative SDK state-changing verbs", async () => {
+    const { execFileSync } = await import("node:child_process");
+    const { mkdtempSync, rmSync, writeFileSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const {
+      AgentNotFoundError,
+      adoptAgent,
+      closeAgent,
+      freeAgent,
+      insertAgent,
+      resetCommandResolverForTests,
+      setCommandResolverForTests,
+      spawnAgent,
+    } = await import("../src/agents.js");
+    const { kickAgent, resetKickProcessExecutor, setKickProcessExecutor } = await import(
+      "../src/agents/kick.js"
+    );
+    const { createArchive, addToArchive, removeFromArchive, deleteArchive } = await import(
+      "../src/archives.js"
+    );
+    const { openDb } = await import("../src/db.js");
+    const { exportArchive } = await import("../src/exporting.js");
+    const { importBucket } = await import("../src/importing.js");
+    const { classifyEventVerb, displayEventPayload, listLogs } = await import("../src/logs.js");
+    const {
+      addBlockEdge,
+      addNote,
+      addTask,
+      closeTask,
+      deleteTask,
+      removeBlockEdge,
+      openTask,
+      reparentTask,
+      setWaitSleepForTests,
+      setWaitStuckWarnForTests,
+      waitForTasks,
+    } = await import("../src/tasks.js");
+    const { claimTask, releaseTask } = await import("../src/tasks/claim.js");
+    const { deferTask, rejectTask } = await import("../src/tasks/lifecycle.js");
+    const { resetTmuxExecutor, setTmuxExecutor } = await import("../src/tmux.js");
+    const { createWorkspace, freeWorkspace, recreateWorkspace, refreshWorkspace } = await import(
+      "../src/workspace.js"
+    );
+    const { destroyWorkstream, ensureWorkstream, exportWorkstream } = await import(
+      "../src/workstream.js"
+    );
+    const { freshMockState, mockTmux } = await import("./_verbs-mock.js");
 
-    function walk(dir: string, out: string[] = []): string[] {
-      for (const entry of readdirSync(dir)) {
-        const full = pj(dir, entry);
-        const st = statSync(full);
-        if (st.isDirectory()) walk(full, out);
-        else if (entry.endsWith(".ts") && !entry.endsWith(".test.ts")) out.push(full);
-      }
-      return out;
-    }
+    const tempDir = mkdtempSync(join(tmpdir(), "mu-state-render-events-"));
+    const db = openDb({ path: join(tempDir, "mu.db") });
+    const previousWaitSleep = setWaitSleepForTests(async () => {});
+    const previousStuckWarn = setWaitStuckWarnForTests(() => {});
+    const originalStateDir = process.env.MU_STATE_DIR;
+    const originalSpawnLiveness = process.env.MU_SPAWN_LIVENESS_MS;
+    process.env.MU_STATE_DIR = join(tempDir, "state");
+    process.env.MU_SPAWN_LIVENESS_MS = "0";
 
-    /**
-     * Resolve a payload AST node to a literal string in which every
-     * `${...}` interpolation is replaced by the sentinel `\x00`. The
-     * sentinel marks 'unknown text here' without colliding with any
-     * real character a verb prefix could legitimately use.
-     *
-     * Returns null when the node is a form we can't statically
-     * resolve (a bare identifier, a function call other than
-     * `formatClaimEvent`, a binary `+` chain, etc.). The caller
-     * treats null as a hard failure: every emitEvent payload MUST be
-     * one of the recognised shapes.
-     */
-    function resolvePayload(node: import("typescript").Node): string | null {
-      if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
-        return node.text;
-      }
-      if (ts.isTemplateExpression(node)) {
-        let out = node.head.text;
-        for (const span of node.templateSpans) {
-          out += `\x00${span.literal.text}`;
-        }
-        return out;
-      }
-      // formatClaimEvent({ prose: "task claim ...", ... })
-      if (
-        ts.isCallExpression(node) &&
-        ts.isIdentifier(node.expression) &&
-        node.expression.text === "formatClaimEvent" &&
-        node.arguments.length === 1
-      ) {
-        const arg = node.arguments[0];
-        if (arg && ts.isObjectLiteralExpression(arg)) {
-          for (const prop of arg.properties) {
-            if (
-              ts.isPropertyAssignment(prop) &&
-              ts.isIdentifier(prop.name) &&
-              prop.name.text === "prose"
-            ) {
-              return resolvePayload(prop.initializer);
-            }
+    const captured = new Map<string, string>();
+    const captureNewEvents = (fn: () => unknown | Promise<unknown>): Promise<void> =>
+      Promise.resolve().then(() => {
+        const before = listLogs(db, { kind: "event" }).map((r) => r.seq);
+        const highWater = before.length === 0 ? 0 : Math.max(...before);
+        return Promise.resolve(fn()).then(() => {
+          for (const event of listLogs(db, { kind: "event", since: highWater })) {
+            const visiblePayload = displayEventPayload(event.payload);
+            const classified = classifyEventVerb(visiblePayload);
+            expect(classified, `payload should classify: ${visiblePayload}`).not.toBeNull();
+            if (classified) captured.set(classified.verb, visiblePayload);
           }
-        }
+        });
+      });
+
+    try {
+      setCommandResolverForTests(async (command) => ({
+        ok: true,
+        binary: command,
+        resolvedPath: command,
+      }));
+      await captureNewEvents(() => ensureWorkstream(db, "events"));
+      await captureNewEvents(() => ensureWorkstream(db, "agents"));
+      const tmuxState = freshMockState();
+      const { executor } = mockTmux(tmuxState);
+      setTmuxExecutor(executor);
+      await captureNewEvents(() => spawnAgent(db, { name: "worker-1", workstream: "agents" }));
+      await captureNewEvents(() => freeAgent(db, "worker-1", "agents"));
+      const orphanWindowId = `@${tmuxState.nextWindowId++}`;
+      const orphanPaneId = `%${tmuxState.nextPaneId++}`;
+      tmuxState.windows.get("mu-agents")?.push({ id: orphanWindowId, name: "orphan" });
+      tmuxState.panes.set(orphanPaneId, {
+        windowId: orphanWindowId,
+        paneId: orphanPaneId,
+        title: "orphan-1",
+        command: "pi",
+      });
+      await captureNewEvents(() =>
+        adoptAgent(db, { paneId: orphanPaneId, workstream: "agents", cli: "pi" }),
+      );
+      await captureNewEvents(() => closeAgent(db, "worker-1", { workstream: "agents" }));
+      resetTmuxExecutor();
+
+      await captureNewEvents(() =>
+        addTask(db, {
+          localId: "base",
+          workstream: "events",
+          title: "Base",
+          impact: 50,
+          effortDays: 1,
+        }),
+      );
+      addTask(db, {
+        localId: "blocked",
+        workstream: "events",
+        title: "Blocked",
+        impact: 40,
+        effortDays: 1,
+      });
+      await captureNewEvents(() => addNote(db, "base", "note", { workstream: "events" }));
+      await captureNewEvents(() => addBlockEdge(db, "events", "blocked", "base"));
+      await captureNewEvents(() => reparentTask(db, "blocked", [], { workstream: "events" }));
+      await captureNewEvents(() => addBlockEdge(db, "events", "blocked", "base"));
+      await captureNewEvents(() => removeBlockEdge(db, "events", "blocked", "base"));
+      await captureNewEvents(() =>
+        claimTask(db, "base", { self: true, actor: "tester", workstream: "events" }),
+      );
+      await captureNewEvents(() => releaseTask(db, "base", { workstream: "events" }));
+      await captureNewEvents(() => openTask(db, "base", { workstream: "events" }));
+      await captureNewEvents(() => closeTask(db, "base", { workstream: "events" }));
+      await captureNewEvents(() => openTask(db, "base", { workstream: "events" }));
+      await captureNewEvents(() => rejectTask(db, "base", { workstream: "events" }));
+      await captureNewEvents(() => openTask(db, "base", { workstream: "events" }));
+      await captureNewEvents(() => deferTask(db, "base", { workstream: "events" }));
+      await captureNewEvents(() => openTask(db, "base", { workstream: "events" }));
+      await captureNewEvents(() =>
+        deleteTask(db, "blocked", "events", {
+          dryRun: false,
+        }),
+      );
+
+      insertAgent(db, { name: "worker-1", workstream: "events", paneId: "%15", status: "busy" });
+      await captureNewEvents(() =>
+        createWorkspace(db, {
+          agent: "worker-1",
+          workstream: "events",
+          projectRoot: tempDir,
+          backend: "none",
+        }),
+      );
+      await captureNewEvents(() =>
+        recreateWorkspace(db, "worker-1", {
+          workstream: "events",
+          projectRoot: tempDir,
+        }),
+      );
+      await captureNewEvents(() =>
+        freeWorkspace(db, "worker-1", { workstream: "events", commit: false }),
+      );
+      await expect(
+        createWorkspace(db, {
+          agent: "ghost-1",
+          workstream: "events",
+          projectRoot: tempDir,
+          backend: "none",
+        }),
+      ).rejects.toBeInstanceOf(AgentNotFoundError);
+      const workspaceCreateFailures = listLogs(db, { workstream: "events", kind: "event" }).filter(
+        (r) => r.payload.startsWith("workspace create ghost-1"),
+      );
+      expect(workspaceCreateFailures).toEqual([]);
+
+      const gitRoot = mkdtempSync(join(tempDir, "git-project-"));
+      execFileSync("git", ["init"], { cwd: gitRoot, stdio: "ignore" });
+      execFileSync("git", ["config", "user.email", "mu@test.local"], {
+        cwd: gitRoot,
+        stdio: "ignore",
+      });
+      execFileSync("git", ["config", "user.name", "mu test"], { cwd: gitRoot, stdio: "ignore" });
+      writeFileSync(join(gitRoot, "README.md"), "hello\n");
+      execFileSync("git", ["add", "README.md"], { cwd: gitRoot, stdio: "ignore" });
+      execFileSync("git", ["commit", "-m", "initial"], { cwd: gitRoot, stdio: "ignore" });
+      await createWorkspace(db, {
+        agent: "worker-1",
+        workstream: "events",
+        projectRoot: gitRoot,
+        backend: "git",
+      });
+      await captureNewEvents(() =>
+        refreshWorkspace(db, { agent: "worker-1", workstream: "events", fromRef: "HEAD" }),
+      );
+
+      await captureNewEvents(async () => {
+        setTmuxExecutor(async (args) => {
+          if (args[0] === "display-message" && args.includes("#{pane_tty}")) {
+            return { stdout: "/dev/ttys999\n", stderr: "", exitCode: 0 };
+          }
+          return { stdout: "", stderr: "unexpected tmux call", exitCode: 1 };
+        });
+        setKickProcessExecutor(async (cmd) => {
+          if (cmd === "ps") return { stdout: "12345 12345 R+ find\n", stderr: "", exitCode: 0 };
+          if (cmd === "kill") return { stdout: "", stderr: "", exitCode: 0 };
+          return { stdout: "", stderr: "unexpected process call", exitCode: 1 };
+        });
+        await kickAgent(db, "worker-1", { workstream: "events" });
+      });
+      resetTmuxExecutor();
+      resetKickProcessExecutor();
+
+      addTask(db, {
+        localId: "stalled",
+        workstream: "events",
+        title: "Stalled",
+        impact: 30,
+        effortDays: 1,
+      });
+      insertAgent(db, {
+        name: "idle-1",
+        workstream: "events",
+        paneId: "%16",
+        status: "needs_input",
+      });
+      await claimTask(db, "stalled", {
+        agentName: "idle-1",
+        workstream: "events",
+        evidence: "stall fixture",
+      });
+      db.prepare("UPDATE agents SET updated_at = ? WHERE name = ?").run(
+        "2000-01-01T00:00:00.000Z",
+        "idle-1",
+      );
+      await captureNewEvents(() =>
+        waitForTasks(db, ["stalled"], {
+          workstream: "events",
+          timeoutMs: 1,
+          stuckAfterMs: 1,
+        }),
+      );
+
+      await captureNewEvents(() =>
+        exportWorkstream(db, { workstream: "events", outDir: join(tempDir, "bucket") }),
+      );
+      await captureNewEvents(() => createArchive(db, "arc"));
+      await captureNewEvents(() => addToArchive(db, "arc", "events"));
+      await captureNewEvents(() =>
+        exportArchive(db, { label: "arc", outDir: join(tempDir, "arc-bucket") }),
+      );
+      await captureNewEvents(() => removeFromArchive(db, "arc", "events"));
+      await captureNewEvents(() => deleteArchive(db, "arc"));
+
+      const bucketRoot = join(tempDir, "bucket");
+      await captureNewEvents(() =>
+        importBucket(db, { bucketDir: bucketRoot, workstreamOverride: "imported" }),
+      );
+
+      await captureNewEvents(async () => {
+        setTmuxExecutor(async (args) => {
+          if (args[0] === "has-session") return { stdout: "", stderr: "missing", exitCode: 1 };
+          return { stdout: "", stderr: "unexpected tmux call", exitCode: 1 };
+        });
+        await destroyWorkstream(db, { workstream: "imported" });
+      });
+      resetTmuxExecutor();
+
+      const expected = [
+        "agent adopt",
+        "agent close",
+        "agent free",
+        "agent kick",
+        "agent spawn",
+        "agent stalled",
+        "archive add",
+        "archive create",
+        "archive delete",
+        "archive export",
+        "archive remove",
+        "task add",
+        "task block",
+        "task claim",
+        "task delete",
+        "task note",
+        "task reparent",
+        "task release",
+        "task status",
+        "task unblock",
+        "workstream destroy",
+        "workstream export",
+        "workstream import",
+        "workstream init",
+        "workspace create",
+        "workspace free",
+        "workspace recreate",
+        "workspace refresh",
+      ];
+      expect([...captured.keys()].sort()).toEqual(expected.sort());
+    } finally {
+      setWaitSleepForTests(previousWaitSleep);
+      setWaitStuckWarnForTests(previousStuckWarn);
+      resetCommandResolverForTests();
+      resetTmuxExecutor();
+      resetKickProcessExecutor();
+      db.close();
+      rmSync(tempDir, { recursive: true, force: true });
+      if (originalStateDir === undefined) {
+        const key = "MU_STATE_DIR";
+        delete process.env[key];
+      } else {
+        process.env.MU_STATE_DIR = originalStateDir;
       }
-      return null;
-    }
-
-    interface Site {
-      file: string;
-      line: number;
-      payload: string | null;
-    }
-    const sites: Site[] = [];
-    for (const file of walk("src")) {
-      const src = readFileSync(file, "utf8");
-      const sf = ts.createSourceFile(file, src, ts.ScriptTarget.Latest, true);
-      const visit = (node: import("typescript").Node): void => {
-        if (
-          ts.isCallExpression(node) &&
-          ts.isIdentifier(node.expression) &&
-          node.expression.text === "emitEvent" &&
-          node.arguments.length >= 3
-        ) {
-          const payloadArg = node.arguments[2];
-          const payload = payloadArg ? resolvePayload(payloadArg) : null;
-          const { line } = sf.getLineAndCharacterOfPosition(node.getStart(sf));
-          sites.push({ file, line: line + 1, payload });
-        }
-        ts.forEachChild(node, visit);
-      };
-      visit(sf);
-    }
-
-    // Sanity: we should have found every callsite. The codebase has
-    // ~20+ live emitters; if this drops to a handful the AST walk has
-    // regressed (e.g. wrong identifier name).
-    expect(sites.length).toBeGreaterThanOrEqual(20);
-
-    // No callsite may have an unresolvable payload. If you hit this,
-    // either (a) refactor the emitter to use one of the recognised
-    // shapes (literal / template / formatClaimEvent({prose: ...})),
-    // or (b) extend `resolvePayload` above to handle the new shape.
-    const unresolved = sites.filter((s) => s.payload === null);
-    expect(
-      unresolved,
-      `emitEvent callsites whose payload shape we can't statically resolve (extend resolvePayload): ${JSON.stringify(
-        unresolved.map((s) => `${s.file}:${s.line}`),
-        null,
-        2,
-      )}`,
-    ).toEqual([]);
-
-    // Build the prefix-match check. A payload matches if it begins
-    // with `<verb> ` for some verb in EVENT_VERB_PREFIXES, OR equals
-    // the verb exactly (single-token tail), OR begins with `<verb>\x00`
-    // (a template literal where the next token is interpolated).
-    const knownPrefixes = [...EVENT_VERB_PREFIXES];
-    const matches = (payload: string): string | null => {
-      for (const verb of knownPrefixes) {
-        if (
-          payload === verb ||
-          payload.startsWith(`${verb} `) ||
-          payload.startsWith(`${verb}\x00`) ||
-          payload.startsWith(`${verb}.`)
-        ) {
-          return verb;
-        }
+      if (originalSpawnLiveness === undefined) {
+        const key = "MU_SPAWN_LIVENESS_MS";
+        delete process.env[key];
+      } else {
+        process.env.MU_SPAWN_LIVENESS_MS = originalSpawnLiveness;
       }
-      return null;
-    };
-    const unknown = sites
-      .filter((s) => s.payload !== null && matches(s.payload) === null)
-      .map((s) => ({ file: s.file, line: s.line, payload: s.payload }));
-    expect(
-      unknown,
-      `emitEvent callsites whose payload prefix is not in EVENT_VERB_PREFIXES: ${JSON.stringify(unknown, null, 2)}`,
-    ).toEqual([]);
+    }
   });
 });

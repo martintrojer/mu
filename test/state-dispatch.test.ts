@@ -26,10 +26,15 @@ import { join } from "node:path";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const originalNoColor = vi.hoisted(() => process.env.NO_COLOR);
+const runTuiMock = vi.hoisted(() => vi.fn<(...args: unknown[]) => Promise<void>>());
 
 vi.hoisted(() => {
   process.env.NO_COLOR = "1";
 });
+
+vi.mock("../src/cli/tui/index.js", () => ({
+  runTui: runTuiMock,
+}));
 
 afterAll(() => {
   if (originalNoColor === undefined) {
@@ -49,6 +54,7 @@ describe("cmdState dispatch", () => {
   beforeEach(async () => {
     tempDir = mkdtempSync(join(tmpdir(), "mu-state-dispatch-"));
     dbPath = join(tempDir, "mu.db");
+    runTuiMock.mockReset();
     await runCli(["workstream", "init", "ws"], dbPath);
     await runCli(
       [
@@ -96,7 +102,7 @@ describe("cmdState dispatch", () => {
     expect(stdout).toContain("State of mu-ws");
   });
 
-  it("multi-workstream renders stacked static cards (TUI is single-ws today)", async () => {
+  it("multi-workstream renders stacked static cards", async () => {
     await runCli(["workstream", "init", "ws2"], dbPath);
     const { stdout, exitCode } = await runCli(["state", "-w", "ws,ws2"], dbPath);
     expect(exitCode).toBeNull();
@@ -120,27 +126,15 @@ describe("cmdState dispatch", () => {
     expect(stderr.toLowerCase()).toContain("--mission");
   });
 
-  it("--tui + multi-workstream is no longer guarded as a UsageError (per feat_tui_multi_workstream)", async () => {
-    // Pre-feat_tui_multi_workstream this combination raised a
-    // UsageError ("--tui currently supports a single workstream").
-    // The TUI now supports tabs (Tab/Shift-Tab cycles); cmdState
-    // forwards the full resolved ws set to runTui.
-    //
-    // We can't actually invoke runCli(["state","--tui",...]) here
-    // because runTui boots ink + waitUntilExit, which would block
-    // the test forever (no TTY in vitest, no q to press). Assert
-    // structurally on the source of cmdState instead: the legacy
-    // multi-ws guard is gone, and the dispatch hands the full
-    // workstreams[] array to runTui. The src/cli/tui/* unit tests
-    // cover the actual <App> tab behaviour.
-    const { readFileSync } = await import("node:fs");
-    const src = readFileSync("./src/cli/state.ts", "utf-8");
-    // The legacy guard ('--tui currently supports a single workstream')
-    // must be removed.
-    expect(src).not.toMatch(/--tui currently supports a single workstream/);
-    // The dispatch must hand runTui the whole workstreams array,
-    // not a single workstream string.
-    expect(src).toMatch(/runTui\(db,\s*\{\s*workstreams:/);
+  it("--tui + multi-workstream forwards every resolved workstream to runTui", async () => {
+    await runCli(["workstream", "init", "ws2"], dbPath);
+
+    const { exitCode, error } = await runCli(["state", "--tui", "-w", "ws,ws2"], dbPath);
+
+    expect(error).toBeUndefined();
+    expect(exitCode).toBeNull();
+    expect(runTuiMock).toHaveBeenCalledOnce();
+    expect(runTuiMock.mock.calls[0]?.[1]).toEqual({ workstreams: ["ws", "ws2"] });
   });
 
   it("--hud option no longer exists (removed in this refactor)", async () => {
@@ -212,8 +206,8 @@ describe("cmdState empty-workstream paths", () => {
   });
 
   it("`mu state --json` is back-compat: when auto-resolve yields nothing, emit empty array (NOT the helpful error)", async () => {
-    // Same test-host caveat as above. We assert: if the auto-resolve
-    // fails AND --json is set, we get a JSON empty array on stdout,
+    // Same test-host caveat as above. If auto-resolve fails AND
+    // --json is set, the command emits a JSON empty array on stdout,
     // NOT a stderr error and exit 2.
     await runCli(["workstream", "init", "alpha"], dbPath);
     const muSessionKey = "MU_SESSION";
@@ -222,12 +216,12 @@ describe("cmdState empty-workstream paths", () => {
     try {
       const { stdout, stderr, exitCode } = await runCli(["state", "--json"], dbPath);
       expect(exitCode).toBeNull();
-      // Either an empty workstreams array (no auto-resolve) OR a
-      // fully-shaped single-workstream JSON object (auto-resolve hit).
-      // Neither path should write to stderr.
-      expect(stderr).toBe("");
       const parsed = JSON.parse(stdout);
-      expect(parsed.workstreams !== undefined || parsed.workstreamName !== undefined).toBe(true);
+      // Either auto-resolved single-ws shape or no-auto-resolve empty
+      // array shape; both are valid on a host with live mu tmux sessions.
+      if (Array.isArray(parsed.workstreams)) expect(parsed.workstreams).toEqual([]);
+      else expect(parsed.workstreamName).toBeTypeOf("string");
+      expect(stderr).toBe("");
     } finally {
       if (saved !== undefined) process.env[muSessionKey] = saved;
     }
