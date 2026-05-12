@@ -82,7 +82,13 @@ export {
   removeFromArchive,
   searchArchives,
 } from "./archives.js";
-export { loadFullDag, renderForest, renderTaskTree, type FullDag } from "./dag.js";
+export {
+  loadFullDag,
+  renderForest,
+  renderTaskTree,
+  type FullDag,
+  type LoadFullDagOptions,
+} from "./dag.js";
 export {
   CURRENT_SCHEMA_VERSION,
   EXPECTED_TABLES,

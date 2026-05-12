@@ -184,6 +184,20 @@ describe("StatusBar", () => {
     expect(text).toContain("back");
   });
 
+  it("DAG popup list-mode hint cluster advertises status toggles", () => {
+    const node = StatusBar({
+      mode: "popup",
+      tickMs: 1000,
+      footer: null,
+      cols: 200,
+      popupName: "DAG",
+      popupMode: "list",
+    });
+    const text = renderToString(node);
+    expect(text).toContain("o/i/c/r/d");
+    expect(text).toContain("toggle status");
+  });
+
   it("popup-list-mode hint cluster advertises `/ filter`", () => {
     // Per feat_popup_search_filter spec: the popup-mode hint must
     // surface `/` so users discover the keybinding without opening

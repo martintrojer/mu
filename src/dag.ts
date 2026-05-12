@@ -6,6 +6,7 @@
 
 import type { Db } from "./db.js";
 import { type TaskRow, getTask, listTasks } from "./tasks.js";
+import type { TaskStatus } from "./tasks/status.js";
 
 export interface FullDag {
   /** Root tasks: no incoming `blocks` edge (no blockers). */
@@ -18,8 +19,15 @@ export interface FullDag {
 
 export type TaskStatusLabelFn = (task: TaskRow) => string;
 
-export function loadFullDag(db: Db, workstream: string): FullDag {
-  const tasks = listTasks(db, workstream);
+export interface LoadFullDagOptions {
+  /** Optional visible-status filter. Omitted = every task status. */
+  statuses?: ReadonlySet<TaskStatus>;
+}
+
+export function loadFullDag(db: Db, workstream: string, opts: LoadFullDagOptions = {}): FullDag {
+  const tasks = listTasks(db, workstream).filter(
+    (t) => opts.statuses === undefined || opts.statuses.has(t.status),
+  );
   const byName = new Map(tasks.map((t) => [t.name, t]));
   const incoming = new Set<string>();
   const edges = new Map<string, string[]>();

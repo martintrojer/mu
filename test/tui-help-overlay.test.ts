@@ -8,6 +8,12 @@ describe("TUI help overlay", () => {
     expect(src).toContain('effect="DAG popup"');
   });
 
+  it("documents the DAG popup status toggles", () => {
+    const src = readFileSync("./src/cli/tui/help.tsx", "utf8");
+    expect(src).toContain('keys="o/i/c/r/d"');
+    expect(src).toContain('effect="toggle DAG status filter (in DAG popup)"');
+  });
+
   it("documents the dashboard card and popup digit ranges", () => {
     const src = readFileSync("./src/cli/tui/help.tsx", "utf8");
     expect(src).toContain(

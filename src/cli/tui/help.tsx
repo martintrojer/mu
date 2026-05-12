@@ -52,6 +52,7 @@ export function Help(): JSX.Element {
         <HelpRow keys="Ctrl-D / Ctrl-U" effect="half-page down / up" />
         <HelpRow keys="PgDn / PgUp" effect="full-page down / up" />
         <HelpRow keys="/" effect="filter (incremental substring; Esc cancel, Enter commit)" />
+        <HelpRow keys="o/i/c/r/d" effect="toggle DAG status filter (in DAG popup)" />
         <HelpRow keys="n / N" effect="next / prev match (v0.next)" />
         <HelpRow keys="y" effect="yank action for focused row" />
         <HelpRow keys="Esc / q" effect="close popup → return to dashboard" />

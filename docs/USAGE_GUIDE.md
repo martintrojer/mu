@@ -464,7 +464,9 @@ mu                          # TTY: TUI across all workstreams; non-TTY: help
   executes a mutation; the user runs the yanked command in their
   shell. Dashboard keymap: `0`-`9` toggle cards; `Shift+0` opens
   Commits, `Shift+1`-`Shift+9` open the remaining numbered popups,
-  and `g` opens the keybind-only DAG popup; `?` shows the keymap;
+  and `g` opens the keybind-only DAG popup; inside the DAG popup,
+  `o`/`i`/`c`/`r`/`d` toggle OPEN / IN_PROGRESS / CLOSED / REJECTED /
+  DEFERRED visibility with default all-on; `?` shows the keymap;
   `q` / `Ctrl-C` quits and restores the main scrollback.
 
   **Popup-drill recursion**: `Enter` in any popup drills into the

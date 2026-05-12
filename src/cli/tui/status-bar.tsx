@@ -150,6 +150,23 @@ function buildHints(
           { kind: "dim", text: "back" },
         ];
       }
+      if (popupName === "DAG") {
+        return [
+          ...popupLabel,
+          { kind: "key", text: "o/i/c/r/d" },
+          { kind: "dim", text: "toggle status ·" },
+          { kind: "key", text: "j/k" },
+          { kind: "dim", text: "scroll ·" },
+          { kind: "key", text: "y" },
+          { kind: "dim", text: "yank ·" },
+          { kind: "key", text: "Esc" },
+          { kind: "dim", text: "close ·" },
+          { kind: "key", text: "?" },
+          { kind: "dim", text: "help ·" },
+          { kind: "key", text: "q" },
+          { kind: "dim", text: "quit" },
+        ];
+      }
       return [
         ...popupLabel,
         { kind: "key", text: "j/k" },

@@ -11,6 +11,7 @@ import {
   dispatchPopupKey,
   dispatchPopupKeyFromInk,
 } from "../src/cli/tui/keys.js";
+import { statusForToggleKey } from "../src/cli/tui/use-status-filter.js";
 
 const NO_KEY = {};
 
@@ -206,9 +207,35 @@ describe("dispatchPopupKey: in-popup convention", () => {
     expect(dispatchPopupKey("x", NO_KEY)).toEqual({ kind: "verb", key: "x" });
     expect(dispatchPopupKey("t", NO_KEY)).toEqual({ kind: "verb", key: "t" });
   });
+  it("DAG status toggle letters still bubble up for non-DAG popups", () => {
+    for (const input of ["o", "i", "c", "r", "d"] as const) {
+      expect(dispatchPopupKey(input, NO_KEY)).toEqual({ kind: "verb", key: input });
+    }
+  });
   it("digits and punctuation are noops in popup convention", () => {
     expect(dispatchPopupKey("1", NO_KEY)).toEqual({ kind: "noop" });
     expect(dispatchPopupKey("!", NO_KEY)).toEqual({ kind: "noop" });
     expect(dispatchPopupKey("+", NO_KEY)).toEqual({ kind: "noop" });
+  });
+});
+
+describe("DAG popup status-toggle key classifier", () => {
+  it.each([
+    ["o", "OPEN"],
+    ["i", "IN_PROGRESS"],
+    ["c", "CLOSED"],
+    ["r", "REJECTED"],
+    ["d", "DEFERRED"],
+  ] as const)("%s toggles %s", (input, status) => {
+    expect(statusForToggleKey(input, NO_KEY)).toBe(status);
+  });
+
+  it("ignores modified keys so Ctrl-D remains page-down", () => {
+    expect(statusForToggleKey("d", { ctrl: true })).toBeUndefined();
+    expect(dispatchPopupKey("d", { ctrl: true })).toEqual({ kind: "pageDown", half: true });
+  });
+
+  it("returns undefined for non-toggle letters", () => {
+    expect(statusForToggleKey("x", NO_KEY)).toBeUndefined();
   });
 });

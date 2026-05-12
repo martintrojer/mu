@@ -24,6 +24,7 @@ called out under "Breaking" in each entry.
 
 ### Added
 
+- DAG popup gains per-status toggle keys (o/i/c/r/d) so you can compose the visible task set without leaving the popup. Filter strip shows current toggle state. Default all-on; reopening resets.
 - **TUI responsive multi-column dashboard + dynamic card row budgets**
   (feat_responsive_layout). The dashboard now reads the live terminal
   width and reflows cards from the narrow stacked view into pair-aware

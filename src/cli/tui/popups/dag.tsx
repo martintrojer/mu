@@ -10,9 +10,11 @@ import { useMemo, useState } from "react";
 import { loadFullDag, renderForest } from "../../../dag.js";
 import type { Db } from "../../../db.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
+import type { TaskStatus } from "../../../tasks/status.js";
 import { colorStatus } from "../../format.js";
 import { dispatchPopupKeyFromInk } from "../keys.js";
 import { PopupShell } from "../popup-shell.js";
+import { StatusFilterStrip, useStatusFilter } from "../use-status-filter.js";
 import { DrillScrollView, useDrillKeymap } from "./drill.js";
 import { applyScroll, isNavAction } from "./scroll.js";
 import { usePopupViewport } from "./viewport.js";
@@ -35,10 +37,13 @@ interface DagBody {
 
 export function DagPopup({ yank, onClose, db, workstream }: PopupProps): JSX.Element {
   const viewport = usePopupViewport();
-  const [{ body, roots }] = useState<DagBody>(() => buildDagBody(db, workstream));
+  const statusFilter = useStatusFilter();
+  const { body, roots } = useMemo<DagBody>(
+    () => buildDagBody(db, workstream, statusFilter.statuses),
+    [db, workstream, statusFilter.statuses],
+  );
   const [focusedRoot, setFocusedRoot] = useState<string | null>(() => roots[0] ?? null);
-
-  const focusedTask = focusedRoot ?? roots[0];
+  const focusedTask = focusedRoot !== null && roots.includes(focusedRoot) ? focusedRoot : roots[0];
   const drill = useDrillKeymap({
     body,
     viewport,
@@ -53,6 +58,7 @@ export function DagPopup({ yank, onClose, db, workstream }: PopupProps): JSX.Ele
   const totalLines = body === "" ? 0 : body.split("\n").length;
 
   useInput((input, key) => {
+    if (statusFilter.onKey(input, key)) return;
     const action = dispatchPopupKeyFromInk(input, key);
     const before = drill.scrollTop;
     drill.dispatch(action);
@@ -76,7 +82,10 @@ export function DagPopup({ yank, onClose, db, workstream }: PopupProps): JSX.Ele
   if (roots.length === 0) {
     return (
       <PopupShell title={`DAG · ${workstream}`}>
-        <Text dimColor>(no tasks)</Text>
+        <Box flexDirection="column" flexGrow={1}>
+          <StatusFilterStrip statuses={statusFilter.statuses} />
+          <Text dimColor>(no tasks)</Text>
+        </Box>
       </PopupShell>
     );
   }
@@ -84,6 +93,7 @@ export function DagPopup({ yank, onClose, db, workstream }: PopupProps): JSX.Ele
   return (
     <PopupShell title={`DAG · ${workstream}`} hint="y yanks `mu task tree <root-id>`">
       <Box flexDirection="column" flexGrow={1}>
+        <StatusFilterStrip statuses={statusFilter.statuses} />
         <DrillScrollView
           title="task DAG forest"
           body={body}
@@ -101,8 +111,12 @@ export function dagYankCommand(taskId: string, workstream: string): string {
   return `mu task tree ${taskId} -w ${workstream}`;
 }
 
-function buildDagBody(db: Db, workstream: string): DagBody {
-  const dag = loadFullDag(db, workstream);
+export function buildDagBody(
+  db: Db,
+  workstream: string,
+  statuses: ReadonlySet<TaskStatus>,
+): DagBody {
+  const dag = loadFullDag(db, workstream, { statuses });
   return {
     body: renderForest(dag.roots, dag.edges, (task) => colorStatus(task.status), dag.tasks),
     roots: dag.roots.map((t) => t.name),
