@@ -226,6 +226,7 @@ export function LogPopup({
             viewport={viewport}
             scrollTop={detailScrollTop}
             emptyText="(empty payload)"
+            hint="y yanks `mu log --since N -n 1`"
           />
         </Box>
       </Shell>

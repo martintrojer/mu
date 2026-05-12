@@ -18,7 +18,6 @@
 //
 // Per ROADMAP pledge: ink/react import limited to src/cli/tui/*.
 
-import { Box } from "ink";
 import { useMemo } from "react";
 import type { Db } from "../../../db.js";
 import { type TaskRow, listNotes } from "../../../tasks.js";
@@ -52,15 +51,14 @@ export function TaskDetailDrill({
     [db, task, workstream],
   );
   return (
-    <Box flexDirection="column">
-      <DrillScrollView
-        title={`mu task notes ${task.name}`}
-        body={body}
-        viewport={viewport}
-        scrollTop={scrollTop}
-        emptyText="(no notes)"
-      />
-    </Box>
+    <DrillScrollView
+      title={`mu task notes ${task.name}`}
+      body={body}
+      viewport={viewport}
+      scrollTop={scrollTop}
+      emptyText="(no notes)"
+      hint={`y yanks \`mu task notes ${task.name}\``}
+    />
   );
 }
 

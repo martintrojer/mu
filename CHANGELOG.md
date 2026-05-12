@@ -352,6 +352,43 @@ is opt-in via the new `--tui` flag.
 
 ### Fixed
 
+- **TUI drill chrome insets into nested magenta border (was rendered
+  as body rows nested inside the popup's cyan box)**
+  (nit_tui_drill_inset_title_and_hints, Layer 2).
+  `DrillScrollView` (`src/cli/tui/popups/drill.tsx`) previously
+  rendered its title (`▸ mu task notes <id>`) + position indicator
+  (`(1-72/311)`) as a row of body content and the optional `hint`
+  (e.g. `loading…`) on the next row. After Layer 1 dropped the
+  popup-level title row by inset-into-border, the drill view's
+  in-body title row was the next-most-load-bearing chrome eater —
+  visible as `▸ mu task notes <id> (1-72/311)` ABOVE the actual
+  notes content inside the popup's cyan rounded box.
+  DrillScrollView now wraps the visible slice in a nested
+  `<TitledBox>` with magenta borders so:
+    - title + position indicator inset into the top border
+      (`╭─ mu task notes <id> · 1-72/311 ───╮`)
+    - drill-specific yank-hint (e.g.
+      ``y yanks `mu task notes <id>` ``) insets into the bottom
+      border (`╰─ y yanks `mu task notes <id>` ───╯`)
+  Magenta keeps the existing visual: the popup Shell's outer
+  cyan border and the drill's inner magenta border distinguish
+  nesting depth without doubled lines (TitledBox renders
+  single-row borders only). DrillScrollView grows an optional
+  `hint?: string` prop dedicated to the drill-specific verb
+  recipe; the j/k/Esc/q nav cluster stays in the global
+  StatusBar (popup-mode hint) so we never duplicate keys across
+  surfaces. Per-consumer wiring:
+    - `task-detail.tsx` (Tasks / Blocked / In-progress / Tracks
+      task-detail leaf) passes `` `y yanks \`mu task notes ${id}\`` ``
+    - `popups/log.tsx` drill passes
+      `` 'y yanks `mu log --since N -n 1`' ``
+    - `popups/doctor.tsx` drill passes the per-check remediation
+      hint resolved via `yankCommandForCheck(focused)`
+    - `popups/agents.tsx` drill keeps its `loading…` hint (no `y`
+      bound in scrollback drill mode)
+  `task-detail.tsx`'s outer `<Box flexDirection="column">` wrapper
+  drops since `DrillScrollView` now owns the column layout. Layer 1
+  bullet stays adjacent below.
 - **TUI popup chrome insets into the rounded border (was rendered
   as body rows)** (nit_tui_drill_inset_title_and_hints, Layer 1).
   Every popup's local `Shell` / `PopupShell` previously rendered

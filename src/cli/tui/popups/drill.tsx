@@ -10,10 +10,29 @@
 // anything. j/k scroll one line; Ctrl-D / Ctrl-U scroll a viewport
 // half. Esc / q is the popup's responsibility (we only render).
 //
+// CHROME INSETS INTO THE BORDERS
+// (nit_tui_drill_inset_title_and_hints, Layer 2)
+//
+// Pre-Layer-2 the drill rendered its own title row ("▸ {title}
+// (1-72/311)") and an optional hint line as ORDINARY BODY ROWS
+// nested inside the popup Shell's rounded box — two rows of chrome
+// rendered as content. The drill now wraps the visible slice in a
+// `<TitledBox>` with magenta borders so:
+//   - title + position indicator inset into the top border line
+//     (`╭─ mu task notes <id> · 1-72/311 ───╮`)
+//   - bottomLabel (drill-specific yank hint) insets into the bottom
+//     border line (`╰─ y yanks `mu task notes <id>` ───────╯`)
+//
+// Magenta keeps the existing visual: cyan outer (popup Shell) +
+// magenta inner (drill chrome). Two nested coloured borders
+// distinguish nesting depth without doubled lines (TitledBox
+// renders single-row borders only).
+//
 // Per ROADMAP pledge: ink/react import limited to src/cli/tui/*.
 
-import { Box, Text } from "ink";
+import { Text } from "ink";
 import { useMemo } from "react";
+import { TitledBox } from "../titled-box.js";
 
 export interface DrillScrollViewProps {
   title: string;
@@ -23,7 +42,11 @@ export interface DrillScrollViewProps {
   viewport: number;
   /** First visible line index (0-based; clamped by caller). */
   scrollTop: number;
-  /** Optional dim hint line above the body (e.g. "loading…"). */
+  /** Optional dim hint rendered as the TitledBox's bottomLabel
+   *  (drill-specific recipe, e.g. ``y yanks `mu task notes <id>` ``
+   *  or ``loading…``). The j/k/Esc/q nav cluster lives in the
+   *  global StatusBar (popup-mode hint), so we keep this label
+   *  short — single drill-specific verb hint. */
   hint?: string;
   /** Optional fallback rendered when the body is empty. */
   emptyText?: string;
@@ -32,7 +55,7 @@ export interface DrillScrollViewProps {
 /**
  * Pure-render scrollable text view. Caller owns scroll state +
  * keyboard wiring; this component just paints the visible slice and
- * a dim "L/T" position indicator.
+ * a dim "L/T" position indicator inset into the magenta top border.
  */
 export function DrillScrollView({
   title,
@@ -50,16 +73,17 @@ export function DrillScrollView({
   const positionLabel = showFallback
     ? "0/0"
     : `${start + 1}-${Math.min(totalLines, start + viewport)}/${totalLines}`;
+  const bottomLabel = hint !== undefined && hint !== "" ? hint : undefined;
 
   return (
-    <Box flexDirection="column">
-      <Box>
-        <Text bold color="magenta">
-          ▸ {title}
-        </Text>
-        <Text dimColor> ({positionLabel})</Text>
-      </Box>
-      {hint !== undefined && hint !== "" ? <Text dimColor>{hint}</Text> : null}
+    <TitledBox
+      title={title}
+      subtitle={positionLabel}
+      borderColor="magenta"
+      titleColor="magenta"
+      bottomLabel={bottomLabel}
+      flexGrow={1}
+    >
       {showFallback ? (
         <Text dimColor>{emptyText ?? "(empty)"}</Text>
       ) : (
@@ -68,7 +92,7 @@ export function DrillScrollView({
           <Text key={`${start + i}`}>{ln === "" ? " " : ln}</Text>
         ))
       )}
-    </Box>
+    </TitledBox>
   );
 }
 

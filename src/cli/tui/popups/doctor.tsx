@@ -241,6 +241,7 @@ export function DoctorPopup({
             viewport={viewport}
             scrollTop={scrollTop}
             emptyText="(no detail)"
+            hint={`y yanks \`${yankCommandForCheck(focused)}\``}
           />
         </Box>
       </Shell>
