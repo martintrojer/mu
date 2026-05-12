@@ -32,7 +32,7 @@
 //   which is enough in practice. Revisit only if visible flicker
 //   regresses against a stable workstream.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Db } from "../../db.js";
 import { type WorkstreamSnapshot, loadWorkstreamSnapshot } from "../../state.js";
 
@@ -111,6 +111,34 @@ export function useDashboardSnapshot(
   // ripple into the card render path.
   const [lastTickMs, setLastTickMs] = useState(0);
 
+  // Snap-to-null on workstream change
+  // (bug_tui_tab_switch_stale_render, workstream `tui-impl`).
+  //
+  //   Without this, Tab/Shift-Tab on the multi-ws TUI flips the
+  //   `workstream` prop but the hook still has the OLD ws's
+  //   WorkstreamSnapshot in `data` until the new effect's first
+  //   tick resolves (~10-50ms for the SQLite read). React renders
+  //   the cards against the stale snapshot in that gap → a mixed
+  //   frame whose CARDS are old-ws but whose TAB STRIP is new-ws.
+  //
+  //   Fix: when the workstream prop changes, synchronously reset
+  //   data to null during render. Cards already handle the null /
+  //   loading-state case. The next tick (started by the effect's
+  //   re-run on the workstream dep) repopulates fresh data within
+  //   one tick.
+  //
+  //   This is the React-officially-blessed pattern for "derive
+  //   state from props": store the previous value in a ref, compare
+  //   during render, and call setState if they diverge. React
+  //   re-renders immediately with the new state and skips any
+  //   intervening commit, so cards never see the stale snapshot.
+  const lastWsRef = useRef(workstream);
+  if (shouldDiscardForWorkstream(lastWsRef.current, workstream)) {
+    lastWsRef.current = workstream;
+    setData({ data: null, error: null });
+    setLastTickMs(0);
+  }
+
   useEffect(() => {
     if (!enabled) return;
     let cancelled = false;
@@ -159,6 +187,18 @@ export function useDashboardSnapshot(
   }, [db, workstream, tickMs, enabled]);
 
   return { data: data.data, lastTickMs, error: data.error };
+}
+
+/**
+ * Pure helper: returns true when a workstream-prop change must
+ * discard the cached snapshot. Today this is just an identity
+ * check, but factoring it out (a) makes the snap-to-null branch in
+ * useDashboardSnapshot unit-testable without driving the hook, and
+ * (b) gives future work (e.g. ws-aliases / case-insensitive
+ * matching) a single seam to extend. See bug_tui_tab_switch_stale_render.
+ */
+export function shouldDiscardForWorkstream(prev: string, next: string): boolean {
+  return prev !== next;
 }
 
 /** Clamp a desired tick rate to [floor, ceiling]. */

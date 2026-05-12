@@ -403,6 +403,19 @@ is opt-in via the new `--tui` flag.
   `{"  "}` (2-space) gutter. Extra unit test in
   `test/tui-columns.test.ts` asserts `renderRow(...).join("  ")` ≤
   `totalWidth` for a synthetic protect+clip mix.
+- **TUI multi-ws Tab no longer renders a mixed frame** (bug_tui_tab_switch_stale_render,
+  layer 1). On `mu state --tui -w A,B`, pressing `Tab` flipped the
+  TabStrip to ws B but the cards rendered ws A's data for one tick
+  (the visible duration of the SQLite read in the new effect).
+  `useDashboardSnapshot` now derives "the workstream prop changed"
+  state-from-props during render via a `lastWsRef`, snapping the
+  cached snapshot to `null` so cards immediately fall back to their
+  loading-state path; the next tick repopulates fresh data within
+  ~1 tickMs. New pure helper `shouldDiscardForWorkstream(prev,
+  next)` exported for unit testing (and as a future seam for ws
+  aliases / case-insensitive matching). New `test/tui-state-tab-switch.test.ts`
+  covers the helper plus a static-source assertion that the hook
+  wires the snap-to-null branch.
 - **TUI popup body data fills the whole popup, not the first 20 rows**
   (bug_tui_popup_data_doesnt_fill). After bug_tui_popups_fill_pane
   added `flexGrow={1}` + `width={cols}` so the popup Shell occupies
