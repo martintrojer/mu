@@ -95,6 +95,82 @@ describe("WorkspacesPopup: drill is the commits-since-fork list (NOT TaskDetailD
   });
 });
 
+describe("WorkspacesPopup: Enter on focused commit drills into git show diff (feat_workspaces_drill_git_show)", () => {
+  it("shells out to git show <sha> --stat -p --color=never via execFile", () => {
+    // Spec: "git -C <workspacePath> show <sha> --stat -p --color=never".
+    // Captured via Node's child_process.execFile (no shell injection).
+    expect(SRC).toContain('from "node:child_process"');
+    expect(SRC).toContain("execFile");
+    expect(SRC).toContain('"show"');
+    expect(SRC).toContain('"--stat"');
+    expect(SRC).toContain('"-p"');
+    expect(SRC).toContain('"--color=never"');
+    // -C <path> is the path arg to git, NOT a shell cd.
+    expect(SRC).toContain('"-C"');
+  });
+
+  it("caps captured output to avoid runaway memory on giant merges", () => {
+    // Spec: "Cap output at e.g. 100_000 chars to avoid runaway
+    // memory on giant merges."
+    expect(SRC).toMatch(/SHOW_MAX_CHARS\s*=\s*100_000/);
+    expect(SRC).toContain("truncated at");
+  });
+
+  it("renders the diff via the shared <DrillScrollView> primitive (mirrors log.tsx)", () => {
+    // Spec mirrors commit 0e3f6db (Log popup Enter drill): same
+    // shared primitive, same scroll-state pattern.
+    expect(SRC).toContain('from "./drill.js"');
+    expect(SRC).toContain("<DrillScrollView");
+    expect(SRC).toContain("clampScrollTop");
+    expect(SRC).toContain("setShowScrollTop");
+  });
+
+  it("Enter in drill mode triggers the show-fetch (loadShow + setShowSha)", () => {
+    // The drill-mode keymap's `case "drill"` branch must wire the
+    // show fetch (the "third level" of the state machine).
+    expect(SRC).toMatch(/case "drill":\s*\{[^}]*setShowSha\(c\.sha\)/);
+    expect(SRC).toMatch(/loadShow\(focused\.path,\s*c\.sha\)/);
+  });
+
+  it("show mode is popup-local (does NOT widen <App>'s PopupMode union)", () => {
+    // Spec: "keep mode local to workspaces.tsx if PopupMode is
+    // currently a union of 'list' | 'drill' only". The union must
+    // stay binary; the third level rides on the local showSha
+    // sentinel inside drill mode.
+    expect(APP_SRC).toMatch(/export type PopupMode = "list" \| "drill";/);
+    // The popup itself doesn't widen its accepted mode either.
+    expect(SRC).toContain('mode: "list" | "drill"');
+  });
+
+  it("y in show mode yanks `git show <sha>` (the COMMAND, per spec)", () => {
+    // Spec: "'y' in 'show' mode yanks `git show <sha>` (the same as
+    // drill mode — operator wants the command, not the captured
+    // output)."
+    expect(SRC).toMatch(/yank\(`git show \$\{showSha\}`\)/);
+  });
+
+  it("resets show-state on focused-workspace change + on leaving drill", () => {
+    // Spec STATE LIFECYCLE block: reset on (a) mode change away
+    // from show / drill, (b) focused workspace change.
+    expect(SRC).toMatch(/setShowSha\(null\)/);
+    expect(SRC).toMatch(/focused\?\.agentName/);
+    // Mode-change-away effect.
+    expect(SRC).toMatch(/if \(mode !== "drill"\)/);
+  });
+
+  it("Esc/q in show mode backs out to commits list (does NOT close popup)", () => {
+    // The show-mode close branch clears showSha but does NOT call
+    // onClose / onModeChange("list") — dropping showSha back-rolls
+    // to the commits-drill view, exactly like log.tsx's drill back
+    // returns to the events list.
+    const showCloseBlock = SRC.match(/if \(inShow\) \{[\s\S]*?case "close":[\s\S]*?return;/);
+    expect(showCloseBlock).not.toBeNull();
+    expect(showCloseBlock?.[0]).toContain("setShowSha(null)");
+    expect(showCloseBlock?.[0]).not.toContain("onClose()");
+    expect(showCloseBlock?.[0]).not.toContain('onModeChange("list")');
+  });
+});
+
 describe("WorkspacesPopup: '/' filter (consumes the shared primitive)", () => {
   it("imports usePopupFilter / applyFilter / FilterPrompt", () => {
     expect(SRC).toContain("usePopupFilter");

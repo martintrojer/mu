@@ -307,9 +307,11 @@ running a wave.
   (interactive ink dashboard; read-only, yanks `mu` commands;
   `1`-`5` toggle cards, `!`/`@`/`#`/`$` open list popups, `Enter`
   drills (in the Activity log popup it opens the focused event's
-  full untruncated payload), `/` filters list popups incrementally, `?`/`F1` keymap,
-  `q`/`Ctrl-C` quits), `--mission`, `--all`, `--json`. `mu doctor`
-  for health.
+  full untruncated payload; the Workspaces popup chains `Enter`
+  three levels deep → commits-since-fork → `git show <sha>` diff
+  view, with `y` yanking `git show <sha>` at every level), `/`
+  filters list popups incrementally, `?`/`F1` keymap, `q`/`Ctrl-C`
+  quits), `--mission`, `--all`, `--json`. `mu doctor` for health.
 
 ## `mu task wait` exits
 

@@ -8,6 +8,18 @@
 // loop: orient on which workspace has unmerged commits, then yank a
 // `cd` to that workspace's path.
 //
+// Per feat_workspaces_drill_git_show: a third, deeper level. Pressing
+// Enter on a focused commit in the commits-since-fork list drills
+// ONE MORE LEVEL into a read-only inline view of the actual
+// `git show <sha> --stat -p` output, rendered via the shared
+// <DrillScrollView> primitive (same one log.tsx uses for full
+// payload view). The popup's `mode` prop from <App> stays "drill"
+// while in the show view — the show level is a popup-local sub-mode
+// (showSha state below) so we don't have to widen <App>'s PopupMode
+// union for one popup. j/k Ctrl-D/U scroll the diff; Esc/q back to
+// the commits list; y yanks the bare `git show <sha>` (the operator
+// gets the command, not the captured output).
+//
 // Mirrors the data exposed by Card 5 (cards/workspaces.tsx) — the
 // same WorkstreamSnapshot.workspaces[] rows decorated by
 // withDirty: true (already wired by state.ts) — and adds two columns
@@ -35,6 +47,8 @@
 //
 // Per ROADMAP pledge: ink/react import limited to src/cli/tui/*.
 
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { Box, Text, useInput } from "ink";
 import { useCallback, useEffect, useState } from "react";
 import type { Db } from "../../../db.js";
@@ -53,7 +67,18 @@ import { dispatchPopupKey } from "../keys.js";
 import { TitledBox } from "../titled-box.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
 import { CursorRow } from "./cursor-row.js";
+import { DrillScrollView, clampScrollTop } from "./drill.js";
 import { usePopupViewport } from "./viewport.js";
+
+// Promisified execFile for the show-level git invocation (see
+// loadShow below). Module-level so the cost is paid once.
+const execFileAsync = promisify(execFile);
+
+/** Cap the captured `git show` output so a giant merge commit can't
+ *  blow the popup's render budget or eat memory. 100_000 chars is
+ *  ~1300 wrapped lines at 80 cols; well above the viewport, well
+ *  below "runaway". */
+const SHOW_MAX_CHARS = 100_000;
 
 export interface PopupProps {
   yank: (command: string) => Promise<void>;
@@ -120,6 +145,19 @@ export function WorkspacesPopup({
   // currently-rendered list only.
   const flt = usePopupFilter();
   const drillFlt = usePopupFilter();
+  // Show-mode (commit-diff drill) state. Owned here (popup-local)
+  // because <App>'s PopupMode union is only "list" | "drill" — we
+  // don't widen it for one popup. While `showSha !== null` AND
+  // mode === "drill" we render the show view; Esc/q clears showSha
+  // back to the commits list. Reset by:
+  //   - mode change away from "drill" (useEffect below)
+  //   - focused workspace change in list mode (useEffect below)
+  //   - Esc/q in show mode (handler below)
+  const [showSha, setShowSha] = useState<string | null>(null);
+  const [showText, setShowText] = useState("");
+  const [showLoading, setShowLoading] = useState(false);
+  const [showErr, setShowErr] = useState<string | null>(null);
+  const [showScrollTop, setShowScrollTop] = useState(0);
 
   const sourceWorkspaces = snapshot?.workspaces ?? [];
   const workspaces =
@@ -136,11 +174,42 @@ export function WorkspacesPopup({
 
   // The active filter pushed up to <App>: list-mode → flt;
   // drill-mode → drillFlt. Either way the StatusBar flips to
-  // popup-filter when editing.
-  const activeFilterEditing = mode === "drill" ? drillFlt.editing : flt.editing;
+  // popup-filter when editing. Show-mode never edits a filter
+  // (it's a read-only diff view) so it never bubbles "true".
+  const inShow = mode === "drill" && showSha !== null;
+  const activeFilterEditing = inShow ? false : mode === "drill" ? drillFlt.editing : flt.editing;
   useEffect(() => {
     onFilterEditingChange?.(activeFilterEditing);
   }, [activeFilterEditing, onFilterEditingChange]);
+
+  /** Shell out to `git -C <path> show <sha> --stat -p --color=never`
+   *  and capture stdout. Cap at SHOW_MAX_CHARS. Errors stringify into
+   *  showErr (rendered inline in the show body). Narrow execFile, no
+   *  abstraction layer — vcs.ts already abstracts ALL the workspace
+   *  VCS verbs; layering one more for one read-only view is over-kill
+   *  per the spec's "narrow execFile in workspaces.tsx is fine" call. */
+  const loadShow = useCallback(async (path: string, sha: string) => {
+    setShowLoading(true);
+    setShowErr(null);
+    setShowText("");
+    setShowScrollTop(0);
+    try {
+      const { stdout } = await execFileAsync(
+        "git",
+        ["-C", path, "show", sha, "--stat", "-p", "--color=never"],
+        { maxBuffer: SHOW_MAX_CHARS * 2 },
+      );
+      const trimmed =
+        stdout.length > SHOW_MAX_CHARS
+          ? `${stdout.slice(0, SHOW_MAX_CHARS)}\n…(truncated at ${SHOW_MAX_CHARS} chars)`
+          : stdout;
+      setShowText(trimmed);
+    } catch (e) {
+      setShowErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setShowLoading(false);
+    }
+  }, []);
 
   // Filtered commits view (drill-mode equivalent of `workspaces`).
   const filteredCommits = applyFilter(commits, drillFlt.query, (c) => `${c.sha} ${c.subject}`);
@@ -181,11 +250,42 @@ export function WorkspacesPopup({
     }
   }, [mode, focused, loadCommits]);
 
+  // Reset show-mode state when the popup leaves drill (back to
+  // workspace list) or when the focused workspace changes. Mirrors
+  // the spec STATE LIFECYCLE: "Reset captured-show state on mode
+  // change away from 'show', focused commit change in drill,
+  // workspace change in list mode". The first two collapse to
+  // "mode !== drill" (Esc from show → drill, Esc from drill → list);
+  // the third is the focused.agentName effect below. Note: we do
+  // NOT reset on focused commit change inside drill — the user
+  // hasn't entered show mode yet there; the show fetch is wired to
+  // the Enter handler instead.
+  useEffect(() => {
+    if (mode !== "drill") {
+      setShowSha(null);
+      setShowText("");
+      setShowErr(null);
+      setShowScrollTop(0);
+      setShowLoading(false);
+    }
+  }, [mode]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: focused?.agentName is the trigger; the effect body is intentionally pure setters, so biome can't infer the dependency from a body reference.
+  useEffect(() => {
+    setShowSha(null);
+    setShowText("");
+    setShowErr(null);
+    setShowScrollTop(0);
+    setShowLoading(false);
+  }, [focused?.agentName]);
+
   useInput((input, key) => {
     // Filter-mode keystrokes consume printable + Esc/Enter/Bksp.
     // The active filter depends on which view we're rendering.
+    // Show-mode is read-only — no filter prompt — so we skip the
+    // consume check entirely (lets Esc fire as close, not
+    // filter-cancel).
     const activeFlt = mode === "drill" ? drillFlt : flt;
-    if (activeFlt.onKey(input, key) === "consumed") return;
+    if (!inShow && activeFlt.onKey(input, key) === "consumed") return;
     const action = dispatchPopupKey(input, {
       ctrl: key.ctrl,
       shift: key.shift,
@@ -200,11 +300,63 @@ export function WorkspacesPopup({
       pageUp: key.pageUp,
       pageDown: key.pageDown,
     });
+    if (inShow) {
+      // Show-mode keymap: j/k scroll the captured diff, Ctrl-D/U /
+      // PgUp/PgDn half- or full-viewport, g/G jump top/bottom, y
+      // yanks `git show <sha>` (the COMMAND, per spec — operator
+      // wants the recipe, not the captured output), Esc/q back to
+      // the commits list. Filter / verb / drill-again are
+      // suppressed in show — it's a read-only diff view.
+      const totalLines = showText === "" ? 0 : showText.split("\n").length;
+      switch (action.kind) {
+        case "close":
+          setShowSha(null);
+          setShowScrollTop(0);
+          return;
+        case "moveDown":
+          setShowScrollTop((s) => clampScrollTop(s + 1, totalLines, drillViewport));
+          return;
+        case "moveUp":
+          setShowScrollTop((s) => clampScrollTop(s - 1, totalLines, drillViewport));
+          return;
+        case "jumpTop":
+          setShowScrollTop(0);
+          return;
+        case "jumpBottom":
+          setShowScrollTop(clampScrollTop(totalLines, totalLines, drillViewport));
+          return;
+        case "pageDown":
+          setShowScrollTop((s) =>
+            clampScrollTop(
+              s + Math.floor(drillViewport / (action.half ? 2 : 1)),
+              totalLines,
+              drillViewport,
+            ),
+          );
+          return;
+        case "pageUp":
+          setShowScrollTop((s) =>
+            clampScrollTop(
+              s - Math.floor(drillViewport / (action.half ? 2 : 1)),
+              totalLines,
+              drillViewport,
+            ),
+          );
+          return;
+        case "yank":
+          if (showSha !== null) void yank(`git show ${showSha}`);
+          return;
+        default:
+          return;
+      }
+    }
     if (mode === "drill") {
       // Drill-mode keymap: j/k scroll the commits list, '/' filters
-      // the commits list, Esc/q backs out to the workspace list.
-      // Yank in drill mode yanks `git show <sha>` for the focused
-      // commit (most useful when scanning for cherry-pick targets).
+      // the commits list, Enter drills ONE MORE LEVEL into the
+      // focused commit's `git show` diff (feat_workspaces_drill_git_show),
+      // Esc/q backs out to the workspace list. Yank in drill mode
+      // yanks `git show <sha>` for the focused commit (most useful
+      // when scanning for cherry-pick targets).
       switch (action.kind) {
         case "close":
           onModeChange("list");
@@ -212,6 +364,13 @@ export function WorkspacesPopup({
         case "filter":
           drillFlt.startEdit();
           return;
+        case "drill": {
+          const c = filteredCommits[safeDrillCursor];
+          if (!c || !focused) return;
+          setShowSha(c.sha);
+          void loadShow(focused.path, c.sha);
+          return;
+        }
         case "moveDown":
           setDrillCursor((c) => Math.min(filteredCommits.length - 1, c + 1));
           return;
@@ -285,6 +444,29 @@ export function WorkspacesPopup({
 
   if (snapshot === null) {
     return <Shell title="Workspaces · popup">{<Text dimColor>loading…</Text>}</Shell>;
+  }
+  if (inShow && showSha !== null && focused) {
+    const shortSha = showSha.slice(0, 12);
+    const body = showErr !== null ? `error: ${showErr}` : showText;
+    return (
+      <Shell title={`Workspaces · git show ${shortSha}`}>
+        <Box flexDirection="column" flexGrow={1}>
+          <DrillScrollView
+            title={`git show ${shortSha} (${focused.agentName})`}
+            body={body}
+            viewport={drillViewport}
+            scrollTop={showScrollTop}
+            hint={showLoading ? "loading…" : undefined}
+            emptyText={showLoading ? "loading…" : "(empty diff)"}
+          />
+        </Box>
+        <Box marginTop={1}>
+          <Text dimColor>
+            j/k scroll · Ctrl-D/U half page · y yanks `git show {shortSha}` · Esc/q back to commits
+          </Text>
+        </Box>
+      </Shell>
+    );
   }
   if (sourceWorkspaces.length === 0) {
     return (

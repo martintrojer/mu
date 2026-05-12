@@ -442,7 +442,12 @@ mu                          # bare alias for `mu state --mission`
   `j/k` / `Ctrl-D/U` scroll the payload, `y` yanks the
   single-event lookup `mu log --since <seq-1> -n 1 -w <ws>`.
   One `Esc` / `q` backs out per recursion level (notes → task
-  list → list of tracks → popup closed).
+  list → list of tracks → popup closed). The Workspaces popup
+  (`%`) chains the same way: list of workspaces → `Enter` opens
+  the commits-since-fork list → `Enter` on a focused commit opens
+  a read-only inline view of `git show <sha> --stat -p` (j/k
+  scroll, Ctrl-D/U half page, `y` yanks the bare `git show <sha>`
+  command, Esc/q backs out one level).
 
   **Popup search/filter**: `/` inside any list popup enters an
   incremental case-insensitive substring filter (lazygit / k9s

@@ -83,6 +83,24 @@ is opt-in via the new `--tui` flag.
     Card 6/7/8 popups (in-progress / blocked / recent) ship under
     `feat_more_cards_umbrella`, they pick up the same chain
     automatically by importing `TaskDetailDrill`.
+  - **Workspaces popup commits-drill → Enter on focused commit
+    drills again into `git show <sha>`** (per
+    `feat_workspaces_drill_git_show`). Third level of the
+    Workspaces popup state machine: list of workspaces → commits
+    since fork → read-only inline view of `git -C <workspace> show
+    <sha> --stat -p --color=never`, rendered via the shared
+    `<DrillScrollView>` primitive (same one log.tsx's payload
+    drill uses). Captured stdout is capped at 100_000 chars to
+    avoid runaway memory on giant merges; the drill cap is the
+    only thing the popup remembers between Esc cycles. Show-mode
+    keymap mirrors the rest: j/k Ctrl-D/U PgUp/PgDn scroll, g/G
+    jump top/bottom, `y` yanks the bare `git show <sha>` (the
+    operator wants the COMMAND, not the captured output — same
+    yank target as the commits-list level), Esc/q backs out one
+    level (back to commits, NOT all the way to workspaces).
+    Mode stays popup-local (`<App>`'s `PopupMode` union stays
+    `"list" | "drill"` — the show level rides on a `showSha`
+    sentinel inside drill mode), so no other popup is touched.
   - **Tick adjust live**: `+`/`=` faster, `-` slower, `0` reset (1s
     default; 100ms floor; 10s ceiling).
   - **Popup `/` search/filter** (lazygit / k9s convention): every
