@@ -353,6 +353,26 @@ is opt-in via the new `--tui` flag.
 
 ### TUI internals
 
+- **Card footer-inset assertions collapsed to a single sweep test**
+  (review_tests_inline_card_source_blocks). Seven test files
+  (`tui-card-{blocked, doctor, inprogress, ready, recent, tracks,
+  workspaces}.test.ts`) carried byte-for-byte copies of the same
+  trailing block: `readFileSync(….tsx)` followed by a 2-it
+  describe asserting (1) no `<Text>+{more} more…</Text>` in-body
+  node and (2) that the source contained the literal string
+  `bottomLabel={bottomLabel}`. The 7 copies are gone; one new
+  sweep file `test/tui-card-footer-inset.test.ts` walks `cards/*.tsx`
+  (mirroring the pattern already used by
+  `tui-card-render-width.test.ts` for `<ListRow>`). The previous
+  `bottomLabel={bottomLabel}` regex was trivially evadable by
+  accident — a stale `let bottomLabel = undefined; <TitledBox
+  bottomLabel={bottomLabel} …/>` would pass while silently
+  disabling the inset — so the sweep additionally pins the
+  computation shape: `const bottomLabel = <count> > 0 ? \`+${…}
+  more · Shift+<digit>\` : undefined`. Net: -141 lines of test
+  duplication, +112 lines of one centralised sweep, one place to
+  update on the next refactor.
+
 - **Status-bar hint cluster: single declarative token list, zero
   drift surface** (review_complexity_status_bar_hint_dual_render).
   `src/cli/tui/status-bar.tsx` previously maintained two parallel

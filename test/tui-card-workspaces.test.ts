@@ -147,20 +147,5 @@ describe("WorkspacesCard pure helpers", () => {
   });
 });
 
-// feat_card_footer_inset: bottom-border inset replaces the in-body
-// "+M more · …" line. Crude regex on the source is enough.
-import { readFileSync as _readFileSync_workspaces } from "node:fs";
-import { fileURLToPath as _fileURLToPath_workspaces } from "node:url";
-const _SRC_workspaces = _readFileSync_workspaces(
-  _fileURLToPath_workspaces(new URL("../src/cli/tui/cards/workspaces.tsx", import.meta.url)),
-  "utf8",
-);
-describe("workspaces.tsx source: no in-body '+M more' line", () => {
-  it("does not render '+{...} more' as a body Text node", () => {
-    expect(_SRC_workspaces).not.toMatch(/<Text[^>]*>\s*\u2026\s*\+/);
-    expect(_SRC_workspaces).not.toMatch(/<Text[^>]*>[^<]*\+\${[^}]+\}\s*more/);
-  });
-  it("wires bottomLabel into TitledBox", () => {
-    expect(_SRC_workspaces).toMatch(/bottomLabel=\{bottomLabel\}/);
-  });
-});
+// feat_card_footer_inset assertions live in test/tui-card-footer-inset.test.ts
+// (single sweep across cards/*) — see review_tests_inline_card_source_blocks.
