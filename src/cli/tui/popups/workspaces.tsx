@@ -47,8 +47,6 @@
 //
 // Per ROADMAP pledge: ink/react import limited to src/cli/tui/*.
 
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import { Box, Text, useInput } from "ink";
 import { useCallback, useEffect, useState } from "react";
 import type { Db } from "../../../db.js";
@@ -63,6 +61,7 @@ import {
   renderRow,
   termColsForLayout,
 } from "../columns.js";
+import { runGitShow } from "../git-show.js";
 import { dispatchPopupKeyFromInk } from "../keys.js";
 import { ListRow } from "../list-row.js";
 import { PopupShell } from "../popup-shell.js";
@@ -72,15 +71,10 @@ import { DrillScrollView, useDrillKeymap } from "./drill.js";
 import { applyCursor, centredVisibleSlice, isNavAction } from "./scroll.js";
 import { usePopupViewport } from "./viewport.js";
 
-// Promisified execFile for the show-level git invocation (see
-// loadShow below). Module-level so the cost is paid once.
-const execFileAsync = promisify(execFile);
-
-/** Cap the captured `git show` output so a giant merge commit can't
- *  blow the popup's render budget or eat memory. 100_000 chars is
- *  ~1300 wrapped lines at 80 cols; well above the viewport, well
- *  below "runaway". */
-const SHOW_MAX_CHARS = 100_000;
+// SHOW_MAX_CHARS + the actual `git show` invocation live in
+// ../git-show.ts so they're testable against a real tiny git repo
+// fixture without spinning up an ink renderer (per
+// review_tests_workspaces_show_loadshow_unmocked).
 
 export interface PopupProps {
   yank: (command: string) => Promise<void>;
@@ -191,32 +185,18 @@ export function WorkspacesPopup({
     onFilterEditingChange?.(activeFilterEditing);
   }, [activeFilterEditing, onFilterEditingChange]);
 
-  /** Shell out to `git -C <path> show <sha> --stat -p --color=never`
-   *  and capture stdout. Cap at SHOW_MAX_CHARS. Errors stringify into
-   *  showErr (rendered inline in the show body). Narrow execFile, no
-   *  abstraction layer — vcs.ts already abstracts ALL the workspace
-   *  VCS verbs; layering one more for one read-only view is over-kill
-   *  per the spec's "narrow execFile in workspaces.tsx is fine" call. */
+  /** Thin React glue around runGitShow (the real git invocation +
+   *  truncation logic lives in ../git-show.ts so it's testable
+   *  against a real fixture). The body here is just state-setter
+   *  bookkeeping. */
   const loadShow = useCallback(async (path: string, sha: string) => {
     setShowLoading(true);
     setShowErr(null);
     setShowText("");
-    try {
-      const { stdout } = await execFileAsync(
-        "git",
-        ["-C", path, "show", sha, "--stat", "-p", "--color=never"],
-        { maxBuffer: SHOW_MAX_CHARS * 2 },
-      );
-      const trimmed =
-        stdout.length > SHOW_MAX_CHARS
-          ? `${stdout.slice(0, SHOW_MAX_CHARS)}\n…(truncated at ${SHOW_MAX_CHARS} chars)`
-          : stdout;
-      setShowText(trimmed);
-    } catch (e) {
-      setShowErr(e instanceof Error ? e.message : String(e));
-    } finally {
-      setShowLoading(false);
-    }
+    const r = await runGitShow(path, sha);
+    if (r.error !== null) setShowErr(r.error);
+    else setShowText(r.text);
+    setShowLoading(false);
   }, []);
 
   // Filtered commits view (drill-mode equivalent of `workspaces`).

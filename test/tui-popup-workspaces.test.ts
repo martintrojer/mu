@@ -96,24 +96,21 @@ describe("WorkspacesPopup: drill is the commits-since-fork list (NOT TaskDetailD
 });
 
 describe("WorkspacesPopup: Enter on focused commit drills into git show diff (feat_workspaces_drill_git_show)", () => {
-  it("shells out to git show <sha> --stat -p --color=never via execFile", () => {
-    // Spec: "git -C <workspacePath> show <sha> --stat -p --color=never".
-    // Captured via Node's child_process.execFile (no shell injection).
-    expect(SRC).toContain('from "node:child_process"');
-    expect(SRC).toContain("execFile");
-    expect(SRC).toContain('"show"');
-    expect(SRC).toContain('"--stat"');
-    expect(SRC).toContain('"-p"');
-    expect(SRC).toContain('"--color=never"');
-    // -C <path> is the path arg to git, NOT a shell cd.
-    expect(SRC).toContain('"-C"');
-  });
-
-  it("caps captured output to avoid runaway memory on giant merges", () => {
-    // Spec: "Cap output at e.g. 100_000 chars to avoid runaway
-    // memory on giant merges."
-    expect(SRC).toMatch(/SHOW_MAX_CHARS\s*=\s*100_000/);
-    expect(SRC).toContain("truncated at");
+  it("delegates the git show invocation + truncation to runGitShow (../git-show.ts)", () => {
+    // The git invocation, the arg vector, and the SHOW_MAX_CHARS
+    // truncation now live in src/cli/tui/git-show.ts where they're
+    // exercised by a REAL git-repo fixture (test/tui-git-show.test.ts).
+    // The popup's responsibility shrinks to wiring: call runGitShow,
+    // route { text, error } to the right state setters. Static-source
+    // assertions on "--color=never" / SHOW_MAX_CHARS belong to the
+    // helper module's tests now.
+    expect(SRC).toContain('from "../git-show.js"');
+    expect(SRC).toContain("runGitShow(path, sha)");
+    // The popup must NOT shell out to git itself anymore (any direct
+    // execFile call here is a regression that bypasses the helper's
+    // arg-vector + truncation guarantees).
+    expect(SRC).not.toContain("node:child_process");
+    expect(SRC).not.toMatch(/\bexecFile\b/);
   });
 
   it("renders the diff via the shared <DrillScrollView> primitive (mirrors log.tsx)", () => {

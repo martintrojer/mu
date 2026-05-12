@@ -353,6 +353,32 @@ is opt-in via the new `--tui` flag.
 
 ### TUI internals
 
+- **Workspaces popup `git show` invocation extracted to a testable
+  helper** (review_tests_workspaces_show_loadshow_unmocked). The
+  `loadShow` callback in `src/cli/tui/popups/workspaces.tsx` previously
+  shelled out via promisified `execFile` inline, with the arg vector,
+  the `SHOW_MAX_CHARS` truncation, and the error-stringification all
+  living in a `useCallback` body that no test ever called — the only
+  coverage was static-source greps for the literal strings
+  `"--color=never"` / `SHOW_MAX_CHARS = 100_000` / `"truncated at"`.
+  A regression that swapped `--color=never` for `--color=always`
+  (would inject ANSI into the popup body) or silently lowered
+  `maxBuffer` to 100 would have passed. New `src/cli/tui/git-show.ts`
+  module exports `runGitShow(path, sha)` returning a structured
+  `{ text, truncated, error }`, plus a `gitShowArgs(path, sha)` arg-
+  vector helper for cheap regression assertions and an `ExecFileFn`
+  injection seam for tests. The popup's `loadShow` shrinks to state-
+  setter glue. New `test/tui-git-show.test.ts` drives the helper
+  against (a) a real `mkdtemp + git init + commit` fixture (asserts
+  truncation fires at SHOW_MAX_CHARS, ZERO ANSI escape sequences in
+  stdout, missing-sha returns a useful error string, non-repo path
+  returns a useful error string) and (b) a stub `execFile` that pins
+  the exact arg vector + maxBuffer≥2×SHOW_MAX_CHARS + the throw→
+  `{error}` conversion. The popup's existing test suite is updated:
+  the per-flag static-source assertions are replaced by a single
+  guard that the popup wires `runGitShow(path, sha)` and never
+  imports `node:child_process` or `execFile` itself.
+
 - **Card footer-inset assertions collapsed to a single sweep test**
   (review_tests_inline_card_source_blocks). Seven test files
   (`tui-card-{blocked, doctor, inprogress, ready, recent, tracks,
