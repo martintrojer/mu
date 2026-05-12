@@ -231,15 +231,21 @@ describe("mu task notes — filters", () => {
       expect(r.stderr).toMatch(/mutually exclusive|--since-claim/);
     });
 
-    it("--json emits the {items, count} collection envelope", async () => {
-      await seedNotes(2);
+    it("--json emits the {items, count} collection envelope with note contents", async () => {
+      await seedNotes(2, "envelope");
       const r = await runCli(["task", "notes", "tnotes", "-w", "test", "--json"], dbPath);
       expect(r.error).toBeUndefined();
-      const out = JSON.parse(r.stdout) as Record<string, unknown>;
-      expect(out).toHaveProperty("items");
-      expect(out).toHaveProperty("count");
-      expect(Array.isArray(out.items)).toBe(true);
+      const out = JSON.parse(r.stdout) as {
+        items: Array<{ author: string | null; content: string; createdAt: string }>;
+        count: number;
+      };
+      expect(Object.keys(out).sort()).toEqual(["count", "items"]);
       expect(out.count).toBe(2);
+      expect(out.items.map((n) => n.content)).toEqual(["envelope 1", "envelope 2"]);
+      expect(out.items.map((n) => n.author)).toEqual(["tester", "tester"]);
+      for (const note of out.items) {
+        expect(Date.parse(note.createdAt)).not.toBeNaN();
+      }
     });
 
     it("default behaviour (no filters) is unchanged", async () => {

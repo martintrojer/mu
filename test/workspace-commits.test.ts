@@ -335,20 +335,22 @@ jjDescribe("jjBackend.commitsSinceBase (smoke)", () => {
     execFileSync("jj", ["commit", "-m", "init"], { cwd: projectRoot, stdio: "ignore" });
   });
 
-  // Smoke: return shape is an array (possibly empty), and each
-  // element has the four CommitSummary fields. We don't assert on
-  // commit count because jj's working-copy semantics around `@`
-  // differ subtly from git's HEAD and depend on jj version.
-  it("returns an array of CommitSummary records (no throws)", async () => {
+  it("returns a described workspace change as a CommitSummary record", async () => {
     const wsPath = join(stateRoot, "workspaces", "auth", "worker-1");
     const r = await jjBackend.createWorkspace({ projectRoot, workspacePath: wsPath });
+    writeFileSync(join(wsPath, "draft.txt"), "draft\n");
+    execFileSync("jj", ["describe", "-m", "jj draft subject", "-m", "jj draft body"], {
+      cwd: wsPath,
+      stdio: "ignore",
+    });
+
     const commits = await jjBackend.commitsSinceBase(wsPath, r.parentRef ?? "");
-    expect(Array.isArray(commits)).toBe(true);
-    for (const c of commits) {
-      expect(typeof c.sha).toBe("string");
-      expect(typeof c.subject).toBe("string");
-      expect(typeof c.body).toBe("string");
-      expect(typeof c.authorDate).toBe("string");
-    }
+    expect(commits).toHaveLength(1);
+    const commit = commits[0];
+    if (!commit) throw new Error("expected one jj workspace commit");
+    expect(commit.subject).toBe("jj draft subject");
+    expect(commit.body).toContain("jj draft body");
+    expect(commit.sha).toMatch(/^[0-9a-f]+$/);
+    expect(commit.authorDate).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 });

@@ -85,16 +85,38 @@ describe("mu state — default (full) mode", () => {
     // Spec: { workstreamName, agents, orphans, tracks, ready, blocked,
     //         inProgress, recentClosed, workspaces, recent } (flat).
     expect(parsed.workstreamName).toBe("ws");
-    expect(Array.isArray(parsed.agents)).toBe(true);
-    expect(Array.isArray(parsed.orphans)).toBe(true);
-    expect(Array.isArray(parsed.tracks)).toBe(true);
-    expect(Array.isArray(parsed.ready)).toBe(true);
-    expect(parsed.ready.length).toBe(2);
-    expect(Array.isArray(parsed.blocked)).toBe(true);
-    expect(Array.isArray(parsed.inProgress)).toBe(true);
-    expect(Array.isArray(parsed.recentClosed)).toBe(true);
-    expect(Array.isArray(parsed.workspaces)).toBe(true);
-    expect(Array.isArray(parsed.recent)).toBe(true);
+    expect(parsed.agents).toEqual([]);
+    expect(parsed.orphans).toEqual([]);
+    expect(parsed.tracks).toEqual([
+      expect.objectContaining({
+        roots: [expect.objectContaining({ name: "alpha", title: "A" })],
+        readyCount: 1,
+      }),
+      expect.objectContaining({
+        roots: [expect.objectContaining({ name: "beta", title: "B" })],
+        readyCount: 1,
+      }),
+    ]);
+    expect(parsed.ready).toEqual([
+      expect.objectContaining({ name: "beta", title: "B", status: "OPEN", roi: 60 }),
+      expect.objectContaining({ name: "alpha", title: "A", status: "OPEN", roi: 50 }),
+    ]);
+    expect(parsed.blocked).toEqual([]);
+    expect(parsed.inProgress).toEqual([]);
+    expect(parsed.recentClosed).toEqual([]);
+    expect(parsed.workspaces).toEqual([]);
+    expect(parsed.recent).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "event",
+          payload: expect.stringContaining("task add alpha"),
+        }),
+        expect.objectContaining({
+          kind: "event",
+          payload: expect.stringContaining("task add beta"),
+        }),
+      ]),
+    );
   });
 
   it("multi-ws --json wraps per-ws shapes in { workstreams: [...] }", async () => {
@@ -106,14 +128,23 @@ describe("mu state — default (full) mode", () => {
     const { stdout, exitCode } = await runCli(["state", "-w", "ws,ws2", "--json"], dbPath);
     expect(exitCode).toBeNull();
     const parsed = JSON.parse(stdout);
-    expect(Array.isArray(parsed.workstreams)).toBe(true);
-    expect(parsed.workstreams.length).toBe(2);
-    for (const w of parsed.workstreams) {
-      expect(typeof w.workstreamName).toBe("string");
-      expect(Array.isArray(w.ready)).toBe(true);
-      expect(Array.isArray(w.blocked)).toBe(true);
-      expect(Array.isArray(w.workspaces)).toBe(true);
-    }
+    expect(parsed.workstreams).toEqual([
+      expect.objectContaining({
+        workstreamName: "ws",
+        ready: expect.arrayContaining([
+          expect.objectContaining({ name: "alpha", title: "A", status: "OPEN" }),
+          expect.objectContaining({ name: "beta", title: "B", status: "OPEN" }),
+        ]),
+        blocked: [],
+        workspaces: [],
+      }),
+      expect.objectContaining({
+        workstreamName: "ws2",
+        ready: [expect.objectContaining({ name: "gamma", title: "G", status: "OPEN" })],
+        blocked: [],
+        workspaces: [],
+      }),
+    ]);
   });
 });
 
@@ -164,7 +195,9 @@ describe("mu state --mission — stripped glance card", () => {
       ["agents", "orphans", "ready", "tracks", "workstreamName"].sort(),
     );
     expect(parsed.workstreamName).toBe("ws");
-    expect(parsed.ready.length).toBe(1);
+    expect(parsed.ready).toEqual([
+      expect.objectContaining({ name: "alpha", title: "A", status: "OPEN", roi: 50 }),
+    ]);
   });
 
   it("bare `mu` (no verb) is an alias for `mu state --mission`", async () => {
@@ -195,6 +228,9 @@ describe("mu state --mission — stripped glance card", () => {
     expect(Object.keys(parsed).sort()).toEqual(
       ["agents", "orphans", "ready", "tracks", "workstreamName"].sort(),
     );
+    expect(parsed.ready).toEqual([
+      expect.objectContaining({ name: "alpha", title: "A", status: "OPEN", roi: 50 }),
+    ]);
   });
 });
 

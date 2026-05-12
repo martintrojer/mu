@@ -379,6 +379,14 @@ is opt-in via the new `--tui` flag.
 
 ### TUI internals
 
+- **JSON shape tests now assert seeded semantics, not just arrays**
+  (testreview_json_shape_weak_assertions). `state --json`, `agent
+  list --json`, `task notes --json`, and workspace-commits tests now
+  seed deterministic rows and assert representative content (task
+  ids/titles/statuses/ROI, live agent name/status, note author/content,
+  jj draft commit subject/body) instead of accepting any array-shaped
+  output. No production behaviour change.
+
 - **Yank OSC-52 branch + platform-conditional probe now have real
   coverage** (review_tests_yank_osc52_unverified). `src/cli/tui/yank.ts`
   had four backends — CLI (pbcopy/wl-copy/xclip/xsel/clip.exe), OSC-52,

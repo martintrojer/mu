@@ -10,7 +10,8 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { insertAgent } from "../src/agents.js";
 import { type Db, openDb } from "../src/db.js";
-import { addNote, addTask, claimTask } from "../src/tasks.js";
+import { addNote, addTask, claimTask, closeTask } from "../src/tasks.js";
+import { resetTmuxExecutor, setTmuxExecutor } from "../src/tmux.js";
 import { ensureWorkstream } from "../src/workstream.js";
 import { runCli } from "./_runCli.js";
 
@@ -49,9 +50,29 @@ describe("--json output on read verbs", () => {
     });
     addNote(db, "a", "FILES: src/auth.ts", { workstream: "auth" });
     db.close();
+
+    setTmuxExecutor(async (args) => {
+      if (args[0] === "list-sessions") {
+        return { stdout: "", stderr: "no server running on /tmp/tmux-test/default", exitCode: 1 };
+      }
+      if (args[0] === "has-session") {
+        return { stdout: "", stderr: "can't find session", exitCode: 1 };
+      }
+      if (args[0] === "list-panes" && args[1] === "-s") {
+        return { stdout: "@1\t%42\tworker-1\tpi", stderr: "", exitCode: 0 };
+      }
+      if (args[0] === "capture-pane") {
+        return { stdout: "ready\n> ", stderr: "", exitCode: 0 };
+      }
+      if (args[0] === "select-pane" || args[0] === "set-option") {
+        return { stdout: "", stderr: "", exitCode: 0 };
+      }
+      return { stdout: "", stderr: `unmocked tmux call: ${args.join(" ")}`, exitCode: 1 };
+    });
   });
 
   afterEach(() => {
+    resetTmuxExecutor();
     rmSync(tempDir, { recursive: true, force: true });
   });
 
@@ -270,53 +291,119 @@ describe("--json output on read verbs", () => {
     expect(eChild?.children[0]?.recurrence).toBe(true);
   });
 
-  it("state --json emits agents as a top-level array (not { active, orphans })", async () => {
+  it("state --json emits seeded content for each top-level collection", async () => {
     // Real footgun discovered in real use: state used to wrap agents in
     // `{ active, orphans }` so `.agents | length` returned 2 (the
     // number of object keys) regardless of agent count. The fix
     // matches mission-control's flat shape: agents is the array,
     // orphans is its own top-level key.
-    // mu state --json emits the full static state-card shape.
-    // emits the unified flat shape — { workstreamName, agents,
-    // orphans, tracks, ready, blocked, inProgress, recentClosed,
-    // workspaces, recent } (no nested `tasks` wrapper, no
-    // `workspace_orphans` / `recent_events` snake-case keys).
+    //
+    // Keep this as a semantic contract, not just a shape check: a
+    // regression that silently drops seeded rows from agents / tracks /
+    // ready / in-progress / blocked / recent-closed / recent should fail.
+    const db2 = openDb({ path: dbPath });
+    addTask(db2, {
+      localId: "inflight",
+      workstream: "auth",
+      title: "In progress task",
+      impact: 60,
+      effortDays: 2,
+    });
+    addTask(db2, {
+      localId: "blocked_leaf",
+      workstream: "auth",
+      title: "Blocked leaf",
+      impact: 40,
+      effortDays: 2,
+      blockedBy: ["a"],
+    });
+    addTask(db2, {
+      localId: "done",
+      workstream: "auth",
+      title: "Closed task",
+      impact: 30,
+      effortDays: 1,
+    });
+    await claimTask(db2, "inflight", { agentName: "worker-1", workstream: "auth" });
+    closeTask(db2, "done", { workstream: "auth", evidence: "seed closed row" });
+    db2.close();
+
     const { stdout } = await runCli(["state", "-w", "auth", "--json"], dbPath);
     const parsed = JSON.parse(stdout.trim()) as {
       workstreamName: string;
-      agents: unknown[];
+      agents: Array<{ name: string; status: string; workstreamName: string }>;
       orphans: unknown[];
-      tracks: unknown[];
-      ready: unknown[];
-      inProgress: unknown[];
-      blocked: unknown[];
-      recentClosed: unknown[];
+      tracks: Array<{ roots: Array<{ name: string; title: string }>; readyCount: number }>;
+      ready: Array<{ name: string; title: string; status: string; roi?: number }>;
+      inProgress: Array<{ name: string; ownerName: string | null; status: string }>;
+      blocked: Array<{ name: string; title: string; status: string }>;
+      recentClosed: Array<{ name: string; title: string; status: string }>;
       workspaces: unknown[];
-      recent: unknown[];
+      recent: Array<{ kind: string; payload: string; workstreamName: string }>;
     };
+
     expect(parsed.workstreamName).toBe("auth");
-    expect(Array.isArray(parsed.agents)).toBe(true);
-    expect(Array.isArray(parsed.orphans)).toBe(true);
-    expect(Array.isArray(parsed.ready)).toBe(true);
-    expect(Array.isArray(parsed.workspaces)).toBe(true);
-    expect(Array.isArray(parsed.recent)).toBe(true);
+    expect(parsed.agents).toEqual([
+      expect.objectContaining({ name: "worker-1", status: "needs_input", workstreamName: "auth" }),
+    ]);
+    expect(parsed.orphans).toEqual([]);
+    expect(parsed.ready).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "a", title: "A", status: "OPEN", roi: 40 }),
+      ]),
+    );
+    expect(parsed.blocked).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "b", title: "B", status: "OPEN" }),
+        expect.objectContaining({ name: "blocked_leaf", title: "Blocked leaf", status: "OPEN" }),
+      ]),
+    );
+    expect(parsed.inProgress).toEqual([
+      expect.objectContaining({ name: "inflight", ownerName: "worker-1", status: "IN_PROGRESS" }),
+    ]);
+    expect(parsed.recentClosed).toEqual([
+      expect.objectContaining({ name: "done", title: "Closed task", status: "CLOSED" }),
+    ]);
+    expect(parsed.tracks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          roots: expect.arrayContaining([
+            expect.objectContaining({ name: "c", title: "C" }),
+            expect.objectContaining({ name: "blocked_leaf", title: "Blocked leaf" }),
+          ]),
+          readyCount: expect.any(Number),
+        }),
+      ]),
+    );
+    expect(parsed.workspaces).toEqual([]);
+    expect(parsed.recent).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "event",
+          payload: expect.stringContaining("task status done"),
+          workstreamName: "auth",
+        }),
+      ]),
+    );
   });
 
-  it("agent list --json emits a { workstreamName, agents, orphans } shape", async () => {
-    // Note: listLiveAgents reconciles against tmux and prunes agents
-    // whose panes don't exist. Our seeded pane id %42 is fake, so the
-    // reaper removes it. We assert the SHAPE of the JSON, not the
-    // agent count — reconciliation behaviour is covered by
-    // reconcile.test.ts.
+  it("agent list --json emits live seeded agents, not only array shape", async () => {
     const { stdout } = await runCli(["agent", "list", "-w", "auth", "--json"], dbPath);
     const parsed = JSON.parse(stdout.trim()) as {
       workstreamName: string;
-      agents: unknown[];
+      agents: Array<{ name: string; paneId: string; status: string; workstreamName: string }>;
       orphans: unknown[];
     };
     expect(parsed.workstreamName).toBe("auth");
-    expect(Array.isArray(parsed.agents)).toBe(true);
-    expect(Array.isArray(parsed.orphans)).toBe(true);
+    expect(parsed.agents).toEqual([
+      expect.objectContaining({
+        name: "worker-1",
+        paneId: "%42",
+        status: "needs_input",
+        workstreamName: "auth",
+      }),
+    ]);
+    expect(parsed.orphans).toEqual([]);
   });
 
   it("agent verbs accept -w as a scope check; mismatch errors with AgentNotInWorkstreamError", async () => {
