@@ -35,6 +35,8 @@ import {
   releaseTask,
   waitForTasks,
 } from "../../tasks.js";
+import { type CommitSummary, WorkspaceVcsRequiredError } from "../../vcs.js";
+import { WorkspaceNotFoundError, listCommitsForWorkspace } from "../../workspace.js";
 
 export async function cmdTaskRelease(
   db: Db,
@@ -186,6 +188,55 @@ export async function cmdClaim(
  *  --json output, and stuck-task hints. */
 function qualifiedId(ref: { workstreamName: string; name: string }): string {
   return `${ref.workstreamName}/${ref.name}`;
+}
+
+function cherryPickCommandForCommits(commits: readonly CommitSummary[]): string | null {
+  const first = commits[0];
+  if (first === undefined) return null;
+  const last = commits[commits.length - 1];
+  if (last === undefined) return null;
+  if (commits.length === 1) return `git cherry-pick ${first.sha}`;
+  return `git cherry-pick ${first.sha}^..${last.sha}`;
+}
+
+function noCommitsRescueStep(owner: string, workstream: string): NextStep {
+  return {
+    intent: `Worker ${owner} closed without committing — apply by hand`,
+    command: `cd $(mu workspace path ${owner} -w ${workstream}) && git status   # rescue diff with git diff / git apply`,
+  };
+}
+
+async function nextStepForFiringOwner(
+  db: Db,
+  owner: string,
+  workstream: string,
+): Promise<NextStep> {
+  try {
+    const r = await listCommitsForWorkspace(db, owner, { workstream });
+    const command = cherryPickCommandForCommits(r.commits);
+    if (command === null) return noCommitsRescueStep(owner, workstream);
+    return {
+      intent:
+        r.commits.length === 1
+          ? `Cherry-pick ${owner}'s commit onto your branch`
+          : `Cherry-pick ${owner}'s ${r.commits.length} commits onto your branch`,
+      command,
+    };
+  } catch (err) {
+    if (err instanceof WorkspaceNotFoundError) {
+      return noCommitsRescueStep(owner, workstream);
+    }
+    if (err instanceof WorkspaceVcsRequiredError) {
+      return {
+        intent: `Worker ${owner} closed in a non-VCS workspace — inspect files by hand`,
+        command: `cd $(mu workspace path ${owner} -w ${workstream}) && ls -la   # cp -a snapshot; inspect files manually`,
+      };
+    }
+    return {
+      intent: `Unable to determine ${owner}'s workspace commits — inspect workspace manually`,
+      command: `mu workspace commits ${owner} -w ${workstream} --json   # if this fails, inspect $(mu workspace path ${owner} -w ${workstream})`,
+    };
+  }
 }
 
 /** Resolve a single `<ws>/<name>` or bare id into a TaskWaitRef.
@@ -390,17 +441,12 @@ export async function cmdTaskWait(
   if (!result.timedOut && firingRef !== null) {
     const owner = firingRef.owner;
     if (owner !== null) {
-      // Workspace path lookup is per-owner; the cherry-pick command
-      // captures HEAD from the worker's workspace and applies it to
-      // the orchestrator's repo. `mu workspace path` prints just the
-      // path on stdout (no JSON needed), so we wrap it in $(cd $(...)
-      // && git log -1) for the HEAD lookup. Operator copy-pastes;
-      // the deferred shell expansion is handled by the operator's
-      // shell, not ours.
-      nextSteps.push({
-        intent: `Cherry-pick ${owner}'s HEAD onto your branch`,
-        command: `git cherry-pick $(cd $(mu workspace path ${owner} -w ${firingRef.workstreamName}) && git log -1 --format=%H)`,
-      });
+      // Best-effort workspace lookup: prefer an inspectable,
+      // sha-pinned cherry-pick range over the old deferred
+      // `git log -1` shell substitution. If the worker closed without
+      // commits (or the workspace can't answer commits-since-fork),
+      // surface a manual-rescue hint instead of a silently-empty pick.
+      nextSteps.push(await nextStepForFiringOwner(db, owner, firingRef.workstreamName));
     }
     nextSteps.push({
       intent: "Verify the cherry-pick",

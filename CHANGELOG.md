@@ -727,6 +727,17 @@ is opt-in via the new `--tui` flag.
 
 ### Fixed
 
+- **`mu task wait --first --json` nextSteps no longer silently cherry-pick a worker's fork point**
+  (`fb_wait_nextsteps_robust_no_commits`). The dispatch-pipeline hint
+  now uses `mu workspace commits`' since-fork data before emitting an
+  apply recipe. Workers with commits get inspectable, sha-pinned
+  commands (`git cherry-pick <sha>` for one commit,
+  `git cherry-pick <first>^..<last>` for multiple commits) instead of
+  a brittle `$(cd $(mu workspace path ...) && git log -1)` shell
+  substitution. Workers that close without committing now surface a
+  manual-rescue NextStep (`closed without committing — apply by hand`)
+  rather than a no-op cherry-pick of the base ref; missing/non-VCS
+  workspaces degrade to manual inspection hints.
 - **`mu task close` now reminds workers to commit dirty workspace edits**
   (fb_close_post_emit_commit_hint). After a real close (not an
   idempotent no-op), if the closing actor has a per-agent workspace

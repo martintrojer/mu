@@ -1027,18 +1027,26 @@ one verify, one workspace recycle:
 # The dispatch-pipeline recipe: cycle until in_flight is empty.
 in_flight=( mufeedback-v03/foo mufeedback-v03/bar roadmap-v0-3/baz )
 while (( ${#in_flight[@]} > 0 )); do
-  closed=$(mu task wait "${in_flight[@]}" --first --timeout 90 --json \
-    | jq -r '.firing.qualifiedId // empty')
+  res=$(mu task wait "${in_flight[@]}" --first --timeout 90 --json)
+  closed=$(jq -r '.firing.qualifiedId // empty' <<<"$res")
   if [[ -z "$closed" ]]; then break; fi  # timeout or exit 6 — see below
 
-  # 1. Cherry-pick the worker's HEAD (the worker is named in the
-  #    nextSteps array — or use `mu task show` to look up).
-  worker=$(mu task show "${closed##*/}" -w "${closed%%/*}" --json | jq -r .ownerName)
+  worker=$(jq -r '.firing.owner // empty' <<<"$res")
   ws=${closed%%/*}
-  # `mu workspace commits --json` knows the workspace's parent_ref
-  # so this is one verb instead of `cd $(mu workspace path) && git log`.
-  sha=$(mu workspace commits "$worker" -w "$ws" --json | jq -r '.items[-1].sha')
-  git cherry-pick "$sha"
+
+  # 1. Inspect, then run, the sha-pinned apply hint from nextSteps.
+  #    When the worker has commits since its fork point, the command is
+  #    `git cherry-pick <sha>` (or `<first>^..<last>` for multiple
+  #    commits). When the worker closed without committing, nextSteps
+  #    says so and points at manual `git diff` / `git apply` rescue.
+  apply=$(jq -r '.nextSteps[0].command' <<<"$res")
+  printf 'apply hint: %s\n' "$apply"
+  if [[ "$apply" == git\ cherry-pick* ]]; then
+    eval "$apply"
+  else
+    echo "manual rescue required; inspect the worker workspace before continuing"
+    break
+  fi
 
   # 2. Verify
   npm run typecheck && npm run lint && npm run test && npm run build
