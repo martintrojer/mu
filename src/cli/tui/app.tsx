@@ -29,7 +29,7 @@ import { RecentCard } from "./cards/recent.js";
 import { TracksCard } from "./cards/tracks.js";
 import { WorkspacesCard } from "./cards/workspaces.js";
 import { Help } from "./help.js";
-import { dispatchGlobalKey } from "./keys.js";
+import { dispatchGlobalKeyFromInk } from "./keys.js";
 import { AgentsPopup } from "./popups/agents.js";
 import { BlockedPopup } from "./popups/blocked.js";
 import { DoctorPopup } from "./popups/doctor.js";
@@ -184,20 +184,7 @@ export function App({ db, workstreams }: AppProps): JSX.Element {
           return;
         }
       }
-      const action = dispatchGlobalKey(input, {
-        ctrl: key.ctrl,
-        shift: key.shift,
-        meta: key.meta,
-        escape: key.escape,
-        return: key.return,
-        upArrow: key.upArrow,
-        downArrow: key.downArrow,
-        leftArrow: key.leftArrow,
-        rightArrow: key.rightArrow,
-        tab: key.tab,
-        pageUp: key.pageUp,
-        pageDown: key.pageDown,
-      });
+      const action = dispatchGlobalKeyFromInk(input, key);
 
       switch (action.kind) {
         case "quit":

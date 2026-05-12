@@ -29,7 +29,7 @@ import {
   renderRow,
   termColsForLayout,
 } from "../columns.js";
-import { dispatchPopupKey } from "../keys.js";
+import { dispatchPopupKeyFromInk } from "../keys.js";
 import { ListRow } from "../list-row.js";
 import { PopupShell } from "../popup-shell.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
@@ -133,20 +133,7 @@ export function AgentsPopup({
     // every printable + Esc/Enter/Bksp; the popup's own dispatchPopupKey
     // is bypassed for the duration of the edit.
     if (mode !== "drill" && flt.onKey(input, key) === "consumed") return;
-    const action = dispatchPopupKey(input, {
-      ctrl: key.ctrl,
-      shift: key.shift,
-      meta: key.meta,
-      escape: key.escape,
-      return: key.return,
-      upArrow: key.upArrow,
-      downArrow: key.downArrow,
-      leftArrow: key.leftArrow,
-      rightArrow: key.rightArrow,
-      tab: key.tab,
-      pageUp: key.pageUp,
-      pageDown: key.pageDown,
-    });
+    const action = dispatchPopupKeyFromInk(input, key);
     if (mode === "drill") {
       // Drill-mode keymap: scroll-based view. Nav cluster funnels
       // through applyScroll; Esc/q backs to list; y yanks the

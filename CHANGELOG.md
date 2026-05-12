@@ -389,6 +389,15 @@ is opt-in via the new `--tui` flag.
   card/popup/acceptance suites; root cause is the missing
   ink-testing-library install). No in-line fixes — implementation
   ships per filed task.
+- **Shared ink-key normalisation for TUI dispatchers**
+  (review_dedup_popup_useinput). `src/cli/tui/keys.ts` now exports
+  `dispatchPopupKeyFromInk(input, key)` and
+  `dispatchGlobalKeyFromInk(input, key)`, centralising the explicit
+  ink `Key` → local `KeyFlags` pick (including rarely-used fields
+  like PgUp/PgDn/F5). The nine fullscreen popups and `<App>` now call
+  the wrapper instead of carrying hand-rolled 13-field object literals
+  in every `useInput` callback, so future key additions happen in one
+  place and can't drift by popup.
 - **Shared popup shell extraction** (review_dedup_popup_shell).
   The nine fullscreen popup modules now import one
   `src/cli/tui/popup-shell.tsx` `<PopupShell>` wrapper instead of

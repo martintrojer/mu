@@ -34,7 +34,7 @@ import {
   termColsForLayout,
 } from "../columns.js";
 import { ageMs, formatRoi, formatSinceClaim } from "../format-helpers.js";
-import { dispatchPopupKey } from "../keys.js";
+import { dispatchPopupKeyFromInk } from "../keys.js";
 import { ListRow } from "../list-row.js";
 import { PopupShell } from "../popup-shell.js";
 
@@ -111,20 +111,7 @@ export function InProgressPopup({
 
   useInput((input, key) => {
     if (mode !== "drill" && flt.onKey(input, key) === "consumed") return;
-    const action = dispatchPopupKey(input, {
-      ctrl: key.ctrl,
-      shift: key.shift,
-      meta: key.meta,
-      escape: key.escape,
-      return: key.return,
-      upArrow: key.upArrow,
-      downArrow: key.downArrow,
-      leftArrow: key.leftArrow,
-      rightArrow: key.rightArrow,
-      tab: key.tab,
-      pageUp: key.pageUp,
-      pageDown: key.pageDown,
-    });
+    const action = dispatchPopupKeyFromInk(input, key);
     if (mode === "drill") {
       const totalLines = notesText === "" ? 0 : notesText.split("\n").length;
       if (isNavAction(action)) {

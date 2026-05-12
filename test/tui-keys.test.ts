@@ -5,7 +5,12 @@
 // design_global_keymap summary table.
 
 import { describe, expect, it } from "vitest";
-import { dispatchGlobalKey } from "../src/cli/tui/keys.js";
+import {
+  dispatchGlobalKey,
+  dispatchGlobalKeyFromInk,
+  dispatchPopupKey,
+  dispatchPopupKeyFromInk,
+} from "../src/cli/tui/keys.js";
 
 const NO_KEY = {};
 
@@ -129,7 +134,23 @@ describe("dispatchGlobalKey: unknown input", () => {
   });
 });
 
-import { dispatchPopupKey } from "../src/cli/tui/keys.js";
+describe("dispatchGlobalKeyFromInk", () => {
+  it("normalises ink key flags before global dispatch", () => {
+    expect(dispatchGlobalKeyFromInk("", { f5: true })).toEqual({ kind: "refreshNow" });
+    expect(dispatchGlobalKeyFromInk("", { tab: true, shift: true })).toEqual({ kind: "prevTab" });
+  });
+});
+
+describe("dispatchPopupKeyFromInk", () => {
+  it("normalises ink key flags before popup dispatch", () => {
+    expect(dispatchPopupKeyFromInk("", { escape: true })).toEqual({ kind: "close" });
+    expect(dispatchPopupKeyFromInk("", { pageDown: true })).toEqual({
+      kind: "pageDown",
+      half: false,
+    });
+    expect(dispatchPopupKeyFromInk("d", { ctrl: true })).toEqual({ kind: "pageDown", half: true });
+  });
+});
 
 describe("dispatchPopupKey: in-popup convention", () => {
   it("Esc closes", () => {

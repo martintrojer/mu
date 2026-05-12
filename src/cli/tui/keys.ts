@@ -67,6 +67,35 @@ export interface KeyFlags {
 }
 
 /**
+ * Structural subset of ink's `Key` object as delivered to useInput.
+ * Kept local (instead of importing ink's type) so keys.ts remains a
+ * pure keymap module with no render-time dependency.
+ */
+export type InkKeyLike = KeyFlags;
+
+function keyFlagsFromInk(key: InkKeyLike): KeyFlags {
+  return {
+    ctrl: key.ctrl,
+    shift: key.shift,
+    meta: key.meta,
+    escape: key.escape,
+    return: key.return,
+    upArrow: key.upArrow,
+    downArrow: key.downArrow,
+    leftArrow: key.leftArrow,
+    rightArrow: key.rightArrow,
+    tab: key.tab,
+    pageUp: key.pageUp,
+    pageDown: key.pageDown,
+    f5: key.f5,
+  };
+}
+
+export function dispatchGlobalKeyFromInk(input: string, key: InkKeyLike): GlobalAction {
+  return dispatchGlobalKey(input, keyFlagsFromInk(key));
+}
+
+/**
  * Map a single keystroke (delivered by ink's useInput) to the global
  * dashboard action it represents. Returns `{kind:"noop"}` for any
  * unrecognised input — the caller can treat noop as "do nothing".
@@ -190,6 +219,10 @@ export type PopupAction =
  * {j k g G n N q y c r w}) bubble up as `{kind: "verb", key}` so the
  * caller can switch on the literal letter.
  */
+export function dispatchPopupKeyFromInk(input: string, key: InkKeyLike): PopupAction {
+  return dispatchPopupKey(input, keyFlagsFromInk(key));
+}
+
 export function dispatchPopupKey(input: string, key: KeyFlags): PopupAction {
   if (key.escape || input === "q" || input === "Q") return { kind: "close" };
   if (input === "j" || key.downArrow) return { kind: "moveDown" };
