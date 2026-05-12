@@ -18,9 +18,10 @@
 // The static fallback is exercised by test/state-render.test.ts (the
 // existing suite). Here we ONLY verify the dispatch decisions.
 
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { chdir } from "node:process";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const originalNoColor = vi.hoisted(() => process.env.NO_COLOR);
@@ -43,11 +44,41 @@ afterAll(() => {
   }
 });
 
+import { insertAgent } from "../src/agents.js";
+import { openDb } from "../src/db.js";
+import { withEnv } from "./_env.js";
 import { runCli } from "./_runCli.js";
+
+function registerWorkspace(
+  dbPath: string,
+  workstream: string,
+  agent: string,
+  workspacePath: string,
+): void {
+  mkdirSync(workspacePath, { recursive: true });
+  const db = openDb({ path: dbPath });
+  try {
+    insertAgent(db, { name: agent, workstream, paneId: `%${workstream}-${agent}`, status: "busy" });
+    const ws = db.prepare("SELECT id FROM workstreams WHERE name = ?").get(workstream) as
+      | { id: number }
+      | undefined;
+    const ag = db
+      .prepare("SELECT id FROM agents WHERE name = ? AND workstream_id = ?")
+      .get(agent, ws?.id ?? -1) as { id: number } | undefined;
+    if (ws === undefined || ag === undefined) throw new Error("failed to seed workspace fixture");
+    db.prepare(
+      `INSERT INTO vcs_workspaces (agent_id, workstream_id, backend, path, parent_ref, created_at)
+       VALUES (?, ?, 'none', ?, NULL, ?)`,
+    ).run(ag.id, ws.id, workspacePath, new Date().toISOString());
+  } finally {
+    db.close();
+  }
+}
 
 describe("cmdState dispatch", () => {
   let tempDir: string;
   let dbPath: string;
+  const originalCwd = process.cwd();
 
   beforeEach(async () => {
     tempDir = mkdtempSync(join(tmpdir(), "mu-state-dispatch-"));
@@ -74,6 +105,7 @@ describe("cmdState dispatch", () => {
   });
 
   afterEach(() => {
+    chdir(originalCwd);
     try {
       rmSync(tempDir, { recursive: true, force: true });
     } catch {}
@@ -118,7 +150,55 @@ describe("cmdState dispatch", () => {
     expect(error).toBeUndefined();
     expect(exitCode).toBeNull();
     expect(runTuiMock).toHaveBeenCalledOnce();
-    expect(runTuiMock.mock.calls[0]?.[1]).toEqual({ workstreams: ["ws", "ws2"] });
+    expect(runTuiMock.mock.calls[0]?.[1]).toEqual({ workstreams: ["ws", "ws2"], initialActive: 0 });
+  });
+
+  it("--tui focuses the workstream whose registered workspace contains cwd", async () => {
+    await runCli(["workstream", "init", "ws2"], dbPath);
+    registerWorkspace(dbPath, "ws2", "worker-1", join(tempDir, "ws2", "worker-1"));
+    chdir(join(tempDir, "ws2", "worker-1"));
+
+    await withEnv("MU_SESSION", undefined, async () => {
+      const { exitCode, error } = await runCli(["state", "--tui", "-w", "ws,ws2"], dbPath);
+      expect(error).toBeUndefined();
+      expect(exitCode).toBeNull();
+      expect(runTuiMock.mock.calls[0]?.[1]).toEqual({
+        workstreams: ["ws", "ws2"],
+        initialActive: 1,
+      });
+    });
+  });
+
+  it("--tui lets $MU_SESSION win over cwd detection", async () => {
+    await runCli(["workstream", "init", "ws2"], dbPath);
+    registerWorkspace(dbPath, "ws2", "worker-1", join(tempDir, "ws2", "worker-1"));
+    chdir(join(tempDir, "ws2", "worker-1"));
+
+    await withEnv("MU_SESSION", "ws", async () => {
+      const { exitCode, error } = await runCli(["state", "--tui", "-w", "ws,ws2"], dbPath);
+      expect(error).toBeUndefined();
+      expect(exitCode).toBeNull();
+      expect(runTuiMock.mock.calls[0]?.[1]).toEqual({
+        workstreams: ["ws", "ws2"],
+        initialActive: 0,
+      });
+    });
+  });
+
+  it("--tui falls back to tab 0 when cwd is outside resolved workspaces", async () => {
+    await runCli(["workstream", "init", "ws2"], dbPath);
+    registerWorkspace(dbPath, "ws2", "worker-1", join(tempDir, "ws2", "worker-1"));
+    chdir(tempDir);
+
+    await withEnv("MU_SESSION", undefined, async () => {
+      const { exitCode, error } = await runCli(["state", "--tui", "-w", "ws,ws2"], dbPath);
+      expect(error).toBeUndefined();
+      expect(exitCode).toBeNull();
+      expect(runTuiMock.mock.calls[0]?.[1]).toEqual({
+        workstreams: ["ws", "ws2"],
+        initialActive: 0,
+      });
+    });
   });
 
   it("--mission option no longer exists", async () => {

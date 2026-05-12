@@ -52,6 +52,7 @@ import { pc } from "../output.js";
 import { WORKSPACE_STALE_THRESHOLD, isWorkspaceStale } from "../staleness.js";
 import { type WorkstreamSnapshot, loadWorkstreamSnapshot } from "../state.js";
 import { listWorkstreams } from "../workstream.js";
+import { resolveInitialTab } from "./tui-launch-focus.js";
 
 // ─── Per-workstream loaded data ─────────────────────────────────────
 
@@ -219,8 +220,9 @@ export async function cmdState(db: Db, opts: StateOpts): Promise<void> {
   // feat_tui_multi_workstream (workstream `tui-impl`): the resolved
   // ws set is forwarded to <App>; Tab / Shift-Tab cycles tabs.
   if (opts.tui === true) {
+    const names = perWs.map((d) => d.workstreamName);
     const { runTui } = await import("./tui/index.js");
-    await runTui(db, { workstreams: perWs.map((d) => d.workstreamName) });
+    await runTui(db, { workstreams: names, initialActive: resolveInitialTab(names, db) });
     return;
   }
 

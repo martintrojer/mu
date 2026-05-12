@@ -35,6 +35,8 @@ called out under "Breaking" in each entry.
   card gets its minimum body rows, large lists cap at their declared
   max, and overflow remains discoverable via the existing `+N more ·
   Shift+N` footer-inset hint.
+- Bare `mu` and `mu state --tui` now seed initial tab focus from `$MU_SESSION` when it names a resolved workstream, then best-effort focus the workstream whose workspace path contains the current cwd, then fall back to tab 0.
+- Tab strip is compact: it shows a windowed view around the active workstream with `‹N` / `›N` indicators when workstreams overflow the available width.
 - **`mu task claim --for` and `mu agent send` warn before dispatching to a stale workspace**
   (feat_claim_warn_stale_workspace). Both dispatch surfaces now reuse
   the Workspaces card's ≥10-commits-behind-main definition via the

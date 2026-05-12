@@ -310,7 +310,10 @@ running a wave.
   `remove`, `delete`, `search`, `export`. Labels globally unique.
 - **Escape hatch + state**: `mu sql "<query>"` for anything not yet
   typed. Humans in a TTY run bare `mu` to launch the all-workstream
-  TUI. Agents/scripts should use typed verbs plus `--json`; bare
+  TUI. Initial tab focus is `$MU_SESSION`, then cwd inside a
+  registered workspace path, then tab 0; overflowing workstream tabs
+  render as a compact active-centred window with `‹N` / `›N` hidden
+  counts. Agents/scripts should use typed verbs plus `--json`; bare
   `mu` on non-TTY stdout (or with `MU_NO_TUI=1`) prints help. `mu state` has `--tui`
   (interactive ink dashboard; read-only, yanks `mu` commands;
   reflows from stacked cards to pair-aware 2 / 3 / 4-column layouts

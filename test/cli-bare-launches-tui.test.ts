@@ -1,6 +1,7 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { chdir } from "node:process";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const originalNoColor = vi.hoisted(() => process.env.NO_COLOR);
@@ -23,6 +24,34 @@ afterAll(() => {
   }
 });
 
+function registerWorkspace(
+  dbPath: string,
+  workstream: string,
+  agent: string,
+  workspacePath: string,
+): void {
+  mkdirSync(workspacePath, { recursive: true });
+  const db = openDb({ path: dbPath });
+  try {
+    insertAgent(db, { name: agent, workstream, paneId: `%${workstream}-${agent}`, status: "busy" });
+    const ws = db.prepare("SELECT id FROM workstreams WHERE name = ?").get(workstream) as
+      | { id: number }
+      | undefined;
+    const ag = db
+      .prepare("SELECT id FROM agents WHERE name = ? AND workstream_id = ?")
+      .get(agent, ws?.id ?? -1) as { id: number } | undefined;
+    if (ws === undefined || ag === undefined) throw new Error("failed to seed workspace fixture");
+    db.prepare(
+      `INSERT INTO vcs_workspaces (agent_id, workstream_id, backend, path, parent_ref, created_at)
+       VALUES (?, ?, 'none', ?, NULL, ?)`,
+    ).run(ag.id, ws.id, workspacePath, new Date().toISOString());
+  } finally {
+    db.close();
+  }
+}
+
+import { insertAgent } from "../src/agents.js";
+import { openDb } from "../src/db.js";
 import { resetTmuxExecutor, setTmuxExecutor } from "../src/tmux.js";
 import { withEnv } from "./_env.js";
 import { runCli } from "./_runCli.js";
@@ -46,6 +75,7 @@ function setStdoutTty(isTTY: boolean): () => void {
 describe("bare mu TTY dispatch", () => {
   let tempDir: string;
   let dbPath: string;
+  const originalCwd = process.cwd();
 
   beforeEach(() => {
     tempDir = mkdtempSync(join(tmpdir(), "mu-cli-bare-tui-"));
@@ -61,6 +91,7 @@ describe("bare mu TTY dispatch", () => {
   });
 
   afterEach(() => {
+    chdir(originalCwd);
     resetTmuxExecutor();
     try {
       rmSync(tempDir, { recursive: true, force: true });
@@ -172,6 +203,101 @@ describe("bare mu TTY dispatch", () => {
           workstreams: ["a", "b"],
           initialActive: 0,
         });
+      });
+    } finally {
+      restoreTty();
+    }
+  });
+
+  it("focuses the workstream whose registered workspace contains cwd", async () => {
+    for (const ws of ["a", "b", "c"]) await runCli(["workstream", "init", ws, "--json"], dbPath);
+    registerWorkspace(dbPath, "b", "worker-1", join(tempDir, "ws-b", "worker-1"));
+    chdir(join(tempDir, "ws-b", "worker-1"));
+
+    const restoreTty = setStdoutTty(true);
+    try {
+      await withEnv("MU_SESSION", undefined, async () => {
+        const { exitCode, error } = await runCli([], dbPath);
+        expect(error).toBeUndefined();
+        expect(exitCode).toBeNull();
+        expect(runTuiMock.mock.calls[0]?.[1]).toMatchObject({ initialActive: 1 });
+      });
+    } finally {
+      restoreTty();
+    }
+  });
+
+  it("lets $MU_SESSION win over cwd detection", async () => {
+    for (const ws of ["a", "b", "c"]) await runCli(["workstream", "init", ws, "--json"], dbPath);
+    registerWorkspace(dbPath, "c", "worker-1", join(tempDir, "ws-c", "worker-1"));
+    chdir(join(tempDir, "ws-c", "worker-1"));
+
+    const restoreTty = setStdoutTty(true);
+    try {
+      await withEnv("MU_SESSION", "b", async () => {
+        const { exitCode, error } = await runCli([], dbPath);
+        expect(error).toBeUndefined();
+        expect(exitCode).toBeNull();
+        expect(runTuiMock.mock.calls[0]?.[1]).toMatchObject({ initialActive: 1 });
+      });
+    } finally {
+      restoreTty();
+    }
+  });
+
+  it("ignores cwd inside a workspace outside the resolved set", async () => {
+    for (const ws of ["a", "b", "z"]) await runCli(["workstream", "init", ws, "--json"], dbPath);
+    registerWorkspace(dbPath, "z", "worker-1", join(tempDir, "ws-z", "worker-1"));
+    chdir(join(tempDir, "ws-z", "worker-1"));
+
+    const restoreTty = setStdoutTty(true);
+    try {
+      await withEnv("MU_SESSION", undefined, async () => {
+        const { exitCode, error } = await runCli(["--workstream", "a,b"], dbPath);
+        expect(error).toBeUndefined();
+        expect(exitCode).toBeNull();
+        expect(runTuiMock.mock.calls[0]?.[1]).toEqual({
+          workstreams: ["a", "b"],
+          initialActive: 0,
+        });
+      });
+    } finally {
+      restoreTty();
+    }
+  });
+
+  it("falls back to tab 0 when cwd is outside every workspace", async () => {
+    for (const ws of ["a", "b"]) await runCli(["workstream", "init", ws, "--json"], dbPath);
+    registerWorkspace(dbPath, "b", "worker-1", join(tempDir, "ws-b", "worker-1"));
+    chdir(tempDir);
+
+    const restoreTty = setStdoutTty(true);
+    try {
+      await withEnv("MU_SESSION", undefined, async () => {
+        const { exitCode, error } = await runCli([], dbPath);
+        expect(error).toBeUndefined();
+        expect(exitCode).toBeNull();
+        expect(runTuiMock.mock.calls[0]?.[1]).toMatchObject({ initialActive: 0 });
+      });
+    } finally {
+      restoreTty();
+    }
+  });
+
+  it("uses workstream order as the deterministic first match for overlapping paths", async () => {
+    for (const ws of ["a", "b"]) await runCli(["workstream", "init", ws, "--json"], dbPath);
+    const parent = join(tempDir, "nested");
+    registerWorkspace(dbPath, "a", "worker-1", parent);
+    registerWorkspace(dbPath, "b", "worker-1", join(parent, "child"));
+    chdir(join(parent, "child"));
+
+    const restoreTty = setStdoutTty(true);
+    try {
+      await withEnv("MU_SESSION", undefined, async () => {
+        const { exitCode, error } = await runCli([], dbPath);
+        expect(error).toBeUndefined();
+        expect(exitCode).toBeNull();
+        expect(runTuiMock.mock.calls[0]?.[1]).toMatchObject({ initialActive: 0 });
       });
     } finally {
       restoreTty();

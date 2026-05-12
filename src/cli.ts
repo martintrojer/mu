@@ -36,9 +36,10 @@ import { wireSnapshotCommands } from "./cli/snapshot.js";
 import { wireSqlCommand } from "./cli/sql.js";
 import { printBareNoWorkstreamsHint, wireStateCommands } from "./cli/state.js";
 import { wireTaskCommands } from "./cli/tasks.js";
+import { resolveInitialTab } from "./cli/tui-launch-focus.js";
 import { wireWorkspaceCommands } from "./cli/workspace.js";
 import { wireWorkstreamCommands } from "./cli/workstream.js";
-import type { Db } from "./db.js";
+import { type Db, WorkstreamNotFoundError } from "./db.js";
 import {
   TASK_STATUS_LIST,
   TaskNotInWorkstreamError,
@@ -626,18 +627,25 @@ export function emitJsonCollection<T>(items: readonly T[]): void {
   emitJson({ items, count: items.length });
 }
 
-async function cmdBareTui(db: Db, program: Command): Promise<void> {
+async function cmdBareTui(
+  db: Db,
+  program: Command,
+  requestedWorkstreams?: readonly string[],
+): Promise<void> {
   const workstreams = await listWorkstreams(db);
-  if (workstreams.length === 0) {
+  const requested = parseCsvFlag(requestedWorkstreams);
+  if (workstreams.length === 0 && requested.length === 0) {
     program.outputHelp();
     printBareNoWorkstreamsHint();
     return;
   }
 
-  const names = workstreams.map((w) => w.name);
-  const envWs = process.env.MU_SESSION;
-  const envIndex = envWs === undefined ? -1 : names.indexOf(envWs);
-  const initialActive = envIndex >= 0 ? envIndex : 0;
+  const allNames = workstreams.map((w) => w.name);
+  const names = requested.length > 0 ? Array.from(new Set(requested)) : allNames;
+  for (const name of names) {
+    if (!allNames.includes(name)) throw new WorkstreamNotFoundError(name);
+  }
+  const initialActive = resolveInitialTab(names, db);
   try {
     const { runTui } = await import("./cli/tui/index.js");
     await runTui(db, { workstreams: names, initialActive });
@@ -717,7 +725,7 @@ export function buildProgram(): Command {
         program.outputHelp();
         return;
       }
-      return handle((db) => cmdBareTui(db, program), command)();
+      return handle((db) => cmdBareTui(db, program, opts.workstream), command)();
     });
 
   wireWorkstreamCommands(program);

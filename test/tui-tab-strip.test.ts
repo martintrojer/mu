@@ -48,8 +48,12 @@ describe("TabStrip", () => {
     expect(node).toBeNull();
   });
 
-  it("renders every workstream name when N>=2", () => {
-    const node = TabStrip({ workstreams: ["alpha", "beta", "gamma"], active: 0 });
+  it("renders every workstream name when N>=2 and they fit", () => {
+    const node = TabStrip({
+      workstreams: ["alpha", "beta", "gamma"],
+      active: 0,
+      terminalColumns: 200,
+    });
     const text = renderToString(node);
     expect(text).toContain("alpha");
     expect(text).toContain("beta");
@@ -60,7 +64,7 @@ describe("TabStrip", () => {
     // Active tab gets `▸ ` prepended (colour-blind-safe affordance,
     // independent of the bold/cyan styling). The non-active tabs
     // appear as bare names.
-    const node = TabStrip({ workstreams: ["alpha", "beta"], active: 1 });
+    const node = TabStrip({ workstreams: ["alpha", "beta"], active: 1, terminalColumns: 200 });
     const text = renderToString(node);
     // Active tab is beta:
     expect(text).toContain("▸ beta");
@@ -69,7 +73,7 @@ describe("TabStrip", () => {
   });
 
   it("renders ` · ` separators between adjacent tabs", () => {
-    const node = TabStrip({ workstreams: ["a", "b", "c"], active: 1 });
+    const node = TabStrip({ workstreams: ["a", "b", "c"], active: 1, terminalColumns: 200 });
     const text = renderToString(node);
     // Two separators expected for three tabs.
     const seps = text.split(" · ").length - 1;
@@ -80,24 +84,49 @@ describe("TabStrip", () => {
     // Discoverability: without the hint, multi-ws users have to
     // open the help overlay to learn the binding. Mirror the
     // status-bar hint cluster's bias toward inline discoverability.
-    const node = TabStrip({ workstreams: ["a", "b"], active: 0 });
+    const node = TabStrip({ workstreams: ["a", "b"], active: 0, terminalColumns: 200 });
     expect(renderToString(node)).toContain("Tab");
     expect(renderToString(node)).toContain("Shift-Tab");
   });
 
   it("renders a `workstreams:` label so the strip is self-documenting", () => {
-    const node = TabStrip({ workstreams: ["a", "b"], active: 0 });
+    const node = TabStrip({ workstreams: ["a", "b"], active: 0, terminalColumns: 200 });
     expect(renderToString(node)).toContain("workstreams:");
   });
 
   it("clamps gracefully when active is out of range (defensive: caller's job, but we shouldn't crash)", () => {
-    // Out-of-range active: no tab gets the active marker, but the
-    // component should still render every name and not throw.
-    const node = TabStrip({ workstreams: ["alpha", "beta"], active: 99 });
+    // Out-of-range active clamps to the last tab, so the active
+    // marker is still rendered and the component does not throw.
+    const node = TabStrip({ workstreams: ["alpha", "beta"], active: 99, terminalColumns: 200 });
     expect(node).not.toBeNull();
     const text = renderToString(node);
     expect(text).toContain("alpha");
-    expect(text).toContain("beta");
-    expect(text).not.toContain("▸ ");
+    expect(text).toContain("▸ beta");
+  });
+
+  it("renders overflow counters and keeps the active marker visible", () => {
+    const node = TabStrip({
+      workstreams: [
+        "ws-01",
+        "ws-02",
+        "ws-03",
+        "ws-04",
+        "ws-05",
+        "ws-06",
+        "ws-07",
+        "ws-08",
+        "ws-09",
+        "ws-10",
+        "ws-11",
+        "ws-12",
+      ],
+      active: 5,
+      terminalColumns: 80,
+    });
+    const text = renderToString(node);
+    expect(text).toMatch(/‹\d+/);
+    expect(text).toContain("▸ ws-06");
+    expect(text).toMatch(/›\d+/);
+    expect(text).not.toContain("ws-01 · ws-02 · ws-03");
   });
 });
