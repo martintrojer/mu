@@ -353,6 +353,23 @@ is opt-in via the new `--tui` flag.
 
 ### TUI internals
 
+- **Status-bar hint cluster: single declarative token list, zero
+  drift surface** (review_complexity_status_bar_hint_dual_render).
+  `src/cli/tui/status-bar.tsx` previously maintained two parallel
+  switches over `(mode, popupName, popupMode)`: `hintsPlain()`
+  built a plain string for the LEFT-zone truncation budget, and
+  `renderHints()` built the JSX with coloured `<Key>` tokens. The
+  header comment honestly read "Keep in lockstep with
+  renderHints()" — a maintenance burden guaranteed to silently rot
+  on the next edit (a hint added to one but not the other quietly
+  miscomputes the LEFT-zone budget on narrow terminals). Refactored
+  to a single `buildHints()` switch that returns a `HintToken[]`
+  (`{kind: "key"|"dim"|"label", text, color?}`); `hintsPlain()` is
+  now `tokens.map(t => t.text).join(" ")`, `renderHints()` walks
+  the same array interleaving `" "` separators so width matches
+  byte-for-byte. The 20-test `tui-status-bar.test.ts` suite
+  continues to pass unchanged.
+
 - **Dropped three TUI dead-code lies**
   (review_dead_code_glyph_for_unused, review_dead_code_refresh_now,
   review_dead_code_workstream_picker). (1) `glyphFor(_t: TaskRow)`

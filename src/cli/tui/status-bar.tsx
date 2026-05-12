@@ -64,11 +64,11 @@ export function StatusBar({
   const left = footer ? formatFooter(footer) : "";
   // Budget for the LEFT zone: total cols - right zone - hint cluster
   // - 4 chars of inter-zone padding. Hint cluster width is its
-  // *plain* (non-coloured) length which we approximate via the
-  // string returned from hintsPlain().
-  const hintsPlainText = hintsPlain(mode, popupName, popupMode);
+  // *plain* (non-coloured) length, derived from the same token list
+  // that renders the JSX so the two cannot drift.
+  const hintTokens = buildHints(mode, popupName, popupMode);
+  const hintsWidth = hintsPlain(hintTokens).length;
   const rightWidth = rightPlain.length;
-  const hintsWidth = hintsPlainText.length;
   const padding = 4;
   const leftBudget = Math.max(0, cols - rightWidth - hintsWidth - padding);
   const leftClipped = leftBudget > 0 ? truncateCell(left, leftBudget) : "";
@@ -78,7 +78,7 @@ export function StatusBar({
       <Box>
         <Text dimColor>{leftClipped}</Text>
       </Box>
-      <Box>{renderHints(mode, popupName, popupMode)}</Box>
+      <Box>{renderHints(hintTokens)}</Box>
       <Box>
         {wsLabel !== "" && (
           <Text bold color="cyan">
@@ -91,111 +91,140 @@ export function StatusBar({
   );
 }
 
-// Plain-text version of the hint cluster used purely to size the
-// LEFT zone's truncation budget. Keep in lockstep with renderHints().
-function hintsPlain(
+// Hint cluster as a single declarative token stream. Both the plain
+// text (used for sizing the LEFT zone's truncation budget) and the
+// JSX (used for rendering) are derived from this — there is no
+// second source of truth to keep in lockstep.
+//
+// Render order: tokens are space-separated. The plain text is
+// `tokens.map(t => t.text).join(" ")`; the JSX wraps each token in
+// the styling implied by its `kind`, separated by literal " "
+// strings so width matches byte-for-byte.
+type HintToken =
+  | { kind: "key"; text: string }
+  | { kind: "dim"; text: string }
+  | { kind: "label"; text: string; color: "cyan" | "magenta" | "yellow" };
+
+function buildHints(
   mode: StatusMode,
   popupName: string | undefined,
   popupMode: PopupMode | undefined,
-): string {
+): HintToken[] {
+  const popupLabel: HintToken[] = popupName
+    ? [
+        { kind: "label", text: popupName, color: "cyan" },
+        { kind: "dim", text: "·" },
+      ]
+    : [];
   switch (mode) {
     case "dashboard":
-      return "1-9 toggle · Shift 1-9 popup · ? help · q quit · +/- tick · r refresh";
-    case "popup": {
-      const label = popupName ? `${popupName} · ` : "";
+      return [
+        { kind: "key", text: "1-9" },
+        { kind: "dim", text: "toggle ·" },
+        { kind: "key", text: "Shift 1-9" },
+        { kind: "dim", text: "popup ·" },
+        { kind: "key", text: "?" },
+        { kind: "dim", text: "help ·" },
+        { kind: "key", text: "q" },
+        { kind: "dim", text: "quit ·" },
+        { kind: "key", text: "+/-" },
+        { kind: "dim", text: "tick ·" },
+        { kind: "key", text: "r" },
+        { kind: "dim", text: "refresh" },
+      ];
+    case "popup":
       if (popupMode === "drill") {
-        return `${label}drill · j/k scroll · Esc back · ? help · q back`;
+        return [
+          ...popupLabel,
+          { kind: "label", text: "drill", color: "magenta" },
+          { kind: "dim", text: "·" },
+          { kind: "key", text: "j/k" },
+          { kind: "dim", text: "scroll ·" },
+          { kind: "key", text: "Esc" },
+          { kind: "dim", text: "back ·" },
+          { kind: "key", text: "?" },
+          { kind: "dim", text: "help ·" },
+          { kind: "key", text: "q" },
+          { kind: "dim", text: "back" },
+        ];
       }
-      return `${label}j/k nav · Shift 1-9 switch popup · / filter · Enter drill · y yank · Esc close · ? help · q quit`;
-    }
-    case "popup-filter": {
-      const label = popupName ? `${popupName} · filter · ` : "filter · ";
-      return `${label}Esc cancel · Enter commit · Bksp edit`;
-    }
+      return [
+        ...popupLabel,
+        { kind: "key", text: "j/k" },
+        { kind: "dim", text: "nav ·" },
+        { kind: "key", text: "Shift 1-9" },
+        { kind: "dim", text: "switch popup ·" },
+        { kind: "key", text: "/" },
+        { kind: "dim", text: "filter ·" },
+        { kind: "key", text: "Enter" },
+        { kind: "dim", text: "drill ·" },
+        { kind: "key", text: "y" },
+        { kind: "dim", text: "yank ·" },
+        { kind: "key", text: "Esc" },
+        { kind: "dim", text: "close ·" },
+        { kind: "key", text: "?" },
+        { kind: "dim", text: "help ·" },
+        { kind: "key", text: "q" },
+        { kind: "dim", text: "quit" },
+      ];
+    case "popup-filter":
+      return [
+        ...popupLabel,
+        { kind: "label", text: "filter", color: "yellow" },
+        { kind: "dim", text: "·" },
+        { kind: "key", text: "Esc" },
+        { kind: "dim", text: "cancel ·" },
+        { kind: "key", text: "Enter" },
+        { kind: "dim", text: "commit ·" },
+        { kind: "key", text: "Bksp" },
+        { kind: "dim", text: "edit" },
+      ];
     case "help":
-      return "Esc/?/q close help";
+      return [
+        { kind: "key", text: "Esc/?/q" },
+        { kind: "dim", text: "close help" },
+      ];
   }
 }
 
-function renderHints(
-  mode: StatusMode,
-  popupName: string | undefined,
-  popupMode: PopupMode | undefined,
-): JSX.Element {
-  switch (mode) {
-    case "dashboard":
+function hintsPlain(tokens: HintToken[]): string {
+  return tokens.map((t) => t.text).join(" ");
+}
+
+function renderHints(tokens: HintToken[]): JSX.Element {
+  // Interleave tokens with literal " " separators so the rendered
+  // width matches `hintsPlain(tokens)` byte-for-byte. ink flattens
+  // children into a single inline run, so no per-child keys are
+  // required (and react treats string children as keyed by index).
+  const children: React.ReactNode[] = [];
+  for (let i = 0; i < tokens.length; i++) {
+    if (i > 0) children.push(" ");
+    children.push(renderToken(tokens[i] as HintToken, i));
+  }
+  return <Text>{children}</Text>;
+}
+
+function renderToken(t: HintToken, key: number): JSX.Element {
+  switch (t.kind) {
+    case "key":
       return (
-        <Text>
-          <Key>1-9</Key> <Text dimColor>toggle ·</Text> <Key>Shift 1-9</Key>{" "}
-          <Text dimColor>popup ·</Text> <Key>?</Key> <Text dimColor>help ·</Text> <Key>q</Key>{" "}
-          <Text dimColor>quit ·</Text> <Key>+/-</Key> <Text dimColor>tick ·</Text> <Key>r</Key>{" "}
-          <Text dimColor>refresh</Text>
+        <Text key={key} color="yellow">
+          {t.text}
         </Text>
       );
-    case "popup": {
-      const label = popupName ? (
-        <>
-          <Text bold color="cyan">
-            {popupName}
-          </Text>{" "}
-          <Text dimColor>·</Text>{" "}
-        </>
-      ) : null;
-      if (popupMode === "drill") {
-        return (
-          <Text>
-            {label}
-            <Text bold color="magenta">
-              drill
-            </Text>{" "}
-            <Text dimColor>·</Text> <Key>j/k</Key> <Text dimColor>scroll ·</Text> <Key>Esc</Key>{" "}
-            <Text dimColor>back ·</Text> <Key>?</Key> <Text dimColor>help ·</Text> <Key>q</Key>{" "}
-            <Text dimColor>back</Text>
-          </Text>
-        );
-      }
+    case "dim":
       return (
-        <Text>
-          {label}
-          <Key>j/k</Key> <Text dimColor>nav ·</Text> <Key>Shift 1-9</Key>{" "}
-          <Text dimColor>switch popup ·</Text> <Key>/</Key> <Text dimColor>filter ·</Text>{" "}
-          <Key>Enter</Key> <Text dimColor>drill ·</Text> <Key>y</Key> <Text dimColor>yank ·</Text>{" "}
-          <Key>Esc</Key> <Text dimColor>close ·</Text> <Key>?</Key> <Text dimColor>help ·</Text>{" "}
-          <Key>q</Key> <Text dimColor>quit</Text>
+        <Text key={key} dimColor>
+          {t.text}
         </Text>
       );
-    }
-    case "popup-filter": {
-      const label = popupName ? (
-        <>
-          <Text bold color="cyan">
-            {popupName}
-          </Text>{" "}
-          <Text dimColor>·</Text>{" "}
-        </>
-      ) : null;
+    case "label":
       return (
-        <Text>
-          {label}
-          <Text bold color="yellow">
-            filter
-          </Text>{" "}
-          <Text dimColor>·</Text> <Key>Esc</Key> <Text dimColor>cancel ·</Text> <Key>Enter</Key>{" "}
-          <Text dimColor>commit ·</Text> <Key>Bksp</Key> <Text dimColor>edit</Text>
-        </Text>
-      );
-    }
-    case "help":
-      return (
-        <Text>
-          <Key>Esc/?/q</Key> <Text dimColor>close help</Text>
+        <Text key={key} bold color={t.color}>
+          {t.text}
         </Text>
       );
   }
-}
-
-function Key({ children }: { children: React.ReactNode }): JSX.Element {
-  return <Text color="yellow">{children}</Text>;
 }
 
 function formatFooter(f: FooterState): string {
