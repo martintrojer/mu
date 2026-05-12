@@ -379,6 +379,15 @@ is opt-in via the new `--tui` flag.
 
 ### TUI internals
 
+- **Tmux integration tests now poll observed state instead of sleeping**
+  (testreview_fixed_sleep_flakes). The remaining fixed sleeps in
+  `test/verbs.integration.test.ts`, `test/tmux.integration.test.ts`,
+  and `test/cli-agent-kick.test.ts` now use the shared `pollUntil()`
+  helper against real predicates (scrollback contains marker, pane
+  disappeared, bash prompt/output visible, pane exists before kick)
+  rather than assuming 200–600ms is enough under load. Deferred export
+  mtime/cadence sleeps stay parked for v0.5+ per the task scope.
+
 - **JSON shape tests now assert seeded semantics, not just arrays**
   (testreview_json_shape_weak_assertions). `state --json`, `agent
   list --json`, `task notes --json`, and workspace-commits tests now

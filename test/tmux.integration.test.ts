@@ -18,6 +18,7 @@ import {
   setPaneTitle,
   splitWindow,
 } from "../src/tmux.js";
+import { pollUntil } from "./_env.js";
 import { freshWorkstream } from "./_fixture.js";
 
 const TMUX_AVAILABLE = process.env.TMUX !== undefined && process.env.TMUX !== "";
@@ -133,13 +134,10 @@ describeIfTmux("tmux integration (real tmux server)", () => {
     expect(await paneExists(paneId)).toBe(true);
     const { killPane } = await import("../src/tmux.js");
     await killPane(paneId);
-    // tmux may briefly report the pane as still existing; poll briefly.
-    let exists = true;
-    for (let i = 0; i < 10 && exists; i++) {
-      await new Promise((resolve) => setTimeout(resolve, 50));
-      exists = await paneExists(paneId);
-    }
-    expect(exists).toBe(false);
+    await pollUntil(async () => !(await paneExists(paneId)), {
+      description: "killed pane disappears",
+    });
+    expect(await paneExists(paneId)).toBe(false);
   });
 
   it("capturePane returns pane scrollback as text", async () => {
@@ -149,8 +147,10 @@ describeIfTmux("tmux integration (real tmux server)", () => {
       // Print known text and stay alive.
       command: "sh -c 'echo MU_INTEGRATION_MARKER; while true; do sleep 60; done'",
     });
-    // Wait briefly for the echo to land in scrollback.
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    await pollUntil(
+      () => capturePane(paneId).then((content) => content.includes("MU_INTEGRATION_MARKER")),
+      { description: "echo marker lands in pane scrollback" },
+    );
     const content = await capturePane(paneId);
     expect(content).toContain("MU_INTEGRATION_MARKER");
   });
@@ -163,8 +163,9 @@ describeIfTmux("tmux integration (real tmux server)", () => {
       name: "shell",
       command: "bash --norc --noprofile",
     });
-    // Wait for shell prompt to appear.
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    await pollUntil(() => capturePane(paneId).then((out) => out.trim().includes("bash")), {
+      description: "bash prompt appears",
+    });
 
     // The smoking gun for naive send-keys: if `/` were interpreted as a
     // less/vim search command, this command would never reach bash. With
@@ -172,9 +173,13 @@ describeIfTmux("tmux integration (real tmux server)", () => {
     const marker = `MU_BP_${Date.now()}`;
     await sendToPane(paneId, `echo "${marker} /tmp/has/slashes ?question !bang"`, { delayMs: 200 });
 
-    // Wait for bash to execute and print.
-    await new Promise((resolve) => setTimeout(resolve, 600));
-
+    await pollUntil(
+      () =>
+        capturePane(paneId).then((out) =>
+          out.includes(`${marker} /tmp/has/slashes ?question !bang`),
+        ),
+      { description: "bracketed-paste command output appears" },
+    );
     const output = await capturePane(paneId);
     expect(output).toContain(`${marker} /tmp/has/slashes ?question !bang`);
   });
@@ -185,7 +190,9 @@ describeIfTmux("tmux integration (real tmux server)", () => {
       name: "shell",
       command: "bash --norc --noprofile",
     });
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    await pollUntil(() => capturePane(paneId).then((out) => out.trim().includes("bash")), {
+      description: "bash prompt appears",
+    });
 
     // Force copy-mode on the pane to verify the copy-mode -q step exits it.
     const { tmux } = await import("../src/tmux.js");
@@ -193,8 +200,9 @@ describeIfTmux("tmux integration (real tmux server)", () => {
 
     const marker = `COPYMODE_${Date.now()}`;
     await sendToPane(paneId, `echo ${marker}`, { delayMs: 200 });
-    await new Promise((resolve) => setTimeout(resolve, 600));
-
+    await pollUntil(() => capturePane(paneId).then((out) => out.includes(marker)), {
+      description: "copy-mode send output appears",
+    });
     const output = await capturePane(paneId);
     expect(output).toContain(marker);
   });

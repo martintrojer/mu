@@ -39,10 +39,12 @@ import {
   killSession,
   newSessionWithPane,
   paneExists,
+  paneTTY,
   resetTmuxExecutor,
   setTmuxExecutor,
 } from "../src/tmux.js";
 import { ensureWorkstream } from "../src/workstream.js";
+import { pollUntil } from "./_env.js";
 import { freshWorkstream } from "./_fixture.js";
 
 // ─── parsePsTtyOutput ─────────────────────────────────────────────────
@@ -366,9 +368,20 @@ describeIfTmux("kickAgent integration (real tmux + real ps + real kill)", () => 
     });
     insertAgent(db, { name: "worker-1", workstream: ws, paneId, status: "busy" });
 
-    // Give tmux + the exec'd sleep a moment to settle.
-    await new Promise((resolve) => setTimeout(resolve, 200));
-    expect(await paneExists(paneId)).toBe(true);
+    // Wait for the pane AND for `sleep` to actually be the foreground
+    // process. paneExists alone is not enough — tmux creates the pane
+    // before bash has exec'd into sleep, so kickAgent can race ahead
+    // and observe bash itself in the foreground (the wrapping CLI),
+    // which it correctly refuses to signal.
+    await pollUntil(
+      async () => {
+        if (!(await paneExists(paneId))) return false;
+        const tty = await paneTTY(paneId);
+        const fg = await foregroundPgid(tty);
+        return fg.kind === "ok" && fg.fgRow?.comm.includes("sleep") === true;
+      },
+      { description: "sleep is foreground before kick" },
+    );
 
     // Kick. SIGINT on a `sleep` exits it (sleep doesn't trap SIGINT).
     const result = await kickAgent(db, "worker-1", { workstream: ws });
@@ -377,13 +390,10 @@ describeIfTmux("kickAgent integration (real tmux + real ps + real kill)", () => 
 
     // The pane closes once the foreground process exits (we used
     // `exec sleep`, so sleep IS the only process in the pane).
-    // Poll briefly for the pane to disappear.
-    let exists = true;
-    for (let i = 0; i < 20 && exists; i++) {
-      await new Promise((resolve) => setTimeout(resolve, 50));
-      exists = await paneExists(paneId);
-    }
-    expect(exists).toBe(false);
+    await pollUntil(async () => !(await paneExists(paneId)), {
+      description: "kicked sleep pane disappears",
+    });
+    expect(await paneExists(paneId)).toBe(false);
 
     // Sanity: no stray `sleep <our-arg>` is left running. Per-test
     // unique duration above is what makes this safe under parallel
@@ -401,7 +411,9 @@ describeIfTmux("kickAgent integration (real tmux + real ps + real kill)", () => 
       command: "bash --norc --noprofile",
     });
     insertAgent(db, { name: "worker-1", workstream: ws, paneId, status: "busy" });
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    await pollUntil(() => paneExists(paneId), {
+      description: "idle bash pane exists before kick refusal",
+    });
 
     await expect(kickAgent(db, "worker-1", { workstream: ws })).rejects.toBeInstanceOf(
       NoForegroundProcessError,

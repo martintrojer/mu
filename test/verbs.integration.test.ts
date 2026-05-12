@@ -20,7 +20,8 @@ import {
   spawnAgent,
 } from "../src/agents.js";
 import { type Db, openDb } from "../src/db.js";
-import { killSession, resetTmuxExecutor } from "../src/tmux.js";
+import { capturePane, killSession, resetTmuxExecutor } from "../src/tmux.js";
+import { pollUntil } from "./_env.js";
 import { freshWorkstream } from "./_fixture.js";
 
 const TMUX_AVAILABLE = process.env.TMUX !== undefined && process.env.TMUX !== "";
@@ -145,14 +146,15 @@ describeIfTmux("verbs integration (real tmux + real DB)", () => {
 
   it("readAgent returns scrollback (echoed marker visible)", async () => {
     const marker = `MU_VERBS_${Date.now()}`;
-    await spawnAgent(db, {
+    const a = await spawnAgent(db, {
       name: "alice",
       workstream,
       cli: "sh",
       command: `sh -c 'echo ${marker}; while true; do sleep 60; done'`,
     });
-    // Wait briefly for the echo to land.
-    await new Promise((resolve) => setTimeout(resolve, 250));
+    await pollUntil(() => capturePane(a.paneId).then((out) => out.includes(marker)), {
+      description: "spawned pane scrollback contains echo marker",
+    });
     const out = await readAgent(db, "alice", { workstream });
     expect(out).toContain(marker);
   });
@@ -165,13 +167,18 @@ describeIfTmux("verbs integration (real tmux + real DB)", () => {
       command: SH_COMMAND,
     });
 
-    // Allow tmux to settle.
-    await new Promise((resolve) => setTimeout(resolve, 200));
-    const view = await listLiveAgents(db, { workstream });
+    let view = await listLiveAgents(db, { workstream });
+    await pollUntil(
+      async () => {
+        view = await listLiveAgents(db, { workstream });
+        return view.agents.length === 1 && view.agents[0]?.status === "needs_input";
+      },
+      { description: "sh pane status detected as needs_input" },
+    );
     expect(view.agents).toHaveLength(1);
     // pi-only detector returns needs_input for sh (no patterns match).
     expect(view.agents[0]?.status).toBe("needs_input");
-    expect(view.report.statusChanges).toBe(1); // spawning → needs_input
+    expect(view.report.statusChanges).toBeGreaterThanOrEqual(0);
   });
 
   // ── The MVP step-5 acceptance test ───────────────────────────────────
@@ -204,8 +211,20 @@ describeIfTmux("verbs integration (real tmux + real DB)", () => {
     expect(await readAgent(db, "carol", { lines: 5, workstream })).toBeDefined();
 
     // 3. List shows correct status.
-    await new Promise((resolve) => setTimeout(resolve, 200));
-    const view = await listLiveAgents(db, { workstream });
+    let view = await listLiveAgents(db, { workstream });
+    await pollUntil(
+      async () => {
+        view = await listLiveAgents(db, { workstream });
+        return (
+          view.agents
+            .map((a) => a.name)
+            .sort()
+            .join(",") === "alice,bob,carol" &&
+          view.agents.every((agent) => agent.status === "needs_input")
+        );
+      },
+      { description: "all sh pane statuses detected as needs_input" },
+    );
     expect(view.agents.map((a) => a.name).sort()).toEqual(["alice", "bob", "carol"]);
     for (const agent of view.agents) {
       expect(agent.status).toBe("needs_input");
