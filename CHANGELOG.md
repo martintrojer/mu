@@ -200,6 +200,24 @@ called out under "Breaking" in each entry.
 
 ### Tests
 
+- **`test/tui-app-behaviour.test.ts`: first behaviour coverage for
+  `<App>` (the 714-LOC TUI root state machine).** Mounts `<App>`
+  via the `simulateInput` + `CaptureStream` seam (with
+  `useDashboardSnapshot` / `useMouse` / `probeClipboardBackend`
+  stubbed via `vi.mock`) and asserts the most load-bearing user
+  invariants: initial dashboard frame, card toggle (1, 3),
+  help overlay open/close (`?` and `Esc`), popup open via the
+  `!` glyph and Esc-to-close-but-app-stays, multi-workstream
+  Tab cycling, Ctrl-C → ink unmount, and `+`/`-` tick-rate
+  adjustment via the StatusBar tick label. Each test was
+  pre-flight-verified by deliberately regressing the matching
+  `app.tsx` branch (e.g. neutering `case "toggleCard"`,
+  `case "toggleHelp"`, `case "openPopup"`, `case "nextTab"`,
+  the popup `onClose`, the snapshot wiring) and confirming the
+  test fails. The pre-existing source-grep `test/tui-app.test.ts`
+  stays as the popup-props-bag invariant guard. Closes
+  `testreview_tui_app_no_behaviour_coverage` (workstream
+  `tui-impl`).
 - **`test/tui-popup-{agents,log,recent,tasks,inprogress,blocked}.test.ts`:
   converted from `readFileSync` source-greps to behaviour tests on
   the `simulateInput` + `CaptureStream` seam.** Each popup now
