@@ -11,7 +11,7 @@ import { createElement } from "react";
 import stringWidth from "string-width";
 import { afterEach, describe, expect, it } from "vitest";
 import { DrillScrollView, wrapDrillBody } from "../src/cli/tui/popups/drill.js";
-import { CaptureStream, collectRenderedLines } from "./_ink-render.js";
+import { CaptureStream, collectRenderedLines, createInkCaptureStream } from "./_ink-render.js";
 
 const ESC = "\u001B";
 const RED = `${ESC}[31m`;
@@ -42,7 +42,7 @@ async function renderDrill(
   opts: { cols: number; boxWidth: number; wrappedBody?: ReturnType<typeof wrapDrillBody> },
 ): Promise<string[]> {
   return withTerminalWidth(opts.cols, async () => {
-    const stdout = new CaptureStream({ columns: opts.cols, rows: 20 });
+    const stdout = createInkCaptureStream({ columns: opts.cols, rows: 20 });
     const instance = render(
       createElement(
         Box,
