@@ -474,11 +474,12 @@ describe("WorkspacesPopup: Enter on focused commit drills into git show diff (fe
   it("show mode is popup-local (does NOT widen <App>'s PopupMode union)", () => {
     // Spec: "keep mode local to workspaces.tsx if PopupMode is
     // currently a union of 'list' | 'drill' only". The union must
-    // stay binary; the third level rides on the local showSha
-    // sentinel inside drill mode.
+    // stay binary; the third level rides on the popup-local
+    // localMode enum inside drill mode.
     expect(APP_SRC).toMatch(/export type PopupMode = "list" \| "drill";/);
     // The popup itself doesn't widen its accepted mode either.
     expect(SRC).toContain('mode: "list" | "drill"');
+    expect(SRC).toContain('type LocalMode = "list" | "commits" | "show"');
   });
 });
 

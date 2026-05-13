@@ -15,8 +15,8 @@
 // <DrillScrollView> primitive (same one log.tsx uses for full
 // payload view). The popup's `mode` prop from <App> stays "drill"
 // while in the show view — the show level is a popup-local sub-mode
-// (showSha state below) so we don't have to widen <App>'s PopupMode
-// union for one popup. j/k Ctrl-D/U scroll the diff; Esc/q back to
+// (the localMode state below) so we don't have to widen <App>'s
+// PopupMode union for one popup. j/k Ctrl-D/U scroll the diff; Esc/q back to
 // the commits list; y yanks the bare `git show <sha>` (the operator
 // gets the command, not the captured output).
 //
@@ -48,7 +48,7 @@
 // Per ROADMAP pledge: ink/react import limited to src/cli/tui/*.
 
 import { Box, Text, useInput, useStdout } from "ink";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import type { Db } from "../../../db.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
 import { type CommitSummary, detectBackend } from "../../../vcs.js";
@@ -101,6 +101,63 @@ const COMMIT_COLORS = [
   undefined, // subject
 ] as const;
 
+type LocalMode = "list" | "commits" | "show";
+
+interface LocalModeState {
+  mode: LocalMode;
+  drilledWorkspace: WorkspaceRow | null;
+  showSha: string | null;
+  showText: string;
+  showLoading: boolean;
+  showErr: string | null;
+}
+
+type LocalModeAction =
+  | { kind: "leaveDrill" }
+  | { kind: "enterDrill"; workspace: WorkspaceRow }
+  | { kind: "enterShow"; sha: string }
+  | { kind: "leaveShow" }
+  | { kind: "resetForWorkspace"; agentName: string | undefined }
+  | { kind: "setShowText"; text: string }
+  | { kind: "setShowLoading"; loading: boolean }
+  | { kind: "setShowError"; error: string | null };
+
+const LOCAL_MODE_INITIAL_STATE: LocalModeState = {
+  mode: "list",
+  drilledWorkspace: null,
+  showSha: null,
+  showText: "",
+  showLoading: false,
+  showErr: null,
+};
+
+function clearShowState(state: LocalModeState): LocalModeState {
+  return { ...state, showSha: null, showText: "", showLoading: false, showErr: null };
+}
+
+function localModeReducer(state: LocalModeState, action: LocalModeAction): LocalModeState {
+  switch (action.kind) {
+    case "leaveDrill":
+      return LOCAL_MODE_INITIAL_STATE;
+    case "enterDrill":
+      return { ...clearShowState(state), mode: "commits", drilledWorkspace: action.workspace };
+    case "enterShow":
+      return { ...state, mode: "show", showSha: action.sha };
+    case "leaveShow":
+      return { ...state, mode: "commits", showSha: null };
+    case "resetForWorkspace":
+      if (state.mode === "list") return state;
+      if (state.drilledWorkspace?.agentName === action.agentName) return state;
+      return { ...clearShowState(state), mode: "commits" };
+    case "setShowText":
+      return { ...state, showText: action.text };
+    case "setShowLoading":
+      return { ...state, showLoading: action.loading };
+    case "setShowError":
+      return { ...state, showErr: action.error };
+  }
+}
+
 // Drill view renders an EXTRA in-body title + dim "(L-T/T)" indicator
 // pair on top of the default popup chrome — subtract 7 (default 6 + 1)
 // for that branch. List view uses the default 6.
@@ -142,18 +199,17 @@ export function WorkspacesPopup({
   const [commits, setCommits] = useState<readonly CommitSummary[]>([]);
   const [drillErr, setDrillErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  // Show-mode (commit-diff drill) state. Owned here (popup-local)
-  // because <App>'s PopupMode union is only "list" | "drill" — we
-  // don't widen it for one popup. While `showSha !== null` AND
-  // mode === "drill" we render the show view; Esc/q clears showSha
-  // back to the commits list. Reset by:
-  //   - mode change away from "drill" (useEffect below)
-  //   - focused workspace change in list mode (useEffect below)
-  //   - Esc/q in show mode (handler below)
-  const [showSha, setShowSha] = useState<string | null>(null);
-  const [showText, setShowText] = useState("");
-  const [showLoading, setShowLoading] = useState(false);
-  const [showErr, setShowErr] = useState<string | null>(null);
+  // Popup-local sub-mode. <App> still only tracks "list" | "drill"
+  // for the StatusBar; inside the workspaces popup, the drill branch
+  // is explicit: commits list vs git-show body. `showSha` is only
+  // meaningful while localMode === "show".
+  const [localModeState, dispatchLocalMode] = useReducer(
+    localModeReducer,
+    LOCAL_MODE_INITIAL_STATE,
+  );
+  const localMode: LocalMode = mode === "drill" ? localModeState.mode : "list";
+  const inShow = localMode === "show";
+  const { showSha, showText, showLoading, showErr } = localModeState;
 
   // Two independent filter instances: one for the workspace list,
   // one for the commits drill view. Each '/' edit applies to the
@@ -164,8 +220,7 @@ export function WorkspacesPopup({
   // conditional useEffect at the call site
   // (per review_tui_workspaces_two_filter_instances). Show-mode
   // never edits a filter (read-only diff view) so both instances
-  // are disabled while inShow.
-  const inShow = mode === "drill" && showSha !== null;
+  // are disabled while localMode === "show".
   const flt = usePopupFilter({
     enabled: !inShow && mode !== "drill",
     onEditingChange: onFilterEditingChange,
@@ -189,16 +244,16 @@ export function WorkspacesPopup({
   const focusedListRow = workspaces[safeCursor];
   // Defensive: capture focused workspace at Enter so the drill stays
   // pinned to the workspace the user visually selected.
-  const [drilledWorkspace, setDrilledWorkspace] = useState<WorkspaceRow | null>(null);
-  const focused = mode === "drill" ? (drilledWorkspace ?? focusedListRow) : focusedListRow;
+  const drilledWorkspace = localModeState.drilledWorkspace;
+  const focused = localMode === "list" ? focusedListRow : (drilledWorkspace ?? focusedListRow);
   const projectRoot = process.cwd();
 
   /** Thin React glue around the shared VcsBackend.showCommit seam. */
   const loadShow = useCallback(async (path: string, sha: string) => {
     await loadShowPreservingBody(path, sha, detectBackend, {
-      setText: setShowText,
-      setError: setShowErr,
-      setLoading: setShowLoading,
+      setText: (text) => dispatchLocalMode({ kind: "setShowText", text }),
+      setError: (error) => dispatchLocalMode({ kind: "setShowError", error }),
+      setLoading: (loading) => dispatchLocalMode({ kind: "setShowLoading", loading }),
     });
   }, []);
 
@@ -232,58 +287,46 @@ export function WorkspacesPopup({
     [db, workstream],
   );
 
+  const focusedAgentName = focused?.agentName;
+  const previousFocusedAgentName = useRef<string | undefined>(undefined);
+  const resetDrillFilter = drillFlt.reset;
   useEffect(() => {
-    void slowTickNonce;
-    if (mode === "drill" && !inShow && focused) {
-      void loadCommits(focused.agentName);
-    }
-  }, [mode, inShow, focused, loadCommits, slowTickNonce]);
+    const focusedChanged = previousFocusedAgentName.current !== focusedAgentName;
+    previousFocusedAgentName.current = focusedAgentName;
 
-  useEffect(() => {
+    if (focusedChanged) {
+      dispatchLocalMode({ kind: "resetForWorkspace", agentName: focusedAgentName });
+      setDrillCursor(0);
+      setCommits([]);
+      resetDrillFilter();
+    }
     if (mode !== "drill") {
+      dispatchLocalMode({ kind: "leaveDrill" });
       setCommits([]);
       setDrillErr(null);
       setLoading(false);
-      setDrilledWorkspace(null);
     }
-  }, [mode]);
+  }, [mode, focusedAgentName, resetDrillFilter]);
 
-  // Reset show-mode state when the popup leaves drill (back to
-  // workspace list) or when the focused workspace changes. Slow-tick
-  // refetches of the SAME workspace/sha keep the existing body visible;
-  // identity changes still clear so stale content does not leak across
-  // drills.
   useEffect(() => {
-    if (mode !== "drill") {
-      setShowSha(null);
-      setShowText("");
-      setShowErr(null);
-      setShowLoading(false);
+    void slowTickNonce;
+    if (localMode === "commits" && focused) {
+      void loadCommits(focused.agentName);
     }
-  }, [mode]);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: focused?.agentName is the trigger; the effect body is intentionally pure setters, so biome can't infer the dependency from a body reference.
-  useEffect(() => {
-    setDrillCursor(0);
-    setCommits([]);
-    drillFlt.reset();
-    setShowSha(null);
-    setShowText("");
-    setShowErr(null);
-    setShowLoading(false);
-  }, [focused?.agentName]);
+  }, [localMode, focused, loadCommits, slowTickNonce]);
 
   const showBody = showErr !== null ? `error: ${showErr}` : showText;
   useEffect(() => {
     void slowTickNonce;
-    if (inShow && focused !== undefined && showSha !== null) {
+    if (localMode === "show" && focused !== undefined && showSha !== null) {
       void loadShow(focused.path, showSha);
     }
-  }, [inShow, focused, showSha, loadShow, slowTickNonce]);
+  }, [localMode, focused, showSha, loadShow, slowTickNonce]);
 
   const showDrill = useDrillKeymap({
     body: showBody,
     viewport: drillViewport,
-    onClose: () => setShowSha(null),
+    onClose: () => dispatchLocalMode({ kind: "leaveShow" }),
     onYank: () => {
       if (showSha !== null) return yank(`git show ${showSha}`);
     },
@@ -297,11 +340,11 @@ export function WorkspacesPopup({
   });
 
   const dispatchListAction = (action: PopupAction) => {
-    if (inShow) {
+    if (localMode === "show") {
       showDrill.dispatch(action);
       return;
     }
-    if (mode === "drill") {
+    if (localMode === "commits") {
       // Drill-mode commits list: nav funnels through applyCursor.
       // '/' filters the commits list, Enter drills ONE MORE LEVEL
       // into the focused commit's `git show` diff
@@ -314,7 +357,7 @@ export function WorkspacesPopup({
       }
       switch (action.kind) {
         case "close":
-          setDrilledWorkspace(null);
+          dispatchLocalMode({ kind: "leaveDrill" });
           onModeChange("list");
           return;
         case "filter":
@@ -323,7 +366,7 @@ export function WorkspacesPopup({
         case "drill": {
           const c = focusedCommit;
           if (!c || !focused) return;
-          setShowSha(c.sha);
+          dispatchLocalMode({ kind: "enterShow", sha: c.sha });
           return;
         }
         case "yank": {
@@ -352,7 +395,7 @@ export function WorkspacesPopup({
         return;
       case "drill":
         if (focusedListRow) {
-          setDrilledWorkspace(focusedListRow);
+          dispatchLocalMode({ kind: "enterDrill", workspace: focusedListRow });
           onModeChange("drill");
         }
         return;
@@ -377,15 +420,15 @@ export function WorkspacesPopup({
     // Show-mode is read-only — no filter prompt — so we skip the
     // consume check entirely (lets Esc fire as close, not
     // filter-cancel).
-    const activeFlt = mode === "drill" ? drillFlt : flt;
-    if (!inShow && activeFlt.onKey(input, key) === "consumed") return;
+    const activeFlt = localMode === "commits" ? drillFlt : flt;
+    if (localMode !== "show" && activeFlt.onKey(input, key) === "consumed") return;
     dispatchListAction(dispatchPopupKeyFromInk(input, key));
   });
 
   if (snapshot === null) {
     return <PopupShell title="Workspaces · popup">{<Text dimColor>loading…</Text>}</PopupShell>;
   }
-  if (inShow && showSha !== null && focused) {
+  if (localMode === "show" && showSha !== null && focused) {
     const shortSha = showSha.slice(0, 12);
     return (
       <PopupShell title={`Workspaces · git show ${shortSha}`}>
@@ -412,7 +455,7 @@ export function WorkspacesPopup({
       </PopupShell>
     );
   }
-  if (mode !== "drill" && workspaces.length === 0) {
+  if (localMode === "list" && workspaces.length === 0) {
     return (
       <PopupShell title="Workspaces · popup">
         <Box flexDirection="column" flexGrow={1}>
@@ -423,7 +466,7 @@ export function WorkspacesPopup({
     );
   }
 
-  if (mode === "drill" && focused) {
+  if (localMode === "commits" && focused) {
     return (
       <PopupShell title={`Workspaces · ${focused.agentName} (commits since fork)`}>
         <Box flexDirection="column" flexGrow={1}>
