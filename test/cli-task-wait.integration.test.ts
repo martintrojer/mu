@@ -88,6 +88,17 @@ describeIfTmux("mu task wait — reaper-detection integration", () => {
     });
   }
 
+  function runDuringFirstWaitSleep(action: () => Promise<void> | void): void {
+    let fired = false;
+    setWaitSleepForTests(async (ms) => {
+      if (!fired) {
+        fired = true;
+        await action();
+      }
+      await new Promise((resolve) => setTimeout(resolve, Math.min(ms, 25)));
+    });
+  }
+
   it("kills the worker mid-wait → exit 6 within poll-interval (NOT --timeout)", async () => {
     const agent = await spawnAgent(db, {
       name: "alice",
@@ -105,11 +116,12 @@ describeIfTmux("mu task wait — reaper-detection integration", () => {
     await claimTask(db, "build", { agentName: "alice", workstream });
     expect(getTask(db, "build", workstream)?.status).toBe("IN_PROGRESS");
 
-    // Schedule the pane death AFTER the wait has entered its poll
-    // loop. 100ms is comfortably past the initial snapshot+sleep.
-    setTimeout(() => {
-      void killPane(agent.paneId);
-    }, 100);
+    // Kill only after waitForTasks has taken its initial snapshot and
+    // entered the first poll sleep. A fixed 100ms timer raced under
+    // multi-agent stress: on a loaded machine the pane could die before
+    // cmdTaskWait seeded its prior-state map, turning the expected
+    // exit-6 into a timeout.
+    runDuringFirstWaitSleep(() => killPane(agent.paneId));
 
     const start = Date.now();
     // Generous --timeout (60s); if exit 6 doesn't fire fast we'd
@@ -149,9 +161,7 @@ describeIfTmux("mu task wait — reaper-detection integration", () => {
     });
     await claimTask(db, "deploy", { agentName: "bob", workstream });
 
-    setTimeout(() => {
-      void killPane(agent.paneId);
-    }, 100);
+    runDuringFirstWaitSleep(() => killPane(agent.paneId));
 
     const { exitCode, stderr, error } = await runCli(
       ["task", "wait", "deploy", "-w", workstream, "--status", "OPEN", "--timeout", "60"],
@@ -179,10 +189,12 @@ describeIfTmux("mu task wait — reaper-detection integration", () => {
     });
     await claimTask(db, "review", { agentName: "carol", workstream });
 
-    // Close the task mid-wait via the SDK (normal happy path).
-    setTimeout(() => {
+    // Close the task after the wait loop has started (normal happy
+    // path). Avoid fixed timers: under stress they can fire before
+    // the CLI reaches waitForTasks.
+    runDuringFirstWaitSleep(() => {
       setTaskStatus(db, "review", "CLOSED", { workstream });
-    }, 100);
+    });
 
     const { exitCode, stderr, error } = await runCli(
       ["task", "wait", "review", "-w", workstream, "--timeout", "60"],
@@ -216,9 +228,7 @@ describeIfTmux("mu task wait — reaper-detection integration", () => {
     // as soon as ONE task reaches CLOSED; here, with neither closing,
     // the reaper-flip on t1 wins and we get exit 6 (suppression rule
     // is target=CLOSED, which is the default).
-    setTimeout(() => {
-      void killPane(a1.paneId);
-    }, 100);
+    runDuringFirstWaitSleep(() => killPane(a1.paneId));
 
     const { exitCode, stderr } = await runCli(
       ["task", "wait", "t1", "t2", "--any", "-w", workstream, "--timeout", "60"],
@@ -283,6 +293,17 @@ describeIfTmux("mu task wait — cross-workstream reaper isolation", () => {
 
   const SH = "sh -c 'while true; do sleep 60; done'";
 
+  function runDuringFirstWaitSleep(action: () => Promise<void> | void): void {
+    let fired = false;
+    setWaitSleepForTests(async (ms) => {
+      if (!fired) {
+        fired = true;
+        await action();
+      }
+      await new Promise((resolve) => setTimeout(resolve, Math.min(ms, 25)));
+    });
+  }
+
   it("reaper-flip on UNWATCHED workstream B does NOT trigger exit 6 on watch of A", async () => {
     // wsA: alive worker owns alphaTask; we'll wait on alphaTask only.
     await spawnAgent(db, { name: "a-worker", workstream: wsA, cli: "sh", command: SH });
@@ -306,14 +327,16 @@ describeIfTmux("mu task wait — cross-workstream reaper isolation", () => {
     addTask(db, { localId: "betatask", workstream: wsB, title: "B", impact: 50, effortDays: 1 });
     await claimTask(db, "betatask", { agentName: "b-worker", workstream: wsB });
 
-    // Kill B's pane mid-wait. Then close A's task so the wait succeeds
-    // (so we know the wait wasn't aborted by some unrelated error).
-    setTimeout(() => {
-      void killPane(beta.paneId);
-    }, 100);
-    setTimeout(() => {
-      setTaskStatus(db, "alphatask", "CLOSED", { workstream: wsA });
-    }, 300);
+    // Kill B's pane after the wait loop has started. Then close A's
+    // task on the following sleep so the wait succeeds (proving the
+    // reaper event from the unwatched workstream did not abort it).
+    let sleeps = 0;
+    setWaitSleepForTests(async (ms) => {
+      sleeps += 1;
+      if (sleeps === 1) await killPane(beta.paneId);
+      if (sleeps === 2) setTaskStatus(db, "alphatask", "CLOSED", { workstream: wsA });
+      await new Promise((resolve) => setTimeout(resolve, Math.min(ms, 25)));
+    });
 
     const { exitCode, stderr } = await runCli(
       // Bare ref + -w wsA (NOT a cross-ws wait — the cross-ws part
@@ -348,9 +371,7 @@ describeIfTmux("mu task wait — cross-workstream reaper isolation", () => {
     addTask(db, { localId: "betatask", workstream: wsB, title: "B", impact: 50, effortDays: 1 });
     await claimTask(db, "betatask", { agentName: "b-worker", workstream: wsB });
 
-    setTimeout(() => {
-      void killPane(beta.paneId);
-    }, 100);
+    runDuringFirstWaitSleep(() => killPane(beta.paneId));
 
     const { exitCode, stderr } = await runCli(
       ["task", "wait", `${wsA}/alphatask`, `${wsB}/betatask`, "--timeout", "30"],

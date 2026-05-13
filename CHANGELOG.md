@@ -122,6 +122,32 @@ called out under "Breaking" in each entry.
   once for its own column count and threads that down via the
   `terminalColumns` prop (now required, not optional).
 
+### Tests
+
+- **Test suite flake population audited and remediated.** The
+  previously intermittent ~1/run failure rate (different test each
+  time, passes on isolated re-run) was driven primarily by
+  multi-agent concurrent test runs — the repo's standard dogfood
+  workflow runs multiple pi workers' `npm run test` in parallel on
+  the same machine. Per-fix details live in
+  `docs/test-flakes-audit.md`. New `npm run test:stress` runs the
+  full suite 30× back-to-back by default, captures one log per run,
+  enforces a per-run timeout, and can simulate concurrent-agent load with
+  `MU_TEST_STRESS_MODE=parallel MU_TEST_STRESS_PARALLEL=2`.
+- VCS fixture cleanup now uses a small retrying `rmFixtureDir()` helper
+  for Sapling/git/jj temp dirs. This fixes the observed
+  `test/vcs-commits-show.test.ts` `ENOTEMPTY` cleanup race where sl's
+  `.hg/blackbox` file activity outlived the test body under load.
+- `mu task wait` reaper integration tests no longer use fixed 100ms
+  timers to kill panes or close tasks. The action now runs from the
+  wait-loop sleep seam after the initial snapshot has seeded prior
+  state, fixing the stress-only timeout where a pane died before the
+  wait could observe the IN_PROGRESS → OPEN transition.
+- Ink render tests no longer rely on a fixed 40ms sleep before reading
+  captured stdout; shared test plumbing now waits for non-empty stable
+  output, reducing timing sensitivity on loaded concurrent-agent
+  machines.
+
 ### TUI internals
 
 - **State/TUI dispatch + event-classifier tests are behaviour-backed**

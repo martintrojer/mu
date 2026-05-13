@@ -3,7 +3,7 @@
 // See design_sdk_seam in workstream `tui` (`mu task notes design_sdk_seam -w tui`).
 
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -24,6 +24,7 @@ import {
 import { type TaskRow, addTask, claimTask } from "../src/tasks.js";
 import { resetTmuxExecutor, setTmuxExecutor } from "../src/tmux.js";
 import { ensureWorkstream } from "../src/workstream.js";
+import { rmFixtureDir } from "./_fs.js";
 import { freshMockState, mockTmux } from "./_verbs-mock.js";
 
 // Minimal TaskRow factory for the pure-function tests.
@@ -52,7 +53,7 @@ function tmp(prefix: string): string {
 }
 
 afterEach(() => {
-  for (const d of dirs) rmSync(d, { recursive: true, force: true });
+  for (const d of dirs) rmFixtureDir(d);
   dirs = [];
 });
 

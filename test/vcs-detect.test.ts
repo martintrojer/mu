@@ -3,11 +3,12 @@
 // worktrees: .git is a FILE there, so marker-dir heuristics miss them.
 
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { detectBackend, gitBackend, jjBackend, noneBackend, slBackend } from "../src/vcs.js";
+import { rmFixtureDir } from "./_fs.js";
 
 let dirs: string[] = [];
 
@@ -18,7 +19,7 @@ function tmp(prefix: string): string {
 }
 
 afterEach(() => {
-  for (const d of dirs) rmSync(d, { recursive: true, force: true });
+  for (const d of dirs) rmFixtureDir(d);
   dirs = [];
 });
 
@@ -64,7 +65,7 @@ gitDescribe("VCS detection — git", () => {
   it("detects a git worktree where .git is a gitdir pointer file", async () => {
     const repo = initGitRepo("mu-vcs-detect-git-main-");
     const worktree = tmp("mu-vcs-detect-git-worktree-");
-    rmSync(worktree, { recursive: true, force: true });
+    rmFixtureDir(worktree);
     execFileSync("git", ["-C", repo, "worktree", "add", "-q", worktree, "-b", "worker"], {
       stdio: "ignore",
     });

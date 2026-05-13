@@ -1,11 +1,12 @@
 // Tests for VcsBackend.recentCommits + showCommit (git/jj/sl/none).
 
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { gitBackend, jjBackend, noneBackend, slBackend } from "../src/vcs.js";
+import { rmFixtureDir } from "./_fs.js";
 
 const ANSI_RE = new RegExp(`${String.fromCharCode(0x1b)}\\[`);
 
@@ -18,7 +19,7 @@ function tmp(prefix: string): string {
 }
 
 afterEach(() => {
-  for (const d of dirs) rmSync(d, { recursive: true, force: true });
+  for (const d of dirs) rmFixtureDir(d);
   dirs = [];
 });
 

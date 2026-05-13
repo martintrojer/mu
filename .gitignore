@@ -19,6 +19,7 @@ build/
 coverage/
 .nyc_output/
 *.tsbuildinfo
+.mu-test-stress/
 
 # mu runtime (when we get there)
 .mu/

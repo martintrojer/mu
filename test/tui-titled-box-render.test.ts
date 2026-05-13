@@ -3,6 +3,7 @@ import { Box, Text, render } from "ink";
 import { createElement } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import { TitledBox } from "../src/cli/tui/titled-box.js";
+import { waitForInkOutput } from "./_ink-render.js";
 
 class CaptureStream extends Writable {
   output = "";
@@ -53,7 +54,7 @@ describe("TitledBox constrained-frame rendering", () => {
       { stdout, stdin: process.stdin, stderr: process.stderr, debug: true, patchConsole: false },
     );
 
-    await new Promise((resolve) => setTimeout(resolve, 40));
+    await waitForInkOutput(stdout);
     instance.unmount();
 
     const lines = stdout.output.split("\n");
@@ -79,7 +80,7 @@ describe("TitledBox constrained-frame rendering", () => {
       { stdout, stdin: process.stdin, stderr: process.stderr, debug: true, patchConsole: false },
     );
 
-    await new Promise((resolve) => setTimeout(resolve, 40));
+    await waitForInkOutput(stdout);
     instance.unmount();
 
     const lines = stdout.output.split("\n");

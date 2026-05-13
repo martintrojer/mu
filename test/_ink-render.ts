@@ -31,10 +31,26 @@ export class CaptureStream extends Writable {
 }
 
 export async function collectRenderedLines(stdout: CaptureStream): Promise<string[]> {
-  await new Promise((resolve) => setTimeout(resolve, 40));
+  await waitForInkOutput(stdout);
   const esc = String.fromCharCode(27);
   return stdout.output
     .replace(new RegExp(`${esc}\\[[0-?]*[ -/]*[@-~]`, "g"), "")
     .split("\n")
     .filter((line) => line.length > 0);
+}
+
+export async function waitForInkOutput(stdout: CaptureStream): Promise<void> {
+  const deadline = Date.now() + 1000;
+  let previous = "";
+  let stableSamples = 0;
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    if (stdout.output.length > 0 && stdout.output === previous) {
+      stableSamples += 1;
+      if (stableSamples >= 2) return;
+    } else {
+      stableSamples = 0;
+      previous = stdout.output;
+    }
+  }
 }

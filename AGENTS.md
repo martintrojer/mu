@@ -195,6 +195,15 @@ those tests skip themselves; CI runs inside tmux.
 - Each test gets its own temp DB and (for integration) a unique
   tmux session like `mu-test-<pid>-<ts>-<rand>` to avoid colliding
   with the user's panes or with parallel test runs.
+- Dogfood reality: multiple pi worker agents often run `npm run test`
+  concurrently on the same machine from different workspaces. Treat
+  flakes that pass in isolation but fail under load as concurrency
+  bugs first (shared `/tmp` cleanup, tmux socket/session collisions,
+  leaked subprocesses, VCS background file activity). Use
+  `npm run test:stress` for the pre-release/stability gate; it runs
+  the suite repeatedly with a per-run timeout and can simulate
+  parallel full-suite runs via
+  `MU_TEST_STRESS_MODE=parallel MU_TEST_STRESS_PARALLEL=2`.
 - The acceptance test in `test/acceptance.test.ts` is the
   "everything works" gate. Keep it passing.
 - **DB baseline**: `openDb()` refuses to open the user's REAL
