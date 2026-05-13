@@ -165,9 +165,6 @@ export interface InsertAgentInput {
 }
 
 interface RawAgentRow {
-  /** Surrogate id (v5). Carried through so internal helpers don't have
-   *  to re-resolve when they need it. */
-  id: number;
   name: string;
   /** Joined from workstreams.name. */
   workstream: string;
@@ -184,7 +181,6 @@ interface RawAgentRow {
  *  operator-facing workstream name as `workstream`. Used by every
  *  read path. */
 const SELECT_AGENT_COLS = `
-  a.id AS id,
   a.name AS name,
   ws.name AS workstream,
   a.cli AS cli,
@@ -316,10 +312,6 @@ export function updateAgentStatus(
     .run(status, new Date().toISOString(), name, wsId);
   return result.changes > 0;
 }
-
-/** rowFromDb retains the surrogate id but the public AgentRow shape
- *  stays operator-facing; the id is internal-only. Strip it on the way
- *  out by destructuring. */
 
 /**
  * Decide whether a scrollback-detected status should overwrite the
