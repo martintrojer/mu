@@ -101,6 +101,7 @@ called out under "Breaking" in each entry.
 
 ### Changed
 
+- TUI: extracted the byte-identical notes-drill `useMemo` block from the five task-list popups (Tasks/ready, In-progress, Blocked, Recent, All-tasks) into a shared `useNotesDrill` hook (`src/cli/tui/use-notes-drill.ts`). Each popup now calls it as a one-liner; SQL+tick semantics stay in lockstep so the next task-list popup is a one-line drop-in. Pure refactor: drill UX, scroll clamping, and yank verbs are unchanged.
 - README now opens with the shipped TUI dashboard screenshot so the flagship human surface is visible before install instructions.
 - README positioning now drops anti-bloat boasting while keeping the load-bearing thesis: mu persists tasks, workspaces, panes, notes, and logs, but the model drives.
 - README now has a dedicated TUI dashboard section covering the ten cards, fullscreen drills, keymap, mouse support, read-only yank contract, and `tuicr` handoff exception.

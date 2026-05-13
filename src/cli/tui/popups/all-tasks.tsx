@@ -28,11 +28,12 @@ import { formatRoi } from "../format-helpers.js";
 import { dispatchPopupKeyFromInk } from "../keys.js";
 import { ListRow } from "../list-row.js";
 import { PopupShell } from "../popup-shell.js";
+import { useNotesDrill } from "../use-notes-drill.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
 import { StatusFilterStrip, useStatusFilter } from "../use-status-filter.js";
 import { useDrillKeymap } from "./drill.js";
 import { applyCursor, centredVisibleSlice, isNavAction } from "./scroll.js";
-import { TaskDetailDrill, renderNotes } from "./task-detail.js";
+import { TaskDetailDrill } from "./task-detail.js";
 import { usePopupViewport } from "./viewport.js";
 
 export interface PopupProps {
@@ -98,11 +99,7 @@ export function AllTasksPopup({
   const safeCursor = visibleTasks.length === 0 ? 0 : Math.min(cursor, visibleTasks.length - 1);
   const focused = visibleTasks[safeCursor];
 
-  const notesText = useMemo<string>(() => {
-    void fastTickNonce;
-    if (mode !== "drill" || !focused) return "";
-    return renderNotes(db, focused.name, workstream);
-  }, [mode, focused, db, workstream, fastTickNonce]);
+  const notesText = useNotesDrill({ mode, focused, db, workstream, fastTickNonce });
 
   const drill = useDrillKeymap({
     body: notesText,

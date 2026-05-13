@@ -176,7 +176,9 @@ describe("AllTasksPopup", () => {
   it("source wires Enter to TaskDetailDrill through the standard task-list popup pattern", () => {
     const src = readFileSync("./src/cli/tui/popups/all-tasks.tsx", "utf-8");
     expect(src).toContain("TaskDetailDrill");
-    expect(src).toContain("renderNotes");
+    // Post-review_tui_task_popups_duplicated_template: the per-popup
+    // renderNotes useMemo moved into the shared useNotesDrill hook.
+    expect(src).toContain("useNotesDrill");
     expect(src).toContain('onModeChange("drill")');
     expect(src).toContain('onModeChange("list")');
   });

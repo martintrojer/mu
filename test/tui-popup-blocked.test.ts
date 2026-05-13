@@ -59,12 +59,15 @@ describe("BlockedPopup: yank intents (read-only)", () => {
 });
 
 describe("BlockedPopup: drill IS TaskDetailDrill (rows ARE tasks)", () => {
-  it("imports TaskDetailDrill + renderNotes (drill-recursion contract)", () => {
+  it("imports TaskDetailDrill + useNotesDrill (drill-recursion contract)", () => {
     // Per feat_track_drill_chains_to_task_drill: rows that ARE
     // tasks chain into the shared TaskDetailDrill leaf.
     expect(SRC).toContain("TaskDetailDrill");
-    expect(SRC).toContain("renderNotes");
     expect(SRC).toMatch(/from\s+"\.\/task-detail\.js"/);
+    // Post-review_tui_task_popups_duplicated_template: the per-popup
+    // renderNotes useMemo moved into the shared useNotesDrill hook.
+    expect(SRC).toContain("useNotesDrill");
+    expect(SRC).toMatch(/from\s+"\.\.\/use-notes-drill\.js"/);
   });
 
   it("drill mode is plumbed via the standard onModeChange list ↔ drill toggle", () => {

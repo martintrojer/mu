@@ -76,7 +76,10 @@ describe("ReadyPopup (Tasks popup)", () => {
     // ready.tsx consumes it (consumer #1) so any future popup that
     // adopts the chain pattern stays in lockstep.
     expect(src).toContain("TaskDetailDrill");
-    expect(src).toContain("renderNotes");
+    // Post-review_tui_task_popups_duplicated_template: the per-popup
+    // `renderNotes` useMemo block moved into the shared useNotesDrill
+    // hook. Assert the new wiring instead of the literal symbol.
+    expect(src).toContain("useNotesDrill");
     expect(src).toContain('onModeChange("drill")');
     expect(src).toContain('onModeChange("list")');
   });

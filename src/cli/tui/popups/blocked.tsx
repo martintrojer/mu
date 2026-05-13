@@ -51,10 +51,11 @@ import { colorForBucket, formatRoi } from "../format-helpers.js";
 import { dispatchPopupKeyFromInk } from "../keys.js";
 import { ListRow } from "../list-row.js";
 import { PopupShell } from "../popup-shell.js";
+import { useNotesDrill } from "../use-notes-drill.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
 import { useDrillKeymap } from "./drill.js";
 import { applyCursor, centredVisibleSlice, isNavAction } from "./scroll.js";
-import { TaskDetailDrill, renderNotes } from "./task-detail.js";
+import { TaskDetailDrill } from "./task-detail.js";
 import { usePopupViewport } from "./viewport.js";
 
 export interface PopupProps {
@@ -127,17 +128,7 @@ export function BlockedPopup({
   const safeCursor = tasks.length === 0 ? 0 : Math.min(cursor, tasks.length - 1);
   const focused = tasks[safeCursor];
 
-  // Resolve notes for the focused task on demand. Memoised on
-  // (taskId, mode); we only hit SQLite when actually drilled in.
-  // Identical to the TaskDetailDrill render path — we duplicate
-  // the call here only because useDrillKeymap needs the rendered
-  // body to clamp scroll. The shared formatter (renderNotes) is
-  // the single source of truth.
-  const notesText = useMemo<string>(() => {
-    void fastTickNonce;
-    if (mode !== "drill" || !focused) return "";
-    return renderNotes(db, focused.name, workstream);
-  }, [mode, focused, db, workstream, fastTickNonce]);
+  const notesText = useNotesDrill({ mode, focused, db, workstream, fastTickNonce });
 
   const drill = useDrillKeymap({
     body: notesText,

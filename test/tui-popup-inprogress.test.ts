@@ -64,12 +64,14 @@ describe("popups/inprogress.tsx static-source invariants", () => {
     expect(SRC).toContain("isStale");
   });
 
-  it("consumes the shared TaskDetailDrill + renderNotes leaf (recursion contract)", () => {
+  it("consumes the shared TaskDetailDrill + useNotesDrill hook (recursion contract)", () => {
     // Per feat_track_drill_chains_to_task_drill: rows ARE tasks, so
     // Enter must chain into TaskDetailDrill. We assert the import
     // and the mode flip wired by the keymap switch.
     expect(SRC).toContain("TaskDetailDrill");
-    expect(SRC).toContain("renderNotes");
+    // Post-review_tui_task_popups_duplicated_template: the per-popup
+    // renderNotes useMemo moved into the shared useNotesDrill hook.
+    expect(SRC).toContain("useNotesDrill");
     expect(SRC).toContain('onModeChange("drill")');
     expect(SRC).toContain('onModeChange("list")');
   });
