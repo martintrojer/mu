@@ -1,24 +1,269 @@
 // Tests for src/cli/tui/popups/workspaces.tsx (feat_popup_5_workspaces,
 // workstream `tui-impl`).
-//
-// We can't snapshot ink output without ink-testing-library (network-
-// blocked). Instead we exercise:
-//   1. The pure helpers (formatDirty / colorForDirty) directly.
-//   2. The import-graph contract (popup is exported, app.tsx wires it).
-//   3. Static-source assertions for the key wiring (yank intent,
-//      drill data source, filter primitive consumption, columns, etc.)
-//
-// Mirrors the structure of test/tui-popup-agents.test.ts.
 
-import { readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
+import { mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { render } from "ink";
+import { createElement, useState } from "react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { insertAgent } from "../src/agents.js";
 import { loadShowPreservingBody } from "../src/cli/tui/popups/show-loader.js";
 import { WorkspacesPopup, colorForDirty, formatDirty } from "../src/cli/tui/popups/workspaces.js";
+import { type Db, openDb, resolveWorkstreamId } from "../src/db.js";
+import type { WorkstreamSnapshot } from "../src/state.js";
+import type { WorkspaceRow } from "../src/workspace.js";
+import {
+  CaptureStream,
+  createInkCaptureStream,
+  createInkInputStream,
+  latestRenderedFrame,
+  simulateInput,
+  waitForInkOutput,
+} from "./_ink-render.js";
 
-const SRC = readFileSync("./src/cli/tui/popups/workspaces.tsx", "utf-8");
+const mockWorkspaceCommits = vi.hoisted(() => ({
+  byAgent: new Map<
+    string,
+    Array<{
+      sha: string;
+      subject: string;
+      body: string;
+      author: string;
+      authorDate: string;
+      relTime: string;
+    }>
+  >(),
+}));
+
+const mockVcs = vi.hoisted(() => ({
+  showText: "commit aaaaaaaaaaaa\n+ mocked workspace show body",
+  showError: null as string | null,
+  calls: [] as Array<{ path: string; sha: string }>,
+}));
+
+vi.mock("../src/workspace.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/workspace.js")>();
+  return {
+    ...actual,
+    listCommitsForWorkspace: vi.fn(
+      async (_db: Db, agent: string, opts: { workstream: string }) => ({
+        vcs: "git",
+        baseRef: "base",
+        workspacePath: `/tmp/${opts.workstream}/${agent}`,
+        commits: mockWorkspaceCommits.byAgent.get(agent) ?? [],
+      }),
+    ),
+  };
+});
+
+vi.mock("../src/vcs.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/vcs.js")>();
+  return {
+    ...actual,
+    detectBackend: vi.fn(async (_path: string) => ({
+      name: "git",
+      showCommit: async (showPath: string, sha: string) => {
+        mockVcs.calls.push({ path: showPath, sha });
+        if (mockVcs.showError !== null) {
+          return { text: "", truncated: false, error: mockVcs.showError };
+        }
+        return { text: mockVcs.showText, truncated: false };
+      },
+    })),
+  };
+});
+
 const APP_SRC = readFileSync("./src/cli/tui/app.tsx", "utf-8");
 const LAYOUT_SRC = readFileSync("./src/cli/tui/layout.ts", "utf-8");
 const KEYS_SRC = readFileSync("./src/cli/tui/keys.ts", "utf-8");
+const SRC = readFileSync("./src/cli/tui/popups/workspaces.tsx", "utf-8");
+const originalStdoutColumns = process.stdout.columns;
+let openDbs: Db[] = [];
+
+afterEach(() => {
+  for (const db of openDbs) db.close();
+  openDbs = [];
+  mockWorkspaceCommits.byAgent.clear();
+  mockVcs.showText = "commit aaaaaaaaaaaa\n+ mocked workspace show body";
+  mockVcs.showError = null;
+  mockVcs.calls = [];
+  Object.defineProperty(process.stdout, "columns", {
+    value: originalStdoutColumns,
+    configurable: true,
+  });
+  CaptureStream.cleanup();
+});
+
+function fixtureDb(): Db {
+  const dir = mkdtempSync(join(tmpdir(), "mu-tui-popup-workspaces-"));
+  const db = openDb({ path: join(dir, "mu.db") });
+  openDbs.push(db);
+  return db;
+}
+
+function registerWorkspace(db: Db, workspace: WorkspaceRow): void {
+  insertAgent(db, {
+    name: workspace.agentName,
+    workstream: workspace.workstreamName,
+    paneId: `%${workspace.agentName}`,
+    status: "needs_input",
+  });
+  const wsId = resolveWorkstreamId(db, workspace.workstreamName);
+  const agent = db
+    .prepare("SELECT id FROM agents WHERE name = ? AND workstream_id = ?")
+    .get(workspace.agentName, wsId) as { id: number } | undefined;
+  if (agent === undefined) throw new Error(`agent row missing: ${workspace.agentName}`);
+  db.prepare(
+    `INSERT INTO vcs_workspaces (agent_id, workstream_id, backend, path, parent_ref, created_at)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+  ).run(
+    agent.id,
+    wsId,
+    workspace.backend,
+    workspace.path,
+    workspace.parentRef,
+    workspace.createdAt,
+  );
+}
+
+function workspace(over: Partial<WorkspaceRow> = {}): WorkspaceRow {
+  return {
+    agentName: "worker-1",
+    workstreamName: "demo",
+    backend: "git",
+    path: "/tmp/demo/worker-1",
+    parentRef: "abcdef0123456789",
+    createdAt: "2026-05-11T00:00:00.000Z",
+    commitsBehindMain: 0,
+    dirty: false,
+    ...over,
+  };
+}
+
+function commit(
+  over: Partial<{
+    sha: string;
+    subject: string;
+    body: string;
+    author: string;
+    authorDate: string;
+    relTime: string;
+  }> = {},
+) {
+  return {
+    sha: "aaaaaaaaaaaaaaaa",
+    subject: "workspace commit",
+    body: "",
+    author: "tester",
+    authorDate: "2026-05-11T00:00:00Z",
+    relTime: "5m",
+    ...over,
+  };
+}
+
+function snapshot(over: Partial<WorkstreamSnapshot> = {}): WorkstreamSnapshot {
+  return {
+    workstreamName: "demo",
+    view: {
+      agents: [],
+      orphans: [],
+      report: { prunedGhosts: 0, statusChanges: 0, orphans: [], mode: "status-only" },
+    },
+    tracks: [],
+    ready: [],
+    inProgress: [],
+    blocked: [],
+    recentClosed: [],
+    allTasks: [],
+    workspaces: [],
+    workspaceOrphans: [],
+    recent: [],
+    recentCommits: [],
+    commitsBackend: null,
+    doctor: null,
+    ...over,
+  };
+}
+
+interface HarnessProps {
+  db: Db;
+  snapshot: WorkstreamSnapshot;
+  yanked: string[];
+  closed: { value: boolean };
+}
+
+function WorkspacesHarness({ db, snapshot, yanked, closed }: HarnessProps): JSX.Element {
+  const [mode, setMode] = useState<"list" | "drill">("list");
+  return createElement(WorkspacesPopup, {
+    yank: async (command: string) => {
+      yanked.push(command);
+    },
+    onClose: () => {
+      closed.value = true;
+    },
+    snapshot,
+    slowTickNonce: 0,
+    mode,
+    onModeChange: setMode,
+    onFooter: () => {},
+    db,
+    workstream: "demo",
+  });
+}
+
+async function renderWorkspacesPopup(
+  db: Db,
+  snapshotValue: WorkstreamSnapshot,
+): Promise<{
+  stdin: ReturnType<typeof createInkInputStream>;
+  stdout: CaptureStream;
+  yanked: string[];
+  closed: { value: boolean };
+  unmount: () => void;
+}> {
+  Object.defineProperty(process.stdout, "columns", { value: 150, configurable: true });
+  const stdin = createInkInputStream();
+  const stdout = createInkCaptureStream({ columns: 150, rows: 32 });
+  const yanked: string[] = [];
+  const closed = { value: false };
+  const instance = render(
+    createElement(WorkspacesHarness, { db, snapshot: snapshotValue, yanked, closed }),
+    {
+      stdout,
+      stdin,
+      stderr: process.stderr,
+      debug: false,
+      patchConsole: false,
+    },
+  );
+  await waitForInkOutput(stdout);
+  return { stdin, stdout, yanked, closed, unmount: () => instance.unmount() };
+}
+
+function frameText(stdout: CaptureStream): string {
+  return latestRenderedFrame(stdout).join("\n");
+}
+
+async function waitForFrame(stdout: CaptureStream, needle: string): Promise<string> {
+  const deadline = Date.now() + 1000;
+  let text = frameText(stdout);
+  while (Date.now() < deadline) {
+    if (text.includes(needle)) return text;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    text = frameText(stdout);
+  }
+  throw new Error(`timed out waiting for ${needle}; last frame:\n${text}`);
+}
+
+async function typeFilter(
+  stdin: ReturnType<typeof createInkInputStream>,
+  query: string,
+): Promise<void> {
+  await simulateInput(stdin, "/");
+  for (const ch of query) await simulateInput(stdin, ch);
+  await simulateInput(stdin, "enter");
+}
 
 describe("WorkspacesPopup: export contract", () => {
   it("is exported as a function", () => {
@@ -53,47 +298,100 @@ describe("WorkspacesPopup: pure helpers", () => {
   });
 });
 
-describe("WorkspacesPopup: yank intents (read-only)", () => {
-  it("list-mode yank → `cd $(mu workspace path <agent> -w <ws>)` (canonical entry)", () => {
-    expect(SRC).toContain("cd $(mu workspace path");
-  });
+describe("WorkspacesPopup: behaviour", () => {
+  it("renders workspaces, filters the list, and yanks the focused workspace path command", async () => {
+    const db = fixtureDb();
+    const rows = [
+      workspace({ agentName: "worker-1", path: "/tmp/demo/worker-1", dirty: false }),
+      workspace({
+        agentName: "reviewer-1",
+        path: "/tmp/demo/reviewer-1",
+        backend: "git",
+        parentRef: "feedfacecafebeef",
+        commitsBehindMain: 12,
+        dirty: true,
+      }),
+    ];
+    const r = await renderWorkspacesPopup(db, snapshot({ workspaces: rows }));
+    try {
+      let text = frameText(r.stdout);
+      expect(text).toContain("Workspaces · popup (1/2)");
+      expect(text).toContain("worker-1");
+      expect(text).toContain("reviewer-1");
+      expect(text).toContain("/tmp/demo/worker-1");
 
-  it("drill-mode yank → `git show <sha>` (cherry-pick discovery)", () => {
-    expect(SRC).toContain("git show");
-  });
+      await simulateInput(r.stdin, "j");
+      await simulateInput(r.stdin, "y");
+      expect(r.yanked).toEqual(["cd $(mu workspace path reviewer-1 -w demo)"]);
 
-  it("never spells a mutating verb (read-only pledge)", () => {
-    // The popup's own act-intents must stay read-only. We sanity-
-    // check that none of the workspace-mutating mu verbs surface as
-    // yank templates. (They'd fail review even if asserted, so this
-    // is a defensive net.)
-    for (const forbidden of [
-      "mu workspace free",
-      "mu workspace recreate",
-      "mu workspace refresh",
-    ]) {
-      expect(SRC, `forbidden mutating yank: ${forbidden}`).not.toContain(forbidden);
+      await typeFilter(r.stdin, "dirty");
+      text = await waitForFrame(r.stdout, "[filter] dirty");
+      expect(text).toContain("reviewer-1");
+      expect(text).toContain("yes");
+      expect(text).not.toContain("worker-1");
+    } finally {
+      r.unmount();
     }
   });
-});
 
-describe("WorkspacesPopup: drill is the commits-since-fork list (NOT TaskDetailDrill)", () => {
-  it("drill data source is listCommitsForWorkspace (workspace SDK)", () => {
-    // Drill loads commits via the existing typed verb. NOT the
-    // task-notes path (TaskDetailDrill); workspaces aren't tasks.
-    expect(SRC).toContain("listCommitsForWorkspace");
+  it("Enter drills into commits, Enter drills again into git show, and Esc backs out one level", async () => {
+    const db = fixtureDb();
+    const row = workspace({ agentName: "worker-1", path: "/tmp/demo/worker-1" });
+    registerWorkspace(db, row);
+    mockWorkspaceCommits.byAgent.set("worker-1", [
+      commit({ sha: "aaaaaaaaaaaaaaaa", subject: "first workspace commit" }),
+      commit({ sha: "bbbbbbbbbbbbbbbb", subject: "second workspace commit" }),
+    ]);
+    const r = await renderWorkspacesPopup(db, snapshot({ workspaces: [row] }));
+    try {
+      await simulateInput(r.stdin, "enter");
+      let text = await waitForFrame(r.stdout, "second workspace commit");
+      expect(text).toContain("Workspaces · worker-1 (commits since fork)");
+      expect(text).toContain("bbbbbbbbbbbb");
+      expect(text).toContain("aaaaaaaaaaaa");
+
+      await simulateInput(r.stdin, "y");
+      expect(r.yanked).toEqual(["git show bbbbbbbbbbbbbbbb"]);
+
+      await simulateInput(r.stdin, "enter");
+      text = await waitForFrame(r.stdout, "+ mocked workspace show body");
+      expect(text).toContain("Workspaces · git show bbbbbbbbbbbb");
+      expect(text).toContain("git show bbbbbbbbbbbb (worker-1)");
+      expect(mockVcs.calls).toEqual([{ path: "/tmp/demo/worker-1", sha: "bbbbbbbbbbbbbbbb" }]);
+
+      await simulateInput(r.stdin, "y");
+      expect(r.yanked).toEqual(["git show bbbbbbbbbbbbbbbb", "git show bbbbbbbbbbbbbbbb"]);
+
+      await simulateInput(r.stdin, "escape");
+      text = await waitForFrame(r.stdout, "Workspaces · worker-1 (commits since fork)");
+      expect(text).toContain("second workspace commit");
+      expect(text).not.toContain("mocked workspace show body");
+    } finally {
+      r.unmount();
+    }
   });
 
-  it("does not import TaskDetailDrill (workspaces aren't tasks)", () => {
-    // Comments may mention TaskDetailDrill (e.g. "Drill is NOT
-    // TaskDetailDrill"); the load-bearing assertion is no import.
-    expect(SRC).not.toMatch(/from\s+"[^"]*task-detail[^"]*"/);
-    expect(SRC).not.toMatch(/import[^;]*TaskDetailDrill/);
-  });
-
-  it("drill mode is plumbed via the standard onModeChange list ↔ drill toggle", () => {
-    expect(SRC).toContain('onModeChange("drill")');
-    expect(SRC).toContain('onModeChange("list")');
+  it("filters the commits drill by sha + subject", async () => {
+    const db = fixtureDb();
+    const row = workspace({ agentName: "worker-1", path: "/tmp/demo/worker-1" });
+    registerWorkspace(db, row);
+    mockWorkspaceCommits.byAgent.set("worker-1", [
+      commit({ sha: "aaaaaaaaaaaaaaaa", subject: "alpha feature" }),
+      commit({ sha: "bbbbbbbbbbbbbbbb", subject: "beta fix" }),
+    ]);
+    const r = await renderWorkspacesPopup(db, snapshot({ workspaces: [row] }));
+    try {
+      await simulateInput(r.stdin, "enter");
+      await waitForFrame(r.stdout, "beta fix");
+      await typeFilter(r.stdin, "alpha");
+      const text = await waitForFrame(r.stdout, "[filter] alpha");
+      expect(text).toContain("aaaaaaaaaaaa");
+      expect(text).toContain("alpha feature");
+      expect(text).not.toContain("bbbbbbbbbbbb");
+      expect(text).not.toContain("beta fix");
+    } finally {
+      r.unmount();
+    }
   });
 });
 
@@ -169,32 +467,8 @@ describe("WorkspacesPopup: Enter on focused commit drills into git show diff (fe
   });
 
   it("delegates git show through the shared VcsBackend.showCommit seam", () => {
-    expect(SRC).toContain("detectBackend");
-    expect(SRC).toContain("loadShowPreservingBody");
     expect(SRC).not.toContain("node:child_process");
     expect(SRC).not.toMatch(/\bexecFile\b/);
-  });
-
-  it("renders the diff via the shared <DrillScrollView> primitive (mirrors log.tsx)", () => {
-    // Spec mirrors commit 0e3f6db (Log popup Enter drill): same
-    // shared primitive, same scroll-state pattern.
-    expect(SRC).toContain('from "./drill.js"');
-    expect(SRC).toContain("<DrillScrollView");
-    // Per review_dedup_drill_keymap the per-popup applyScroll /
-    // setShowScrollTop skeleton now lives in useDrillKeymap.
-    expect(SRC).toContain("useDrillKeymap");
-    expect(SRC).toContain("showDrill.scrollTop");
-    expect(SRC).not.toContain("setShowScrollTop");
-  });
-
-  it("Enter in drill mode triggers show mode; slow tick/effect fetches the body", () => {
-    // The drill-mode keymap's `case "drill"` branch enters the
-    // third level; the slow-tick effect owns the subprocess fetch so
-    // the body also refreshes while held open.
-    expect(SRC).toMatch(/case "drill":\s*\{[^}]*setShowSha\(c\.sha\)/);
-    expect(SRC).toMatch(/if \(inShow && focused !== undefined && showSha !== null\)/);
-    expect(SRC).toMatch(/loadShow\(focused\.path,\s*showSha\)/);
-    expect(SRC).toMatch(/\[inShow, focused, showSha, loadShow, slowTickNonce\]/);
   });
 
   it("show mode is popup-local (does NOT widen <App>'s PopupMode union)", () => {
@@ -205,95 +479,6 @@ describe("WorkspacesPopup: Enter on focused commit drills into git show diff (fe
     expect(APP_SRC).toMatch(/export type PopupMode = "list" \| "drill";/);
     // The popup itself doesn't widen its accepted mode either.
     expect(SRC).toContain('mode: "list" | "drill"');
-  });
-
-  it("y in show mode yanks `git show <sha>` (the COMMAND, per spec)", () => {
-    // Spec: "'y' in 'show' mode yanks `git show <sha>` (the same as
-    // drill mode — operator wants the command, not the captured
-    // output)."
-    expect(SRC).toMatch(/yank\(`git show \$\{showSha\}`\)/);
-  });
-
-  it("t in show mode launches tuicr for the focused commit in the project cwd", () => {
-    expect(SRC).toContain('from "../tuicr.js"');
-    expect(SRC).toMatch(
-      /onTuicr:[\s\S]*runTuicrInteractive\(\{ rev: showSha, cwd: projectRoot \}\)/,
-    );
-    expect(SRC).toContain("onFooter?.(r.error");
-    expect(SRC).toContain("t tuicr");
-  });
-
-  it("resets show-state on focused-workspace change + on leaving drill", () => {
-    // Spec STATE LIFECYCLE block: reset on (a) mode change away
-    // from show / drill, (b) focused workspace change.
-    expect(SRC).toMatch(/setShowSha\(null\)/);
-    expect(SRC).toMatch(/focused\?\.agentName/);
-    // Mode-change-away effect.
-    expect(SRC).toMatch(/if \(mode !== "drill"\)/);
-  });
-
-  it("Esc/q in show mode backs out to commits list (does NOT close popup)", () => {
-    // The show-mode close callback clears showSha but does NOT call
-    // onClose / onModeChange("list") — dropping showSha back-rolls
-    // to the commits-drill view, exactly like log.tsx's drill back
-    // returns to the events list.
-    const showHookBlock = SRC.match(/const showDrill = useDrillKeymap\(\{[\s\S]*?\}\);/);
-    expect(showHookBlock).not.toBeNull();
-    expect(showHookBlock?.[0]).toContain("onClose: () => setShowSha(null)");
-    expect(showHookBlock?.[0]).not.toContain("onClose()");
-    expect(showHookBlock?.[0]).not.toContain('onModeChange("list")');
-  });
-
-  it("passes showSha as useDrillKeymap resetKey so slow-tick body refreshes do not jump to top", () => {
-    expect(SRC).toContain('resetKey: showSha ?? ""');
-  });
-});
-
-describe("WorkspacesPopup: '/' filter (consumes the shared primitive)", () => {
-  it("imports usePopupFilter / applyFilter / FilterPrompt", () => {
-    expect(SRC).toContain("usePopupFilter");
-    expect(SRC).toContain("applyFilter");
-    expect(SRC).toContain("FilterPrompt");
-  });
-
-  it("blob includes agent + backend + parent_ref + dirty marker (matches spec)", () => {
-    // The spec MATCHING RULES: search blob =
-    //   `${agent} ${backend} ${parent_ref} ${dirty?'dirty':''}`
-    expect(SRC).toMatch(/agentName.*backend.*parentRef/s);
-    expect(SRC).toContain('"dirty"');
-  });
-
-  it("the commits drill ALSO wires its own filter (sha + subject)", () => {
-    // Spec: "DO plug into use-popup-filter for the commits view too
-    //  — '/' substring search across sha+subject is helpful when
-    //  there are 30+ commits."
-    expect(SRC).toMatch(/sha.*subject/);
-    // Two distinct filter instances (workspace list + commits drill).
-    const matches = SRC.match(/usePopupFilter\(\)/g) ?? [];
-    expect(matches.length).toBeGreaterThanOrEqual(2);
-  });
-});
-
-describe("WorkspacesPopup: list layout is Card 5 columns + 2 extras", () => {
-  it("renders all seven popup columns: glyph, agent, backend, behind, dirty, parent_ref, path", () => {
-    // The spec's POPUP LAYOUT block — extras over the card:
-    //   dirty? + path. The other five mirror Card 5.
-    expect(SRC).toContain("status glyph");
-    expect(SRC).toContain("agent name");
-    expect(SRC).toContain("backend");
-    expect(SRC).toContain("commits-behind");
-    expect(SRC).toContain("dirty?");
-    expect(SRC).toContain("parent_ref short");
-    expect(SRC).toContain("path");
-  });
-
-  it("only the path column is CLIPPABLE (everything else is PROTECTED)", () => {
-    // Per feat_column_aligned_lists clipping policy. Yank-bearing
-    // tokens must not truncate.
-    const clipMatches = SRC.match(/kind:\s*"clip"/g) ?? [];
-    expect(clipMatches.length).toBeGreaterThanOrEqual(1);
-    // Drill list also clips subject (sha is protected).
-    expect(clipMatches.length).toBeLessThanOrEqual(2);
   });
 });
 

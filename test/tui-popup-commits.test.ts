@@ -1,7 +1,9 @@
 // Tests for src/cli/tui/popups/commits.tsx (feat_tui_commits_card).
 
 import { readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
+import { render } from "ink";
+import { createElement, useState } from "react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   CommitsPopup,
   commitFilterBlob,
@@ -10,10 +12,41 @@ import {
   showCommandForBackend,
 } from "../src/cli/tui/popups/commits.js";
 import { wrapAnsiLines } from "../src/cli/tui/wrap-ansi.js";
+import type { Db } from "../src/db.js";
+import type { WorkstreamSnapshot } from "../src/state.js";
 import type { CommitSummary } from "../src/vcs.js";
+import {
+  CaptureStream,
+  createInkCaptureStream,
+  createInkInputStream,
+  latestRenderedFrame,
+  simulateInput,
+  waitForInkOutput,
+} from "./_ink-render.js";
 
-const SRC = readFileSync("./src/cli/tui/popups/commits.tsx", "utf-8");
-const DRILL_SRC = readFileSync("./src/cli/tui/popups/drill.tsx", "utf-8");
+const mockVcs = vi.hoisted(() => ({
+  showText: "commit 1111111\n+ mocked git show body",
+  showError: null as string | null,
+  calls: [] as Array<{ path: string; sha: string }>,
+}));
+
+vi.mock("../src/vcs.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/vcs.js")>();
+  return {
+    ...actual,
+    detectBackend: vi.fn(async (_path: string) => ({
+      name: "git",
+      showCommit: async (showPath: string, sha: string) => {
+        mockVcs.calls.push({ path: showPath, sha });
+        if (mockVcs.showError !== null) {
+          return { text: "", truncated: false, error: mockVcs.showError };
+        }
+        return { text: mockVcs.showText, truncated: false };
+      },
+    })),
+  };
+});
+
 const APP_SRC = readFileSync("./src/cli/tui/app.tsx", "utf-8");
 const KEYS_SRC = readFileSync("./src/cli/tui/keys.ts", "utf-8");
 const ESC = "\u001B";
@@ -22,6 +55,19 @@ const GREEN = `${ESC}[32m`;
 const RESET = `${ESC}[0m`;
 const ANSI_RE = new RegExp(`${ESC}\\[[0-?]*[ -/]*[@-~]`, "g");
 const PARTIAL_ANSI_RE = new RegExp(`${ESC}(?:$|\\[[0-?]*[ -/]?$)`);
+
+const originalStdoutColumns = process.stdout.columns;
+
+afterEach(() => {
+  mockVcs.showText = "commit 1111111\n+ mocked git show body";
+  mockVcs.showError = null;
+  mockVcs.calls = [];
+  Object.defineProperty(process.stdout, "columns", {
+    value: originalStdoutColumns,
+    configurable: true,
+  });
+  CaptureStream.cleanup();
+});
 
 function commit(over: Partial<CommitSummary> = {}): CommitSummary {
   return {
@@ -33,6 +79,109 @@ function commit(over: Partial<CommitSummary> = {}): CommitSummary {
     relTime: "4m",
     ...over,
   };
+}
+
+function snapshot(over: Partial<WorkstreamSnapshot> = {}): WorkstreamSnapshot {
+  return {
+    workstreamName: "demo",
+    view: {
+      agents: [],
+      orphans: [],
+      report: { prunedGhosts: 0, statusChanges: 0, orphans: [], mode: "status-only" },
+    },
+    tracks: [],
+    ready: [],
+    inProgress: [],
+    blocked: [],
+    recentClosed: [],
+    allTasks: [],
+    workspaces: [],
+    workspaceOrphans: [],
+    recent: [],
+    recentCommits: [],
+    commitsBackend: null,
+    doctor: null,
+    ...over,
+  };
+}
+
+interface HarnessProps {
+  snapshot: WorkstreamSnapshot;
+  yanked: string[];
+  footer: string[];
+  closed: { value: boolean };
+}
+
+function CommitsHarness({ snapshot, yanked, footer, closed }: HarnessProps): JSX.Element {
+  const [mode, setMode] = useState<"list" | "drill">("list");
+  return createElement(CommitsPopup, {
+    yank: async (command: string) => {
+      yanked.push(command);
+    },
+    onClose: () => {
+      closed.value = true;
+    },
+    snapshot,
+    slowTickNonce: 0,
+    mode,
+    onModeChange: setMode,
+    onFooter: (command: string) => {
+      footer.push(command);
+    },
+    db: {} as Db,
+    workstream: "demo",
+  });
+}
+
+async function renderCommitsPopup(snapshotValue: WorkstreamSnapshot): Promise<{
+  stdin: ReturnType<typeof createInkInputStream>;
+  stdout: CaptureStream;
+  yanked: string[];
+  closed: { value: boolean };
+  unmount: () => void;
+}> {
+  Object.defineProperty(process.stdout, "columns", { value: 140, configurable: true });
+  const stdin = createInkInputStream();
+  const stdout = createInkCaptureStream({ columns: 140, rows: 30 });
+  const yanked: string[] = [];
+  const footer: string[] = [];
+  const closed = { value: false };
+  const instance = render(
+    createElement(CommitsHarness, { snapshot: snapshotValue, yanked, footer, closed }),
+    {
+      stdout,
+      stdin,
+      stderr: process.stderr,
+      debug: false,
+      patchConsole: false,
+    },
+  );
+  await waitForInkOutput(stdout);
+  return { stdin, stdout, yanked, closed, unmount: () => instance.unmount() };
+}
+
+function frameText(stdout: CaptureStream): string {
+  return latestRenderedFrame(stdout).join("\n");
+}
+
+async function waitForFrame(stdout: CaptureStream, needle: string): Promise<string> {
+  const deadline = Date.now() + 1000;
+  let text = frameText(stdout);
+  while (Date.now() < deadline) {
+    if (text.includes(needle)) return text;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    text = frameText(stdout);
+  }
+  throw new Error(`timed out waiting for ${needle}; last frame:\n${text}`);
+}
+
+async function typeFilter(
+  stdin: ReturnType<typeof createInkInputStream>,
+  query: string,
+): Promise<void> {
+  await simulateInput(stdin, "/");
+  for (const ch of query) await simulateInput(stdin, ch);
+  await simulateInput(stdin, "enter");
 }
 
 describe("CommitsPopup export + pure helpers", () => {
@@ -85,58 +234,71 @@ describe("CommitsPopup ANSI wrapping", () => {
   });
 });
 
-describe("CommitsPopup source invariants", () => {
-  it("uses shared PopupShell, ListRow, usePopupFilter, central scroll, and useDrillKeymap", () => {
-    expect(SRC).toContain('from "../popup-shell.js"');
-    expect(SRC).toContain('from "../list-row.js"');
-    expect(SRC).toContain("usePopupFilter");
-    expect(SRC).toContain("applyFilter");
-    expect(SRC).toContain("applyCursor");
-    expect(SRC).toContain("centredVisibleSlice");
-    expect(SRC).toContain("useDrillKeymap");
-    expect(SRC).toContain("<DrillScrollView");
-    expect(DRILL_SRC).toContain("useWrappedBody");
-    expect(DRILL_SRC).toContain("wrappedBody ?? wrapDrillBody(body, wrapWidth)");
+describe("CommitsPopup behaviour", () => {
+  it("renders recent commits, filters by commit metadata, and yanks the focused show command", async () => {
+    const snap = snapshot({
+      recentCommits: [
+        commit({
+          sha: "1111111111111111",
+          subject: "alpha subject",
+          author: "alice",
+          relTime: "1m",
+        }),
+        commit({
+          sha: "2222222222222222",
+          subject: "beta subject",
+          author: "bob",
+          relTime: "2m",
+        }),
+      ],
+      commitsBackend: "git",
+    });
+    const r = await renderCommitsPopup(snap);
+    try {
+      let text = frameText(r.stdout);
+      expect(text).toContain("Commits · git (1/2)");
+      expect(text).toContain("1111111");
+      expect(text).toContain("alpha subject");
+      expect(text).toContain("bob");
+
+      await simulateInput(r.stdin, "j");
+      await simulateInput(r.stdin, "y");
+      expect(r.yanked).toEqual(["git show 2222222222222222"]);
+
+      await typeFilter(r.stdin, "alice");
+      text = await waitForFrame(r.stdout, "[filter] alice");
+      expect(text).toContain("1111111");
+      expect(text).toContain("alpha subject");
+      expect(text).not.toContain("2222222");
+      expect(text).not.toContain("beta subject");
+    } finally {
+      r.unmount();
+    }
   });
 
-  it("reads snapshot.recentCommits and filters sha + subject + author + relTime", () => {
-    expect(SRC).toContain("snapshot?.recentCommits");
-    expect(SRC).toMatch(/sha.*subject.*author.*relTime/s);
-  });
+  it("Enter drills into VCS show output, y yanks there too, and Esc returns to the list", async () => {
+    const snap = snapshot({
+      recentCommits: [commit({ sha: "1111111111111111", subject: "alpha subject" })],
+      commitsBackend: "git",
+    });
+    const r = await renderCommitsPopup(snap);
+    try {
+      await simulateInput(r.stdin, "enter");
+      let text = await waitForFrame(r.stdout, "+ mocked git show body");
+      expect(text).toContain("Commits · git · 1111111");
+      expect(text).toContain("git show 1111111111111111 · alpha subject");
+      expect(mockVcs.calls).toEqual([{ path: process.cwd(), sha: "1111111111111111" }]);
 
-  it("shows commits via the VcsBackend.showCommit seam, not git-only helper", () => {
-    expect(SRC).toContain("detectBackend");
-    expect(SRC).toContain("loadShowPreservingBody");
-    expect(SRC).not.toContain("runGitShow");
-    expect(SRC).not.toContain("node:child_process");
-  });
+      await simulateInput(r.stdin, "y");
+      expect(r.yanked).toEqual(["git show 1111111111111111"]);
 
-  it("renders the detected backend in list, empty, and drill titles", () => {
-    expect(SRC).toContain("snapshot?.commitsBackend");
-    expect(SRC).toContain("formatBackend(backendName)");
-    expect(SRC).toContain('"(no vcs)"');
-  });
-
-  it("yank matrix yanks backend-specific show commands in list and drill modes", () => {
-    expect(SRC).toContain("showCommandForBackend");
-    expect(SRC).toContain("git show");
-    expect(SRC).toContain("jj show");
-    expect(SRC).toContain("sl show");
-    expect(SRC).toMatch(/onYank:[\s\S]*yank\(showCommand\)/);
-    expect(SRC).toMatch(/case "yank":[\s\S]*showCommandForBackend/);
-  });
-
-  it("drill-mode `t` launches tuicr for the focused sha in the project cwd", () => {
-    expect(SRC).toContain('from "../tuicr.js"');
-    expect(SRC).toMatch(
-      /onTuicr:[\s\S]*runTuicrInteractive\(\{ rev: focused\.sha, cwd: projectRoot \}\)/,
-    );
-    expect(SRC).toContain("onFooter?.(r.error");
-    expect(SRC).toContain("t tuicr");
-  });
-
-  it("passes focused sha as useDrillKeymap resetKey so slow-tick body refreshes do not jump to top", () => {
-    expect(SRC).toContain('resetKey: focused?.sha ?? ""');
+      await simulateInput(r.stdin, "escape");
+      text = await waitForFrame(r.stdout, "Commits · git (1/1)");
+      expect(text).toContain("alpha subject");
+      expect(text).not.toContain("mocked git show body");
+    } finally {
+      r.unmount();
+    }
   });
 });
 

@@ -1,24 +1,34 @@
 // Tests for src/cli/tui/popups/doctor.tsx (feat_popup_9_doctor,
 // workstream `tui-impl`).
 //
-// Same shape as test/tui-popup-blocked.test.ts: pure-helper +
-// import-graph + static-source assertions. We can't snapshot ink
-// output without ink-testing-library (network-blocked).
-//
-// Doctor popup is DIFFERENT from popups 6/7/8 — rows are NOT
-// tasks, so the drill MUST NOT chain into TaskDetailDrill. The
-// drill is a small ad-hoc detail view of the focused check via
-// the shared DrillScrollView leaf.
+// Doctor popup is DIFFERENT from task popups — rows are NOT tasks, so
+// the drill MUST NOT chain into TaskDetailDrill. The drill is a small
+// ad-hoc detail view of the focused check via the shared DrillScrollView
+// leaf.
 
-import { readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
+import { mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { render } from "ink";
+import { createElement, useState } from "react";
+import { afterEach, describe, expect, it } from "vitest";
 import { DoctorPopup, renderDrillBody } from "../src/cli/tui/popups/doctor.js";
+import { type Db, openDb } from "../src/db.js";
 import { type DoctorCheck, remediationParagraph } from "../src/doctor-summary.js";
+import type { WorkstreamSnapshot } from "../src/state.js";
+import {
+  CaptureStream,
+  createInkCaptureStream,
+  createInkInputStream,
+  latestRenderedFrame,
+  simulateInput,
+  waitForInkOutput,
+} from "./_ink-render.js";
 
 const SRC_RAW = readFileSync("./src/cli/tui/popups/doctor.tsx", "utf-8");
 // Strip `// ...` line comments + `/* ... */` block comments so the
-// import-graph / yank-matrix assertions don't false-positive on
-// prose mentions of the forbidden tokens (e.g. "NOT TaskDetailDrill").
+// import-graph assertions don't false-positive on prose mentions of
+// forbidden tokens (e.g. "NOT TaskDetailDrill").
 function stripComments(src: string): string {
   // Strip line comments FIRST so a `// ... src/cli/tui/*.` line
   // (yes, those exist in the source headers) doesn't open a false
@@ -30,6 +40,131 @@ const APP_SRC = readFileSync("./src/cli/tui/app.tsx", "utf-8");
 const LAYOUT_SRC = readFileSync("./src/cli/tui/layout.ts", "utf-8");
 const KEYS_SRC = readFileSync("./src/cli/tui/keys.ts", "utf-8");
 const SUMMARY_SRC = readFileSync("./src/doctor-summary.ts", "utf-8");
+const originalStdoutColumns = process.stdout.columns;
+let openDbs: Db[] = [];
+
+afterEach(() => {
+  for (const db of openDbs) db.close();
+  openDbs = [];
+  Object.defineProperty(process.stdout, "columns", {
+    value: originalStdoutColumns,
+    configurable: true,
+  });
+  CaptureStream.cleanup();
+});
+
+function fixtureDb(): Db {
+  const dir = mkdtempSync(join(tmpdir(), "mu-tui-popup-doctor-"));
+  const db = openDb({ path: join(dir, "mu.db") });
+  openDbs.push(db);
+  return db;
+}
+
+function snapshot(over: Partial<WorkstreamSnapshot> = {}): WorkstreamSnapshot {
+  return {
+    workstreamName: "demo",
+    view: {
+      agents: [],
+      orphans: [],
+      report: { prunedGhosts: 0, statusChanges: 0, orphans: [], mode: "status-only" },
+    },
+    tracks: [],
+    ready: [],
+    inProgress: [],
+    blocked: [],
+    recentClosed: [],
+    allTasks: [],
+    workspaces: [],
+    workspaceOrphans: [],
+    recent: [],
+    recentCommits: [],
+    commitsBackend: null,
+    doctor: null,
+    ...over,
+  };
+}
+
+interface HarnessProps {
+  db: Db;
+  snapshot: WorkstreamSnapshot;
+  yanked: string[];
+  closed: { value: boolean };
+}
+
+function DoctorHarness({ db, snapshot, yanked, closed }: HarnessProps): JSX.Element {
+  const [mode, setMode] = useState<"list" | "drill">("list");
+  return createElement(DoctorPopup, {
+    yank: async (command: string) => {
+      yanked.push(command);
+    },
+    onClose: () => {
+      closed.value = true;
+    },
+    snapshot,
+    mode,
+    onModeChange: setMode,
+    db,
+    workstream: "demo",
+  });
+}
+
+async function renderDoctorPopup(
+  db: Db,
+  snapshotValue: WorkstreamSnapshot,
+): Promise<{
+  stdin: ReturnType<typeof createInkInputStream>;
+  stdout: CaptureStream;
+  yanked: string[];
+  closed: { value: boolean };
+  unmount: () => void;
+}> {
+  Object.defineProperty(process.stdout, "columns", { value: 140, configurable: true });
+  const stdin = createInkInputStream();
+  const stdout = createInkCaptureStream({ columns: 140, rows: 30 });
+  const yanked: string[] = [];
+  const closed = { value: false };
+  const instance = render(
+    createElement(DoctorHarness, { db, snapshot: snapshotValue, yanked, closed }),
+    {
+      stdout,
+      stdin,
+      stderr: process.stderr,
+      debug: false,
+      patchConsole: false,
+    },
+  );
+  await waitForInkOutput(stdout);
+  return { stdin, stdout, yanked, closed, unmount: () => instance.unmount() };
+}
+
+function frameText(stdout: CaptureStream): string {
+  return latestRenderedFrame(stdout).join("\n");
+}
+
+async function waitForFrame(stdout: CaptureStream, needle: string): Promise<string> {
+  const deadline = Date.now() + 1000;
+  let text = frameText(stdout);
+  while (Date.now() < deadline) {
+    if (text.includes(needle)) return text;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    text = frameText(stdout);
+  }
+  throw new Error(`timed out waiting for ${needle}; last frame:\n${text}`);
+}
+
+async function typeFilter(
+  stdin: ReturnType<typeof createInkInputStream>,
+  query: string,
+): Promise<void> {
+  await simulateInput(stdin, "/");
+  for (const ch of query) await simulateInput(stdin, ch);
+  await simulateInput(stdin, "enter");
+}
+
+async function clearFilter(stdin: ReturnType<typeof createInkInputStream>): Promise<void> {
+  await simulateInput(stdin, "/");
+  await simulateInput(stdin, "escape");
+}
 
 describe("DoctorPopup: export contract", () => {
   it("is exported as a function", () => {
@@ -50,20 +185,81 @@ describe("DoctorPopup: export contract", () => {
   });
 });
 
-describe("DoctorPopup: data source — ALL checks (not just non-OK)", () => {
-  it("calls loadDoctorChecks(db, snapshot) — NOT snapshot.doctor.checks", () => {
-    // The card filters to non-OK rows; the popup must show every
-    // check. loadDoctorChecks is the SDK seam that returns the
-    // full array.
-    expect(SRC).toMatch(/loadDoctorChecks\s*\(/);
+describe("DoctorPopup: behaviour", () => {
+  it("renders every doctor check, filters by detail text, and yanks the focused remediation command", async () => {
+    const db = fixtureDb();
+    const snap = snapshot({
+      view: {
+        agents: [],
+        orphans: [{ paneId: "%99", title: "lost", command: "pi" }],
+        report: { prunedGhosts: 2, statusChanges: 0, orphans: [], mode: "status-only" },
+      },
+      workspaceOrphans: [{ agentName: "worker-1", workstreamName: "demo", path: "/tmp/orphan" }],
+    });
+    const r = await renderDoctorPopup(db, snap);
+    try {
+      let text = frameText(r.stdout);
+      expect(text).toContain("Doctor · popup (1/7)");
+      expect(text).toContain("schema");
+      expect(text).toContain("agents");
+      expect(text).toContain("2 ghost panes");
+      expect(text).toContain("panes");
+      expect(text).toContain("1 orphan pane");
+      expect(text).toContain("workspaces");
+      expect(text).toContain("1 orphan dir");
+
+      await typeFilter(r.stdin, "orphan dir");
+      text = await waitForFrame(r.stdout, "[filter] orphan dir");
+      expect(text).toContain("workspaces");
+      expect(text).toContain("1 orphan dir");
+      expect(text).not.toContain("agents");
+      expect(text).not.toContain("2 ghost panes");
+
+      await simulateInput(r.stdin, "y");
+      expect(r.yanked).toEqual(["mu workspace orphans"]);
+    } finally {
+      r.unmount();
+    }
   });
 
-  it("does NOT silently fall back to snapshot.doctor (the truncated set)", () => {
-    // The popup MUST go through loadDoctorChecks; reading
-    // snapshot.doctor.checks would be wrong (Card 9 may pre-filter
-    // it in future).
-    expect(SRC).not.toContain("snapshot.doctor.checks");
-    expect(SRC).not.toContain("snap.doctor.checks");
+  it("Enter drills into remediation details; y yanks there too; Esc returns to all checks", async () => {
+    const db = fixtureDb();
+    const snap = snapshot({
+      view: {
+        agents: [],
+        orphans: [],
+        report: { prunedGhosts: 2, statusChanges: 0, orphans: [], mode: "status-only" },
+      },
+    });
+    const r = await renderDoctorPopup(db, snap);
+    try {
+      await typeFilter(r.stdin, "ghost");
+      await waitForFrame(r.stdout, "[filter] ghost");
+      await clearFilter(r.stdin);
+      await simulateInput(r.stdin, "j");
+      await simulateInput(r.stdin, "j");
+      await simulateInput(r.stdin, "j");
+      await simulateInput(r.stdin, "j");
+      await simulateInput(r.stdin, "enter");
+      let text = await waitForFrame(r.stdout, "Doctor · agents (detail)");
+      expect(text).toContain("Doctor · agents (detail)");
+      expect(text).toContain("agents · warn");
+      expect(text).toContain("status:  warn");
+      expect(text).toContain("detail:  2 ghost panes");
+      expect(text).toContain("mu agent list");
+      expect(text).not.toContain("TaskDetailDrill");
+
+      await simulateInput(r.stdin, "y");
+      expect(r.yanked).toEqual(["mu agent list"]);
+
+      await simulateInput(r.stdin, "escape");
+      text = await waitForFrame(r.stdout, "Doctor · popup (5/7)");
+      expect(text).toContain("agents");
+      expect(text).toContain("2 ghost panes");
+      expect(text).not.toContain("Doctor · agents (detail)");
+    } finally {
+      r.unmount();
+    }
   });
 });
 
@@ -75,16 +271,6 @@ describe("DoctorPopup: drill is NOT TaskDetailDrill (rows aren't tasks)", () => 
     expect(SRC).not.toContain("TaskDetailDrill");
     expect(SRC).not.toContain("renderNotes");
     expect(SRC).not.toMatch(/from\s+"\.\/task-detail\.js"/);
-  });
-
-  it("uses the shared DrillScrollView leaf for the drill body", () => {
-    expect(SRC).toContain("DrillScrollView");
-    expect(SRC).toMatch(/from\s+"\.\/drill\.js"/);
-  });
-
-  it("drill mode is plumbed via the standard list ↔ drill toggle", () => {
-    expect(SRC).toContain('onModeChange("drill")');
-    expect(SRC).toContain('onModeChange("list")');
   });
 });
 
@@ -150,34 +336,6 @@ describe("DoctorPopup: drill body renderer (pure)", () => {
   it("renders multi-line output (drill body is a paragraph, not a one-liner)", () => {
     const body = renderDrillBody(sample);
     expect(body.split("\n").length).toBeGreaterThan(3);
-  });
-});
-
-describe("DoctorPopup: '/' filter (consumes the shared primitive)", () => {
-  it("imports usePopupFilter / applyFilter / FilterPrompt", () => {
-    expect(SRC).toContain("usePopupFilter");
-    expect(SRC).toContain("applyFilter");
-    expect(SRC).toContain("FilterPrompt");
-  });
-
-  it("blob includes name + status + detail (matches spec)", () => {
-    // Per spec FILTER block: blob = `${name} ${status} ${detail}`.
-    expect(SRC).toMatch(/c\.name.*c\.status.*c\.detail/s);
-  });
-});
-
-describe("DoctorPopup: list layout — glyph + check + STATUS + detail", () => {
-  it("renders all four columns: glyph, check name, status, detail", () => {
-    expect(SRC).toContain("glyph");
-    expect(SRC).toContain("check name");
-    expect(SRC).toContain("status");
-    expect(SRC).toContain("detail");
-  });
-
-  it("only the detail column is CLIPPABLE (everything else is PROTECTED)", () => {
-    // Per feat_column_aligned_lists clipping policy.
-    const clipMatches = SRC.match(/kind:\s*"clip"/g) ?? [];
-    expect(clipMatches.length).toBe(1);
   });
 });
 
