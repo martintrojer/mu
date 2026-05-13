@@ -91,6 +91,7 @@ called out under "Breaking" in each entry.
 
 ### Performance
 
+- `reconcile()` now hoists `knownAgentCommands()` out of the orphan-pane loop via a `buildAgentPaneRecogniser()` closure: one snapshot of the `MU_PI_COMMAND` / `MU_CLAUDE_COMMAND` / `MU_CODEX_COMMAND` env vars per pass instead of one per pane. Hot path on every `mu state` poll tick (sessions in the wild can have dozens of panes); also pins the env-var snapshot for the loop so test suites that twiddle `MU_*_COMMAND` in `afterEach` can't race the inner check. Per `review_substrate_known_agent_clis_recomputed`.
 - **TUI snapshot poll split into a fast SQL-only tick (1s) and a slow
   subprocess tick (10s).** Tmux liveness, per-workspace dirty status,
   and project recent-commits no longer block every fast tick. p50

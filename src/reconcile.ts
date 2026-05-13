@@ -120,6 +120,20 @@ function knownAgentCommands(): ReadonlySet<string> {
   return names;
 }
 
+/**
+ * Build a recogniser closure that captures one snapshot of
+ * knownAgentCommands() (which itself reads MU_<CLI>_COMMAND env vars).
+ * Hoisted out of the orphan-surface loop so reconcile() reads each env
+ * var at most once per pass instead of once per pane: dozens of panes
+ * × three env vars per call = needless syscalls in a `mu state` poll
+ * tick. Also pins the env-var snapshot for the loop, so test suites
+ * that twiddle MU_PI_COMMAND in afterEach can't race the inner check.
+ */
+function buildAgentPaneRecogniser(): (pane: TmuxPane) => boolean {
+  const known = knownAgentCommands();
+  return (pane) => known.has(pane.command);
+}
+
 export async function reconcile(db: Db, opts: ReconcileOptions): Promise<ReconcileReport> {
   const sessionName = opts.tmuxSession ?? `mu-${opts.workstream}`;
   const mode: ReconcileMode = opts.mode ?? "full";
@@ -188,14 +202,11 @@ export async function reconcile(db: Db, opts: ReconcileOptions): Promise<Reconci
   //    pane the user spawned for their own use is never an orphan.
   //    Pure read; runs in every mode.
   const dbPaneIds = new Set(survivors.map((a) => a.paneId));
+  const looksLikeAgentPane = buildAgentPaneRecogniser();
   for (const pane of tmuxPanes) {
     if (dbPaneIds.has(pane.paneId)) continue;
     if (looksLikeAgentPane(pane)) orphans.push(pane);
   }
 
   return { prunedGhosts, statusChanges, orphans, mode };
-}
-
-function looksLikeAgentPane(pane: TmuxPane): boolean {
-  return knownAgentCommands().has(pane.command);
 }
