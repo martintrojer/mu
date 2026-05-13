@@ -11,7 +11,6 @@
 // feat_column_aligned_lists clipping policy: timestamp, source, verb
 // are PROTECTED (short, identity-bearing); the rest is CLIPPABLE.
 
-import { Text } from "ink";
 import { classifyEventVerb, displayEventPayload } from "../../../logs.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
 import {
@@ -23,8 +22,8 @@ import {
 } from "../columns.js";
 import { CARD_CONFIGS, cardRenderHeight } from "../layout.js";
 import { ListRow } from "../list-row.js";
-import { PaddedRows } from "../padded-rows.js";
 import { TitledBox } from "../titled-box.js";
+import { CardPlaceholder } from "./_placeholder.js";
 
 export interface LogCardProps {
   snapshot: WorkstreamSnapshot | null;
@@ -44,35 +43,27 @@ const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
 export function LogCard({ snapshot, rowBudget, cols }: LogCardProps): JSX.Element {
   const contentWidth = contentWidthFromCols(cols ?? termColsForLayout());
   if (snapshot === null) {
-    return (
-      <TitledBox
-        height={cardRenderHeight(cardConfig, rowBudget)}
-        width={cols}
-        title="Activity log"
-        cardId={4}
-      >
-        <PaddedRows rows={rowBudget ?? cardConfig.minRows}>
-          <Text dimColor>loading…</Text>
-        </PaddedRows>
-      </TitledBox>
-    );
+    return CardPlaceholder({
+      title: "Activity log",
+      cardId: 4,
+      config: cardConfig,
+      rowBudget,
+      cols,
+      text: "loading…",
+    });
   }
 
   const { recent } = snapshot;
 
   if (recent.length === 0) {
-    return (
-      <TitledBox
-        height={cardRenderHeight(cardConfig, rowBudget)}
-        width={cols}
-        title="Activity log"
-        cardId={4}
-      >
-        <PaddedRows rows={rowBudget ?? cardConfig.minRows}>
-          <Text dimColor>(no events yet)</Text>
-        </PaddedRows>
-      </TitledBox>
-    );
+    return CardPlaceholder({
+      title: "Activity log",
+      cardId: 4,
+      config: cardConfig,
+      rowBudget,
+      cols,
+      text: "(no events yet)",
+    });
   }
 
   // Show the LAST N events (newest at the bottom). listLogs returns

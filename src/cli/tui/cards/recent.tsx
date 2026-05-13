@@ -50,7 +50,6 @@
 //   Shift+8 (`*`) opens the matching Recent popup. Card slot 8 and
 //   popup slot 8 now point at the same task-recent view again.
 
-import { Text } from "ink";
 import type { WorkstreamSnapshot } from "../../../state.js";
 import { inkColorForStatus } from "../../format.js";
 import {
@@ -63,8 +62,8 @@ import {
 import { ageMs, formatWhen } from "../format-helpers.js";
 import { CARD_CONFIGS, cardRenderHeight } from "../layout.js";
 import { ListRow } from "../list-row.js";
-import { PaddedRows } from "../padded-rows.js";
 import { TitledBox } from "../titled-box.js";
+import { CardPlaceholder } from "./_placeholder.js";
 
 // Re-exported for back-compat with consumers that previously imported
 // these helpers from this card (popups/recent, tests). The single
@@ -90,35 +89,27 @@ const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
 export function RecentCard({ snapshot, rowBudget, cols }: RecentCardProps): JSX.Element {
   const contentWidth = contentWidthFromCols(cols ?? termColsForLayout());
   if (snapshot === null) {
-    return (
-      <TitledBox
-        height={cardRenderHeight(cardConfig, rowBudget)}
-        width={cols}
-        title="Recent"
-        cardId={8}
-      >
-        <PaddedRows rows={rowBudget ?? cardConfig.minRows}>
-          <Text dimColor>loading…</Text>
-        </PaddedRows>
-      </TitledBox>
-    );
+    return CardPlaceholder({
+      title: "Recent",
+      cardId: 8,
+      config: cardConfig,
+      rowBudget,
+      cols,
+      text: "loading…",
+    });
   }
 
   const { recentClosed } = snapshot;
 
   if (recentClosed.length === 0) {
-    return (
-      <TitledBox
-        height={cardRenderHeight(cardConfig, rowBudget)}
-        width={cols}
-        title="Recent"
-        cardId={8}
-      >
-        <PaddedRows rows={rowBudget ?? cardConfig.minRows}>
-          <Text dimColor>(none recently closed)</Text>
-        </PaddedRows>
-      </TitledBox>
-    );
+    return CardPlaceholder({
+      title: "Recent",
+      cardId: 8,
+      config: cardConfig,
+      rowBudget,
+      cols,
+      text: "(none recently closed)",
+    });
   }
 
   const now = Date.now();

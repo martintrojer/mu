@@ -60,7 +60,6 @@
 //         into TaskDetailDrill (rows ARE tasks)
 //   Until then, Shift+7 (`&`) stays a reserved noop in keys.ts.
 
-import { Text } from "ink";
 import type { Db } from "../../../db.js";
 import { type WorkstreamSnapshot, roiBucket } from "../../../state.js";
 import { type TaskEdgeWithStatus, getTaskEdgesWithStatus } from "../../../tasks.js";
@@ -75,8 +74,8 @@ import {
 import { colorForBucket, formatRoi } from "../format-helpers.js";
 import { CARD_CONFIGS, cardRenderHeight } from "../layout.js";
 import { ListRow } from "../list-row.js";
-import { PaddedRows } from "../padded-rows.js";
 import { TitledBox } from "../titled-box.js";
+import { CardPlaceholder } from "./_placeholder.js";
 
 export interface BlockedCardProps {
   snapshot: WorkstreamSnapshot | null;
@@ -106,35 +105,27 @@ export function BlockedCard({
 }: BlockedCardProps): JSX.Element {
   const contentWidth = contentWidthFromCols(cols ?? termColsForLayout());
   if (snapshot === null) {
-    return (
-      <TitledBox
-        height={cardRenderHeight(cardConfig, rowBudget)}
-        width={cols}
-        title="Blocked"
-        cardId={7}
-      >
-        <PaddedRows rows={rowBudget ?? cardConfig.minRows}>
-          <Text dimColor>loading…</Text>
-        </PaddedRows>
-      </TitledBox>
-    );
+    return CardPlaceholder({
+      title: "Blocked",
+      cardId: 7,
+      config: cardConfig,
+      rowBudget,
+      cols,
+      text: "loading…",
+    });
   }
 
   const { blocked } = snapshot;
 
   if (blocked.length === 0) {
-    return (
-      <TitledBox
-        height={cardRenderHeight(cardConfig, rowBudget)}
-        width={cols}
-        title="Blocked"
-        cardId={7}
-      >
-        <PaddedRows rows={rowBudget ?? cardConfig.minRows}>
-          <Text dimColor>(none blocked)</Text>
-        </PaddedRows>
-      </TitledBox>
-    );
+    return CardPlaceholder({
+      title: "Blocked",
+      cardId: 7,
+      config: cardConfig,
+      rowBudget,
+      cols,
+      text: "(none blocked)",
+    });
   }
 
   const shown = blocked.slice(0, rowBudget ?? cardConfig.maxRows);

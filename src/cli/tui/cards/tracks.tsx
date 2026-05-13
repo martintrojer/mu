@@ -22,8 +22,8 @@ import {
 } from "../columns.js";
 import { CARD_CONFIGS, cardRenderHeight } from "../layout.js";
 import { ListRow } from "../list-row.js";
-import { PaddedRows } from "../padded-rows.js";
 import { TitledBox } from "../titled-box.js";
+import { CardPlaceholder } from "./_placeholder.js";
 
 export interface TracksCardProps {
   snapshot: WorkstreamSnapshot | null;
@@ -43,38 +43,32 @@ const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
 export function TracksCard({ snapshot, rowBudget, cols }: TracksCardProps): JSX.Element {
   const contentWidth = contentWidthFromCols(cols ?? termColsForLayout());
   if (snapshot === null) {
-    return (
-      <TitledBox
-        height={cardRenderHeight(cardConfig, rowBudget)}
-        width={cols}
-        title="Tracks"
-        cardId={2}
-      >
-        <PaddedRows rows={rowBudget ?? cardConfig.minRows}>
-          <Text dimColor>loading…</Text>
-        </PaddedRows>
-      </TitledBox>
-    );
+    return CardPlaceholder({
+      title: "Tracks",
+      cardId: 2,
+      config: cardConfig,
+      rowBudget,
+      cols,
+      text: "loading…",
+    });
   }
 
   const { tracks } = snapshot;
   const totalReady = tracks.reduce((acc, t) => acc + t.readyCount, 0);
 
   if (tracks.length === 0) {
-    return (
-      <TitledBox
-        height={cardRenderHeight(cardConfig, rowBudget)}
-        width={cols}
-        title="Tracks"
-        cardId={2}
-      >
-        <PaddedRows rows={rowBudget ?? cardConfig.minRows}>
-          <Text dimColor>
-            (no goals) try `mu task add -w {snapshot.workstreamName} --title "..."`
-          </Text>
-        </PaddedRows>
-      </TitledBox>
-    );
+    return CardPlaceholder({
+      title: "Tracks",
+      cardId: 2,
+      config: cardConfig,
+      rowBudget,
+      cols,
+      children: (
+        <Text dimColor>
+          (no goals) try `mu task add -w {snapshot.workstreamName} --title "..."`
+        </Text>
+      ),
+    });
   }
 
   const shown = tracks.slice(0, rowBudget ?? cardConfig.maxRows);

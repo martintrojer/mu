@@ -9,7 +9,6 @@
 // process.cwd() (the project root where the TUI was launched), NOT any
 // per-agent worker workspace.
 
-import { Text } from "ink";
 import type { WorkstreamSnapshot } from "../../../state.js";
 import {
   type ColumnSpec,
@@ -20,8 +19,8 @@ import {
 } from "../columns.js";
 import { CARD_CONFIGS, cardRenderHeight } from "../layout.js";
 import { ListRow } from "../list-row.js";
-import { PaddedRows } from "../padded-rows.js";
 import { TitledBox } from "../titled-box.js";
+import { CardPlaceholder } from "./_placeholder.js";
 
 export interface CommitsCardProps {
   snapshot: WorkstreamSnapshot | null;
@@ -40,36 +39,28 @@ const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
 export function CommitsCard({ snapshot, rowBudget, cols }: CommitsCardProps): JSX.Element {
   const contentWidth = contentWidthFromCols(cols ?? termColsForLayout());
   if (snapshot === null) {
-    return (
-      <TitledBox
-        height={cardRenderHeight(cardConfig, rowBudget)}
-        width={cols}
-        title="Commits"
-        cardId={0}
-      >
-        <PaddedRows rows={rowBudget ?? cardConfig.minRows}>
-          <Text dimColor>loading…</Text>
-        </PaddedRows>
-      </TitledBox>
-    );
+    return CardPlaceholder({
+      title: "Commits",
+      cardId: 0,
+      config: cardConfig,
+      rowBudget,
+      cols,
+      text: "loading…",
+    });
   }
 
   const { recentCommits } = snapshot;
   const backendLabel = formatBackend(snapshot.commitsBackend ?? null);
   if (recentCommits.length === 0) {
-    return (
-      <TitledBox
-        height={cardRenderHeight(cardConfig, rowBudget)}
-        width={cols}
-        title="Commits"
-        subtitle={backendLabel}
-        cardId={0}
-      >
-        <PaddedRows rows={rowBudget ?? cardConfig.minRows}>
-          <Text dimColor>no commits</Text>
-        </PaddedRows>
-      </TitledBox>
-    );
+    return CardPlaceholder({
+      title: "Commits",
+      cardId: 0,
+      config: cardConfig,
+      rowBudget,
+      cols,
+      subtitle: backendLabel,
+      text: "no commits",
+    });
   }
 
   const shown = recentCommits.slice(0, rowBudget ?? cardConfig.maxRows);

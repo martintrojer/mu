@@ -56,8 +56,8 @@ import {
 } from "../columns.js";
 import { CARD_CONFIGS, cardRenderHeight } from "../layout.js";
 import { ListRow } from "../list-row.js";
-import { PaddedRows } from "../padded-rows.js";
 import { TitledBox } from "../titled-box.js";
+import { CardPlaceholder } from "./_placeholder.js";
 
 export interface DoctorCardProps {
   snapshot: WorkstreamSnapshot | null;
@@ -77,18 +77,14 @@ const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
 export function DoctorCard({ snapshot, rowBudget, cols }: DoctorCardProps): JSX.Element {
   const contentWidth = contentWidthFromCols(cols ?? termColsForLayout());
   if (snapshot === null || snapshot.doctor === null) {
-    return (
-      <TitledBox
-        height={cardRenderHeight(cardConfig, rowBudget)}
-        width={cols}
-        title="Doctor"
-        cardId={9}
-      >
-        <PaddedRows rows={rowBudget ?? cardConfig.minRows}>
-          <Text dimColor>loading…</Text>
-        </PaddedRows>
-      </TitledBox>
-    );
+    return CardPlaceholder({
+      title: "Doctor",
+      cardId: 9,
+      config: cardConfig,
+      rowBudget,
+      cols,
+      text: "loading…",
+    });
   }
 
   const { checks, problemCount } = snapshot.doctor;
@@ -97,22 +93,20 @@ export function DoctorCard({ snapshot, rowBudget, cols }: DoctorCardProps): JSX.
   // Healthy path: render the quiet "✓ <K> checks" line so the
   // operator can confirm the card ran (vs. simply being empty).
   if (problemCount === 0) {
-    return (
-      <TitledBox
-        height={cardRenderHeight(cardConfig, rowBudget)}
-        width={cols}
-        title="Doctor"
-        subtitle={subtitle}
-        cardId={9}
-      >
-        <PaddedRows rows={rowBudget ?? cardConfig.minRows}>
-          <Text dimColor>
-            <Text color="green">✓</Text> {checks.length} check
-            {checks.length === 1 ? "" : "s"}
-          </Text>
-        </PaddedRows>
-      </TitledBox>
-    );
+    return CardPlaceholder({
+      title: "Doctor",
+      cardId: 9,
+      config: cardConfig,
+      rowBudget,
+      cols,
+      subtitle,
+      children: (
+        <Text dimColor>
+          <Text color="green">✓</Text> {checks.length} check
+          {checks.length === 1 ? "" : "s"}
+        </Text>
+      ),
+    });
   }
 
   const problems = checks.filter((c) => c.status !== "ok");

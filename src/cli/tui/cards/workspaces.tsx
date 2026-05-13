@@ -47,8 +47,8 @@ import {
 } from "../columns.js";
 import { CARD_CONFIGS, cardRenderHeight } from "../layout.js";
 import { ListRow } from "../list-row.js";
-import { PaddedRows } from "../padded-rows.js";
 import { TitledBox } from "../titled-box.js";
+import { CardPlaceholder } from "./_placeholder.js";
 
 export interface WorkspacesCardProps {
   snapshot: WorkstreamSnapshot | null;
@@ -69,18 +69,14 @@ const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
 export function WorkspacesCard({ snapshot, rowBudget, cols }: WorkspacesCardProps): JSX.Element {
   const contentWidth = contentWidthFromCols(cols ?? termColsForLayout());
   if (snapshot === null) {
-    return (
-      <TitledBox
-        height={cardRenderHeight(cardConfig, rowBudget)}
-        width={cols}
-        title="Workspaces"
-        cardId={5}
-      >
-        <PaddedRows rows={rowBudget ?? cardConfig.minRows}>
-          <Text dimColor>loading…</Text>
-        </PaddedRows>
-      </TitledBox>
-    );
+    return CardPlaceholder({
+      title: "Workspaces",
+      cardId: 5,
+      config: cardConfig,
+      rowBudget,
+      cols,
+      text: "loading…",
+    });
   }
 
   const { workspaces, workstreamName } = snapshot;
@@ -89,20 +85,18 @@ export function WorkspacesCard({ snapshot, rowBudget, cols }: WorkspacesCardProp
   const subtitle = formatSubtitle(workspaces.length, stale, dirty);
 
   if (workspaces.length === 0) {
-    return (
-      <TitledBox
-        height={cardRenderHeight(cardConfig, rowBudget)}
-        width={cols}
-        title="Workspaces"
-        cardId={5}
-      >
-        <PaddedRows rows={rowBudget ?? cardConfig.minRows}>
-          <Text dimColor>
-            (no workspaces) try `mu agent spawn worker-1 -w {workstreamName} --workspace`
-          </Text>
-        </PaddedRows>
-      </TitledBox>
-    );
+    return CardPlaceholder({
+      title: "Workspaces",
+      cardId: 5,
+      config: cardConfig,
+      rowBudget,
+      cols,
+      children: (
+        <Text dimColor>
+          (no workspaces) try `mu agent spawn worker-1 -w {workstreamName} --workspace`
+        </Text>
+      ),
+    });
   }
 
   const shown = workspaces.slice(0, rowBudget ?? cardConfig.maxRows);

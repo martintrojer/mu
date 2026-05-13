@@ -24,8 +24,8 @@ import {
 import { colorForBucket, formatRoi } from "../format-helpers.js";
 import { CARD_CONFIGS, cardRenderHeight } from "../layout.js";
 import { ListRow } from "../list-row.js";
-import { PaddedRows } from "../padded-rows.js";
 import { TitledBox } from "../titled-box.js";
+import { CardPlaceholder } from "./_placeholder.js";
 
 export interface ReadyCardProps {
   snapshot: WorkstreamSnapshot | null;
@@ -46,37 +46,31 @@ const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
 export function ReadyCard({ snapshot, rowBudget, cols }: ReadyCardProps): JSX.Element {
   const contentWidth = contentWidthFromCols(cols ?? termColsForLayout());
   if (snapshot === null) {
-    return (
-      <TitledBox
-        height={cardRenderHeight(cardConfig, rowBudget)}
-        width={cols}
-        title="Ready"
-        cardId={3}
-      >
-        <PaddedRows rows={rowBudget ?? cardConfig.minRows}>
-          <Text dimColor>loading…</Text>
-        </PaddedRows>
-      </TitledBox>
-    );
+    return CardPlaceholder({
+      title: "Ready",
+      cardId: 3,
+      config: cardConfig,
+      rowBudget,
+      cols,
+      text: "loading…",
+    });
   }
 
   const { ready } = snapshot;
 
   if (ready.length === 0) {
-    return (
-      <TitledBox
-        height={cardRenderHeight(cardConfig, rowBudget)}
-        width={cols}
-        title="Ready"
-        cardId={3}
-      >
-        <PaddedRows rows={rowBudget ?? cardConfig.minRows}>
-          <Text dimColor>
-            (no ready tasks) every blocker is OPEN/IN_PROGRESS or every task is closed
-          </Text>
-        </PaddedRows>
-      </TitledBox>
-    );
+    return CardPlaceholder({
+      title: "Ready",
+      cardId: 3,
+      config: cardConfig,
+      rowBudget,
+      cols,
+      children: (
+        <Text dimColor>
+          (no ready tasks) every blocker is OPEN/IN_PROGRESS or every task is closed
+        </Text>
+      ),
+    });
   }
 
   const shown = ready.slice(0, rowBudget ?? cardConfig.maxRows);

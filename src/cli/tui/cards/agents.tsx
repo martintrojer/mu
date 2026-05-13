@@ -29,8 +29,8 @@ import {
 } from "../columns.js";
 import { CARD_CONFIGS, cardRenderHeight } from "../layout.js";
 import { ListRow } from "../list-row.js";
-import { PaddedRows } from "../padded-rows.js";
 import { TitledBox } from "../titled-box.js";
+import { CardPlaceholder } from "./_placeholder.js";
 
 export interface AgentsCardProps {
   snapshot: WorkstreamSnapshot | null;
@@ -50,18 +50,14 @@ const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
 export function AgentsCard({ snapshot, rowBudget, cols }: AgentsCardProps): JSX.Element {
   const contentWidth = contentWidthFromCols(cols ?? termColsForLayout());
   if (snapshot === null) {
-    return (
-      <TitledBox
-        height={cardRenderHeight(cardConfig, rowBudget)}
-        width={cols}
-        title="Agents"
-        cardId={1}
-      >
-        <PaddedRows rows={rowBudget ?? cardConfig.minRows}>
-          <Text dimColor>loading…</Text>
-        </PaddedRows>
-      </TitledBox>
-    );
+    return CardPlaceholder({
+      title: "Agents",
+      cardId: 1,
+      config: cardConfig,
+      rowBudget,
+      cols,
+      text: "loading…",
+    });
   }
 
   const agents = snapshot.view.agents;
@@ -69,20 +65,16 @@ export function AgentsCard({ snapshot, rowBudget, cols }: AgentsCardProps): JSX.
   const histLabel = formatHistogram(histogram);
 
   if (agents.length === 0) {
-    return (
-      <TitledBox
-        height={cardRenderHeight(cardConfig, rowBudget)}
-        width={cols}
-        title="Agents"
-        cardId={1}
-      >
-        <PaddedRows rows={rowBudget ?? cardConfig.minRows}>
-          <Text dimColor>
-            (no agents) try `mu agent spawn worker-1 -w {snapshot.workstreamName}`
-          </Text>
-        </PaddedRows>
-      </TitledBox>
-    );
+    return CardPlaceholder({
+      title: "Agents",
+      cardId: 1,
+      config: cardConfig,
+      rowBudget,
+      cols,
+      children: (
+        <Text dimColor>(no agents) try `mu agent spawn worker-1 -w {snapshot.workstreamName}`</Text>
+      ),
+    });
   }
 
   const shown = agents.slice(0, rowBudget ?? cardConfig.maxRows);
