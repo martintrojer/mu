@@ -192,6 +192,24 @@ called out under "Breaking" in each entry.
 
 ### Tests
 
+- `test/db.test.ts`: replaced the fake-FK assertion with two real
+  ones. The previous "rejects edges to non-existent tasks (FK)"
+  test routed both endpoints through an `insertEdge` helper that
+  swallowed the SDK's "task not found" lookup error and synthesised
+  a raw `INSERT INTO task_edges ... VALUES (?, -999999, ...)` to
+  coerce SQLite's FK error — so the test passed for the wrong
+  reason and would have stayed green if the typed
+  `TaskNotFoundError` early-throw in `addBlockEdge` was deleted.
+  Split into (a) a direct DB-level FK assertion that runs a raw
+  `INSERT` with a bogus surrogate id and expects `/FOREIGN KEY/`,
+  pinning the schema's `REFERENCES tasks (id)` constraint, and
+  (b) an SDK-level assertion that calls `addBlockEdge(db, "test",
+  "a", "ghost")` and expects `TaskNotFoundError`, pinning the
+  resolver's early typed throw. The catch+synthesise hack in the
+  helper was removed; both endpoints must now exist. Both new
+  tests were verified to fail when their respective behaviours are
+  regressed (FK constraint dropped from `task_edges`; typed throw
+  in `addBlockEdge` short-circuited).
 - `tsconfig.test.json` is now wired into `npm run typecheck`; 48 long-buried test type errors were cleaned up across five commits, so test-file TypeScript regressions no longer escape typecheck.
 - TUI all-tasks popup tests now cover the centred visible-window behaviour by rendering the popup through Ink with 200 tasks and driving the cursor to row 100, instead of grepping `all-tasks.tsx` for `centredVisibleSlice` / `windowed.map` implementation details. The shared Ink test harness gained a tiny input stream helper and latest-frame extractor for this pattern.
 - `test/tui-state-hook-rerender.test.ts`: the three remaining

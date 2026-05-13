@@ -6,6 +6,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type Db, defaultDbPath, openDb } from "../src/db.js";
+import { addBlockEdge, addTask } from "../src/tasks.js";
+import { TaskNotFoundError } from "../src/tasks/errors.js";
 
 describe("openDb", () => {
   let tempDir: string;
@@ -279,10 +281,46 @@ describe("openDb", () => {
     db.close();
   });
 
-  it("rejects edges to non-existent tasks (FK)", () => {
+  // Two complementary assertions for the "can't point an edge at a
+  // non-existent task" contract. The original single test routed both
+  // through an `insertEdge` helper that swallowed the SDK's
+  // "task not found" lookup error and synthesised a raw INSERT with
+  // surrogate id -999999 to coerce SQLite's FK error — so it passed for
+  // the wrong reason (a regression that, say, removed the typed
+  // TaskNotFoundError throw would have left the synthetic-FK path
+  // happily green). Split into:
+  //   (a) direct DB-level FK: raw INSERT into task_edges with a bogus
+  //       surrogate id MUST raise SQLite's FOREIGN KEY error. Pins the
+  //       schema's `REFERENCES tasks (id)` constraint.
+  //   (b) SDK-level path: addBlockEdge MUST raise the typed
+  //       TaskNotFoundError BEFORE any SQL runs, so callers get exit-3
+  //       semantics and an actionable error rather than a generic SQL
+  //       failure. Pins the resolver's early-throw behaviour.
+  it("FK constraint blocks edges with a bogus tasks.id surrogate", () => {
     const db = openDb({ path: dbPath });
     insertTask(db, { id: "a", title: "A", impact: 50, effortDays: 1 });
-    expect(() => insertEdge(db, "a", "ghost")).toThrow();
+    const aId = taskIdByLocalId(db, "a");
+    expect(() =>
+      db
+        .prepare(
+          `INSERT INTO task_edges (from_task_id, to_task_id, created_at)
+           VALUES (?, ?, datetime('now'))`,
+        )
+        .run(aId, 999999),
+    ).toThrow(/FOREIGN KEY/);
+    db.close();
+  });
+
+  it("addBlockEdge throws TaskNotFoundError for an unknown local_id", () => {
+    const db = openDb({ path: dbPath });
+    addTask(db, {
+      localId: "a",
+      workstream: "test",
+      title: "A",
+      impact: 50,
+      effortDays: 1,
+    });
+    expect(() => addBlockEdge(db, "test", "a", "ghost")).toThrowError(TaskNotFoundError);
     db.close();
   });
 
@@ -448,20 +486,11 @@ function taskIdByLocalId(db: Db, localId: string): number {
 
 function insertEdge(db: Db, from: string, to: string): void {
   // v5: task_edges holds INTEGER FKs (from_task_id, to_task_id).
-  // Translate the test fixture's operator-facing local_ids.
-  // For the FK-violation test (insertEdge(a, ghost)), the lookup will
-  // throw "not found"; tests catch it via .toThrow().
-  let toId: number;
-  try {
-    toId = taskIdByLocalId(db, to);
-  } catch {
-    // Match the v4 'FOREIGN KEY constraint failed' contract by inserting
-    // a deliberately invalid id so SQLite raises the FK error.
-    db.prepare(
-      `INSERT INTO task_edges (from_task_id, to_task_id, created_at) VALUES (?, ?, datetime('now'))`,
-    ).run(taskIdByLocalId(db, from), -999999);
-    return;
-  }
+  // Translate the test fixture's operator-facing local_ids. Both
+  // endpoints MUST exist; the "non-existent task" assertion lives in
+  // the FK / SDK tests above and exercises the contract directly
+  // rather than through this helper.
+  const toId = taskIdByLocalId(db, to);
   const fromId = from === to ? toId : taskIdByLocalId(db, from);
   db.prepare(
     `INSERT INTO task_edges (from_task_id, to_task_id, created_at) VALUES (?, ?, datetime('now'))`,
