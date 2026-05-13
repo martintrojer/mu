@@ -1,8 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { Help } from "../src/cli/tui/help.js";
+import {
+  HelpView,
+  applyHelpScroll,
+  flattenHelpRows,
+  helpPositionLabel,
+  helpViewport,
+} from "../src/cli/tui/help.js";
 import { HELP_PANES } from "../src/cli/tui/keymap-spec.js";
 
 type ElementLike = { type?: unknown; props: Record<string, unknown> };
+
+const HELP_ROWS = flattenHelpRows();
 
 function isElementLike(node: unknown): node is ElementLike {
   return (
@@ -36,34 +44,76 @@ function renderToString(node: unknown): string {
     if (typeof n === "number") return String(n);
     if (Array.isArray(n)) return n.map(walk).join("");
     if (isElementLike(n)) {
-      if (typeof n.type === "function") {
-        const component = n.type as (props: Record<string, unknown>) => unknown;
-        return walk(component(n.props));
-      }
-      return walk(n.props.children);
+      return [
+        walk(n.props.title),
+        walk(n.props.subtitle),
+        walk(n.props.bottomLabel),
+        walk(n.props.keys),
+        walk(n.props.effect),
+        walk(n.props.children),
+      ].join("");
     }
     return "";
   }
   return walk(node);
 }
 
+function visibleText(rows: number, scrollTop = 0): string {
+  return renderToString(HelpView({ rows, scrollTop }));
+}
+
 describe("TUI help overlay", () => {
+  it("renders only the fixed viewport on low-row panes", () => {
+    const viewport = helpViewport(15);
+    expect(viewport).toBe(12);
+    expect(HELP_ROWS).toHaveLength(53);
+
+    const text = visibleText(15);
+    expect(text).toContain("keys · 1-12/53");
+    expect(text).toContain("keys · dashboard");
+    expect(text).toContain("toggle this overlay");
+    expect(text).not.toContain("keys · popup list");
+    expect(text).not.toContain("mouse");
+  });
+
+  it("scrolls with popup navigation semantics and clamps at the bottom", () => {
+    expect(applyHelpScroll(0, { kind: "moveDown" }, 15, HELP_ROWS.length)).toBe(1);
+    expect(applyHelpScroll(1, { kind: "pageDown", half: true }, 15, HELP_ROWS.length)).toBe(7);
+    expect(applyHelpScroll(7, { kind: "jumpBottom" }, 15, HELP_ROWS.length)).toBe(41);
+    expect(applyHelpScroll(41, { kind: "moveDown" }, 15, HELP_ROWS.length)).toBe(41);
+    expect(applyHelpScroll(41, { kind: "jumpTop" }, 15, HELP_ROWS.length)).toBe(0);
+    expect(applyHelpScroll(3, { kind: "noop" }, 15, HELP_ROWS.length)).toBe(3);
+  });
+
+  it("computes the inset position indicator from the visible range", () => {
+    expect(helpPositionLabel(0, 12, HELP_ROWS.length)).toBe("1-12/53");
+    expect(helpPositionLabel(11, 12, HELP_ROWS.length)).toBe("12-23/53");
+    expect(helpPositionLabel(41, 12, HELP_ROWS.length)).toBe("42-53/53");
+    expect(visibleText(15, 11)).toContain("keys · 12-23/53");
+  });
+
+  it("hides the position indicator and renders all rows when the pane is tall enough", () => {
+    const text = visibleText(200);
+    expect(helpPositionLabel(0, helpViewport(200), HELP_ROWS.length)).toBeUndefined();
+    expect(text).not.toContain("1-12/53");
+    expect(text).toContain("keys · dashboard");
+    expect(text).toContain("keys · popup list");
+    expect(text).toContain("keys · popup drill");
+    expect(text).toContain("keys · popup filter");
+    expect(text).toContain("keys · DAG / all-tasks");
+    expect(text).toContain("mouse");
+    expect(text).toContain("no mouse back; use Esc/q");
+  });
+
   it("renders as one rounded outer box instead of side-by-side bordered panes", () => {
-    const root = Help();
+    const root = HelpView({ rows: 200 });
     expect(isElementLike(root)).toBe(true);
     if (!isElementLike(root)) throw new Error("Help() should return a JSX element");
 
-    expect(root.props.borderStyle).toBe("round");
+    expect(root.props.title).toBe("keys");
     expect(root.props.borderColor).toBe("cyan");
-    expect(root.props.paddingX).toBe(1);
-    expect(root.props.flexDirection).toBe("column");
-    expect(root.props.gap).toBeUndefined();
-
-    const roundBoxes: ElementLike[] = [];
-    visitElements(root, (element) => {
-      if (element.props.borderStyle === "round") roundBoxes.push(element);
-    });
-    expect(roundBoxes).toHaveLength(1);
+    expect(root.props.titleColor).toBe("cyan");
+    expect(root.props.width).toBe(process.stdout.columns ?? 80);
 
     const sideBySidePaneBoxes = childrenArray(root.props.children).filter(
       (child) => isElementLike(child) && child.props.borderStyle === "round",
@@ -72,7 +122,7 @@ describe("TUI help overlay", () => {
   });
 
   it("renders every section header in bold cyan", () => {
-    const root = Help();
+    const root = HelpView({ rows: 200 });
     const elements: ElementLike[] = [];
     visitElements(root, (element) => elements.push(element));
 
@@ -88,26 +138,13 @@ describe("TUI help overlay", () => {
   });
 
   it("renders one blank-line separator between each help section", () => {
-    const root = Help();
+    const root = HelpView({ rows: 200 });
     expect(isElementLike(root)).toBe(true);
     if (!isElementLike(root)) throw new Error("Help() should return a JSX element");
 
-    const sections = childrenArray(root.props.children).filter(isElementLike);
-    expect(sections).toHaveLength(HELP_PANES.length);
-
-    for (const [idx, section] of sections.entries()) {
-      expect(section.props.flexDirection).toBe("column");
-      const sectionChildren = childrenArray(section.props.children);
-      const firstChild = sectionChildren[0];
-      if (idx === 0) {
-        expect(isElementLike(firstChild) && firstChild.props.children === " ").toBe(false);
-      } else {
-        expect(isElementLike(firstChild)).toBe(true);
-        if (!isElementLike(firstChild))
-          throw new Error("section separator should be a JSX element");
-        expect(firstChild.props.children).toBe(" ");
-      }
-    }
+    expect(flattenHelpRows().filter((row) => row.kind === "separator")).toHaveLength(
+      HELP_PANES.length - 1,
+    );
 
     const blankTextNodes: ElementLike[] = [];
     visitElements(root, (element) => {
@@ -117,7 +154,7 @@ describe("TUI help overlay", () => {
   });
 
   it("documents the dashboard keymap including omitted-from-bar keys", () => {
-    const text = renderToString(Help());
+    const text = visibleText(200);
     expect(text).toContain("keys · dashboard");
     expect(text).toContain("0-9");
     expect(text).toContain(
@@ -147,7 +184,7 @@ describe("TUI help overlay", () => {
   });
 
   it("splits popup list, drill, and filter help panes", () => {
-    const text = renderToString(Help());
+    const text = visibleText(200);
     expect(text).toContain("keys · popup list");
     expect(text).toContain("move selection");
     expect(text).toContain("Ctrl-D/U");
@@ -171,7 +208,7 @@ describe("TUI help overlay", () => {
   });
 
   it("documents DAG/all-tasks status toggles and all-tasks sort/search keys", () => {
-    const text = renderToString(Help());
+    const text = visibleText(200);
     expect(text).toContain("keys · DAG / all-tasks");
     expect(text).toContain("o/i/c/r/d");
     expect(text).toContain("OPEN / IN_PROGRESS / CLOSED / REJECTED / DEFERRED");
@@ -181,7 +218,7 @@ describe("TUI help overlay", () => {
   });
 
   it("drops stale pseudo-rows", () => {
-    const text = renderToString(Help());
+    const text = visibleText(200);
     expect(text).not.toContain("v0.next");
     expect(text).not.toContain("(any letter)");
     expect(text).not.toContain("see popup footer");
@@ -191,7 +228,7 @@ describe("TUI help overlay", () => {
     // Mouse bindings live in the canonical keymap spec; Help() iterates
     // HELP_PANES from there so a single source-of-truth feeds both the
     // overlay and the orphan-hint regression test.
-    const text = renderToString(Help());
+    const text = visibleText(200);
     expect(text).toContain("mouse");
     expect(text).toContain("double-click card");
     expect(text).toContain("drill into popup");

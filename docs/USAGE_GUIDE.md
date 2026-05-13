@@ -475,7 +475,11 @@ mu                          # TTY: TUI across all workstreams; non-TTY: help
   REJECTED red, and DEFERRED dim/gray. Status-bar hint clusters show
   the always-available keys for
   the current mode; the `?` help overlay is the superset (including
-  less-common paging, refresh, tick-rate, and sub-mode keys). Dashboard
+  less-common paging, refresh, tick-rate, and sub-mode keys). On
+  low-row panes the help overlay scrolls with the same popup/drill
+  navigation keys (`j`/`k`, Ctrl-D/U, PgDn/PgUp, `g`/`G`) and shows a
+  title inset such as `keys · 1-12/53` while content overflows.
+  Dashboard
   keymap: `0`-`9` toggle cards; `Shift+0` opens Commits,
   `Shift+1`-`Shift+9` open the remaining numbered popups, `g` opens
   the keybind-only DAG popup, and `t` opens the keybind-only

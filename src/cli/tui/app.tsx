@@ -258,9 +258,14 @@ export function App({ db, workstreams, initialActive = 0 }: AppProps): JSX.Eleme
   // popups, Esc closes via this dispatcher).
   useInput(
     (input, key) => {
-      // Esc / q always closes the help overlay (highest priority).
-      if (helpOpen && (key.escape || input === "q" || input === "Q")) {
-        setHelpOpen(false);
+      // Help overlay owns its local scroll keys. App only handles
+      // close/toggle here, then swallows every other key so `j` / `k`
+      // / Ctrl-D / Ctrl-U cannot leak into the global dashboard
+      // keymap while the overlay is open.
+      if (helpOpen) {
+        if (key.escape || input === "q" || input === "Q" || input === "?") {
+          setHelpOpen(false);
+        }
         return;
       }
       // While a popup is open, the popup owns navigation/yank/close.
@@ -387,7 +392,7 @@ export function App({ db, workstreams, initialActive = 0 }: AppProps): JSX.Eleme
   if (helpOpen) {
     return (
       <Box flexDirection="column" height={rows} overflow="hidden">
-        <Help />
+        <Help rows={rows} />
         <Box flexGrow={1} />
         <StatusBar
           mode="help"
