@@ -2,8 +2,13 @@
 
 **A small, opinionated control plane for a crew of AI coding agents
 working in parallel.** One tmux session, a typed task DAG, isolated
-VCS workspaces per agent, an audit log — and a hard refusal to
-grow into another bloated agent framework.
+VCS workspaces per agent, an audit log — and a dashboard for seeing
+what the crew is doing right now.
+
+![mu dashboard](docs/img/tui-dashboard.png)
+
+*`mu` (no args) — read-only dashboard: agents, tracks, ready /
+in-progress / blocked tasks, log tail, workspaces, doctor.*
 
 ```bash
 mu workstream init auth-refactor
