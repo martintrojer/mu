@@ -67,10 +67,25 @@ export function wrapAnsi(line: string, width: number): string[] {
   return out.length === 0 ? [line] : out;
 }
 
+export function padAnsiLine(line: string, width: number): string {
+  const visibleWidth = stringWidth(line);
+  if (visibleWidth >= width) return line;
+  return line + " ".repeat(width - visibleWidth);
+}
+
 export function wrapAnsiLines(text: string, width: number): string {
   return text
     .split("\n")
     .flatMap((line) => wrapAnsi(line, width))
+    .join("\n");
+}
+
+export function wrapAndPadAnsiLines(text: string, width: number): string {
+  if (text === "") return "";
+  return text
+    .split("\n")
+    .flatMap((line) => wrapAnsi(line, width))
+    .map((line) => padAnsiLine(line, width))
     .join("\n");
 }
 

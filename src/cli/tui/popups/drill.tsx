@@ -34,7 +34,7 @@ import { Box, Text } from "ink";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { cellWidth, contentWidthFromCols, termColsForLayout, truncateCell } from "../columns.js";
 import type { PopupAction } from "../keys.js";
-import { wrapAnsiLines } from "../wrap-ansi.js";
+import { wrapAndPadAnsiLines } from "../wrap-ansi.js";
 import { applyScroll, clampScrollTop, isNavAction } from "./scroll.js";
 
 // Re-export so existing `import { clampScrollTop } from "./drill.js"`
@@ -83,7 +83,7 @@ function drillWrapWidth(): number {
 }
 
 export function wrapDrillBody(body: string, wrapWidth: number): WrappedDrillBody {
-  const wrapped = wrapAnsiLines(body, wrapWidth);
+  const wrapped = wrapAndPadAnsiLines(body, wrapWidth);
   const lines = wrapped === "" ? [] : wrapped.split("\n");
   return { wrapped, lines, totalLines: lines.length };
 }
@@ -230,13 +230,13 @@ export function DrillScrollView({
   // earlier per-line width pin.)
   //
   // Body lines have already been ANSI-aware pre-wrapped by visual
-  // width (`wrapAnsiLines` via useDrillKeymap / wrapDrillBody).
-  // Keep every pre-wrapped logical line on exactly one terminal row:
-  // Ink's default Text wrap can re-wrap coloured lines after counting
-  // SGR escape bytes, which spills into the popup chrome and bends the
-  // right border. `wrap="truncate"` uses visual width; correct lines
-  // pass through unchanged, and any upstream over-budget line clips
-  // cleanly instead of corrupting the frame.
+  // width and padded to exactly the drill width (`wrapAndPadAnsiLines`
+  // via useDrillKeymap / wrapDrillBody). Keep every pre-wrapped logical
+  // line on exactly one terminal row: Ink's truncate path can undercount
+  // ANSI-coloured text and eat the popup's trailing space + right border
+  // when it has to fit an over-budget line. Because drill body rows are
+  // pre-sized to the exact budget, `wrap="truncate"` is a no-op safety
+  // belt rather than the fitting mechanism.
   return (
     <Box flexDirection="column" flexGrow={1}>
       <Box>

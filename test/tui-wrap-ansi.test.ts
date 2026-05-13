@@ -1,9 +1,19 @@
-import { describe, expect, it } from "vitest";
-import { wrapAnsi, wrapAnsiLines } from "../src/cli/tui/wrap-ansi.js";
+import { Box, Text, render } from "ink";
+import { createElement } from "react";
+import stringWidth from "string-width";
+import { afterEach, describe, expect, it } from "vitest";
+import {
+  padAnsiLine,
+  wrapAndPadAnsiLines,
+  wrapAnsi,
+  wrapAnsiLines,
+} from "../src/cli/tui/wrap-ansi.js";
+import { CaptureStream, collectRenderedLines, createInkCaptureStream } from "./_ink-render.js";
 
 const ESC = "\u001B";
 const RED = `${ESC}[31m`;
 const GREEN = `${ESC}[32m`;
+const CYAN = `${ESC}[36m`;
 const BOLD = `${ESC}[1m`;
 const RESET = `${ESC}[0m`;
 const ANSI_RE = new RegExp(`${ESC}\\[[0-?]*[ -/]*[@-~]`, "g");
@@ -23,6 +33,10 @@ function sgrBalance(s: string): number {
 }
 
 describe("wrapAnsi", () => {
+  afterEach(() => {
+    CaptureStream.cleanup();
+  });
+
   it("wraps plain ASCII at visible width", () => {
     expect(wrapAnsi("abcdefghij", 4)).toEqual(["abcd", "efgh", "ij"]);
   });
@@ -58,6 +72,29 @@ describe("wrapAnsi", () => {
     );
   });
 
+  it("padAnsiLine pads a short ANSI line to visible width with plain spaces", () => {
+    const padded = padAnsiLine(`${GREEN}ok${RESET}`, 5);
+
+    expect(padded).toBe(`${GREEN}ok${RESET}   `);
+    expect(stringWidth(padded)).toBe(5);
+    expect(sgrBalance(padded)).toBe(0);
+  });
+
+  it("padAnsiLine leaves exact-width and over-width lines unchanged", () => {
+    expect(padAnsiLine("hello", 5)).toBe("hello");
+    expect(padAnsiLine("hello", 3)).toBe("hello");
+    expect(padAnsiLine(`${GREEN}hello${RESET}`, 5)).toBe(`${GREEN}hello${RESET}`);
+  });
+
+  it("wrapAndPadAnsiLines returns every wrapped line at the requested visible width", () => {
+    const wrapped = wrapAndPadAnsiLines(`${CYAN}abcdefghi${RESET}\nxy`, 4);
+    const lines = wrapped.split("\n");
+
+    expect(lines.map(stripAnsi)).toEqual(["abcd", "efgh", "i   ", "xy  "]);
+    expect(lines.every((line) => stringWidth(line) === 4)).toBe(true);
+    expect(lines.every((line) => sgrBalance(line) === 0)).toBe(true);
+  });
+
   it("does not leave emitted wrapped lines with active SGR state", () => {
     const wrapped = wrapAnsi(`${RED}abcdef${RESET}`, 2);
 
@@ -83,5 +120,30 @@ describe("wrapAnsi", () => {
     const wrapped = wrapAnsi(`abcdef${RED}ghij`, 4);
     expect(wrapped.every((line) => sgrBalance(line) === 0)).toBe(true);
     expect(wrapped[wrapped.length - 1]?.endsWith(RESET)).toBe(true);
+  });
+
+  it("keeps a padded ANSI hunk header inside an Ink box without eating the right border", async () => {
+    const boxWidth = 90;
+    const contentWidth = boxWidth - 4; // borders + paddingX=1 on both sides
+    const hunk = `${CYAN}@@ -35,6 +81,109 @@${RESET} ${"x".repeat(80)}`;
+    const body = wrapAndPadAnsiLines(hunk, contentWidth);
+    const stdout = createInkCaptureStream({ columns: boxWidth, rows: 10 });
+    const instance = render(
+      createElement(
+        Box,
+        { width: boxWidth, paddingX: 1, borderStyle: "round" },
+        createElement(Text, { wrap: "truncate" }, body),
+      ),
+      { stdout, stdin: process.stdin, stderr: process.stderr, debug: false, patchConsole: false },
+    );
+
+    const rows = await collectRenderedLines(stdout);
+    instance.unmount();
+
+    expect(rows.length).toBeGreaterThanOrEqual(4);
+    expect(rows.every((row) => stringWidth(row) === boxWidth)).toBe(true);
+    for (const row of rows.slice(1, -1)) {
+      expect(row.endsWith("│")).toBe(true);
+    }
   });
 });

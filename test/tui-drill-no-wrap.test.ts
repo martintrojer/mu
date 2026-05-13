@@ -81,7 +81,7 @@ describe("DrillScrollView does not let Ink byte-wrap coloured pre-wrapped lines"
     expect(src).toContain('color="magenta" wrap="truncate"');
     expect(src).toContain('dimColor wrap="truncate"');
     expect(src).toContain('key={`${start + i}`} wrap="truncate"');
-    expect(src).toContain("Ink's default Text wrap can re-wrap coloured lines");
+    expect(src).toContain("Ink's truncate path can undercount");
   });
 
   it("keeps ANSI-coloured diff lines that are exactly wrapWidth on one rendered row each", async () => {

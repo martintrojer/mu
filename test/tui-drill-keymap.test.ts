@@ -52,11 +52,11 @@ describe("useDrillKeymap", () => {
     expect(DRILL_SRC).toContain("wrappedLines: wrappedBody.lines");
   });
 
-  it("wraps drill bodies through one shared helper instead of two raw wrapAnsiLines call sites", () => {
+  it("wraps drill bodies through one shared helper instead of raw wrap helper call sites", () => {
     const stripped = DRILL_SRC.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
-    const rawWrapCalls = stripped.match(/wrapAnsiLines\(/g) ?? [];
+    const rawWrapCalls = stripped.match(/wrapAndPadAnsiLines\(/g) ?? [];
     expect(rawWrapCalls).toHaveLength(1);
-    expect(stripped).toContain("const wrapped = wrapAnsiLines(body, wrapWidth)");
+    expect(stripped).toContain("const wrapped = wrapAndPadAnsiLines(body, wrapWidth)");
     expect(stripped).toContain("wrappedBody ?? wrapDrillBody(body, wrapWidth)");
   });
 
