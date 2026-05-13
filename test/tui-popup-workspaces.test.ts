@@ -302,12 +302,12 @@ describe("App ↔ keys wiring for popup 5", () => {
     expect(APP_SRC).toContain("WorkspacesPopup");
   });
 
-  it("app.tsx renderPopup has a case 5 → <WorkspacesPopup />", () => {
-    expect(APP_SRC).toMatch(/case 5:\s*\n\s*return <WorkspacesPopup/);
+  it("app.tsx POPUP_REGISTRY maps 5 → WorkspacesPopup", () => {
+    expect(APP_SRC).toMatch(/5: WorkspacesPopup/);
   });
 
   it("app.tsx popupNameForId(5) returns 'Workspaces'", () => {
-    expect(APP_SRC).toMatch(/case 5:\s*\n\s*return "Workspaces"/);
+    expect(APP_SRC).toMatch(/popupNameForId[\s\S]*case 5:[\s\S]*return "Workspaces"/);
   });
 
   it("app.tsx PopupId union includes 5", () => {

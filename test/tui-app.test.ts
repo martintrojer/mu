@@ -39,7 +39,9 @@ describe("App popup-lifecycle state-restore (structural)", () => {
     // Any change that adds setVisibility/setTickMs to the props
     // bag must be a deliberate decision and should fail this
     // structural check (which the implementer can then update).
-    const renderPopupBlock = src.match(/function renderPopup[\s\S]*?\n[ \t]*\}/m);
+    const renderPopupBlock = src.match(
+      /function renderPopup[\s\S]*?return <Popup \{\.\.\.props\} \/>;\n[ \t]*\}/m,
+    );
     expect(renderPopupBlock, "renderPopup function should exist in App.tsx").not.toBeNull();
     const block = renderPopupBlock?.[0] ?? "";
     expect(block, "popups must not receive setVisibility").not.toContain("setVisibility");
@@ -52,7 +54,7 @@ describe("App popup-lifecycle state-restore (structural)", () => {
     const src = readFileSync("./src/cli/tui/app.tsx", "utf-8");
     // The props bag passed to popups (now multi-line since `snapshot`
     // was added in Wave 6 — match across newlines).
-    const m = src.match(/const props = \{([\s\S]*?)\};/);
+    const m = src.match(/const props(?:: [A-Za-z]+)? = \{([\s\S]*?)\};/);
     expect(m, "props bag should be a single literal in renderPopup").not.toBeNull();
     const propsContent = m?.[1] ?? "";
     // Must contain yank and onClose; must not contain anything else.

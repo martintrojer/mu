@@ -203,12 +203,12 @@ describe("App ↔ keys wiring for popup 9", () => {
     expect(APP_SRC).toContain("DoctorPopup");
   });
 
-  it("app.tsx renderPopup has a case 9 → <DoctorPopup />", () => {
-    expect(APP_SRC).toMatch(/case 9:\s*\n\s*return <DoctorPopup/);
+  it("app.tsx POPUP_REGISTRY maps 9 → DoctorPopup", () => {
+    expect(APP_SRC).toMatch(/9: DoctorPopup/);
   });
 
   it("app.tsx popupNameForId(9) returns 'Doctor'", () => {
-    expect(APP_SRC).toMatch(/case 9:\s*\n\s*return "Doctor"/);
+    expect(APP_SRC).toMatch(/popupNameForId[\s\S]*case 9:[\s\S]*return "Doctor"/);
   });
 
   it("app.tsx PopupId union includes 9", () => {

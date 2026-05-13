@@ -17,7 +17,7 @@
 // nonces so visible details refresh without closing/reopening.
 
 import { Box, Text, useApp, useInput, useStdin, useStdout } from "ink";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { type ComponentType, useCallback, useEffect, useRef, useState } from "react";
 import type { Db } from "../../db.js";
 import { AgentsCard } from "./cards/agents.js";
 import { BlockedCard } from "./cards/blocked.js";
@@ -89,7 +89,59 @@ export interface FooterState {
 }
 
 type PopupId = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | "dag" | "allTasks" | null;
+type PopupRegistryId = NonNullable<PopupId>;
 export type PopupMode = "list" | "drill";
+type DashboardSnapshot = ReturnType<typeof useDashboardSnapshot>["data"];
+
+interface CommonCardProps {
+  snapshot: DashboardSnapshot;
+  db: Db;
+  workstream: string;
+  rowBudget?: number;
+  cols?: number;
+}
+
+interface CommonPopupProps {
+  yank: (command: string) => Promise<void>;
+  onFooter: (command: string, copied: boolean, tone?: FooterState["tone"]) => void;
+  onClose: () => void;
+  snapshot: DashboardSnapshot;
+  fastTickNonce: number;
+  slowTickNonce: number;
+  mode: PopupMode;
+  onModeChange: (mode: PopupMode) => void;
+  onFilterEditingChange: (editing: boolean) => void;
+  db: Db;
+  workstream: string;
+}
+
+const CARD_REGISTRY: Record<CardId, ComponentType<CommonCardProps>> = {
+  0: CommitsCard,
+  1: AgentsCard,
+  2: TracksCard,
+  3: ReadyCard,
+  4: LogCard,
+  5: WorkspacesCard,
+  6: InProgressCard,
+  7: BlockedCard,
+  8: RecentCard,
+  9: DoctorCard,
+};
+
+const POPUP_REGISTRY: Record<PopupRegistryId, ComponentType<CommonPopupProps>> = {
+  0: CommitsPopup,
+  1: AgentsPopup,
+  2: TracksPopup,
+  3: ReadyPopup,
+  4: LogPopup,
+  5: WorkspacesPopup,
+  6: InProgressPopup,
+  7: BlockedPopup,
+  8: RecentPopup,
+  9: DoctorPopup,
+  dag: DagPopup,
+  allTasks: AllTasksPopup,
+};
 
 export const DASHBOARD_MIN_ROWS = 5;
 
@@ -473,8 +525,8 @@ export function App({ db, workstreams, initialActive = 0 }: AppProps): JSX.Eleme
     </Box>
   );
 
-  function renderPopup(id: NonNullable<PopupId>): JSX.Element {
-    const props = {
+  function renderPopup(id: PopupRegistryId): JSX.Element {
+    const props: CommonPopupProps = {
       yank: yankFn,
       onFooter: footerFn,
       onClose: () => {
@@ -491,32 +543,8 @@ export function App({ db, workstreams, initialActive = 0 }: AppProps): JSX.Eleme
       db,
       workstream,
     };
-    switch (id) {
-      case 0:
-        return <CommitsPopup {...props} />;
-      case 1:
-        return <AgentsPopup {...props} />;
-      case 2:
-        return <TracksPopup {...props} />;
-      case 3:
-        return <ReadyPopup {...props} />;
-      case 4:
-        return <LogPopup {...props} />;
-      case 5:
-        return <WorkspacesPopup {...props} />;
-      case 6:
-        return <InProgressPopup {...props} />;
-      case 7:
-        return <BlockedPopup {...props} />;
-      case 8:
-        return <RecentPopup {...props} />;
-      case 9:
-        return <DoctorPopup {...props} />;
-      case "dag":
-        return <DagPopup {...props} />;
-      case "allTasks":
-        return <AllTasksPopup {...props} />;
-    }
+    const Popup = POPUP_REGISTRY[id];
+    return <Popup {...props} />;
   }
 }
 
@@ -609,7 +637,7 @@ function capRowBudgetsForColumn(
 }
 
 interface RenderCardContext {
-  snapshot: ReturnType<typeof useDashboardSnapshot>["data"];
+  snapshot: DashboardSnapshot;
   db: Db;
   workstream: string;
   width: number;
@@ -617,38 +645,17 @@ interface RenderCardContext {
 }
 
 function renderCard(id: CardId, { snapshot, db, workstream, width, budgets }: RenderCardContext) {
-  const rowBudget = budgets[id];
-  switch (id) {
-    case 0:
-      return <CommitsCard key={id} snapshot={snapshot} rowBudget={rowBudget} cols={width} />;
-    case 1:
-      return <AgentsCard key={id} snapshot={snapshot} rowBudget={rowBudget} cols={width} />;
-    case 2:
-      return <TracksCard key={id} snapshot={snapshot} rowBudget={rowBudget} cols={width} />;
-    case 3:
-      return <ReadyCard key={id} snapshot={snapshot} rowBudget={rowBudget} cols={width} />;
-    case 4:
-      return <LogCard key={id} snapshot={snapshot} rowBudget={rowBudget} cols={width} />;
-    case 5:
-      return <WorkspacesCard key={id} snapshot={snapshot} rowBudget={rowBudget} cols={width} />;
-    case 6:
-      return <InProgressCard key={id} snapshot={snapshot} rowBudget={rowBudget} cols={width} />;
-    case 7:
-      return (
-        <BlockedCard
-          key={id}
-          snapshot={snapshot}
-          db={db}
-          workstream={workstream}
-          rowBudget={rowBudget}
-          cols={width}
-        />
-      );
-    case 8:
-      return <RecentCard key={id} snapshot={snapshot} rowBudget={rowBudget} cols={width} />;
-    case 9:
-      return <DoctorCard key={id} snapshot={snapshot} rowBudget={rowBudget} cols={width} />;
-  }
+  const Card = CARD_REGISTRY[id];
+  return (
+    <Card
+      key={id}
+      snapshot={snapshot}
+      db={db}
+      workstream={workstream}
+      rowBudget={budgets[id]}
+      cols={width}
+    />
+  );
 }
 
 function visibleCardIds(visibility: CardVisibility): CardId[] {

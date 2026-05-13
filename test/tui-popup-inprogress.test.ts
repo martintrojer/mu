@@ -113,7 +113,7 @@ describe("popups/inprogress.tsx ↔ App / keys wiring", () => {
   it("App.tsx renders InProgressPopup for popup id 6", () => {
     const app = readFileSync("./src/cli/tui/app.tsx", "utf-8");
     expect(app).toContain("InProgressPopup");
-    expect(app).toMatch(/case 6:\s*\n\s*return <InProgressPopup/);
+    expect(app).toMatch(/6: InProgressPopup/);
     expect(app).toMatch(/popupNameForId[\s\S]*case 6:[\s\S]*return "In-progress"/);
   });
 

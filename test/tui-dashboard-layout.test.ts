@@ -28,11 +28,13 @@ describe("dashboard responsive-layout wiring", () => {
     );
   });
 
-  it("dashboard passes per-column width and row budgets to each card", () => {
+  it("dashboard passes per-column width and row budgets through the card registry", () => {
     expect(APP_SRC).toContain("columnWidths(cols, assignments.length)");
     expect(APP_SRC).toContain("cullCardsForRows(visible, rows)");
     expect(APP_SRC).toContain("+{model.hiddenCount} cards hidden · resize taller");
     expect(APP_SRC).toContain("allocateRowBudgets(");
+    expect(APP_SRC).toContain("const Card = CARD_REGISTRY[id]");
+    expect(APP_SRC).toMatch(/rowBudget=\{budgets\[id\]\}[\s\S]*?cols=\{width\}/);
     for (const component of [
       "AgentsCard",
       "TracksCard",
@@ -45,9 +47,7 @@ describe("dashboard responsive-layout wiring", () => {
       "RecentCard",
       "DoctorCard",
     ]) {
-      expect(APP_SRC).toMatch(
-        new RegExp(`<${component}[\\s\\S]*?rowBudget=\\{rowBudget\\}[\\s\\S]*?cols=\\{width\\}`),
-      );
+      expect(APP_SRC).toContain(component);
     }
   });
 
@@ -102,8 +102,8 @@ describe("dashboard responsive-layout wiring", () => {
     expect(LAYOUT_SRC).toMatch(/7: \{[^}]*group: "task-list"/);
     expect(LAYOUT_SRC).toMatch(/4: \{[^}]*group: "stream"/);
     expect(LAYOUT_SRC).toMatch(/8: \{[^}]*group: "task-list"/);
-    expect(APP_SRC).toMatch(/case 0:\s*\n\s*return <CommitsCard/);
-    expect(APP_SRC).toMatch(/case 8:\s*\n\s*return <RecentCard/);
+    expect(APP_SRC).toMatch(/0: CommitsCard/);
+    expect(APP_SRC).toMatch(/8: RecentCard/);
     expect(LAYOUT_SRC).toContain("Recent");
   });
 });
