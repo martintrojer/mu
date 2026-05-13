@@ -1,6 +1,8 @@
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { render } from "ink";
+import { createElement } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   AllTasksPopup,
@@ -13,15 +15,24 @@ import {
 } from "../src/cli/tui/popups/all-tasks.js";
 import { applyCursor, centredVisibleSlice } from "../src/cli/tui/popups/scroll.js";
 import { type Db, openDb } from "../src/db.js";
+import type { WorkstreamSnapshot } from "../src/state.js";
 import { type TaskRow, addTask, listTasks, setTaskStatus } from "../src/tasks.js";
 import { sortTasks } from "../src/tasks/sort.js";
 import { TASK_STATUSES } from "../src/tasks/status.js";
+import {
+  CaptureStream,
+  createInkCaptureStream,
+  createInkInputStream,
+  latestRenderedFrame,
+  waitForInkOutput,
+} from "./_ink-render.js";
 
 let openDbs: Db[] = [];
 
 afterEach(() => {
   for (const db of openDbs) db.close();
   openDbs = [];
+  CaptureStream.cleanup();
 });
 
 function fixtureDb(): Db {
@@ -56,6 +67,42 @@ function seedMany(db: Db, count: number): TaskRow[] {
     });
   }
   return sortTasks(listTasks(db, "demo"), "id");
+}
+
+async function pause(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function renderAllTasksAfterMovingToCursor(opts: {
+  db: Db;
+  tasks: TaskRow[];
+  cursor: number;
+  rows: number;
+}): Promise<{ lines: string[]; unmount: () => void }> {
+  const stdin = createInkInputStream();
+  const stdout = createInkCaptureStream({ columns: 120, rows: opts.rows });
+  const instance = render(
+    createElement(AllTasksPopup, {
+      yank: async () => {},
+      onClose: () => {},
+      snapshot: { allTasks: opts.tasks } as WorkstreamSnapshot,
+      fastTickNonce: 0,
+      mode: "list",
+      onModeChange: () => {},
+      db: opts.db,
+      workstream: "demo",
+    }),
+    { stdout, stdin, stderr: process.stderr, debug: false, patchConsole: false },
+  );
+
+  await waitForInkOutput(stdout);
+  for (let i = 0; i < opts.cursor; i++) {
+    stdin.write("j");
+    await pause(1);
+  }
+  await waitForInkOutput(stdout);
+
+  return { lines: latestRenderedFrame(stdout), unmount: () => instance.unmount() };
 }
 
 describe("AllTasksPopup", () => {
@@ -117,19 +164,26 @@ describe("AllTasksPopup", () => {
     expect(sortIndicator("recency")).toContain("updated");
   });
 
-  it("uses a viewport-sized centred window for 200-task lists", () => {
+  it("renders a centred task window for a 200-task list with the cursor at 100", async () => {
     const db = fixtureDb();
     const tasks = seedMany(db, 200);
-    const viewport = 15;
-    const cursor = 100;
 
-    const { start, visible } = centredVisibleSlice(tasks, cursor, viewport);
+    const { lines, unmount } = await renderAllTasksAfterMovingToCursor({
+      db,
+      tasks,
+      cursor: 100,
+      rows: 20,
+    });
+    unmount();
 
-    expect(visible).toHaveLength(viewport);
-    expect(start).toBe(93);
-    expect(visible.map((t) => t.name)).toEqual(tasks.slice(93, 108).map((t) => t.name));
-    expect(visible[cursor - start]?.name).toBe("task_100");
-    expect(allTasksListTitle(cursor, tasks.length, viewport)).toContain("50%");
+    const taskRows = lines.filter((line) => /│ task_\d{3}/.test(line));
+    expect(taskRows).toHaveLength(15);
+    expect(taskRows.map((line) => line.match(/task_\d{3}/)?.[0])).toEqual(
+      Array.from({ length: 15 }, (_, i) => `task_${String(i + 93).padStart(3, "0")}`),
+    );
+    expect(taskRows.at(7) ?? "").toContain("task_100");
+    expect(lines.at(0) ?? "").toContain("All tasks · popup (101/200) · 50%");
+    expect(lines.at(-1)).toContain("mu task show task_100 -w demo");
   });
 
   it("j/k navigation advances and retreats the rendered task window", () => {
@@ -188,13 +242,26 @@ describe("AllTasksPopup", () => {
     expect(src).not.toContain('from "../../../cli.js"');
   });
 
-  it("source renders the centred slice, not every filtered task", () => {
-    const src = readFileSync("./src/cli/tui/popups/all-tasks.tsx", "utf-8");
-    expect(src).toContain("centredVisibleSlice(visibleTasks, safeCursor, viewport)");
-    expect(src).toContain("windowed.map");
-    expect(src).toContain("start + i === safeCursor");
-    expect(src).not.toContain("visibleTasks.map((t, i)");
-    expect(src).toContain("filter: {visible} of {total}");
-    expect(src).not.toContain("visible / {total} total");
+  it("renders only the visible task window, not every filtered task", async () => {
+    const db = fixtureDb();
+    const tasks = seedMany(db, 200);
+
+    const { lines, unmount } = await renderAllTasksAfterMovingToCursor({
+      db,
+      tasks,
+      cursor: 100,
+      rows: 20,
+    });
+    unmount();
+
+    const text = lines.join("\n");
+    expect(text).toContain("filter: 200 of 200");
+    expect(text).not.toContain("visible / 200 total");
+    expect(text).not.toContain("task_000");
+    expect(text).not.toContain("task_092");
+    expect(text).toContain("task_093");
+    expect(text).toContain("task_107");
+    expect(text).not.toContain("task_108");
+    expect(text).not.toContain("task_199");
   });
 });
