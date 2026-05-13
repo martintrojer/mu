@@ -146,11 +146,6 @@ export function WorkspacesPopup({
   const [commits, setCommits] = useState<readonly CommitSummary[]>([]);
   const [drillErr, setDrillErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  // Two independent filter instances: one for the workspace list,
-  // one for the commits drill view. Each '/' edit applies to the
-  // currently-rendered list only.
-  const flt = usePopupFilter();
-  const drillFlt = usePopupFilter();
   // Show-mode (commit-diff drill) state. Owned here (popup-local)
   // because <App>'s PopupMode union is only "list" | "drill" — we
   // don't widen it for one popup. While `showSha !== null` AND
@@ -163,6 +158,26 @@ export function WorkspacesPopup({
   const [showText, setShowText] = useState("");
   const [showLoading, setShowLoading] = useState(false);
   const [showErr, setShowErr] = useState<string | null>(null);
+
+  // Two independent filter instances: one for the workspace list,
+  // one for the commits drill view. Each '/' edit applies to the
+  // currently-rendered list only. The `enabled` prop tells each
+  // instance whether it's the currently-active filter; the hook
+  // bubbles the editing flag up to <App> for the active one and
+  // bubbles `false` for the inactive one — no hand-rolled
+  // conditional useEffect at the call site
+  // (per review_tui_workspaces_two_filter_instances). Show-mode
+  // never edits a filter (read-only diff view) so both instances
+  // are disabled while inShow.
+  const inShow = mode === "drill" && showSha !== null;
+  const flt = usePopupFilter({
+    enabled: !inShow && mode !== "drill",
+    onEditingChange: onFilterEditingChange,
+  });
+  const drillFlt = usePopupFilter({
+    enabled: !inShow && mode === "drill",
+    onEditingChange: onFilterEditingChange,
+  });
 
   const sourceWorkspaces = snapshot?.workspaces ?? [];
   // Per bug_filter_drill_opens_wrong_task: text filter applied
@@ -181,16 +196,6 @@ export function WorkspacesPopup({
   const [drilledWorkspace, setDrilledWorkspace] = useState<WorkspaceRow | null>(null);
   const focused = mode === "drill" ? (drilledWorkspace ?? focusedListRow) : focusedListRow;
   const projectRoot = process.cwd();
-
-  // The active filter pushed up to <App>: list-mode → flt;
-  // drill-mode → drillFlt. Either way the StatusBar flips to
-  // popup-filter when editing. Show-mode never edits a filter
-  // (it's a read-only diff view) so it never bubbles "true".
-  const inShow = mode === "drill" && showSha !== null;
-  const activeFilterEditing = inShow ? false : mode === "drill" ? drillFlt.editing : flt.editing;
-  useEffect(() => {
-    onFilterEditingChange?.(activeFilterEditing);
-  }, [activeFilterEditing, onFilterEditingChange]);
 
   /** Thin React glue around the shared VcsBackend.showCommit seam. */
   const loadShow = useCallback(async (path: string, sha: string) => {

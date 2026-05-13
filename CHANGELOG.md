@@ -110,6 +110,7 @@ called out under "Breaking" in each entry.
 
 ### Changed
 
+- TUI `usePopupFilter` gains an `enabled` prop (default `true`); when `false`, the hook bubbles `false` up via `onEditingChange` regardless of its own internal `editing` state. The Workspaces popup, which has TWO filter instances (workspace list + commits drill), now passes its own `enabled` flag from each instance and lets the hook itself decide which one bubbles `true`. Drops the hand-rolled `activeFilterEditing` ternary + `useEffect` at the call site — every popup that uses the filter now wires it the same way. Per `review_tui_workspaces_two_filter_instances`.
 - TUI Blocked/In-progress/Recent cards now use module-scope `GLYPH` constants for their row glyphs instead of zero-argument `glyphFor()` calls in each card render. Pure refactor; rendered output is unchanged. Per `review_tui_glyph_for_zero_arg_overhead`.
 - TUI popup double-click now emits first-class `setCursor` + `drill` actions instead of replaying `g` plus N delayed `j` synthetic keys through Ink's private input emitter. The row offset is named (`POPUP_CHROME_TOP`) and linked to the shared popup chrome budget, reducing race/flake risk for deep popup rows. Per `review_tui_renderpopup_dead_code_path`.
 - Agent row reads no longer select or type the unused surrogate `id` column in `RawAgentRow`; helpers that need the internal id continue to resolve it explicitly at the SDK boundary. Pure substrate cleanup, no user-visible change. Per `review_substrate_raw_agent_row_id_unused`.

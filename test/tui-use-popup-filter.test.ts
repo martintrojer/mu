@@ -7,7 +7,9 @@
 // wrapper around useReducer; covered structurally by the popup
 // integration tests.
 
-import { describe, expect, it } from "vitest";
+import { Box, render } from "ink";
+import { createElement, useEffect } from "react";
+import { afterEach, describe, expect, it } from "vitest";
 import type { KeyFlags } from "../src/cli/tui/keys.js";
 import {
   type FilterAction,
@@ -19,6 +21,7 @@ import {
   popupFilterReducer,
   usePopupFilter,
 } from "../src/cli/tui/use-popup-filter.js";
+import { CaptureStream, createInkCaptureStream, createInkInputStream } from "./_ink-render.js";
 
 describe("popupFilterReducer", () => {
   it("starts in the documented initial state (empty query, not editing)", () => {
@@ -276,6 +279,84 @@ describe("FilterPrompt rendering", () => {
   });
 });
 
+describe("usePopupFilter enabled prop bubbling", () => {
+  afterEach(() => {
+    CaptureStream.cleanup();
+  });
+
+  // Tiny test harness: render a component that uses the hook with the
+  // given options and immediately enters edit mode via startEdit().
+  // We capture the bubbled editing values via the onEditingChange
+  // callback. Behaviour seam (per test/README.md) instead of
+  // source-grep — we want to verify what the hook DOES, not how it's
+  // written.
+  function renderHookHarness(opts: {
+    enabled?: boolean;
+    onEditingChange: (editing: boolean) => void;
+  }) {
+    function Harness(): JSX.Element {
+      const flt = usePopupFilter({
+        enabled: opts.enabled,
+        onEditingChange: opts.onEditingChange,
+      });
+      // Auto-start the edit on first render so state.editing flips
+      // to true. The hook's bubble-up effect should then either
+      // bubble true (enabled !== false) or stay at false
+      // (enabled === false).
+      // biome-ignore lint/correctness/useExhaustiveDependencies: one-shot mount effect
+      useEffect(() => {
+        flt.startEdit();
+      }, []);
+      return createElement(Box, null);
+    }
+    const stdin = createInkInputStream();
+    const stdout = createInkCaptureStream({ columns: 80, rows: 24 });
+    const stderr = createInkCaptureStream({ columns: 80, rows: 24 });
+    const instance = render(createElement(Harness), {
+      stdin,
+      stdout,
+      stderr,
+      debug: false,
+      patchConsole: false,
+      exitOnCtrlC: false,
+    });
+    return instance;
+  }
+
+  it("enabled=true (default) bubbles state.editing through (false → true on startEdit)", async () => {
+    const calls: boolean[] = [];
+    const inst = renderHookHarness({
+      onEditingChange: (e) => {
+        calls.push(e);
+      },
+    });
+    // Let the mount effect + state-flip flush.
+    await new Promise((r) => setTimeout(r, 20));
+    inst.unmount();
+    // First bubble is the initial render (false). After startEdit
+    // fires in useEffect the state-update triggers another render
+    // and bubbles true.
+    expect(calls[0]).toBe(false);
+    expect(calls).toContain(true);
+  });
+
+  it("enabled=false bubbles false even after startEdit flips state.editing to true", async () => {
+    const calls: boolean[] = [];
+    const inst = renderHookHarness({
+      enabled: false,
+      onEditingChange: (e) => {
+        calls.push(e);
+      },
+    });
+    await new Promise((r) => setTimeout(r, 20));
+    inst.unmount();
+    // Every bubble must be false — the hook clamps under enabled=false
+    // regardless of what state.editing internally became.
+    expect(calls.length).toBeGreaterThan(0);
+    for (const v of calls) expect(v).toBe(false);
+  });
+});
+
 describe("usePopupFilter (hook export shape)", () => {
   // Hook can't run without a renderer, but we can assert it's a
   // function (callable) and that the reducer/applyFilter/FilterPrompt
@@ -298,11 +379,12 @@ describe("usePopupFilter (hook export shape)", () => {
 describe("usePopupFilter onEditingChange wiring (structural)", () => {
   it("every list popup wires onFilterEditingChange via the hook option (no hand-rolled useEffect)", async () => {
     const { readFileSync } = await import("node:fs");
-    // The eight popups whose bubble-up was hand-rolled before this
-    // refactor. workspaces.tsx is intentionally NOT in this list —
-    // it has TWO filter instances (list + drill) and chooses which
-    // editing flag to surface based on the popup's sub-mode, so it
-    // hand-rolls. See use-popup-filter.tsx UsePopupFilterOpts JSDoc.
+    // The nine popups whose bubble-up was hand-rolled before this
+    // refactor. Per review_tui_workspaces_two_filter_instances,
+    // workspaces.tsx is now ALSO in the canonical list — its two
+    // filter instances each pass `enabled` so the hook itself does
+    // the right thing. (Each call site uses the multi-line form
+    // because the option object includes `enabled: ...`.)
     const popups = [
       "agents",
       "blocked",
@@ -331,16 +413,19 @@ describe("usePopupFilter onEditingChange wiring (structural)", () => {
     }
   });
 
-  it("workspaces.tsx still hand-rolls (two filter instances) — baseline pin", async () => {
-    // Documents the intentional exception. If workspaces.tsx ever
-    // collapses to a single filter, this baseline can flip and it
-    // can adopt the option form. Until then the hand-roll is
-    // load-bearing because it picks between flt.editing and
-    // drillFlt.editing based on the sub-mode.
+  it("workspaces.tsx uses two enabled-gated filter instances (no hand-rolled bubble)", async () => {
+    // Per review_tui_workspaces_two_filter_instances:
+    // workspaces has TWO filter instances (list + commits drill).
+    // Each one passes its own `enabled` flag plus the shared
+    // onFilterEditingChange callback; the hook decides which one
+    // bubbles `true`. No more activeFilterEditing useEffect.
     const { readFileSync } = await import("node:fs");
     const src = readFileSync("./src/cli/tui/popups/workspaces.tsx", "utf-8");
-    expect(src).toContain("const flt = usePopupFilter();");
-    expect(src).toContain("const drillFlt = usePopupFilter();");
-    expect(src).toContain("onFilterEditingChange?.(activeFilterEditing)");
+    expect(src).toContain('enabled: !inShow && mode !== "drill",');
+    expect(src).toContain('enabled: !inShow && mode === "drill",');
+    expect(src).toContain("onEditingChange: onFilterEditingChange,");
+    // The previous hand-roll is gone.
+    expect(src).not.toContain("onFilterEditingChange?.(activeFilterEditing)");
+    expect(src).not.toContain("const activeFilterEditing");
   });
 });

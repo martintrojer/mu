@@ -182,19 +182,24 @@ export interface PopupFilter {
  * `onEditingChange` is a callback the popup wires to its parent
  * `<App>`'s `setPopupFilterEditing`. Called WHENEVER the editing
  * flag changes (and once on mount when the initial value differs
- * from undefined-default). When omitted, the hook is silent —
- * callers that have a more complex bubble-up policy (e.g.
- * workspaces.tsx, which has TWO filter instances and chooses
- * which one's editing state to surface based on the popup's
- * sub-mode) hand-roll their own useEffect and pass nothing here.
+ * from undefined-default). When omitted, the hook is silent.
+ *
+ * `enabled` (default true) lets popups with MULTIPLE filter
+ * instances (e.g. workspaces.tsx — list view + commits drill view)
+ * mark which instance is currently active. A disabled instance
+ * always bubbles `false` regardless of its own `state.editing`, so
+ * the StatusBar mode flip stays consistent across sub-modes
+ * without hand-rolling a conditional useEffect at the call site.
+ * Per review_tui_workspaces_two_filter_instances.
  */
 export interface UsePopupFilterOpts {
   onEditingChange?: (editing: boolean) => void;
+  enabled?: boolean;
 }
 
 export function usePopupFilter(opts: UsePopupFilterOpts = {}): PopupFilter {
   const [state, dispatch] = useReducer(popupFilterReducer, INITIAL_FILTER_STATE);
-  const { onEditingChange } = opts;
+  const { onEditingChange, enabled } = opts;
   const onKey = useCallback(
     (input: string, key: KeyFlags): "consumed" | "passthrough" => {
       const action = classifyFilterKey(state, input, key);
@@ -208,10 +213,14 @@ export function usePopupFilter(opts: UsePopupFilterOpts = {}): PopupFilter {
   const reset = useCallback(() => dispatch({ kind: "reset" }), []);
   // Bubble the editing flag up to the parent (StatusBar uses it to
   // flip its hint cluster into popup-filter mode). No-op when the
-  // caller doesn't pass a callback.
+  // caller doesn't pass a callback. When `enabled === false`, bubble
+  // `false` regardless of state.editing so popups with multiple
+  // filter instances can declaratively mark which one is active
+  // (per review_tui_workspaces_two_filter_instances).
+  const bubbledEditing = enabled === false ? false : state.editing;
   useEffect(() => {
-    onEditingChange?.(state.editing);
-  }, [state.editing, onEditingChange]);
+    onEditingChange?.(bubbledEditing);
+  }, [bubbledEditing, onEditingChange]);
   return { query: state.query, editing: state.editing, onKey, startEdit, reset };
 }
 
