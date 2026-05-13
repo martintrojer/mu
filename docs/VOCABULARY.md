@@ -72,7 +72,7 @@ defined here, fix the doc. If you need a new term, add it here first.
 | **reconcile**         | Verb: re-derive registry rows from substrate reality (tmux). Always runs in `mu agent list` and `mu doctor`. | "sync", "refresh"                              |
 | **adopt**             | Verb (`mu agent adopt`): register an existing tmux pane as a managed **agent**. The inverse of `mu agent list`'s 'orphan' state. Pane must be in the workstream's tmux session. | "import", "absorb"                       |
 | **pi-subagents**      | A different package by Nico Bailon for in-pi focused delegation. Mu and pi-subagents are complementary, not competing. | conflating with mu                                 |
-| **TUI**               | The interactive ink-based dashboard launched by `mu state --tui`. Lives in `src/cli/tui/`. Read-only against SQLite (yanks, never executes). | "GUI", "interactive mode"                         |
+| **TUI**               | The interactive ink-based dashboard launched by bare `mu` in a TTY or explicitly by `mu state --tui`. Lives in `src/cli/tui/`. Read-only against SQLite (yanks, never executes). | "GUI", "interactive mode"                         |
 | **dashboard**         | The TUI's main screen — the grid of cards above the status bar. | "home screen", "main view"                         |
 | **card**              | A glanceable summary tile on the dashboard, identified by its toggle digit (0-9). Wrapped in a TitledBox. | "panel", "section" (overloaded)                    |
 | **popup**             | A fullscreen drill-down opened with `Shift+0`-`Shift+9` or a keybind-only shortcut such as `g` for DAG; single-popup invariant. Closed with `Esc`/`q`. | "modal", "dialog", "detail view"                   |
@@ -150,10 +150,10 @@ cache; `mu agent list` reconciles on every call.
 | Verb                  | Effect                                                                      |
 | --------------------- | --------------------------------------------------------------------------- |
 | `mu agent free alice`       | Sets `alice.status = 'free'`. Agent stays alive. Means "I'm done with you for now; you're available."  |
-| `mu release feature_a`| Clears `tasks.owner` for `feature_a`. The agent who claimed it is unaffected.  |
+| `mu task release feature_a`| Clears the task owner for `feature_a`. The agent who claimed it is unaffected.  |
 | `mu agent close alice`      | Terminates alice's pane and removes from registry. Destructive.             |
 | `mu agent kick alice`       | Signals (default SIGINT) the foreground process group of alice's pane TTY. For wedged tool subprocesses (`find /`, busy-wait); the wrapping CLI itself is untouched. Refuses when the foreground IS the wrapping CLI. |
-| `mu detach alice`     | (Future) Tmux-detaches alice's pane without killing the process. Not in v1. |
+| *(none)*              | There is no detach verb. Use tmux detach to leave a workstream attached session without killing panes. |
 
 **Don't conflate `free` and `release`.** Free is about the *agent*;
 release is about the *task*.
@@ -165,7 +165,7 @@ release is about the *task*.
 | `mu task add <id> ...`                | Creates a new OPEN task                               |
 | `mu task close/open/reject/defer <id>` | Lifecycle transition                                 |
 | `mu task claim <task> [--for <agent>]`     | Atomic: sets `owner`, flips status to `IN_PROGRESS`   |
-| `mu release <task>`                   | Clears `owner`. Auto-flips `IN_PROGRESS` → `OPEN` (so the task re-enters the ready set); other statuses preserved. `--reopen` forces `OPEN` from `CLOSED`/`REJECTED`/`DEFERRED` |
+| `mu task release <task>`              | Clears `owner`. Auto-flips `IN_PROGRESS` → `OPEN` (so the task re-enters the ready set); other statuses preserved. `--reopen` forces `OPEN` from `CLOSED`/`REJECTED`/`DEFERRED` |
 | `mu task note <task> "..."`           | Appends to `task_notes`. Never edits prior notes.     |
 | `mu task notes <task> [--tail N \| --since <iso> \| --since-claim]` | List notes (oldest first). `--tail N` (alias `--last N`) prints last N; `--since <iso>` filters by `created_at`; `--since-claim` auto-resolves to the most recent `task claim` event timestamp. `--since` and `--since-claim` are mutually exclusive. |
 
@@ -361,5 +361,5 @@ documented as "workstream id" in column comments.
      it duplicated the canonical-terms table at the top of this file,
      drifted out of sync, and carried entries for rejected features
      (capability, agent-frontmatter `persistent: false`, the JS DSL,
-     the `defineOperation` registry). The table is the single source.
+     the operation-registry idea). The table is the single source.
      For deeper background, follow the links the table rows carry. -->
