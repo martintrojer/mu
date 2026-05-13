@@ -53,7 +53,8 @@ just a fancier agent runner.
   `ROI = impact / effort` drives prioritization.
 - **One edge type**: `blocks`. `A → B` means A must close before B can
   start. Multiple edge types create ambiguity that defeats the purpose.
-- **Status lifecycle**: `OPEN → IN_PROGRESS → CLOSED/RESOLVED`.
+- **Status lifecycle**: `OPEN → IN_PROGRESS → CLOSED`, with
+  `REJECTED` and `DEFERRED` as terminal still-blocking outcomes.
 - **Notes** are append-only per task; survive across LLM sessions and
   agent restarts. The fix for context loss at the *task* level rather
   than the agent level.
@@ -71,8 +72,9 @@ separate query layer.
 
 ### Parallel-track detection (the killer feature)
 
-`mu task tracks` runs union-find on the graph to identify independent
-subtrees that can be assigned to different agents in parallel.
+The Tracks section in `mu state` / bare `mu` runs union-find on the
+graph to identify independent subtrees that can be assigned to
+different agents in parallel.
 
 **Diamond patterns get merged automatically.** If two roots share a
 prerequisite, they collapse into one track — preventing two agents
@@ -161,8 +163,10 @@ independent tmux sessions, fully isolated.
   `MU_SESSION=<name>`.
 - **Subsequent operations** in the same shell (or any child shell with
   `MU_SESSION_ID` set) target the same session.
-- **`mu agent attach`** → attach to the whole workstream's tmux session
-- **`mu agent attach <agent>`** → attach and focus that agent's window/pane
+- **`tmux attach -t mu-<workstream>`** → attach to the whole
+  workstream's tmux session
+- **`mu agent attach <agent>`** → print the agent's scrollback plus
+  the one-paste tmux attach command for that pane
 - **`mu agent list`** shows only the current workstream's agents by default
 - **`mu agent list`** is scoped to one workstream; list workstreams first,
   then run `mu agent list -w <workstream>` for the scope you want
@@ -231,34 +235,19 @@ the sibling state-module equivalent). No module outside
 static CLI bundle from pulling the TUI graph into help/version/json
 paths and preserves the ROADMAP render-layer pledge.
 
-## Operations registry
+## CLI / SDK surface
 
-Every mu action is defined exactly once via `defineOperation(...)`.
-The registry is collected at module import time (no codegen step) and
-from one source produces six surfaces:
+Every user-visible operation is a typed SDK function plus a thin
+Commander wrapper. The CLI wiring in `src/cli.ts` and the verb
+namespace files under `src/cli/` are the canonical verb surface;
+there is no generated registry layer, DSL, or separate operation
+schema. Programmatic callers import the same SDK functions from
+`src/index.ts`, while agents/scripts compose CLI verbs with `--json`.
 
-```
-              ┌─────────────────────────────┐
-              │  defineOperation(...)  │
-              │   name, category,      │
-              │   caps[], params,      │
-              │   handler              │
-              └─────────────┬──────────────┘
-                            │
-          ┌────────────┬──────┼──────┬───────────┐
-          ▼            ▼            ▼            ▼           ▼
-   ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌───────┐  ┌────────┐
-   │ CLI verb│  │ Pi tool │  │ mu.d.ts │  │ skill │  │ doctor │
-   └─────────┘  └─────────┘  └─────────┘  └───────┘  └────────┘
-```
-
-No operation may exist outside the registry. CLI verbs that are not
-operations (e.g., `mu workstream init`, `mu agent attach`, `mu doctor`) are exceptions
-listed explicitly in the CLI module and motivated.
-
-(A capability-tag system on operations was considered and dropped
-as an abstraction with no current consumer; see
-[ROADMAP.md § Open questions](ROADMAP.md#open-questions).)
+The boundary rule is: external surfaces accept operator-facing names
+(`workstream`, task id, agent name); internal helpers resolve those to
+surrogate INTEGER ids once and then stay on ids. See
+[§ Surrogate-PK + SDK-boundary discipline](#surrogate-pk--sdk-boundary-discipline-load-bearing).
 
 ---
 
@@ -299,16 +288,16 @@ Key properties:
 
 ## Modules (actual src/ layout)
 
-Mostly-flat `src/`: 18 root `.ts` files plus two cohesive
-subclusters (`src/agents/`, `src/tasks/`) and the `src/cli/` verb
-wrappers (with their own `src/cli/tasks/` sub-cluster). No
-`core/` subdirectory; no anticipatory layering. Subclusters obey
+Mostly-flat `src/`: root `.ts` modules plus cohesive subclusters
+(`src/agents/`, `src/tasks/`, and `src/cli/` wrappers with their own
+`src/cli/tasks/` and `src/cli/tui/` sub-clusters). No `core/`
+subdirectory; no anticipatory layering. Subclusters obey
 the AGENTS.md rule: imports flow cluster → root, never upward.
 Each module is concrete and consumed today.
 
 | Module                | Responsibility                                                                            |
 | --------------------- | ----------------------------------------------------------------------------------------- |
-| `src/db.ts`           | SQLite (better-sqlite3) connection, WAL mode, schema (14 tables + 3 views, **schema v7** — v5 surrogate-INTEGER-PK substrate, plus v6's 5 additive `archive_*` tables, minus v7's drop of `approvals`), default paths, `resolveWorkstreamId` (the SDK boundary's first leg). Pre-current DBs are upgraded in place on `openDb`: v5 → v6 was additive (CREATE-TABLE-IF-NOT-EXISTS), v6 → v7 is destructive-but-idempotent (`DROP TABLE IF EXISTS approvals` runs before `applySchema`); both happen with no migration script. |
+| `src/db.ts`           | SQLite (better-sqlite3) connection, WAL mode, schema (14 tables + 3 views, **schema v7** — v5 surrogate-INTEGER-PK substrate, plus v6's 5 additive `archive_*` tables, minus v7's drop of `approvals`), default paths, `resolveWorkstreamId` (the SDK boundary's first leg). `openDb` refuses pre-v5 DBs loudly; v5+ DBs are brought to the current idempotent schema shape by `applySchema` (v6 additive tables, v7's `DROP TABLE IF EXISTS approvals`). |
 | `src/tmux.ts`         | Single tmux executor wrapper, send protocol (bracketed-paste), pane validation            |
 | `src/detect.ts`       | Pi-only status detector (`busy` / `needs_input` / `idle` / `done`)                        |
 | `src/reconcile.ts`    | Ghost prune + status detect + orphan surface; "reality wins"                              |

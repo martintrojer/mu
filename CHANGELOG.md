@@ -86,6 +86,7 @@ called out under "Breaking" in each entry.
 - README now opens with the shipped TUI dashboard screenshot so the flagship human surface is visible before install instructions.
 - README positioning now drops anti-bloat boasting while keeping the load-bearing thesis: mu persists tasks, workspaces, panes, notes, and logs, but the model drives.
 - README now has a dedicated TUI dashboard section covering the ten cards, fullscreen drills, keymap, mouse support, read-only yank contract, and `tuicr` handoff exception.
+- Architecture docs now match the current CLI/SDK shape: no operation registry, current task statuses, current `agent attach` behaviour, and the v7 schema path.
 - Every TUI task-list popup and card now colour-codes the status column (OPEN cyan, IN_PROGRESS yellow, CLOSED green, REJECTED red, DEFERRED gray/dim) — matching the existing static `mu task list` / `mu state` table colouring. Was: rendered as plain dim text in TUI.
 - TaskDetailDrill (the read-only drill that shows a task's note timeline) now renders each note's header (`── <ts>  <author> ──`) in bold cyan so multi-note tasks (especially umbrella tasks) are easy to scan top-to-bottom.
 - DAG popup (`g`) nodes now render `<name>  <status>` only — the long task summary trailing each node was clipped or wrapped at narrow widths and added little signal beyond the name. `mu task tree` CLI keeps the full label for static prints. DAG popup also truncates long lines per popup width (no more wrap).
