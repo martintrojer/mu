@@ -109,6 +109,7 @@ export function AllTasksPopup({
       if (!focused) return;
       return yank(allTasksYankCommand(focused.name, workstream));
     },
+    resetKey: focused?.name ?? "",
   });
 
   useInput((input, key) => {

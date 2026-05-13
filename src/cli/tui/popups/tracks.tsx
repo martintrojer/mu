@@ -170,6 +170,7 @@ export function TracksPopup({
       if (!focusedTask || !snapshot) return;
       return yank(`mu task notes ${focusedTask.name} -w ${snapshot.workstreamName}`);
     },
+    resetKey: focusedTask?.name ?? "",
   });
 
   useInput((input, key) => {

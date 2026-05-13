@@ -61,6 +61,7 @@ export function DagPopup({
       if (focusedTask === undefined) return;
       return yank(dagYankCommand(focusedTask, workstream));
     },
+    resetKey: workstream,
   });
 
   const lineToRoot = useMemo(() => rootForBodyLines(body, roots), [body, roots]);

@@ -1,9 +1,11 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Box, render } from "ink";
-import { createElement } from "react";
+import { Box, Text, render } from "ink";
+import { createElement, useEffect, useRef } from "react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { PopupAction } from "../src/cli/tui/keys.js";
+import { useDrillKeymap } from "../src/cli/tui/popups/drill.js";
 import { TaskDetailDrill } from "../src/cli/tui/popups/task-detail.js";
 import { type Db, openDb } from "../src/db.js";
 import { type TaskRow, addNote, addTask } from "../src/tasks.js";
@@ -68,6 +70,128 @@ describe("TaskDetailDrill tick refresh", () => {
   });
 });
 
+describe("useDrillKeymap refresh semantics", () => {
+  it("preserves scrollTop across body refresh when resetKey is unchanged", async () => {
+    const capture = { scrolls: [] as number[] };
+    const stdout = new CaptureStream({ columns: 100, rows: 24 });
+    const instance = render(
+      keymapElement({
+        body: numberedLines(20, "before"),
+        viewport: 5,
+        resetKey: "same-task",
+        capture,
+      }),
+      { stdout, stdin: process.stdin, stderr: process.stderr, debug: true, patchConsole: false },
+    );
+    await waitForInkOutput(stdout);
+
+    instance.rerender(
+      keymapElement({
+        body: numberedLines(20, "before"),
+        viewport: 5,
+        resetKey: "same-task",
+        action: { kind: "jumpBottom" },
+        actionNonce: 1,
+        capture,
+      }),
+    );
+    await waitForScroll(capture, 15);
+
+    instance.rerender(
+      keymapElement({
+        body: numberedLines(20, "after"),
+        viewport: 5,
+        resetKey: "same-task",
+        actionNonce: 2,
+        capture,
+      }),
+    );
+    await waitForLatestScroll(capture, 15);
+
+    instance.unmount();
+  });
+
+  it("resets scrollTop to 0 when resetKey changes", async () => {
+    const capture = { scrolls: [] as number[] };
+    const stdout = new CaptureStream({ columns: 100, rows: 24 });
+    const instance = render(
+      keymapElement({
+        body: numberedLines(20, "same"),
+        viewport: 5,
+        resetKey: "task-a",
+        capture,
+      }),
+      { stdout, stdin: process.stdin, stderr: process.stderr, debug: true, patchConsole: false },
+    );
+    await waitForInkOutput(stdout);
+
+    instance.rerender(
+      keymapElement({
+        body: numberedLines(20, "same"),
+        viewport: 5,
+        resetKey: "task-a",
+        action: { kind: "jumpBottom" },
+        actionNonce: 1,
+        capture,
+      }),
+    );
+    await waitForScroll(capture, 15);
+
+    instance.rerender(
+      keymapElement({
+        body: numberedLines(20, "same"),
+        viewport: 5,
+        resetKey: "task-b",
+        actionNonce: 2,
+        capture,
+      }),
+    );
+    await waitForScroll(capture, 0);
+
+    instance.unmount();
+  });
+
+  it("clamps scrollTop when body shrinks below the current offset", async () => {
+    const capture = { scrolls: [] as number[] };
+    const stdout = new CaptureStream({ columns: 100, rows: 24 });
+    const instance = render(
+      keymapElement({
+        body: numberedLines(20, "long"),
+        viewport: 5,
+        resetKey: "same-task",
+        capture,
+      }),
+      { stdout, stdin: process.stdin, stderr: process.stderr, debug: true, patchConsole: false },
+    );
+    await waitForInkOutput(stdout);
+
+    instance.rerender(
+      keymapElement({
+        body: numberedLines(20, "long"),
+        viewport: 5,
+        resetKey: "same-task",
+        action: { kind: "jumpBottom" },
+        actionNonce: 1,
+        capture,
+      }),
+    );
+    await waitForScroll(capture, 15);
+
+    instance.rerender(
+      keymapElement({
+        body: numberedLines(8, "short"),
+        viewport: 5,
+        resetKey: "same-task",
+        actionNonce: 2,
+        capture,
+      }),
+    );
+    await waitForScroll(capture, 3);
+
+    instance.unmount();
+  });
+});
+
 function drillElement(tickNonce: number): JSX.Element {
   return createElement(
     Box,
@@ -81,4 +205,65 @@ function drillElement(tickNonce: number): JSX.Element {
       tickNonce,
     }),
   );
+}
+
+interface KeymapElementOptions {
+  body: string;
+  viewport: number;
+  resetKey: string;
+  capture: { scrolls: number[] };
+  action?: PopupAction;
+  actionNonce?: number;
+}
+
+function keymapElement(opts: KeymapElementOptions): JSX.Element {
+  return createElement(DrillKeymapHarness, opts);
+}
+
+function DrillKeymapHarness({
+  body,
+  viewport,
+  resetKey,
+  capture,
+  action,
+}: KeymapElementOptions): JSX.Element {
+  const drill = useDrillKeymap({
+    body,
+    viewport,
+    resetKey,
+    onClose: () => {},
+  });
+  const sink = useRef(capture);
+  useEffect(() => {
+    sink.current.scrolls.push(drill.scrollTop);
+  }, [drill.scrollTop]);
+  useEffect(() => {
+    if (action !== undefined) drill.dispatch(action);
+  }, [action, drill.dispatch]);
+  return createElement(Text, null, `scroll:${drill.scrollTop}`);
+}
+
+function numberedLines(count: number, label: string): string {
+  return Array.from({ length: count }, (_, i) => `${label} line ${i + 1}`).join("\n");
+}
+
+async function waitForScroll(capture: { scrolls: number[] }, expected: number): Promise<void> {
+  const deadline = Date.now() + 1000;
+  while (Date.now() < deadline) {
+    if (capture.scrolls.includes(expected)) return;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  expect(capture.scrolls).toContain(expected);
+}
+
+async function waitForLatestScroll(
+  capture: { scrolls: number[] },
+  expected: number,
+): Promise<void> {
+  const deadline = Date.now() + 1000;
+  while (Date.now() < deadline) {
+    if (capture.scrolls.at(-1) === expected) return;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  expect(capture.scrolls.at(-1)).toBe(expected);
 }

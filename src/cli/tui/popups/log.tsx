@@ -98,6 +98,7 @@ export function LogPopup({
       const since = Math.max(0, focused.seq - 1);
       return yank(`mu log --since ${since} -n 1 -w ${snapshot.workstreamName}`);
     },
+    resetKey: focused?.seq ?? "",
   });
 
   useInput((input, key) => {

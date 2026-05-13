@@ -68,6 +68,7 @@ import { runTuicrInteractive } from "../tuicr.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
 import { DrillScrollView, useDrillKeymap } from "./drill.js";
 import { applyCursor, centredVisibleSlice, isNavAction } from "./scroll.js";
+import { loadShowPreservingBody } from "./show-loader.js";
 import { usePopupViewport } from "./viewport.js";
 
 export interface PopupProps {
@@ -186,14 +187,11 @@ export function WorkspacesPopup({
 
   /** Thin React glue around the shared VcsBackend.showCommit seam. */
   const loadShow = useCallback(async (path: string, sha: string) => {
-    setShowLoading(true);
-    setShowErr(null);
-    setShowText("");
-    const backend = await detectBackend(path);
-    const r = await backend.showCommit(path, sha);
-    if (r.error !== undefined) setShowErr(r.error);
-    else setShowText(r.text);
-    setShowLoading(false);
+    await loadShowPreservingBody(path, sha, detectBackend, {
+      setText: setShowText,
+      setError: setShowErr,
+      setLoading: setShowLoading,
+    });
   }, []);
 
   // Filtered commits view (drill-mode equivalent of `workspaces`).
@@ -216,8 +214,6 @@ export function WorkspacesPopup({
         // fork?" view; the backend returns oldest-first. Reverse a
         // copy (don't mutate the source).
         setCommits([...r.commits].reverse());
-        setDrillCursor(0);
-        drillFlt.reset();
       } catch (e) {
         setDrillErr(e instanceof Error ? e.message : String(e));
         setCommits([]);
@@ -225,9 +221,7 @@ export function WorkspacesPopup({
         setLoading(false);
       }
     },
-    // drillFlt.reset is stable (useCallback in the hook); listing it
-    // here keeps biome's exhaustive-deps lint happy.
-    [db, workstream, drillFlt.reset],
+    [db, workstream],
   );
 
   useEffect(() => {
@@ -237,16 +231,19 @@ export function WorkspacesPopup({
     }
   }, [mode, inShow, focused, loadCommits, slowTickNonce]);
 
+  useEffect(() => {
+    if (mode !== "drill") {
+      setCommits([]);
+      setDrillErr(null);
+      setLoading(false);
+    }
+  }, [mode]);
+
   // Reset show-mode state when the popup leaves drill (back to
-  // workspace list) or when the focused workspace changes. Mirrors
-  // the spec STATE LIFECYCLE: "Reset captured-show state on mode
-  // change away from 'show', focused commit change in drill,
-  // workspace change in list mode". The first two collapse to
-  // "mode !== drill" (Esc from show → drill, Esc from drill → list);
-  // the third is the focused.agentName effect below. Note: we do
-  // NOT reset on focused commit change inside drill — the user
-  // hasn't entered show mode yet there; the show fetch is wired to
-  // the Enter handler instead.
+  // workspace list) or when the focused workspace changes. Slow-tick
+  // refetches of the SAME workspace/sha keep the existing body visible;
+  // identity changes still clear so stale content does not leak across
+  // drills.
   useEffect(() => {
     if (mode !== "drill") {
       setShowSha(null);
@@ -257,6 +254,9 @@ export function WorkspacesPopup({
   }, [mode]);
   // biome-ignore lint/correctness/useExhaustiveDependencies: focused?.agentName is the trigger; the effect body is intentionally pure setters, so biome can't infer the dependency from a body reference.
   useEffect(() => {
+    setDrillCursor(0);
+    setCommits([]);
+    drillFlt.reset();
     setShowSha(null);
     setShowText("");
     setShowErr(null);
@@ -284,6 +284,7 @@ export function WorkspacesPopup({
       if (!r.ok) onFooter?.(r.error ?? "tuicr failed", false, "error");
       else onFooter?.(`tuicr -r ${showSha}`, true, "info");
     },
+    resetKey: showSha ?? "",
   });
 
   useInput((input, key) => {
@@ -503,7 +504,7 @@ function renderDrillBody(
 ): JSX.Element {
   const title = `commits for ${focused.agentName}`;
   const hint = "y yanks `git show <sha>`";
-  if (loading) {
+  if (loading && source.length === 0) {
     return (
       <DrillScrollView
         title={title}

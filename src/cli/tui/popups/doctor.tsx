@@ -121,6 +121,7 @@ export function DoctorPopup({
       if (!focused) return;
       return yank(yankCommandForCheck(focused));
     },
+    resetKey: focused?.name ?? "",
   });
 
   useInput((input, key) => {

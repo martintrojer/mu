@@ -12,6 +12,7 @@
 
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { loadShowPreservingBody } from "../src/cli/tui/popups/show-loader.js";
 import { WorkspacesPopup, colorForDirty, formatDirty } from "../src/cli/tui/popups/workspaces.js";
 
 const SRC = readFileSync("./src/cli/tui/popups/workspaces.tsx", "utf-8");
@@ -96,9 +97,79 @@ describe("WorkspacesPopup: drill is the commits-since-fork list (NOT TaskDetailD
 });
 
 describe("WorkspacesPopup: Enter on focused commit drills into git show diff (feat_workspaces_drill_git_show)", () => {
+  it("loadShow preserves the previous body while the backend refetch is pending", async () => {
+    const states: string[] = [];
+    let text = "previous diff body";
+    let error: string | null = "old error";
+    let loading = false;
+    let resolveShow: ((value: { text: string; truncated: boolean }) => void) | undefined;
+    const showPromise = new Promise<{ text: string; truncated: boolean }>((resolve) => {
+      resolveShow = resolve;
+    });
+
+    const pending = loadShowPreservingBody(
+      "/repo",
+      "abc123",
+      async () => ({
+        showCommit: async () => showPromise,
+      }),
+      {
+        setText: (next) => {
+          text = next;
+          states.push(`text:${next}`);
+        },
+        setError: (next) => {
+          error = next;
+          states.push(`error:${next ?? "null"}`);
+        },
+        setLoading: (next) => {
+          loading = next;
+          states.push(`loading:${String(next)}`);
+        },
+      },
+    );
+
+    await Promise.resolve();
+    expect(loading).toBe(true);
+    expect(error).toBeNull();
+    expect(text).toBe("previous diff body");
+    expect(states).not.toContain("text:");
+
+    if (resolveShow === undefined) throw new Error("show promise was not captured");
+    resolveShow({ text: "new diff body", truncated: false });
+    await pending;
+
+    expect(text).toBe("new diff body");
+    expect(loading).toBe(false);
+  });
+
+  it("clears the body on an actual show error", async () => {
+    let text = "previous diff body";
+    let error: string | null = null;
+    await loadShowPreservingBody(
+      "/repo",
+      "bad",
+      async () => ({
+        showCommit: async () => ({ text: "", truncated: false, error: "bad revision" }),
+      }),
+      {
+        setText: (next) => {
+          text = next;
+        },
+        setError: (next) => {
+          error = next;
+        },
+        setLoading: () => {},
+      },
+    );
+
+    expect(error).toBe("bad revision");
+    expect(text).toBe("");
+  });
+
   it("delegates git show through the shared VcsBackend.showCommit seam", () => {
-    expect(SRC).toContain("detectBackend(path)");
-    expect(SRC).toContain("backend.showCommit(path, sha)");
+    expect(SRC).toContain("detectBackend");
+    expect(SRC).toContain("loadShowPreservingBody");
     expect(SRC).not.toContain("node:child_process");
     expect(SRC).not.toMatch(/\bexecFile\b/);
   });
@@ -170,6 +241,10 @@ describe("WorkspacesPopup: Enter on focused commit drills into git show diff (fe
     expect(showHookBlock?.[0]).toContain("onClose: () => setShowSha(null)");
     expect(showHookBlock?.[0]).not.toContain("onClose()");
     expect(showHookBlock?.[0]).not.toContain('onModeChange("list")');
+  });
+
+  it("passes showSha as useDrillKeymap resetKey so slow-tick body refreshes do not jump to top", () => {
+    expect(SRC).toContain('resetKey: showSha ?? ""');
   });
 });
 

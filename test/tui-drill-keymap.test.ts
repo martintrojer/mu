@@ -16,6 +16,7 @@ function loadPopup(name: string): string {
 
 const DRILL_POPUP_CASES: ReadonlyArray<{ name: string; src: string }> = [
   { name: "agents.tsx", src: loadPopup("agents.tsx") },
+  { name: "all-tasks.tsx", src: loadPopup("all-tasks.tsx") },
   { name: "blocked.tsx", src: loadPopup("blocked.tsx") },
   { name: "commits.tsx", src: loadPopup("commits.tsx") },
   { name: "doctor.tsx", src: loadPopup("doctor.tsx") },
@@ -42,12 +43,16 @@ describe("useDrillKeymap", () => {
     expect(DRILL_SRC).toMatch(/case "yank":/);
     expect(DRILL_SRC).toMatch(/case "verb":/);
     expect(DRILL_SRC).toMatch(/action\.key === "t"/);
+    expect(DRILL_SRC).toContain("resetKey?: string | number");
+    expect(DRILL_SRC).toContain("const resetSignal = resetKey ?? body");
+    expect(DRILL_SRC).toMatch(/clampScrollTop\(s, totalLines, viewport\)/);
   });
 
   for (const { name, src } of ALL_POPUP_CASES) {
     it(`${name} imports and calls the shared drill keymap hook`, () => {
       expect(src).toMatch(/useDrillKeymap/);
       expect(src).toMatch(/useDrillKeymap\(\{/);
+      expect(src).toMatch(/resetKey:/);
     });
   }
 
@@ -67,6 +72,12 @@ describe("useDrillKeymap", () => {
     const src = loadPopup("workspaces.tsx");
     expect(src).toMatch(/const showDrill = useDrillKeymap\(\{/);
     expect(src).toMatch(/showDrill\.dispatch\(action\);/);
+  });
+
+  it("dag delegates the forest body to the shared hook", () => {
+    const src = loadPopup("dag.tsx");
+    expect(src).toMatch(/const drill = useDrillKeymap\(\{/);
+    expect(src).toContain("resetKey: workstream");
   });
 
   for (const { name, src } of ALL_POPUP_CASES) {

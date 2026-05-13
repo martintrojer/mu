@@ -35,7 +35,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { cellWidth, contentWidthFromCols, termColsForLayout, truncateCell } from "../columns.js";
 import type { PopupAction } from "../keys.js";
 import { wrapAnsiLines } from "../wrap-ansi.js";
-import { applyScroll, isNavAction } from "./scroll.js";
+import { applyScroll, clampScrollTop, isNavAction } from "./scroll.js";
 
 // Re-export so existing `import { clampScrollTop } from "./drill.js"`
 // callers stay valid until they migrate to the centralised
@@ -53,6 +53,13 @@ export interface DrillKeymapOptions {
   onYank?: () => void | Promise<void>;
   /** Optional user-driven escape hatch for git-show drills. */
   onTuicr?: () => void | Promise<void>;
+  /**
+   * Identity signal for scroll resets. Callers should pass the focused
+   * row / entity identity so auto-refreshes of the SAME drill preserve
+   * scroll, while navigating to a DIFFERENT drill resets to the top.
+   * Omit to keep the legacy behaviour: reset whenever body changes.
+   */
+  resetKey?: string | number;
 }
 
 export interface DrillKeymap {
@@ -71,6 +78,7 @@ export function useDrillKeymap({
   onClose,
   onYank,
   onTuicr,
+  resetKey,
 }: DrillKeymapOptions): DrillKeymap {
   const [scrollTop, setScrollTop] = useState(0);
   const wrapWidth = Math.max(0, contentWidthFromCols(termColsForLayout()) - 2);
@@ -80,10 +88,16 @@ export function useDrillKeymap({
     [wrappedBody],
   );
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: scroll resets when the rendered drill body changes, even if the new body has the same line count.
+  const resetSignal = resetKey ?? body;
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: resetSignal intentionally preserves legacy body-based resets when resetKey is omitted, and identity-based resets when resetKey is supplied.
   useEffect(() => {
     setScrollTop(0);
-  }, [body]);
+  }, [resetSignal]);
+
+  useEffect(() => {
+    setScrollTop((s) => clampScrollTop(s, totalLines, viewport));
+  }, [totalLines, viewport]);
 
   const dispatch = useCallback(
     (action: PopupAction) => {

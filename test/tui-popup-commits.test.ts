@@ -104,8 +104,8 @@ describe("CommitsPopup source invariants", () => {
   });
 
   it("shows commits via the VcsBackend.showCommit seam, not git-only helper", () => {
-    expect(SRC).toContain("detectBackend(projectRoot)");
-    expect(SRC).toContain("backend.showCommit(projectRoot, sha)");
+    expect(SRC).toContain("detectBackend");
+    expect(SRC).toContain("loadShowPreservingBody");
     expect(SRC).not.toContain("runGitShow");
     expect(SRC).not.toContain("node:child_process");
   });
@@ -132,6 +132,10 @@ describe("CommitsPopup source invariants", () => {
     );
     expect(SRC).toContain("onFooter?.(r.error");
     expect(SRC).toContain("t tuicr");
+  });
+
+  it("passes focused sha as useDrillKeymap resetKey so slow-tick body refreshes do not jump to top", () => {
+    expect(SRC).toContain('resetKey: focused?.sha ?? ""');
   });
 });
 

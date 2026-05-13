@@ -25,6 +25,7 @@ import { runTuicrInteractive } from "../tuicr.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
 import { DrillScrollView, useDrillKeymap } from "./drill.js";
 import { applyCursor, centredVisibleSlice, isNavAction } from "./scroll.js";
+import { loadShowPreservingBody } from "./show-loader.js";
 import { usePopupViewport } from "./viewport.js";
 
 export interface PopupProps {
@@ -86,15 +87,20 @@ export function CommitsPopup({
 
   const loadShow = useCallback(
     async (sha: string) => {
-      setShowLoading(true);
-      setShowErr(null);
-      setShowText("");
-      const backend = await detectBackend(projectRoot);
-      setBackendName(backend.name);
-      const r = await backend.showCommit(projectRoot, sha);
-      if (r.error !== undefined) setShowErr(r.error);
-      else setShowText(r.text);
-      setShowLoading(false);
+      await loadShowPreservingBody(
+        projectRoot,
+        sha,
+        async (path) => {
+          const backend = await detectBackend(path);
+          setBackendName(backend.name);
+          return backend;
+        },
+        {
+          setText: setShowText,
+          setError: setShowErr,
+          setLoading: setShowLoading,
+        },
+      );
     },
     [projectRoot],
   );
@@ -131,6 +137,7 @@ export function CommitsPopup({
       if (!r.ok) onFooter?.(r.error ?? "tuicr failed", false, "error");
       else onFooter?.(`tuicr -r ${focused.sha}`, true, "info");
     },
+    resetKey: focused?.sha ?? "",
   });
 
   useInput((input, key) => {

@@ -112,6 +112,7 @@ export function RecentPopup({
       if (!focused || !snapshot) return;
       return yank(`mu task notes ${focused.name} -w ${snapshot.workstreamName}`);
     },
+    resetKey: focused?.name ?? "",
   });
 
   useInput((input, key) => {

@@ -18,7 +18,7 @@
 // status are PROTECTED; the role description is CLIPPABLE.
 
 import { Box, Text, useInput } from "ink";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { STATUS_EMOJI, readAgent } from "../../../agents.js";
 import type { Db } from "../../../db.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
@@ -94,6 +94,7 @@ export function AgentsPopup({
       : applyFilter(sourceAgents, flt.query, (a) => `${a.name} ${a.status} ${a.cli} ${a.role}`);
   const safeCursor = agents.length === 0 ? 0 : Math.min(cursor, agents.length - 1);
   const focused = agents[safeCursor];
+  const lastFocusedAgentName = useRef<string | null>(null);
   // Load scrollback when entering drill mode (or when the focused
   // row changes while in drill mode). Read-only: capturePane is a
   // tmux read, never a write.
@@ -101,6 +102,8 @@ export function AgentsPopup({
     async (paneAgent: string) => {
       setLoading(true);
       setScrollbackErr(null);
+      // Keep the previous scrollback visible during the slow-tick
+      // refetch; clearing here causes a blank-flash flicker.
       try {
         const text = await readAgent(db, paneAgent, {
           workstream,
@@ -120,9 +123,23 @@ export function AgentsPopup({
   useEffect(() => {
     void slowTickNonce;
     if (mode === "drill" && focused) {
+      if (lastFocusedAgentName.current !== focused.name) {
+        setScrollback("");
+        setScrollbackErr(null);
+      }
+      lastFocusedAgentName.current = focused.name;
       void loadScrollback(focused.name);
     }
   }, [mode, focused, loadScrollback, slowTickNonce]);
+
+  useEffect(() => {
+    if (mode !== "drill") {
+      lastFocusedAgentName.current = null;
+      setScrollback("");
+      setScrollbackErr(null);
+      setLoading(false);
+    }
+  }, [mode]);
 
   const drillBody = scrollbackErr !== null ? `error: ${scrollbackErr}` : scrollback;
   const drill = useDrillKeymap({
@@ -135,6 +152,7 @@ export function AgentsPopup({
         `mu agent read ${focused.name} -n ${SCROLLBACK_LINES} -w ${snapshot.workstreamName}`,
       );
     },
+    resetKey: focused?.name ?? "",
   });
 
   useInput((input, key) => {

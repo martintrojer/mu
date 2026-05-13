@@ -137,6 +137,8 @@ called out under "Breaking" in each entry.
 - TUI `?` help overlay is now scrollable. On low-row panes (e.g. 24 rows) the previous single-column render hid the bottom half of the keymap behind the StatusBar; now j/k/Ctrl-D/U/g/G/PgDn/PgUp scroll the body and a position indicator (`1-12/53`) sits inset into the title.
 - TUI drill-down views (TaskDetailDrill notes, commits show body, agent scrollback) used to capture their content once on mount and stay frozen until the user closed and reopened the drill. They now refresh on the same tick the parent dashboard does — fast tick (1s) for SQL-derived content (notes); slow tick (10s) for subprocess-derived content (commits show, agent scrollback). r/F5 forces an immediate refresh.
 
+- TUI drill-down views no longer jump back to the top or blank-flash during their data-tick refresh. `useDrillKeymap` now resets scroll only when the drill identity changes (task id, commit sha, agent name, etc.) and clamps existing scroll state when refreshed content shrinks; subprocess-backed git-show / scrollback refetches keep the prior body visible until the new body arrives.
+
 - git-show drills (Commits popup + Workspaces popup) now wrap long lines by visual width instead of byte count. Previously the new `--color=always` ANSI escape sequences inflated Ink's wrap math, breaking lines mid-escape and corrupting the popup chrome / colours. Wrap-within-borders is now clean at any pane width.
 
 - TUI keyboard popup-opens (`t`, `1`-`9`, `Shift+0`-`9`) no longer replay a stale mouse double-click event; the replay queue is consume-once via a ref. Symptom that's now fixed: pressing `t` on the dashboard could land the cursor on a random row + drill into TaskDetailDrill if you'd previously used a mouse double-click.
