@@ -1,9 +1,11 @@
-// Verifies every typed error class carries actionable errorNextSteps().
+// Verifies every exported typed error class with errorNextSteps()
+// carries actionable, contextual recovery hints.
 //
 // One test per error class. Tests don't assert the exact text of the
 // hints (those evolve); they assert that the error implements
-// HasNextSteps and returns a non-empty array of well-formed NextStep
-// records.
+// HasNextSteps, returns a non-empty array of well-formed NextStep
+// records, and that at least one command contains the constructor
+// context that makes the hint copy-pasteable rather than generic.
 
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -14,129 +16,397 @@ import {
   AgentExistsError,
   AgentNotFoundError,
   AgentNotInWorkstreamError,
+  AgentSpawnCliNotFoundError,
   AgentSpawnStartupError,
+  NoForegroundProcessError,
   WorkspacePreservedError,
 } from "../src/agents.js";
-import { WorkstreamNotFoundError, openDb } from "../src/db.js";
+import {
+  ArchiveAlreadyExistsError,
+  ArchiveLabelInvalidError,
+  ArchiveNotFoundError,
+} from "../src/archives.js";
+import { NameAmbiguousError } from "../src/cli.js";
+import { SchemaTooOldError, WorkstreamNotFoundError, openDb } from "../src/db.js";
+import {
+  ImportBucketInvalidError,
+  ImportEdgeRefMissingError,
+  ImportFrontmatterParseError,
+  ImportSourceNotInBucketError,
+  WorkstreamAlreadyExistsError,
+} from "../src/importing.js";
 import { hasNextSteps } from "../src/output.js";
+import {
+  PruneOptionsInvalidError,
+  SnapshotFileMissingError,
+  SnapshotNotFoundError,
+  SnapshotVersionMismatchError,
+} from "../src/snapshots.js";
 import {
   ClaimerNotRegisteredError,
   CrossWorkstreamEdgeError,
   CycleError,
+  ReaperDetectedDuringWaitError,
+  StallDetectedDuringWaitError,
   TaskAlreadyOwnedError,
+  TaskClaimStaleWorkspaceError,
   TaskExistsError,
+  TaskHasOpenDependentsError,
   TaskIdInvalidError,
   TaskNotFoundError,
   TaskNotInWorkstreamError,
 } from "../src/tasks.js";
 import { PaneNotFoundError, TmuxError } from "../src/tmux.js";
 import {
+  WorkspaceConflictError,
+  WorkspaceDirtyError,
+  WorkspaceVcsRequiredError,
+} from "../src/vcs.js";
+import {
+  HomeDirAsProjectRootError,
   WorkspaceExistsError,
   WorkspaceNotFoundError,
   WorkspacePathNotEmptyError,
 } from "../src/workspace.js";
 import { WorkstreamNameInvalidError } from "../src/workstream.js";
 
-describe("typed errors all carry actionable errorNextSteps()", () => {
-  // (instance, label-for-test-name, expectedTokens)
-  // expectedTokens are entity ids (taskId / agentName / paneId / slug /
-  // workstream) that MUST appear in at least one step's command —
-  // otherwise the steps are well-formed but generic and the user is
-  // not actually pointed at the right entity. Without this column the
-  // loop only checked 'is well-formed', not 'is contextual'
-  // (review_test_error_nextsteps_too_loose).
-  const cases: Array<[Error, string, string[]]> = [
-    [new TaskNotFoundError("foo"), "TaskNotFoundError", ["foo"]],
-    [new TaskExistsError("foo"), "TaskExistsError", ["foo"]],
-    // TaskIdInvalidError: the user typed something invalid; the
-    // recovery is to use the auto-derived path (--title) or the
-    // sanitised candidate. The sanitised id appears in the second
-    // step's command.
-    [new TaskIdInvalidError("Bad ID"), "TaskIdInvalidError", ["bad_id"]],
-    [
-      new TaskNotInWorkstreamError("foo", "expected", "actual"),
-      "TaskNotInWorkstreamError",
-      ["foo", "actual"],
-    ],
-    [new TaskAlreadyOwnedError("foo", "alice"), "TaskAlreadyOwnedError", ["foo", "alice"]],
-    [
-      new ClaimerNotRegisteredError("pi-mu", "%6441"),
-      "ClaimerNotRegisteredError (with pane)",
-      ["%6441"],
-    ],
-    // No-pane variant has no entity to interpolate; skip token check.
-    [new ClaimerNotRegisteredError("pi-mu", null), "ClaimerNotRegisteredError (no pane)", []],
-    [new CycleError("a", "b"), "CycleError", ["a", "b"]],
-    // CrossWorkstreamEdgeError's recovery is to move the BLOCKER, so
-    // the dependent's id legitimately doesn't appear; only check the
-    // entities the recovery actually references.
-    [
-      new CrossWorkstreamEdgeError("a", "wsA", "b", "wsB"),
-      "CrossWorkstreamEdgeError",
-      ["a", "wsB"],
-    ],
-    [new AgentExistsError("alice"), "AgentExistsError", ["alice"]],
-    [new AgentNotFoundError("alice"), "AgentNotFoundError", ["alice"]],
-    [
-      new AgentNotInWorkstreamError("alice", "expected", "actual"),
-      "AgentNotInWorkstreamError",
-      ["alice", "actual"],
-    ],
-    [new AgentDiedOnSpawnError("alice", "%15", "panic: died"), "AgentDiedOnSpawnError", ["alice"]],
-    [
-      new AgentSpawnStartupError(
-        "alice",
-        "%15",
-        "Error: No API key found for amazon-bedrock",
-        "Error: No API key found for amazon-bedrock\n> ",
-      ),
-      "AgentSpawnStartupError",
-      ["alice"],
-    ],
-    // TmuxError doesn't carry a single id; check that its command
-    // mentions doctor (its standard recovery hint).
-    [new TmuxError(["list-panes"], "no server", "", 1), "TmuxError", ["doctor"]],
-    [new PaneNotFoundError("%999"), "PaneNotFoundError", ["%999"]],
-    [new WorkspaceExistsError("alice"), "WorkspaceExistsError", ["alice"]],
-    [
-      new WorkspacePathNotEmptyError("alice", "auth", "/path/to/ws"),
-      "WorkspacePathNotEmptyError",
-      ["/path/to/ws"],
-    ],
-    [new WorkspacePreservedError("alice", "/path/to/ws"), "WorkspacePreservedError", ["alice"]],
-    [new WorkspaceNotFoundError("alice"), "WorkspaceNotFoundError", ["alice"]],
-    [new WorkstreamNameInvalidError("mu-foo"), "WorkstreamNameInvalidError", ["foo"]],
-    // WorkstreamNotFoundError is the resolve-time miss raised by
-    // src/db.ts:resolveWorkstreamId — the first leg of the SDK
-    // boundary (operator-name → surrogate id). schema_v5_cli_boundary.
-    [new WorkstreamNotFoundError("ghost"), "WorkstreamNotFoundError", ["ghost"]],
-  ];
+interface NextStepLike {
+  intent: string;
+  command: string;
+}
 
-  for (const [err, label, expectedTokens] of cases) {
+interface NextStepsCase {
+  error: Error;
+  label: string;
+  expectedTokens: string[];
+}
+
+const staleWorkspace = {
+  agentName: "stale-agent",
+  workstreamName: "stale-ws",
+  commitsBehindMain: 12,
+  isStale: true,
+};
+
+const cases: NextStepsCase[] = [
+  // src/tasks/errors.ts
+  { error: new TaskNotFoundError("foo"), label: "TaskNotFoundError", expectedTokens: ["foo"] },
+  {
+    error: new TaskIdInvalidError("Bad ID"),
+    label: "TaskIdInvalidError",
+    expectedTokens: ["bad_id"],
+  },
+  { error: new TaskExistsError("foo"), label: "TaskExistsError", expectedTokens: ["foo"] },
+  {
+    error: new TaskNotInWorkstreamError("foo", "expected", "actual"),
+    label: "TaskNotInWorkstreamError",
+    expectedTokens: ["foo", "actual"],
+  },
+  {
+    error: new TaskAlreadyOwnedError("foo", "alice"),
+    label: "TaskAlreadyOwnedError",
+    expectedTokens: ["foo", "alice"],
+  },
+  {
+    error: new TaskHasOpenDependentsError("foo", "reject", ["bar"]),
+    label: "TaskHasOpenDependentsError",
+    expectedTokens: ["foo"],
+  },
+  {
+    error: new ClaimerNotRegisteredError("pi-mu", "%6441"),
+    label: "ClaimerNotRegisteredError (with pane)",
+    expectedTokens: ["%6441"],
+  },
+  {
+    // No-pane variant has no entity to interpolate, but it still must
+    // produce the anonymous / --for / adopt recovery options.
+    error: new ClaimerNotRegisteredError("pi-mu", null),
+    label: "ClaimerNotRegisteredError (no pane)",
+    expectedTokens: ["--self", "--for", "<pane-id>"],
+  },
+  {
+    error: new TaskClaimStaleWorkspaceError(staleWorkspace),
+    label: "TaskClaimStaleWorkspaceError",
+    expectedTokens: ["stale-agent", "stale-ws"],
+  },
+  { error: new CycleError("a", "b"), label: "CycleError", expectedTokens: ["a", "b"] },
+  {
+    error: new ReaperDetectedDuringWaitError("wait_task", "worker-1", "wait-ws"),
+    label: "ReaperDetectedDuringWaitError",
+    expectedTokens: ["wait_task", "wait-ws"],
+  },
+  {
+    error: new StallDetectedDuringWaitError("wait_task", "worker-1", "wait-ws", 300),
+    label: "StallDetectedDuringWaitError",
+    expectedTokens: ["wait_task", "worker-1", "wait-ws"],
+  },
+  {
+    // CrossWorkstreamEdgeError's recovery is to move or duplicate the
+    // BLOCKER, so the dependent id legitimately doesn't appear in all
+    // commands. Pin the blocker + destination workstream context.
+    error: new CrossWorkstreamEdgeError("blocker", "wsA", "dep", "wsB"),
+    label: "CrossWorkstreamEdgeError",
+    expectedTokens: ["blocker", "wsB"],
+  },
+
+  // src/agents/errors.ts + src/agents/kick.ts
+  {
+    error: new AgentSpawnCliNotFoundError("pi-meta", "pi-meta", "MU_PI_META_COMMAND"),
+    label: "AgentSpawnCliNotFoundError",
+    expectedTokens: ["MU_PI_META_COMMAND", "pi-meta"],
+  },
+  { error: new AgentExistsError("alice"), label: "AgentExistsError", expectedTokens: ["alice"] },
+  {
+    error: new AgentNotFoundError("alice"),
+    label: "AgentNotFoundError",
+    expectedTokens: ["alice"],
+  },
+  {
+    error: new AgentNotInWorkstreamError("alice", "expected", "actual"),
+    label: "AgentNotInWorkstreamError",
+    expectedTokens: ["alice", "actual"],
+  },
+  {
+    error: new AgentDiedOnSpawnError("scout-perf-1", "%42", "panic: died"),
+    label: "AgentDiedOnSpawnError",
+    expectedTokens: ["scout-perf-1"],
+  },
+  {
+    error: new AgentSpawnStartupError(
+      "alice",
+      "%15",
+      "Error: No API key found for amazon-bedrock",
+      "Error: No API key found for amazon-bedrock\n> ",
+    ),
+    label: "AgentSpawnStartupError",
+    expectedTokens: ["alice"],
+  },
+  {
+    error: new WorkspacePreservedError("alice", "/path/to/ws"),
+    label: "WorkspacePreservedError",
+    expectedTokens: ["alice", "/path/to/ws"],
+  },
+  {
+    error: new NoForegroundProcessError("alice", "/dev/ttys001", "shell-only"),
+    label: "NoForegroundProcessError",
+    expectedTokens: ["alice"],
+  },
+
+  // src/tmux.ts
+  {
+    error: new TmuxError(["list-panes"], "no server", "", 1),
+    label: "TmuxError",
+    expectedTokens: ["doctor", "list-panes"],
+  },
+  { error: new PaneNotFoundError("%999"), label: "PaneNotFoundError", expectedTokens: ["%999"] },
+
+  // src/workspace/core.ts
+  {
+    error: new WorkspaceExistsError("alice"),
+    label: "WorkspaceExistsError",
+    expectedTokens: ["alice"],
+  },
+  {
+    error: new WorkspaceNotFoundError("alice"),
+    label: "WorkspaceNotFoundError",
+    expectedTokens: ["alice"],
+  },
+  {
+    error: new WorkspacePathNotEmptyError("alice", "auth", "/path/to/ws"),
+    label: "WorkspacePathNotEmptyError",
+    expectedTokens: ["alice", "auth", "/path/to/ws"],
+  },
+  {
+    error: new HomeDirAsProjectRootError("alice", "auth", "/Users/alice"),
+    label: "HomeDirAsProjectRootError",
+    expectedTokens: ["alice", "auth", "<your-project>"],
+  },
+
+  // src/vcs/types.ts
+  {
+    error: new WorkspaceVcsRequiredError("refresh", "/path/to/ws"),
+    label: "WorkspaceVcsRequiredError",
+    expectedTokens: ["workspace", "<jj|sl|git>"],
+  },
+  {
+    error: new WorkspaceDirtyError("/path/to/ws", ["src/file.ts"], "recreate"),
+    label: "WorkspaceDirtyError",
+    expectedTokens: ["/path/to/ws", "--force"],
+  },
+  {
+    error: new WorkspaceConflictError("/path/to/ws", "origin/main", ["src/file.ts"]),
+    label: "WorkspaceConflictError",
+    expectedTokens: ["/path/to/ws", "rebase --abort"],
+  },
+
+  // src/workstream.ts / src/db.ts
+  {
+    error: new WorkstreamNameInvalidError("mu-foo"),
+    label: "WorkstreamNameInvalidError",
+    expectedTokens: ["foo"],
+  },
+  {
+    error: new WorkstreamNotFoundError("ghost"),
+    label: "WorkstreamNotFoundError",
+    expectedTokens: ["ghost"],
+  },
+  {
+    error: new SchemaTooOldError(4, 5),
+    label: "SchemaTooOldError",
+    expectedTokens: ["migrate-v4-to-v5", "sqlite3"],
+  },
+
+  // src/snapshots/*
+  {
+    error: new SnapshotNotFoundError(9999),
+    label: "SnapshotNotFoundError",
+    expectedTokens: ["snapshot"],
+  },
+  {
+    error: new SnapshotVersionMismatchError(42, 6, 7),
+    label: "SnapshotVersionMismatchError (older)",
+    expectedTokens: ["schema_version = 7"],
+  },
+  {
+    error: new SnapshotVersionMismatchError(43, 8, 7),
+    label: "SnapshotVersionMismatchError (newer)",
+    expectedTokens: ["@latest"],
+  },
+  {
+    error: new SnapshotFileMissingError(42, "/path/to/snap.db"),
+    label: "SnapshotFileMissingError",
+    expectedTokens: ["42"],
+  },
+  {
+    error: new PruneOptionsInvalidError("bad prune flags"),
+    label: "PruneOptionsInvalidError",
+    expectedTokens: ["prune --help"],
+  },
+
+  // src/archives/core.ts
+  {
+    error: new ArchiveNotFoundError("release-v1"),
+    label: "ArchiveNotFoundError",
+    expectedTokens: ["release-v1"],
+  },
+  {
+    error: new ArchiveAlreadyExistsError("release-v1"),
+    label: "ArchiveAlreadyExistsError",
+    expectedTokens: ["release-v1"],
+  },
+  {
+    error: new ArchiveLabelInvalidError("Bad Label!"),
+    label: "ArchiveLabelInvalidError",
+    expectedTokens: ["bad_label_"],
+  },
+
+  // src/importing.ts
+  {
+    error: new ImportBucketInvalidError("/tmp/mu-bucket", "manifest.json missing"),
+    label: "ImportBucketInvalidError",
+    expectedTokens: ["/tmp/mu-bucket", "manifest.json"],
+  },
+  {
+    error: new ImportSourceNotInBucketError("/tmp/mu-bucket", "ghost", ["alpha", "beta"]),
+    label: "ImportSourceNotInBucketError",
+    expectedTokens: ["/tmp/mu-bucket", "manifest.json"],
+  },
+  {
+    error: new WorkstreamAlreadyExistsError("existing-ws"),
+    label: "WorkstreamAlreadyExistsError",
+    expectedTokens: ["existing-ws", "--workstream <new-name>"],
+  },
+  {
+    error: new ImportFrontmatterParseError("/tmp/mu-bucket/ws/tasks/foo.md", 3, "bad"),
+    label: "ImportFrontmatterParseError",
+    expectedTokens: ["/tmp/mu-bucket/ws/tasks/foo.md"],
+  },
+  {
+    error: new ImportEdgeRefMissingError("from_task", "missing_task", "blocks"),
+    label: "ImportEdgeRefMissingError",
+    expectedTokens: ["from_task", "<bucket>"],
+  },
+
+  // src/cli/handle.ts
+  {
+    error: new NameAmbiguousError("dupe", ["ws-a", "ws-b"], "task"),
+    label: "NameAmbiguousError",
+    expectedTokens: ["ws-a/dupe", "ws-b/dupe"],
+  },
+];
+
+function assertWellFormedSteps(err: Error): NextStepLike[] {
+  expect(hasNextSteps(err)).toBe(true);
+  const steps = (err as unknown as { errorNextSteps: () => unknown[] }).errorNextSteps();
+  expect(Array.isArray(steps)).toBe(true);
+  expect(steps.length).toBeGreaterThan(0);
+  for (const s of steps as Array<{ intent?: unknown; command?: unknown }>) {
+    expect(typeof s.intent).toBe("string");
+    expect(typeof s.command).toBe("string");
+    expect((s.intent as string).trim().length).toBeGreaterThan(0);
+    expect((s.command as string).trim().length).toBeGreaterThan(0);
+  }
+  return steps as NextStepLike[];
+}
+
+function commandContainsEveryToken(steps: NextStepLike[], tokens: string[]): void {
+  const commands = steps.map((s) => s.command);
+  for (const token of tokens) {
+    expect(
+      commands.some((c) => c.includes(token)),
+      `expected at least one step's command to mention '${token}'; got: ${JSON.stringify(commands)}`,
+    ).toBe(true);
+  }
+}
+
+describe("typed errors all carry actionable errorNextSteps()", () => {
+  for (const { error, label, expectedTokens } of cases) {
     it(`${label}: implements HasNextSteps with non-empty, well-formed, contextual steps`, () => {
-      expect(hasNextSteps(err)).toBe(true);
-      const steps = (err as unknown as { errorNextSteps: () => unknown[] }).errorNextSteps();
-      expect(Array.isArray(steps)).toBe(true);
-      expect(steps.length).toBeGreaterThan(0);
-      for (const s of steps as Array<{ intent?: unknown; command?: unknown }>) {
-        expect(typeof s.intent).toBe("string");
-        expect(typeof s.command).toBe("string");
-        expect((s.intent as string).trim().length).toBeGreaterThan(0);
-        expect((s.command as string).trim().length).toBeGreaterThan(0);
-      }
-      // Every expected entity-id token must appear in at least one
-      // step's command. Catches generic errorNextSteps()'s that
-      // return ['mu --help'] regardless of the error's parameters.
-      const commands = (steps as Array<{ command: string }>).map((s) => s.command);
-      for (const token of expectedTokens) {
-        expect(
-          commands.some((c) => c.includes(token)),
-          `expected at least one step's command to mention '${token}'; got: ${JSON.stringify(commands)}`,
-        ).toBe(true);
-      }
+      const steps = assertWellFormedSteps(error);
+      commandContainsEveryToken(steps, expectedTokens);
     });
   }
+
+  it("inventory matches exported error classes", async () => {
+    const modules = await Promise.all([
+      import("../src/agents.js"),
+      import("../src/tasks.js"),
+      import("../src/archives.js"),
+      import("../src/importing.js"),
+      import("../src/snapshots.js"),
+      import("../src/vcs.js"),
+      import("../src/workspace.js"),
+      import("../src/db.js"),
+      import("../src/workstream.js"),
+      import("../src/tmux.js"),
+      import("../src/cli.js"),
+    ]);
+
+    const exportedNames = new Set<string>();
+    for (const moduleExports of modules) {
+      for (const exported of Object.values(moduleExports)) {
+        if (isErrorConstructorWithNextSteps(exported)) {
+          exportedNames.add(exported.name);
+        }
+      }
+    }
+
+    const coveredNames = new Set(cases.map((c) => c.error.name));
+    const missing = [...exportedNames].filter((name) => !coveredNames.has(name)).sort();
+    expect(missing).toEqual([]);
+    expect(coveredNames.size).toBe(exportedNames.size);
+    expect(cases.length).toBeGreaterThanOrEqual(exportedNames.size);
+  });
 });
+
+function isErrorConstructorWithNextSteps(
+  value: unknown,
+): value is { name: string; prototype: Error & { errorNextSteps: () => unknown } } {
+  if (typeof value !== "function") return false;
+  const prototype = (value as { prototype?: unknown }).prototype;
+  if (!(prototype instanceof Error)) return false;
+  return typeof (prototype as { errorNextSteps?: unknown }).errorNextSteps === "function";
+}
 
 describe("error-specific structured-step assertions", () => {
   it("ClaimerNotRegisteredError pins the exact pane id when given", () => {
