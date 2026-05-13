@@ -491,45 +491,57 @@ export async function refreshAgentTitle(
  * in a wrong state — IN_PROGRESS forever, with no owner to release.
  */
 export function deleteAgent(db: Db, name: string, workstream: string): boolean {
-  // Snapshot the stuck tasks BEFORE the DELETE; the FK CASCADE
-  // (SET NULL on owner_id) makes the post-delete query indistinguishable
-  // from "never owned by this agent."
-  const agentId = agentIdByName(db, name, workstream);
-  if (agentId === null) {
-    // Already gone — idempotent return. (Could happen if reconcile
-    // pruned a ghost concurrently.) The DELETE is a no-op.
-    return false;
-  }
-  const stuck = db
-    .prepare(
-      `SELECT t.id AS taskId, t.local_id AS localId, ws.name AS workstream
-         FROM tasks t
-         JOIN workstreams ws ON ws.id = t.workstream_id
-        WHERE t.owner_id = ? AND t.status = 'IN_PROGRESS'`,
-    )
-    .all(agentId) as Array<{ taskId: number; localId: string; workstream: string }>;
+  // Wrap the whole reaper sequence (snapshot stuck tasks → DELETE
+  // agent → per-task UPDATE + addNote + emitEvent) in a single
+  // synchronous better-sqlite3 transaction. Without this, a throw
+  // mid-loop (FK race after workstream destroy, addNote/emitEvent
+  // regression, OOM, …) would leave the agent row deleted (FK
+  // CASCADE already SET NULL on tasks.owner_id) but only PART of
+  // the reaper trail written: leftover IN_PROGRESS tasks with no
+  // owner and no `[reaper]` note explaining how they got there.
+  // Reconcile / `mu task wait --stuck-after` would then surface
+  // them as ownerless zombies with no breadcrumb.
+  return db.transaction(() => {
+    // Snapshot the stuck tasks BEFORE the DELETE; the FK CASCADE
+    // (SET NULL on owner_id) makes the post-delete query indistinguishable
+    // from "never owned by this agent."
+    const agentId = agentIdByName(db, name, workstream);
+    if (agentId === null) {
+      // Already gone — idempotent return. (Could happen if reconcile
+      // pruned a ghost concurrently.) The DELETE is a no-op.
+      return false;
+    }
+    const stuck = db
+      .prepare(
+        `SELECT t.id AS taskId, t.local_id AS localId, ws.name AS workstream
+           FROM tasks t
+           JOIN workstreams ws ON ws.id = t.workstream_id
+          WHERE t.owner_id = ? AND t.status = 'IN_PROGRESS'`,
+      )
+      .all(agentId) as Array<{ taskId: number; localId: string; workstream: string }>;
 
-  const result = db.prepare("DELETE FROM agents WHERE id = ?").run(agentId);
-  if (result.changes === 0) return false;
+    const result = db.prepare("DELETE FROM agents WHERE id = ?").run(agentId);
+    if (result.changes === 0) return false;
 
-  for (const t of stuck) {
-    db.prepare("UPDATE tasks SET status = 'OPEN', updated_at = ? WHERE id = ?").run(
-      new Date().toISOString(),
-      t.taskId,
-    );
-    addNote(
-      db,
-      t.localId,
-      `[reaper] previous owner ${name} gone (agent removed); status reverted IN_PROGRESS → OPEN, owner cleared`,
-      { author: "reaper", workstream: t.workstream },
-    );
-    emitEvent(
-      db,
-      t.workstream,
-      `task reap ${t.localId} (previous owner ${name} gone, IN_PROGRESS → OPEN)`,
-    );
-  }
-  return true;
+    for (const t of stuck) {
+      db.prepare("UPDATE tasks SET status = 'OPEN', updated_at = ? WHERE id = ?").run(
+        new Date().toISOString(),
+        t.taskId,
+      );
+      addNote(
+        db,
+        t.localId,
+        `[reaper] previous owner ${name} gone (agent removed); status reverted IN_PROGRESS → OPEN, owner cleared`,
+        { author: "reaper", workstream: t.workstream },
+      );
+      emitEvent(
+        db,
+        t.workstream,
+        `task reap ${t.localId} (previous owner ${name} gone, IN_PROGRESS → OPEN)`,
+      );
+    }
+    return true;
+  })();
 }
 
 // ────────────────────────────────────────────────────────────────────────
