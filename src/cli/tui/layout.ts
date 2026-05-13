@@ -22,6 +22,19 @@ export type CardId = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
 export type CardGroup = "small-pair" | "task-list" | "stream";
 
 export interface CardRowConfig {
+  /** Stable card name (e.g. "commits", "agents", "inProgress"). The
+   *  single source of truth for the per-card identifier; replaces
+   *  the old hand-rolled cardKeyFromId switch in app.tsx. Used as
+   *  the card-toggle visibility key (alongside the numeric CardId)
+   *  and as a stable string handle anywhere a name is needed. */
+  name: string;
+  /** Human label shown in the popup status bar (e.g. "Commits",
+   *  "In-progress", "Tasks"). Replaces the old popupNameForId
+   *  switch in app.tsx. Distinct from `name` because some labels
+   *  diverge from a naive capitalise (slot 3's name is "ready"
+   *  but its popup is the all-Tasks view; slot 6 is "In-progress",
+   *  not "InProgress"). */
+  label: string;
   /** Minimum BODY rows to reserve for the card. Empty data still gets this much budget. */
   minRows: number;
   /** Maximum BODY rows worth rendering on the dashboard. Popups are exhaustive. */
@@ -37,16 +50,86 @@ export type CardConfigMap = Readonly<Record<CardId, CardRowConfig>>;
 const CARD_CHROME_ROWS = 4;
 
 export const CARD_CONFIGS: CardConfigMap = {
-  0: { minRows: 3, maxRows: 12, chrome: CARD_CHROME_ROWS, group: "stream" }, // Commits
-  1: { minRows: 2, maxRows: 10, chrome: CARD_CHROME_ROWS, group: "small-pair" }, // Agents
-  2: { minRows: 2, maxRows: 8, chrome: CARD_CHROME_ROWS, group: "small-pair" }, // Tracks
-  3: { minRows: 3, maxRows: 15, chrome: CARD_CHROME_ROWS, group: "task-list" }, // Ready
-  4: { minRows: 3, maxRows: 12, chrome: CARD_CHROME_ROWS, group: "stream" }, // Activity log
-  5: { minRows: 2, maxRows: 8, chrome: CARD_CHROME_ROWS, group: "small-pair" }, // Workspaces
-  6: { minRows: 3, maxRows: 12, chrome: CARD_CHROME_ROWS, group: "task-list" }, // In-progress
-  7: { minRows: 3, maxRows: 12, chrome: CARD_CHROME_ROWS, group: "task-list" }, // Blocked
-  8: { minRows: 3, maxRows: 12, chrome: CARD_CHROME_ROWS, group: "task-list" }, // Recent
-  9: { minRows: 2, maxRows: 8, chrome: CARD_CHROME_ROWS, group: "small-pair" }, // Doctor
+  0: {
+    name: "commits",
+    label: "Commits",
+    minRows: 3,
+    maxRows: 12,
+    chrome: CARD_CHROME_ROWS,
+    group: "stream",
+  },
+  1: {
+    name: "agents",
+    label: "Agents",
+    minRows: 2,
+    maxRows: 10,
+    chrome: CARD_CHROME_ROWS,
+    group: "small-pair",
+  },
+  2: {
+    name: "tracks",
+    label: "Tracks",
+    minRows: 2,
+    maxRows: 8,
+    chrome: CARD_CHROME_ROWS,
+    group: "small-pair",
+  },
+  3: {
+    name: "ready",
+    label: "Tasks",
+    minRows: 3,
+    maxRows: 15,
+    chrome: CARD_CHROME_ROWS,
+    group: "task-list",
+  },
+  4: {
+    name: "log",
+    label: "Log",
+    minRows: 3,
+    maxRows: 12,
+    chrome: CARD_CHROME_ROWS,
+    group: "stream",
+  },
+  5: {
+    name: "workspaces",
+    label: "Workspaces",
+    minRows: 2,
+    maxRows: 8,
+    chrome: CARD_CHROME_ROWS,
+    group: "small-pair",
+  },
+  6: {
+    name: "inProgress",
+    label: "In-progress",
+    minRows: 3,
+    maxRows: 12,
+    chrome: CARD_CHROME_ROWS,
+    group: "task-list",
+  },
+  7: {
+    name: "blocked",
+    label: "Blocked",
+    minRows: 3,
+    maxRows: 12,
+    chrome: CARD_CHROME_ROWS,
+    group: "task-list",
+  },
+  8: {
+    name: "recent",
+    label: "Recent",
+    minRows: 3,
+    maxRows: 12,
+    chrome: CARD_CHROME_ROWS,
+    group: "task-list",
+  },
+  9: {
+    name: "doctor",
+    label: "Doctor",
+    minRows: 2,
+    maxRows: 8,
+    chrome: CARD_CHROME_ROWS,
+    group: "small-pair",
+  },
 };
 
 export interface ColumnAssignment {

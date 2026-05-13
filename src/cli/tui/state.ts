@@ -42,49 +42,38 @@ import {
   loadWorkstreamSnapshotSlow,
   mergeSnapshotFastSlow,
 } from "../../state.js";
+import type { CardId } from "./layout.js";
 
 export const TICK_DEFAULT_MS = 1000;
 export const TICK_FLOOR_MS = 100;
 export const TICK_CEILING_MS = 10_000;
 export const SLOW_TICK_MS = 10_000;
 
-export interface CardVisibility {
-  agents: boolean;
-  tracks: boolean;
-  ready: boolean;
-  log: boolean;
-  workspaces: boolean;
-  /** Card 6 — IN_PROGRESS tasks (feat_card_6_inprogress, workstream
-   *  `tui-impl`). Reads snapshot.inProgress directly; no SDK extension. */
-  inProgress: boolean;
-  /** Card 7 — OPEN tasks with still-gating blockers (feat_card_7_blocked,
-   *  workstream `tui-impl`). Reads snapshot.blocked directly; the per-row
-   *  blocker counts come from getTaskEdgesWithStatus (≤8 cheap sync reads
-   *  per tick). No SDK extension. */
-  blocked: boolean;
-  /** Card 0 — recent project commits. Reads snapshot.recentCommits
-   *  populated by the withRecentCommits opt-in. */
-  commits: boolean;
-  /** Card 8 — recently CLOSED tasks. Reads snapshot.recentClosed. */
-  recent: boolean;
-  /** Card 9 — doctor health-check summary (feat_card_9_doctor,
-   *  workstream `tui-impl`). Reads `snapshot.doctor` (populated by
-   *  loadWorkstreamSnapshot when called with `withDoctor: true`).
-   *  See src/doctor-summary.ts for the SDK seam. */
-  doctor: boolean;
-}
+/**
+ * Per-card on/off state for the dashboard. Keyed by numeric CardId
+ * (0..9) — the same key that CARD_CONFIGS, CARD_REGISTRY,
+ * POPUP_REGISTRY, and dataCountForCard already use.
+ *
+ * Pre-review_tui_card_key_from_id_redundant this was keyed by
+ * string ("agents", "tracks", "ready", …), which forced a
+ * 24-line `cardKeyFromId` switch every keystroke and every render
+ * to bridge to the numeric id. Folding the keys back into the
+ * shared CardId space eliminates the bridge and keeps the per-card
+ * `name` string as the human-friendly identifier on CARD_CONFIGS.
+ */
+export type CardVisibility = Record<CardId, boolean>;
 
 export const DEFAULT_CARD_VISIBILITY: CardVisibility = {
-  agents: true,
-  tracks: true,
-  ready: true,
-  log: true,
-  workspaces: true,
-  inProgress: true,
-  blocked: true,
-  commits: true,
-  recent: true,
-  doctor: true,
+  0: true,
+  1: true,
+  2: true,
+  3: true,
+  4: true,
+  5: true,
+  6: true,
+  7: true,
+  8: true,
+  9: true,
 };
 
 export interface DashboardSnapshot {

@@ -144,7 +144,10 @@ describe("App / keys wiring for Commits popup", () => {
   it("App imports and renders CommitsPopup via numeric popup id 0", () => {
     expect(APP_SRC).toContain('from "./popups/commits.js"');
     expect(APP_SRC).toMatch(/0: CommitsPopup/);
-    expect(APP_SRC).toMatch(/popupNameForId[\s\S]*case 0:[\s\S]*return "Commits"/);
+    // Post-review_tui_card_key_from_id_redundant: popupNameForId
+    // reads CARD_CONFIGS[id].label instead of a 24-line switch.
+    const layoutSrc = readFileSync("./src/cli/tui/layout.ts", "utf-8");
+    expect(layoutSrc).toMatch(/0:\s*\{[^}]*label:\s*"Commits"/);
   });
 
   it("keys maps Shift+0 ')' to openPopup(0), drops l/L, and keeps Shift+8 (*) as Recent", () => {

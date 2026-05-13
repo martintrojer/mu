@@ -114,7 +114,10 @@ describe("popups/inprogress.tsx ↔ App / keys wiring", () => {
     const app = readFileSync("./src/cli/tui/app.tsx", "utf-8");
     expect(app).toContain("InProgressPopup");
     expect(app).toMatch(/6: InProgressPopup/);
-    expect(app).toMatch(/popupNameForId[\s\S]*case 6:[\s\S]*return "In-progress"/);
+    // Post-review_tui_card_key_from_id_redundant: popupNameForId
+    // reads CARD_CONFIGS[id].label instead of a 24-line switch.
+    const layout = readFileSync("./src/cli/tui/layout.ts", "utf-8");
+    expect(layout).toMatch(/6:\s*\{[^}]*label:\s*"In-progress"/);
   });
 
   it("App.tsx PopupId union includes 6", () => {

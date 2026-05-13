@@ -12,6 +12,7 @@ import { BlockedPopup } from "../src/cli/tui/popups/blocked.js";
 const SRC = readFileSync("./src/cli/tui/popups/blocked.tsx", "utf-8");
 const APP_SRC = readFileSync("./src/cli/tui/app.tsx", "utf-8");
 const KEYS_SRC = readFileSync("./src/cli/tui/keys.ts", "utf-8");
+const LAYOUT_SRC = readFileSync("./src/cli/tui/layout.ts", "utf-8");
 
 describe("BlockedPopup: export contract", () => {
   it("is exported as a function", () => {
@@ -130,8 +131,10 @@ describe("App ↔ keys wiring for popup 7", () => {
     expect(APP_SRC).toMatch(/7: BlockedPopup/);
   });
 
-  it("app.tsx popupNameForId(7) returns 'Blocked'", () => {
-    expect(APP_SRC).toMatch(/popupNameForId[\s\S]*case 7:[\s\S]*return "Blocked"/);
+  it("layout.ts CARD_CONFIGS[7].label is 'Blocked' (drives popupNameForId)", () => {
+    // Post-review_tui_card_key_from_id_redundant: popupNameForId
+    // reads CARD_CONFIGS[id].label instead of a 24-line switch.
+    expect(LAYOUT_SRC).toMatch(/7:\s*\{[^}]*label:\s*"Blocked"/);
   });
 
   it("app.tsx PopupId union includes 7", () => {

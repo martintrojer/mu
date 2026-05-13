@@ -17,6 +17,7 @@ import { WorkspacesPopup, colorForDirty, formatDirty } from "../src/cli/tui/popu
 
 const SRC = readFileSync("./src/cli/tui/popups/workspaces.tsx", "utf-8");
 const APP_SRC = readFileSync("./src/cli/tui/app.tsx", "utf-8");
+const LAYOUT_SRC = readFileSync("./src/cli/tui/layout.ts", "utf-8");
 const KEYS_SRC = readFileSync("./src/cli/tui/keys.ts", "utf-8");
 
 describe("WorkspacesPopup: export contract", () => {
@@ -306,8 +307,10 @@ describe("App ↔ keys wiring for popup 5", () => {
     expect(APP_SRC).toMatch(/5: WorkspacesPopup/);
   });
 
-  it("app.tsx popupNameForId(5) returns 'Workspaces'", () => {
-    expect(APP_SRC).toMatch(/popupNameForId[\s\S]*case 5:[\s\S]*return "Workspaces"/);
+  it("layout.ts CARD_CONFIGS[5].label is 'Workspaces' (drives popupNameForId)", () => {
+    // Post-review_tui_card_key_from_id_redundant: popupNameForId
+    // reads CARD_CONFIGS[id].label instead of a 24-line switch.
+    expect(LAYOUT_SRC).toMatch(/5:\s*\{[^}]*label:\s*"Workspaces"/);
   });
 
   it("app.tsx PopupId union includes 5", () => {

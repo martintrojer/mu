@@ -112,7 +112,10 @@ describe("popups/recent.tsx ↔ App / keys wiring", () => {
     const app = readFileSync("./src/cli/tui/app.tsx", "utf-8");
     expect(app).toContain("RecentPopup");
     expect(app).toMatch(/8: RecentPopup/);
-    expect(app).toMatch(/popupNameForId[\s\S]*case 8:[\s\S]*return "Recent"/);
+    // Post-review_tui_card_key_from_id_redundant: popupNameForId
+    // reads CARD_CONFIGS[id].label instead of a 24-line switch.
+    const layout = readFileSync("./src/cli/tui/layout.ts", "utf-8");
+    expect(layout).toMatch(/8:\s*\{[^}]*label:\s*"Recent"/);
   });
 
   it("keys.ts maps Shift+8 (*) to openPopup(8)", () => {

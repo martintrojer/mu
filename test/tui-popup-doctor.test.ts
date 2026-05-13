@@ -27,6 +27,7 @@ function stripComments(src: string): string {
 }
 const SRC = stripComments(SRC_RAW);
 const APP_SRC = readFileSync("./src/cli/tui/app.tsx", "utf-8");
+const LAYOUT_SRC = readFileSync("./src/cli/tui/layout.ts", "utf-8");
 const KEYS_SRC = readFileSync("./src/cli/tui/keys.ts", "utf-8");
 const SUMMARY_SRC = readFileSync("./src/doctor-summary.ts", "utf-8");
 
@@ -203,8 +204,10 @@ describe("App ↔ keys wiring for popup 9", () => {
     expect(APP_SRC).toMatch(/9: DoctorPopup/);
   });
 
-  it("app.tsx popupNameForId(9) returns 'Doctor'", () => {
-    expect(APP_SRC).toMatch(/popupNameForId[\s\S]*case 9:[\s\S]*return "Doctor"/);
+  it("layout.ts CARD_CONFIGS[9].label is 'Doctor' (drives popupNameForId)", () => {
+    // Post-review_tui_card_key_from_id_redundant: popupNameForId
+    // reads CARD_CONFIGS[id].label instead of a 24-line switch.
+    expect(LAYOUT_SRC).toMatch(/9:\s*\{[^}]*label:\s*"Doctor"/);
   });
 
   it("app.tsx PopupId union includes 9", () => {

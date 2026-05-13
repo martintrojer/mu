@@ -421,10 +421,7 @@ export function App({ db, workstreams, initialActive = 0 }: AppProps): JSX.Eleme
           return;
         case "toggleCard":
           if (popup !== null) return; // suppress while popup is open
-          setVisibility((v) => ({
-            ...v,
-            [cardKeyFromId(action.cardId)]: !v[cardKeyFromId(action.cardId)],
-          }));
+          setVisibility((v) => ({ ...v, [action.cardId]: !v[action.cardId] }));
           return;
         case "openPopup":
           if (popup !== null) return; // single-popup invariant
@@ -699,61 +696,19 @@ function renderCard(id: CardId, { snapshot, db, workstream, width, budgets }: Re
 function visibleCardIds(visibility: CardVisibility): CardId[] {
   const ids: CardId[] = [];
   for (const id of [0, 1, 2, 3, 4, 5, 6, 7, 8, 9] as const) {
-    if (visibility[cardKeyFromId(id)]) ids.push(id);
+    if (visibility[id]) ids.push(id);
   }
   return ids;
 }
 
-function cardKeyFromId(id: CardId): keyof CardVisibility {
-  switch (id) {
-    case 0:
-      return "commits";
-    case 1:
-      return "agents";
-    case 2:
-      return "tracks";
-    case 3:
-      return "ready";
-    case 4:
-      return "log";
-    case 5:
-      return "workspaces";
-    case 6:
-      return "inProgress";
-    case 7:
-      return "blocked";
-    case 8:
-      return "recent";
-    case 9:
-      return "doctor";
-  }
-}
-
+// Both helpers below are pure CARD_CONFIGS table reads after
+// review_tui_card_key_from_id_redundant. They were 24-line
+// switch(id) blocks that duplicated the per-card name list already
+// living in src/cli/tui/layout.ts. The 'dag' / 'allTasks' branches
+// stay inline because they're not card slots — they're
+// keybind-only popups with no row in CARD_CONFIGS.
 function popupNameForId(id: NonNullable<PopupId>): string {
-  switch (id) {
-    case 0:
-      return "Commits";
-    case 1:
-      return "Agents";
-    case 2:
-      return "Tracks";
-    case 3:
-      return "Tasks";
-    case 4:
-      return "Log";
-    case 5:
-      return "Workspaces";
-    case 6:
-      return "In-progress";
-    case 7:
-      return "Blocked";
-    case 8:
-      return "Recent";
-    case 9:
-      return "Doctor";
-    case "dag":
-      return "DAG";
-    case "allTasks":
-      return "All tasks";
-  }
+  if (id === "dag") return "DAG";
+  if (id === "allTasks") return "All tasks";
+  return CARD_CONFIGS[id].label;
 }
