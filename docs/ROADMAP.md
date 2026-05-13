@@ -1,6 +1,6 @@
 # Roadmap
 
-What's coming after [0.1.0](../CHANGELOG.md), with full design
+What's coming after the current pre-1.0 line, with full design
 rationale per item. This is the **single forward-looking doc**: if
 a feature isn't listed here, it isn't planned. If it's listed but
 unbuilt, see its promotion criteria for what would move it.
@@ -463,12 +463,9 @@ Listed so we don't pretend they're settled.
   heterogeneous-CLI forward-compat). Today the only meaningful
   value is `pi`. We're keeping it TEXT — if multi-CLI re-earns its
   way back, the column doesn't need a schema migration.
-- **Composite `(workstream, local_id)` PK on tasks.** Currently
-  `local_id` is global PK. Two workstreams can't both have a
-  `design` task. Recorded as a deferred normalization above.
-- **Capability tags on operations.** The `defineOperation()`
-  registry that would have carried these is rejected. The role
-  flag on agents is stored but unenforced. The internal critique
+- **Capability tags on operations.** The rejected operation-registry
+  idea would have carried these. The role flag on agents is stored
+  but unenforced. The internal critique
   flagged "capability-gated mutations" as part of the minimal
   core; for now mu's only authorization surface is "the agent ran
   the verb." Earn capability enforcement when an agent actually
