@@ -316,10 +316,11 @@ speaking for another.
   tests. Verification is the caller's job. (mu may grow optional
   verifying-runners later if friction surfaces; today it's an
   audit-trail discipline, not enforcement.)
-- **Not undoable.** No snapshots, no `mu undo`. `mu workstream
-  destroy --yes` is irreversible. Recovery is restoring `mu.db` from
-  a backup. Snapshots are deferred past 1.0 — the SQL escape hatch
-  + FK CASCADE behaviour cover most repair scenarios.
+- **DB-undoable, not substrate-undoable.** Destructive verbs
+  auto-capture whole-DB snapshots and `mu undo --yes` restores the
+  registry. That does not replay killed tmux panes or recreate freed
+  workspace directories; after a restore, reconciliation reports
+  ghosts/orphans and the caller decides what to re-spawn or adopt.
 
 ---
 

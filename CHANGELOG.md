@@ -88,6 +88,7 @@ called out under "Breaking" in each entry.
 - README now has a dedicated TUI dashboard section covering the ten cards, fullscreen drills, keymap, mouse support, read-only yank contract, and `tuicr` handoff exception.
 - Architecture docs now match the current CLI/SDK shape: no operation registry, current task statuses, current `agent attach` behaviour, and the v7 schema path.
 - Usage guide SQL examples now use the v5+ surrogate-id schema (`workstream_id`, `task_id`, `owner_id`) and the demo assignment uses the typed `mu task claim` verb instead of raw owner updates.
+- Vision docs now describe the shipped DB snapshot/undo contract instead of the pre-snapshot irreversibility note.
 - README task examples now use the shipped `--blocked-by` flag instead of stale `--blocks` spelling.
 - Every TUI task-list popup and card now colour-codes the status column (OPEN cyan, IN_PROGRESS yellow, CLOSED green, REJECTED red, DEFERRED gray/dim) — matching the existing static `mu task list` / `mu state` table colouring. Was: rendered as plain dim text in TUI.
 - TaskDetailDrill (the read-only drill that shows a task's note timeline) now renders each note's header (`── <ts>  <author> ──`) in bold cyan so multi-note tasks (especially umbrella tasks) are easy to scan top-to-bottom.
