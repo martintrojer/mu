@@ -160,11 +160,11 @@ export interface DrillScrollViewProps {
   viewport: number;
   /** First visible line index (0-based; clamped by caller). */
   scrollTop: number;
-  /** Optional dim hint rendered as the TitledBox's bottomLabel
-   *  (drill-specific recipe, e.g. ``y yanks `mu task notes <id>` ``
-   *  or ``loading…``). The j/k/Esc/q nav cluster lives in the
-   *  global StatusBar (popup-mode hint), so we keep this label
-   *  short — single drill-specific verb hint. */
+  /** Optional dim hint rendered below the body (drill-specific
+   *  recipe, e.g. ``y yanks `mu task notes <id>` `` or
+   *  ``loading…``). The j/k/Esc/q nav cluster lives in the global
+   *  StatusBar (popup-mode hint), so we keep this label short —
+   *  single drill-specific verb hint. */
   hint?: string;
   /** Optional fallback rendered when the body is empty. */
   emptyText?: string;
@@ -213,35 +213,43 @@ export function DrillScrollView({
   // (bug_tui_drill_text_no_width_pin — central fix replacing the
   // earlier per-line width pin.)
   //
-  // Long lines WRAP within the popup's inner width (no `wrap` prop
-  // on body Text — ink's default is wrap-on-overflow). The user's
-  // expectation: "long strings should wrap so you can read all of
-  // them, but wrap within the borders." The position counter still
-  // counts LOGICAL lines (split-on-\n), so a viewport of 8 may
-  // visually consume more terminal rows when some logical lines
-  // wrap; the user keeps scrolling with j/k. That's the accepted
-  // trade-off vs. computing wrap-aware viewport sizing.
+  // Body lines have already been ANSI-aware pre-wrapped by visual
+  // width (`wrapAnsiLines` via useDrillKeymap / wrapDrillBody).
+  // Keep every pre-wrapped logical line on exactly one terminal row:
+  // Ink's default Text wrap can re-wrap coloured lines after counting
+  // SGR escape bytes, which spills into the popup chrome and bends the
+  // right border. `wrap="truncate"` uses visual width; correct lines
+  // pass through unchanged, and any upstream over-budget line clips
+  // cleanly instead of corrupting the frame.
   return (
     <Box flexDirection="column" flexGrow={1}>
       <Box>
-        <Text bold color="magenta">
+        <Text bold color="magenta" wrap="truncate">
           {headerTitle}
         </Text>
-        <Text dimColor> · {positionLabel}</Text>
+        <Text dimColor wrap="truncate">
+          {` · ${positionLabel}`}
+        </Text>
       </Box>
       <Box flexDirection="column" flexGrow={1}>
         {showFallback ? (
-          <Text dimColor>{emptyText ?? "(empty)"}</Text>
+          <Text dimColor wrap="truncate">
+            {emptyText ?? "(empty)"}
+          </Text>
         ) : (
           visible.map((ln, i) => (
             // eslint-disable-next-line react/no-array-index-key
-            <Text key={`${start + i}`}>{ln === "" ? " " : ln}</Text>
+            <Text key={`${start + i}`} wrap="truncate">
+              {ln === "" ? " " : ln}
+            </Text>
           ))
         )}
       </Box>
       {hasHint ? (
         <Box>
-          <Text dimColor>{hintText}</Text>
+          <Text dimColor wrap="truncate">
+            {hintText}
+          </Text>
         </Box>
       ) : null}
     </Box>

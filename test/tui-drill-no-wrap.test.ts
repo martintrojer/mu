@@ -1,83 +1,117 @@
-// Regression guards for the DrillScrollView rendering invariants.
+// Regression guards for DrillScrollView's single-row body rendering.
 //
-// History (read in order to understand what we landed and why):
-//
-// 1. Original symptom: every long-text drill view (task notes, git
-//    show, log payloads, agent scrollback, doctor remediation)
-//    wrapped past the popup's right border. The first attempt added
-//    `<Text wrap="truncate">` per line — but ink only honours
-//    truncate inside a parent <Box> with a definite width, and
-//    DrillScrollView at the time wrapped its body in its OWN
-//    nested <TitledBox> at width=stdout.columns INSIDE the popup's
-//    cyan TitledBox at width=stdout.columns. Both boxes drew rounded
-//    borders + paddingX (4 cols of chrome each), so the inner box
-//    overflowed the popup's inner content area by 4 cols and the
-//    body's contentWidth was double-counted. Lines that fit the
-//    inner contentWidth then spilled past the OUTER cyan border;
-//    the terminal scrolled / wrapped exactly as the user reported.
-//
-// 2. Central fix: drop the nested magenta TitledBox entirely. Render
-//    title + position + body + hint INLINE inside the popup's
-//    existing chrome. One border, one width budget; ink's natural
-//    flex-grown column inherits the popup's inner width.
-//
-// 3. User refinement: long lines should WRAP-WITHIN-BORDERS so you
-//    can read the whole line by scrolling, NOT clip with `…` /
-//    truncate. So the body lines drop the `wrap` prop entirely and
-//    let ink default to wrap-on-overflow.
-//
-// What this test pins (the live invariants):
-//   - DrillScrollView does NOT import TitledBox.
-//   - DrillScrollView does NOT render a nested <TitledBox>.
-//   - Body lines do NOT carry wrap="truncate" (so long lines wrap
-//     within the popup's inner width instead of clipping), and
-//     ANSI-coloured lines are pre-wrapped by visible width before
-//     reaching Ink's byte-oriented Text wrapping.
-//   - The magenta-coloured title still renders (visual consistency
-//     with the prior nested-TitledBox magenta border).
+// The drill body is pre-wrapped upstream by visual width with
+// wrapAnsiLines(). Once a line reaches Ink it must stay on one
+// terminal row: Ink's default Text wrap can count ANSI SGR escape
+// bytes in coloured git-show / scrollback output and wrap again,
+// spilling text into the popup chrome and bending the right border.
 
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { Box, render } from "ink";
+import { createElement } from "react";
+import stringWidth from "string-width";
+import { afterEach, describe, expect, it } from "vitest";
+import { DrillScrollView, wrapDrillBody } from "../src/cli/tui/popups/drill.js";
+import { CaptureStream, collectRenderedLines } from "./_ink-render.js";
 
-const DRILL_SRC = readFileSync(
-  join(import.meta.dirname, "..", "src", "cli", "tui", "popups", "drill.tsx"),
-  "utf8",
-);
+const ESC = "\u001B";
+const RED = `${ESC}[31m`;
+const GREEN = `${ESC}[32m`;
+const RESET = `${ESC}[0m`;
+const ANSI_RE = new RegExp(`${ESC}\\[[0-?]*[ -/]*[@-~]`, "g");
 
-/** Strip block + line comments so doc references don't trip
- *  source-pattern assertions. */
-function stripComments(src: string): string {
-  return src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+function stripAnsi(s: string): string {
+  return s.replace(ANSI_RE, "");
 }
 
-describe("DrillScrollView renders inline (no nested TitledBox)", () => {
-  it("does not import TitledBox", () => {
-    expect(stripComments(DRILL_SRC)).not.toMatch(/from\s+["']\.\.\/titled-box\.js["']/);
+function bodyRows(lines: readonly string[]): string[] {
+  return lines.filter((line) => !line.startsWith("git show ") && line !== "hint");
+}
+
+async function withTerminalWidth<T>(cols: number, fn: () => Promise<T>): Promise<T> {
+  const original = process.stdout.columns;
+  Object.defineProperty(process.stdout, "columns", { value: cols, configurable: true });
+  try {
+    return await fn();
+  } finally {
+    Object.defineProperty(process.stdout, "columns", { value: original, configurable: true });
+  }
+}
+
+async function renderDrill(
+  body: string,
+  opts: { cols: number; boxWidth: number; wrappedBody?: ReturnType<typeof wrapDrillBody> },
+): Promise<string[]> {
+  return withTerminalWidth(opts.cols, async () => {
+    const stdout = new CaptureStream({ columns: opts.cols, rows: 20 });
+    const instance = render(
+      createElement(
+        Box,
+        { flexDirection: "column", width: opts.boxWidth },
+        createElement(DrillScrollView, {
+          title: "git show abc123",
+          body,
+          viewport: 8,
+          scrollTop: 0,
+          hint: "hint",
+          wrappedBody: opts.wrappedBody ?? wrapDrillBody(body, opts.boxWidth),
+        }),
+      ),
+      { stdout, stdin: process.stdin, stderr: process.stderr, debug: false, patchConsole: false },
+    );
+    const lines = await collectRenderedLines(stdout);
+    instance.unmount();
+    return lines;
+  });
+}
+
+function exactAnsiDiffBody(wrapWidth: number): string {
+  const plusLine = `${GREEN}+${"a".repeat(wrapWidth - 1)}${RESET}`;
+  const minusLine = `${RED}-${"b".repeat(wrapWidth - 1)}${RESET}`;
+  return `${plusLine}\n${minusLine}`;
+}
+
+describe("DrillScrollView does not let Ink byte-wrap coloured pre-wrapped lines", () => {
+  afterEach(() => {
+    CaptureStream.cleanup();
   });
 
-  it("does not render a <TitledBox> wrapper", () => {
-    expect(stripComments(DRILL_SRC)).not.toMatch(/<TitledBox\b/);
+  it("marks title, position, fallback, body, and hint Text as truncate-wrapped", async () => {
+    const { readFileSync } = await import("node:fs");
+    const src = readFileSync("./src/cli/tui/popups/drill.tsx", "utf8");
+    expect(src).toContain('color="magenta" wrap="truncate"');
+    expect(src).toContain('dimColor wrap="truncate"');
+    expect(src).toContain('key={`${start + i}`} wrap="truncate"');
+    expect(src).toContain("Ink's default Text wrap can re-wrap coloured lines");
   });
 
-  it("body lines wrap-within-borders (ANSI-aware pre-wrap, no wrap prop on body Text)", () => {
-    // Find the visible.map(...) → <Text>{ln}</Text> render branch
-    // and assert the <Text> there does NOT carry `wrap="..."`.
-    // ink's default is wrap-on-overflow, which is what we want.
-    const stripped = stripComments(DRILL_SRC);
-    const match = stripped.match(/visible\.map\([^)]*\)\s*=>\s*\(([\s\S]*?)\)\s*\)/);
-    expect(match, "could not find visible.map render branch").not.toBeNull();
-    const branch = match?.[1] ?? "";
-    expect(
-      branch,
-      "drill body <Text> must NOT carry wrap=… (lines should wrap within the popup width, not clip)",
-    ).not.toMatch(/<Text[^>]*\bwrap=/);
-    expect(stripped).toContain("wrapDrillBody");
+  it("keeps ANSI-coloured diff lines that are exactly wrapWidth on one rendered row each", async () => {
+    const wrapWidth = 24;
+    const lines = await renderDrill(exactAnsiDiffBody(wrapWidth), {
+      cols: wrapWidth + 6,
+      boxWidth: wrapWidth,
+    });
+    const rows = bodyRows(lines).map(stripAnsi);
+
+    expect(rows).toEqual([`+${"a".repeat(wrapWidth - 1)}`, `-${"b".repeat(wrapWidth - 1)}`]);
+    expect(rows.every((line) => stringWidth(line) <= wrapWidth)).toBe(true);
   });
 
-  it("title + position label render as a single inline header row", () => {
-    const stripped = stripComments(DRILL_SRC);
-    expect(stripped).toMatch(/<Text[^>]*\bcolor=["']magenta["']/);
-    expect(stripped).toMatch(/positionLabel/);
+  it("truncates an over-budget coloured line instead of producing a wrap-overflow row", async () => {
+    const wrapWidth = 24;
+    const body = `${RED}>${"x".repeat(wrapWidth + 8)}${RESET}`;
+    const lines = await renderDrill(body, {
+      cols: wrapWidth + 6,
+      boxWidth: wrapWidth,
+      // Deliberately model a buggy upstream pre-wrap result: one
+      // visible line wider than the drill budget. DrillScrollView
+      // should clip it in-place, not let Ink wrap an overflow row.
+      wrappedBody: { wrapped: body, lines: [body], totalLines: 1 },
+    });
+    const rows = bodyRows(lines).map(stripAnsi);
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toContain("…");
+    expect(rows[0]?.startsWith(">")).toBe(true);
+    expect(rows.every((line) => stringWidth(line) <= wrapWidth)).toBe(true);
   });
 });
