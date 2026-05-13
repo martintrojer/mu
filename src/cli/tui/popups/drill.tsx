@@ -31,7 +31,7 @@
 // Per ROADMAP pledge: ink/react import limited to src/cli/tui/*.
 
 import { Box, Text } from "ink";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { cellWidth, contentWidthFromCols, termColsForLayout, truncateCell } from "../columns.js";
 import type { PopupAction } from "../keys.js";
 import { wrapAnsiLines } from "../wrap-ansi.js";
@@ -53,6 +53,8 @@ export interface DrillKeymapOptions {
   onYank?: () => void | Promise<void>;
   /** Optional user-driven escape hatch for git-show drills. */
   onTuicr?: () => void | Promise<void>;
+  /** Called after keyboard navigation computes and stores a new scroll top. */
+  onScrollChange?: (newTop: number) => void;
   /**
    * Identity signal for scroll resets. Callers should pass the focused
    * row / entity identity so auto-refreshes of the SAME drill preserve
@@ -101,9 +103,23 @@ export function useDrillKeymap({
   onClose,
   onYank,
   onTuicr,
+  onScrollChange,
   resetKey,
 }: DrillKeymapOptions): DrillKeymap {
-  const [scrollTop, setScrollTop] = useState(0);
+  const [scrollTop, setScrollTopState] = useState(0);
+  const scrollTopRef = useRef(0);
+  const onScrollChangeRef = useRef(onScrollChange);
+  onScrollChangeRef.current = onScrollChange;
+  const updateScrollTop = useCallback(
+    (update: number | ((current: number) => number), notify = false): number => {
+      const nextTop = typeof update === "function" ? update(scrollTopRef.current) : update;
+      scrollTopRef.current = nextTop;
+      setScrollTopState(nextTop);
+      if (notify) onScrollChangeRef.current?.(nextTop);
+      return nextTop;
+    },
+    [],
+  );
   const wrapWidth = drillWrapWidth();
   const wrappedBody = useWrappedBody(body, wrapWidth);
   const { totalLines } = wrappedBody;
@@ -112,22 +128,22 @@ export function useDrillKeymap({
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: resetSignal intentionally preserves legacy body-based resets when resetKey is omitted, and identity-based resets when resetKey is supplied.
   useEffect(() => {
-    setScrollTop(0);
-  }, [resetSignal]);
+    updateScrollTop(0);
+  }, [resetSignal, updateScrollTop]);
 
   useEffect(() => {
-    setScrollTop((s) => clampScrollTop(s, totalLines, viewport));
-  }, [totalLines, viewport]);
+    updateScrollTop((s) => clampScrollTop(s, totalLines, viewport));
+  }, [totalLines, updateScrollTop, viewport]);
 
   const dispatch = useCallback(
     (action: PopupAction) => {
       if (isNavAction(action)) {
-        setScrollTop((s) => applyScroll(s, action, totalLines, viewport));
+        updateScrollTop((s) => applyScroll(s, action, totalLines, viewport), true);
         return;
       }
       switch (action.kind) {
         case "close":
-          setScrollTop(0);
+          updateScrollTop(0);
           onClose();
           return;
         case "yank":
@@ -140,7 +156,7 @@ export function useDrillKeymap({
           return;
       }
     },
-    [onClose, onTuicr, onYank, totalLines, viewport],
+    [onClose, onTuicr, onYank, totalLines, updateScrollTop, viewport],
   );
 
   return {

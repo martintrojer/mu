@@ -1,24 +1,30 @@
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Box, Text, render } from "ink";
+import { createElement, useEffect, useRef } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import { cellWidth } from "../src/cli/tui/columns.js";
+import type { PopupAction } from "../src/cli/tui/keys.js";
 import {
   DagPopup,
   buildDagBody,
   dagYankCommand,
   truncateDagBody,
 } from "../src/cli/tui/popups/dag.js";
+import { useDrillKeymap } from "../src/cli/tui/popups/drill.js";
 import { loadFullDag, renderForest } from "../src/dag.js";
 import { type Db, openDb } from "../src/db.js";
 import { type TaskRow, addBlockEdge, addTask, setTaskStatus } from "../src/tasks.js";
 import { TASK_STATUSES } from "../src/tasks/status.js";
+import { CaptureStream, createInkCaptureStream, waitForInkOutput } from "./_ink-render.js";
 
 let openDbs: Db[] = [];
 
 afterEach(() => {
   for (const db of openDbs) db.close();
   openDbs = [];
+  CaptureStream.cleanup();
 });
 
 function task(name: string, title = name): TaskRow {
@@ -197,6 +203,11 @@ describe("DagPopup", () => {
     expect(src).toContain("<PopupShell");
     expect(src).toContain("<DrillScrollView");
     expect(src).toContain("useDrillKeymap");
+    expect(src).not.toContain("applyScroll");
+    expect(src).not.toContain("isNavAction");
+    expect(src).not.toContain("const before = drill.scrollTop");
+    expect(src).not.toContain("onClose: () => {}");
+    expect(src).toContain("onScrollChange:");
     expect(src).toContain("<StatusFilterStrip");
     expect(src).toContain("includeTitle: false");
     expect(src).toContain("truncateDagBody(body, contentWidth)");
@@ -206,4 +217,76 @@ describe("DagPopup", () => {
   it("yank helper produces the focused task tree command", () => {
     expect(dagYankCommand("root_a", "demo")).toBe("mu task tree root_a -w demo");
   });
+
+  it("useDrillKeymap onScrollChange reports the same scrollTop that it stores", async () => {
+    const capture = { scrolls: [] as number[], changes: [] as number[] };
+    const stdout = createInkCaptureStream({ columns: 100, rows: 24 });
+    const instance = render(
+      createElement(DrillScrollChangeHarness, {
+        body: numberedLines(20),
+        viewport: 5,
+        capture,
+      }),
+      { stdout, stdin: process.stdin, stderr: process.stderr, debug: true, patchConsole: false },
+    );
+    await waitForInkOutput(stdout);
+
+    instance.rerender(
+      createElement(DrillScrollChangeHarness, {
+        body: numberedLines(20),
+        viewport: 5,
+        capture,
+        action: { kind: "jumpBottom" },
+      }),
+    );
+    await waitForChange(capture, 15);
+
+    expect(capture.scrolls).toContain(15);
+    instance.unmount();
+  });
 });
+
+interface DrillScrollChangeHarnessProps {
+  body: string;
+  viewport: number;
+  capture: { scrolls: number[]; changes: number[] };
+  action?: PopupAction;
+}
+
+function DrillScrollChangeHarness({
+  body,
+  viewport,
+  capture,
+  action,
+}: DrillScrollChangeHarnessProps): JSX.Element {
+  const drill = useDrillKeymap({
+    body,
+    viewport,
+    resetKey: "dag-root-focus",
+    onClose: () => {},
+    onScrollChange: (newTop) => capture.changes.push(newTop),
+  });
+  const lastAction = useRef<PopupAction | undefined>(undefined);
+  useEffect(() => {
+    capture.scrolls.push(drill.scrollTop);
+  }, [capture, drill.scrollTop]);
+  useEffect(() => {
+    if (action === undefined || action === lastAction.current) return;
+    lastAction.current = action;
+    drill.dispatch(action);
+  }, [action, drill.dispatch]);
+  return createElement(Box, null, createElement(Text, null, `scroll:${drill.scrollTop}`));
+}
+
+function numberedLines(count: number): string {
+  return Array.from({ length: count }, (_, i) => `line ${i + 1}`).join("\n");
+}
+
+async function waitForChange(capture: { changes: number[] }, expected: number): Promise<void> {
+  const deadline = Date.now() + 1000;
+  while (Date.now() < deadline) {
+    if (capture.changes.includes(expected)) return;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  expect(capture.changes).toContain(expected);
+}

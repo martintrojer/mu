@@ -6,7 +6,7 @@
 // popup; it is a dashboard-level graph affordance for large workstreams.
 
 import { Box, Text, useInput } from "ink";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { loadFullDag, renderForest } from "../../../dag.js";
 import type { Db } from "../../../db.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
@@ -17,7 +17,6 @@ import { dispatchPopupKeyFromInk } from "../keys.js";
 import { PopupShell } from "../popup-shell.js";
 import { StatusFilterStrip, useStatusFilter } from "../use-status-filter.js";
 import { DrillScrollView, useDrillKeymap } from "./drill.js";
-import { applyScroll, isNavAction } from "./scroll.js";
 import { usePopupViewport } from "./viewport.js";
 
 export interface PopupProps {
@@ -52,15 +51,20 @@ export function DagPopup({
     return buildDagBody(db, workstream, statusFilter.statuses, contentWidth);
   }, [db, workstream, statusFilter.statuses, contentWidth, fastTickNonce]);
   const [focusedRoot, setFocusedRoot] = useState<string | null>(() => roots[0] ?? null);
+  const lineToRootRef = useRef<readonly string[]>([]);
+  const rootsRef = useRef<readonly string[]>([]);
+  rootsRef.current = roots;
   const focusedTask = focusedRoot !== null && roots.includes(focusedRoot) ? focusedRoot : roots[0];
   const drill = useDrillKeymap({
     body,
     viewport,
-    onClose: () => {},
+    onClose,
     onYank: () => {
       if (focusedTask === undefined) return;
       return yank(dagYankCommand(focusedTask, workstream));
     },
+    onScrollChange: (newTop) =>
+      setFocusedRoot(lineToRootRef.current[newTop] ?? rootsRef.current[0] ?? null),
     resetKey: workstream,
   });
 
@@ -68,27 +72,12 @@ export function DagPopup({
     () => rootForBodyLines(drill.wrappedLines, roots),
     [drill.wrappedLines, roots],
   );
+  lineToRootRef.current = lineToRoot;
 
   useInput((input, key) => {
     if (statusFilter.onKey(input, key)) return;
     const action = dispatchPopupKeyFromInk(input, key);
-    const before = drill.scrollTop;
     drill.dispatch(action);
-    switch (action.kind) {
-      case "close":
-        onClose();
-        return;
-      default:
-        break;
-    }
-
-    // Simplified yank focus: track the root whose header is at or
-    // before the current top line (or first root). This keeps the
-    // command useful without cursor-row plumbing in the text drill.
-    if (isNavAction(action)) {
-      const nextTop = applyScroll(before, action, drill.totalLines, viewport);
-      setFocusedRoot(lineToRoot[nextTop] ?? roots[0] ?? null);
-    }
   });
 
   if (roots.length === 0) {
