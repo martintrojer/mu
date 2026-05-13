@@ -14,6 +14,29 @@ export interface TaskEdges {
   dependents: string[];
 }
 
+export interface CanonicalBlocker {
+  localId: string;
+  id: number;
+}
+
+export function dedupeBlockersById(blockers: readonly CanonicalBlocker[]): CanonicalBlocker[] {
+  const seen = new Set<number>();
+  const canonical: CanonicalBlocker[] = [];
+  for (const blocker of blockers) {
+    if (seen.has(blocker.id)) continue;
+    seen.add(blocker.id);
+    canonical.push(blocker);
+  }
+  return canonical;
+}
+
+function sameNumberSet(left: readonly number[], right: readonly number[]): boolean {
+  if (left.length !== right.length) return false;
+  const rightSet = new Set(right);
+  if (rightSet.size !== right.length) return false;
+  return left.every((value) => rightSet.has(value));
+}
+
 /** One end of an edge with the neighbour's current status attached.
  *  Used by `mu task show` to group blockers/dependents into
  *  "still gating" vs "satisfied" buckets without making the renderer
@@ -250,7 +273,7 @@ export function removeBlockEdge(
 export interface ReparentTaskResult {
   /** Edges removed (i.e. all incoming `to_task = taskId` edges). */
   removedEdges: number;
-  /** Edges added (== blockers.length on success). */
+  /** Edges added (after duplicate blockers are canonicalised). */
   addedEdges: number;
 }
 
@@ -283,8 +306,10 @@ export function reparentTask(
   // existence + same-workstream + cycle checks before any DELETE.
   // Look up blockers across all workstreams so a blocker that exists in
   // a DIFFERENT workstream surfaces CrossWorkstreamEdgeError (clearer
-  // than TaskNotFoundError).
-  const blockerIds: number[] = [];
+  // than TaskNotFoundError). Duplicate blockers are an ergonomic input
+  // accident from repeat/CSV forms, so silently canonicalise by
+  // surrogate id while preserving first-seen order.
+  const requestedBlockers: CanonicalBlocker[] = [];
   for (const blockerLocalId of blockers) {
     if (blockerLocalId === taskLocalId) {
       throw new CycleError(blockerLocalId, taskLocalId);
@@ -304,7 +329,18 @@ export function reparentTask(
     if (wouldCreateCycle(db, blockerId, taskSurrogateId)) {
       throw new CycleError(blockerLocalId, taskLocalId);
     }
-    blockerIds.push(blockerId);
+    requestedBlockers.push({ localId: blockerLocalId, id: blockerId });
+  }
+  const canonicalBlockers = dedupeBlockersById(requestedBlockers);
+  const blockerIds = canonicalBlockers.map((blocker) => blocker.id);
+  const currentBlockerIds = (
+    db
+      .prepare("SELECT from_task_id AS id FROM task_edges WHERE to_task_id = ?")
+      .all(taskSurrogateId) as { id: number }[]
+  ).map((row) => row.id);
+
+  if (sameNumberSet(currentBlockerIds, blockerIds)) {
+    return { removedEdges: 0, addedEdges: 0 };
   }
 
   return db.transaction(() => {
@@ -317,18 +353,14 @@ export function reparentTask(
       insertEdge.run(blockerId, taskSurrogateId, now);
     }
     // Bump the reparented task itself — its blocker set just changed.
-    // No-op when both removed and added were 0 (effectively a no-op
-    // call); skip in that case so an idempotent `reparent --blocked-by
-    // <same-set>` stays a true no-op for `--sort recency`.
-    if (removed.changes > 0 || blockerIds.length > 0) {
-      touchTask(db, taskSurrogateId, now);
-    }
-    const blockersBit = blockers.length > 0 ? `, new=${[...blockers].join(",")}` : "";
+    touchTask(db, taskSurrogateId, now);
+    const blockerNames = canonicalBlockers.map((blocker) => blocker.localId);
+    const blockersBit = blockerNames.length > 0 ? `, new=${blockerNames.join(",")}` : "";
     emitEvent(
       db,
       task.workstreamName,
-      `task reparent ${taskLocalId} (removed ${removed.changes} edges, added ${blockers.length}${blockersBit})`,
+      `task reparent ${taskLocalId} (removed ${removed.changes} edges, added ${blockerIds.length}${blockersBit})`,
     );
-    return { removedEdges: removed.changes, addedEdges: blockers.length };
+    return { removedEdges: removed.changes, addedEdges: blockerIds.length };
   })();
 }

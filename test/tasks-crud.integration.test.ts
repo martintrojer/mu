@@ -191,6 +191,27 @@ describe("addTask", () => {
     expect(ready).toEqual(["design"]);
   });
 
+  it("dedupes duplicate blockedBy entries by first-seen task", () => {
+    addTask(db, {
+      localId: "design",
+      workstream: "test",
+      title: "Design",
+      impact: 80,
+      effortDays: 2,
+    });
+    const build = addTask(db, {
+      localId: "build",
+      workstream: "test",
+      title: "Build",
+      impact: 80,
+      effortDays: 5,
+      blockedBy: ["design", "design"],
+    });
+    expect(build.name).toBe("build");
+    expect(getTaskEdges(db, "build", "test").blockers).toEqual(["design"]);
+    expect((db.prepare("SELECT COUNT(*) AS n FROM task_edges").get() as { n: number }).n).toBe(1);
+  });
+
   it("rejects unknown blocker BEFORE inserting the task", () => {
     expect(() =>
       addTask(db, {
@@ -789,6 +810,45 @@ describe("reparentTask", () => {
     const r = reparentTask(db, "target", ["c"], { workstream: "auth" });
     expect(r).toEqual({ removedEdges: 2, addedEdges: 1 });
     expect(getTaskEdges(db, "target", "auth").blockers).toEqual(["c"]);
+  });
+
+  it("is a true no-op when reparenting to the identical blocker set", () => {
+    const before = getTask(db, "target", "auth")?.updatedAt;
+    const start = Date.now();
+    while (Date.now() === start) {
+      /* spin */
+    }
+    const r = reparentTask(db, "target", ["a", "b"], { workstream: "auth" });
+    const after = getTask(db, "target", "auth")?.updatedAt;
+    expect(r).toEqual({ removedEdges: 0, addedEdges: 0 });
+    expect(after).toBe(before);
+    expect(getTaskEdges(db, "target", "auth").blockers).toEqual(["a", "b"]);
+  });
+
+  it("dedupes duplicate blockers and inserts a single edge", () => {
+    const r = reparentTask(db, "target", ["a", "a"], { workstream: "auth" });
+    expect(r).toEqual({ removedEdges: 2, addedEdges: 1 });
+    expect(getTaskEdges(db, "target", "auth").blockers).toEqual(["a"]);
+    const row = db
+      .prepare(
+        "SELECT COUNT(*) AS n FROM task_edges WHERE to_task_id = (SELECT id FROM tasks WHERE local_id = 'target')",
+      )
+      .get() as { n: number };
+    expect(row.n).toBe(1);
+  });
+
+  it("dedupes replacement blockers in first-seen order", () => {
+    const r = reparentTask(db, "target", ["b", "c", "b"], { workstream: "auth" });
+    expect(r).toEqual({ removedEdges: 2, addedEdges: 2 });
+    const rows = db
+      .prepare(
+        `SELECT t.local_id AS id FROM task_edges e
+           JOIN tasks t ON t.id = e.from_task_id
+          WHERE e.to_task_id = (SELECT id FROM tasks WHERE local_id = 'target')
+          ORDER BY e.created_at, e.rowid`,
+      )
+      .all() as { id: string }[];
+    expect(rows.map((row) => row.id)).toEqual(["b", "c"]);
   });
 
   it("clears all incoming edges with empty blockers list", () => {

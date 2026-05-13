@@ -133,6 +133,38 @@ describe("mu task add --blocked-by", () => {
     expect(edges.blockers.sort()).toEqual(["a", "b", "c"]);
   });
 
+  it("--blocked-by dedupes CSV duplicate blockers", async () => {
+    await runCli(
+      ["task", "add", "design", "-w", "test", "-t", "Design", "-i", "80", "-e", "2"],
+      dbPath,
+    );
+    const r = await runCli(
+      [
+        "task",
+        "add",
+        "build",
+        "-w",
+        "test",
+        "-t",
+        "Build",
+        "-i",
+        "70",
+        "-e",
+        "3",
+        "--blocked-by",
+        "design,design",
+      ],
+      dbPath,
+    );
+    expect(r.error).toBeUndefined();
+    expect(r.exitCode).toBeNull();
+    expect(r.stderr).not.toMatch(/SQLITE_CONSTRAINT|UNIQUE constraint failed/i);
+    const db = openDb({ path: dbPath });
+    const edges = getTaskEdges(db, "build", "test");
+    db.close();
+    expect(edges.blockers).toEqual(["design"]);
+  });
+
   it("--blocked-by accepts the repeated-flag form (variadic)", async () => {
     // Codified by cli_audit_plurality_uniformity (v0.3): every
     // multi-value flag accepts repeated invocations OR a CSV value
@@ -169,6 +201,40 @@ describe("mu task add --blocked-by", () => {
     const edges = getTaskEdges(db, "build", "test");
     db.close();
     expect(edges.blockers.sort()).toEqual(["a", "b", "c"]);
+  });
+
+  it("--blocked-by dedupes repeated duplicate blockers", async () => {
+    await runCli(
+      ["task", "add", "design", "-w", "test", "-t", "Design", "-i", "80", "-e", "2"],
+      dbPath,
+    );
+    const r = await runCli(
+      [
+        "task",
+        "add",
+        "build",
+        "-w",
+        "test",
+        "-t",
+        "Build",
+        "-i",
+        "70",
+        "-e",
+        "3",
+        "--blocked-by",
+        "design",
+        "--blocked-by",
+        "design",
+      ],
+      dbPath,
+    );
+    expect(r.error).toBeUndefined();
+    expect(r.exitCode).toBeNull();
+    expect(r.stderr).not.toMatch(/SQLITE_CONSTRAINT|UNIQUE constraint failed/i);
+    const db = openDb({ path: dbPath });
+    const edges = getTaskEdges(db, "build", "test");
+    db.close();
+    expect(edges.blockers).toEqual(["design"]);
   });
 
   it("--blocks (the old name) is rejected by commander as unknown option", async () => {

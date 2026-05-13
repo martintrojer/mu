@@ -88,6 +88,34 @@ describe("mu task reparent --blocked-by", () => {
     expect(edges.blockers.sort()).toEqual(["a", "b", "c", "d"]);
   });
 
+  it("CSV duplicate blockers are deduped without leaking SQLite errors", async () => {
+    const r = await runCli(
+      ["task", "reparent", "target", "-w", "test", "--blocked-by", "a,a"],
+      dbPath,
+    );
+    expect(r.error).toBeUndefined();
+    expect(r.exitCode).toBeNull();
+    expect(r.stderr).not.toMatch(/SQLITE_CONSTRAINT|UNIQUE constraint failed/i);
+    const db = openDb({ path: dbPath });
+    const edges = getTaskEdges(db, "target", "test");
+    db.close();
+    expect(edges.blockers).toEqual(["a"]);
+  });
+
+  it("repeated duplicate blockers are deduped without leaking SQLite errors", async () => {
+    const r = await runCli(
+      ["task", "reparent", "target", "-w", "test", "--blocked-by", "a", "--blocked-by", "a"],
+      dbPath,
+    );
+    expect(r.error).toBeUndefined();
+    expect(r.exitCode).toBeNull();
+    expect(r.stderr).not.toMatch(/SQLITE_CONSTRAINT|UNIQUE constraint failed/i);
+    const db = openDb({ path: dbPath });
+    const edges = getTaskEdges(db, "target", "test");
+    db.close();
+    expect(edges.blockers).toEqual(["a"]);
+  });
+
   it("empty string clears all blockers", async () => {
     // Seed with two blockers first.
     await runCli(["task", "reparent", "target", "-w", "test", "--blocked-by", "a,b"], dbPath);

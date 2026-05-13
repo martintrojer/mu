@@ -5,7 +5,7 @@ import { emitEvent } from "../logs.js";
 import { captureSnapshot } from "../snapshots.js";
 import { ensureWorkstream } from "../workstream.js";
 import { taskIdFor, touchTask } from "./core.js";
-import { wouldCreateCycle } from "./edges.js";
+import { dedupeBlockersById, wouldCreateCycle } from "./edges.js";
 import {
   CrossWorkstreamEdgeError,
   CycleError,
@@ -75,6 +75,8 @@ export function addTask(db: Db, opts: AddTaskOptions) {
       .run(wsId, opts.localId, opts.title, opts.impact, opts.effortDays, now, now);
     const newTaskId = Number(insertResult.lastInsertRowid);
 
+    let canonicalBlockedBy: string[] = [];
+
     if (opts.blockedBy && opts.blockedBy.length > 0) {
       // Prefer the same-workstream blocker first (v5 per-workstream
       // local_id), then fall back to a global lookup so a cross-ws
@@ -93,10 +95,7 @@ export function addTask(db: Db, opts: AddTaskOptions) {
            JOIN workstreams ws ON ws.id = t.workstream_id
           WHERE t.local_id = ? LIMIT 1`,
       );
-      const insertEdge = db.prepare(
-        "INSERT INTO task_edges (from_task_id, to_task_id, created_at) VALUES (?, ?, ?)",
-      );
-      for (const blocker of opts.blockedBy) {
+      const requestedBlockers = opts.blockedBy.map((blocker) => {
         const row = (blockerLookupSameWs.get(blocker, wsId) ?? blockerLookupAnyWs.get(blocker)) as
           | { id: number; workstream: string }
           | undefined;
@@ -114,14 +113,22 @@ export function addTask(db: Db, opts: AddTaskOptions) {
         if (wouldCreateCycle(db, row.id, newTaskId)) {
           throw new CycleError(blocker, opts.localId);
         }
-        insertEdge.run(row.id, newTaskId, now);
+        return { localId: blocker, id: row.id };
+      });
+      const canonicalBlockers = dedupeBlockersById(requestedBlockers);
+      canonicalBlockedBy = canonicalBlockers.map((blocker) => blocker.localId);
+      const insertEdge = db.prepare(
+        "INSERT INTO task_edges (from_task_id, to_task_id, created_at) VALUES (?, ?, ?)",
+      );
+      for (const blocker of canonicalBlockers) {
+        insertEdge.run(blocker.id, newTaskId, now);
       }
     }
 
     const row = getTask(db, opts.localId, opts.workstream);
     if (!row) throw new Error(`addTask: row missing after insert: ${opts.localId}`);
     const blockedBy =
-      opts.blockedBy && opts.blockedBy.length > 0 ? `, blocked-by=${opts.blockedBy.join(",")}` : "";
+      canonicalBlockedBy.length > 0 ? `, blocked-by=${canonicalBlockedBy.join(",")}` : "";
     emitEvent(
       db,
       opts.workstream,
