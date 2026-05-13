@@ -192,6 +192,21 @@ called out under "Breaking" in each entry.
 
 ### Tests
 
+- `test/_ink-render.ts`: added a `simulateInput(stdin, key, opts?)`
+  helper plus a header comment block documenting the
+  CaptureStream-based behaviour-test seam (the 4-step pattern:
+  `createInkInputStream` + `createInkCaptureStream` + `render` +
+  `simulateInput` → assert `latestRenderedFrame`). Symbolic key
+  names (`escape`, `enter`, `up`, …) translate to the byte sequences
+  ink's `parse-keypress.js` decodes; plain strings (`"j"`, multi-char
+  text) are written verbatim. The 5ms default wait gives ink's
+  reconciler one tick to flush. Pinned by 7 unit tests in
+  `test/_ink-render.test.ts`. Motivated by the
+  `testreview_tui_static_source_grep_pervasive` umbrella: workers
+  reaching for `readFileSync` source-greps because they didn't
+  realise the seam existed; the header now spells out when to use
+  behaviour tests vs source-greps and points at
+  `tui-popup-all-tasks.test.ts` as the exemplar.
 - `test/db.test.ts`: replaced the fake-FK assertion with two real
   ones. The previous "rejects edges to non-existent tasks (FK)"
   test routed both endpoints through an `insertEdge` helper that
