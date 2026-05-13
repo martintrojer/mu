@@ -121,6 +121,7 @@ called out under "Breaking" in each entry.
 
 ### Fixed
 
+- `mu sql` now uses better-sqlite3 prepared-statement metadata to decide whether a single statement returns rows, so `PRAGMA table_info(...)` and comment-prefixed `SELECT` queries render rows instead of write change-count output.
 - `mu task add` now omits the human `blocked by:` line when no `--blocked-by` values were supplied, instead of printing an empty optional field.
 - `mu workstream destroy` dry-run Next commands now preserve the operator's `--archive <label>` and `--no-export` flags, so copy-pasting the confirmation command matches the preview.
 - TUI `?` help overlay is now scrollable. On low-row panes (e.g. 24 rows) the previous single-column render hid the bottom half of the keymap behind the StatusBar; now j/k/Ctrl-D/U/g/G/PgDn/PgUp scroll the body and a position indicator (`1-12/53`) sits inset into the title.

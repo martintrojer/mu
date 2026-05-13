@@ -104,20 +104,19 @@ export async function cmdSql(
     return;
   }
 
-  const lower = trimmed.toLowerCase();
-  const isRead =
-    lower.startsWith("select") || lower.startsWith("with") || lower.startsWith("explain");
-  if (opts.confirmRows !== undefined && isRead) {
+  // Past the multi-statement branch: prepare() succeeded, so `stmt` must
+  // be set. Narrow once instead of repeating the unreachable check at
+  // every read/write fork below. better-sqlite3's prepared-statement
+  // metadata is the source of truth for row-returning statements; prefix
+  // guesses miss PRAGMA reads and comment-prefixed SELECTs.
+  if (!stmt) throw new Error("unreachable: stmt should be set on the single-statement path");
+  const single = stmt;
+  if (opts.confirmRows !== undefined && single.reader) {
     throw new UsageError(
       "--confirm-rows is only meaningful on write statements (UPDATE / DELETE / INSERT / REPLACE)",
     );
   }
-  // Past the multi-statement branch: prepare() succeeded, so `stmt` must
-  // be set. Narrow once instead of repeating the unreachable check at
-  // every read/write fork below.
-  if (!stmt) throw new Error("unreachable: stmt should be set on the single-statement path");
-  const single = stmt;
-  if (isRead) {
+  if (single.reader) {
     const rows = single.all([]);
     if (opts.json) {
       emitJson(rows);
@@ -293,6 +292,10 @@ export function wireSqlCommand(program: Command): void {
   program
     .command("sql <query>")
     .description("Run a SQL query against the live mu DB (SELECT / UPDATE / DELETE all allowed)")
+    // SQL line comments start with `--`; quoted queries like
+    // `mu sql "-- comment\nSELECT 1"` must bind that token as the
+    // required <query> argument rather than as an unknown CLI option.
+    .allowUnknownOption(true)
     .option(...JSON_OPT)
     .option(
       "--confirm-rows <n>",

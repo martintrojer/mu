@@ -128,6 +128,59 @@ describe("multi-statement support via better-sqlite3 db.exec", () => {
   });
 });
 
+describe("mu sql single-statement reader detection", () => {
+  let tempDir: string;
+  let dbPath: string;
+  let db: Db;
+
+  beforeEach(() => {
+    tempDir = mkdtempSync(join(tmpdir(), "mu-sql-reader-"));
+    dbPath = join(tempDir, "mu.db");
+    db = openDb({ path: dbPath });
+  });
+
+  afterEach(() => {
+    db.close();
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it("routes PRAGMA table_info(...) through the row-returning path", async () => {
+    const { stdout, stderr, exitCode, error } = await runCli(
+      ["sql", "PRAGMA table_info(tasks)", "--json"],
+      dbPath,
+    );
+
+    expect(error).toBeUndefined();
+    expect(exitCode).toBeNull();
+    expect(stderr).toBe("");
+    const parsed = JSON.parse(stdout.trim()) as Array<{ name?: string }>;
+    expect(parsed.some((row) => row.name === "local_id")).toBe(true);
+  });
+
+  it("routes comment-prefixed SELECT through the row-returning path", async () => {
+    const { stdout, stderr, exitCode, error } = await runCli(
+      ["sql", "-- a comment\nSELECT 1 AS one", "--json"],
+      dbPath,
+    );
+
+    expect(error).toBeUndefined();
+    expect(exitCode).toBeNull();
+    expect(stderr).toBe("");
+    expect(JSON.parse(stdout.trim())).toEqual([{ one: 1 }]);
+  });
+
+  it("rejects --confirm-rows on PRAGMA because it returns rows", async () => {
+    const { stdout, stderr, exitCode, error } = await runCli(
+      ["sql", "PRAGMA table_info(tasks)", "--confirm-rows", "1"],
+      dbPath,
+    );
+
+    expect(error).toBeUndefined();
+    expect(exitCode).toBe(2);
+    expect(stdout + stderr).toMatch(/--confirm-rows is only meaningful on write statements/);
+  });
+});
+
 describe("mu sql --confirm-rows", () => {
   let tempDir: string;
   let dbPath: string;
