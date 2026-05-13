@@ -25,10 +25,11 @@ import {
   termColsForLayout,
 } from "../columns.js";
 import { formatRoi } from "../format-helpers.js";
-import { dispatchPopupKeyFromInk } from "../keys.js";
+import { type PopupAction, type PopupActionEnvelope, dispatchPopupKeyFromInk } from "../keys.js";
 import { ListRow } from "../list-row.js";
 import { PopupShell } from "../popup-shell.js";
 import { useNotesDrill } from "../use-notes-drill.js";
+import { usePopupActionQueue } from "../use-popup-action-queue.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
 import { StatusFilterStrip, useStatusFilter } from "../use-status-filter.js";
 import { useDrillKeymap } from "./drill.js";
@@ -44,6 +45,7 @@ export interface PopupProps {
   mode: "list" | "drill";
   onModeChange: (mode: "list" | "drill") => void;
   onFilterEditingChange?: (editing: boolean) => void;
+  popupActions?: readonly PopupActionEnvelope[];
   db: Db;
   workstream: string;
 }
@@ -70,6 +72,7 @@ export function AllTasksPopup({
   mode,
   onModeChange,
   onFilterEditingChange,
+  popupActions,
   db,
   workstream,
 }: PopupProps): JSX.Element {
@@ -112,15 +115,12 @@ export function AllTasksPopup({
     resetKey: focused?.name ?? "",
   });
 
-  useInput((input, key) => {
-    if (mode !== "drill" && flt.onKey(input, key) === "consumed") return;
-    if (mode !== "drill" && statusFilter.onKey(input, key)) return;
-    const action = dispatchPopupKeyFromInk(input, key);
+  const dispatchListAction = (action: PopupAction) => {
     if (mode === "drill") {
       drill.dispatch(action);
       return;
     }
-    if (isNavAction(action)) {
+    if (action.kind === "setCursor" || isNavAction(action)) {
       setCursor((c) => applyCursor(c, action, visibleTasks.length, viewport));
       return;
     }
@@ -141,6 +141,14 @@ export function AllTasksPopup({
         if (action.key === "s") setSortKey(nextTaskSortKey);
         return;
     }
+  };
+
+  usePopupActionQueue(popupActions, dispatchListAction);
+
+  useInput((input, key) => {
+    if (mode !== "drill" && flt.onKey(input, key) === "consumed") return;
+    if (mode !== "drill" && statusFilter.onKey(input, key)) return;
+    dispatchListAction(dispatchPopupKeyFromInk(input, key));
   });
 
   if (snapshot === null) {

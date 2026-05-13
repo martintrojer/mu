@@ -18,7 +18,7 @@ import {
 } from "../src/cli/tui/popups/scroll.js";
 
 describe("isNavAction", () => {
-  it("recognises the six nav kinds", () => {
+  it("recognises the six scroll nav kinds", () => {
     expect(isNavAction({ kind: "moveUp" })).toBe(true);
     expect(isNavAction({ kind: "moveDown" })).toBe(true);
     expect(isNavAction({ kind: "jumpTop" })).toBe(true);
@@ -37,6 +37,7 @@ describe("isNavAction", () => {
       "noop",
       "nextMatch",
       "prevMatch",
+      "setCursor",
     ]) {
       expect(isNavAction({ kind })).toBe(false);
     }
@@ -79,6 +80,13 @@ describe("applyCursor", () => {
     expect(applyCursor(20, { kind: "jumpBottom" }, total, viewport)).toBe(49);
   });
 
+  it("setCursor jumps directly to an absolute row and clamps", () => {
+    expect(applyCursor(0, { kind: "setCursor", index: 12 }, total, viewport)).toBe(12);
+    expect(applyCursor(0, { kind: "setCursor", index: -5 }, total, viewport)).toBe(0);
+    expect(applyCursor(0, { kind: "setCursor", index: 999 }, total, viewport)).toBe(49);
+    expect(applyCursor(7, { kind: "setCursor", index: 3 }, 0, viewport)).toBe(0);
+  });
+
   it("pageDown half/full step is floor(viewport / (half ? 2 : 1))", () => {
     expect(applyCursor(0, { kind: "pageDown", half: true }, total, viewport)).toBe(5);
     expect(applyCursor(0, { kind: "pageDown", half: false }, total, viewport)).toBe(10);
@@ -99,6 +107,7 @@ describe("applyCursor", () => {
     }
     expect(applyCursor(0, { kind: "pageDown", half: true }, 0, viewport)).toBe(0);
     expect(applyCursor(0, { kind: "pageUp", half: true }, 0, viewport)).toBe(0);
+    expect(applyCursor(0, { kind: "setCursor", index: 10 }, 0, viewport)).toBe(0);
   });
 
   it("a tiny viewport still yields a no-op page step (matches pre-centralisation behaviour)", () => {
@@ -223,7 +232,7 @@ describe("centredVisibleSlice", () => {
 });
 
 describe("NavAction is structurally a subset of PopupAction", () => {
-  // Sanity check that the union has exactly the six kinds we
+  // Sanity check that the union has exactly the six scroll kinds we
   // dispatch on. If a seventh kind appears here, `isNavAction`'s
   // NAV_KINDS allowlist must update too.
   const allKinds = (xs: NavAction[]) => xs.map((x) => x.kind).sort();

@@ -61,10 +61,11 @@ import {
   renderRow,
   termColsForLayout,
 } from "../columns.js";
-import { dispatchPopupKeyFromInk } from "../keys.js";
+import { type PopupAction, type PopupActionEnvelope, dispatchPopupKeyFromInk } from "../keys.js";
 import { ListRow } from "../list-row.js";
 import { PopupShell } from "../popup-shell.js";
 import { runTuicrInteractive } from "../tuicr.js";
+import { usePopupActionQueue } from "../use-popup-action-queue.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
 import { DrillScrollView, useDrillKeymap } from "./drill.js";
 import { applyCursor, centredVisibleSlice, isNavAction } from "./scroll.js";
@@ -80,6 +81,7 @@ export interface PopupProps {
   onModeChange: (mode: "list" | "drill") => void;
   /** Bubbles the filter-prompt edit state up to <App> for StatusBar mode. */
   onFilterEditingChange?: (editing: boolean) => void;
+  popupActions?: readonly PopupActionEnvelope[];
   onFooter?: (command: string, copied: boolean, tone?: "normal" | "info" | "error") => void;
   db: Db;
   workstream: string;
@@ -118,6 +120,7 @@ export function WorkspacesPopup({
   mode,
   onModeChange,
   onFilterEditingChange,
+  popupActions,
   onFooter,
   db,
   workstream,
@@ -287,15 +290,7 @@ export function WorkspacesPopup({
     resetKey: showSha ?? "",
   });
 
-  useInput((input, key) => {
-    // Filter-mode keystrokes consume printable + Esc/Enter/Bksp.
-    // The active filter depends on which view we're rendering.
-    // Show-mode is read-only — no filter prompt — so we skip the
-    // consume check entirely (lets Esc fire as close, not
-    // filter-cancel).
-    const activeFlt = mode === "drill" ? drillFlt : flt;
-    if (!inShow && activeFlt.onKey(input, key) === "consumed") return;
-    const action = dispatchPopupKeyFromInk(input, key);
+  const dispatchListAction = (action: PopupAction) => {
     if (inShow) {
       showDrill.dispatch(action);
       return;
@@ -307,7 +302,7 @@ export function WorkspacesPopup({
       // (feat_workspaces_drill_git_show), Esc/q backs out to the
       // workspace list. Yank in drill mode yanks `git show <sha>`
       // for the focused commit (cherry-pick target inspection).
-      if (isNavAction(action)) {
+      if (action.kind === "setCursor" || isNavAction(action)) {
         setDrillCursor((c) => applyCursor(c, action, filteredCommits.length, drillViewport));
         return;
       }
@@ -337,7 +332,7 @@ export function WorkspacesPopup({
           return;
       }
     }
-    if (isNavAction(action)) {
+    if (action.kind === "setCursor" || isNavAction(action)) {
       setCursor((c) => applyCursor(c, action, workspaces.length, viewport));
       return;
     }
@@ -362,6 +357,19 @@ export function WorkspacesPopup({
         return;
       }
     }
+  };
+
+  usePopupActionQueue(popupActions, dispatchListAction);
+
+  useInput((input, key) => {
+    // Filter-mode keystrokes consume printable + Esc/Enter/Bksp.
+    // The active filter depends on which view we're rendering.
+    // Show-mode is read-only — no filter prompt — so we skip the
+    // consume check entirely (lets Esc fire as close, not
+    // filter-cancel).
+    const activeFlt = mode === "drill" ? drillFlt : flt;
+    if (!inShow && activeFlt.onKey(input, key) === "consumed") return;
+    dispatchListAction(dispatchPopupKeyFromInk(input, key));
   });
 
   if (snapshot === null) {

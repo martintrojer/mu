@@ -91,6 +91,11 @@ describe("App popup-lifecycle state-restore (structural)", () => {
       // (per feat_popup_search_filter).
       "onFilterEditingChange",
       "setPopupFilterEditing",
+      // mouse double-click routing: <App> owns a small action queue so
+      // popups can consume setCursor → drill without receiving raw
+      // mouse events or App state setters.
+      "popupActions",
+      "setPopupActions",
       // tuicr escape-hatch result plumbing: popups can write a
       // success/error footer without receiving setFooter directly.
       "onFooter",

@@ -206,6 +206,7 @@ export type PopupAction =
   | { kind: "jumpBottom" }
   | { kind: "pageDown"; half: boolean }
   | { kind: "pageUp"; half: boolean }
+  | { kind: "setCursor"; index: number }
   | { kind: "filter" }
   | { kind: "nextMatch" }
   | { kind: "prevMatch" }
@@ -214,6 +215,11 @@ export type PopupAction =
   | { kind: "drill" }
   | { kind: "verb"; key: string }
   | { kind: "noop" };
+
+export interface PopupActionEnvelope {
+  seq: number;
+  action: PopupAction;
+}
 
 /**
  * Map a keystroke inside a popup to the popup-local action it

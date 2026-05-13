@@ -31,7 +31,13 @@ import { RecentCard } from "./cards/recent.js";
 import { TracksCard } from "./cards/tracks.js";
 import { WorkspacesCard } from "./cards/workspaces.js";
 import { Help } from "./help.js";
-import { type InputMode, dispatchGlobalKeyFromInk, shouldSwallowGlobalKeyFromInk } from "./keys.js";
+import {
+  type InputMode,
+  type PopupAction,
+  type PopupActionEnvelope,
+  dispatchGlobalKeyFromInk,
+  shouldSwallowGlobalKeyFromInk,
+} from "./keys.js";
 import {
   CARD_CONFIGS,
   type CardId,
@@ -58,6 +64,7 @@ import { LogPopup } from "./popups/log.js";
 import { ReadyPopup } from "./popups/ready.js";
 import { RecentPopup } from "./popups/recent.js";
 import { TracksPopup } from "./popups/tracks.js";
+import { POPUP_CHROME_ROWS } from "./popups/viewport.js";
 import { WorkspacesPopup } from "./popups/workspaces.js";
 import {
   type CardVisibility,
@@ -112,6 +119,7 @@ interface CommonPopupProps {
   mode: PopupMode;
   onModeChange: (mode: PopupMode) => void;
   onFilterEditingChange: (editing: boolean) => void;
+  popupActions: readonly PopupActionEnvelope[];
   db: Db;
   workstream: string;
 }
@@ -145,6 +153,11 @@ const POPUP_REGISTRY: Record<PopupRegistryId, ComponentType<CommonPopupProps>> =
 };
 
 export const DASHBOARD_MIN_ROWS = 5;
+// Mouse SGR coordinates are 1-based. The first popup data row sits
+// below the top border at y=2. Link the named top offset to the
+// shared popup chrome budget so the double-click path is not a
+// detached magic `event.y - 2` constant.
+export const POPUP_CHROME_TOP = Math.max(0, POPUP_CHROME_ROWS - 1);
 
 export function dashboardAvailableRows(
   rows: number,
@@ -162,17 +175,18 @@ interface PendingMouseEventRef {
 
 // Ink's `useStdin` does not advertise `internal_eventEmitter` in its
 // public TypeScript types, but the field IS what backs ink's own
-// public `useInput` hook (see ink/build/components/StdinContext.d.ts —
-// the field is exported from the Props type but flagged `internal_*`
-// per ink convention, meaning ink reserves the right to rename or
-// remove it without a breaking-change bump). We need it to replay
-// synthetic key bytes from mouse events so popups' existing keymaps
-// keep handling scroll/drill without each one re-subscribing to
-// useMouse(). Define a typed seam + runtime probe so:
+// public `useInput` hook (the field is exported from ink's stdin
+// context props but flagged `internal_*` per ink convention, meaning
+// ink reserves the right to rename or remove it without a
+// breaking-change bump). We still use it for
+// mouse-wheel scroll compatibility (scroll replays one `j`/`k` key);
+// double-click drills now use first-class PopupAction events instead
+// of replaying N synthetic row-navigation keys. Define a typed seam
+// + runtime probe so:
 //   1. The cast site is explicit, not a silent any-shaped access.
 //   2. If a future ink upgrade drops the field, we degrade gracefully
-//      (mouse stops emitting synthetic keys; keyboard nav unaffected)
-//      AND the test in test/tui-app-emitter-shape.test.ts fails CI.
+//      (mouse-wheel scroll stops emitting synthetic keys; keyboard
+//       nav and double-click PopupAction routing are unaffected).
 interface InkStdinWithEmitter extends ReturnType<typeof useStdin> {
   internal_eventEmitter: EventEmitter;
 }
@@ -189,26 +203,27 @@ export function replayPendingMouseEvent(
   opts: {
     popupOpen: boolean;
     filterEditing: boolean;
-    emitKey: (key: string, delayMs: number) => void;
+    emitKey?: (key: string, delayMs: number) => void;
+    emitAction: (action: PopupAction) => void;
   },
 ): boolean {
   if (!opts.popupOpen || opts.filterEditing) return false;
   const event = pendingMouseEvent.current;
-  pendingMouseEvent.current = null;
   if (event === null) return false;
   if (event.kind === "scroll") {
+    if (opts.emitKey === undefined) return false;
+    pendingMouseEvent.current = null;
     opts.emitKey(event.direction === "up" ? "k" : "j", 0);
     return true;
   }
   if (event.kind === "doubleclick") {
-    const rowIndex = Math.max(0, event.y - 2);
-    const keys = `g${"j".repeat(rowIndex)}\r`;
-    for (let i = 0; i < keys.length; i++) {
-      const key = keys[i];
-      if (key !== undefined) opts.emitKey(key, i * 8);
-    }
+    pendingMouseEvent.current = null;
+    const rowIndex = Math.max(0, event.y - POPUP_CHROME_TOP);
+    opts.emitAction({ kind: "setCursor", index: rowIndex });
+    opts.emitAction({ kind: "drill" });
     return true;
   }
+  pendingMouseEvent.current = null;
   return false;
 }
 
@@ -237,6 +252,8 @@ export function App({ db, workstreams, initialActive = 0 }: AppProps): JSX.Eleme
   const [refreshNonce, setRefreshNonce] = useState<number>(0);
   const pendingMouseEvent = useRef<MouseEvent | null>(null);
   const [popupMouseTick, setPopupMouseTick] = useState<number>(0);
+  const popupActionSeq = useRef(0);
+  const [popupActions, setPopupActions] = useState<PopupActionEnvelope[]>([]);
 
   // Probe clipboard backend once per session and memoise.
   const clipboardRef = useRef<ClipboardBackend | undefined>(undefined);
@@ -287,6 +304,12 @@ export function App({ db, workstreams, initialActive = 0 }: AppProps): JSX.Eleme
     setFooter({ command, copied, tone });
   }, []);
 
+  const emitPopupAction = useCallback((action: PopupAction) => {
+    const seq = popupActionSeq.current + 1;
+    popupActionSeq.current = seq;
+    setPopupActions((events) => [...events.slice(-8), { seq, action }]);
+  }, []);
+
   useMouse((event) => {
     if (helpOpen || terminalTooSmall) return;
     if (popup === null) {
@@ -301,6 +324,7 @@ export function App({ db, workstreams, initialActive = 0 }: AppProps): JSX.Eleme
         }
       }
       if (hit === null) return;
+      setPopupActions([]);
       setPopupMode("list");
       setPopup(hit);
       return;
@@ -314,32 +338,38 @@ export function App({ db, workstreams, initialActive = 0 }: AppProps): JSX.Eleme
   useEffect(() => {
     void popupMouseTick;
     // Ink's public useInput hook is backed by this internal emitter;
-    // replay the same bytes keyboard users type so mouse scroll/drill
-    // stays routed through each popup's existing keymap switch. The
-    // runtime probe + typed seam (getInkInternalEmitter) makes the
+    // mouse-wheel scroll still replays the same single `j`/`k` byte
+    // keyboard users type. Double-click drill bypasses this private
+    // emitter and emits PopupAction objects directly. The runtime
+    // probe + typed seam (getInkInternalEmitter) makes the remaining
     // private-API dependency explicit and degrades gracefully if a
-    // future ink upgrade drops the field — mouse stops emitting
-    // synthetic keys, keyboard nav is unaffected.
+    // future ink upgrade drops the field — mouse-wheel scroll stops
+    // emitting synthetic keys, keyboard nav and double-click routing
+    // are unaffected.
     const emitter = getInkInternalEmitter(stdin);
-    if (emitter === null) {
-      if (process.env.MU_TUI_DEBUG_MOUSE === "1") {
-        process.stderr.write(
-          "mu: ink stdin missing internal_eventEmitter; mouse replay disabled\n",
-        );
-      }
-      return;
+    if (emitter === null && process.env.MU_TUI_DEBUG_MOUSE === "1") {
+      process.stderr.write(
+        "mu: ink stdin missing internal_eventEmitter; mouse scroll replay disabled\n",
+      );
     }
-    const emitKey = (key: string, delayMs: number) => {
-      setTimeout(() => emitter.emit("input", Buffer.from(key)), delayMs);
-    };
+    const emitKey =
+      emitter === null
+        ? undefined
+        : (key: string, delayMs: number) => {
+            setTimeout(() => emitter.emit("input", Buffer.from(key)), delayMs);
+          };
     replayPendingMouseEvent(pendingMouseEvent, {
       popupOpen: popup !== null,
       filterEditing: popupFilterEditing,
       emitKey,
+      emitAction: emitPopupAction,
     });
-  }, [popupMouseTick, popup, popupFilterEditing, stdin]);
+  }, [popupMouseTick, popup, popupFilterEditing, stdin, emitPopupAction]);
   useEffect(() => {
-    if (popup === null) pendingMouseEvent.current = null;
+    if (popup === null) {
+      pendingMouseEvent.current = null;
+      setPopupActions([]);
+    }
   }, [popup]);
 
   // Global keymap. Rendered before popup rendering so popups can
@@ -401,6 +431,7 @@ export function App({ db, workstreams, initialActive = 0 }: AppProps): JSX.Eleme
           return;
         case "openPopup":
           if (popup !== null) return; // single-popup invariant
+          setPopupActions([]);
           setPopupMode("list");
           setPopup(action.cardId);
           return;
@@ -544,6 +575,7 @@ export function App({ db, workstreams, initialActive = 0 }: AppProps): JSX.Eleme
         setPopup(null);
         setPopupMode("list");
         setPopupFilterEditing(false);
+        setPopupActions([]);
       },
       snapshot: snap.data,
       fastTickNonce: snap.fastTickNonce,
@@ -551,6 +583,7 @@ export function App({ db, workstreams, initialActive = 0 }: AppProps): JSX.Eleme
       mode: popupMode,
       onModeChange: setPopupMode,
       onFilterEditingChange: setPopupFilterEditing,
+      popupActions,
       db,
       workstream,
     };

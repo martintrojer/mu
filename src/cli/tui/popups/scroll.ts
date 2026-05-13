@@ -25,8 +25,9 @@
 //     the user pages through; no per-row focus; the body is
 //     pre-formatted text (lines). Use `applyScroll`.
 //
-// Both consume the SAME six action kinds (matches PopupAction's nav
-// subset from src/cli/tui/keys.ts), so the popup boilerplate is:
+// Both consume the SAME cursor/scroll action kinds (matches
+// PopupAction's nav subset from src/cli/tui/keys.ts), so the popup
+// boilerplate is:
 //
 //     if (isNavAction(action)) {
 //       setCursor((c) => applyCursor(c, action, items.length, viewport));
@@ -42,7 +43,7 @@
 //     }
 
 /**
- * The six PopupAction kinds that move the cursor or scroll the view.
+ * The PopupAction kinds that move the cursor or scroll the view.
  * Exact subset of PopupAction from keys.ts — kept structurally
  * compatible so `isNavAction(popupAction)` narrows in-place without
  * a remap.
@@ -54,6 +55,8 @@ export type NavAction =
   | { kind: "jumpBottom" }
   | { kind: "pageUp"; half: boolean }
   | { kind: "pageDown"; half: boolean };
+
+type CursorAction = NavAction | { kind: "setCursor"; index: number };
 
 const NAV_KINDS = new Set<string>([
   "moveUp",
@@ -108,6 +111,8 @@ function clampCursor(cursor: number, total: number): number {
 /**
  * Apply a navigation action to a cursor-based view. Returns the new
  * cursor index, clamped to [0, total-1] (or 0 when total === 0).
+ * `setCursor` is first-class so mouse double-click can focus row N
+ * directly instead of replaying `g` + N×`j` synthetic keys.
  *
  *   cursor    current cursor index
  *   action    one of the six NavAction kinds
@@ -116,7 +121,7 @@ function clampCursor(cursor: number, total: number): number {
  */
 export function applyCursor(
   cursor: number,
-  action: NavAction,
+  action: CursorAction,
   total: number,
   viewport: number,
 ): number {
@@ -134,6 +139,8 @@ export function applyCursor(
       return clampCursor(cursor + pageStep(viewport, action.half), total);
     case "pageUp":
       return clampCursor(cursor - pageStep(viewport, action.half), total);
+    case "setCursor":
+      return clampCursor(action.index, total);
   }
 }
 

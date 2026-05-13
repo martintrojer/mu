@@ -29,9 +29,10 @@ import {
   renderRow,
   termColsForLayout,
 } from "../columns.js";
-import { dispatchPopupKeyFromInk } from "../keys.js";
+import { type PopupAction, type PopupActionEnvelope, dispatchPopupKeyFromInk } from "../keys.js";
 import { ListRow } from "../list-row.js";
 import { PopupShell } from "../popup-shell.js";
+import { usePopupActionQueue } from "../use-popup-action-queue.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
 import { DrillScrollView, useDrillKeymap } from "./drill.js";
 import { applyCursor, centredVisibleSlice, isNavAction } from "./scroll.js";
@@ -46,6 +47,7 @@ export interface PopupProps {
   onModeChange: (mode: "list" | "drill") => void;
   /** Bubbles the filter-prompt edit state up to <App> for StatusBar mode. */
   onFilterEditingChange?: (editing: boolean) => void;
+  popupActions?: readonly PopupActionEnvelope[];
   db: Db;
   workstream: string;
 }
@@ -74,6 +76,7 @@ export function AgentsPopup({
   mode,
   onModeChange,
   onFilterEditingChange,
+  popupActions,
   db,
   workstream,
 }: PopupProps): JSX.Element {
@@ -155,17 +158,12 @@ export function AgentsPopup({
     resetKey: focused?.name ?? "",
   });
 
-  useInput((input, key) => {
-    // Filter-mode keystrokes (when the prompt is editing) consume
-    // every printable + Esc/Enter/Bksp; the popup's own dispatchPopupKey
-    // is bypassed for the duration of the edit.
-    if (mode !== "drill" && flt.onKey(input, key) === "consumed") return;
-    const action = dispatchPopupKeyFromInk(input, key);
+  const dispatchListAction = (action: PopupAction) => {
     if (mode === "drill") {
       drill.dispatch(action);
       return;
     }
-    if (isNavAction(action)) {
+    if (action.kind === "setCursor" || isNavAction(action)) {
       setCursor((c) => applyCursor(c, action, agents.length, viewport));
       return;
     }
@@ -203,6 +201,16 @@ export function AgentsPopup({
         return;
       }
     }
+  };
+
+  usePopupActionQueue(popupActions, dispatchListAction);
+
+  useInput((input, key) => {
+    // Filter-mode keystrokes (when the prompt is editing) consume
+    // every printable + Esc/Enter/Bksp; the popup's own dispatchPopupKey
+    // is bypassed for the duration of the edit.
+    if (mode !== "drill" && flt.onKey(input, key) === "consumed") return;
+    dispatchListAction(dispatchPopupKeyFromInk(input, key));
   });
 
   if (snapshot === null) {

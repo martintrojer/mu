@@ -167,10 +167,6 @@ export function mouseEventToNavAction(
   return event.direction === "up" ? { kind: "moveUp" } : { kind: "moveDown" };
 }
 
-export function popupRowIndexFromMouse(event: Pick<MouseEvent, "y">, rowOffset = 2): number {
-  return event.y - rowOffset;
-}
-
 function subscribeToMouseReports(fn: MouseReportSubscriber): () => void {
   subscribers.add(fn);
   attachStdin();
