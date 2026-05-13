@@ -1,5 +1,4 @@
-// Tests for src/cli/tui/yank.ts (Wave 4 Task 18 of
-// docs/plans/2026-05-11-interactive-tui.md).
+// Tests for src/cli/tui/yank.ts.
 //
 // The probe inspects platform + env + which-binary-is-on-PATH, so it's
 // hard to test exhaustively in a single CI environment. Approach:

@@ -1,5 +1,4 @@
-// End-to-end acceptance test for the TUI (Wave 8 Task 39 of
-// docs/plans/2026-05-11-interactive-tui.md).
+// End-to-end acceptance test for the TUI.
 //
 // The "render App + send keys + assert yanked command" gate from the
 // plan's design_tests rubric isn't directly achievable without

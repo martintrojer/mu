@@ -335,8 +335,8 @@ infra (`test/_fs.ts` `rmFixtureDir()` retries, etc), not in the
 production code under test.
 
 If you see one of these, check `bug_test_suite_flakes_audit_and_remediate`
-notes and `docs/test-flakes-audit.md` for the catalogue. Re-run the
-specific test in isolation to confirm:
+notes for the historical catalogue. Re-run the specific test in
+isolation to confirm:
 
 ```
 npm run test -- <flaky-test-file>

@@ -1,5 +1,4 @@
-// Tests for src/cli/tui/keys.ts (Wave 4 Task 20 of
-// docs/plans/2026-05-11-interactive-tui.md).
+// Tests for src/cli/tui/keys.ts.
 //
 // Pure-function dispatcher; one test per binding from the
 // design_global_keymap summary table.
