@@ -5,14 +5,143 @@
 // import-graph + static-source assertions. We can't snapshot ink
 // output without ink-testing-library (network-blocked).
 
-import { readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
+import { mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { render } from "ink";
+import { createElement } from "react";
+import { afterEach, describe, expect, it } from "vitest";
 import { BlockedPopup } from "../src/cli/tui/popups/blocked.js";
+import { type Db, openDb } from "../src/db.js";
+import type { WorkstreamSnapshot } from "../src/state.js";
+import { addTask, listBlocked } from "../src/tasks.js";
+import {
+  CaptureStream,
+  type InkInputStream,
+  createInkCaptureStream,
+  createInkInputStream,
+  latestRenderedFrame,
+  simulateInput,
+  waitForInkOutput,
+} from "./_ink-render.js";
 
 const SRC = readFileSync("./src/cli/tui/popups/blocked.tsx", "utf-8");
 const APP_SRC = readFileSync("./src/cli/tui/app.tsx", "utf-8");
 const KEYS_SRC = readFileSync("./src/cli/tui/keys.ts", "utf-8");
 const LAYOUT_SRC = readFileSync("./src/cli/tui/layout.ts", "utf-8");
+
+let openDbs: Db[] = [];
+
+afterEach(() => {
+  for (const db of openDbs) db.close();
+  openDbs = [];
+  CaptureStream.cleanup();
+});
+
+function fixtureDb(): Db {
+  const dir = mkdtempSync(join(tmpdir(), "mu-tui-popup-blocked-"));
+  const db = openDb({ path: join(dir, "mu.db") });
+  openDbs.push(db);
+  return db;
+}
+
+function seedBlockedTasks(db: Db): void {
+  addTask(db, {
+    workstream: "demo",
+    localId: "needle2_blocker",
+    title: "blocking prerequisite",
+    impact: 50,
+    effortDays: 1,
+  });
+  addTask(db, {
+    workstream: "demo",
+    localId: "other_blocker",
+    title: "unrelated prerequisite",
+    impact: 50,
+    effortDays: 1,
+  });
+  addTask(db, {
+    workstream: "demo",
+    localId: "target_blocked",
+    title: "needle1 blocked work",
+    impact: 50,
+    effortDays: 1,
+    blockedBy: ["needle2_blocker"],
+  });
+  addTask(db, {
+    workstream: "demo",
+    localId: "noise_blocked",
+    title: "ordinary blocked work",
+    impact: 50,
+    effortDays: 1,
+    blockedBy: ["other_blocker"],
+  });
+}
+
+function snapshotFor(db: Db): WorkstreamSnapshot {
+  return {
+    workstreamName: "demo",
+    view: {
+      agents: [],
+      orphans: [],
+      report: { prunedGhosts: 0, statusChanges: 0, orphans: [], mode: "status-only" },
+    },
+    tracks: [],
+    ready: [],
+    inProgress: [],
+    blocked: listBlocked(db, "demo"),
+    recentClosed: [],
+    allTasks: [],
+    workspaces: [],
+    workspaceOrphans: [],
+    recent: [],
+    recentCommits: [],
+    commitsBackend: null,
+    doctor: null,
+  };
+}
+
+function mountBlockedPopup(opts: { db: Db; snapshot: WorkstreamSnapshot }): {
+  stdin: InkInputStream;
+  stdout: CaptureStream;
+  unmount: () => void;
+} {
+  const stdin = createInkInputStream();
+  const stdout = createInkCaptureStream({ columns: 120, rows: 24 });
+  const instance = render(
+    createElement(BlockedPopup, {
+      yank: async () => {},
+      onClose: () => {},
+      snapshot: opts.snapshot,
+      fastTickNonce: 0,
+      mode: "list",
+      onModeChange: () => {},
+      db: opts.db,
+      workstream: opts.snapshot.workstreamName,
+    }),
+    { stdout, stdin, stderr: process.stderr, debug: false, patchConsole: false },
+  );
+  return { stdin, stdout, unmount: () => instance.unmount() };
+}
+
+async function typeCommittedFilter(stdin: InkInputStream, query: string): Promise<void> {
+  await simulateInput(stdin, "/");
+  for (const char of query) await simulateInput(stdin, char);
+  await simulateInput(stdin, "enter");
+}
+
+async function renderFilteredBlocked(query: string): Promise<string> {
+  const db = fixtureDb();
+  seedBlockedTasks(db);
+  const snapshot = snapshotFor(db);
+  const { stdin, stdout, unmount } = mountBlockedPopup({ db, snapshot });
+  await waitForInkOutput(stdout);
+  await typeCommittedFilter(stdin, query);
+  await waitForInkOutput(stdout);
+  const text = latestRenderedFrame(stdout).join("\n");
+  unmount();
+  return text;
+}
 
 describe("BlockedPopup: export contract", () => {
   it("is exported as a function", () => {
@@ -83,10 +212,25 @@ describe("BlockedPopup: '/' filter (consumes the shared primitive)", () => {
     expect(SRC).toContain("applyFilter");
     expect(SRC).toContain("FilterPrompt");
   });
+});
 
-  it("blob includes id + title + blocker ids (matches spec)", () => {
-    // Per spec FILTER block: blob = `${id} ${title} ${blockerIds.join(" ")}`.
-    expect(SRC).toMatch(/t\.name.*t\.title.*blockers\.join/s);
+describe("BlockedPopup '/' filter behaviour", () => {
+  it("matches by task title substring", async () => {
+    const text = await renderFilteredBlocked("needle1");
+
+    expect(text).toContain("target_blocked");
+    expect(text).toContain("needle1 blocked work");
+    expect(text).not.toContain("noise_blocked");
+    expect(text).not.toContain("ordinary blocked work");
+  });
+
+  it("matches by blocker id substring", async () => {
+    const text = await renderFilteredBlocked("needle2");
+
+    expect(text).toContain("target_blocked");
+    expect(text).toContain("needle2_blocker");
+    expect(text).not.toContain("noise_blocked");
+    expect(text).not.toContain("other_blocker");
   });
 });
 

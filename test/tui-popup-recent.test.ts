@@ -14,6 +14,7 @@ import { join } from "node:path";
 import { render } from "ink";
 import { createElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { insertAgent } from "../src/agents.js";
 import { RecentPopup, formatRoi, yankCommandForTask } from "../src/cli/tui/popups/recent.js";
 import { type Db, openDb } from "../src/db.js";
 import type { WorkstreamSnapshot } from "../src/state.js";
@@ -63,6 +64,38 @@ function seedRecentClosed(db: Db): void {
     impact: 50,
     effortDays: 1,
   });
+}
+
+function seedRecentClosedForFilter(db: Db): void {
+  addTask(db, {
+    workstream: "demo",
+    localId: "target_recent",
+    title: "needle1 shipped work",
+    impact: 50,
+    effortDays: 1,
+  });
+  setTaskStatus(db, "target_recent", "CLOSED", { workstream: "demo", evidence: "done" });
+  db.prepare(
+    `UPDATE tasks
+        SET owner_id = (SELECT id FROM agents WHERE name = 'needle2_owner')
+      WHERE local_id = 'target_recent'
+        AND workstream_id = (SELECT id FROM workstreams WHERE name = 'demo')`,
+  ).run();
+
+  addTask(db, {
+    workstream: "demo",
+    localId: "noise_recent",
+    title: "ordinary shipped work",
+    impact: 50,
+    effortDays: 1,
+  });
+  setTaskStatus(db, "noise_recent", "CLOSED", { workstream: "demo", evidence: "done" });
+  db.prepare(
+    `UPDATE tasks
+        SET owner_id = (SELECT id FROM agents WHERE name = 'other_owner')
+      WHERE local_id = 'noise_recent'
+        AND workstream_id = (SELECT id FROM workstreams WHERE name = 'demo')`,
+  ).run();
 }
 
 interface MountOpts {
@@ -158,6 +191,37 @@ describe("formatRoi", () => {
   });
 });
 
+async function typeCommittedFilter(stdin: InkInputStream, query: string): Promise<void> {
+  await simulateInput(stdin, "/");
+  for (const char of query) await simulateInput(stdin, char);
+  await simulateInput(stdin, "enter");
+}
+
+async function renderFilteredRecent(query: string): Promise<string> {
+  const db = fixtureDb();
+  insertAgent(db, {
+    name: "needle2_owner",
+    workstream: "demo",
+    paneId: "%201",
+    status: "free",
+  });
+  insertAgent(db, {
+    name: "other_owner",
+    workstream: "demo",
+    paneId: "%202",
+    status: "free",
+  });
+  seedRecentClosedForFilter(db);
+  const snap = snapshotFor(db);
+  const { stdin, stdout, unmount } = mountRecentPopup({ db, snapshot: snap });
+  await waitForInkOutput(stdout);
+  await typeCommittedFilter(stdin, query);
+  await waitForInkOutput(stdout);
+  const text = latestRenderedFrame(stdout).join("\n");
+  unmount();
+  return text;
+}
+
 describe("RecentPopup behaviour (mount + simulateInput)", () => {
   it("renders only snapshot.recentClosed rows (not OPEN tasks)", async () => {
     const db = fixtureDb();
@@ -211,27 +275,21 @@ describe("RecentPopup behaviour (mount + simulateInput)", () => {
     unmount();
   });
 
-  it("'/' filter narrows the visible rows by id substring", async () => {
-    const db = fixtureDb();
-    seedRecentClosed(db);
-    const snap = snapshotFor(db);
+  it("'/' filter matches by title substring", async () => {
+    const text = await renderFilteredRecent("needle1");
 
-    const { stdin, stdout, unmount } = mountRecentPopup({ db, snapshot: snap });
-    await waitForInkOutput(stdout);
+    expect(text).toContain("target_recent");
+    expect(text).toContain("needle1 shipped work");
+    expect(text).not.toContain("noise_recent");
+    expect(text).not.toContain("ordinary shipped work");
+  });
 
-    // Open the filter prompt and type "alph".
-    await simulateInput(stdin, "/");
-    await simulateInput(stdin, "a");
-    await simulateInput(stdin, "l");
-    await simulateInput(stdin, "p");
-    await simulateInput(stdin, "h");
-    await waitForInkOutput(stdout);
-    const text = latestRenderedFrame(stdout).join("\n");
-    unmount();
+  it("'/' filter matches by owner substring", async () => {
+    const text = await renderFilteredRecent("needle2");
 
-    expect(text).toContain("alpha");
-    expect(text).not.toContain("│ beta");
-    expect(text).not.toContain("│ gamma");
+    expect(text).toContain("target_recent");
+    expect(text).not.toContain("noise_recent");
+    expect(text).not.toContain("ordinary shipped work");
   });
 
   it("Enter on a row asks the parent to flip into drill mode", async () => {

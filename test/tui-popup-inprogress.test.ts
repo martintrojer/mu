@@ -5,15 +5,140 @@
 // for the Tasks-popup pattern; cards/inprogress.tsx for column +
 // glyph re-use; task-detail.tsx for the recursion contract).
 
-import { readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
+import { mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { render } from "ink";
+import { createElement } from "react";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   InProgressPopup,
   formatRoi,
   yankCommandForTask,
 } from "../src/cli/tui/popups/inprogress.js";
+import { type Db, openDb } from "../src/db.js";
+import type { WorkstreamSnapshot } from "../src/state.js";
+import type { TaskRow } from "../src/tasks.js";
+import {
+  CaptureStream,
+  type InkInputStream,
+  createInkCaptureStream,
+  createInkInputStream,
+  latestRenderedFrame,
+  simulateInput,
+  waitForInkOutput,
+} from "./_ink-render.js";
 
 const SRC = readFileSync("./src/cli/tui/popups/inprogress.tsx", "utf-8");
+
+let openDbs: Db[] = [];
+
+afterEach(() => {
+  for (const db of openDbs) db.close();
+  openDbs = [];
+  CaptureStream.cleanup();
+});
+
+function fixtureDb(): Db {
+  const dir = mkdtempSync(join(tmpdir(), "mu-tui-popup-inprogress-"));
+  const db = openDb({ path: join(dir, "mu.db") });
+  openDbs.push(db);
+  return db;
+}
+
+function taskRow(overrides: Partial<TaskRow> & Pick<TaskRow, "name" | "title">): TaskRow {
+  return {
+    name: overrides.name,
+    workstreamName: overrides.workstreamName ?? "demo",
+    title: overrides.title,
+    status: overrides.status ?? "IN_PROGRESS",
+    impact: overrides.impact ?? 50,
+    effortDays: overrides.effortDays ?? 1,
+    ownerName: overrides.ownerName ?? null,
+    createdAt: overrides.createdAt ?? "2026-01-01T00:00:00.000Z",
+    updatedAt: overrides.updatedAt ?? "2026-01-01T00:00:00.000Z",
+  };
+}
+
+function snapshotWithInProgress(tasks: TaskRow[]): WorkstreamSnapshot {
+  return {
+    workstreamName: "demo",
+    view: {
+      agents: [],
+      orphans: [],
+      report: { prunedGhosts: 0, statusChanges: 0, orphans: [], mode: "status-only" },
+    },
+    tracks: [],
+    ready: [],
+    inProgress: tasks,
+    blocked: [],
+    recentClosed: [],
+    allTasks: [],
+    workspaces: [],
+    workspaceOrphans: [],
+    recent: [],
+    recentCommits: [],
+    commitsBackend: null,
+    doctor: null,
+  };
+}
+
+interface MountOpts {
+  db: Db;
+  snapshot: WorkstreamSnapshot;
+}
+
+function mountInProgressPopup(opts: MountOpts): {
+  stdin: InkInputStream;
+  stdout: CaptureStream;
+  unmount: () => void;
+} {
+  const stdin = createInkInputStream();
+  const stdout = createInkCaptureStream({ columns: 120, rows: 24 });
+  const instance = render(
+    createElement(InProgressPopup, {
+      yank: async () => {},
+      onClose: () => {},
+      snapshot: opts.snapshot,
+      fastTickNonce: 0,
+      mode: "list",
+      onModeChange: () => {},
+      db: opts.db,
+      workstream: opts.snapshot.workstreamName,
+    }),
+    { stdout, stdin, stderr: process.stderr, debug: false, patchConsole: false },
+  );
+  return { stdin, stdout, unmount: () => instance.unmount() };
+}
+
+async function typeCommittedFilter(stdin: InkInputStream, query: string): Promise<void> {
+  await simulateInput(stdin, "/");
+  for (const char of query) await simulateInput(stdin, char);
+  await simulateInput(stdin, "enter");
+}
+
+async function renderFilteredInProgress(query: string): Promise<string> {
+  const db = fixtureDb();
+  const snapshot = snapshotWithInProgress([
+    taskRow({
+      name: "target_inprogress",
+      title: "needle1",
+      ownerName: "needle2_owner",
+    }),
+    taskRow({
+      name: "noise_inprogress",
+      title: "ordinary",
+      ownerName: "other_owner",
+    }),
+  ]);
+  const { stdin, stdout, unmount } = mountInProgressPopup({ db, snapshot });
+  await waitForInkOutput(stdout);
+  await typeCommittedFilter(stdin, query);
+  await waitForInkOutput(stdout);
+  const text = latestRenderedFrame(stdout).join("\n");
+  unmount();
+  return text;
+}
 
 describe("InProgressPopup (export contract)", () => {
   it("is exported as a function", () => {
@@ -81,11 +206,29 @@ describe("popups/inprogress.tsx static-source invariants", () => {
     expect(SRC).toContain("applyFilter");
     expect(SRC).toContain("FilterPrompt");
   });
+});
 
-  it("filter blob covers id + title + owner (matching rules)", () => {
-    expect(SRC).toMatch(/\$\{t\.name\} \$\{t\.title\} \$\{t\.ownerName \?\? ""\}/);
+describe("InProgressPopup '/' filter behaviour", () => {
+  it("matches by title substring", async () => {
+    const text = await renderFilteredInProgress("needle1");
+
+    expect(text).toContain("target_inprogress");
+    expect(text).toContain("needle1");
+    expect(text).not.toContain("noise_inprogress");
+    expect(text).not.toContain("ordinary");
   });
 
+  it("matches by owner substring", async () => {
+    const text = await renderFilteredInProgress("needle2");
+
+    expect(text).toContain("target_inprogress");
+    expect(text).toContain("needle2_owner");
+    expect(text).not.toContain("noise_inprogress");
+    expect(text).not.toContain("other_owner");
+  });
+});
+
+describe("popups/inprogress.tsx static-source invariants", () => {
   it("reads only snapshot.inProgress (no other task-list source)", () => {
     expect(SRC).toContain("snapshot.inProgress");
     // Defensive: should not pull from snapshot.ready or .blocked etc.
