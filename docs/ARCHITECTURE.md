@@ -519,4 +519,4 @@ not in the mu package.
 
 The dependency list lives in `package.json`; the rule for adding
 new ones is the anti-feature pledge in
-[ROADMAP.md § Anti-feature pledges](ROADMAP.md#anti-feature-pledges-still-in-force-reinforced-by-an-internal-critique).
+[ROADMAP.md § Anti-feature pledges](ROADMAP.md#anti-feature-pledges).

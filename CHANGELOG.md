@@ -22,6 +22,24 @@ called out under "Breaking" in each entry.
   explicitly workstream-scoped; list workstreams first, then run
   `mu agent list -w <workstream>`.
 
+### Removed
+
+- `docs/test-flakes-audit.md` and `docs/plans/` deleted. The flake
+  audit's durable lessons live in AGENTS.md and ARCHITECTURE.md;
+  closed task notes (`mu task notes
+  bug_test_suite_flakes_audit_and_remediate`) keep the historical
+  transcript. Plan docs were one-off implementation scratchpads from
+  pre-TUI work; their content has long since shipped.
+- `docs/ROADMAP.md` rewritten and trimmed (561 → ~165 lines).
+  Cut: every "SHIPPED in v0.x" entry (CHANGELOG owns history); the
+  long essays under each rejected feature (collapsed to one-liners);
+  the "Operational lessons we're stealing" tables of pi-subagents
+  internals; speculative `task_artifacts` / `tasks_v` items; "Documents
+  still to write" and "How to use this roadmap" boilerplate.
+  Kept: promotion criteria, anti-feature pledges (referenced from
+  AGENTS.md), pi-extension three rules, per-CLI detector sketch (the
+  one real pending feature), open questions.
+
 ### Added
 
 - Commits/Workspaces popup drills now render the underlying VCS show output in color (red/green/cyan diff highlighting; the existing `--color=never` was disabling the natural ANSI output).
@@ -158,8 +176,9 @@ called out under "Breaking" in each entry.
   multi-agent concurrent test runs — the repo's standard dogfood
   workflow runs multiple pi workers' `npm run test` in parallel on
   the same machine. Durable lessons now live in AGENTS.md and
-  `docs/ARCHITECTURE.md`; `docs/test-flakes-audit.md` is now only a
-  short historical pointer to those sources and the closed task notes.
+  `docs/ARCHITECTURE.md`. The short-lived historical pointer doc
+  `docs/test-flakes-audit.md` was deleted; closed task notes remain
+  reachable via `mu task notes bug_test_suite_flakes_audit_and_remediate`.
   New `npm run test:stress` runs the full suite 30× back-to-back by
   default, captures one log per run, enforces a per-run timeout, and
   can simulate concurrent-agent load with
