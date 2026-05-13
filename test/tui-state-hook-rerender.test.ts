@@ -64,7 +64,7 @@ describe("snapshotKey — visible-affecting field projection", () => {
       workstreamName: "ws",
       cli: "pi",
       paneId: "%1",
-      status: "running" as const,
+      status: "busy" as const,
       role: "writer",
       tab: null,
       createdAt: "2026-01-01T00:00:00Z",

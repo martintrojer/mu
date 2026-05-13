@@ -28,6 +28,7 @@ const EMPTY_SNAPSHOT: WorkstreamSnapshot = {
   workspaceOrphans: [],
   recent: [],
   recentCommits: [],
+  commitsBackend: null,
   doctor: null,
 };
 
@@ -57,7 +58,7 @@ describe("CommitsCard", () => {
   });
 
   it("renders sha-7, relTime, and subject for each visible commit", () => {
-    const snapshot = {
+    const snapshot: WorkstreamSnapshot = {
       ...EMPTY_SNAPSHOT,
       commitsBackend: "git",
       recentCommits: [

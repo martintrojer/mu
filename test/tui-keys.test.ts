@@ -10,9 +10,26 @@ import {
   dispatchPopupKey,
   dispatchPopupKeyFromInk,
 } from "../src/cli/tui/keys.js";
+import type { KeyFlags } from "../src/cli/tui/keys.js";
 import { statusForToggleKey } from "../src/cli/tui/use-status-filter.js";
 
-const NO_KEY = {};
+const NO_KEY: KeyFlags = {};
+const KEY_DEFAULTS: Required<KeyFlags> = {
+  ctrl: false,
+  shift: false,
+  meta: false,
+  escape: false,
+  return: false,
+  upArrow: false,
+  downArrow: false,
+  leftArrow: false,
+  rightArrow: false,
+  tab: false,
+  pageUp: false,
+  pageDown: false,
+  f5: false,
+};
+const F1_KEY = { ...KEY_DEFAULTS, f1: true };
 
 describe("dispatchGlobalKey: card toggles 0-9", () => {
   it.each([
@@ -97,7 +114,7 @@ describe("dispatchGlobalKey: refresh / quit / help / footer-clear", () => {
     // help in many terminals. '?' is the canonical help binding
     // (lazygit/btop/k9s/vim) and works everywhere — single key, single
     // place to document.
-    expect(dispatchGlobalKey("", { f1: true } as { f1: true })).toEqual({ kind: "noop" });
+    expect(dispatchGlobalKey("", F1_KEY)).toEqual({ kind: "noop" });
   });
   it("c clearFooter (without ctrl)", () => {
     expect(dispatchGlobalKey("c", NO_KEY)).toEqual({ kind: "clearFooter" });

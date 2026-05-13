@@ -54,6 +54,8 @@ function snap(doctor: DoctorSummary | null): WorkstreamSnapshot {
     workspaces: [],
     workspaceOrphans: [],
     recent: [],
+    recentCommits: [],
+    commitsBackend: null,
     doctor,
   };
 }

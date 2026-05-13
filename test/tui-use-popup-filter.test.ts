@@ -8,6 +8,7 @@
 // integration tests.
 
 import { describe, expect, it } from "vitest";
+import type { KeyFlags } from "../src/cli/tui/keys.js";
 import {
   type FilterAction,
   FilterPrompt,
@@ -101,6 +102,22 @@ describe("popupFilterReducer", () => {
 describe("classifyFilterKey", () => {
   const editing: FilterState = { query: "do", editing: true };
   const idle: FilterState = { query: "", editing: false };
+  const keyDefaults: Required<KeyFlags> = {
+    ctrl: false,
+    shift: false,
+    meta: false,
+    escape: false,
+    return: false,
+    upArrow: false,
+    downArrow: false,
+    leftArrow: false,
+    rightArrow: false,
+    tab: false,
+    pageUp: false,
+    pageDown: false,
+    f5: false,
+  };
+  const backspaceKey = { ...keyDefaults, backspace: true };
 
   it("returns null when not editing (passthrough)", () => {
     expect(classifyFilterKey(idle, "x", {})).toBeNull();
@@ -117,9 +134,7 @@ describe("classifyFilterKey", () => {
   });
 
   it("backspace via key.backspace flag", () => {
-    expect(classifyFilterKey(editing, "", { backspace: true } as { backspace: true })).toEqual({
-      kind: "backspace",
-    });
+    expect(classifyFilterKey(editing, "", backspaceKey)).toEqual({ kind: "backspace" });
   });
 
   it("backspace via DEL byte (0x7f)", () => {

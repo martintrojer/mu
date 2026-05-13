@@ -76,20 +76,17 @@ function git(repo: string, ...args: string[]): string {
 
 function agent(over: Partial<AgentRow> = {}): AgentRow {
   return {
-    id: 1,
     name: "worker-1",
-    workstream: "ws",
-    status: "alive",
-    title: "worker-1",
-    role: "full-access",
-    createdAt: 0,
-    updatedAt: 0,
-    paneId: "%1",
-    windowId: "@1",
-    sessionName: "mu-ws",
+    workstreamName: "ws",
     cli: "pi",
+    paneId: "%1",
+    status: "busy",
+    role: "full-access",
+    tab: null,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
     ...over,
-  } as AgentRow;
+  };
 }
 
 describe("summarizeOwnedTasks", () => {
@@ -140,12 +137,12 @@ describe("agentStatusHistogram", () => {
 
   it("counts per status", () => {
     const agents: AgentRow[] = [
-      agent({ name: "a", status: "free" }),
-      agent({ name: "b", status: "free" }),
+      agent({ name: "a", status: "busy" }),
+      agent({ name: "b", status: "busy" }),
       agent({ name: "c", status: "needs_input" }),
     ];
     const h = agentStatusHistogram(agents);
-    expect(h.get("free")).toBe(2);
+    expect(h.get("busy")).toBe(2);
     expect(h.get("needs_input")).toBe(1);
     expect(h.size).toBe(2);
   });

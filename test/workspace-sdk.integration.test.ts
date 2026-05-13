@@ -19,6 +19,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AgentNotFoundError, insertAgent } from "../src/agents.js";
 import { type Db, openDb } from "../src/db.js";
+import type { VcsBackend } from "../src/vcs.js";
 import {
   HomeDirAsProjectRootError,
   WorkspaceExistsError,
@@ -366,12 +367,12 @@ describe("createWorkspace cleanup on backend throw (snap_dogfood Finding 4b)", (
     // noneBackend.createWorkspace (e.g. the FK CASCADE tests above).
     const wsPath = workspacePath("auth", "worker-1");
     let partialDirSeenByCleanup = false;
-    const flakyBackend = {
-      name: "none" as const,
+    const flakyBackend: VcsBackend = {
+      name: "none",
       async detect() {
         return true;
       },
-      async createWorkspace(opts: { projectRoot: string; workspacePath: string }) {
+      async createWorkspace(opts) {
         // Simulate the cp-mid-stream failure: create a partial dir
         // first, then throw.
         mkdirSync(opts.workspacePath, { recursive: true });
@@ -384,6 +385,24 @@ describe("createWorkspace cleanup on backend throw (snap_dogfood Finding 4b)", (
       },
       async commitsBehind() {
         return null;
+      },
+      async rebaseTo() {
+        throw new Error("not implemented in test backend");
+      },
+      async isClean() {
+        return true;
+      },
+      async commitsSinceBase() {
+        throw new Error("not implemented in test backend");
+      },
+      async recentCommits() {
+        return [];
+      },
+      async showCommit() {
+        return { text: "", truncated: false };
+      },
+      async listDirtyFiles() {
+        return [];
       },
     };
     await expect(
