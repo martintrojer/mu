@@ -121,6 +121,7 @@ called out under "Breaking" in each entry.
 
 ### Fixed
 
+- `mu workstream destroy` dry-run Next commands now preserve the operator's `--archive <label>` and `--no-export` flags, so copy-pasting the confirmation command matches the preview.
 - TUI `?` help overlay is now scrollable. On low-row panes (e.g. 24 rows) the previous single-column render hid the bottom half of the keymap behind the StatusBar; now j/k/Ctrl-D/U/g/G/PgDn/PgUp scroll the body and a position indicator (`1-12/53`) sits inset into the title.
 - TUI drill-down views (TaskDetailDrill notes, commits show body, agent scrollback) used to capture their content once on mount and stay frozen until the user closed and reopened the drill. They now refresh on the same tick the parent dashboard does — fast tick (1s) for SQL-derived content (notes); slow tick (10s) for subprocess-derived content (commits show, agent scrollback). r/F5 forces an immediate refresh.
 

@@ -255,6 +255,16 @@ function autoExportDir(workstream: string): string {
   return join(defaultStateDir(), "exports", `${workstream}-${ts}`);
 }
 
+function destroyConfirmCommand(
+  workstream: string,
+  opts: { archive?: string; export?: boolean },
+): string {
+  const parts = [`mu workstream destroy -w ${workstream} --yes`];
+  if (opts.archive !== undefined) parts.push(`--archive ${opts.archive}`);
+  if (opts.export === false) parts.push("--no-export");
+  return parts.join(" ");
+}
+
 export async function cmdDestroy(
   db: Db,
   opts: {
@@ -308,6 +318,17 @@ export async function cmdDestroy(
   }
 
   if (!opts.yes) {
+    const confirmCommand = destroyConfirmCommand(workstream, opts);
+    const dryRunNextSteps: NextStep[] = [
+      {
+        intent: "Confirm and actually destroy",
+        command: confirmCommand,
+      },
+      {
+        intent: "After destroying, undo if you regret it (DB only; tmux NOT rolled back)",
+        command: "mu undo --yes",
+      },
+    ];
     if (opts.json) {
       emitJson({
         workstreamName: workstream,
@@ -318,16 +339,7 @@ export async function cmdDestroy(
           opts.archive !== undefined
             ? { label: opts.archive, wouldArchiveTasks: summary.taskCount }
             : undefined,
-        nextSteps: [
-          {
-            intent: "Confirm and actually destroy",
-            command: `mu workstream destroy -w ${workstream} --yes${opts.archive !== undefined ? ` --archive ${opts.archive}` : ""}`,
-          },
-          {
-            intent: "After destroying, undo if you regret it (DB only; tmux NOT rolled back)",
-            command: "mu undo --yes",
-          },
-        ],
+        nextSteps: dryRunNextSteps,
       });
       return;
     }
@@ -354,16 +366,7 @@ export async function cmdDestroy(
         "A snapshot will be taken before the destroy; `mu undo --yes` reverts it (DB only — tmux panes / on-disk workspace dirs are NOT rolled back).",
       ),
     );
-    printNextSteps([
-      {
-        intent: "Confirm and actually destroy",
-        command: `mu workstream destroy -w ${workstream} --yes`,
-      },
-      {
-        intent: "After destroying, undo if you regret it",
-        command: "mu undo --yes",
-      },
-    ]);
+    printNextSteps(dryRunNextSteps);
     return;
   }
 

@@ -426,30 +426,48 @@ describe("mu workstream destroy --archive", () => {
     post.close();
   });
 
-  it("--archive <existing> WITHOUT --yes: dry-run prints 'would archive N tasks to <label>'", async () => {
-    await runCli(["archive", "create", "wave"], dbPath);
-    const { error, stdout, exitCode } = await runCli(
-      ["workstream", "destroy", "-w", "alpha", "--archive", "wave"],
-      dbPath,
-    );
-    expect(error).toBeUndefined();
-    expect(exitCode).toBeNull();
-    expect(stdout).toMatch(/would archive 2 tasks to wave/);
-    expect(stdout).toMatch(/dry-run/);
+  it.each([
+    {
+      name: "--archive label",
+      setup: async () => {
+        await runCli(["archive", "create", "wave"], dbPath);
+      },
+      argv: ["workstream", "destroy", "-w", "alpha", "--archive", "wave"],
+      expectedNext: "mu workstream destroy -w alpha --yes --archive wave",
+    },
+    {
+      name: "--archive label + --no-export",
+      setup: async () => {
+        await runCli(["archive", "create", "wave"], dbPath);
+      },
+      argv: ["workstream", "destroy", "-w", "alpha", "--archive", "wave", "--no-export"],
+      expectedNext: "mu workstream destroy -w alpha --yes --archive wave --no-export",
+    },
+  ])(
+    "$name: dry-run prints 'would archive N tasks to <label>' and preserves flags in Next",
+    async ({ setup, argv, expectedNext }) => {
+      await setup();
+      const { error, stdout, exitCode } = await runCli(argv, dbPath);
+      expect(error).toBeUndefined();
+      expect(exitCode).toBeNull();
+      expect(stdout).toMatch(/would archive 2 tasks to wave/);
+      expect(stdout).toMatch(/dry-run/);
+      expect(stdout).toContain(expectedNext);
 
-    // Workstream is untouched (dry-run).
-    const post = openDb({ path: dbPath });
-    const live = post
-      .prepare(
-        "SELECT t.local_id FROM tasks t JOIN workstreams ws ON ws.id = t.workstream_id WHERE ws.name = ?",
-      )
-      .all("alpha") as { local_id: string }[];
-    expect(live.map((t) => t.local_id).sort()).toEqual(["build", "design"]);
-    // Archive is empty still.
-    const wave = listArchives(post).find((a) => a.label === "wave");
-    expect(wave?.totalTasks).toBe(0);
-    post.close();
-  });
+      // Workstream is untouched (dry-run).
+      const post = openDb({ path: dbPath });
+      const live = post
+        .prepare(
+          "SELECT t.local_id FROM tasks t JOIN workstreams ws ON ws.id = t.workstream_id WHERE ws.name = ?",
+        )
+        .all("alpha") as { local_id: string }[];
+      expect(live.map((t) => t.local_id).sort()).toEqual(["build", "design"]);
+      // Archive is empty still.
+      const wave = listArchives(post).find((a) => a.label === "wave");
+      expect(wave?.totalTasks).toBe(0);
+      post.close();
+    },
+  );
 });
 
 // ─── mu archive search ──────────────────────────────────────────────
