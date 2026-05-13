@@ -16,6 +16,7 @@
 // popups are open; drill-down bodies consume explicit fast/slow tick
 // nonces so visible details refresh without closing/reopening.
 
+import type { EventEmitter } from "node:events";
 import { Box, Text, useApp, useInput, useStdin, useStdout } from "ink";
 import { type ComponentType, useCallback, useEffect, useRef, useState } from "react";
 import type { Db } from "../../db.js";
@@ -159,6 +160,30 @@ interface PendingMouseEventRef {
   current: MouseEvent | null;
 }
 
+// Ink's `useStdin` does not advertise `internal_eventEmitter` in its
+// public TypeScript types, but the field IS what backs ink's own
+// public `useInput` hook (see ink/build/components/StdinContext.d.ts —
+// the field is exported from the Props type but flagged `internal_*`
+// per ink convention, meaning ink reserves the right to rename or
+// remove it without a breaking-change bump). We need it to replay
+// synthetic key bytes from mouse events so popups' existing keymaps
+// keep handling scroll/drill without each one re-subscribing to
+// useMouse(). Define a typed seam + runtime probe so:
+//   1. The cast site is explicit, not a silent any-shaped access.
+//   2. If a future ink upgrade drops the field, we degrade gracefully
+//      (mouse stops emitting synthetic keys; keyboard nav unaffected)
+//      AND the test in test/tui-app-emitter-shape.test.ts fails CI.
+interface InkStdinWithEmitter extends ReturnType<typeof useStdin> {
+  internal_eventEmitter: EventEmitter;
+}
+
+export function getInkInternalEmitter(stdin: ReturnType<typeof useStdin>): EventEmitter | null {
+  if ("internal_eventEmitter" in stdin) {
+    return (stdin as InkStdinWithEmitter).internal_eventEmitter;
+  }
+  return null;
+}
+
 export function replayPendingMouseEvent(
   pendingMouseEvent: PendingMouseEventRef,
   opts: {
@@ -290,16 +315,29 @@ export function App({ db, workstreams, initialActive = 0 }: AppProps): JSX.Eleme
     void popupMouseTick;
     // Ink's public useInput hook is backed by this internal emitter;
     // replay the same bytes keyboard users type so mouse scroll/drill
-    // stays routed through each popup's existing keymap switch.
+    // stays routed through each popup's existing keymap switch. The
+    // runtime probe + typed seam (getInkInternalEmitter) makes the
+    // private-API dependency explicit and degrades gracefully if a
+    // future ink upgrade drops the field — mouse stops emitting
+    // synthetic keys, keyboard nav is unaffected.
+    const emitter = getInkInternalEmitter(stdin);
+    if (emitter === null) {
+      if (process.env.MU_TUI_DEBUG_MOUSE === "1") {
+        process.stderr.write(
+          "mu: ink stdin missing internal_eventEmitter; mouse replay disabled\n",
+        );
+      }
+      return;
+    }
     const emitKey = (key: string, delayMs: number) => {
-      setTimeout(() => stdin.internal_eventEmitter.emit("input", Buffer.from(key)), delayMs);
+      setTimeout(() => emitter.emit("input", Buffer.from(key)), delayMs);
     };
     replayPendingMouseEvent(pendingMouseEvent, {
       popupOpen: popup !== null,
       filterEditing: popupFilterEditing,
       emitKey,
     });
-  }, [popupMouseTick, popup, popupFilterEditing, stdin.internal_eventEmitter]);
+  }, [popupMouseTick, popup, popupFilterEditing, stdin]);
   useEffect(() => {
     if (popup === null) pendingMouseEvent.current = null;
   }, [popup]);
