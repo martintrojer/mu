@@ -36,9 +36,11 @@ import picocolors from "picocolors";
  *     OFF, even when TMUX/MU_FORCE_COLOR/FORCE_COLOR are set. We
  *     treat any defined value (including "") as set, matching the
  *     no-color.org convention and picocolors' own behavior.
- *   - `MU_FORCE_COLOR` set → ON (mu-specific override).
- *   - `FORCE_COLOR` set → ON (the standard env var picocolors / chalk
- *     consult).
+ *   - `MU_FORCE_COLOR` truthy → ON (mu-specific override). Values
+ *     "", "0", and "false" are explicit opt-outs, matching chalk's
+ *     FORCE_COLOR convention.
+ *   - `FORCE_COLOR` truthy → ON (the standard env var picocolors /
+ *     chalk consult). Values "", "0", and "false" opt out.
  *   - `TMUX` set → ON (the load-bearing fix for `watch` inside tmux:
  *     the surrounding pane is a real terminal even though our stdout
  *     is a pipe).
@@ -48,10 +50,17 @@ import picocolors from "picocolors";
  *
  * See task hud_colors_stripped_under_watch_and for the original repro.
  */
+function envForceTrue(key: string): boolean {
+  const v = process.env[key];
+  if (v === undefined) return false;
+  if (v === "" || v === "0" || v.toLowerCase() === "false") return false;
+  return true;
+}
+
 export function colorEnabled(): boolean {
   if (process.env.NO_COLOR !== undefined) return false;
-  if (process.env.MU_FORCE_COLOR !== undefined) return true;
-  if (process.env.FORCE_COLOR !== undefined) return true;
+  if (envForceTrue("MU_FORCE_COLOR")) return true;
+  if (envForceTrue("FORCE_COLOR")) return true;
   if (process.env.TMUX !== undefined) return true;
   return Boolean(process.stdout.isTTY) && process.env.TERM !== "dumb";
 }

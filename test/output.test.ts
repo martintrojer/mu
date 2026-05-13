@@ -80,8 +80,22 @@ describe("colorEnabled (env-var matrix + isTTY fallback)", () => {
     withEnv({ MU_FORCE_COLOR: "1" }, false, () => expect(colorEnabled()).toBe(true));
   });
 
+  it("returns false when MU_FORCE_COLOR=0", () => {
+    withEnv({ MU_FORCE_COLOR: "0" }, false, () => expect(colorEnabled()).toBe(false));
+  });
+
   it("returns true when FORCE_COLOR=1", () => {
     withEnv({ FORCE_COLOR: "1" }, false, () => expect(colorEnabled()).toBe(true));
+  });
+
+  it("returns false when FORCE_COLOR=0", () => {
+    withEnv({ FORCE_COLOR: "0" }, false, () => expect(colorEnabled()).toBe(false));
+  });
+
+  it('returns true when FORCE_COLOR=1 even if MU_FORCE_COLOR=""', () => {
+    withEnv({ MU_FORCE_COLOR: "", FORCE_COLOR: "1" }, false, () =>
+      expect(colorEnabled()).toBe(true),
+    );
   });
 
   it("returns true when no env vars are set but stdout.isTTY is true (TTY fallback)", () => {

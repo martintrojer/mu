@@ -128,6 +128,7 @@ called out under "Breaking" in each entry.
 
 ### Fixed
 
+- `MU_FORCE_COLOR=0` and `FORCE_COLOR=0` now opt out of static CLI ANSI colour output instead of forcing it on, matching chalk's FORCE_COLOR semantics. Empty string and `false` values are also treated as force-colour opt-outs; `TMUX` keeps its is-set terminal hint semantics.
 - TUI drill body/header/hint `Text` nodes now use `wrap="truncate"` so Ink cannot re-wrap ANSI-coloured pre-wrapped git-show / agent-scrollback lines by escape-byte count and bend the popup's right border.
 - `mu workstream destroy --empty --yes` now captures one sweep-level snapshot instead of one sweep snapshot plus one nested snapshot per empty workstream destroyed. Direct single-workstream destroys still capture their own pre-mutation snapshot.
 - `mu workstream import` now preserves literal note author `"system"` across export/import round-trips while keeping NULL note authors NULL. The bucket markdown now renders NULL note authors as `by null` and quoted real author strings as `by "..."`, matching the live DB where `task_notes.author` is nullable free text rather than treating `"system"` as a sentinel.
