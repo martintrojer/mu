@@ -377,6 +377,31 @@ describe("scrollback scanner — Part B patterns", () => {
     const agent = await spawnAgent(db, { name: "worker-1", workstream: "auth", cli: "pi" });
     expect(agent.name).toBe("worker-1");
   });
+
+  // review_substrate_startup_err_patterns_too_broad: the previous
+  // /command not found/i and /No such file or directory/i patterns
+  // were unanchored, so banner / prose lines that merely mentioned
+  // the marker triggered a full spawn rollback. Anchored patterns
+  // require the marker at end-of-line (optionally followed by a
+  // single `: <name>` token to admit the zsh form). The legacy
+  // positive cases above still trip; the prose cases below must NOT.
+  it.each([
+    ["I noticed earlier you saw 'command not found' in the scrollback"],
+    ["hint: type `mu` \u2014 command not found? install with brew install mu"],
+    ["checked /etc/foo and got: No such file or directory in the docs"],
+    ["banner: 'No such file or directory' is a common posix message"],
+  ])("prose mentioning the marker (no shell-error anchor) does NOT trip: %s", async (line) => {
+    const { executor } = mockTmux(state);
+    setTmuxExecutor(executor);
+    injectScrollbackOnSleep(`pi v0.5.0\n${line}\n> `);
+
+    const agent = await spawnAgent(db, {
+      name: "worker-1",
+      workstream: "auth",
+      cli: "pi",
+    });
+    expect(agent.name).toBe("worker-1");
+  });
 });
 
 // ─── Part C: env-var attribution in the spawn success line ───────────

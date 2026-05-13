@@ -573,11 +573,21 @@ const STARTUP_ERROR_PATTERNS: readonly RegExp[] = [
   //   - PATH inside the spawned shell differs from PATH in mu's
   //     process (login shell rc files, /etc/paths.d, etc.).
   //   - Race: binary on PATH at spawn time, gone 1.5s later.
-  // Scoped to the FIRST 30 lines of scrollback (see
-  // STARTUP_ERROR_TAIL_LINES) so a user's later `cat /no/such/file`
-  // can't false-positive long after spawn.
-  /command not found/i,
-  /No such file or directory/i,
+  //
+  // Anchored to lines that LOOK like a shell error rather than prose
+  // mentioning the marker (review_substrate_startup_err_patterns_too_broad):
+  // require the marker at end-of-line, optionally followed by a single
+  // `: <name>` token (the zsh form: `zsh: command not found: pi-meta`).
+  // This still trips the canonical cases —
+  //   `bash: pi-meta: command not found`
+  //   `zsh: command not found: pi-meta`
+  //   `sh: pi-meta: No such file or directory`
+  // — but rejects banner prose like
+  //   `I noticed earlier you saw 'command not found'`
+  //   `type \`mu\` — command not found? install with …`
+  // that previously triggered a full spawn rollback. The pre-flight
+  // PATH check remains the deterministic safety net for typo'd `--cli`.
+  /^(?:.*: )?(?:command not found|No such file or directory)(?::\s*\S+)?$/i,
 ];
 
 /**
