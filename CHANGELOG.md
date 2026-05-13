@@ -8,1600 +8,247 @@ called out under "Breaking" in each entry.
 
 ---
 
-## [0.5.0] — unreleased
-
-### Breaking
-
-- **Removed `mu state --mission`**. Bare `mu` is now the human TTY
-  entrypoint for the all-workstream TUI; agents and scripts should use
-  `mu state --json` instead. The full static snapshot is a superset of
-  the old stripped mission JSON shape.
-- **Removed the `mu state -n/--lines` alias for the recent-events cap**.
-  Use `mu state --events <n>` instead.
-- **Removed the dead `mu agent list --all` surface**. Agent listing stays
-  explicitly workstream-scoped; list workstreams first, then run
-  `mu agent list -w <workstream>`.
-
-### Removed
-
-- **SDK: `workstreamStateDir` and `ensureWorkstreamStateDir` removed
-  from `src/db.ts` (and the `mu` SDK re-exports in `src/index.ts`).**
-  Both functions had zero in-tree consumers; the `<state-dir>/
-  workstreams/<workstream>/` artifact directory they computed has
-  never been written to. Paper-only break for any external SDK
-  caller — mu itself ships no callers, and the directory layout is
-  not a stable surface. If a future feature needs per-workstream
-  artifact dirs we'll reintroduce a single helper at the call site.
-- `docs/test-flakes-audit.md` and `docs/plans/` deleted. The flake
-  audit's durable lessons live in AGENTS.md and ARCHITECTURE.md;
-  closed task notes (`mu task notes
-  bug_test_suite_flakes_audit_and_remediate`) keep the historical
-  transcript. Plan docs were one-off implementation scratchpads from
-  pre-TUI work; their content has long since shipped.
-- `docs/ROADMAP.md` rewritten and trimmed (561 → ~165 lines).
-  Cut: every "SHIPPED in v0.x" entry (CHANGELOG owns history); the
-  long essays under each rejected feature (collapsed to one-liners);
-  the "Operational lessons we're stealing" tables of pi-subagents
-  internals; speculative `task_artifacts` / `tasks_v` items; "Documents
-  still to write" and "How to use this roadmap" boilerplate.
-  Kept: promotion criteria, anti-feature pledges (referenced from
-  AGENTS.md), pi-extension three rules, per-CLI detector sketch (the
-  one real pending feature), open questions.
-
-### Added
-
-- Commits/Workspaces popup drills now render the underlying VCS show output in color (red/green/cyan diff highlighting; the existing `--color=never` was disabling the natural ANSI output).
-- New `t` shortcut in any `git show` drill: launches `tuicr -r <sha>` in the TUI launch cwd, suspending mu's TUI alt-screen until tuicr exits. This is the one user-driven escape from the read-only TUI pledge: it invokes another TUI tool the operator explicitly drives, then restores mu.
-- TUI mouse support: double-click a card to drill into its popup, scroll the mouse wheel inside a list/drill to navigate, double-click a row to drill into its detail. Esc/q remain the canonical 'back' (no mouse back binding by design).
-- DAG popup gains per-status toggle keys (o/i/c/r/d) so you can compose the visible task set without leaving the popup. Filter strip shows current toggle state. Default all-on; reopening resets.
-- TUI all-tasks popup (`t` keybind, no card slot — keybind-only like DAG). Per-status toggle keys (o/i/c/r/d) reuse the same useStatusFilter hook the DAG popup uses. Sort cycle key (`s`) walks roi → recency → age → id. Enter drills into TaskDetailDrill; `y` yanks `mu task show <id>`.
-- **TUI responsive multi-column dashboard + dynamic card row budgets**
-  (feat_responsive_layout). The dashboard now reads the live terminal
-  width and reflows cards from the narrow stacked view into pair-aware
-  2 / 3 / 4-column layouts at 120 / 180 / 240 columns: small cards
-  (Agents, Tracks, Workspaces, Doctor), task-list cards (Ready,
-  In-progress, Blocked), and stream cards (Activity log, Commits)
-  stay visually stable as the pane resizes or cards are toggled.
-  Each column also runs a pure row-budget allocator so every visible
-  card gets its minimum body rows, large lists cap at their declared
-  max, and overflow remains discoverable via the existing `+N more ·
-  Shift+N` footer-inset hint.
-- TUI initial-tab focus now uses a richer ladder: `$MU_SESSION` → tmux session name (`mu-<ws>`) → cwd inside a workspace → cwd equals the project root of any workstream's workspaces (tiebreak by most-recent activity) → tab 0. Means bare `mu` from the project root in any tmux pane lands on the most-relevant workstream instead of always tab 0.
-- Tab strip is compact: it shows a windowed view around the active workstream with `‹N` / `›N` indicators when workstreams overflow the available width.
-- **`mu task claim --for` and `mu agent send` warn before dispatching to a stale workspace**
-  (feat_claim_warn_stale_workspace). Both dispatch surfaces now reuse
-  the Workspaces card's ≥10-commits-behind-main definition via the
-  shared `WORKSPACE_STALE_THRESHOLD`. Default behaviour is a yellow
-  stderr `WARN:` plus a `mu workspace refresh <agent> -w <ws>` Next:
-  hint while the claim/send still succeeds. Passing
-  `--strict-staleness` refuses instead with typed
-  `TaskClaimStaleWorkspaceError` (exit 4). JSON output includes a
-  `staleness` object (`agentName`, `workstreamName`,
-  `commitsBehindMain`, `isStale`) or `null` for agents without a
-  workspace.
-- **TUI Commits card + popup** (feat_tui_commits_card). The dashboard now has a lazygit-style recent-project-commits card (`<sha-7> <relTime> <subject>`) sourced from the project root where the TUI was launched, not from any per-agent worker workspace. The fullscreen Commits popup supports `/` filtering, cursor navigation, and `Enter` drilling into the backend's show view; `y` yanks the show command. The VCS seam now supports git, jj, and sl via `VcsBackend.recentCommits(projectRoot, limit)` and `VcsBackend.showCommit(projectRoot, sha)`, with the `none` backend rendering a graceful empty state. Current slot/key assignments are documented under Changed.
-- **Bare `mu` launches the TUI when stdout is attached to a TTY**
-  (feat_mu_bare_launches_tui). The human entrypoint now opens the
-  read-only dashboard immediately with every workstream loaded as
-  tabs; `$MU_SESSION` seeds the initial active tab when it names one
-  of those workstreams, otherwise tab 0 wins. Non-TTY stdout, `--json`,
-  and `MU_NO_TUI=1` deliberately stay on the help path so agents,
-  scripts, pipes, and CI never boot Ink by surprise. An empty machine
-  prints `mu --help` plus `Get started: mu workstream init <name>`.
-  `mu state` remains the static card and `mu state --tui` remains the
-  explicit TUI selector for back-compat.
-
-- **Commits card and popup show the detected VCS backend**
-  (bug_vcs_detect_misses_git_worktrees). The TUI Commits card and
-  popup now include the active backend in their header/subtitle
-  (`git`, `jj`, `sl`, or `(no vcs)`) so users can see which substrate
-  won detection at a glance.
-
-### Performance
-
-- `reconcile()` now hoists `knownAgentCommands()` out of the orphan-pane loop via a `buildAgentPaneRecogniser()` closure: one snapshot of the `MU_PI_COMMAND` / `MU_CLAUDE_COMMAND` / `MU_CODEX_COMMAND` env vars per pass instead of one per pane. Hot path on every `mu state` poll tick (sessions in the wild can have dozens of panes); also pins the env-var snapshot for the loop so test suites that twiddle `MU_*_COMMAND` in `afterEach` can't race the inner check. Per `review_substrate_known_agent_clis_recomputed`.
-- **TUI snapshot poll split into a fast SQL-only tick (1s) and a slow
-  subprocess tick (10s).** Tmux liveness, per-workspace dirty status,
-  and project recent-commits no longer block every fast tick. p50
-  snapshot cost dropped from ~385ms to <1ms; the 10s slow tick handles
-  the subprocess work in the background. `r`/F5 still refreshes
-  everything immediately. Workstream tab switch triggers an eager slow
-  tick so the new workstream's subprocess data is fresh within 1s.
-
-### Changed
-
-- TUI popups now derive their layout width from Ink's `useStdout()` hook (`stdout?.columns ?? 80`) instead of calling the `termColsForLayout()` process-stdout helper in component bodies. `termColsForLayout()` remains exported as a deprecated back-compat alias for tests/out-of-tree callers. Per `review_tui_term_cols_for_layout_pop_pop_pop`.
-- TUI Workspaces popup now models its popup-local list → commits → git-show flow with an explicit `localMode` enum instead of deriving the third view from a `showSha` sentinel, collapsing the reset paths into one reducer while preserving the same visible behaviour. Per `review_tui_workspaces_popup_too_large` smaller subset; full file split deferred.
-- TUI `usePopupFilter` gains an `enabled` prop (default `true`); when `false`, the hook bubbles `false` up via `onEditingChange` regardless of its own internal `editing` state. The Workspaces popup, which has TWO filter instances (workspace list + commits drill), now passes its own `enabled` flag from each instance and lets the hook itself decide which one bubbles `true`. Drops the hand-rolled `activeFilterEditing` ternary + `useEffect` at the call site — every popup that uses the filter now wires it the same way. Per `review_tui_workspaces_two_filter_instances`.
-- TUI Blocked/In-progress/Recent cards now use module-scope `GLYPH` constants for their row glyphs instead of zero-argument `glyphFor()` calls in each card render. Pure refactor; rendered output is unchanged. Per `review_tui_glyph_for_zero_arg_overhead`.
-- TUI popup double-click now emits first-class `setCursor` + `drill` actions instead of replaying `g` plus N delayed `j` synthetic keys through Ink's private input emitter. The row offset is named (`POPUP_CHROME_TOP`) and linked to the shared popup chrome budget, reducing race/flake risk for deep popup rows. Per `review_tui_renderpopup_dead_code_path`.
-- Agent row reads no longer select or type the unused surrogate `id` column in `RawAgentRow`; helpers that need the internal id continue to resolve it explicitly at the SDK boundary. Pure substrate cleanup, no user-visible change. Per `review_substrate_raw_agent_row_id_unused`.
-- Last-claim lookup now shares one private `lastClaimEvent` helper for the structured claim-event SQL and LIKE escaping used by `lastClaimActor` and `lastClaimEventAt`. Pure substrate cleanup, no user-visible change. Per `review_substrate_last_claim_dup`.
-- TUI `<App>`'s mouse path now goes through a typed seam (`getInkInternalEmitter`) before reaching ink's private `internal_eventEmitter`. The cast site is explicit, runtime-probed (`if ("internal_eventEmitter" in stdin)`), and degrades gracefully (mouse stops emitting synthetic keys; keyboard nav unaffected) if a future ink upgrade drops the field. New `test/tui-app-emitter-shape.test.ts` asserts ink's `StdinContext.d.ts` still declares the field so the next ink bump that removes it fails CI loudly. Per `review_tui_app_uses_internal_ink_emitter` (Path A; Path B — routing mouse through `useMouse` directly into popups — deferred to avoid colliding with in-flight popup work).
-- TUI: folded the parallel `cardKeyFromId` and `popupNameForId` switch ladders in `src/cli/tui/app.tsx` into table lookups on `CARD_CONFIGS`. `CardRowConfig` gained a `name` field (the card identifier — "commits", "agents", "inProgress", …) and a `label` field (the human popup title — "Commits", "Agents", "In-progress", "Tasks" for slot 3, etc.), so the per-card name list now lives in exactly one place. `CardVisibility` switched from `Record<string, boolean>` to `Record<CardId, boolean>` (the same numeric key the rest of the card system already uses), eliminating the bridging switch entirely; `popupNameForId` collapses to a 3-line `CARD_CONFIGS[id].label` read with the keybind-only `"dag"` / `"allTasks"` popups handled inline. ~50 LOC removed across two switches; renaming a card slot now needs a single CARD_CONFIGS edit instead of touching `app.tsx` × 2 + `state.ts` + tests. Pure refactor; no user-visible change. Per `review_tui_card_key_from_id_redundant`.
-- TUI `<App>` now renders cards/popups through `CARD_REGISTRY` and `POPUP_REGISTRY` maps keyed by card/popup id instead of two parallel `switch (id)` blocks. The common card/popup prop bags are passed uniformly; components that do not need fields such as `db`, `workstream`, or `onFooter` simply ignore them. Pure refactor: behaviour and key bindings are unchanged. Per `review_tui_app_card_render_two_switches`.
-- TUI drill bodies now wrap once and share the result between scroll clamping and painting. `useDrillKeymap` owns the ANSI-aware wrapped body metadata and `DrillScrollView` / `TaskDetailDrill` accept that pre-wrapped data, so long scrollback / git-show / notes drills cannot desynchronise their scroll math from rendered lines. Per `review_tui_drill_wraps_body_twice`.
-- TUI `useDrillKeymap` now accepts an `onScrollChange(newTop)` callback fired from the same applyScroll path that updates drill scroll state. The DAG popup consumes it to keep the focused root in lockstep with scrollTop, dropping its duplicated `applyScroll` recomputation and empty `onClose` workaround. Per `review_tui_dag_double_apply_scroll`.
-- TUI: extracted shared `CardPlaceholder` helper for the loading and empty body branches each of the 10 dashboard cards used to hand-roll. Lives at `src/cli/tui/cards/_placeholder.tsx` (next to the cards, since only cards consume it). Each card collapses its loading/empty branch from a 10-line `<TitledBox><PaddedRows><Text dimColor>...</Text></PaddedRows></TitledBox>` block to one call; richer empty-state JSX (Agents/Ready/Tracks/Workspaces hint strings; Doctor's healthy-line glyph) routes through the helper's `children` slot. Pure refactor: rendered output is byte-identical, card prop signatures unchanged, and the test walker (`test/_card-render.ts`) needed no change because the helper is invoked as a function (not as JSX) so the underlying TitledBox/PaddedRows tree is exposed to the existing walk. Per `review_tui_card_loading_empty_boilerplate`.
-- Doctor remediation helpers moved out of the slot-9 popup into the SDK. `yankCommandForCheck` and `remediationParagraph` now live in `src/doctor-summary.ts` next to `DoctorCheck` and are re-exported from `src/index.ts`, so adding a new doctor check is a single touchpoint instead of two and future SDK consumers (e.g. a `mu doctor --remediation` flag) can reach the same data without depending on the TUI render layer. The popup keeps `renderDrillBody` (it's a render concern that interleaves summary + status + detail + separators) and just imports the moved helpers. Pure refactor: behaviour and yank vocabulary are byte-identical. Per `review_tui_doctor_remediation_lives_in_popup`.
-- TUI: extracted the byte-identical notes-drill `useMemo` block from the five task-list popups (Tasks/ready, In-progress, Blocked, Recent, All-tasks) into a shared `useNotesDrill` hook (`src/cli/tui/use-notes-drill.ts`). Each popup now calls it as a one-liner; SQL+tick semantics stay in lockstep so the next task-list popup is a one-line drop-in. Pure refactor: drill UX, scroll clamping, and yank verbs are unchanged.
-- README now opens with the shipped TUI dashboard screenshot so the flagship human surface is visible before install instructions.
-- README positioning now drops anti-bloat boasting while keeping the load-bearing thesis: mu persists tasks, workspaces, panes, notes, and logs, but the model drives.
-- README now has a dedicated TUI dashboard section covering the ten cards, fullscreen drills, keymap, mouse support, read-only yank contract, and `tuicr` handoff exception.
-- Architecture docs now match the current CLI/SDK shape: no operation registry, current task statuses, current `agent attach` behaviour, and the v7 schema path.
-- Usage guide SQL examples now use the v5+ surrogate-id schema (`workstream_id`, `task_id`, `owner_id`) and the demo assignment uses the typed `mu task claim` verb instead of raw owner updates.
-- Vision docs now describe the shipped DB snapshot/undo contract instead of the pre-snapshot irreversibility note.
-- Roadmap docs now drop stale v0.1 framing and the already-resolved composite task-key open question.
-- Vocabulary docs now reflect bare-`mu` TUI launch and current `mu task release` naming, and remove the stale future `mu detach` row.
-- README task examples now use the shipped `--blocked-by` flag instead of stale `--blocks` spelling.
-- Split `src/tasks.ts` into a cohesive `src/tasks/` cluster (`core`, `id`, `queries`, `edit`, `edges`, plus existing claim/lifecycle/wait/status/sort/errors), leaving the root file as the SDK re-export hub.
-- Split `src/vcs.ts` into a cohesive `src/vcs/` cluster (`types`, `helpers`, one file per backend, and dispatcher), leaving the root file as the SDK re-export hub.
-- Split `src/workspace.ts` into a cohesive `src/workspace/` cluster (`core`, `crud`, `decorate`, `orphans`, `recreate`), leaving the root file as the SDK re-export hub.
-- Split `src/archives.ts` into a cohesive `src/archives/` cluster (`core`, `query`, `addremove`, `delete`), leaving the root file as the SDK re-export hub.
-- Split `src/snapshots.ts` into a cohesive `src/snapshots/` cluster (`core`, `capture`, `restore`, `prune`), leaving the root file as the SDK re-export hub.
-- Every TUI task-list popup and card now colour-codes the status column (OPEN cyan, IN_PROGRESS yellow, CLOSED green, REJECTED red, DEFERRED gray/dim) — matching the existing static `mu task list` / `mu state` table colouring. Was: rendered as plain dim text in TUI.
-- TaskDetailDrill (the read-only drill that shows a task's note timeline) now renders each note's header (`── <ts>  <author> ──`) in bold cyan so multi-note tasks (especially umbrella tasks) are easy to scan top-to-bottom.
-- DAG popup (`g`) nodes now render `<name>  <status>` only — the long task summary trailing each node was clipped or wrapped at narrow widths and added little signal beyond the name. `mu task tree` CLI keeps the full label for static prints. DAG popup also truncates long lines per popup width (no more wrap).
-
-### Fixed
-
-- TUI list popups (all-tasks, ready, in-progress, blocked, recent, agents, doctor, workspaces) no longer drill into the wrong row when the `/` text filter is on. The `visibleTasks` derivation previously dropped the text filter on `mode === "drill"`, so pressing Enter at filtered-row 1 (3 matches) re-resolved the cursor against the unfiltered list (e.g. 50 rows) and drilled into a different task at index 1 of the unfiltered set. The mode-conditional is gone; the filter applies uniformly. Defensively, each popup also captures the focused row identity at the moment Enter is pressed, so even if the underlying list shifts under a future refactor the drill stays pinned to the row the user visually selected. (bug_filter_drill_opens_wrong_task)
-- TUI drill body rows are now ANSI-wrapped and padded to the exact popup content width before Ink sees them, so Ink's ANSI `wrap="truncate"` miscount no longer eats the trailing space and right border on long coloured `@@ -X,Y +A,B @@ ...` git-show hunk headers. (bug_ink_truncate_eats_right_border)
-- TUI `wrapAnsi` now closes any open SGR state on both the early-return path (line short enough to skip the wrap loop) and the end-of-loop trailing-chunk push, not just on mid-wrap chunk boundaries. Previously a coloured input fragment with no closing `\x1b[0m` (e.g. `\x1b[31m+ added`) returned unchanged, and Ink wrote the leaked SGR state straight into the next cell — the popup's right border, the next row's left border, padding spaces — making the chrome look misaligned/patchy. The `wrap="truncate"` fix in f24f5df addressed the byte-vs-visual width problem; this is the second, separate bleed source. Canonical reproducer: Workspaces → Enter on a workspace → Enter on a commit (git-show drill); right border now stays a single straight cyan column regardless of which lines are coloured. (bug_drill_ansi_state_leaks_into_border)
-- `MU_FORCE_COLOR=0` and `FORCE_COLOR=0` now opt out of static CLI ANSI colour output instead of forcing it on, matching chalk's FORCE_COLOR semantics. Empty string and `false` values are also treated as force-colour opt-outs; `TMUX` keeps its is-set terminal hint semantics.
-- TUI drill body/header/hint `Text` nodes now use `wrap="truncate"` so Ink cannot re-wrap ANSI-coloured pre-wrapped git-show / agent-scrollback lines by escape-byte count and bend the popup's right border.
-- `mu workstream destroy --empty --yes` now captures one sweep-level snapshot instead of one sweep snapshot plus one nested snapshot per empty workstream destroyed. Direct single-workstream destroys still capture their own pre-mutation snapshot.
-- `mu workstream import` now preserves literal note author `"system"` across export/import round-trips while keeping NULL note authors NULL. The bucket markdown now renders NULL note authors as `by null` and quoted real author strings as `by "..."`, matching the live DB where `task_notes.author` is nullable free text rather than treating `"system"` as a sentinel.
-- `src/db.ts` no longer throws plain `Error` objects whose `.name` was monkey-patched to `"TaskNotFoundError"` / `"AgentNotFoundError"` from `resolveTaskId` / `resolveAgentId` (review_substrate_resolve_id_anonymous_errors). Those instances flunked `instanceof TaskNotFoundError` in `cli/handle.ts:classifyError`, falling through to generic exit 1 instead of the typed exit 3 (= not-found). The two helpers are now `tryResolveTaskId` / `tryResolveAgentId` and return `number | null` on miss, paralleling the existing `tryResolveWorkstreamId`. SDK callers in `src/tasks/*.ts` and `src/agents.ts` (where the typed error classes live) own the throws, which keeps the CLI's typed-error → exit-code map honest. New regression test asserts `mu task close <nonexistent>` and `mu agent show <nonexistent>` exit with code 3, not 1.
-- `mu state --tui` no longer preloads and discards static snapshots before launching Ink. The explicit TUI path now resolves the workstream-name set, calls `runTui`, and leaves tmux/VCS-backed `loadWorkstreamSnapshot` work to the static JSON/render path and the TUI's own poll loop.
-- `mu workstream import` now refuses any existing target workstream row before importing, rather than only refusing existing workstreams that already had tasks. This prevents silent merges into workstreams that have agents or workspaces but no tasks; destroy the existing workstream first or import under a new name.
-- **`mu agent spawn` startup-error scanner no longer false-positives on banner prose** (review_substrate_startup_err_patterns_too_broad). The post-spawn scrollback scan previously matched `/command not found/i` and `/No such file or directory/i` anywhere on a line, so any agent banner that quoted those phrases as English (e.g. “I noticed earlier you saw 'command not found'”, or a hint like “type `mu` — command not found? install with brew install mu”) tripped a full spawn rollback (pane killed, workspace freed, agent row deleted). Anchored to one regex — `/^(?:.*: )?(?:command not found|No such file or directory)(?::\s*\S+)?$/i` — that requires the marker at end-of-line (with an optional trailing `: <name>` to admit the zsh form `zsh: command not found: pi-meta`). All three legacy positive cases (bash / zsh / sh shapes) still trip; prose mentioning the marker no longer does. Pre-flight `checkCommandResolvable` remains the deterministic safety net for typo'd `--cli`.
-- `mu sql` now uses better-sqlite3 prepared-statement metadata to decide whether a single statement returns rows, so `PRAGMA table_info(...)` and comment-prefixed `SELECT` queries render rows instead of write change-count output.
-- `agents.deleteAgent` now wraps the whole reaper sequence (snapshot stuck tasks → DELETE agent row → per-task UPDATE + `[reaper]` task_note + `task reap` event) in a single better-sqlite3 transaction. Previously a throw mid-loop (FK race after workstream destroy, addNote/emitEvent regression, OOM) would leave the agent row deleted (FK CASCADE clears `tasks.owner_id`) but only PART of the reaper trail written: leftover IN_PROGRESS tasks with no owner and no `[reaper]` note explaining how they got there, surfaced later by reconcile / `mu task wait --stuck-after` as ownerless zombies. Includes a regression test that monkey-patches the `task_notes` INSERT to throw mid-loop and asserts the agent row, task ownership, and event log all roll back atomically.
-- `mu task add` now omits the human `blocked by:` line when no `--blocked-by` values were supplied, instead of printing an empty optional field.
-- `mu task reparent` and `mu task add --blocked-by` now silently dedupe duplicate blocker input from comma/repeated flag forms before writing `task_edges`, avoiding raw SQLite UNIQUE errors. Reparenting to the same blocker set is now a true no-op that leaves `updated_at` unchanged.
-- `mu workstream destroy` dry-run Next commands now preserve the operator's `--archive <label>` and `--no-export` flags, so copy-pasting the confirmation command matches the preview.
-- TUI `?` help overlay is now scrollable. On low-row panes (e.g. 24 rows) the previous single-column render hid the bottom half of the keymap behind the StatusBar; now j/k/Ctrl-D/U/g/G/PgDn/PgUp scroll the body and a position indicator (`1-12/53`) sits inset into the title.
-- TUI drill-down views (TaskDetailDrill notes, commits show body, agent scrollback) used to capture their content once on mount and stay frozen until the user closed and reopened the drill. They now refresh on the same tick the parent dashboard does — fast tick (1s) for SQL-derived content (notes); slow tick (10s) for subprocess-derived content (commits show, agent scrollback). r/F5 forces an immediate refresh.
-
-- TUI drill-down views no longer jump back to the top or blank-flash during their data-tick refresh. `useDrillKeymap` now resets scroll only when the drill identity changes (task id, commit sha, agent name, etc.) and clamps existing scroll state when refreshed content shrinks; subprocess-backed git-show / scrollback refetches keep the prior body visible until the new body arrives.
-
-- git-show drills (Commits popup + Workspaces popup) now wrap long lines by visual width instead of byte count. Previously the new `--color=always` ANSI escape sequences inflated Ink's wrap math, breaking lines mid-escape and corrupting the popup chrome / colours. Wrap-within-borders is now clean at any pane width.
-
-- TUI keyboard popup-opens (`t`, `1`-`9`, `Shift+0`-`9`) no longer replay a stale mouse double-click event; the replay queue is consume-once via a ref. Symptom that's now fixed: pressing `t` on the dashboard could land the cursor on a random row + drill into TaskDetailDrill if you'd previously used a mouse double-click.
-
-- **TUI mouse double-click hit-test no longer points at the wrong card.** Empty-state cards (for example Doctor with no warnings) now render at their allocated `chrome + rowBudget` height instead of shrinking to only their minimum padding, so dashboard hit-test rectangles stay aligned with the Ink-rendered card grid all the way down the pane.
-
-- **All-tasks popup (`t`) now properly windows large lists.** Previously it rendered every task and let the cursor move off-screen because the rendered slice never advanced. Now uses `centredVisibleSlice` so the cursor stays mid-window and j/k/Ctrl-D/scroll-wheel actually move the visible window. Title gains a percent indicator (e.g. `23%`) when the list overflows the viewport.
-
-- **TUI dashboard no longer renders interleaved card borders / overlapping content on low-row-count panes.** The row-budget allocator now culls low-priority cards (Doctor → Recent → Workspaces → …) until the surviving set fits the available rows; a `+N cards hidden · resize taller` hint replaces them at the bottom. An outer height clip on the dashboard container is the final safety net.
-
-- **TUI dashboard 2-col layout no longer buries Commits**
-  (bug_layout_slot_0_buried_after_slot_fix). Commits (slot 0) no
-  longer lands below Recent (slot 8) in the middle of the right
-  column. Dashboard columns now follow a slot-stable order: normal
-  card runs are numeric, stream cards sit as natural trailers, and
-  slot 0 trails as the lowest-frequency stream card. The 2-col split
-  also rebalances stream cards across columns to 5/5 (was 4/6),
-  aligning bottom edges with Activity log trailing the left column and
-  Commits trailing the right column.
-
-- **TabStrip no longer crashes the TUI on small panes**
-  (bug_tab_strip_conditional_hook_crash). The component called a
-  helper that wrapped `useStdout()` and that helper was invoked
-  CONDITIONALLY (skipped when the `terminalColumns` prop was
-  provided). React's rules of hooks then crashed ink with `Rendered
-  fewer hooks than expected. This may be caused by an accidental
-  early return statement.` whenever the prop flipped between defined
-  and undefined across renders — the typical trigger was running
-  bare `mu` in a small tmux pane. Fix: TabStrip is now a pure
-  presentational component; the parent `<App>` reads `useStdout`
-  once for its own column count and threads that down via the
-  `terminalColumns` prop (now required, not optional).
-
-### Tests
-
-- **`test/tui-app-behaviour.test.ts`: first behaviour coverage for
-  `<App>` (the 714-LOC TUI root state machine).** Mounts `<App>`
-  via the `simulateInput` + `CaptureStream` seam (with
-  `useDashboardSnapshot` / `useMouse` / `probeClipboardBackend`
-  stubbed via `vi.mock`) and asserts the most load-bearing user
-  invariants: initial dashboard frame, card toggle (1, 3),
-  help overlay open/close (`?` and `Esc`), popup open via the
-  `!` glyph and Esc-to-close-but-app-stays, multi-workstream
-  Tab cycling, Ctrl-C → ink unmount, and `+`/`-` tick-rate
-  adjustment via the StatusBar tick label. Each test was
-  pre-flight-verified by deliberately regressing the matching
-  `app.tsx` branch (e.g. neutering `case "toggleCard"`,
-  `case "toggleHelp"`, `case "openPopup"`, `case "nextTab"`,
-  the popup `onClose`, the snapshot wiring) and confirming the
-  test fails. The pre-existing source-grep `test/tui-app.test.ts`
-  stays as the popup-props-bag invariant guard. Closes
-  `testreview_tui_app_no_behaviour_coverage` (workstream
-  `tui-impl`).
-- **`test/tui-popup-{agents,log,recent,tasks,inprogress,blocked}.test.ts`:
-  converted from `readFileSync` source-greps to behaviour tests on
-  the `simulateInput` + `CaptureStream` seam.** Each popup now
-  mounts with a fixture `WorkstreamSnapshot`, drives keystrokes
-  through the new seam, and asserts on visible text + `vi.fn()`
-  yank / `onModeChange` / `onClose` callbacks. Yank-and-frame
-  assertions cover `mu task claim ready_a -w demo` (OPEN-no-owner
-  ReadyPopup row), `mu task close alpha_run -w demo --evidence
-  "..."` (IN_PROGRESS row), `mu task tree paint -w demo`
-  (Blocked-popup diagnostic), and `mu task notes <id>`
-  (drill-mode yank). The agents popup stubs `setTmuxExecutor` so
-  drill-mode `readAgent` → `capturePane` returns a deterministic
-  in-memory scrollback. Drill mode also asserts the focused task's
-  notes show in the rendered body. Each conversion was
-  pre-flight-tested against a deliberate regression (renaming the
-  yank verb, removing the drill case) and confirmed to fail.
-  Structural greps that pin slot id ↔ App registry ↔ keys glue
-  (e.g. in-progress at slot 6 / `^`, blocked at slot 7 / `&`)
-  stay because they're import-graph guards — the seam header
-  explicitly carves those out. Closes the
-  `testreview_tui_static_source_grep_pervasive` umbrella.
-- `test/_ink-render.ts`: added a `simulateInput(stdin, key, opts?)`
-  helper plus a header comment block documenting the
-  CaptureStream-based behaviour-test seam (the 4-step pattern:
-  `createInkInputStream` + `createInkCaptureStream` + `render` +
-  `simulateInput` → assert `latestRenderedFrame`). Symbolic key
-  names (`escape`, `enter`, `up`, …) translate to the byte sequences
-  ink's `parse-keypress.js` decodes; plain strings (`"j"`, multi-char
-  text) are written verbatim. The 5ms default wait gives ink's
-  reconciler one tick to flush. Pinned by 7 unit tests in
-  `test/_ink-render.test.ts`. Motivated by the
-  `testreview_tui_static_source_grep_pervasive` umbrella: workers
-  reaching for `readFileSync` source-greps because they didn't
-  realise the seam existed; the header now spells out when to use
-  behaviour tests vs source-greps and points at
-  `tui-popup-all-tasks.test.ts` as the exemplar.
-- `test/db.test.ts`: replaced the fake-FK assertion with two real
-  ones. The previous "rejects edges to non-existent tasks (FK)"
-  test routed both endpoints through an `insertEdge` helper that
-  swallowed the SDK's "task not found" lookup error and synthesised
-  a raw `INSERT INTO task_edges ... VALUES (?, -999999, ...)` to
-  coerce SQLite's FK error — so the test passed for the wrong
-  reason and would have stayed green if the typed
-  `TaskNotFoundError` early-throw in `addBlockEdge` was deleted.
-  Split into (a) a direct DB-level FK assertion that runs a raw
-  `INSERT` with a bogus surrogate id and expects `/FOREIGN KEY/`,
-  pinning the schema's `REFERENCES tasks (id)` constraint, and
-  (b) an SDK-level assertion that calls `addBlockEdge(db, "test",
-  "a", "ghost")` and expects `TaskNotFoundError`, pinning the
-  resolver's early typed throw. The catch+synthesise hack in the
-  helper was removed; both endpoints must now exist. Both new
-  tests were verified to fail when their respective behaviours are
-  regressed (FK constraint dropped from `task_edges`; typed throw
-  in `addBlockEdge` short-circuited).
-- `tsconfig.test.json` is now wired into `npm run typecheck`; 48 long-buried test type errors were cleaned up across five commits, so test-file TypeScript regressions no longer escape typecheck.
-- TUI all-tasks popup tests now cover the centred visible-window behaviour by rendering the popup through Ink with 200 tasks and driving the cursor to row 100, instead of grepping `all-tasks.tsx` for `centredVisibleSlice` / `windowed.map` implementation details. The shared Ink test harness gained a tiny input stream helper and latest-frame extractor for this pattern.
-- `test/tui-state-hook-rerender.test.ts`: the three remaining
-  static source-grep describe blocks (Layer B, refreshNonce dep
-  wiring, app.tsx refresh-now wiring) were rewritten as behaviour
-  tests that mount `useDashboardSnapshot` through ink with a
-  controllable loader. The Layer B test asserts the hook returns
-  the SAME `data` reference (Object.is) across ticks whose
-  byte-equal-but-non-identity snapshots project to the same
-  snapshotKey, plus that `fastTickNonce` keeps advancing while the
-  reference holds. The refreshNonce test bumps the nonce mid-run
-  with `tickMs=10000` and asserts the loader fires within ~250ms
-  (no interval tick can mask a synchronous one). The app-wiring
-  test bumps the nonce twice and asserts each distinct value
-  triggers an extra fast load while a no-op rerender with the
-  same nonce does not. Each test was verified against a deliberate
-  regression in `state.ts` (key short-circuit removed; nonce
-  dropped from the dep list; nonce setter removed). The grep
-  pattern was a known weak spot — `not.toMatch(/void refreshNonce/)`
-  could not distinguish a load-bearing dep-list anchor from a
-  no-op effect, and was vulnerable to renames like `setLastTickMs`
-  → `setTick`.
-- `classifyError()` and `errorNextSteps()` tests now cover every exported typed error class with recovery hints, including archive/import/snapshot/workspace/spawn/wait lanes, and include an inventory drift check so new typed errors cannot silently miss the user-facing recovery contract.
-- **Test suite split into fast and full tiers.** `npm run test:fast`
-  now runs the pure/in-process unit tier for the dev loop and
-  concurrent worker checks, excluding `*.integration.test.ts` and
-  `*.smoke.test.ts`. `npm run test` keeps the full suite gate,
-  including integration tests that touch real tmux, git/jj/sl
-  fixture repos, filesystem-heavy export/import/snapshot paths, or
-  subprocess-style in-process CLI flows. The `.integration.test.ts`
-  suffix is promoted to the full-only tier marker; slow/substrate
-  tests that previously used plain `.test.ts` names were renamed
-  accordingly. The four-greens pre-commit gate still requires the
-  full `npm run test`.
-- **Test suite flake population audited and remediated.** The
-  previously intermittent ~1/run failure rate (different test each
-  time, passes on isolated re-run) was driven primarily by
-  multi-agent concurrent test runs — the repo's standard dogfood
-  workflow runs multiple pi workers' `npm run test` in parallel on
-  the same machine. Durable lessons now live in AGENTS.md and
-  `docs/ARCHITECTURE.md`. The short-lived historical pointer doc
-  `docs/test-flakes-audit.md` was deleted; closed task notes remain
-  reachable via `mu task notes bug_test_suite_flakes_audit_and_remediate`.
-  New `npm run test:stress` runs the full suite 30× back-to-back by
-  default, captures one log per run, enforces a per-run timeout, and
-  can simulate concurrent-agent load with
-  `MU_TEST_STRESS_MODE=parallel MU_TEST_STRESS_PARALLEL=2`.
-- VCS fixture cleanup now uses a small retrying `rmFixtureDir()` helper
-  for Sapling/git/jj temp dirs. This fixes the observed
-  `test/vcs-commits-show.test.ts` `ENOTEMPTY` cleanup race where sl's
-  `.hg/blackbox` file activity outlived the test body under load.
-- `mu task wait` reaper integration tests no longer use fixed 100ms
-  timers to kill panes or close tasks. The action now runs from the
-  wait-loop sleep seam after the initial snapshot has seeded prior
-  state, fixing the stress-only timeout where a pane died before the
-  wait could observe the IN_PROGRESS → OPEN transition.
-- Ink render tests no longer rely on a fixed 40ms sleep before reading
-  captured stdout; shared test plumbing now waits for non-empty stable
-  output, reducing timing sensitivity on loaded concurrent-agent
-  machines.
-
-### TUI internals
-
-- **TUI input-mode swallow rules consolidated into a single helper**
-  (review_tui_help_overlay_swallows_only_some_keys). `<App>`'s
-  `useInput` callback used to carry two parallel "keys to NOT bubble
-  to the global dispatcher" lists — one for the help-overlay branch,
-  one for the popup branch — expressed slightly differently and
-  inviting drift on every binding change. Both call sites now
-  delegate to `shouldSwallowGlobalKey(input, key, mode)` in
-  `src/cli/tui/keys.ts`, with `InputMode` enumerating the four
-  modes (`dashboard` / `help` / `popup` / `popup-filter`). Pure
-  helper, fully unit-tested in `test/tui-keys.test.ts`. Behaviour
-  unchanged.
-- **State/TUI dispatch + event-classifier tests are behaviour-backed**
-  (testreview_static_source_assertions). `test/state-dispatch.test.ts`
-  no longer reads `src/cli/state.ts` looking for the legacy
-  multi-workstream TUI guard or a `runTui({workstreams: ...})`
-  source shape. It lazy-mocks `runTui` and drives the real in-process
-  CLI path (`mu state --tui -w ws,ws2`), asserting the TUI branch is
-  invoked once with every resolved workstream and without booting Ink.
-  `test/state-render.test.ts` drops the TypeScript-AST audit of every
-  `emitEvent(...)` callsite; the replacement drives representative
-  SDK mutating verbs, captures the actual `agent_logs` payloads they
-  emit, passes the user-visible payloads through `classifyEventVerb`,
-  and asserts every emitted verb prefix is recognised. The tests now
-  fail on broken runtime dispatch/classification rather than harmless
-  source refactors.
 
 ## [0.4.0] — unreleased
 
-Feature theme: **interactive TUI**. `mu state --tui` opens an
-ink-based dashboard (rounded-border cards, fullscreen popups,
-live-updating, keyboard-driven, read-only). Default `mu state`
-behaviour is unchanged — the static card stays the default; the TUI
-is opt-in via the new `--tui` flag.
+Feature theme: **interactive TUI**. Bare `mu` opens an ink-based,
+read-only dashboard (rounded-border cards, fullscreen popups,
+multi-workstream tabs, mouse + keyboard, live-updating); `mu state`
+is the static card; both stay opt-in for non-TTY callers.
+
+### Breaking
+
+- Removed `mu state --mission`. Bare `mu` is the human TUI entrypoint;
+  agents/scripts use `mu state --json` (superset of the old shape).
+- Removed `mu state -n/--lines`; use `mu state --events <n>`.
+- Removed `mu agent list --all`; agent listing is workstream-scoped
+  (list workstreams, then `mu agent list -w <ws>`).
+- SDK: `workstreamStateDir` / `ensureWorkstreamStateDir` removed
+  from `src/db.ts` + `src/index.ts` (zero in-tree consumers).
 
 ### Added
 
-- **TUI DAG popup (`g`)** — the dashboard now has a keybind-only full task-DAG view for the active workstream. It renders every root task (no incoming `blocks` edge) as a `mu task tree --down`-style ASCII subtree, with blank lines between roots and diamond repeats collapsed with the existing `↻ already shown above` marker. New SDK/data seam `loadFullDag(db, workstream)` plus shared `renderForest(...)` keep the CLI tree renderer and TUI popup on the same box-drawing implementation. The popup is read-only and yanks `mu task tree <root-id> -w <ws>` for the root closest to the current scroll position (TODO: refine from scroll-root approximation to exact cursor-line task lookup when the text drill grows cursor-row plumbing).
-- **TUI multi-workstream tabs (`mu state --tui -w A,B,C`)** — the
-  TUI now accepts the same multi-value `-w` set the static card
-  has always supported (and `--all`). N≥2 surfaces a one-row tab
-  strip above the cards (`workstreams: ▸ active · next · …`)
-  with the active tab in bold/cyan + a colour-blind-safe `▸ `
-  marker; `Tab` cycles forward, `Shift-Tab` backward (suppressed
-  while a popup is open so the same key still navigates inside
-  popups that bind it locally). Cards / popups remain single-ws
-  (they read the active tab's snapshot); per the design note in
-  feat_tui_multi_workstream the Agents card does NOT grow a per-
-  row workstream column — the active tab encodes ws identity, and
-  a column would steal real estate from the actual signal columns.
-  The status bar's right zone gains a `[<active-ws>]` prefix next
-  to the tick rate so the active tab is visible without looking up
-  at the strip. Single-ws TUI (N=1) is byte-identical to the
-  pre-multi-ws frame: the strip renders nothing, the status-bar
-  prefix is omitted. New `<TabStrip>` component in
-  `src/cli/tui/tab-strip.tsx` (the only new file); `<App>` takes
-  `workstreams: string[]` instead of `workstream: string`;
-  `RunTuiOptions.workstream` becomes `RunTuiOptions.workstreams[]`;
-  the legacy `--tui currently supports a single workstream`
-  UsageError is removed from `cmdState`. Tab / Shift-Tab actions
-  added to `dispatchGlobalKey` (`{ kind: "nextTab" }` /
-  `{ kind: "prevTab" }`). Per the v0.4 anti-feature pledge,
-  ink/react remain confined to `src/cli/tui/*`.
-- **`mu state --tui`** — interactive ink-based dashboard. v0 ships:
-  - 4 cards on the dashboard (Agents, Tracks, Ready, Activity log)
-    toggleable with `1`-`4`. Each card uses `<TitledBox>`: rounded
-    border with the section header inset into the top border line
-    (lazygit/btop convention).
-  - 4 fullscreen popups opened with `Shift+1`-`Shift+4` (US-glyph-row
-    bound: `!`/`@`/`#`/`$`). Single-popup invariant; `Esc`/`q`
-    closes and restores prior dashboard state (toggles + tick rate).
-  - **Read-only**: act-intents `y`-yank the canonical `mu` command
-    to the clipboard via `pbcopy`/`wl-copy`/`xclip`/`xsel`/`clip.exe`,
-    falling back to OSC-52. The TUI never executes a mutation; the
-    user runs the yanked command in their shell.
-  - **Yank matrix** in the Tasks popup: state-aware. OPEN+ready
-    → `mu task claim`, OPEN+owned → `mu task release`,
-    IN_PROGRESS → `mu task close --evidence`, CLOSED/REJECTED/DEFERRED
-    → `mu task open`.
-  - **Enter drills into the focused row** in every popup (read-only):
-    Agents popup → inline scrollback view (`mu agent read -n 80`
-    rendered with j/k scroll). Tracks popup → inline list of every
-    task in that track's prerequisite subgraph. Tasks popup →
-    inline rendering of all task notes. Log popup → inline view of
-    the focused event's full untruncated payload (long
-    workspace-refresh / claim / multi-line note payloads clip in the
-    list view; the drill is the affordance for reading the full
-    text); `y` yanks the single-event lookup
-    `mu log --since <seq-1> -n 1 -w <ws>`. Esc / q from the drill view
-    pops one level back to the popup list; a second Esc / q closes
-    the popup back to the dashboard. The status bar surfaces the
-    drill sub-mode (`drill · j/k scroll · Esc back`) so the
-    multi-level state is unambiguous.
-  - **Drill rows that ARE entities chain into a deeper drill**
-    (per popup-drill recursion contract). Today: pressing `Enter`
-    on a task row inside the Tracks-popup drill opens the SAME
-    notes/details view the Tasks-popup drill renders — the shared
-    `TaskDetailDrill` leaf in `src/cli/tui/popups/task-detail.tsx`.
-    One `Esc`/`q` backs out per recursion level (task-detail →
-    Tracks-drill task list → list of tracks → popup closed). When
-    Card 6/7/8 popups (in-progress / blocked / recent) ship under
-    `feat_more_cards_umbrella`, they pick up the same chain
-    automatically by importing `TaskDetailDrill`.
-  - **Workspaces popup commits-drill → Enter on focused commit
-    drills again into `git show <sha>`** (per
-    `feat_workspaces_drill_git_show`). Third level of the
-    Workspaces popup state machine: list of workspaces → commits
-    since fork → read-only inline view of `git -C <workspace> show
-    <sha> --stat -p --color=never`, rendered via the shared
-    `<DrillScrollView>` primitive (same one log.tsx's payload
-    drill uses). Captured stdout is capped at 100_000 chars to
-    avoid runaway memory on giant merges; the drill cap is the
-    only thing the popup remembers between Esc cycles. Show-mode
-    keymap mirrors the rest: j/k Ctrl-D/U PgUp/PgDn scroll, g/G
-    jump top/bottom, `y` yanks the bare `git show <sha>` (the
-    operator wants the COMMAND, not the captured output — same
-    yank target as the commits-list level), Esc/q backs out one
-    level (back to commits, NOT all the way to workspaces).
-    Mode stays popup-local (`<App>`'s `PopupMode` union stays
-    `"list" | "drill"` — the show level rides on a `showSha`
-    sentinel inside drill mode), so no other popup is touched.
-  - **Tick adjust live**: `+`/`=` faster, `-` slower, `0` reset (1s
-    default; 100ms floor; 10s ceiling).
-  - **Popup `/` search/filter** (lazygit / k9s convention): every
-    list popup (Agents/Tracks/Tasks/Log) accepts `/` to enter an
-    incremental case-insensitive substring filter that narrows the
-    visible rows in real time. `Esc` cancels (clears the query),
-    `Enter` commits (keeps the filter applied while letting `j/k`
-    resume normal navigation), `Backspace` edits, printable chars
-    append. Press `/` again to refine a committed filter. The
-    filter blob is per-popup: agent name + status + cli + role;
-    track head id + title; task name + title + status + owner; log
-    verb + payload + source. Filter state is per-popup and dies
-    with the popup. Implemented as a shared primitive in
-    `src/cli/tui/use-popup-filter.tsx` (`usePopupFilter` hook +
-    pure `popupFilterReducer` + `applyFilter<T>` + `<FilterPrompt>`)
-    so the cards 5-9 popups under `feat_more_cards_umbrella` consume
-    it in ~5 LOC each.
-  - **Help overlay**: `?` shows the global + in-popup keymap.
-  - **Alt-screen**: enters `\x1b[?1049h` on launch, restores on
-    quit. Dashboard is flush with row 0; main scrollback is preserved.
-  - **Column-aligned rows** with protect/clip clipping policy: task
-    IDs / agent names / status tokens never truncate; titles /
-    payloads / paths clip with `…`. Uses `string-width` for
-    emoji + ANSI awareness.
-- **TUI Doctor popup (Shift+9 / `(`)** — the matching popup for
-  Card 9. Fullscreen drill-down of EVERY doctor check (OK + warn +
-  fail), not just the non-OK subset Card 9 surfaces. Renders the
-  Card 9 columns (glyph + check name + STATUS + detail) so the
-  popup stays visually in sync; re-uses Card 9's pure helpers
-  (`glyphFor`, `colorForStatus`). j/k navigation; `/` filter via
-  the shared `usePopupFilter` primitive (blob =
-  `${name} ${status} ${detail}`); `y` yanks an INFORMATIONAL
-  remediation hint (e.g. `mu agent list`, `mu workspace orphans`,
-  or a `# ...` no-op for schema-shape checks that have no
-  actionable mutation an operator should yank) — read-only by
-  construction, no mutating verb surfaces in the yank matrix.
-  `Enter` drills into a small ad-hoc detail view of the focused
-  check (name, status, detail, multi-line remediation paragraph)
-  rendered via the shared `DrillScrollView` leaf — NOT
-  `TaskDetailDrill` (rows are doctor checks, not tasks; the
-  popup-recursion contract from
-  feat_track_drill_chains_to_task_drill does not apply). New SDK
-  seam `loadDoctorChecks(db, snapshot)` in `src/doctor-summary.ts`
-  is a thin wrapper over `loadDoctorSummary` that returns the full
-  check array — the popup needs every row, the card needs the
-  warn+fail subset.
-- **TUI Doctor card (slot 9)** — toggleable with `9`. One
-  glanceable health-check summary so the operator notices a broken
-  state without remembering to run `mu doctor`. Filters to non-OK
-  rows for the body: glyph (✗ red fail / ⚠ yellow warn / ✓ green
-  ok), check name, status, and a short remediation detail (e.g.
-  `2 ghost panes; run \`mu agent list\``,
-  `1 orphan dir; run \`mu workspace orphans\``). Subtitle is
-  `all healthy` when every check passes (and a quiet "✓ K checks"
-  body line confirms the card ran), or the warn+fail count
-  otherwise. Reads `snapshot.doctor` populated by
-  `loadWorkstreamSnapshot(db, ws, { withDoctor: true })`; the new
-  `withDoctor` flag mirrors the `withDirty` opt-in pattern. New SDK
-  helper `loadDoctorSummary(db, snapshot)` in
-  `src/doctor-summary.ts` runs the cheap subset of `mu doctor`'s
-  checks (synchronous DB pragmas + COUNT-shape SELECTs; reads
-  ghosts/orphans/workspace-orphans straight off the snapshot).
-  Tmux-binary presence is intentionally omitted from the per-tick
-  card (the dashboard is already running inside a terminal so
-  tmux's binary presence is implicit, and a per-tick subprocess
-  fork on a polled dashboard is the wrong tradeoff). Slot-9 popup
-  (Shift+9 / `(`) is not shipped yet; tracked by
-  feat_more_cards_umbrella, and when it lands it MAY consume
-  feat_popup_search_filter (`/` filtering check names) but NOT
-  feat_track_drill_chains_to_task_drill (rows aren't tasks). After
-  this card lands, all reserved digit slots (1–9) are filled; slot
-  0 stays reserved by convention.
-- **TUI Blocked popup (Shift+7 / `&`)** — the matching popup
-  for Card 7. Fullscreen drill-down of every blocked task (OPEN
-  with at least one still-gating blocker). Renders the Card 7
-  glyph + id + STATUS + #blockers + ROI columns, plus a
-  top-blocker id column the card is too narrow to fit. Re-uses
-  Card 7's pure helpers (`glyphFor`, `stillGating`) so the popup
-  stays visually in sync. j/k navigation; `/` filter via the
-  shared `usePopupFilter` primitive (per feat_popup_search_filter;
-  blob is `${id} ${title} ${blockerIds.join(" ")}` so search
-  matches both the blocked task itself AND its still-gating
-  prereqs); `y` yanks `mu task tree <id> -w <ws>` — the most
-  actionable diagnostic for a blocked row ("show me what's
-  blocking this"). `Enter` chains into the shared
-  `TaskDetailDrill` leaf (rows ARE tasks, so the drill-recursion
-  contract from feat_track_drill_chains_to_task_drill applies
-  unchanged); `y` in drill mode yanks `mu task notes <id>` to
-  match the leaf the user is reading. Read-only: no mutating
-  verbs (no `mu task close / open / claim / release / reject /
-  defer / block / unblock / delete` yank). Esc/q backs out one
-  level (drill → list, then list → popup closed). Slot-6/8
-  popups remain reserved and tracked by `feat_more_cards_umbrella`.
-- **TUI Workspaces popup (Shift+5 / `%`)** — the matching popup
-  for Card 5. Fullscreen drill-down of every per-agent workspace in
-  the workstream. Renders the same five Card 5 columns (status
-  glyph, agent name, backend, commits-behind, parent_ref short)
-  plus two extras the card couldn't fit (dirty? and the on-disk
-  path). Re-uses the card's pure colour/glyph helpers (`glyphFor`,
-  `colorForGlyph`, `colorForBehind`, `formatBehind`) so the popup
-  stays visually in sync with the card. j/k navigation; `/` filter
-  via the shared `usePopupFilter` primitive (per
-  feat_popup_search_filter — blob is
-  `agent backend parent_ref [dirty]`); `y` yanks
-  `cd $(mu workspace path <agent> -w <ws>)` (the canonical entry
-  to a workspace per skills/mu's cherry-pick / inspection-workflow
-  recipe). Read-only: no mutating verbs (no `mu workspace free` /
-  `recreate` / `refresh` yank — surfaced as out-of-scope by the
-  task brief). `Enter` drills into the per-workspace
-  commits-since-fork list (`listCommitsForWorkspace` — the same
-  data `mu workspace commits <agent>` surfaces). The drill is its
-  OWN read-only list (NOT `TaskDetailDrill` — workspaces aren't
-  tasks); columns are `<sha-short>  <subject>` newest-first; the
-  drill ALSO consumes `usePopupFilter` so '/' substring search
-  across (sha + subject) works in 30+-commit workspaces; `y` in
-  drill mode yanks `git show <sha>` (cherry-pick discovery).
-  Esc/q backs out one level (drill → list, then list → popup
-  closed). Slot-6/7/8 popups remain reserved and tracked by
-  `feat_more_cards_umbrella`.
-- **TUI Recent card (slot 8)** — toggleable with `8`. One
-  glanceable list of the most-recently CLOSED tasks in the
-  workstream, newest first: heavy-check glyph (✓, green), task
-  id, status, time-since-close (relative-time token with `ago`
-  suffix), and title. Subtitle inlines `<N>` or
-  `<N> · last <when>` where `<when>` is the time since the
-  most-recent close — the actionable anchor for the operator's
-  "did the wave just finish?" question. Reads
-  `snapshot.recentClosed` directly (the existing `listRecentClosed`
-  SDK helper, sorted by `updated_at DESC`); no SDK extension.
-  Empty-state body is `(none recently closed)`. Surfaces "what
-  just shipped" so the operator can cherry-pick / verify /
-  cross-reference without bouncing to a separate `mu task list
-  --status CLOSED -w <ws>` shell. Slot-8 popup (Shift+8 / `*`)
-  is not shipped yet; tracked by feat_more_cards_umbrella, and
-  when it lands it MUST follow feat_popup_search_filter (`/`)
-  and feat_track_drill_chains_to_task_drill (Enter chains rows
-  into TaskDetailDrill, since rows ARE tasks). Slot 9 stays
-  reserved.
-- **TUI Blocked card (slot 7)** — toggleable with `7`. One
-  glanceable list of every OPEN task with at least one still-gating
-  blocker (status ≠ CLOSED): chain-link glyph, task id, status,
-  #blockers, ROI, title. Subtitle inlines `<N>` or `<N> · top
-  blocker: <id>` where the top blocker is the still-gating prereq
-  shared by the most visible rows (alphabetic tie-break) — the
-  single task that, if closed, would unblock the most downstream
-  work. Reads `snapshot.blocked` directly; per-row blocker counts
-  come from `getTaskEdgesWithStatus` (≤8 cheap synchronous
-  better-sqlite3 reads per tick — orders of magnitude cheaper than
-  the per-row `git status` shellouts the Workspaces card already
-  does). No SDK extension. Empty-state body is `(none blocked)`.
-  Fills the diagnostic gap that previously forced the operator to
-  walk the dependency tree manually via `mu task tree <id>`.
-  Slot-7 popup (Shift+7 / `&`) is not shipped yet; tracked by
-  feat_more_cards_umbrella, and when it lands it MUST follow
-  feat_popup_search_filter (`/`) and
-  feat_track_drill_chains_to_task_drill (Enter chains rows into
-  TaskDetailDrill, since rows ARE tasks).
-- **TUI In-progress card (slot 6)** — toggleable with `6`. One
-  glanceable list of every IN_PROGRESS task with id, owner,
-  time-since-claim (relative-time token), and title. Glyph is the
-  cog (matches `STATUS_EMOJI.busy` so it reads the same as in the
-  Agents card). Subtitle inlines `<N>` or `<N> · <K> stale` when
-  any row's last lifecycle flip is ≥5min old (matches the
-  `MU_IDLE_THRESHOLD_MS` default). Reads `snapshot.inProgress`
-  directly — no SDK extension. Empty-state body is `(none in
-  progress)`. Fills the cross-ref pain that previously forced
-  the operator to read the Agents card AND the Ready card to
-  figure out "what's actually running right now".
-- **TUI Recent popup (Shift+8 / `*`)** — the matching
-  fullscreen drill-down for Card 8 (per feat_popup_8_recent).
-  Mirrors the card's columns (`glyph id STATUS closed-at title`)
-  and adds `impact`, `effort`, and `ROI` columns the card was too
-  narrow to fit. `j/k` nav, `/` filter (incremental
-  case-insensitive substring over `id title owner` via the shared
-  `usePopupFilter` primitive), `y` yanks `mu task open <id> -w
-  <ws>` (the most likely act-intent for a recently-CLOSED row;
-  matches the popups/ready.tsx CLOSED branch of the yank matrix —
-  re-open is the typical "revisit a just-shipped task" flow),
-  `Enter` chains into the shared `TaskDetailDrill` leaf rendering
-  the focused task's notes timeline (per the recursion contract
-  from feat_track_drill_chains_to_task_drill — rows ARE tasks).
-  Drill-mode `y` yanks `mu task notes <id>`. Read-only: never
-  executes a mutation. Re-uses Card 8's pure helpers (`glyphFor`,
-  `formatWhen`, `ageMs`) so the popup stays in visual lockstep
-  with the card. After this popup lands, only slots 5/7/9 remain
-  unwired under feat_more_cards_umbrella.
-- **TUI In-progress popup (Shift+6 / `^`)** — the matching
-  fullscreen drill-down for Card 6 (per feat_popup_6_inprogress).
-  Mirrors the card's columns (`glyph id STATUS owner since-claim
-  title`) and adds an ROI column the card was too narrow to fit.
-  `j/k` nav, `/` filter (incremental case-insensitive substring
-  over `id title owner` via the shared `usePopupFilter` primitive),
-  `y` yanks `mu task close <id> -w <ws> --evidence "..."` (the
-  most likely act-intent for an IN_PROGRESS row; matches the Tasks
-  popup yank matrix), `Enter` chains into the shared
-  `TaskDetailDrill` leaf rendering the focused task's notes
-  timeline (per the recursion contract from
-  feat_track_drill_chains_to_task_drill — rows ARE tasks). Drill-mode
-  `y` yanks `mu task notes <id>`. Read-only: never executes a
-  mutation. Re-uses Card 6's pure helpers (`glyphFor`,
-  `formatSinceClaim`, `ageMs`, `isStale`) so the popup stays in
-  visual lockstep with the card.
-- **TUI Workspaces card (slot 5)** — toggleable with `5`. Shows
-  per-agent rows: status glyph (★ dirty / ⓘ stale / ✓ clean),
-  agent name, backend, commits-behind-main (green ≤2 / yellow 3-9 /
-  red ≥10), parent_ref short. Subtitle inlines `N stale` /
-  `M dirty` counts when non-zero. The card surfaces the
-  cherry-pick / refresh-between-waves signals previously only
-  visible via `mu workspace list`. Slot-5 popup (Shift+5 / `%`) is
-  not shipped yet; tracked by feat_more_cards_umbrella.
-  - New SDK helper `decorateWithDirty(rows)` in `src/workspace.ts`
-    populates `WorkspaceRow.dirty` via `backend.listDirtyFiles`
-    (capped at DECORATE_CONCURRENCY = 4 in flight, mirroring
-    `decorateWithStaleness`). jj / none backends short-circuit to
-    `false` (no operator-visible "dirty" concept).
-  - `loadWorkstreamSnapshot(db, ws, { withDirty: true })` opts in
-    to the extra shellouts; the static `mu state` card and `mu
-    workspace list` keep the cheap fast path.
-- New SDK surface (`src/state.ts`):
-  - `loadWorkstreamSnapshot(db, ws, opts?)` — the data contract
-    both the static renderer and the TUI consume.
-  - `agentStatusHistogram(agents)`, `summarizeOwnedTasks(owned)`,
-    `roiBucket(impact, effortDays)` — small derivation helpers
-    used by both surfaces.
-- `classifyEventVerb(payload)` in `src/logs.ts` — the parsing
-  half of the previous HUD-mode `colorEventPayload`, now reused
-  by the static renderer's static event row + the TUI's log card.
+#### TUI
 
-### Removed
+- **Bare `mu` launches the dashboard** when stdout is a TTY.
+  `--json`, `MU_NO_TUI=1`, and non-TTY pipes still print `--help`.
+  `mu state --tui` remains the explicit selector.
+- **9-card responsive dashboard**: Agents, Tracks, Ready, Activity
+  log, Workspaces, In-progress, Blocked, Recent, Doctor, plus a
+  Commits stream. Reflows into 1/2/3/4-column layouts at
+  120/180/240 cols; per-card row-budget allocator picks min/max,
+  culls low-priority cards on tight panes with a hint.
+- **Card section headers inset into the rounded top border** with
+  yellow superscript toggle digits (btop/lazygit convention).
+  Optional `Shift+N` truncation hint inset into the bottom border.
+- **9 fullscreen popups** opened with `Shift+1`-`Shift+9` (US-glyph
+  row); single-popup invariant; `Esc`/`q` returns to dashboard
+  preserving toggles + tick rate.
+- **DAG popup (`g`)**: full task DAG for the active workstream,
+  ASCII subtree per root, diamond-collapse marker, `o/i/c/r/d`
+  per-status toggles, yanks `mu task tree <root> -w <ws>`.
+- **All-tasks popup (`t`)**: every task as a sortable
+  (roi → recency → age → id) + filterable list, drills into
+  TaskDetailDrill, yanks `mu task show <id>`.
+- **Multi-workstream tabs** (`mu state --tui -w A,B,C` or `--all`):
+  one-row tab strip with `▸` active marker, `Tab`/`Shift-Tab`
+  cycles, status-bar shows `[<active-ws>]`, single-ws frame
+  byte-identical to pre-multi-ws.
+- **Mouse support**: double-click card → drill, scroll wheel
+  navigates lists/drills, double-click row → drill into detail.
+- **`/` substring filter** on every list popup; status-bar
+  flips to filter mode while editing; per-status-toggle strip
+  on task popups (`o/i/c/r/d`).
+- **`y` yanks** the canonical `mu` command for the focused
+  row to the system clipboard via
+  pbcopy/wl-copy/xclip/xsel/clip.exe with OSC-52 fallback.
+- **`?` help overlay** (scrollable on short panes).
+- **`t` in any git-show drill** launches `tuicr -r <sha>` with
+  alt-screen suspend/restore — the one user-driven escape from
+  the read-only TUI pledge.
+- **Drills auto-refresh on tick** (fast 1s for SQL-derived bodies,
+  slow 10s for subprocess git-show / scrollback). Scroll position
+  preserved across refreshes; no blank-flash mid-refetch.
+- **Initial active tab** picked via `$MU_SESSION` → tmux session
+  → cwd inside a workspace → cwd at any workstream's project root
+  → tab 0.
 
-- **`mu state --hud`** and supporting infrastructure (≈417 LOC):
-  `hudPaneSize`, `formatHud{Agents,Tasks,Recent,Tracks}Table`,
-  `renderHudMode`, the dynamic-fit greedy budget layout, the
-  `MU_HUD_FORCE_SIZE` env override, the `--hud` and `-n/--lines`
-  options, the private `colorEventPayload` colour wrapper. The TUI
-  is the conceptual replacement; users wanting the old HUD shape
-  can pin to 0.3.x.
-- The previous private `loadWorkstreamData` + `PerWsData` in
-  `src/cli/state.ts` — now `loadWorkstreamSnapshot` +
-  `WorkstreamSnapshot` in `src/state.ts`.
+#### CLI
+
+- **`mu agent adopt <pane-id> [--name <agent>]`** — formally
+  register an existing tmux pane as a managed agent (was a manual
+  SQL escape).
+- **`mu task close-if-ready <id>`** — close a task only when all
+  its blockers are CLOSED; refuses with a typed error otherwise.
+- **`mu task wait`** — block until a set of tasks reach a target
+  status; `--first --any --on-stall exit --json` returns full
+  next-step recipe (cherry-pick, free, recreate).
+- **`mu task claim --for` and `mu agent send` warn before
+  dispatching to a stale workspace** (≥10 commits behind main);
+  `--strict-staleness` makes it a hard error
+  (`TaskClaimStaleWorkspaceError`, exit 4).
+- **`--blocked-by <a,b,c>`** on `mu task add` (replaces the older
+  `--blocks` direction; reads as "this task is blocked by X").
+- **`mu workstream destroy --empty --yes`** sweeps every empty
+  workstream in one snapshot (was N+1 snapshots).
+- **VCS backend seam**: `recentCommits(projectRoot, limit)` and
+  `showCommit(projectRoot, sha)` for git, jj, sl; `none` returns
+  graceful empty.
 
 ### Changed
 
-- TUI `?` help overlay re-rendered as a single vertical column with bold section headers (was: 6 side-by-side rounded boxes that squished every effect string into a long thin strip on typical terminal widths).
-- TUI status-bar hint clusters re-audited per mode (dashboard/popup-list/popup-drill/popup-filter/dag/all-tasks); each mode lists exactly the keys you can press in that mode. The `?` overlay is the superset. Drill and filter sub-modes get their own columns in the overlay (previously buried under "in popup"). Orphan-hint regression test enforces every key shown in the bar appears in the overlay.
-- Recent restored to dashboard card slot 8 (was demoted to popup-only when Commits took the slot in v0.5 alpha).
-- Commits promoted to dashboard card slot 0 (was reserved-by-convention).
-- Dropped `l`/`L` alias for the Commits popup; Shift+0 ')' is the canonical key.
-
-- **CLI handler exits are centralised in `handle()`**
-  (review_repo_process_exit_inside_handlers). Leaf command handlers
-  no longer call `process.exit()` themselves: bare `mu state` with no
-  auto-resolvable workstream now throws `UsageError`, and `mu task
-  wait` timeouts throw a small internal `CliExitError(5)` sentinel
-  after rendering their normal stdout/JSON payload. `handle()` records
-  the exit code, runs its `finally` block (including `db.close()`),
-  then exits exactly once. This keeps typed-error exit-code mapping
-  and cleanup in one place.
-- Bare `mu state` outside a tmux session no longer prints the
-  silent `(no workstreams)` line. With workstreams on the machine
-  it now errors with the workstream list and three suggested fixes
-  (`mu state -w <name>`, `mu state --all`, `mu --help`), exit 2.
-  `--all` on a truly empty machine still prints a helpful hint.
-  `--json` callers continue to get `{workstreams: []}` for back-compat.
-
-### Repo cleanups
-
-- Dropped the unused `zod` runtime dependency and refreshed the lockfile.
-- Removed dead `mu agent list --all` documentation/next-step residue:
-  `mu agent list` remains explicitly workstream-scoped, and typed hints
-  now point users to `mu workstream list` before choosing a scope. The
-  compatibility flag itself is removed in v0.5.0.
-- Purged vestigial HUD-era helpers/comments: deleted the unused
-  `currentPaneSize()` tmux helper, narrowed stale internal comments to
-  the static-state/TUI model, and queued the `mu state -n/--lines` alias
-  itself for v0.5 removal.
-- `mu workspace commits --json` now keeps the collection envelope while
-  preserving the metadata the SDK already computes:
-  `{items,count,vcs,baseRef,workspacePath}`.
-- Git workspace dirtiness now has one source of truth: `freeWorkspace`
-  reuses `listGitDirtyFiles().length > 0`, and the duplicate
-  `isGitDirty()` helper is gone.
-
-### TUI internals
-
-- **Tmux integration tests now poll observed state instead of sleeping**
-  (testreview_fixed_sleep_flakes). The remaining fixed sleeps in
-  `test/verbs.integration.test.ts`, `test/tmux.integration.test.ts`,
-  and `test/cli-agent-kick.test.ts` now use the shared `pollUntil()`
-  helper against real predicates (scrollback contains marker, pane
-  disappeared, bash prompt/output visible, pane exists before kick)
-  rather than assuming 200–600ms is enough under load. Deferred export
-  mtime/cadence sleeps stay parked for v0.5+ per the task scope.
-
-- **JSON shape tests now assert seeded semantics, not just arrays**
-  (testreview_json_shape_weak_assertions). `state --json`, `agent
-  list --json`, `task notes --json`, and workspace-commits tests now
-  seed deterministic rows and assert representative content (task
-  ids/titles/statuses/ROI, live agent name/status, note author/content,
-  jj draft commit subject/body) instead of accepting any array-shaped
-  output. No production behaviour change.
-
-- **Yank OSC-52 branch + platform-conditional probe now have real
-  coverage** (review_tests_yank_osc52_unverified). `src/cli/tui/yank.ts`
-  had four backends — CLI (pbcopy/wl-copy/xclip/xsel/clip.exe), OSC-52,
-  and null — but the OSC-52 path (the actual fallback for SSH users
-  without an X server) wasn't exercised by ANY test, and the
-  platform-conditional `probeClipboardBackend` only ran the host's
-  branch (so a regression in the WSL or Wayland branch would be
-  invisible). Added two narrow injection seams:
-  (1) `yank(text, backend, { osc52Writer? })` accepts a stub writer
-  for the OSC-52 branch (default still writes to `/dev/tty`), plus a
-  new exported `osc52Sequence(text)` helper so the byte sequence is
-  testable directly. (2) `probeClipboardBackend({ platform?, wayland?,
-  x11?, isWsl?, hasCommand? })` accepts a synthetic env so every
-  branch can run on any host (defaults still read `process.platform`
-  / `WAYLAND_DISPLAY` / `DISPLAY` / `/proc/version` / `command -v`).
-  `test/tui-yank.test.ts` grows: OSC-52 sequence framing
-  (`ESC ] 52 ; c ; <base64> BEL`, base64 round-trip, BEL not ST
-  terminator), writer-throws → `{copied:false,error}`, exactly-one-
-  invocation, and 9 platform-conditional probe cases (darwin±pbcopy,
-  WSL, linux+Wayland+wl-copy, linux+X11+xclip, linux+X11+xsel-only,
-  Wayland-prefers-wl-copy-over-xclip, xclip-wins-over-xsel,
-  linux-no-display → OSC-52, unknown platform → OSC-52). 21 tests
-  total (up from 5); no production behaviour change.
-
-- **Workspaces popup `git show` invocation extracted to a testable
-  helper** (review_tests_workspaces_show_loadshow_unmocked). The
-  `loadShow` callback in `src/cli/tui/popups/workspaces.tsx` previously
-  shelled out via promisified `execFile` inline, with the arg vector,
-  the `SHOW_MAX_CHARS` truncation, and the error-stringification all
-  living in a `useCallback` body that no test ever called — the only
-  coverage was static-source greps for the literal strings
-  `"--color=never"` / `SHOW_MAX_CHARS = 100_000` / `"truncated at"`.
-  A regression that swapped `--color=never` for `--color=always`
-  (would inject ANSI into the popup body) or silently lowered
-  `maxBuffer` to 100 would have passed. New `src/cli/tui/git-show.ts`
-  module exports `runGitShow(path, sha)` returning a structured
-  `{ text, truncated, error }`, plus a `gitShowArgs(path, sha)` arg-
-  vector helper for cheap regression assertions and an `ExecFileFn`
-  injection seam for tests. The popup's `loadShow` shrinks to state-
-  setter glue. New `test/tui-git-show.test.ts` drives the helper
-  against (a) a real `mkdtemp + git init + commit` fixture (asserts
-  truncation fires at SHOW_MAX_CHARS, ZERO ANSI escape sequences in
-  stdout, missing-sha returns a useful error string, non-repo path
-  returns a useful error string) and (b) a stub `execFile` that pins
-  the exact arg vector + maxBuffer≥2×SHOW_MAX_CHARS + the throw→
-  `{error}` conversion. The popup's existing test suite is updated:
-  the per-flag static-source assertions are replaced by a single
-  guard that the popup wires `runGitShow(path, sha)` and never
-  imports `node:child_process` or `execFile` itself.
-
-- **Card footer-inset assertions collapsed to a single sweep test**
-  (review_tests_inline_card_source_blocks). Seven test files
-  (`tui-card-{blocked, doctor, inprogress, ready, recent, tracks,
-  workspaces}.test.ts`) carried byte-for-byte copies of the same
-  trailing block: `readFileSync(….tsx)` followed by a 2-it
-  describe asserting (1) no `<Text>+{more} more…</Text>` in-body
-  node and (2) that the source contained the literal string
-  `bottomLabel={bottomLabel}`. The 7 copies are gone; one new
-  sweep file `test/tui-card-footer-inset.test.ts` walks `cards/*.tsx`
-  (mirroring the pattern already used by
-  `tui-card-render-width.test.ts` for `<ListRow>`). The previous
-  `bottomLabel={bottomLabel}` regex was trivially evadable by
-  accident — a stale `let bottomLabel = undefined; <TitledBox
-  bottomLabel={bottomLabel} …/>` would pass while silently
-  disabling the inset — so the sweep additionally pins the
-  computation shape: `const bottomLabel = <count> > 0 ? \`+${…}
-  more · Shift+<digit>\` : undefined`. Net: -141 lines of test
-  duplication, +112 lines of one centralised sweep, one place to
-  update on the next refactor.
-
-- **Status-bar hint cluster: single declarative token list, zero
-  drift surface** (review_complexity_status_bar_hint_dual_render).
-  `src/cli/tui/status-bar.tsx` previously maintained two parallel
-  switches over `(mode, popupName, popupMode)`: `hintsPlain()`
-  built a plain string for the LEFT-zone truncation budget, and
-  `renderHints()` built the JSX with coloured `<Key>` tokens. The
-  header comment honestly read "Keep in lockstep with
-  renderHints()" — a maintenance burden guaranteed to silently rot
-  on the next edit (a hint added to one but not the other quietly
-  miscomputes the LEFT-zone budget on narrow terminals). Refactored
-  to a single `buildHints()` switch that returns a `HintToken[]`
-  (`{kind: "key"|"dim"|"label", text, color?}`); `hintsPlain()` is
-  now `tokens.map(t => t.text).join(" ")`, `renderHints()` walks
-  the same array interleaving `" "` separators so width matches
-  byte-for-byte. The 20-test `tui-status-bar.test.ts` suite
-  continues to pass unchanged.
-
-- **Dropped three TUI dead-code lies**
-  (review_dead_code_glyph_for_unused, review_dead_code_refresh_now,
-  review_dead_code_workstream_picker). (1) `glyphFor(_t: TaskRow)`
-  in `cards/{blocked,inprogress,recent}.tsx` was a const-returning
-  helper whose `TaskRow` arg existed purely for plug-in symmetry no
-  caller needed — exactly the anticipatory-abstraction pattern
-  AGENTS.md bans. Argument dropped; popup/card/test call sites
-  collapse to `glyphFor()`; the unused `TaskRow` import goes too.
-  (2) The `r` / F5 refresh-now binding bumped a `refreshNonce`
-  whose only consumer was a no-op `void refreshNonce` useEffect;
-  the snapshot poll loop in `useDashboardSnapshot` had no
-  refresh-now signal so the help-overlay-advertised binding did
-  nothing. Wired through: hook now takes an optional `refreshNonce`
-  param + lists it as an effect dep so a bump tears down the
-  interval and re-runs `tick()` synchronously; the dead useEffect
-  in `app.tsx` is gone. (3) The `w` workstream-picker binding
-  emitted a `workstream picker: v0.next` toast and otherwise did
-  nothing — a discoverable affordance shipping as a lie. Multi-ws
-  Tab/Shift-Tab (feat_tui_multi_workstream) covers the use case
-  now; the binding is gone from `keys.ts`, the suppression set in
-  `app.tsx`, the help overlay row, and the `tui-keys.test.ts`
-  expectation (replaced by a regression guard that pins `w` as a
-  noop). If a real picker ever ships, restore the binding then.
-
-- **Centralised pure formatters across cards/popups**
-  (review_dedup_age_ms, review_dedup_color_for_bucket,
-  review_dedup_format_roi, review_unify_format_when_since). Hoisted
-  the four pure helpers that had quietly accumulated 12+ near-
-  identical copies across the TUI cluster: `ageMs` (4 consumers),
-  `colorForBucket` (3 byte-identical copies), `formatRoi` (3
-  exported helpers + 2 inline `Math.round / Number.isFinite`
-  duplicates), and the `formatSinceClaim` / `formatWhen` pair
-  (which were each hand-rolled twice over the same
-  `relTime`-shaped arithmetic). All four now live in one new
-  `src/cli/tui/format-helpers.ts`; `formatSinceClaim` and
-  `formatWhen` collapse onto `relTime` / new `relTimeAgo` in
-  `src/cli/format.ts` so the static-CLI relative-time formatter
-  and the TUI's are now the single source of truth. Cards
-  re-export the helpers they used to define for back-compat with
-  popup / test imports. Stale "intentionally duplicated; single
-  call site per card, not worth a shared helper" comments deleted
-  — they outlasted their truth as soon as the popups landed and
-  bumped consumer counts to 4. New `test/tui-format-helpers.test.ts`
-  pins the helpers directly so a future drift inside a card can't
-  quietly reintroduce the duplication this commit removed.
-
-- **Lifecycle-backed graph/acceptance tests**
-  (testreview_acceptance_bypasses_lifecycle). The canonical
-  acceptance test and graph-view/track tests no longer mark tasks
-  `CLOSED` via raw SQL. They drive `closeTask()` instead and assert
-  the side effects raw SQL skipped: status-event evidence, synthetic
-  `CLOSE:` notes, and `updated_at` movement before checking ready /
-  track projections. Status-filter setup now uses `setTaskStatus()` /
-  `closeTask()` except where a test is intentionally constructing a
-  corrupt or otherwise impossible DB state.
-
-- **Colour-env test hygiene** (testreview_env_leak_no_color). The
-  three colourless render test files that set `NO_COLOR=1` at module
-  load now restore the original value in `afterAll`, preventing a
-  Vitest worker from leaking the opt-out into later output-colour
-  matrix tests.
-
-- **Tasks-popup yank matrix tests** (review_tests_yank_matrix_per_state).
-  `popups/ready.tsx` now exports the pure `yankCommandForTask`
-  helper, and a table-driven regression test pins every row-state
-  act-intent (OPEN unowned → claim, OPEN owned → release,
-  IN_PROGRESS → close with evidence, CLOSED/REJECTED/DEFERRED →
-  open, unknown → no yank) so the user-visible `y` behaviour cannot
-  silently drift back to static source-only coverage.
-
-- **Behavioural card-render tests** (review_tests_card_truthy_assertions).
-  The nine `test/tui-card-*.test.ts` files now use a shared
-  `renderCardToText()` JSX-walker helper (same recursion pattern as
-  the status-bar and tab-strip tests) instead of truthy JSX smoke
-  assertions, pinning card titles/subtitles, populated row cells,
-  empty-state hints, and `+N more · Shift+X` truncation labels.
-
-- **Post-v0.4 audit pass** (review_tui_code_and_tests). Ran the
-  canonical code-reviewer + test-reviewer skills across the entire
-  TUI surface (`src/cli/tui/**` + `test/tui-*.test.ts`). 26 findings
-  filed as separate `review_*` tasks for triage — 15 code-reviewer
-  (mostly duplication candidates for the next centralisation wave —
-  popup `Shell` / `dispatchPopupKey` key-flag pack / drill keymap
-  / formatRoi / colorForBucket / ageMs / formatSinceClaim ↔
-  formatWhen ↔ relTime — plus two dead-code lies: `r` refresh-now
-  and `w` workstream picker that show in the help overlay but do
-  nothing) and 11 test-reviewer (the dominant theme is `expect(src).toContain(...)`
-  static-source assertions standing in for behaviour tests across
-  card/popup/acceptance suites; root cause is the missing
-  ink-testing-library install). No in-line fixes — implementation
-  ships per filed task.
-- **Shared drill-mode keymap hook** (review_dedup_drill_keymap).
-  `src/cli/tui/popups/drill.tsx` now exports `useDrillKeymap({body,
-  viewport, onClose, onYank})`, centralising the repeated
-  DrillScrollView leaf skeleton (body line count → `applyScroll`,
-  Esc/q back, y delegate). The seven direct text drills
-  (Agents/Ready/In-progress/Blocked/Recent/Log/Doctor) now simply
-  call `drill.dispatch(action)` in drill mode; Tracks' task-detail
-  leaf and Workspaces' git-show leaf use the same hook for their
-  deeper scroll-based drill levels. Coverage in
-  `test/tui-drill-keymap.test.ts` keeps future popups from
-  reintroducing local `applyScroll` / `totalLines` drill switches.
-
-- **Shared ink-key normalisation for TUI dispatchers**
-  (review_dedup_popup_useinput). `src/cli/tui/keys.ts` now exports
-  `dispatchPopupKeyFromInk(input, key)` and
-  `dispatchGlobalKeyFromInk(input, key)`, centralising the explicit
-  ink `Key` → local `KeyFlags` pick (including rarely-used fields
-  like PgUp/PgDn/F5). The nine fullscreen popups and `<App>` now call
-  the wrapper instead of carrying hand-rolled 13-field object literals
-  in every `useInput` callback, so future key additions happen in one
-  place and can't drift by popup.
-- **Shared popup shell extraction** (review_dedup_popup_shell).
-  The nine fullscreen popup modules now import one
-  `src/cli/tui/popup-shell.tsx` `<PopupShell>` wrapper instead of
-  carrying eight byte-identical local `Shell` components plus the
-  near-identical `ready.tsx` `PopupShell` copy. The shared wrapper
-  owns the cyan `<TitledBox>` chrome, `flexGrow={1}` fill invariant,
-  and nullable bottom hint mapping; `test/tui-popup-shells.test.ts`
-  now asserts each popup imports the shared shell rather than
-  defining a local one.
-
-- **Centralised drill cursor-centring + filter-editing bubble-up**
-  (review_dedup_drill_centring_visible_slice,
-  review_dedup_filter_editing_effect). Two follow-ups from the
-  v0.4 audit pass that close out two more low-severity dedup
-  findings. (1) The `Math.max(0, Math.min(items.length - viewport,
-  cursor - Math.floor(viewport/2)))` cursor-centring formula was
-  duplicated across three drill views (log events list, tracks
-  task-list drill, workspaces commits-since-fork). Sibling helpers
-  in `popups/scroll.ts` already owned `applyCursor` /
-  `applyScroll`, but NOT the visible-slice math — obvious drift
-  surface (`floor` vs `ceil`, half-window vs explicit). New pure
-  `centredVisibleSlice(items, cursor, viewport): {start, visible}`
-  in `popups/scroll.ts` collapses all three to one line each;
-  `tui-scroll.test.ts` adds 7 cases pinning the boundary semantics
-  including a sweep-test that locks the helper to the legacy
-  inline formula. (2) The bubble-up `useEffect(() =>
-  onFilterEditingChange?.(flt.editing), [flt.editing,
-  onFilterEditingChange])` block that flips the StatusBar into
-  popup-filter mode was hand-rolled identically in 8 popups
-  (agents/blocked/doctor/inprogress/log/ready/recent/tracks). Now
-  baked into `usePopupFilter` itself via an optional
-  `onEditingChange` callback option; the 8 useEffect blocks
-  collapse and `useEffect` import drops from 6 of them.
-  workspaces.tsx still hand-rolls because it has TWO filter
-  instances (list + drill) and chooses which `editing` flag to
-  surface based on sub-mode; that exception is documented in the
-  hook's JSDoc and pinned by a baseline test in
-  `tui-use-popup-filter.test.ts`. The new test also enforces the
-  no-hand-roll invariant across the eight collapsed popups so a
-  future refactor can't quietly reintroduce the duplicated block.
-
-- **Centralised scroll/navigation dispatch**
-  (feat_centralize_scroll_navigation). Every popup's `useInput`
-  switch over `dispatchPopupKey` used to carry its own copy of the
-  same six `case` arms (`moveDown` / `moveUp` / `jumpTop` /
-  `jumpBottom` / `pageUp` / `pageDown`); ~60 near-duplicate arms
-  across 9 popups inevitably drifted (one consumer would forget
-  Ctrl-D / Ctrl-U; another would only support `g`/`G` in list mode
-  and not in drill mode; a third would lose the page-step formula).
-  All six arms now collapse into a single `applyCursor` /
-  `applyScroll` call (cursor-based vs scrollTop-based) wired
-  through new pure helpers in `src/cli/tui/popups/scroll.ts`. The
-  helper has zero ink/react imports and is covered exhaustively by
-  `test/tui-scroll.test.ts`. `clampScrollTop` relocates from
-  `popups/drill.tsx` into the new module (drill re-exports it for
-  back-compat). Every list-mode AND drill-mode in every popup now
-  trivially supports j/k/g/G/Ctrl-D/U/PgUp/PgDn with identical
-  semantics, and a future popup author can't drift the keymap by
-  re-implementing the switch.
-
-- **Centralised list-row rendering** (feat_centralize_list_row_render).
-  Every `popups/*.tsx` (9) and `cards/*.tsx` (9) row JSX block now
-  routes through a single new `<ListRow>` primitive
-  (`src/cli/tui/list-row.tsx`). The four invariants every row had to
-  hand-code — outer `<Box width={contentWidth}>` (was
-  bug_tui_log_popup_columns_misaligned), `wrap="truncate"` on the
-  outer `<Text>` (was bug_tui_log_card_columns_misaligned), the
-  canonical 2-space `COL_GUTTER` between cells, and the
-  selected-row→`<CursorRow>` delegation — are now owned by ONE
-  component. Per-cell colour palettes pass in declaratively as a
-  `colors` array, sibling of `COLUMN_SPECS`. The previously-failing
-  bug class (one popup forgets one attribute, the regression hides
-  in 1-of-18 panes until somebody opens it) is gone by construction:
-  no consumer can drift the gutter, forget the width pin, or skip
-  `wrap="truncate"`. `test/tui-card-render-width.test.ts` is
-  reframed to assert the new invariant ("every renderRow consumer
-  routes through ListRow or CursorRow; no hand-rolled
-  `<Box><Text wrap=...>` row remains"); `test/tui-list-row.test.ts`
-  is the new unit test for the primitive itself.
-
-### Pillar amendments
-
-- **VISION.md Constraint #7 (new)**: "Every invocation is
-  short-lived — except for two named interactive readers." Names
-  the previously-implicit pillar and carves a bounded exception
-  for `mu log --tail` (existing) and `mu state --tui` (new).
-  The exception is gated by four properties: interactive (not a
-  daemon), read-only (against SQLite), no resources beyond stdio +
-  a poll timer, opt-in (via `--tui` flag) with a static fallback.
-- **ROADMAP.md anti-feature pledge updates**: the "no render
-  layer beyond cli-table3 + picocolors" pledge is replaced with a
-  TIGHTER form that permits `ink` ONLY in the `src/cli/tui/`
-  subtree. New companion pledge: no second render layer alongside
-  ink (no blessed/neo-blessed/reblessed/terminal-kit/hand-rolled
-  ANSI in parallel — if ink ever fails, REPLACE the stack and
-  amend the pledge; don't stack stacks).
+- **Schema v4 → v7**: snapshots table (v4 — auto-snapshot before
+  every destructive verb), surrogate-PK normalisation
+  (`tasks.id INTEGER PK + (workstream_id, local_id) UNIQUE`,
+  v5), cross-workstream archive tables (`archives`,
+  `archived_tasks`, `archived_edges`, `archived_notes`,
+  `archived_events`, v6), dropped unused `approvals` (v7).
+- **Source clusters**: split `src/{tasks,vcs,workspace,archives,
+  snapshots}.ts` into per-concern subdirs; root files become SDK
+  re-export hubs. Each cluster has its own ARCHITECTURE.md row.
+- **MU_FORCE_COLOR=0 / FORCE_COLOR=0** now opt OUT of static CLI
+  colour (matches chalk semantics; was inverted).
+- **Diff drills** now render in colour (red/green/cyan diff
+  highlighting); ANSI-aware wrap pads each line to the popup's
+  exact content width so ink can't eat the right border.
+- **TUI snapshot poll** split into a fast SQL-only tick (1s) and
+  a slow subprocess tick (10s); p50 cost dropped ~385ms → <1ms.
+- **`mu state --tui`** no longer preloads + discards static
+  snapshots before launching ink.
+- **`reconcile()`** hoists `knownAgentCommands()` out of the
+  orphan-pane loop (one env-var read per pass, was per-pane).
+- **README revised**: TUI dashboard screenshot up top; dropped
+  anti-bloat boasting; "stay out of the model's way" thesis
+  sharpened; dedicated TUI section.
+- **`docs/ROADMAP.md`** trimmed 561 → ~165 lines (cut shipped
+  entries, long rejection essays, pi-subagents internals tables,
+  speculative items). Kept promotion criteria, anti-feature
+  pledges, per-CLI detector sketch, open questions.
+- **`skills/mu/SKILL.md`** trimmed 590 → 356 lines (filler,
+  redundant warnings, restated examples).
+- **Notes model** standardised on FILES / DECISION / VERIFIED
+  conventions (already de facto; documented).
+- Many smaller pure-refactor TUI consolidations: shared
+  `useNotesDrill`, `useDrillKeymap` (incl. `onScrollChange` +
+  `resetKey`), `useWrappedBody`, `usePopupFilter` `enabled` prop,
+  `CARD_REGISTRY` / `POPUP_REGISTRY`, `CARD_CONFIGS.{name,label}`
+  table-lookup, `CardPlaceholder`, `shouldSwallowGlobalKey`,
+  `setCursor` PopupAction (no more synthetic key replay),
+  `getInkInternalEmitter` typed seam.
 
 ### Fixed
 
-- **VCS backend detection now uses each tool's canonical root command**
-  (bug_vcs_detect_misses_git_worktrees). `detectBackend()` probes
-  `jj root`, `sl root`, then `git rev-parse --show-toplevel` instead
-  of checking whether `.jj` / `.sl` / `.git` is a directory. This
-  fixes git-worktree detection: worker workspaces use a `.git` FILE
-  (`gitdir:` pointer), so the old heuristic fell through to `none`
-  and left the TUI Commits card empty in every worker pane.
-- **`mu task wait --first --json` nextSteps no longer silently cherry-pick a worker's fork point**
-  (`fb_wait_nextsteps_robust_no_commits`). The dispatch-pipeline hint
-  now uses `mu workspace commits`' since-fork data before emitting an
-  apply recipe. Workers with commits get inspectable, sha-pinned
-  commands (`git cherry-pick <sha>` for one commit,
-  `git cherry-pick <first>^..<last>` for multiple commits) instead of
-  a brittle `$(cd $(mu workspace path ...) && git log -1)` shell
-  substitution. Workers that close without committing now surface a
-  manual-rescue NextStep (`closed without committing — apply by hand`)
-  rather than a no-op cherry-pick of the base ref; missing/non-VCS
-  workspaces degrade to manual inspection hints.
-- **`mu task close` now reminds workers to commit dirty workspace edits**
-  (fb_close_post_emit_commit_hint). After a real close (not an
-  idempotent no-op), if the closing actor has a per-agent workspace
-  with uncommitted edits, the success `Next:` block gains a best-effort
-  `cd $(mu workspace path <actor> -w <ws>) && git commit -am '<task-title>'`
-  hint. Clean workspaces, actors without a workspace, `none` backends,
-  and failed VCS dirty probes silently omit the hint; the same entry is
-  included in `--json` `nextSteps`.
-- **TUI card body rows no longer collapse into the rounded bottom
-  border, and bottom-label cards no longer grow a phantom blank row**
-  (bug_tui_card_body_collapses_into_bottom_border). Follow-up to
-  bug_tui_dashboard_top_card_scrolls_off: that fix correctly kept
-  `flexShrink={1}` on the OUTER TitledBox so Yoga may shrink cards
-  instead of scrolling the topmost card's chrome off-screen, but it
-  also let the INNER border-body Box shrink below its body-row
-  content. When the inner body under-allocated, ink painted the
-  rounded bottom border on top of an overflowing child row
-  (`╰─task text──╯`); when it over-allocated, cards with an inset
-  `bottomLabel` showed a blank body row immediately above the
-  `╰─ +N more · Shift+N ─╯` border. Fix: keep the outer shrink +
-  app-level `overflow="hidden"` safety net, but pin the inner
-  border-body Box to `flexShrink={0}` so its height stays tied to
-  content and clipping happens at the card/dashboard boundary rather
-  than inside the border chrome. Coverage adds an ink render
-  regression in `test/tui-titled-box-render.test.ts` plus the
-  existing TitledBox frame-height source guard. While there, the
-  Tracks card now renders the singular `1 task` count instead of
-  `1 tasks`.
-- **Bucket-level export INDEX.md stays additive across one-workstream refreshes**
-  (review_repo_export_bucket_index_not_additive). The renderer now
-  writes `manifest_version: 2` and stores compact task summaries
-  (`name` / `title` / `status` / `impact` / `effortDays`) in each
-  `manifest.sources[].tasks[]` entry, so the top-level `INDEX.md`
-  renders the union from the merged manifest instead of only the
-  `input.sources` for the current call. v1 manifests are accepted
-  on re-export by inferring summaries from existing task markdown
-  where possible, then rewritten as v2.
-- **Archive re-adds now document their snapshot-only contract**
-  (review_repo_archive_events_not_incremental). `mu archive add`
-  still targets end-of-milestone snapshot-and-destroy flows rather
-  than incremental event mirroring; re-adding the same source is
-  task-incremental only, and notes/events for already-archived tasks
-  stay pinned to the original snapshot. The event payload and usage
-  guide now say this explicitly instead of implying an event-stream
-  refresh.
-- **TUI DrillScrollView body lines now clip at the drill content
-  width instead of wrapping** (bug_tui_drill_text_no_width_pin).
-  Follow-up to bug_tui_drill_scrollview_wraps_long_lines: the body
-  `<Text wrap="truncate">` was necessary but not sufficient because
-  ink only truncates against a definite parent width. DrillScrollView
-  now derives `contentWidth` from the same `termColsForLayout()` /
-  `contentWidthFromCols()` helpers as cards and popups, and wraps the
-  fallback plus `visible.map(...)` body lines in a single
-  `<Box flexDirection="column" width={contentWidth}>`. That completes
-  the width-pin trio with bug_tui_log_card_columns_misaligned and
-  bug_tui_log_popup_columns_misaligned, covering every long-text drill
-  (task notes, Workspaces git-show, Activity-log payload, agent
-  scrollback, and Doctor remediation). While diagnosing the sibling
-  Activity-log card report, the TUI log card/popup now run structured
-  `task.claim\t...` events through `displayEventPayload()` before
-  classification so the visible verb column is `task claim` instead
-  of the raw `task.claim` sentinel.
-- **TUI drill-mode bottom labels are yank-only again**
-  (bug_tui_drill_double_hints). The Layer-2 contract from
-  nit_tui_drill_inset_title_and_hints said `DrillScrollView`'s
-  magenta bottom label should carry only the drill-specific yank
-  recipe, while the j/k / Ctrl-D/U / Esc navigation cluster lives
-  in the global StatusBar. Several popup drill views drifted and
-  rendered the full nav recipe in their nested TitledBox, producing
-  two stacked hint surfaces. All nine popup files now keep drill
-  bottom labels to the yank recipe only (including Workspaces'
-  commits and git-show drill levels); list-mode hints are
-  unchanged. Static coverage in `test/tui-popup-shells.test.ts`
-  bans renderable drill hints containing `j/k`, `Ctrl-D`, or
-  `Esc back` so the duplication does not regress.
-- **TUI dashboard topmost card no longer scrolls its top border
-  off-screen on the single-ws dashboard**
-  (bug_tui_dashboard_top_card_scrolls_off). Sibling of
-  bug_tui_tab_switch_stale_render Layer 2: that fix added
-  `overflow="hidden"` to the height-pinned root `<Box>` of all
-  three frame branches (dashboard / popup / help), which catches
-  the multi-ws case where the TabStrip adds one row over the nine
-  cards and pushes total content to `rows+1`. The single-ws case
-  has no TabStrip, but the nine cards' SUMMED natural height
-  (especially Card 8 — Recent and Card 9 — Doctor, both with
-  multi-row bodies) can still exceed `rows` on normal terminal
-  sizes. Even with `overflow="hidden"` pinned, ink (via Yoga) gave
-  every card its natural height first because Yoga's default
-  `flexShrink` is **0** (unlike CSS's 1) — so the topmost card's
-  chrome scrolled off the top of the terminal anyway. Fix: pin
-  `flexShrink={1}` (named `TITLED_BOX_FLEX_SHRINK` for the
-  next reader) on the outer `<Box>` of `TitledBox`, so Yoga
-  distributes the deficit proportionally across cards and the
-  bottommost card's body clips instead of the topmost card's
-  chrome being lost. Outer Box also gains `overflow="hidden"` so
-  the inner border-body Box clips cleanly when shrunk (otherwise
-  the inner content overruns the now-shrunken outer slot and the
-  visible artifact comes back even though Yoga did the math
-  right). Belt-and-braces with the existing dashboard-root
-  `overflow="hidden"`: the per-card `flexShrink` tells Yoga it MAY
-  shrink cards, the root pin tells ink to clip if Yoga still
-  didn't (e.g. a card with a hardcoded `height` prop). Coverage:
-  `test/tui-app-frame-height.test.ts` grows two regression
-  assertions — TitledBox's outer Box pins `flexShrink` AND
-  `overflow="hidden"`, so a future refactor of TitledBox doesn't
-  silently regress. The bottommost card already carries its own
-  `+M more · Shift+N` truncation hint inset into its bottom border
-  (feat_card_footer_inset) so the operator gets a visual cue when
-  any card's body has been clipped.
-- **TUI dashboard / popup / help frames clip overflow at the
-  height-pinned root** (bug_tui_tab_switch_stale_render Layer 2).
-  Multi-ws repro (`mu state --tui -w A,B`): the TabStrip adds one
-  row above the nine cards; total content becomes `rows+1`. Ink's
-  default overflow is "visible", so the overflowing row was
-  emitted past the terminal bottom, the terminal scrolled, and
-  the topmost card's `╭─ ¹ Agents … ─╮` top border vanished off
-  the top edge. Fix: add `overflow="hidden"` to all three frame
-  branches' height-pinned root `<Box>` (dashboard, popup, help).
-  Ink then clips children to the box's computed bounds instead
-  of overrunning, so nothing escapes above row 1. Single-ws TUI
-  is byte-identical (no TabStrip → no overflow); the
-  belt-and-braces sibling
-  bug_tui_dashboard_top_card_scrolls_off above also covers the
-  per-card variant where the cards' summed natural height alone
-  beats `rows`.
-- **TUI drill chrome insets into nested magenta border (was rendered
-  as body rows nested inside the popup's cyan box)**
-  (nit_tui_drill_inset_title_and_hints, Layer 2).
-  `DrillScrollView` (`src/cli/tui/popups/drill.tsx`) previously
-  rendered its title (`▸ mu task notes <id>`) + position indicator
-  (`(1-72/311)`) as a row of body content and the optional `hint`
-  (e.g. `loading…`) on the next row. After Layer 1 dropped the
-  popup-level title row by inset-into-border, the drill view's
-  in-body title row was the next-most-load-bearing chrome eater —
-  visible as `▸ mu task notes <id> (1-72/311)` ABOVE the actual
-  notes content inside the popup's cyan rounded box.
-  DrillScrollView now wraps the visible slice in a nested
-  `<TitledBox>` with magenta borders so:
-    - title + position indicator inset into the top border
-      (`╭─ mu task notes <id> · 1-72/311 ───╮`)
-    - drill-specific yank-hint (e.g.
-      ``y yanks `mu task notes <id>` ``) insets into the bottom
-      border (`╰─ y yanks `mu task notes <id>` ───╯`)
-  Magenta keeps the existing visual: the popup Shell's outer
-  cyan border and the drill's inner magenta border distinguish
-  nesting depth without doubled lines (TitledBox renders
-  single-row borders only). DrillScrollView grows an optional
-  `hint?: string` prop dedicated to the drill-specific verb
-  recipe; the j/k/Esc/q nav cluster stays in the global
-  StatusBar (popup-mode hint) so we never duplicate keys across
-  surfaces. Per-consumer wiring:
-    - `task-detail.tsx` (Tasks / Blocked / In-progress / Tracks
-      task-detail leaf) passes `` `y yanks \`mu task notes ${id}\`` ``
-    - `popups/log.tsx` drill passes
-      `` 'y yanks `mu log --since N -n 1`' ``
-    - `popups/doctor.tsx` drill passes the per-check remediation
-      hint resolved via `yankCommandForCheck(focused)`
-    - `popups/agents.tsx` drill keeps its `loading…` hint (no `y`
-      bound in scrollback drill mode)
-  `task-detail.tsx`'s outer `<Box flexDirection="column">` wrapper
-  drops since `DrillScrollView` now owns the column layout. Layer 1
-  bullet stays adjacent below.
-- **TUI popup chrome insets into the rounded border (was rendered
-  as body rows)** (nit_tui_drill_inset_title_and_hints, Layer 1).
-  Every popup's local `Shell` / `PopupShell` previously rendered
-  the popup-level title (e.g. `Tasks · popup (3/12)`) as the
-  first body row inside its rounded box AND the per-popup hint
-  (e.g. ``y yanks `mu task claim <id>` ``) as another body row
-  near the bottom — two rows of chrome rendered as content inside
-  the visible border, plus an extra dim margin between body and
-  hint. The Shell now delegates to `<TitledBox>` (the same
-  primitive the cards use) so the title insets into the top
-  border line (`╭─ Tasks · popup (3/12) ─────╮`) and the
-  per-popup hint insets into the bottom border line
-  (`╰─ y yanks `mu task claim <id>` ─────╯`), matching the
-  visual language already established for the dashboard cards via
-  feat_card_footer_inset. TitledBox grows an optional
-  `flexGrow?: number` prop applied to BOTH its outer column
-  container and inner border-body Box so the popup Shells (which
-  previously hand-rolled their own `<Box flexGrow={1} width={cols}>`
-  per bug_tui_popups_fill_pane) keep filling the App-pinned popup
-  region edge-to-edge through the delegate. All nine popup files
-  (agents, blocked, doctor, inprogress, log, ready, tracks,
-  workspaces) drop their hand-rolled rounded-box render and the
-  in-body `Enter … · y yanks …` hint block. `popups/viewport.ts`'s
-  `POPUP_CHROME_ROWS` budget drops from 6 to 3 (border 2 + filter
-  prompt 1) since title and hint no longer cost body rows; popup
-  bodies pick up ~3 extra visible rows for free on tall panes.
-  Coverage: `test/tui-popup-shells.test.ts` flips its assertions
-  from "Shell renders `<Box borderStyle="round">` with
-  `flexGrow={1} width={cols}`" to "Shell delegates to `<TitledBox>`
-  with `flexGrow={1}`"; `test/tui-popup-viewport.test.ts` updates
-  the boundary cases for the new chrome budget. The Tasks-popup
-  hint (yank-matrix per row state) re-resolves on cursor move so
-  the bottom-border label stays in lockstep with the focused row.
-  Layer 2 (DrillScrollView chrome insets too) ships separately.
-- **TUI popup cursor-row highlight is now a solid full-width
-  inverse line (was patchy — per-cell colours leaked through the
-  outer `inverse`)** (bug_tui_popup_cursor_highlight_color_leak).
-  Every list popup (`agents`, `blocked`, `doctor`, `inprogress`,
-  `log`, `ready`, `tracks`, `workspaces`) used to render the
-  cursor row by wrapping per-cell coloured `<Text>` chunks (color,
-  bold, dimColor) inside a single `<Text inverse={sel}>`. ink
-  emits an independent ANSI sequence per nested `<Text>`, and
-  inner SGR sequences (color/bold/dim) RESET the outer `inverse`
-  state — so cursor rows showed inverse video only on the bare
-  whitespace cells while every coloured cell broke the highlight.
-  Plus the row `<Box>` was content-sized, so the highlight ended
-  at the last character of content rather than spanning the popup
-  width. Fix: new `src/cli/tui/popups/cursor-row.tsx` exports a
-  tiny `<CursorRow cells contentWidth>` helper that joins the
-  already-padded cells with the canonical 2-space gutter
-  (`COL_GUTTER`), padEnds to `contentWidth`, and wraps in a single
-  `<Text inverse wrap="truncate">` on a width-pinned `<Box>` —
-  the lazygit / k9s / btop convention (cursor row trades its
-  per-cell palette for a solid full-width inverse line). Each
-  popup's selected-row branch becomes a single `<CursorRow .../>`
-  use; non-selected rows keep their per-cell palette unchanged.
-  Tests: new `test/tui-cursor-row.test.ts` covers the helper
-  (cells join with `COL_GUTTER`, padEnd to width, single `<Text
-  inverse>` with no per-cell styling, edge cases for short cells /
-  zero width / single cell) plus a static-source regression guard
-  asserting every list popup imports `CursorRow` AND no longer
-  carries an `inverse=` attribute on any `<Text>`.
-- **TUI DrillScrollView body lines clip instead of wrapping**
-  (bug_tui_drill_scrollview_wraps_long_lines). Every drill consumer
-  (Tasks → notes, Workspaces → git show, Log → full payload, Agents
-  → scrollback, Doctor → remediation) was rendering body lines as
-  bare `<Text>`, which inherits ink's default `wrap="wrap"` and folds
-  long lines onto a second terminal row. Two visible breakages: (1)
-  the position counter (`L1-72/311`) counts logical lines, not
-  terminal rows, so the magenta drill paints 90+ rows for the
-  promised 8-line viewport and the bottom hint slides out of frame;
-  (2) `j`/`k` stride matches logical lines but the cursor visually
-  jumps multiple rows because previous wraps stretched the pane.
-  Fix: the body-line `<Text>` in `src/cli/tui/popups/drill.tsx` now
-  carries `wrap="truncate"` — TitledBox already pins the magenta
-  inner box's width via its border layout, so truncate engages
-  immediately. Completes the trio with sibling fixes
-  bug_tui_log_card_columns_misaligned (cards) and
-  bug_tui_log_popup_columns_misaligned (popup rows). Static-source
-  regression guard in new `test/tui-drill-scrollview.test.ts`
-  asserts the body-line `<Text>` carries `wrap="truncate"` (or
-  `truncate-end`).
-- **TUI card rows clip cleanly at contentWidth (was overflowing /
-  wrapping due to gutter-accounting + ink-overflow bugs)**
-  (bug_tui_log_card_columns_misaligned). Completes
-  bug_tui_long_lines_overflow: even after every `layoutColumns` call
-  site started passing `contentWidth`, rows in the Activity-log card
-  (and to a lesser extent every other card / popup that renders
-  tabular rows via `renderRow`) were still observed wrapping to a
-  second terminal line / running past the rounded-border right edge.
-  Two layers behind the symptom: (1) the protect/clip allocator's
-  width math is correct, but consumers render padded cells joined by
-  a literal `{"  "}` two-space gutter and any drift from that
-  convention silently breaks alignment; (2) ink's default `<Text>`
-  overflow behaviour is to WRAP, not truncate, so any 1-2 cell
-  under-estimate by the allocator surfaces as a wrapped row instead
-  of a graceful clip. Fix: defensive belt — every outermost row
-  `<Text>` in `src/cli/tui/cards/*.tsx` and
-  `src/cli/tui/popups/*.tsx` now sets `wrap="truncate"` so ink clips
-  the joined row to the parent's width; static-source regression
-  guard in new `test/tui-card-render-width.test.ts` asserts every
-  `renderRow` consumer carries the prop AND uses the canonical
-  `{"  "}` (2-space) gutter. Extra unit test in
-  `test/tui-columns.test.ts` asserts `renderRow(...).join("  ")` ≤
-  `totalWidth` for a synthetic protect+clip mix.
-- **TUI in-progress + recent drill viewports no longer clip notes
-  to 20 rows** (bug_tui_inprogress_recent_drill_viewport_clipped).
-  When bug_tui_popup_data_doesnt_fill landed the dynamic
-  `popupViewport(rows)` seam, six of the eight then-existing popups
-  migrated; `inprogress.tsx` and `recent.tsx` were missed in the
-  copy-paste sweep and kept their module-scope `const VIEWPORT = 20`,
-  so on any pane taller than ~25 rows the drill body filled exactly
-  20 visible lines and the rest of the popup chrome (cyan border)
-  reached the pane bottom over a band of dead space — what the user
-  saw as "popup covers viewport, content clipped". Both popups now
-  use the dynamic viewport, and the centralisation work the user
-  asked for ships alongside the bug fix: new `usePopupViewport()`
-  ink hook in `src/cli/tui/popups/viewport.ts` wraps the
-  `useStdout()` + `stdout?.rows ?? 24` + `popupViewport(...)` trio
-  so every popup body is now one line (`const viewport =
-  usePopupViewport()`) instead of three. All nine popups (`agents`,
-  `blocked`, `doctor`, `inprogress`, `log`, `ready`, `recent`,
-  `tracks`, `workspaces`) migrate in this commit; Workspaces drill
-  passes its `WORKSPACES_DRILL_CHROME` override through the hook's
-  optional argument. New `test/tui-popup-viewport-no-hardcode.test.ts`
-  glob-walks `src/cli/tui/popups/*.tsx` (no curated list — that's
-  exactly how the previous regression hid) and asserts no file
-  re-introduces a `const VIEWPORT = …` literal; the existing
-  `tui-popup-viewport.test.ts` was extended to cover the two
-  previously-missed popups and to assert every popup imports the
-  hook (not the raw helper) so the next regression can't slip
-  through the same way.
-- **TUI multi-ws frame no longer eats the topmost card's top border**
-  (bug_tui_tab_switch_stale_render, layer 2). When the multi-ws
-  TabStrip rendered above the cards, the strip's 1-row consumption
-  pushed total content past the height-pinned root Box's `rows`
-  budget; ink emitted the overflow past the terminal bottom, the
-  terminal scrolled, and the topmost card's `╭─ ¹ Agents … ─╮`
-  top border vanished off the top edge — the user saw what looked
-  like a broken Agents card with naked body rows. `<Box height={rows}>`
-  in all three frame branches (dashboard / popup / help) now also
-  carries `overflow="hidden"`, instructing ink to clip children to
-  the box's computed bounds rather than overrun. Single-ws TUI is
-  byte-identical (the strip returns null, total height was already
-  ≤ rows). New regression coverage in `test/tui-app-frame-height.test.ts`
-  asserts every branch's root Box carries `overflow="hidden"` and
-  that TabStrip lives INSIDE the height-pinned + clipping root (so
-  flexbox accounts for its 1-row height when sizing the cards).
-- **TUI multi-ws Tab no longer renders a mixed frame** (bug_tui_tab_switch_stale_render,
-  layer 1). On `mu state --tui -w A,B`, pressing `Tab` flipped the
-  TabStrip to ws B but the cards rendered ws A's data for one tick
-  (the visible duration of the SQLite read in the new effect).
-  `useDashboardSnapshot` now derives "the workstream prop changed"
-  state-from-props during render via a `lastWsRef`, snapping the
-  cached snapshot to `null` so cards immediately fall back to their
-  loading-state path; the next tick repopulates fresh data within
-  ~1 tickMs. New pure helper `shouldDiscardForWorkstream(prev,
-  next)` exported for unit testing (and as a future seam for ws
-  aliases / case-insensitive matching). New `test/tui-state-tab-switch.test.ts`
-  covers the helper plus a static-source assertion that the hook
-  wires the snap-to-null branch.
-- **TUI per-row `<Box>` now pins `width={contentWidth}` so
-  `wrap="truncate"` actually clips** (bug_tui_log_popup_columns_misaligned).
-  Predecessor bug_tui_log_card_columns_misaligned added
-  `wrap="truncate"` to every outer row `<Text>`, but ink only
-  honours that prop when the parent `<Box>` has a defined width —
-  Box width defaults to its content's intrinsic width, which IS
-  the unbounded joined cells, so `truncate` had nothing to clip
-  to. The user-visible regression: `Shift+4` Activity-log popup
-  rows wrapping to a second terminal line and columns drifting
-  across rows whenever any cell overflowed. Fix: every per-row
-  outer `<Box key=...>` in `src/cli/tui/popups/*.tsx` (9 files)
-  and `src/cli/tui/cards/*.tsx` (9 files) now carries
-  `width={contentWidth}` so `wrap="truncate"` engages and rows
-  clip at the rounded-border right edge instead of wrapping.
-  Static-source regression guard added to
-  `test/tui-card-render-width.test.ts` asserts every `renderRow`
-  consumer's outer `<Box>` carries a `width={...}` attr.
-- **TUI popup body data fills the whole popup, not the first 20 rows**
-  (bug_tui_popup_data_doesnt_fill). After bug_tui_popups_fill_pane
-  added `flexGrow={1}` + `width={cols}` so the popup Shell occupies
-  the full pane edge-to-edge, the row data INSIDE the Shell was
-  still capped at a hardcoded `const VIEWPORT = 20` in every popup
-  file, leaving a band of empty space inside the popup border on
-  panes taller than ~25 rows. New pure helper `popupViewport(rows,
-  chromeOverride?)` in `src/cli/tui/popups/viewport.ts` (no ink/react
-  imports) computes the body slice from `useStdout().rows` minus a
-  6-row chrome budget (Shell border + title + hint margin + hint +
-  filter prompt), with a floor of 8 rows so very-small terminals stay
-  usable. Each popup (`agents`, `blocked`, `log`, `ready`, `tracks`,
-  `workspaces`) now reads `useStdout().stdout?.rows` at render time,
-  calls `popupViewport`, and threads the result through every slice /
-  scroll-clamp / cursor-centring expression. Two per-popup nuances:
-  Workspaces drill subtracts an extra row (the in-body title +
-  indicator pair); Log popup uses the per-render viewport in BOTH the
-  slice size AND the cursor-centring half-window. Tests:
-  `test/tui-popup-viewport.test.ts` covers boundaries (default
-  chrome, override, floor) plus a static-source regression guard
-  asserting no popup file still contains `const VIEWPORT = 20`.
-- **TUI long titles no longer overflow + wrap to a second line**
-  (bug_tui_long_lines_overflow). `layoutColumns(rows, specs,
-  totalWidth?)` short-circuits to natural widths when `totalWidth`
-  is undefined; every card and popup body was calling it with two
-  args, so the protect/clip remainder-distribution never ran and
-  long titles in `Ready` / `Tasks` / `Blocked` / `In-progress` /
-  `Recent` rows pushed past the rounded-border right edge and
-  wrapped the trailing cells (owner, ROI, etc.) to a second
-  terminal line. New `contentWidthFromCols(cols)` helper in
-  `src/cli/tui/columns.ts` (subtracts the 4 cols of TitledBox /
-  popup Shell chrome — 1 border + 1 padX per side) plus a sibling
-  `termColsForLayout()` reading `process.stdout.columns` directly
-  (bare property read instead of the `useStdout()` hook so card
-  FCs called as plain functions in unit tests still work; ink
-  re-renders the whole tree on SIGWINCH so the value is current).
-  Threaded through every one of the 16 `layoutColumns` call sites
-  in `src/cli/tui/{cards,popups}/*.tsx`. Static-source regression
-  guard in `test/tui-columns.test.ts` asserts every caller passes
-  a non-empty 3rd argument.
-- **TUI dashboard no longer flickers on every tick**
-  (bug_tui_flicker_on_every_tick). The `useDashboardSnapshot` hook
-  was unconditionally calling `setSnap({ data, lastTickMs, error })`
-  on every successful poll — even when nothing visible had changed —
-  forcing React/ink to re-render every card 1×/sec. Two-layer fix in
-  `src/cli/tui/state.ts`: (A) project the visible-affecting fields
-  through a pure `snapshotKey()` and short-circuit `setData` when the
-  JSON-encoded key is byte-equal to the previous one (returns the
-  same `data` reference so ink's prop-diff bottoms out at the cards);
-  (B) move `lastTickMs` into its own `useState` so the StatusBar's
-  tick display can refresh without dragging the cards along. On a
-  stable workstream the dashboard is now visually static between
-  ticks; only the dim tick-rate indicator in the bottom-right may
-  refresh, and ink diffs that down to ~3 cells of repaint.
-- **TUI cards: `+M more` truncation hint inset into the bottom
-  border** (feat_card_footer_inset). Previously each of the nine
-  glance cards rendered the truncation hint as an extra body row
-  inside the rounded box (e.g. `… +2 more · open Tracks popup
-  (Shift+2)`), costing a full content row of the card's vertical
-  budget AND still drawing the bottom border below it as a plain
-  `─` fill. The hint now mirrors the top-border title: rendered
-  INSIDE the bottom border line itself as `╰─ +2 more · Shift+2 ───╯`.
-  TitledBox grows an optional `bottomLabel?: string` prop; when
-  set, the inner Box's bottom border is suppressed and a single
-  hand-rendered `<Text>` row is stacked below it. The geometry is
-  shared with the top-border render path via the new pure helper
-  `computeBorderRowDashes(cols, label)`. Per the design correction
-  in the task notes, NO superscript/digit prefix on the bottom
-  row — the label says "Shift+N" in plain text and the superscript
-  is a top-edge convention only. All nine cards (agents, tracks,
-  ready, log, workspaces, in-progress, blocked, recent, doctor)
-  drop their in-body more-line render branches and pass
-  `bottomLabel={truncated ? \`+${more} more · Shift+${cardId}\` :
-  undefined}` instead. Coverage:
-  test/tui-titled-box.test.ts grows `computeBorderRowDashes` cases
-  (label-only, short-label dash-fill, empty-label, overflow floor,
-  parity with `computeTopRowDashes`); each card test asserts the
-  source no longer contains the in-body `\u2026 … + ... more` literal
-  AND wires `bottomLabel` into the TitledBox call.
-- **Test infrastructure: `openDb` refuses the user's real DB under
-  VITEST** (Layer "db" of bug_test_flake_round_2). A new hard
-  guard at the top of `openDb()` throws when called with a path
-  that resolves to `<HOME or XDG_STATE_HOME>/mu/mu.db` while
-  `process.env.VITEST` is set (or `NODE_ENV === "test"`). Tests
-  MUST point at a per-test temp DB (via MU_DB_PATH — which
-  test/_runCli.ts sets automatically — or an explicit `{ path }`
-  argument). The previous regime relied on every test remembering
-  to override the path; a slip silently mutated the dev box's live
-  state (we observed a stray 'demo' workstream replicated from
-  test/tui-acceptance.test.ts into ~/.local/state/mu/mu.db). The
-  guard catches the leak source at the offending openDb() stack
-  frame. Production code paths never set VITEST, so the guard is a
-  complete no-op outside the test runner. Coverage:
-  test/db-test-guard.test.ts (3 cases: HOME-rooted forbidden,
-  arbitrary temp permitted, XDG_STATE_HOME-rooted forbidden).
-- **Test infrastructure: `MU_TMUX_SOCKET` published at module load**
-  (round-3 Part A of bug_test_flake_round_3). Previously the env
-  publish lived inside `setup()` of `test/_global-teardown.ts`.
-  vitest's globalSetup contract makes that work today (setup runs
-  before fork), but the contract is fragile to pool changes and
-  the failure mode is silent (sessions land on the user's default
-  socket instead of the private `mu-test-<...>` one). The fix
-  hoists `process.env.MU_TMUX_SOCKET = TEST_SOCKET` to the module
-  body, which unambiguously runs before vitest spawns anything.
-  `setup()` then bootstraps the actual tmux server and reverts the
-  env publish on bootstrap failure for graceful fallback. Verified:
-  3 back-to-back `npx vitest run` invocations leave zero `mu-*`
-  residue on the default socket.
-- **Test infrastructure: allowlist-based default-socket sweep**
-  (round-3 Part B of bug_test_flake_round_3). The previous regex
-  sweep `^mu-(acc|claim|kick|...)-` only matched sessions whose
-  name started with a known fixture prefix followed by a dash, so
-  bare-name leftovers like `mu-alpha`, `mu-demo`, `mu-ws`, `mu-ws2`,
-  `mu-scratch`, `mu-beta`, `mu-gamma` (created by tests that hardcode
-  short workstream names instead of using `freshWorkstream()`) lingered
-  on the user's default socket forever. Replaced with an allowlist
-  approach: the sweep computes the union of (1) `mu-*` sessions
-  present at module-load time (the user's pre-existing tmux state)
-  and (2) `mu-<name>` for every workstream in the user's REAL DB
-  (read-only via better-sqlite3, bypassing the `openDb()` test
-  guard). Anything starting with `mu-` and NOT in the union is
-  killed by elimination. Verified by injecting a fake mid-suite
-  `tmux new-session -s mu-injected-leak`: pre-existing `mu-alpha`
-  survived; `mu-injected-leak` killed at teardown. Pure policy
-  helper `sessionsToKill(allMuSessions, allowlist)` covered by
-  test/global-teardown-allowlist.test.ts (6 cases).
-- **Test infrastructure: allowlist drops the "pre-existing sessions"
-  snapshot — DB-only** (round-4 of bug_test_flake_round_4_self_heal).
-  The round-3 allowlist had a self-locking edge case: it snapshotted
-  `mu-*` sessions present on the user's default socket at module-load
-  time and never invalidated them, so test residue from a partially
-  broken run got grandfathered in as protected forever. The
-  orchestrator had to manually `tmux kill-session` 7 leaked sessions
-  (`mu-alpha mu-beta mu-demo mu-gamma mu-scratch mu-ws mu-ws2`) that
-  no future sweep would ever clean up. Replaced with a DB-only
-  allowlist: `mu-<name>` for every row in the user's `workstreams`
-  table, plus `mu-$MU_SESSION` if the orchestrator runs the suite
-  inside a tmux pane. The pre-existing snapshot helper
-  (`snapshotPreexistingSessions` + `PROTECTED_PREEXISTING_SESSIONS`)
-  is gone. Cost: an ad-hoc `tmux new-session -t mu-foo` with no DB
-  row gets killed by the sweep — the workaround is
-  `mu workstream init foo` (which the user would have to do anyway
-  to use it as a workstream). Pure-helper test coverage rebalanced:
-  the "pre-existing overlap" case becomes "DB-row overlap" plus a
-  new "ad-hoc with no DB row gets killed" case proving the
-  self-heal contract holds.
-- **Test infrastructure: `MU_*` env-var baseline scrub** (Layer
-  "test" of bug_test_flake_round_2). vitest forks inherit the
-  parent shell's environment; when a developer (or the
-  orchestrator agent) runs `npm test` from a shell that exports
-  `MU_PI_COMMAND=pi-meta` (Meta-internal pi wrapper),
-  `MU_IDLE_THRESHOLD_MS=...`, etc., those values silently changed
-  SDK behaviour underneath every test — 5 cli-agent-spawn-validation
-  tests deterministically failed because `--cli pi` was being
-  resolved to `pi-meta` (not on PATH outside Meta). New per-fork
-  `setupFiles: ["./test/_setup.ts"]` hook deletes every `MU_*`
-  env var at fork startup. Allowlist: `MU_TMUX_SOCKET` (set by
-  `_global-teardown.ts` BEFORE fork spawn for Layer-3 isolation
-  and inherited intentionally). Tests that need a specific value
-  opt IN per-test via `process.env.X = "..."` or `withEnv()` from
-  `test/_env.ts`. Verified by
-  `MU_PI_COMMAND=pi-meta npm test` → 0 failures.
-- **TUI dashboard renders flush with row 1 again** (bug_tui_topalign_v2).
-  The alt-screen swap (`\x1b[?1049h`) inherits the cursor row from
-  the prior buffer on iTerm2, Apple Terminal, and tmux's inner
-  terminal, so the dashboard appeared mid-pane wherever the shell
-  prompt happened to be. `ALT_SCREEN_ENTER` now extends to
-  `\x1b[?1049h\x1b[2J\x1b[H\x1b[?25l` (swap, clear, home, hide
-  cursor) and `ALT_SCREEN_EXIT` to `\x1b[?25h\x1b[?1049l` (show
-  cursor, restore prior buffer) — the lazygit/btop/htop convention.
-  Constants moved to `src/cli/tui/escapes.ts` so they're unit-testable
-  without booting ink.
+- **Filter+Enter on a list popup** drilled into the wrong row
+  (visibleTasks dropped the text filter on `mode === "drill"`,
+  re-resolved cursor against the unfiltered set). Filter now
+  applies uniformly; popups also capture drilled-task identity
+  at Enter time as a defensive belt.
+- **git-show drill right border ragged** on coloured hunk-header
+  rows. Two compounding fixes:
+  (a) `wrap-ansi` closes any open SGR state on early-return +
+      end-of-loop trailing chunk (was leaking colour into
+      adjacent chrome cells).
+  (b) drill body lines ANSI-wrapped + space-padded to exact
+      popup content width before ink sees them, so ink's
+      `wrap="truncate"` ANSI miscount no longer eats the
+      trailing space + right border.
+- **Drill auto-refresh flicker**: scroll reset to 0 on every tick
+  + blank-flash mid-refetch. Scroll now resets only on identity
+  change; subprocess loaders preserve prior body until new body
+  arrives.
+- **`mu agent spawn` startup-error scanner false-positive on
+  banner prose** quoting `"command not found"` / `"No such file
+  or directory"`. Regex anchored to end-of-line shell-error form.
+- **`mu workstream import`** now refuses ANY existing target
+  workstream (was only refusing if it had tasks); prevents
+  silent merges into ws with agents/workspaces but no tasks.
+- **`mu workstream import`** preserves literal `"system"` note
+  author across round-trip (was coerced to NULL).
+- **`mu task reparent` / `mu task add --blocked-by`** silently
+  dedupe duplicate blockers from comma/repeated-flag forms (was
+  raw SQLite UNIQUE error). Same-set reparent is a true no-op.
+- **`mu task add`** drops empty `blocked by:` line when no
+  blockers were supplied.
+- **`mu workstream destroy` dry-run Next** preserves operator's
+  `--archive <label>` and `--no-export` flags.
+- **`mu sql`** routes single-statement read vs write via
+  better-sqlite3's `stmt.reader` flag, not a string-prefix
+  guess; `PRAGMA table_info(...)` and comment-prefixed SELECTs
+  now return rows.
+- **`agents.deleteAgent`** wraps the reaper sequence in a
+  transaction so a mid-loop throw can't leave the agent row
+  deleted with un-released stuck tasks.
+- **`src/db.ts` resolver helpers** return `null` on miss
+  (`tryResolveTaskId` / `tryResolveAgentId`); SDK callers throw
+  the typed error so `cli/handle.ts:classifyError` maps to the
+  right exit code (was falling through to generic exit 1).
+- **TUI dashboard** culling on tight panes: low-priority cards
+  collapse with a `+N hidden · resize taller` hint; outer height
+  clip is the safety net. No more interleaved card borders.
+- **TUI dashboard 2-col layout** keeps Commits (slot 0) trailing
+  the right column; rebalance to 5/5 split.
+- **TUI keyboard popup-opens** (`t`, `1-9`, `Shift+0-9`) consume
+  the mouse double-click replay queue once via a ref (was
+  replaying stale events).
+- **TUI mouse double-click hit-test** aligned with rendered card
+  heights (empty cards now render at full chrome+rowBudget).
+- **All-tasks popup** properly windows large lists via
+  `centredVisibleSlice`; cursor stays mid-window.
+- **TabStrip** no longer crashes on small panes (was conditionally
+  calling `useStdout()` — react hooks rule violation).
+- **`?` help overlay scrollable** on low-row panes
+  (j/k/Ctrl-D/U/g/G/PgDn/PgUp + position indicator).
+- **VCS backend detection** card subtitle shows active backend
+  (`git` / `jj` / `sl` / `(no vcs)`).
+- **mu task wait** reaper integration tests no longer rely on
+  fixed 100ms timers; action runs from the wait-loop sleep seam.
+- **Test-suite flake population** audited and remediated; lessons
+  in AGENTS.md / ARCHITECTURE.md. Multi-agent concurrent test runs
+  on shared `/tmp` were the primary driver. New `npm run test:stress`
+  runs 30× back-to-back (or parallel via
+  `MU_TEST_STRESS_MODE=parallel MU_TEST_STRESS_PARALLEL=2`).
 
-### Deps added
+### Tests
 
-- `ink ^5.0.0` (interactive TUI render layer; lazy-imported)
-- `react ^18.0.0` (peer of ink)
-- `@types/react ^18.0.0` (devDep)
-- `string-width` (transitive via ink) — used by `columns.ts` for
-  emoji + ANSI-aware cell width measurement.
+- **Test suite split into fast/full tiers**: `npm run test:fast`
+  excludes `*.integration.test.ts` / `*.smoke.test.ts` for the
+  dev loop; full `npm run test` is the four-greens pre-commit
+  gate.
+- **`tsconfig.test.json` wired into `npm run typecheck`**; 48
+  long-buried test type errors fixed across 5 commits. Test-file
+  TS regressions no longer escape typecheck.
+- **CaptureStream + simulateInput behaviour-test seam**
+  documented in `test/_ink-render.ts` + `test/README.md`. 7
+  popup test files converted from readFileSync source-greps to
+  mount-and-assert behaviour against rendered frames + spy
+  callbacks. Each conversion verified against a deliberate
+  regression. Structural greps (App ↔ keys ↔ layout wiring,
+  slot ↔ keymap glue) carved out as the legitimate use of
+  source-greps.
+- **`<App>` first behaviour coverage** (`test/tui-app-behaviour.test.ts`):
+  card toggle, help overlay, popup open/close, multi-ws Tab
+  cycling, Ctrl-C unmount, tick-rate adjust.
+- **`useDashboardSnapshot` source-greps replaced** with behaviour
+  tests asserting Object.is reference stability and refreshNonce
+  loader-fire semantics.
+- **`classifyError` + `errorNextSteps`** now cover every exported
+  typed error class, with an inventory drift check.
+- **Git-show wrap-ansi**: regression tests for ANSI SGR close on
+  early-return + end-of-loop, and for drill body padding to
+  prevent right-border eating.
 
-Non-TUI cold-start unchanged (every other verb avoids the lazy import).
+### Performance
 
-### Schema
+- TUI snapshot poll p50 ~385ms → <1ms (fast/slow split).
+- `reconcile()` orphan loop O(panes·env-reads) → O(panes).
 
-Unchanged.
+### Removed (docs)
 
----
+- `docs/test-flakes-audit.md` (one-off remediation log; lessons
+  folded into AGENTS.md + ARCHITECTURE.md).
+- `docs/plans/` (pre-TUI implementation scratchpads; long since
+  shipped).
+
 
 ## [0.3.2] — 2026-05-11
 

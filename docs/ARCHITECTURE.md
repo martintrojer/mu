@@ -235,6 +235,202 @@ the sibling state-module equivalent). No module outside
 static CLI bundle from pulling the TUI graph into help/version/json
 paths and preserves the ROADMAP render-layer pledge.
 
+---
+
+## TUI architecture
+
+The TUI is a 10-card live-updating dashboard built on `ink` (React
+for the terminal). It is mu's flagship human surface, but it is
+**read-only** and lives entirely under `src/cli/tui/` — the static
+CLI verbs remain the canonical mutation API. The TUI yanks `mu`
+commands; the operator runs them.
+
+### Cluster shape
+
+`src/cli/tui/` is the only place ink/react are imported. The cluster
+role-by-role:
+
+```
+src/cli/tui/
+├── index.ts                    # runTui entrypoint; alt-screen + mouse-mode lifecycle
+├── escapes.ts                  # pure ANSI byte sequences (alt-screen, SGR mouse mode)
+├── app.tsx                     # <App> root: popup state machine, global keymap, tabs
+├── state.ts                    # useDashboardSnapshot poll-loop hook (fast/slow tier split)
+├── keys.ts                     # pure dispatchGlobalKey + dispatchPopupKey + shouldSwallowGlobalKey
+├── keymap-spec.ts              # canonical keymap source-of-truth (drives help overlay + dispatch)
+├── mouse.ts                    # vendored SGR mouse parser + double-click + useMouse hook
+├── yank.ts                    # clipboard probe + write (pbcopy/wl-copy/xclip/xsel/clip.exe + OSC-52)
+├── tuicr.ts                    # `t` shortcut: alt-screen handoff to tuicr -r <sha>
+├── layout.ts                   # responsive multi-column dashboard + per-card row budgets
+├── columns.ts                  # column-aligned row layout with protect/clip clipping
+├── wrap-ansi.ts                # ANSI-aware visual-width line wrapper + SGR close-on-end
+├── glyphs.ts                   # superscript digit + status glyphs
+├── format-helpers.ts           # shared TUI formatters (relTime, sinceClaim, ROI)
+├── titled-box.tsx              # rounded border with section-header / bottomLabel inset
+├── popup-shell.tsx             # popup outer chrome (cyan TitledBox)
+├── list-row.tsx                # centralised non-selected row primitive
+├── padded-rows.tsx             # per-card body padder
+├── status-bar.tsx              # bottom status bar (mode + active ws + tick + footer flash)
+├── tab-strip.tsx               # multi-workstream tab switcher (N≥2)
+├── tab-strip-layout.ts         # pure window-around-active layout helper
+├── help.tsx                    # ?/F1 keymap overlay (scrollable on short panes)
+├── use-popup-filter.tsx        # shared '/' substring filter hook + applyFilter + FilterPrompt
+├── use-status-filter.tsx       # task-status toggles (o/i/c/r/d) for task-list popups
+├── use-notes-drill.ts          # shared notes-drill memo (5 task popups consume it)
+├── use-popup-action-queue.ts   # consume mouse PopupAction queue once per render
+├── cards/                      # 10 dashboard glance cards (one slot each)
+│   ├── _placeholder.tsx        # shared loading/empty body wrapper
+│   └── {agents,tracks,ready,log,workspaces,inprogress,blocked,recent,commits,doctor}.tsx
+└── popups/                     # fullscreen drill-down popups
+    ├── {agents,tracks,ready,log,workspaces,inprogress,blocked,recent,commits,doctor}.tsx
+    ├── dag.tsx                 # keybind-only on `g`: full task DAG forest
+    ├── all-tasks.tsx           # keybind-only on `t`: sortable / filterable list of every task
+    ├── drill.tsx               # DrillScrollView + useDrillKeymap (shared scrollable-text leaf)
+    ├── task-detail.tsx         # TaskDetailDrill (notes timeline; the recursion sink)
+    ├── cursor-row.tsx          # selected-row primitive (delegated to from list-row)
+    ├── scroll.ts               # pure applyCursor / applyScroll / clampScrollTop / isNavAction
+    ├── viewport.ts             # popupViewport + POPUP_CHROME_ROWS + POPUP_VIEWPORT_FLOOR
+    └── show-loader.ts          # subprocess-preserving show loader (avoids blank-flash mid-refetch)
+```
+
+### State machine
+
+`<App>` is the root. It owns:
+
+- **Popup state** — `null` (dashboard) or one of the popup ids.
+  Single-popup invariant; `Esc` / `q` returns to dashboard.
+- **Card visibility** — `Record<CardId, boolean>` toggled by `0`-`9`.
+- **Tick rate** — fast tick interval (1s default; adjustable with
+  `+` / `-` / `=` / `0`).
+- **Active workstream tab** — index into the resolved workstream
+  set; `Tab` / `Shift-Tab` cycles when N≥2.
+- **Footer flash** — transient status-bar message (yank confirm,
+  tuicr exit, etc.).
+
+Popups own their own local state (cursor, filter query, drill mode,
+local modes like Workspaces' `list` / `commits` / `show`). Popups
+NEVER mutate App-level state — they receive a read-only props bag
+(`snapshot`, `db`, `workstream`, `fastTickNonce`, `slowTickNonce`,
+`yank`, `onClose`, `onModeChange`, `onFilterEditingChange`,
+`onFooter`).
+
+### Polling tiers (fast vs slow)
+
+The poll loop in `state.ts` (`useDashboardSnapshot`) splits work
+into two intervals:
+
+- **Fast tick** (default 1s, adjustable): SQL-only. `loadWorkstreamSnapshotFast`
+  reads tasks, tracks, workspace registry rows, recent events,
+  workspace orphans. Cheap (~p50 <1ms).
+- **Slow tick** (10s, hardcoded `SLOW_TICK_MS`): subprocess-backed.
+  `loadWorkstreamSnapshotSlow` runs tmux liveness, per-workspace
+  dirty status, recent project commits, and the Doctor summary.
+  Expensive (~p50 hundreds of ms).
+
+The last slow result is merged into every fast render via
+`mergeSnapshotFastSlow` so cards never flicker through a loading
+state. `r` / `F5` triggers both intervals immediately. Workstream
+tab switch clears the slow cache and eager-fetches the new
+workstream so cards are fresh within 1s of switching.
+
+A pure `snapshotKey` / `snapshotKeyString` re-render guard returns
+the SAME `data` reference across no-op ticks so React's diffing
+short-circuits cleanly.
+
+### Render geometry
+
+Responsive layout lives in `layout.ts`:
+
+- **Breakpoint-driven columns**: stacked below 120 cols; 2 columns
+  at 120; 3 at 180; 4 at 240. Stream cards (Commits, Activity log)
+  trail; slot 0 (Commits) trails last.
+- **Per-card row budgets**: each visible card gets a `min` /
+  `max` / `chrome` budget; the allocator distributes available
+  rows so a noisy list can't crowd siblings. Overflow surfaces as
+  `+N more · Shift+N` inset into the card's bottom border.
+- **Cull-on-tight-pane**: when even minimum budgets don't fit,
+  cull cards by priority (Doctor → Recent → Workspaces → …) and
+  show `+N cards hidden · resize taller` at the bottom. Outer
+  height clip is the safety net.
+
+Text rendering is ANSI-aware: `wrap-ansi.ts` wraps by visual width
+(via `string-width`) and closes any open SGR state on the early-
+return + end-of-loop paths so coloured fragments without trailing
+`\x1b[0m` can't bleed into adjacent ink chrome cells. Drill bodies
+are also space-padded to exact box width so ink's `wrap="truncate"`
+ANSI miscount can't eat the trailing right-border glyph.
+
+### Read-only invariant + the `tuicr` escape
+
+Every popup row exposes one canonical `mu` command via `y`. `yank.ts`
+probes for a clipboard backend (pbcopy / wl-copy / xclip / xsel /
+clip.exe) and falls back to OSC-52 over stderr if none is found.
+The command goes to the clipboard; the operator runs it.
+
+The one user-driven escape is `t` inside any `git show` drill:
+`tuicr.ts` writes `ALT_SCREEN_EXIT` + the SGR mouse-mode disable
+bytes, exec's `tuicr -r <sha>` in the project root / workspace cwd
+as a foreground subprocess, then on exit writes `ALT_SCREEN_ENTER`
++ mouse-mode-enable and the dashboard re-renders. This is a
+deliberate handoff, not an in-process mutation.
+
+The read-only pledge is in `docs/ROADMAP.md`'s anti-feature list;
+any future TUI gesture that wants to mutate state must file a
+roadmap entry first.
+
+### Mouse + keyboard
+
+Mouse support is opt-in via SGR mouse mode (`escapes.ts` provides
+the enable/disable bytes). `mouse.ts` parses `ESC[<button;x;y;M/m`
+from stdin, detects double-clicks, and exposes a `useMouse()` hook.
+
+Keyboard dispatch flows through pure helpers in `keys.ts`:
+`dispatchGlobalKey` (dashboard mode), `dispatchPopupKey` (popup
+mode), and `shouldSwallowGlobalKey` (which keys popups consume
+and do not bubble to the global dispatcher). The keymap source-of-
+truth lives in `keymap-spec.ts` so the help overlay and the
+dispatcher can never drift apart.
+
+Double-click on a card emits `{kind: "setCursor", index}` followed
+by `{kind: "drill"}` through `use-popup-action-queue.ts`, which
+consumes one action per render (so the cursor update lands before
+the drill resolves the focused row).
+
+### Drill recursion
+
+List popups drill via `Enter` into entity-specific leaves. The
+central primitive is `popups/drill.tsx`'s `DrillScrollView` (a
+scrollable text leaf shared by Workspaces' git-show, Agents'
+scrollback, the Activity log payload drill, and the Doctor
+remediation drill). Task popups drill into
+`popups/task-detail.tsx`'s `TaskDetailDrill` (the notes timeline);
+the Tracks popup chains track → task list → TaskDetailDrill via
+the same leaf.
+
+`useDrillKeymap` owns the scroll state, accepts an optional
+`resetKey` (so identity-change resets scroll while tick-driven body
+refreshes preserve it), an optional `onScrollChange` callback (so
+the DAG popup's focused-root tracking stays in lockstep), and
+shares ANSI-aware wrapped body metadata so the scroll-clamp math
+and the painter can't desync.
+
+Subprocess-backed drills (Workspaces git-show, Agents scrollback,
+Commits show) use `popups/show-loader.ts` which preserves the
+prior body during a refetch — no blank-flash flicker on the slow
+tick.
+
+### Test seam
+
+TUI behaviour testing is documented in `test/README.md`. The
+seam is `test/_ink-render.ts`'s `createInkInputStream` +
+`createInkCaptureStream` + `simulateInput` + `latestRenderedFrame`.
+Mount a popup or `<App>` into a CaptureStream, drive keystrokes,
+assert against the visible frame and spy callbacks. Source-greps
+are reserved for narrow structural guards (App ↔ keys ↔ layout
+wiring; slot ↔ keymap glue) — not for behaviour.
+
+---
+
 ## CLI / SDK surface
 
 Every user-visible operation is a typed SDK function plus a thin

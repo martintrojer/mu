@@ -13,8 +13,9 @@ write code. Follow the conventions below.
 
 1. **[docs/USAGE_GUIDE.md](docs/USAGE_GUIDE.md)** — what mu does
    from a user's perspective. ~10 minutes.
-2. **[CHANGELOG.md](CHANGELOG.md)** — the v0.1.0 release entry.
-   Single source of truth for the verb list, schema, env vars.
+2. **[CHANGELOG.md](CHANGELOG.md)** — the upcoming version's
+   entry (currently `[0.4.0] — unreleased`). Single source of truth
+   for the verb list, schema, env vars.
 3. **[docs/VISION.md](docs/VISION.md)** — the load-bearing pillars.
    The design principles you must not violate.
 4. **[docs/ROADMAP.md](docs/ROADMAP.md)** — what's next, with
@@ -49,32 +50,43 @@ mu/
 ├── src/                   # all source (root files: SDK + shared infra; one
 │                          # level of subdirs OK for cohesive clusters — see
 │                          # `src/cli/`, `src/agents/`, `src/tasks/` below)
-│   ├── db.ts              # SQLite schema + openDb (single CREATE-IF-NOT-EXISTS block)
+│   ├── db.ts              # SQLite schema + openDb (single CREATE-IF-NOT-EXISTS block; v7)
 │   ├── tmux.ts            # tmux wrapper, send protocol, pane validation
-│   ├── detect.ts          # pi-only status detector
+│   ├── detect.ts          # pi status detector + Braille-spinner fallback for other CLIs
 │   ├── reconcile.ts       # ghost prune + status detect + orphan surface
 │   ├── agents.ts          # CRUD + send/read/list/close/free + liveness + reaper hub (re-exports src/agents/*)
 │   ├── agents/            # cohesive cluster of agent-lifecycle internals
 │   │   ├── spawn.ts       # spawnAgent + resolveCliCommand / awaitSpawnLiveness / pane create-or-reuse / prestage / rollback
+│   │   ├── kick.ts        # reaper events + cleanup of dead agent rows
 │   │   ├── adopt.ts       # adoptAgent: register an existing tmux pane as a managed agent
 │   │   └── errors.ts      # typed agent error classes (AgentNotFoundError, AgentDiedOnSpawnError, …)
-│   ├── tasks.ts           # task SDK hub (re-exports src/tasks/* + edit/edges/queries verbs)
+│   ├── tasks.ts           # task SDK hub (re-exports src/tasks/*)
 │   ├── tasks/             # cohesive cluster of task-graph internals
-│   │   ├── status.ts      # TaskStatus enum + helpers (single source of truth for statuses)
-│   │   ├── claim.ts       # claim/release + resolveActorIdentity (atomic CAS)
+│   │   ├── status.ts      # TaskStatus enum + helpers
+│   │   ├── core.ts        # core SDK funcs reused across cluster files
+│   │   ├── id.ts          # tryResolveTaskId / qualified-id helpers
+│   │   ├── queries.ts     # listTasks / nextTasks / owned-by
+│   │   ├── edit.ts        # addTask / setTaskTitle / etc (no edges)
+│   │   ├── edges.ts       # block / unblock / reparent / delete + dedupe
+│   │   ├── claim.ts       # claim / release + resolveActorIdentity (atomic CAS)
 │   │   ├── lifecycle.ts   # setTaskStatus / closeTask / openTask / rejectTask / deferTask + cascade
 │   │   ├── wait.ts        # waitForTasks: block until tasks reach a target status
+│   │   ├── sort.ts        # sortTasks (roi / recency / age / id)
 │   │   └── errors.ts      # typed task error classes (TaskAlreadyOwnedError, CycleError, …)
 │   ├── tracks.ts          # parallel-tracks union-find with diamond merge
 │   ├── workstream.ts      # ensureWorkstream / list / summarize / destroy / export
-│   ├── archives.ts        # cross-workstream archive buckets (create / add / remove / restore)
+│   ├── archives.ts        # cross-workstream archive bucket SDK hub (re-exports src/archives/*)
 │   ├── exporting.ts       # unified bucket renderer (workstream + archive export)
-│   ├── importing.ts       # inverse of exporting.ts: parse a v0.3 bucket dir → live DB rows
+│   ├── importing.ts       # inverse of exporting.ts: parse a bucket dir → live DB rows
 │   ├── logs.ts            # agent_logs SDK (append, list, latestSeq, emitEvent)
-│   ├── vcs.ts             # VcsBackend interface + jj/sl/git/none impls
-│   ├── workspace.ts       # per-agent VCS workspaces (CRUD over vcs_workspaces)
-│   ├── snapshots.ts       # whole-DB snapshots (VACUUM INTO) + auto-capture hook
-│   ├── doctor-summary.ts  # TUI-friendly slice of `mu doctor` checks (loadDoctorSummary)
+│   ├── vcs.ts             # VcsBackend hub (re-exports src/vcs/*: jj/sl/git/none impls)
+│   ├── workspace.ts       # per-agent VCS workspaces hub (re-exports src/workspace/*)
+│   ├── snapshots.ts       # whole-DB snapshots hub (re-exports src/snapshots/*)
+│   ├── dag.ts             # full-DAG forest builder (loadFullDag for `mu task tree` + DAG popup)
+│   ├── state.ts           # SDK seam for `mu state` (fast SQL tier + slow subprocess tier + merge)
+│   ├── staleness.ts       # WORKSPACE_STALE_THRESHOLD + isStaleWorkspace
+│   ├── project-root.ts    # detectProjectRoot for the TUI launch cwd ladder
+│   ├── doctor-summary.ts  # TUI-friendly slice of `mu doctor` checks + remediation helpers
 │   ├── output.ts          # NextStep type + printNextSteps / errorNextSteps
 │   ├── cli.ts             # commander wiring (buildProgram); re-exports format/handle for back-compat
 │   ├── cli/               # one file per verb-namespace; thin wrappers over the SDK
@@ -89,32 +101,51 @@ mu/
 │   │   │   ├── claim.ts      # claim / release / wait
 │   │   │   ├── tree.ts       # tree rendering
 │   │   │   └── wire.ts       # Commander glue
-│   │   ├── workspace.ts   # workspace create / list / free / path / orphans
+│   │   ├── workspace.ts   # workspace create / list / free / path / orphans / refresh / commits
 │   │   ├── log.ts         # log read / write / tail
 │   │   ├── archive.ts     # archive create / list / show / add / remove / delete
-│   │   ├── state.ts       # `mu state` (canonical state card) + bare `mu` (mission control); --tui dispatches to src/cli/tui/
-│   │   ├── tui/           # interactive ink-based TUI cluster (mu state --tui); ONLY place ink/react are imported
-│   │   │   ├── index.ts    # runTui entrypoint; writes alt-screen enter/exit around ink render
-│   │   │   ├── escapes.ts  # pure ANSI escape constants (ALT_SCREEN_ENTER/EXIT) — no ink imports
-│   │   │   ├── app.tsx     # <App> root (popup state machine + global keymap + footer + tick)
-│   │   │   ├── state.ts    # poll-loop hook (useDashboardSnapshot) + tick constants
-│   │   │   ├── keys.ts     # pure dispatchGlobalKey + dispatchPopupKey
-│   │   │   ├── yank.ts     # clipboard probe + write (pbcopy/wl-copy/xclip/xsel/clip.exe + OSC-52)
-│   │   │   ├── titled-box.tsx  # rounded border with section header inset into top border
-│   │   │   ├── list-row.tsx  # centralised non-selected row primitive (width pin + COL_GUTTER + wrap=truncate + selected→CursorRow delegation)
-│   │   │   ├── columns.ts  # column-aligned row layout with protect/clip clipping
-│   │   │   ├── help.tsx    # ?/F1 keymap overlay
-│   │   │   ├── use-popup-filter.tsx  # shared '/' substring filter (hook + reducer + applyFilter + FilterPrompt)
-│   │   │   ├── tab-strip.tsx  # multi-workstream tab switcher (rendered above cards when N≥2)
-│   │   │   ├── cards/{agents,tracks,ready,log,workspaces,inprogress,blocked,recent,doctor}.tsx  # 9 dashboard glance cards
-│   │   │   └── popups/{agents,tracks,ready,log,workspaces,inprogress,blocked,recent,doctor}.tsx  # 9 fullscreen drill-down popups
+│   │   ├── state.ts       # `mu state` (canonical state card); --tui dispatches to src/cli/tui/
+│   │   ├── staleness.ts   # shared workspace-staleness CLI helpers + warn formatter
+│   │   ├── tui-launch-focus.ts # initial-tab focus ladder for bare `mu` and `mu state --tui`
+│   │   ├── tui/           # interactive ink-based TUI cluster; ONLY place ink/react are imported
+│   │   │   ├── index.ts            # runTui entrypoint; alt-screen + mouse-mode lifecycle
+│   │   │   ├── escapes.ts          # pure ANSI escape constants (ALT_SCREEN_*, mouse-mode bytes) — no ink imports
+│   │   │   ├── app.tsx             # <App> root (popup state machine + global keymap + footer + tick + tabs)
+│   │   │   ├── state.ts            # poll-loop hook (useDashboardSnapshot; fast/slow tick split)
+│   │   │   ├── keys.ts             # pure dispatchGlobalKey + dispatchPopupKey + shouldSwallowGlobalKey
+│   │   │   ├── keymap-spec.ts      # canonical keymap source-of-truth (drives help overlay + dispatch)
+│   │   │   ├── yank.ts             # clipboard probe + write (pbcopy/wl-copy/xclip/xsel/clip.exe + OSC-52)
+│   │   │   ├── mouse.ts            # vendored SGR mouse layer (parser + double-click + useMouse hook)
+│   │   │   ├── layout.ts           # responsive multi-column dashboard + per-card row budgets
+│   │   │   ├── columns.ts          # column-aligned row layout with protect/clip clipping
+│   │   │   ├── wrap-ansi.ts        # ANSI-aware visual-width line wrapper + SGR close-on-end
+│   │   │   ├── glyphs.ts           # superscript digit + status glyphs
+│   │   │   ├── format-helpers.ts   # shared TUI formatters (relTime, sinceClaim, ROI, etc.)
+│   │   │   ├── titled-box.tsx      # rounded border with section header inset into top border + bottomLabel
+│   │   │   ├── popup-shell.tsx     # popup outer chrome (cyan TitledBox)
+│   │   │   ├── list-row.tsx        # centralised non-selected row primitive (width pin + gutter + truncate)
+│   │   │   ├── padded-rows.tsx     # per-card body padder
+│   │   │   ├── help.tsx            # ?/F1 keymap overlay (scrollable on short panes)
+│   │   │   ├── status-bar.tsx      # bottom status bar (mode + active ws + tick + footer flash)
+│   │   │   ├── tab-strip.tsx       # multi-workstream tab switcher (N≥2)
+│   │   │   ├── tab-strip-layout.ts # pure window-around-active layout helper for the tab strip
+│   │   │   ├── tuicr.ts            # `t` shortcut: alt-screen handoff to tuicr -r <sha>
+│   │   │   ├── use-popup-filter.tsx       # shared '/' substring filter hook + applyFilter + FilterPrompt
+│   │   │   ├── use-status-filter.tsx      # task-status toggles for task-list popups (o/i/c/r/d)
+│   │   │   ├── use-notes-drill.ts         # shared notes-drill memo (5 task popups consume it)
+│   │   │   ├── use-popup-action-queue.ts  # consume mouse PopupAction queue once per render
+│   │   │   ├── cards/{agents,tracks,ready,log,workspaces,inprogress,blocked,recent,commits,doctor}.tsx + _placeholder.tsx
+│   │   │   └── popups/{agents,tracks,ready,log,workspaces,inprogress,blocked,recent,commits,doctor,dag,all-tasks}.tsx
+│   │   │                          # plus drill.tsx (DrillScrollView), task-detail.tsx (TaskDetailDrill),
+│   │   │                          # cursor-row.tsx, scroll.ts (applyCursor/applyScroll), viewport.ts,
+│   │   │                          # show-loader.ts (shared subprocess-preserving loader)
 │   │   ├── snapshot.ts    # undo / snapshot list / snapshot show
 │   │   ├── sql.ts         # sql escape hatch
 │   │   ├── doctor.ts      # doctor diagnostic
 │   │   ├── format.ts      # pure rendering helpers (table renderers, status colourers, truncate/relTime)
 │   │   └── handle.ts      # typed-error → exit-code map + handle() wrapper
 │   └── index.ts           # SDK entrypoint (re-exports)
-├── test/                  # 60 files / 57 *.test.ts / ~996 it()/test() calls; many use real tmux/git/jj/sl
+├── test/                  # ~165 *.test.ts files / ~2000 it()/test() calls; many use real tmux/git/jj/sl
 ├── skills/mu/SKILL.md     # what the LLM running inside an agent pane sees
 ├── package.json           # bin: { mu: ./dist/cli.js }, type: module
 ├── tsconfig.json          # strict + noUncheckedIndexedAccess + verbatimModuleSyntax
@@ -286,12 +317,18 @@ meeting these criteria, **stop**. Add an entry to
 The "anti-feature pledges" in ROADMAP.md are firm:
 
 - No config file
-- No daemon
+- No daemon / background process beyond what tmux + SQLite give us
 - No anticipatory abstractions (no traits with zero implementors)
 - No wrappers around wrappers
-- No codegen
-- An agent template/discovery system requires explicit promotion
-- No render layer beyond `cli-table3` + `picocolors`
+- No codegen / embedded JS engine / workflow DSL
+- No template/discovery system for agent roles (spawn flags + first
+  message ARE the definition)
+- No render layer beyond `cli-table3` + `picocolors`, EXCEPT `ink`
+  confined to `src/cli/tui/`. NO second TUI stack alongside `ink`
+  (no `blessed` / `terminal-kit` etc.); if `ink` ever stops paying
+  off, REPLACE it, don't stack stacks.
+- No plugin runtime, web UI, RPC, chat/docs integrations, memory
+  system, workflow engine
 - Don't bundle pi (it's a peer dep)
 
 ### When in doubt: be small
@@ -330,11 +367,24 @@ real friction proves itself.
 
 ### "Update the schema"
 
-1. 0.1.0 has no migration layer. Schema lives in `src/db.ts` as a
-   single CREATE-IF-NOT-EXISTS block. The first non-additive
-   change should land alongside a `schema_version` table.
-2. Update tests that exercise the schema (`test/db.test.ts`).
-3. Update [CHANGELOG.md](CHANGELOG.md) §"Schema" snapshot.
+1. Current schema version is **v7** (see `CURRENT_SCHEMA_VERSION`
+   in `src/db.ts`). The schema lives in `src/db.ts` as the
+   `applySchema(db)` block, which is idempotent CREATE-IF-NOT-EXISTS
+   plus targeted `DROP TABLE IF EXISTS` for retired tables
+   (e.g. v7's `DROP TABLE IF EXISTS approvals`). `openDb` rejects
+   pre-current DBs with `SchemaTooOldError` (exit 4) and a
+   migration hint.
+2. Bump `CURRENT_SCHEMA_VERSION` in `src/db.ts` and mirror the new
+   shape in `CURRENT_SCHEMA`. Two of the last three bumps were
+   script-free: v5 → v6 was purely additive (existing
+   CREATE-TABLE-IF-NOT-EXISTS picked up new tables); v6 → v7 was a
+   destructive-but-idempotent `DROP TABLE` block. Reach for a
+   one-shot migration script only when the change can't be
+   expressed that way (the v4 → v5 surrogate-PK substrate switch
+   was the canonical example).
+3. Update tests that exercise the schema (`test/db.test.ts`).
+4. Update [CHANGELOG.md](CHANGELOG.md) under the upcoming version's
+   `### Changed` section.
 
 ### "Add a new tmux operation"
 

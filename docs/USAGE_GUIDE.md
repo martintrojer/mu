@@ -1,12 +1,12 @@
 # mu — Usage Guide
 
-A practical, copy-pasteable tour of mu (current main; v0.5-track).
+A practical, copy-pasteable tour of mu (current main; v0.4-track).
 Everything below works against the built CLI. Terms are canonical
 — see [VOCABULARY.md](VOCABULARY.md) for definitions; the complete
 current verb list is in `## CLI — complete verb list` of
 [skills/mu/SKILL.md](../skills/mu/SKILL.md).
 
-> **Status:** v0.5 wave (pre-1.0). ~60 typed verbs across 8
+> **Status:** v0.4 wave (pre-1.0). ~60 typed verbs across 8
 > namespaces (`workstream`, `agent`, `task`, `workspace`, `log`,
 > `snapshot`, `archive`, `me`) plus bare top-level verbs
 > (`state`, `doctor`, `sql`, `undo`, `adopt`). Every verb accepts
@@ -20,7 +20,7 @@ current verb list is in `## CLI — complete verb list` of
 > UNIQUE on operator-facing names; v6 added the `archive_*`
 > family additively; v7 dropped the dead `approvals` table).
 > See [CHANGELOG.md](../CHANGELOG.md) for the release entry,
-> and [§ Not in 0.5.0](#whats-not-in-050-and-how-to-work-around-it)
+> and [§ Not in 0.4.0](#whats-not-in-040-and-how-to-work-around-it)
 > at the bottom for the gaps that still need workarounds.
 
 *If anything below disagrees with `mu --help`, trust `mu --help`.*
@@ -34,6 +34,7 @@ current verb list is in `## CLI — complete verb list` of
 3. [Create a workstream (`mu workstream init`)](#3-create-a-workstream)
 4. [Plan some work as a DAG (`mu task add`)](#4-plan-some-work-as-a-dag)
 5. [See the graph (dashboard + state API)](#5-see-the-graph-dashboard--state-api)
+5b. [The TUI dashboard (interactive)](#5b-the-tui-dashboard-interactive)
 6. [Spawn a crew (`mu agent spawn`)](#6-spawn-a-crew)
 7. [Watch the crew live (`tmux attach`)](#7-watch-the-crew-live)
 8. [Send work to an agent (`mu agent send`)](#8-send-work-to-an-agent)
@@ -47,7 +48,7 @@ current verb list is in `## CLI — complete verb list` of
 15.5. [Archives — cross-workstream preservation](#155-archives--cross-workstream-preservation-of-task-graphs)
 16. [One-shot demo script](#16-one-shot-demo-script)
 17. [Mental model in three sentences](#mental-model-in-three-sentences)
-18. [What's NOT in 0.5.0](#whats-not-in-050-and-how-to-work-around-it)
+18. [What's NOT in 0.4.0](#whats-not-in-040-and-how-to-work-around-it)
 19. [Where to go from here](#where-to-go-from-here)
 
 ---
@@ -394,202 +395,289 @@ workstream, mu refuses with a `CrossWorkstreamEdgeError`.
 
 ## 5. See the graph (dashboard + state API)
 
-For a human at a terminal, launch the TUI:
+`mu` exposes one logical "what's going on?" view with two renderers:
+
+| Surface              | Use it for                                                      |
+| -------------------- | --------------------------------------------------------------- |
+| **bare `mu`**        | A human at a terminal — launches the interactive TUI dashboard. |
+| **`mu state --tui`** | Same TUI, explicitly opt-in. Useful in scripts / aliases.       |
+| **`mu state`**       | Static text card. JSON-friendly; pipeable; `watch`-able.        |
+| **`mu state --json`** | The canonical full snapshot. Agents and scripts read this.     |
+
+The interactive surface is large enough to deserve its own section —
+see [§ 5b. The TUI dashboard](#5b-the-tui-dashboard-interactive)
+immediately below. The rest of this section is the static / JSON
+contract.
+
+### Static state card (`mu state`)
+
+For an agent/script or a static capture, use explicit `mu state`:
 
 ```bash
-mu
+mu state -w auth-refactor          # human-readable card
+mu state -w auth-refactor --json   # full snapshot
+mu state --all --json              # every workstream on this machine
 ```
 
-It loads every workstream as tabs; use `Tab` / `Shift-Tab` to switch,
-`?` for the keymap, and `q` / `Ctrl-C` to quit. The dashboard is the
-answer to **"what should I look at next?"** without asking an LLM:
-Commits, Agents, Tracks, Ready, Activity log, Workspaces,
-In-progress, Blocked, Recent, and Doctor cards all update live. The dashboard
-reflows at wide terminal widths: stacked below 120 cols, then 2 / 3 /
-4 pair-aware columns at 120 / 180 / 240 cols, with each visible card
-getting a dynamic row budget so a noisy list cannot crowd out its
-siblings. On very short panes, the dashboard culls low-priority cards
-(Doctor, Recent, Workspaces, then other diagnostic cards) until the
-surviving cards fit and shows `+N cards hidden · resize taller` at the
-bottom; resize taller and those cards reappear without changing your
-manual card toggles.
-
-For an agent/script or a static capture, use explicit state verbs:
-
-```bash
-mu state --workstream auth-refactor
-mu state --workstream auth-refactor --json
-```
-
-The static state card includes every section the TUI cards summarize:
+The static card includes every section the TUI cards summarize:
 agents + orphans + tracks + ready / in-progress / blocked /
 recent-closed tasks + workspaces + recent events. `--json` emits the
-same full snapshot for scripts and agents; it is the migration path for
-old `mu state --mission --json` callers.
+same full snapshot shape regardless of `--tui`.
 
-Dashboard ordering is intentionally slot-stable: within each rendered
-column, non-stream cards are ordered by toggle digit ascending while
-stream cards sit as natural trailers, with slot 0 (Commits) trailing
-last (`…, 0`). In the 2-column layout, stream cards are split as
-column trailers (Activity log on the left, Commits on the right when
-both are visible) so the all-cards view stacks evenly instead of
-producing a 4/6 lopsided split.
-
-### `mu state` render modes (default, `--tui`)
-
-`mu state` is one verb with two render modes — same data set, different
-presentation strategy. The flag picks the renderer; `--json` always
-emits the full static snapshot shape.
-
-```bash
-mu state                    # default: full top-to-bottom static card
-mu state --tui              # interactive ink-based dashboard (read-only; yanks commands)
-mu                          # TTY: TUI across all workstreams; non-TTY: help
-```
-
-- **default (full card)** — every section: agents + orphans + tracks +
-  ready / in-progress / blocked / recent-closed + workspaces + recent
-  events. JSON-first by design (per Ilya's council critique: state
-  cards as the default attention surface; SQL/raw verbs as the
-  escape hatch underneath).
-
-- **`--tui`** — interactive ink-based dashboard: 10 toggleable cards
-  (Commits, Agents, Tracks, Ready, Activity log, Workspaces,
-  In-progress, Blocked, Recent, Doctor) with rounded borders and inset section
-  headers (lazygit / btop / k9s convention), matching fullscreen
-  popups (Shift+0..Shift+9), plus `g` for the current workstream's
-  full task DAG popup and `t` for the current workstream's all-tasks
-  list popup,
-  live-updating every 1s (adjustable with
-  `+/-/=`). The dashboard is responsive: cards stack below 120
-  columns, then reflow into pair-aware 2 / 3 / 4-column layouts at
-  120 / 180 / 240 columns, and each card gets a dynamic body-row
-  budget before showing its `+N more · Shift+N` footer. **Read-only**:
-  act-intents `y`-yank
-  the canonical `mu` command to the clipboard — the TUI never
-  executes a mutation; the user runs the yanked command in their
-  shell. One narrow user-driven escape is `t` inside git-show drills:
-  mu suspends its alt-screen, runs `tuicr -r <sha>` in the project
-  root / workspace cwd, then restores the dashboard when tuicr exits.
-  Task-list cards and popups colour-code status cells consistently with
-  the static CLI tables: OPEN cyan, IN_PROGRESS yellow, CLOSED green,
-  REJECTED red, and DEFERRED dim/gray. Status-bar hint clusters show
-  the always-available keys for
-  the current mode; the `?` help overlay is the superset (including
-  less-common paging, refresh, tick-rate, and sub-mode keys). On
-  low-row panes the help overlay scrolls with the same popup/drill
-  navigation keys (`j`/`k`, Ctrl-D/U, PgDn/PgUp, `g`/`G`) and shows a
-  title inset such as `keys · 1-12/53` while content overflows.
-  Dashboard
-  keymap: `0`-`9` toggle cards; `Shift+0` opens Commits,
-  `Shift+1`-`Shift+9` open the remaining numbered popups, `g` opens
-  the keybind-only DAG popup, and `t` opens the keybind-only
-  all-tasks popup. Inside the DAG and all-tasks popups,
-  `o`/`i`/`c`/`r`/`d` toggle OPEN / IN_PROGRESS / CLOSED / REJECTED /
-  DEFERRED visibility with default all-on. DAG popup nodes render only
-  `<name>  <status>` (task name + status) and truncate to the popup
-  width so deep task DAG nesting stays single-line; the static
-  `mu task tree` CLI keeps the full `<name>  <status>  <title>` label.
-  Inside all-tasks, `s`
-  cycles sort key (`roi` → `recency` → `age` → `id`), Enter drills
-  into the focused task's notes, and `y` yanks `mu task show <id>`;
-  `?` shows the keymap;
-  `q` / `Ctrl-C` quits and restores the main scrollback. Mouse
-  support is navigation-in only: double-click a dashboard card to
-  open its popup, use the scroll wheel inside a popup list or drill
-  body to move the focused list, and double-click a popup row to
-  drill one level deeper. There is intentionally no mouse back
-  binding — use `Esc` / `q` to back out predictably.
-
-  **Popup-drill recursion**: `Enter` in any popup drills into the
-  focused row. Where the row is itself an entity (a task), a
-  further `Enter` chains into the SAME read-only task-detail leaf
-  (notes timeline). Concretely: Tracks popup (`@`) → `Enter` opens
-  the track's task list → `Enter` opens that task's notes timeline
-  — identical to the Tasks popup (`#`) drill on the same task. In
-  the Activity log popup (`$`), `Enter` drills into a read-only view
-  of the focused event's full untruncated payload (long
-  workspace-refresh / claim / multi-line note payloads clip in the
-  list view; the drill is the affordance for reading the full text);
-  `j/k` / `Ctrl-D/U` scroll the payload, `y` yanks the
-  single-event lookup `mu log --since <seq-1> -n 1 -w <ws>`.
-  One `Esc` / `q` backs out per recursion level (notes → task
-  list → list of tracks → popup closed). The Workspaces popup
-  (`%`) chains the same way: list of workspaces → `Enter` opens
-  the commits-since-fork list → `Enter` on a focused commit opens
-  a read-only inline view of `git show <sha> --stat -p` (j/k
-  scroll, Ctrl-D/U half page, `y` yanks the bare `git show <sha>`
-  command, `t` launches `tuicr -r <sha>` in the TUI launch cwd,
-  Esc/q backs out one level). The Commits popup (`Shift+0`)
-  lists the recent project-root commits (git / jj / sl) and `Enter`
-  opens the backend's show view (`git show`, `jj show`, or `sl show`);
-  `y` yanks that show command and `t` launches `tuicr -r <sha>` in
-  the project-root cwd.
-
-  **Popup search/filter**: `/` inside any list popup enters an
-  incremental case-insensitive substring filter (lazygit / k9s
-  convention). The filter blob is per-popup: agent name + status +
-  cli + role; track head id + title; task name + title + status +
-  owner; log verb + payload + source. While editing, every
-  printable character appends to the query and `Backspace` pops
-  one; `Esc` cancels (clears the query); `Enter` commits (keeps
-  the filter applied while letting `j/k` resume normal
-  navigation). Press `/` again on a committed filter to refine
-  it. Filter state is per-popup and dies with the popup.
-
-  **Polling contract**: the dashboard has two refresh tiers. The
-  adjustable tick (`+` / `-` / `=` / `0`, default 1s) is SQL-only and
-  refreshes tasks, tracks, workspace registry rows, and the activity
-  log. Subprocess-backed data refreshes every 10s in the background:
-  tmux-derived agent liveness/orphans, workspace dirty flags, recent
-  project commits, and the Doctor summary. The last slow-tier result is
-  merged into every fast render so cards do not flicker through a
-  loading state. `r` / F5 refreshes both tiers immediately, and
-  Tab/Shift-Tab triggers an eager slow refresh for the newly active
-  workstream.
-
-`--tui` is mutually exclusive with `--json`. Multi-workstream `--tui`
-IS supported: tabs (Tab / Shift-Tab) cycle through the resolved set,
-one workstream visible at a time. Per-card rows always belong to the
-active tab; cards/popups never gain a per-row workstream column (the
-active tab encodes ws identity).
-
-Multi-workstream: pass `-w` multiple values to render N workstreams
-in one card. `-w a,b,c`, `-w a -w b`, or any mix all work — see
-[CLI conventions](#cli-conventions-multi-value-flags). `--all` is
-sugar for "every workstream on this machine" (mutually exclusive with
-`-w`). In default mode N≥2 stacks one per-workstream card after
-another. In `--tui` mode N≥2 surfaces a compact one-row tab strip
-above the cards (`workstreams: ▸ active · next · …`); `Tab` /
-`Shift-Tab` cycles, the active tab name appears in the status bar's
-right zone next to the tick rate, and popups always operate on the
-active tab. Initial focus follows the same precedence as bare `mu`:
-`$MU_SESSION`, then current tmux session name (`mu-<workstream>`), then
-cwd inside a registered workspace path, then cwd equal to a
-VCS-derived project root for registered workspaces (most-recent
-workstream activity breaks ties), then tab 0. When the workstream set
-is too wide for the terminal, the strip windows around the active tab
-and shows `‹N` / `›N` counters for hidden workstreams.
-The `--json` envelope wraps in `{ workstreams: [...] }` when N≥2.
-
-JSON shapes:
+**JSON shapes**
 
 - `mu state --json` (single-ws): flat `{ workstreamName, agents,
   orphans, tracks, ready, blocked, inProgress, recentClosed,
   workspaces, recent }`.
-- bare `mu --json`: prints help rather than entering the TUI; use
-  `mu state --json` for the full state snapshot.
+- `mu state --json` (multi-ws): wrapped `{ workstreams: [{...}, ...] }`.
+- bare `mu --json`: prints `--help` rather than entering the TUI;
+  use `mu state --json` for the full snapshot.
 - `--tui` is render-only and incompatible with `--json` (the TUI
-  has no JSON shape; pass `--json` without `--tui` for the static
-  shape).
+  has no JSON shape).
 
-> **Migrating from old state surfaces**: `mu state --hud` was removed
-> in v0.4; use `mu state --tui` for the interactive replacement, or
-> plain `mu state` for the static card you used to use under `watch`.
-> `mu state --mission` was removed in v0.5; use `mu state --json` for
-> agent/script consumers (the full snapshot is a superset).
-> `tmux display-popup -E 'mu state -w X'` keeps working unchanged for
-> popup-card use; the previous `mu hud` verb was removed in v0.3.
+**Multi-workstream**: pass `-w` multiple values, or `--all`. See
+[CLI conventions](#cli-conventions-multi-value-flags). In static
+mode N≥2 stacks one per-workstream card after another.
+
+> **Migrating from old state surfaces**: `mu state --hud` and
+> `mu state --mission` were removed in v0.4; use `mu state --tui`
+> for the interactive surface and `mu state --json` for the full
+> snapshot. `tmux display-popup -E 'mu state -w X'` keeps working
+> unchanged for popup-card use.
+
+---
+
+## 5b. The TUI dashboard (interactive)
+
+The interactive TUI is mu's flagship human surface. It is **read-only
+by design** — every act-intent `y`anks the canonical `mu` command to
+your clipboard so you run mutations from your shell, with one
+documented escape (`t` in git-show drills runs `tuicr` in the project
+root, see below).
+
+### Launch
+
+```bash
+mu                              # bare; opens the TUI when stdout is a TTY
+mu state --tui                  # explicit; same surface
+mu state --tui -w a,b           # restrict to specific workstreams
+mu state --tui --all            # all workstreams (default for bare `mu`)
+MU_NO_TUI=1 mu                  # force the help path even in a TTY
+mu --json                       # also forces help; pipe `mu state --json`
+```
+
+Quit with `q` or `Ctrl-C`. The dashboard restores your scrollback
+on exit (alt-screen).
+
+**Initial active tab** is picked from this ladder:
+`$MU_SESSION` → current tmux session name (`mu-<ws>`) → cwd inside a
+registered workspace → cwd at the VCS-derived project root of any
+workstream (newest activity wins ties) → tab 0.
+
+### Layout: 10 cards, responsive columns
+
+The dashboard renders 10 toggleable cards with rounded borders and
+section headers inset into the top border line (lazygit / btop / k9s
+convention):
+
+| Slot | Card          | Toggle | Popup     | Content                                              |
+| ---- | ------------- | ------ | --------- | ---------------------------------------------------- |
+| 0    | Commits       | `0`    | `Shift+0` | Recent project-root commits (git / jj / sl)          |
+| 1    | Agents        | `1`    | `Shift+1` | Active agents + status + cli + role                  |
+| 2    | Tracks        | `2`    | `Shift+2` | Parallel tracks (union-find clusters)                |
+| 3    | Ready (Tasks) | `3`    | `Shift+3` | Ready-to-claim tasks (no open blockers)              |
+| 4    | Activity log  | `4`    | `Shift+4` | Recent `agent_logs` events                           |
+| 5    | Workspaces    | `5`    | `Shift+5` | Per-agent VCS workspaces + behind/dirty status       |
+| 6    | In-progress   | `6`    | `Shift+6` | IN_PROGRESS tasks owned by agents                    |
+| 7    | Blocked       | `7`    | `Shift+7` | Tasks with at least one open blocker                 |
+| 8    | Recent        | `8`    | `Shift+8` | Recently CLOSED tasks                                |
+| 9    | Doctor        | `9`    | `Shift+9` | Cheap health checks (schema, ghosts, orphans, …)    |
+| —    | DAG           | —      | `g`       | Full task DAG forest (keybind-only)                  |
+| —    | All tasks     | —      | `t`       | Sortable / filterable list of every task             |
+
+Digit toggles HIDE / SHOW the card on the dashboard; `Shift+digit`
+opens the matching fullscreen popup. **Single-popup invariant**: only
+one popup is visible at a time; `Esc` / `q` returns to the dashboard
+with all toggles + tick rate preserved.
+
+**Responsive layout**: cards stack below 120 cols, then reflow into
+pair-aware 2 / 3 / 4-column layouts at 120 / 180 / 240 cols. Each
+visible card gets a dynamic row budget so a noisy list cannot crowd
+out its siblings; overflow shows as `+N more · Shift+N` inset into
+the bottom border. On very short panes, the dashboard culls
+low-priority cards (Doctor → Recent → Workspaces → …) and shows
+`+N cards hidden · resize taller` until the surviving cards fit.
+
+Dashboard ordering is slot-stable: within each rendered column,
+non-stream cards are ordered by toggle digit ascending; stream cards
+(Commits, Activity log) sit as natural trailers, with slot 0 trailing
+last.
+
+### Multi-workstream tabs
+
+When the TUI is launched with N≥2 workstreams (e.g. bare `mu` on a
+machine with multiple workstreams, or `mu state --tui -w a,b,c`),
+a compact tab strip renders above the cards:
+
+```
+workstreams: ▸ auth-refactor · ui-rewrite · demo   (Tab / Shift-Tab)
+```
+
+- `Tab` cycles forward, `Shift-Tab` backward (suppressed inside
+  popups so the same key still navigates inside popups that bind
+  it locally).
+- The active tab name appears in the status bar's right zone next
+  to the tick rate.
+- Cards / popups always operate on the active tab — there's no
+  per-row workstream column.
+- For N=1 the strip renders nothing (frame is byte-identical to
+  single-ws TUI).
+- When the workstream set is wider than the terminal, the strip
+  windows around the active tab and shows `‹N` / `›N` counters
+  for hidden workstreams.
+
+### Popup drills
+
+`Enter` in any list popup drills into the focused row. Where the
+row is itself an entity (a task), a further `Enter` chains into the
+shared read-only task-detail leaf (notes timeline):
+
+- **Tracks popup (`Shift+2`)**: list of tracks → `Enter` opens the
+  track's task list → `Enter` opens that task's notes timeline.
+- **Ready / In-progress / Blocked / Recent / All-tasks**:
+  list of tasks → `Enter` opens notes; `y` yanks `mu task show <id>`
+  (or `mu task claim` / `mu task close` / `mu task tree` depending
+  on popup).
+- **Activity log popup (`Shift+4`)**: list of events → `Enter`
+  drills into the full untruncated payload of the focused event;
+  `y` yanks `mu log --since <seq-1> -n 1 -w <ws>`.
+- **Workspaces popup (`Shift+5`)**: list of workspaces → `Enter`
+  opens the commits-since-fork list → `Enter` on a commit opens
+  the inline `git show <sha> --stat -p` view; `y` yanks `git show
+  <sha>`; `t` launches `tuicr -r <sha>`.
+- **Commits popup (`Shift+0`)**: project-root recent commits →
+  `Enter` opens the backend's show view; `y` yanks the show
+  command; `t` launches `tuicr`.
+- **Doctor popup (`Shift+9`)**: list of checks → `Enter` opens
+  the remediation paragraph for the focused check.
+- **DAG popup (`g`)**: keybind-only; renders the active workstream's
+  full task DAG forest (one ASCII subtree per root, diamond-collapse
+  marker on repeated nodes).
+
+One `Esc` / `q` backs out per recursion level. Drills auto-refresh
+in step with the dashboard tick (fast 1s for SQL-derived bodies
+like notes, slow 10s for subprocess git-show / scrollback). Scroll
+position is preserved across refreshes; subprocess loaders keep the
+prior body visible until the new one arrives so there's no
+blank-flash mid-refetch.
+
+### Search / filter
+
+`/` inside any list popup enters an incremental case-insensitive
+substring filter (lazygit / k9s convention):
+
+- Every printable character appends to the query; `Backspace` pops
+  one.
+- `Esc` cancels (clears the query); `Enter` commits (keeps the
+  filter applied while letting `j/k` resume normal navigation).
+- Press `/` again on a committed filter to refine.
+- The filter blob is per-popup: agent name + status + cli + role;
+  track head id + title; task name + title + status + owner; log
+  verb + payload + source.
+- Filter state is per-popup and dies with the popup.
+
+Task-list popups also expose **per-status toggles** (`o` / `i` / `c`
+/ `r` / `d` toggle OPEN / IN_PROGRESS / CLOSED / REJECTED / DEFERRED
+visibility; default all-on).
+
+The All-tasks popup adds **sort cycle** on `s`: `roi` → `recency`
+→ `age` → `id`.
+
+### Mouse
+
+Navigation-in only:
+
+- Double-click a dashboard card → opens its popup.
+- Scroll-wheel inside a popup list / drill body → moves the focused
+  cursor / scrolls the body.
+- Double-click a popup row → drills one level deeper.
+
+There is intentionally **no mouse back binding** — use `Esc` / `q`
+to back out predictably.
+
+### Yank contract (`y`) and the `tuicr` escape (`t`)
+
+Every popup row exposes one canonical `mu` command via `y`. The
+command goes to your system clipboard (pbcopy / wl-copy / xclip /
+xsel / clip.exe with OSC-52 fallback). You run it in your shell.
+The TUI never executes a mutation.
+
+The one user-driven escape from the read-only pledge is **`t`**
+inside any `git show` drill (Workspaces popup or Commits popup):
+mu suspends its alt-screen, runs `tuicr -r <sha>` in the project
+root / workspace cwd, then restores the dashboard when tuicr exits.
+This is a deliberate handoff — the operator drives another TUI
+tool, not mu performing the mutation.
+
+Task-list cards and popups colour-code status cells consistently
+with the static CLI tables: OPEN cyan, IN_PROGRESS yellow, CLOSED
+green, REJECTED red, DEFERRED dim/gray.
+
+### Polling tiers
+
+The dashboard has two refresh tiers:
+
+- **Fast tick** (default 1s, adjustable with `+` / `-` / `=` /
+  `0`): SQL-only. Refreshes tasks, tracks, workspace registry rows,
+  and the activity log.
+- **Slow tick** (10s, fixed): subprocess-backed. Refreshes
+  tmux-derived agent liveness / orphans, workspace dirty flags,
+  recent project commits, and the Doctor summary.
+
+The last slow-tier result is merged into every fast render so cards
+do not flicker through a loading state. `r` / F5 refreshes both
+tiers immediately. Tab / Shift-Tab triggers an eager slow refresh
+for the newly active workstream.
+
+### Keymap reference
+
+| Mode      | Keys                         | Action                                                         |
+| --------- | ---------------------------- | -------------------------------------------------------------- |
+| dashboard | `0`-`9`                      | toggle card visibility                                         |
+| dashboard | `Shift+0`-`Shift+9`          | open the matching popup                                        |
+| dashboard | `g`                          | open DAG popup (keybind-only)                                  |
+| dashboard | `t`                          | open All-tasks popup (keybind-only)                            |
+| dashboard | `Tab` / `Shift-Tab`          | cycle workstream tabs (N≥2)                                   |
+| dashboard | `+` / `-` / `=` / `0`        | adjust fast tick rate (faster / slower / default / pause)      |
+| dashboard | `r` / `F5`                   | force refresh both tiers                                       |
+| dashboard | `?` / `F1`                   | open help overlay                                              |
+| any       | `q` / `Ctrl-C`               | quit (or back out of popup; quits at dashboard)                |
+| popup     | `j` / `k`                    | move cursor / scroll                                           |
+| popup     | `g` / `G`                    | jump top / bottom                                              |
+| popup     | `Ctrl-D` / `Ctrl-U`          | half-page down / up                                            |
+| popup     | `PgDn` / `PgUp`              | full page                                                      |
+| popup     | `Enter`                      | drill into focused row                                         |
+| popup     | `Esc` / `q`                  | back out one level                                             |
+| popup     | `y`                          | yank canonical `mu` command for focused row                    |
+| popup     | `/`                          | enter filter mode                                              |
+| filter    | (printable) / `Backspace`    | edit query                                                     |
+| filter    | `Esc`                        | cancel (clear query)                                           |
+| filter    | `Enter`                      | commit (keep filter, return to nav)                            |
+| task popup| `o` / `i` / `c` / `r` / `d`  | toggle OPEN / IN_PROGRESS / CLOSED / REJECTED / DEFERRED       |
+| All-tasks | `s`                          | cycle sort key (roi → recency → age → id)                       |
+| git-show  | `t`                          | launch `tuicr -r <sha>` (alt-screen handoff)                   |
+
+`?` shows the same table as a scrollable overlay (j/k/Ctrl-D/U/g/G
+also work inside the overlay).
+
+### Read-only invariant
+
+The TUI never executes a mutation. This is not a feature of the
+implementation; it's a load-bearing pledge in `docs/ROADMAP.md`. If
+a future TUI gesture tempts you to call into the SDK to mutate
+state, file a roadmap entry first — the yank-and-run pattern is the
+intentional cost we pay to keep the TUI inspectable, scriptable, and
+recoverable from any shell.
 
 ---
 
@@ -1863,9 +1951,9 @@ service of those three.
 
 ---
 
-## What's NOT in 0.5.0 (and how to work around it)
+## What's NOT in 0.4.0 (and how to work around it)
 
-<a id="whats-not-in-050-and-how-to-work-around-it"></a>
+<a id="whats-not-in-040-and-how-to-work-around-it"></a>
 
 The full roadmap with promotion criteria lives in
 [ROADMAP.md](ROADMAP.md). The short list of gaps you might hit
