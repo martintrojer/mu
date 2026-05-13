@@ -2,14 +2,13 @@ import { Text } from "ink";
 import type { ReactNode } from "react";
 
 export interface PaddedRowsProps {
-  minRows?: number;
   rows?: number;
   children: ReactNode;
 }
 
 /** Ensure one-line empty/loading card bodies still occupy their row budget. */
-export function PaddedRows({ minRows, rows, children }: PaddedRowsProps): JSX.Element {
-  const targetRows = Math.max(0, Math.floor(rows ?? minRows ?? 0));
+export function PaddedRows({ rows, children }: PaddedRowsProps): JSX.Element {
+  const targetRows = Math.max(0, Math.floor(rows ?? 0));
   const blanks = Math.max(0, targetRows - 1);
   return (
     <>
