@@ -411,7 +411,8 @@ export function claimTask(
   opts?: ClaimOptions,
 ): ClaimResult {
   const wsId = resolveWorkstreamId(db, workstream);
-  const taskId = resolveTaskId(db, wsId, localId);
+  const taskId = tryResolveTaskId(db, wsId, localId);
+  if (taskId === null) throw new TaskNotFoundError(localId);
   const agentId = resolveCurrentAgentId(db, wsId);
   return claimTaskById(db, taskId, agentId, opts);
 }
@@ -423,10 +424,12 @@ function claimTaskById(db, taskId, agentId, opts): ClaimResult { ... }
 Why exactly once at the boundary: no double-resolution; no
 mid-function ambiguity (once surrogate ids exist, internal helpers
 don't need to thread workstream context — the FKs make scope
-implicit); one place to do error mapping
-(`WorkstreamNotFoundError` / `TaskNotFoundError` /
-`AgentNotFoundError` all originate at resolve-time, with the
-operator's input string in the error payload).
+implicit); one place to do error mapping (`WorkstreamNotFoundError`
+originates at resolve-time inside `src/db.ts`; `TaskNotFoundError` /
+`AgentNotFoundError` are raised by SDK callers wrapping the
+`tryResolve*` null-return so the typed class — and the CLI's
+exit-code 3 mapping — stays consistent regardless of which leg of
+the resolve missed).
 
 **`--json` output preserves operator-facing names.** Surrogate ids
 stay strictly internal — they never leak into `--json`, error

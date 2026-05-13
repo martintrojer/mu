@@ -170,16 +170,17 @@ function refuseUserDbDuringTests(path: string): void {
 //   id + agent name). Internal helpers take surrogate ids. Resolution
 //   happens at the public-function entry, exactly once.
 //
-// These helpers throw typed errors mapped to the same exit codes that
-// the previous "row not found" paths surfaced. Errors live next to
-// their domain modules (TaskNotFoundError in src/tasks/errors.ts,
-// AgentNotFoundError in src/agents/errors.ts, WorkstreamNameInvalidError
-// in src/workstream.ts) so the resolve functions just import + throw.
-//
-// We import them lazily via dynamic require to avoid an import cycle
-// (workstream/agents/tasks all import from db.ts). Each resolve helper
-// throws a TS Error subclass whose `.name` matches the canonical typed
-// error a consumer would expect.
+// `resolveWorkstreamId` is the only resolve helper that throws a typed
+// error from this leaf module — `WorkstreamNotFoundError` is defined
+// here, so there is no cycle. The task / agent resolvers RETURN
+// `number | null` (`tryResolveTaskId` / `tryResolveAgentId`) and let
+// SDK callers in `src/tasks/*.ts` / `src/agents.ts` throw the typed
+// `TaskNotFoundError` / `AgentNotFoundError` they own. That keeps
+// `cli/handle.ts`'s `instanceof`-based exit-code map (3 = not-found)
+// honest: a leaf throwing a plain `Error` whose `.name` was monkey-
+// patched to `"TaskNotFoundError"` flunks `instanceof TaskNotFoundError`
+// and falls through to the generic exit 1
+// (review_substrate_resolve_id_anonymous_errors).
 
 export class WorkstreamNotFoundError extends Error implements HasNextSteps {
   override readonly name = "WorkstreamNotFoundError";
@@ -221,34 +222,32 @@ export function tryResolveWorkstreamId(db: Db, workstream: string): number | nul
   return row ? row.id : null;
 }
 
-/** Resolve a (workstream_id, local_id) pair to the task's surrogate id.
- *  Throws an Error tagged 'TaskNotFoundError' on miss (callers in
- *  src/tasks*.ts wrap with the proper typed error class — but a bare
- *  caller still gets a meaningful message). */
-export function resolveTaskId(db: Db, workstreamId: number, localId: string): number {
+/** Resolve a (workstream_id, local_id) pair to the task's surrogate
+ *  id, returning `null` on miss. SDK callers in `src/tasks/*.ts`
+ *  wrap the null return in `TaskNotFoundError` so the CLI's typed-
+ *  error → exit-code map (3 = not-found) fires. The leaf intentionally
+ *  does NOT throw a typed error (it would either pull in a cyclic
+ *  import or — as before — fake the `.name` and silently flunk
+ *  `instanceof TaskNotFoundError`, falling through to exit 1).
+ *  Renamed from `resolveTaskId` in
+ *  review_substrate_resolve_id_anonymous_errors. */
+export function tryResolveTaskId(db: Db, workstreamId: number, localId: string): number | null {
   const row = db
     .prepare("SELECT id FROM tasks WHERE workstream_id = ? AND local_id = ?")
     .get(workstreamId, localId) as { id: number } | undefined;
-  if (!row) {
-    const err = new Error(`no such task in workstream: ${localId}`);
-    (err as Error & { name: string }).name = "TaskNotFoundError";
-    throw err;
-  }
-  return row.id;
+  return row ? row.id : null;
 }
 
 /** Resolve a (workstream_id, agent_name) pair to the agent's surrogate
- *  id. Throws an Error tagged 'AgentNotFoundError' on miss. */
-export function resolveAgentId(db: Db, workstreamId: number, name: string): number {
+ *  id, returning `null` on miss. SDK callers in `src/agents.ts` wrap
+ *  the null return in `AgentNotFoundError` so the CLI's typed-error →
+ *  exit-code map (3 = not-found) fires. See `tryResolveTaskId` for the
+ *  full rationale (review_substrate_resolve_id_anonymous_errors). */
+export function tryResolveAgentId(db: Db, workstreamId: number, name: string): number | null {
   const row = db
     .prepare("SELECT id FROM agents WHERE workstream_id = ? AND name = ?")
     .get(workstreamId, name) as { id: number } | undefined;
-  if (!row) {
-    const err = new Error(`no such agent in workstream: ${name}`);
-    (err as Error & { name: string }).name = "AgentNotFoundError";
-    throw err;
-  }
-  return row.id;
+  return row ? row.id : null;
 }
 
 export class SchemaTooOldError extends Error implements HasNextSteps {
