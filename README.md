@@ -13,8 +13,8 @@ in-progress / blocked tasks, log tail, workspaces, doctor.*
 ```bash
 mu workstream init auth-refactor
 mu task add --title "Design auth"  --impact 80 --effort-days 2
-mu task add --title "Build auth"   --impact 80 --effort-days 5 --blocks design_auth
-mu task add --title "Review auth"  --impact 60 --effort-days 1 --blocks build_auth
+mu task add --title "Build auth"   --impact 80 --effort-days 5 --blocked-by design_auth
+mu task add --title "Review auth"  --impact 60 --effort-days 1 --blocked-by build_auth
 
 mu agent spawn worker-1   --workspace
 mu agent spawn reviewer-1 --workspace --role read-only
@@ -161,8 +161,8 @@ mu workstream init auth-refactor
 
 # Plan the work as a DAG. IDs auto-derive from titles.
 mu task add --title "Design auth module" --impact 80 --effort-days 2
-mu task add --title "Build auth"         --impact 80 --effort-days 5 --blocks design_auth_module
-mu task add --title "Review auth"        --impact 60 --effort-days 1 --blocks build_auth
+mu task add --title "Build auth"         --impact 80 --effort-days 5 --blocked-by design_auth_module
+mu task add --title "Review auth"        --impact 60 --effort-days 1 --blocked-by build_auth
 
 # Spawn a crew with isolated workspaces.
 mu agent spawn worker-1   --workspace

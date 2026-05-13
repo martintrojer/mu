@@ -384,9 +384,10 @@ Each task validates its id (`/^[a-z][a-z0-9_-]{0,63}$/`) and rejects
 duplicates. If you tried `mu task add x --blocked-by y` while `y`
 already transitively depended on `x`, mu would refuse with a `CycleError`.
 
-**Task ids are globally unique** (PRIMARY KEY across all workstreams)
-but tasks are scoped to one workstream. Cross-workstream blocks-edges
-are forbidden — if `--blocks foo` resolves to a task in a different
+**Task ids are per-workstream unique.** The same local id can exist in
+multiple workstreams, so cross-workstream references use the qualified
+form `<workstream>/<id>` when a global scope is needed. Blocks-edges
+are always same-workstream — if a blocker resolves outside the target
 workstream, mu refuses with a `CrossWorkstreamEdgeError`.
 
 ---
@@ -894,7 +895,7 @@ a worker pane just for a 5-minute job. Two patterns split here:
 
 - **Worker** — a pane mu spawned (or you adopted). Has a row in the
   `agents` table. Identity = pane title. Claims with bare
-  `mu task claim <id>`. `tasks.owner` is set to the worker's name.
+  `mu task claim <id>`. `tasks.owner_id` points at the worker row.
 
 - **Actor** — anything that *causes* a state change. Includes
   workers, but also includes the orchestrator. May or may not have
@@ -916,13 +917,13 @@ Three actionable next steps. Pick one based on intent:
 ```bash
 # Orchestrator does the work itself (most common):
 mu task claim some-task --self --evidence "trivial 5-line fix"
-#   -> tasks.owner stays NULL
+#   -> tasks.owner_id stays NULL
 #   -> agent_logs records 'task claim some-task by pi-mu --self (anonymous)'
 #   -> mu task show surfaces it as 'owner: (self: pi-mu)'
 
 # Orchestrator dispatches to a worker:
 mu task claim some-task --for worker-1
-#   -> tasks.owner = 'worker-1'
+#   -> tasks.owner_id points at worker-1
 
 # Orchestrator wants to BE a registered worker (rare):
 mu agent adopt %6441 -w <ws>  # only if pane is in mu-<ws> session
@@ -938,7 +939,7 @@ to pane title, or `$USER`, or `unknown`):
 mu task claim deploy --self --actor deploy-bot --evidence "prod release"
 ```
 
-When `tasks.owner IS NULL` because of `--self`, `mu task show` looks
+When `tasks.owner_id IS NULL` because of `--self`, `mu task show` looks
 up the most recent `task claim` event for that task and surfaces it:
 
 ```
@@ -988,7 +989,12 @@ verb stays useful on un-claimed tasks).
 Or, for ad-hoc shape, the SQL escape hatch:
 
 ```bash
-mu sql "SELECT author, content, created_at FROM task_notes WHERE task_id='design' ORDER BY id"
+mu sql "SELECT n.author, n.content, n.created_at
+        FROM task_notes n
+        JOIN tasks t ON t.id = n.task_id
+        JOIN workstreams w ON w.id = t.workstream_id
+       WHERE t.local_id='design' AND w.name='auth-refactor'
+       ORDER BY n.id"
 ```
 
 Convention for note content: `KEY: value` lines. Common keys are
@@ -1249,12 +1255,14 @@ mu sql "UPDATE tasks SET status='IN_PROGRESS'
 
 # What's blocking what (open tasks only) — same data as `mu task tree`
 # but as a flat join when you want a wider report. task_edges is keyed
-# by tasks.id, not local_id.
+# by tasks.id, not local_id; join workstreams to scope the report.
 mu sql "SELECT b.local_id AS blocked, t.local_id AS by_task
         FROM tasks b
+        JOIN workstreams w ON w.id = b.workstream_id
         JOIN task_edges e ON e.to_task_id = b.id
         JOIN tasks t ON t.id = e.from_task_id
-        WHERE t.status != 'CLOSED' AND b.status = 'OPEN'"
+        WHERE w.name='mufeedback-v03'
+          AND t.status != 'CLOSED' AND b.status = 'OPEN'"
 
 # Recursive CTE: every task that transitively blocks `launch` in a
 # given workstream (or use `mu task tree launch --json` for the same
@@ -1539,8 +1547,10 @@ failure leaves the registry intact (you can retry); if you only want
 the DB cleared, use `mu sql` directly:
 
 ```bash
-mu sql "DELETE FROM tasks  WHERE workstream='auth-refactor'"   # cascades
-mu sql "DELETE FROM agents WHERE workstream='auth-refactor'"
+mu sql "DELETE FROM tasks
+         WHERE workstream_id=(SELECT id FROM workstreams WHERE name='auth-refactor')"   # cascades
+mu sql "DELETE FROM agents
+         WHERE workstream_id=(SELECT id FROM workstreams WHERE name='auth-refactor')"
 ```
 
 Or nuke the entire DB:
@@ -1815,8 +1825,8 @@ mu agent spawn worker-1 --workstream demo --cli sh
 mu agent spawn worker-2   --workstream demo --cli sh
 
 # Assign + observe
-mu sql "UPDATE tasks SET owner='worker-1', status='IN_PROGRESS' WHERE local_id='design'"
-mu --workstream demo
+mu task claim design -w demo --for worker-1 --evidence "demo assignment"
+mu state -w demo
 
 # Watch live (Ctrl+b d to detach)
 tmux attach -t mu-demo
@@ -1842,8 +1852,8 @@ rm -f ~/.local/state/mu/mu.db
    shared deps.
 
 3. **Agents claim tasks via their pane title — zero config.**
-   `mu task claim foo` from inside `worker-1`'s pane sets `tasks.owner='worker-1'`
-   atomically. mu reads the pane title via
+   `mu task claim foo` from inside `worker-1`'s pane sets the task's
+   `owner_id` to the `worker-1` agent row atomically. mu reads the pane title via
    `tmux display-message -t $TMUX_PANE -p '#{pane_title}'`, set on
    spawn. Two agents cannot claim the same task.
 
@@ -1868,9 +1878,9 @@ in real use:
 | Markdown agent-definition discovery           | Spawn accepts `--cli` and `--command` directly; no template registry    | dropped       |
 | `mu run script.ts` (JS DSL)                   | Use `--json` + bash + jq                                                | rejected      |
 | Sync to GitHub Issues / Linear / Asana        | Not in scope; explicitly rejected                                       | —             |
-| ~~`mu task blocked`~~ (removed; the `blocked` SQL view is the abstraction) | `mu sql "SELECT local_id, status, title FROM blocked WHERE workstream='X'"` | removed-with-recipe |
-| ~~`mu task goals`~~ (removed; same shape as `blocked` — view is the abstraction) | `mu sql "SELECT local_id, status, title FROM goals WHERE workstream='X'"` | removed-with-recipe |
-| ~~`mu task search <pat>`~~ (removed; case-insensitive LIKE is one SQL line) | `mu sql "SELECT local_id, status, title FROM tasks WHERE workstream='X' AND LOWER(title) LIKE '%pat%'"` (add `LEFT JOIN task_notes` for the old `--in-notes`; drop the `WHERE workstream=` clause for the old `--all`) | removed-with-recipe |
+| ~~`mu task blocked`~~ (removed; the `blocked` SQL view is the abstraction) | `mu sql "SELECT b.local_id, b.status, b.title FROM blocked b JOIN workstreams w ON w.id=b.workstream_id WHERE w.name='X'"` | removed-with-recipe |
+| ~~`mu task goals`~~ (removed; same shape as `blocked` — view is the abstraction) | `mu sql "SELECT g.local_id, g.status, g.title FROM goals g JOIN workstreams w ON w.id=g.workstream_id WHERE w.name='X'"` | removed-with-recipe |
+| ~~`mu task search <pat>`~~ (removed; case-insensitive LIKE is one SQL line) | `mu sql "SELECT t.local_id, t.status, t.title FROM tasks t JOIN workstreams w ON w.id=t.workstream_id WHERE w.name='X' AND LOWER(t.title) LIKE '%pat%'"` (add `LEFT JOIN task_notes` for the old `--in-notes`; drop the workstream join/filter for the old `--all`) | removed-with-recipe |
 
 Anything in this table that bites you in real use is a candidate
 for **promotion**. Criteria: proven friction in ≥2 real workflows +
