@@ -619,7 +619,7 @@ async function cmdDestroyEmpty(
   const failed: EmptyDestroyFailure[] = [];
   for (const ws of empties) {
     try {
-      const result = await destroyWorkstream(db, { workstream: ws.name });
+      const result = await destroyWorkstream(db, { workstream: ws.name, suppressSnapshot: true });
       results.push({
         workstreamName: ws.name,
         killedTmux: result.killedTmux,

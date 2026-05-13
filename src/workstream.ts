@@ -211,6 +211,15 @@ export interface WorkstreamOptions {
   resolveBackend?: (name: VcsBackendName) => VcsBackend;
 }
 
+export interface DestroyWorkstreamOptions extends WorkstreamOptions {
+  /** Skip the per-workstream pre-mutation snapshot because the caller
+   *  already captured a broader snapshot for the whole destructive
+   *  operation. Used by `mu workstream destroy --empty` after its
+   *  sweep-level safety snapshot; direct destroy callers leave this
+   *  false so the default safety net is unchanged. */
+  suppressSnapshot?: boolean;
+}
+
 /**
  * Discover every workstream visible on this machine. The union of:
  *   - rows in the `workstreams` table (canonical DB source; populated by
@@ -355,7 +364,10 @@ function isRegistered(db: Db, workstream: string): boolean {
  * to call repeatedly. Returns counts so the caller can print a useful
  * summary.
  */
-export async function destroyWorkstream(db: Db, opts: WorkstreamOptions): Promise<DestroyResult> {
+export async function destroyWorkstream(
+  db: Db,
+  opts: DestroyWorkstreamOptions,
+): Promise<DestroyResult> {
   const tmuxSession = opts.tmuxSession ?? `mu-${opts.workstream}`;
 
   // Pre-mutation snapshot (snap_design §EDGE CASES > WORKSTREAM
@@ -364,7 +376,9 @@ export async function destroyWorkstream(db: Db, opts: WorkstreamOptions): Promis
   // anchoring to one name would lie about scope). If the snapshot
   // throws (disk full, perms), abort the destroy — better to refuse
   // than to delete irrecoverably.
-  captureSnapshot(db, `workstream destroy ${opts.workstream}`, null);
+  if (opts.suppressSnapshot !== true) {
+    captureSnapshot(db, `workstream destroy ${opts.workstream}`, null);
+  }
 
   // Pre-count the cascade victims so we can report them — SQLite's
   // changes() only reports rows directly affected by the last statement,
