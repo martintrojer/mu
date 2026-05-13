@@ -2,7 +2,13 @@ import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { DagPopup, buildDagBody, dagYankCommand } from "../src/cli/tui/popups/dag.js";
+import { cellWidth } from "../src/cli/tui/columns.js";
+import {
+  DagPopup,
+  buildDagBody,
+  dagYankCommand,
+  truncateDagBody,
+} from "../src/cli/tui/popups/dag.js";
 import { loadFullDag, renderForest } from "../src/dag.js";
 import { type Db, openDb } from "../src/db.js";
 import { type TaskRow, addBlockEdge, addTask, setTaskStatus } from "../src/tasks.js";
@@ -96,6 +102,57 @@ describe("DagPopup", () => {
     expect(dag.edges.get("root_a")).toEqual(["child_a", "child_b"]);
   });
 
+  it("omits task titles from DAG popup nodes", () => {
+    const db = fixtureDb();
+    addTask(db, {
+      workstream: "demo",
+      localId: "compact_node",
+      title: "FEAT: recognisable summary line that should not render",
+      impact: 50,
+      effortDays: 1,
+    });
+
+    const body = buildDagBody(db, "demo", new Set(TASK_STATUSES));
+
+    expect(body.body).toContain("compact_node");
+    expect(body.body).toContain("OPEN");
+    expect(body.body).not.toContain("FEAT: recognisable summary line");
+  });
+
+  it("truncates long DAG lines to the popup content width with a safety margin", () => {
+    const db = fixtureDb();
+    const longRoot = `root_${"x".repeat(58)}`;
+    addTask(db, {
+      workstream: "demo",
+      localId: longRoot,
+      title: "title should be omitted before truncation",
+      impact: 50,
+      effortDays: 1,
+    });
+    const contentWidth = 30;
+
+    const body = buildDagBody(db, "demo", new Set(TASK_STATUSES), contentWidth);
+    const lines = body.body.split("\n");
+
+    expect(lines).toHaveLength(1);
+    const line = lines[0];
+    expect(line).toBeDefined();
+    expect(cellWidth(line ?? "")).toBeLessThanOrEqual(contentWidth - 1);
+    expect(line).toContain("…");
+  });
+
+  it("truncateDagBody clips each logical line without adding wrapped rows", () => {
+    const body = ["a".repeat(40), `${"b".repeat(40)}  CLOSED`].join("\n");
+    const clipped = truncateDagBody(body, 12);
+    const lines = clipped.split("\n");
+
+    expect(lines).toHaveLength(2);
+    for (const line of lines) {
+      expect(cellWidth(line)).toBeLessThanOrEqual(11);
+      expect(line).toContain("…");
+    }
+  });
+
   it("passes all statuses by default (existing DAG popup behaviour)", () => {
     const db = fixtureDb();
     seedOnePerStatus(db);
@@ -141,6 +198,8 @@ describe("DagPopup", () => {
     expect(src).toContain("<DrillScrollView");
     expect(src).toContain("useDrillKeymap");
     expect(src).toContain("<StatusFilterStrip");
+    expect(src).toContain("includeTitle: false");
+    expect(src).toContain("truncateDagBody(body, contentWidth)");
     expect(src).not.toContain("<TitledBox");
   });
 

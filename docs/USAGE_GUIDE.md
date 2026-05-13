@@ -475,7 +475,11 @@ mu                          # TTY: TUI across all workstreams; non-TTY: help
   the keybind-only DAG popup, and `t` opens the keybind-only
   all-tasks popup. Inside the DAG and all-tasks popups,
   `o`/`i`/`c`/`r`/`d` toggle OPEN / IN_PROGRESS / CLOSED / REJECTED /
-  DEFERRED visibility with default all-on. Inside all-tasks, `s`
+  DEFERRED visibility with default all-on. DAG popup nodes render only
+  `<name>  <status>` (task name + status) and truncate to the popup
+  width so deep task DAG nesting stays single-line; the static
+  `mu task tree` CLI keeps the full `<name>  <status>  <title>` label.
+  Inside all-tasks, `s`
   cycles sort key (`roi` → `recency` → `age` → `id`), Enter drills
   into the focused task's notes, and `y` yanks `mu task show <id>`;
   `?` shows the keymap;

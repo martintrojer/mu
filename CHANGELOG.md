@@ -79,6 +79,10 @@ called out under "Breaking" in each entry.
   everything immediately. Workstream tab switch triggers an eager slow
   tick so the new workstream's subprocess data is fresh within 1s.
 
+### Changed
+
+- DAG popup (`g`) nodes now render `<name>  <status>` only — the long task summary trailing each node was clipped or wrapped at narrow widths and added little signal beyond the name. `mu task tree` CLI keeps the full label for static prints. DAG popup also truncates long lines per popup width (no more wrap).
+
 ### Fixed
 
 - **TUI mouse double-click hit-test no longer points at the wrong card.** Empty-state cards (for example Doctor with no warnings) now render at their allocated `chrome + rowBudget` height instead of shrinking to only their minimum padding, so dashboard hit-test rectangles stay aligned with the Ink-rendered card grid all the way down the pane.

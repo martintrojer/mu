@@ -19,6 +19,11 @@ export interface FullDag {
 
 export type TaskStatusLabelFn = (task: TaskRow) => string;
 
+export interface RenderTreeOptions {
+  /** Include the task title after the name + status label. Default: true. */
+  includeTitle?: boolean;
+}
+
 export interface LoadFullDagOptions {
   /** Optional visible-status filter. Omitted = every task status. */
   statuses?: ReadonlySet<TaskStatus>;
@@ -72,6 +77,7 @@ export function renderForest(
   edges: ReadonlyMap<string, readonly string[]>,
   statusFn: TaskStatusLabelFn,
   tasksByName?: ReadonlyMap<string, TaskRow>,
+  opts: RenderTreeOptions = {},
 ): string {
   const byName = new Map(tasksByName ?? roots.map((t) => [t.name, t]));
   const seen = new Set<string>();
@@ -79,12 +85,12 @@ export function renderForest(
 
   for (const root of roots) {
     if (!byName.has(root.name)) byName.set(root.name, root);
-    const lines = [formatTreeNodeLabel(root, statusFn)];
+    const lines = [formatTreeNodeLabel(root, statusFn, opts)];
     if (seen.has(root.name)) {
       lines[0] = `${lines[0]}  (↻ already shown above)`;
     } else {
       seen.add(root.name);
-      renderForestChildren(root.name, "", edges, byName, statusFn, seen, lines);
+      renderForestChildren(root.name, "", edges, byName, statusFn, seen, lines, opts);
     }
     sections.push(lines.join("\n"));
   }
@@ -98,12 +104,13 @@ export function renderTaskTree(
   root: TaskRow,
   direction: "blockers" | "dependents",
   statusFn: TaskStatusLabelFn,
+  opts: RenderTreeOptions = {},
 ): string {
   const edges = new Map<string, string[]>();
   const byName = new Map<string, TaskRow>([[root.name, root]]);
   const visited = new Set<string>();
   collectTreeEdges(db, workstream, root.name, direction, edges, byName, visited);
-  return renderForest([root], edges, statusFn, byName);
+  return renderForest([root], edges, statusFn, byName, opts);
 }
 
 function collectTreeEdges(
@@ -156,6 +163,7 @@ function renderForestChildren(
   statusFn: TaskStatusLabelFn,
   seen: Set<string>,
   lines: string[],
+  opts: RenderTreeOptions,
 ): void {
   const children = edges.get(taskName) ?? [];
   for (let i = 0; i < children.length; i++) {
@@ -173,17 +181,23 @@ function renderForestChildren(
 
     if (seen.has(childName)) {
       lines.push(
-        `${prefix}${branch}${formatTreeNodeLabel(child, statusFn)}  (↻ already shown above)`,
+        `${prefix}${branch}${formatTreeNodeLabel(child, statusFn, opts)}  (↻ already shown above)`,
       );
       continue;
     }
 
-    lines.push(`${prefix}${branch}${formatTreeNodeLabel(child, statusFn)}`);
+    lines.push(`${prefix}${branch}${formatTreeNodeLabel(child, statusFn, opts)}`);
     seen.add(childName);
-    renderForestChildren(childName, childPrefix, edges, byName, statusFn, seen, lines);
+    renderForestChildren(childName, childPrefix, edges, byName, statusFn, seen, lines, opts);
   }
 }
 
-function formatTreeNodeLabel(t: TaskRow, statusFn: TaskStatusLabelFn): string {
-  return `${t.name}  ${statusFn(t)}  ${t.title}`;
+export function formatTreeNodeLabel(
+  t: TaskRow,
+  statusFn: TaskStatusLabelFn,
+  opts: RenderTreeOptions = {},
+): string {
+  const base = `${t.name}  ${statusFn(t)}`;
+  if (opts.includeTitle === false) return base;
+  return `${base}  ${t.title}`;
 }

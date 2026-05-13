@@ -12,6 +12,7 @@ import type { Db } from "../../../db.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
 import type { TaskStatus } from "../../../tasks/status.js";
 import { colorStatus } from "../../format.js";
+import { contentWidthFromCols, termColsForLayout, truncateCell } from "../columns.js";
 import { dispatchPopupKeyFromInk } from "../keys.js";
 import { PopupShell } from "../popup-shell.js";
 import { StatusFilterStrip, useStatusFilter } from "../use-status-filter.js";
@@ -38,9 +39,10 @@ interface DagBody {
 export function DagPopup({ yank, onClose, db, workstream }: PopupProps): JSX.Element {
   const viewport = usePopupViewport();
   const statusFilter = useStatusFilter();
+  const contentWidth = contentWidthFromCols(termColsForLayout());
   const { body, roots } = useMemo<DagBody>(
-    () => buildDagBody(db, workstream, statusFilter.statuses),
-    [db, workstream, statusFilter.statuses],
+    () => buildDagBody(db, workstream, statusFilter.statuses, contentWidth),
+    [db, workstream, statusFilter.statuses, contentWidth],
   );
   const [focusedRoot, setFocusedRoot] = useState<string | null>(() => roots[0] ?? null);
   const focusedTask = focusedRoot !== null && roots.includes(focusedRoot) ? focusedRoot : roots[0];
@@ -115,12 +117,24 @@ export function buildDagBody(
   db: Db,
   workstream: string,
   statuses: ReadonlySet<TaskStatus>,
+  contentWidth: number = contentWidthFromCols(termColsForLayout()),
 ): DagBody {
   const dag = loadFullDag(db, workstream, { statuses });
+  const body = renderForest(dag.roots, dag.edges, (task) => colorStatus(task.status), dag.tasks, {
+    includeTitle: false,
+  });
   return {
-    body: renderForest(dag.roots, dag.edges, (task) => colorStatus(task.status), dag.tasks),
+    body: truncateDagBody(body, contentWidth),
     roots: dag.roots.map((t) => t.name),
   };
+}
+
+export function truncateDagBody(body: string, contentWidth: number): string {
+  const width = Math.max(0, contentWidth - 1);
+  return body
+    .split("\n")
+    .map((line) => truncateCell(line, width))
+    .join("\n");
 }
 
 function rootForBodyLines(body: string, roots: readonly string[]): string[] {
