@@ -153,9 +153,9 @@ called out under "Breaking" in each entry.
   multi-agent concurrent test runs — the repo's standard dogfood
   workflow runs multiple pi workers' `npm run test` in parallel on
   the same machine. Durable lessons now live in AGENTS.md and
-  `docs/ARCHITECTURE.md`; the one-off `docs/test-flakes-audit.md`
-  remediation log was pruned after every audit cluster closed. New
-  `npm run test:stress` runs the full suite 30× back-to-back by
+  `docs/ARCHITECTURE.md`; `docs/test-flakes-audit.md` is now only a
+  short historical pointer to those sources and the closed task notes.
+  New `npm run test:stress` runs the full suite 30× back-to-back by
   default, captures one log per run, enforces a per-run timeout, and
   can simulate concurrent-agent load with
   `MU_TEST_STRESS_MODE=parallel MU_TEST_STRESS_PARALLEL=2`.
