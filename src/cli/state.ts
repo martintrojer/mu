@@ -16,21 +16,23 @@
 //                               act-intents that yank commands for the
 //                               user to run in a shell.
 //
-// Static mode and TUI share the same data set (loaded once via
-// loadWorkstreamSnapshot); only the rendering strategy differs. --tui
-// is mutually exclusive with --json.
+// Static JSON/render modes load their full data set via
+// loadWorkstreamSnapshot. The TUI owns its own poll loop and only
+// needs the resolved workstream names at launch. --tui is mutually
+// exclusive with --json.
 //
 // All modes support variadic `-w X[,Y]...` / `-w X -w Y` and `--all`.
 // In static modes N=1 renders single-mode (legacy shape) and N≥2
 // stacks per-workstream full cards. In TUI mode N≥2
 // switches workstreams via tabs.
 //
-// All modes pass mode: "status-only" to listLiveAgents — refresh
-// status + pane title (the operator's primary signal) but skip prune
-// + reap, so the periodic poll never deletes mid-spawn placeholders
+// Static snapshots pass mode: "status-only" to listLiveAgents —
+// refresh status + pane title (the operator's primary signal) but skip
+// prune + reap, so static renders never delete mid-spawn placeholders
 // (bug_agent_spawn_workspace_fk_failure) and the pane border indicator
 // stays fresh between mutating verbs
-// (bug_pane_title_glyph_stuck_at_needs_input).
+// (bug_pane_title_glyph_stuck_at_needs_input). The TUI launches first
+// and performs its own fast/slow polling after Ink renders.
 
 import {
   JSON_OPT,
@@ -193,6 +195,21 @@ export async function cmdState(db: Db, opts: StateOpts): Promise<void> {
     throw new UsageError(lines.join("\n"));
   }
 
+  // ── Interactive TUI branch (explicit via --tui) ──
+  // The legacy static card remains the default for `mu state` so it
+  // stays visible to LLMs, screenshots, docs, and muscle-memory users.
+  // Bare `mu` owns the TTY auto-route for humans. Mutual-exclusion with
+  // --json is enforced before any static snapshot work.
+  // Multi-workstream TUI is supported via tabs as of
+  // feat_tui_multi_workstream (workstream `tui-impl`): the resolved
+  // ws set is forwarded to <App>; Tab / Shift-Tab cycles tabs.
+  if (opts.tui === true) {
+    const { runTui } = await import("./tui/index.js");
+    const initialActive = await resolveInitialTab(workstreams, db);
+    await runTui(db, { workstreams: workstreams, initialActive });
+    return;
+  }
+
   const eventLimit = opts.events ?? 20;
   const perWs: PerWsData[] = [];
   for (const ws of workstreams) {
@@ -208,21 +225,6 @@ export async function cmdState(db: Db, opts: StateOpts): Promise<void> {
       if (single === undefined) throw new Error("invariant: workstreams non-empty");
       emitJson(fullJsonShape(single));
     }
-    return;
-  }
-
-  // ── Interactive TUI branch (explicit via --tui) ──
-  // The legacy static card remains the default for `mu state` so it
-  // stays visible to LLMs, screenshots, docs, and muscle-memory users.
-  // Bare `mu` owns the TTY auto-route for humans. Mutual-exclusion with
-  // --json is enforced earlier (above the JSON branch).
-  // Multi-workstream TUI is supported via tabs as of
-  // feat_tui_multi_workstream (workstream `tui-impl`): the resolved
-  // ws set is forwarded to <App>; Tab / Shift-Tab cycles tabs.
-  if (opts.tui === true) {
-    const names = perWs.map((d) => d.workstreamName);
-    const { runTui } = await import("./tui/index.js");
-    await runTui(db, { workstreams: names, initialActive: await resolveInitialTab(names, db) });
     return;
   }
 
