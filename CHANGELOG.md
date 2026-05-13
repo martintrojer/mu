@@ -194,6 +194,26 @@ called out under "Breaking" in each entry.
 
 - `tsconfig.test.json` is now wired into `npm run typecheck`; 48 long-buried test type errors were cleaned up across five commits, so test-file TypeScript regressions no longer escape typecheck.
 - TUI all-tasks popup tests now cover the centred visible-window behaviour by rendering the popup through Ink with 200 tasks and driving the cursor to row 100, instead of grepping `all-tasks.tsx` for `centredVisibleSlice` / `windowed.map` implementation details. The shared Ink test harness gained a tiny input stream helper and latest-frame extractor for this pattern.
+- `test/tui-state-hook-rerender.test.ts`: the three remaining
+  static source-grep describe blocks (Layer B, refreshNonce dep
+  wiring, app.tsx refresh-now wiring) were rewritten as behaviour
+  tests that mount `useDashboardSnapshot` through ink with a
+  controllable loader. The Layer B test asserts the hook returns
+  the SAME `data` reference (Object.is) across ticks whose
+  byte-equal-but-non-identity snapshots project to the same
+  snapshotKey, plus that `fastTickNonce` keeps advancing while the
+  reference holds. The refreshNonce test bumps the nonce mid-run
+  with `tickMs=10000` and asserts the loader fires within ~250ms
+  (no interval tick can mask a synchronous one). The app-wiring
+  test bumps the nonce twice and asserts each distinct value
+  triggers an extra fast load while a no-op rerender with the
+  same nonce does not. Each test was verified against a deliberate
+  regression in `state.ts` (key short-circuit removed; nonce
+  dropped from the dep list; nonce setter removed). The grep
+  pattern was a known weak spot — `not.toMatch(/void refreshNonce/)`
+  could not distinguish a load-bearing dep-list anchor from a
+  no-op effect, and was vulnerable to renames like `setLastTickMs`
+  → `setTick`.
 - `classifyError()` and `errorNextSteps()` tests now cover every exported typed error class with recovery hints, including archive/import/snapshot/workspace/spawn/wait lanes, and include an inventory drift check so new typed errors cannot silently miss the user-facing recovery contract.
 - **Test suite split into fast and full tiers.** `npm run test:fast`
   now runs the pure/in-process unit tier for the dev loop and
