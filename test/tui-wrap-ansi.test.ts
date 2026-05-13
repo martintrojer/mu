@@ -63,4 +63,25 @@ describe("wrapAnsi", () => {
 
     expect(wrapped.every((line) => sgrBalance(line) === 0)).toBe(true);
   });
+
+  // bug_drill_ansi_state_leaks_into_border: short colored input that
+  // bypasses wrapping (early-return path) still has to close any open
+  // SGR; otherwise ink renders the next chrome cell in the leaked colour.
+  it("early-return path appends RESET when SGR is left open", () => {
+    expect(wrapAnsi(`${RED}+ added`, 80)).toEqual([`${RED}+ added${RESET}`]);
+  });
+
+  it("early-return path does not add a spurious RESET when no SGR is open", () => {
+    expect(wrapAnsi("plain text", 80)).toEqual(["plain text"]);
+    expect(wrapAnsi(`${RED}closed${RESET}`, 80)).toEqual([`${RED}closed${RESET}`]);
+  });
+
+  it("end-of-loop emit closes SGR on the trailing wrapped chunk", () => {
+    // Wrap a line whose final fragment opens (and never closes) SGR.
+    // The trailing chunk goes through the end-of-loop push, which must
+    // also append RESET so it does not bleed into the next row.
+    const wrapped = wrapAnsi(`abcdef${RED}ghij`, 4);
+    expect(wrapped.every((line) => sgrBalance(line) === 0)).toBe(true);
+    expect(wrapped[wrapped.length - 1]?.endsWith(RESET)).toBe(true);
+  });
 });

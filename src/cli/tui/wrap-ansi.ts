@@ -15,7 +15,15 @@ interface Token {
  * ANSI SGR colour/style across hard wrap boundaries.
  */
 export function wrapAnsi(line: string, width: number): string[] {
-  if (line === "" || width <= 0 || stringWidth(line) <= width) return [line];
+  if (line === "") return [line];
+  if (width <= 0 || stringWidth(line) <= width) {
+    // Even the early-return path must guarantee SGR is closed so the ink
+    // render does not leak colour into adjacent chrome (the popup right
+    // border is the canonical reproducer): a short colored line like
+    // `\x1b[31m+ added` with no trailing reset would otherwise paint the
+    // following border cell red. (bug_drill_ansi_state_leaks_into_border)
+    return [closeIfOpen(line, computeActiveSgr(line))];
+  }
 
   const out: string[] = [];
   const activeSgr: string[] = [];
@@ -25,7 +33,7 @@ export function wrapAnsi(line: string, width: number): string[] {
 
   const emit = () => {
     if (chunkWidth === 0) return;
-    out.push(activeSgr.length > 0 ? `${chunk}${RESET}` : chunk);
+    out.push(closeIfOpen(chunk, activeSgr));
     chunk = activeSgr.join("");
     chunkWidth = 0;
   };
@@ -50,7 +58,12 @@ export function wrapAnsi(line: string, width: number): string[] {
     if (chunkWidth >= width) emit();
   }
 
-  if (chunkWidth > 0 || (chunk !== "" && out.length === 0)) out.push(chunk);
+  // Same close-if-open guarantee as emit() for the trailing chunk: an
+  // input whose final fragment is colored without a closing reset must
+  // not bleed into ink's border render on the next row.
+  if (chunkWidth > 0 || (chunk !== "" && out.length === 0)) {
+    out.push(closeIfOpen(chunk, activeSgr));
+  }
   return out.length === 0 ? [line] : out;
 }
 
@@ -68,6 +81,26 @@ function nextToken(text: string, offset: number): Token {
   if (codePoint === undefined) return { text: first, width: stringWidth(first) };
   const char = String.fromCodePoint(codePoint);
   return { text: char, width: stringWidth(char) };
+}
+
+function closeIfOpen(text: string, active: string[]): string {
+  return active.length > 0 ? `${text}${RESET}` : text;
+}
+
+function computeActiveSgr(line: string): string[] {
+  const active: string[] = [];
+  let i = 0;
+  while (i < line.length) {
+    ANSI_PATTERN.lastIndex = i;
+    const m = ANSI_PATTERN.exec(line);
+    if (m?.index === i) {
+      updateActiveSgr(m[0], active);
+      i += m[0].length;
+      continue;
+    }
+    i++;
+  }
+  return active;
 }
 
 function updateActiveSgr(seq: string, active: string[]): void {
