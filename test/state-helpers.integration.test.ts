@@ -140,12 +140,12 @@ describe("agentStatusHistogram", () => {
 
   it("counts per status", () => {
     const agents: AgentRow[] = [
-      agent({ name: "a", status: "alive" }),
-      agent({ name: "b", status: "alive" }),
+      agent({ name: "a", status: "free" }),
+      agent({ name: "b", status: "free" }),
       agent({ name: "c", status: "needs_input" }),
     ];
     const h = agentStatusHistogram(agents);
-    expect(h.get("alive")).toBe(2);
+    expect(h.get("free")).toBe(2);
     expect(h.get("needs_input")).toBe(1);
     expect(h.size).toBe(2);
   });

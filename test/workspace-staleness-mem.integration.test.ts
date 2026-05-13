@@ -130,32 +130,32 @@ describe("decorateWithStaleness", () => {
       const sharedRef = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
       const rows = [
         {
-          agent: "a",
-          workstream: "w",
+          agentName: "a",
+          workstreamName: "w",
           backend: "git" as const,
           path: "/p/a",
           parentRef: sharedRef,
           createdAt: "2026-01-01T00:00:00Z",
         },
         {
-          agent: "b",
-          workstream: "w",
+          agentName: "b",
+          workstreamName: "w",
           backend: "git" as const,
           path: "/p/b",
           parentRef: sharedRef,
           createdAt: "2026-01-01T00:00:00Z",
         },
         {
-          agent: "c",
-          workstream: "w",
+          agentName: "c",
+          workstreamName: "w",
           backend: "git" as const,
           path: "/p/c",
           parentRef: sharedRef,
           createdAt: "2026-01-01T00:00:00Z",
         },
         {
-          agent: "d",
-          workstream: "w",
+          agentName: "d",
+          workstreamName: "w",
           backend: "git" as const,
           path: "/p/d",
           parentRef: sharedRef,
@@ -181,32 +181,32 @@ describe("decorateWithStaleness", () => {
     try {
       const rows = [
         {
-          agent: "a",
-          workstream: "w",
+          agentName: "a",
+          workstreamName: "w",
           backend: "git" as const,
           path: "/p/a",
           parentRef: "refA",
           createdAt: "2026-01-01T00:00:00Z",
         },
         {
-          agent: "b",
-          workstream: "w",
+          agentName: "b",
+          workstreamName: "w",
           backend: "git" as const,
           path: "/p/b",
           parentRef: "refA",
           createdAt: "2026-01-01T00:00:00Z",
         },
         {
-          agent: "c",
-          workstream: "w",
+          agentName: "c",
+          workstreamName: "w",
           backend: "git" as const,
           path: "/p/c",
           parentRef: "refB",
           createdAt: "2026-01-01T00:00:00Z",
         },
         {
-          agent: "d",
-          workstream: "w",
+          agentName: "d",
+          workstreamName: "w",
           backend: "git" as const,
           path: "/p/d",
           parentRef: "refB",
@@ -239,8 +239,8 @@ describe("decorateWithStaleness", () => {
     });
     try {
       const rows = Array.from({ length: 12 }, (_, i) => ({
-        agent: `a${i}`,
-        workstream: "w",
+        agentName: `a${i}`,
+        workstreamName: "w",
         backend: "git" as const,
         path: `/p/a${i}`,
         parentRef: `ref-${i}`, // distinct refs → cache never hits, all 12 must shell out
