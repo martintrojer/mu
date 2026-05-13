@@ -87,6 +87,9 @@ export interface BlockedCardProps {
 
 export const cardConfig = CARD_CONFIGS[7];
 
+/** Glyph for every blocked row. Always the chain-link (⛓). */
+export const GLYPH = "⛓";
+
 const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
   { kind: "protect" }, // glyph
   { kind: "protect" }, // task id
@@ -146,7 +149,7 @@ export function BlockedCard({
     return { bucket, roiText };
   });
   const rows = shown.map((t, i) => [
-    glyphFor(),
+    GLYPH,
     t.name,
     t.status,
     String(blockerLists[i]?.length ?? 0),
@@ -185,17 +188,8 @@ export function BlockedCard({
 
 // ─── pure helpers (exported for unit tests) ────────────────────────
 
-/** Glyph for a blocked row. Always the chain-link (⛓). The colour
- *  is applied at the call site; the function returns just the glyph
- *  so tests can assert on the codepoint without coupling to ink.
- *  Argumentless because the glyph never depends on the row
- *  (review_dead_code_glyph_for_unused — was previously
- *  `glyphFor(_t: TaskRow)` for plug-in symmetry that no caller
- *  needed; the anticipatory parameter ran afoul of AGENTS.md's
- *  no-anticipatory-abstraction pledge). */
-export function glyphFor(): string {
-  return "⛓";
-}
+/** @deprecated Use GLYPH. Kept for existing popup/test consumers. */
+export const glyphFor = (): string => GLYPH;
 
 /** Filter a list of blockers to the still-gating ones. A blocker is
  *  still-gating iff its status is not CLOSED — REJECTED and DEFERRED

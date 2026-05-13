@@ -78,6 +78,9 @@ export interface RecentCardProps {
 
 export const cardConfig = CARD_CONFIGS[8];
 
+/** Glyph for every recently-closed row. Always the heavy check (✓). */
+export const GLYPH = "✓";
+
 const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
   { kind: "protect" }, // glyph
   { kind: "protect" }, // task id
@@ -119,13 +122,7 @@ export function RecentCard({ snapshot, rowBudget, cols }: RecentCardProps): JSX.
   const shown = recentClosed.slice(0, rowBudget ?? cardConfig.maxRows);
   const more = recentClosed.length - shown.length;
   const bottomLabel = more > 0 ? `+${more} more · Shift+8` : undefined;
-  const rows = shown.map((t, i) => [
-    glyphFor(),
-    t.name,
-    t.status,
-    formatWhen(ages[i] ?? null),
-    t.title,
-  ]);
+  const rows = shown.map((t, i) => [GLYPH, t.name, t.status, formatWhen(ages[i] ?? null), t.title]);
   const widths = layoutColumns(rows, COLUMN_SPECS, contentWidth);
 
   return (
@@ -156,14 +153,8 @@ export function RecentCard({ snapshot, rowBudget, cols }: RecentCardProps): JSX.
 
 // ─── pure helpers (exported for unit tests) ────────────────────────
 
-/** Glyph for a recently-closed row. Always the heavy check (✓,
- *  U+2713). The colour is applied at the call site; the function
- *  returns just the glyph so tests can pin the codepoint without
- *  coupling to ink. Argumentless because the glyph never depends on
- *  the row (review_dead_code_glyph_for_unused). */
-export function glyphFor(): string {
-  return "✓";
-}
+/** @deprecated Use GLYPH. Kept for existing popup/test consumers. */
+export const glyphFor = (): string => GLYPH;
 
 /** Build the subtitle: total · last <when>. Suppresses the "last"
  *  leg when `mostRecentMs` is null (defensive — populated path

@@ -76,6 +76,9 @@ export interface InProgressCardProps {
 
 export const cardConfig = CARD_CONFIGS[6];
 
+/** Glyph for every IN_PROGRESS task. Mirrors STATUS_EMOJI.busy. */
+export const GLYPH = STATUS_EMOJI.busy ?? "⚙";
+
 /** ≥5min since the last lifecycle flip → "stale claim". Matches the
  *  default value of MU_IDLE_THRESHOLD_MS (300_000ms / 5min) used by
  *  the agent-side idle detector — we deliberately re-use the same
@@ -126,7 +129,7 @@ export function InProgressCard({ snapshot, rowBudget, cols }: InProgressCardProp
   const more = inProgress.length - shown.length;
   const bottomLabel = more > 0 ? `+${more} more · Shift+6` : undefined;
   const rows = shown.map((t, i) => [
-    glyphFor(),
+    GLYPH,
     t.name,
     t.status,
     t.ownerName ?? "—",
@@ -166,16 +169,8 @@ export function InProgressCard({ snapshot, rowBudget, cols }: InProgressCardProp
 
 // ─── pure helpers (exported for unit tests) ────────────────────────
 
-/** Status glyph for an IN_PROGRESS task. Always the cog (mirrors
- *  STATUS_EMOJI.busy used in the Agents card so the operator reads
- *  it as "this thing is running" without learning a second
- *  vocabulary). Falls back to a literal cog if STATUS_EMOJI.busy is
- *  ever unset (defensive — the table is exhaustive today).
- *  Argumentless because the glyph never depends on the row
- *  (review_dead_code_glyph_for_unused). */
-export function glyphFor(): string {
-  return STATUS_EMOJI.busy ?? "⚙";
-}
+/** @deprecated Use GLYPH. Kept for existing popup/test consumers. */
+export const glyphFor = (): string => GLYPH;
 
 /** True when `ms` is at or above the stale-claim threshold (5min).
  *  null / undefined → false (we never paint "stale" without data). */
