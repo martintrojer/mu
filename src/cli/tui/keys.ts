@@ -225,6 +225,82 @@ export function dispatchPopupKeyFromInk(input: string, key: InkKeyLike): PopupAc
   return dispatchPopupKey(input, keyFlagsFromInk(key));
 }
 
+// ─── App-level swallow rules ───────────────────────────────────────
+//
+// Per review_tui_help_overlay_swallows_only_some_keys: the swallow
+// lists for the help-overlay branch and the popup-mode branch in
+// <App>'s useInput were duplicated — same conceptual rule ("do not
+// let this keystroke leak into the global dashboard keymap while a
+// modal is open") expressed twice with slightly different lists,
+// inviting drift. Centralised here so a future binding change has
+// one place to update.
+//
+// Caller contract: this helper ONLY decides whether to short-
+// circuit BEFORE the global-keymap dispatcher (`dispatchGlobalKey`)
+// runs. The caller is still responsible for App-owned actions that
+// fire BEFORE the swallow check (toggling helpOpen on close keys,
+// Ctrl-C universal exit). Every popup component owns its own
+// `useInput`; ink fires every mounted `useInput` per keystroke, so
+// the popup's local nav handler still sees `j` / `k` / etc. while
+// this helper short-circuits the global one.
+
+/** Active <App> input mode for swallow-rule selection. */
+export type InputMode = "dashboard" | "help" | "popup" | "popup-filter";
+
+/**
+ * Should this keystroke be swallowed (NOT dispatched to the global
+ * dashboard keymap)?
+ *
+ * - `dashboard` — never swallow; the global keymap is the only
+ *   keymap.
+ * - `help`      — swallow everything. Help owns its local scroll
+ *   keys (j/k/Ctrl-D/Ctrl-U/PgUp/PgDn) via `Help`'s own useInput;
+ *   nothing else should reach the global dispatcher while the
+ *   overlay is up. Caller pre-handles `Esc`/`q`/`Q`/`?` close keys.
+ * - `popup`     — swallow close keys (popup owns close), card
+ *   toggles (`0`-`9` + `!@#$%^&*()`), the keybind-only popup
+ *   openers (`g`/`t`), and footer-clear (`c`). Tick (`+`/`-`/`=`),
+ *   refresh (`r`/`F5`), help toggle (`?`), and tab nav (Tab/Shift-
+ *   Tab) still bubble up so they remain global even inside a popup.
+ * - `popup-filter` — swallow EVERY global key. The popup's `/`
+ *   filter prompt is the active text input; tick/refresh/help/etc.
+ *   would compete with the user's typing.
+ *
+ * Ctrl-C is NEVER swallowed regardless of mode (universal escape).
+ * The caller still handles it explicitly so it remains a hard
+ * `exit()` even when otherwise inside a popup.
+ */
+export function shouldSwallowGlobalKey(input: string, key: KeyFlags, mode: InputMode): boolean {
+  if (key.ctrl === true && input === "c") return false;
+  switch (mode) {
+    case "dashboard":
+      return false;
+    case "help":
+      return true;
+    case "popup-filter":
+      return true;
+    case "popup":
+      if (key.escape === true || input === "q" || input === "Q") return true;
+      // Guard on length: input is "" for pure-flag keys (Tab,
+      // arrows, Esc, F5). Without the length check, JS's
+      // `.includes("")` returns true for the popup-opener glyph
+      // string and would swallow Tab.
+      if (input.length === 0) return false;
+      if (input >= "0" && input <= "9") return true;
+      if ("!@#$%^&*()".includes(input)) return true;
+      if (input === "g" || input === "t" || input === "c") return true;
+      return false;
+  }
+}
+
+export function shouldSwallowGlobalKeyFromInk(
+  input: string,
+  key: InkKeyLike,
+  mode: InputMode,
+): boolean {
+  return shouldSwallowGlobalKey(input, keyFlagsFromInk(key), mode);
+}
+
 export function dispatchPopupKey(input: string, key: KeyFlags): PopupAction {
   if (key.escape || input === "q" || input === "Q") return { kind: "close" };
   if (input === "j" || key.downArrow) return { kind: "moveDown" };

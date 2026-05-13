@@ -31,7 +31,7 @@ import { RecentCard } from "./cards/recent.js";
 import { TracksCard } from "./cards/tracks.js";
 import { WorkspacesCard } from "./cards/workspaces.js";
 import { Help } from "./help.js";
-import { dispatchGlobalKeyFromInk } from "./keys.js";
+import { type InputMode, dispatchGlobalKeyFromInk, shouldSwallowGlobalKeyFromInk } from "./keys.js";
 import {
   CARD_CONFIGS,
   type CardId,
@@ -346,58 +346,34 @@ export function App({ db, workstreams, initialActive = 0 }: AppProps): JSX.Eleme
   // override Esc / q / y handling locally via their own useInput
   // (later popups will register handlers; for v0 placeholder
   // popups, Esc closes via this dispatcher).
+  //
+  // Per review_tui_help_overlay_swallows_only_some_keys: the per-
+  // mode "do not let this key leak into the global dispatcher"
+  // rule is centralised in `shouldSwallowGlobalKey` (keys.ts) so
+  // the help-overlay and popup branches share one swallow list.
+  // Help and popup components own their own `useInput` for local
+  // scroll/nav; ink fires every mounted useInput per keystroke, so
+  // those local handlers still see `j`/`k`/etc. while this branch
+  // short-circuits the global dispatcher.
   useInput(
     (input, key) => {
-      // Help overlay owns its local scroll keys. App only handles
-      // close/toggle here, then swallows every other key so `j` / `k`
-      // / Ctrl-D / Ctrl-U cannot leak into the global dashboard
-      // keymap while the overlay is open.
+      // Help overlay close-keys are App-owned (the helper swallows
+      // them along with everything else, so they must be handled
+      // BEFORE the swallow check). Help.tsx's local useInput
+      // handles scroll; the rest is consumed.
       if (helpOpen) {
         if (key.escape || input === "q" || input === "Q" || input === "?") {
           setHelpOpen(false);
         }
-        return;
       }
-      // While a popup is open, the popup owns navigation/yank/close.
-      // App MUST NOT also handle q/Q (would quit the whole app —
-      // confusing footgun) or Esc (would race with the popup's own
-      // Esc handler). The popup's onClose callback flips popup back
-      // to null; App resumes ownership on the next render.
-      // Tick keys (+/-/=), refresh (r), and help (?) still bubble
-      // up so they remain global even inside a popup.
-      if (popup !== null) {
-        // Popups now own their own close (Esc/q routed through
-        // dispatchPopupKey → case "close"). Per
-        // feat_popup_search_filter spec step 6, the App-level
-        // q/Esc safety net was removed because it would race with
-        // the filter prompt's own Esc-cancel handler. If a popup
-        // regresses and stops handling close, the user can still
-        // exit via Ctrl-C (handled below).
-        if (key.escape || input === "q" || input === "Q") {
-          // Let the popup handle it; do nothing here.
-          return;
-        }
-        // Suppress card toggles / popup openers inside a popup; let
-        // tick/help/refresh fall through. While the filter prompt
-        // is editing, ALSO suppress every other globally-reactive
-        // key (+/-/r/?/c/w) so they don't compete with the user's
-        // filter typing.
-        if (popupFilterEditing) return;
-        if (
-          (input >= "0" && input <= "9") ||
-          "!@#$%^&*()".includes(input) ||
-          input === "g" ||
-          input === "t" ||
-          input === "c"
-        ) {
-          return;
-        }
-        // Ctrl-C still quits (universal escape).
-        if (key.ctrl && input === "c") {
-          exit();
-          return;
-        }
-      }
+      const mode: InputMode = helpOpen
+        ? "help"
+        : popup === null
+          ? "dashboard"
+          : popupFilterEditing
+            ? "popup-filter"
+            : "popup";
+      if (shouldSwallowGlobalKeyFromInk(input, key, mode)) return;
       const action = dispatchGlobalKeyFromInk(input, key);
 
       switch (action.kind) {

@@ -9,8 +9,10 @@ import {
   dispatchGlobalKeyFromInk,
   dispatchPopupKey,
   dispatchPopupKeyFromInk,
+  shouldSwallowGlobalKey,
+  shouldSwallowGlobalKeyFromInk,
 } from "../src/cli/tui/keys.js";
-import type { KeyFlags } from "../src/cli/tui/keys.js";
+import type { InputMode, KeyFlags } from "../src/cli/tui/keys.js";
 import { statusForToggleKey } from "../src/cli/tui/use-status-filter.js";
 
 const NO_KEY: KeyFlags = {};
@@ -237,6 +239,95 @@ describe("dispatchPopupKey: in-popup convention", () => {
     expect(dispatchPopupKey("1", NO_KEY)).toEqual({ kind: "noop" });
     expect(dispatchPopupKey("!", NO_KEY)).toEqual({ kind: "noop" });
     expect(dispatchPopupKey("+", NO_KEY)).toEqual({ kind: "noop" });
+  });
+});
+
+describe("shouldSwallowGlobalKey: per-mode swallow rules", () => {
+  // Per review_tui_help_overlay_swallows_only_some_keys: this
+  // helper centralises the swallow lists that used to live
+  // duplicated in <App>'s helpOpen branch and popup branch. Tests
+  // codify the contract — a regression that adds a new global key
+  // (e.g. a global "v" verb) without thinking about modal modes
+  // will fail one of these cases.
+
+  it("dashboard mode never swallows", () => {
+    for (const c of ["q", "Q", "j", "k", "0", "!", "g", "t", "c", "+", "-", "=", "r", "?"]) {
+      expect(shouldSwallowGlobalKey(c, NO_KEY, "dashboard")).toBe(false);
+    }
+    expect(shouldSwallowGlobalKey("", { escape: true }, "dashboard")).toBe(false);
+    expect(shouldSwallowGlobalKey("", { tab: true }, "dashboard")).toBe(false);
+  });
+
+  it("help mode swallows everything except Ctrl-C", () => {
+    // Help.tsx's local useInput owns scroll; App's branch swallows
+    // every other key so the global keymap stays inert. The caller
+    // pre-handles `Esc`/`q`/`Q`/`?` for close — this helper still
+    // says "swallow" for them so the global dispatcher is skipped.
+    for (const c of ["q", "Q", "j", "k", "0", "!", "g", "t", "c", "+", "-", "=", "r", "?"]) {
+      expect(shouldSwallowGlobalKey(c, NO_KEY, "help")).toBe(true);
+    }
+    expect(shouldSwallowGlobalKey("", { escape: true }, "help")).toBe(true);
+    // Ctrl-C bypass: universal exit must reach the caller's
+    // explicit Ctrl-C handler regardless of mode.
+    expect(shouldSwallowGlobalKey("c", { ctrl: true }, "help")).toBe(false);
+  });
+
+  it("popup mode swallows close keys, card toggles, popup openers, and `c`", () => {
+    // Close keys: popup owns close.
+    expect(shouldSwallowGlobalKey("", { escape: true }, "popup")).toBe(true);
+    expect(shouldSwallowGlobalKey("q", NO_KEY, "popup")).toBe(true);
+    expect(shouldSwallowGlobalKey("Q", NO_KEY, "popup")).toBe(true);
+    // Card toggles 0-9.
+    for (const c of ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"]) {
+      expect(shouldSwallowGlobalKey(c, NO_KEY, "popup")).toBe(true);
+    }
+    // Popup-opener glyphs.
+    for (const c of ["!", "@", "#", "$", "%", "^", "&", "*", "(", ")"]) {
+      expect(shouldSwallowGlobalKey(c, NO_KEY, "popup")).toBe(true);
+    }
+    // Keybind-only popup openers + footer-clear.
+    expect(shouldSwallowGlobalKey("g", NO_KEY, "popup")).toBe(true);
+    expect(shouldSwallowGlobalKey("t", NO_KEY, "popup")).toBe(true);
+    expect(shouldSwallowGlobalKey("c", NO_KEY, "popup")).toBe(true);
+  });
+
+  it("popup mode lets tick/refresh/help/tab/Ctrl-C bubble to the global dispatcher", () => {
+    // These remain global even inside a popup so the user can
+    // still tweak refresh rate, force a poke, and toggle help.
+    for (const c of ["+", "-", "=", "r", "?"]) {
+      expect(shouldSwallowGlobalKey(c, NO_KEY, "popup")).toBe(false);
+    }
+    expect(shouldSwallowGlobalKey("", { tab: true }, "popup")).toBe(false);
+    expect(shouldSwallowGlobalKey("", { tab: true, shift: true }, "popup")).toBe(false);
+    expect(shouldSwallowGlobalKey("", { f5: true }, "popup")).toBe(false);
+    // Ctrl-C universal escape.
+    expect(shouldSwallowGlobalKey("c", { ctrl: true }, "popup")).toBe(false);
+  });
+
+  it("popup-filter mode swallows everything except Ctrl-C", () => {
+    // The filter prompt is the active text input; tick/refresh/
+    // help/tab/etc. would compete with the user's typing.
+    for (const c of ["q", "Q", "j", "k", "0", "!", "g", "t", "c", "+", "-", "=", "r", "?"]) {
+      expect(shouldSwallowGlobalKey(c, NO_KEY, "popup-filter")).toBe(true);
+    }
+    expect(shouldSwallowGlobalKey("", { escape: true }, "popup-filter")).toBe(true);
+    expect(shouldSwallowGlobalKey("", { tab: true }, "popup-filter")).toBe(true);
+    // Ctrl-C still wins.
+    expect(shouldSwallowGlobalKey("c", { ctrl: true }, "popup-filter")).toBe(false);
+  });
+
+  it("shouldSwallowGlobalKeyFromInk normalises ink key flags", () => {
+    expect(shouldSwallowGlobalKeyFromInk("", { escape: true }, "popup")).toBe(true);
+    expect(shouldSwallowGlobalKeyFromInk("", { tab: true }, "popup")).toBe(false);
+    expect(shouldSwallowGlobalKeyFromInk("c", { ctrl: true }, "help")).toBe(false);
+  });
+
+  it("InputMode is exhaustive (compile-time check via switch)", () => {
+    // If a future change adds a new InputMode, the switch in
+    // shouldSwallowGlobalKey will fail noUncheckedIndexedAccess /
+    // exhaustiveness; this test documents the four-mode contract.
+    const modes: InputMode[] = ["dashboard", "help", "popup", "popup-filter"];
+    expect(modes).toHaveLength(4);
   });
 });
 

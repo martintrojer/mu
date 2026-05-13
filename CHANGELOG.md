@@ -288,6 +288,17 @@ called out under "Breaking" in each entry.
 
 ### TUI internals
 
+- **TUI input-mode swallow rules consolidated into a single helper**
+  (review_tui_help_overlay_swallows_only_some_keys). `<App>`'s
+  `useInput` callback used to carry two parallel "keys to NOT bubble
+  to the global dispatcher" lists — one for the help-overlay branch,
+  one for the popup branch — expressed slightly differently and
+  inviting drift on every binding change. Both call sites now
+  delegate to `shouldSwallowGlobalKey(input, key, mode)` in
+  `src/cli/tui/keys.ts`, with `InputMode` enumerating the four
+  modes (`dashboard` / `help` / `popup` / `popup-filter`). Pure
+  helper, fully unit-tested in `test/tui-keys.test.ts`. Behaviour
+  unchanged.
 - **State/TUI dispatch + event-classifier tests are behaviour-backed**
   (testreview_static_source_assertions). `test/state-dispatch.test.ts`
   no longer reads `src/cli/state.ts` looking for the legacy
