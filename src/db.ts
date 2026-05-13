@@ -126,7 +126,7 @@ export function openDb(options: OpenDbOptions = {}): Db {
  * MUST point at a per-test temp DB (via MU_DB_PATH or the explicit
  * `{ path }` option). A test that forgets to override either one
  * silently mutated the dev box's live state — we observed a stray
- * 'demo' workstream row replicated from test/tui-acceptance.test.ts
+ * 'demo' workstream row replicated from test/tui-acceptance.integration.test.ts
  * into ~/.local/state/mu/mu.db. The guard throws a useful diagnostic
  * the moment the offending openDb() call is made; the failing test's
  * stack trace then names the leak source directly.

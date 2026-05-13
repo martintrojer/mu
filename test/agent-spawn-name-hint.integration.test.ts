@@ -79,7 +79,7 @@ beforeEach(() => {
   setSleepForTests(async () => {});
   // Skip the post-spawn liveness sleep — the mock pane stays alive
   // forever so the check would just waste 1500ms per test. Matches the
-  // pattern in test/verbs-spawn.test.ts.
+  // pattern in test/verbs-spawn.integration.test.ts.
   process.env.MU_SPAWN_LIVENESS_MS = "0";
   const { executor } = mockTmux(state);
   setTmuxExecutor(executor);

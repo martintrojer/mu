@@ -1,6 +1,6 @@
 // CLI-level tests for `mu task reparent --blocked-by`.
 //
-// Mirrors test/cli-task-add-blocked-by.test.ts but for the
+// Mirrors test/cli-task-add-blocked-by.integration.test.ts but for the
 // reparent verb. Both forms (CSV and repeated-flag, as codified by
 // cli_audit_plurality_uniformity in v0.3) must work end-to-end.
 

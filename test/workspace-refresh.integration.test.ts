@@ -18,7 +18,7 @@
 //     and does not throw.
 //
 // The integration tests for jj/sl mirror the conditional-describe
-// pattern in test/workspace-backends.test.ts.
+// pattern in test/workspace-backends.integration.test.ts.
 
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -115,7 +115,7 @@ const gitDescribe = GIT ? describe : describe.skip;
 
 // Construct an "origin → consumer → workspace" topology so origin/HEAD
 // resolves and we can advance origin to test that the rebase pulls the
-// new commits in. Mirrors test/workspace-backends.test.ts's setup.
+// new commits in. Mirrors test/workspace-backends.integration.test.ts's setup.
 function gitInitConsumer(): { originDir: string; consumerProject: string } {
   const originDir = mkdtempSync(join(tmpdir(), "mu-refresh-origin-"));
   execFileSync("git", ["init", "-q", "-b", "main", projectRoot], { stdio: "ignore" });

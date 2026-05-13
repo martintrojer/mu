@@ -2,11 +2,11 @@
 // --cascade dry-run by default, --yes commits).
 //
 // Split out of test/tasks.test.ts under
-// testreview_test_files_past_800loc — see test/tasks-crud.test.ts
+// testreview_test_files_past_800loc — see test/tasks-crud.integration.test.ts
 // for the full split rationale. Lives separately from the rest of
 // the lifecycle tests because reject/defer is its own cohesive
 // surface (open-dependents check, three-way --cascade contract,
-// strand-prevention) and pushed test/tasks-lifecycle.test.ts
+// strand-prevention) and pushed test/tasks-lifecycle.integration.test.ts
 // past the 800 LOC refactor signal.
 
 import { mkdtempSync, rmSync } from "node:fs";

@@ -328,7 +328,7 @@ describe("spawnAgent — pre-flight PATH check (Part A)", () => {
 
 describe("scrollback scanner — Part B patterns", () => {
   /** Inject the given scrollback into every existing pane during the
-   *  spawn liveness sleep. Mirrors test/verbs-spawn.test.ts. */
+   *  spawn liveness sleep. Mirrors test/verbs-spawn.integration.test.ts. */
   function injectScrollbackOnSleep(content: string): void {
     setSleepForTests(async () => {
       for (const pane of state.panes.values()) {

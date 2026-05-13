@@ -38,7 +38,7 @@ import {
 const originalNoColor = process.env.NO_COLOR;
 
 // Force colorless output so literal-substring assertions vs ANSI escapes
-// are stable. Mirrors test/state-render.test.ts.
+// are stable. Mirrors test/state-render.integration.test.ts.
 process.env.NO_COLOR = "1";
 
 afterAll(() => {

@@ -134,13 +134,18 @@ npm install
 npm run build            # tsup → dist/
 npm run typecheck        # tsc --noEmit
 npm run lint             # biome check src test
-npm run test             # vitest run
+npm run test:fast        # fast unit/dev-loop tier (excludes *.integration.test.ts / *.smoke.test.ts)
+npm run test             # full vitest suite, including integration tests
 npm run test:watch       # vitest in watch mode
+npm run test:watch:fast  # fast-tier watch mode
 ```
 
-All four must pass before any commit. Tests include real-tmux
-integration tests that need `$TMUX` set. If you're not in tmux,
-those tests skip themselves; CI runs inside tmux.
+Use `npm run test:fast` for the inner dev loop and concurrent
+worker checks; it is the concurrency-safe tier that avoids real
+tmux/VCS subprocess integration fixtures. All four green gates still
+include `npm run test` (the full suite) before any commit. Full tests
+include real-tmux integration tests that need `$TMUX` set. If you're
+not in tmux, those tests skip themselves; CI runs inside tmux.
 
 ### Commits
 
@@ -186,9 +191,18 @@ those tests skip themselves; CI runs inside tmux.
 
 - Unit tests: real SQLite (in-temp-dir), mocked tmux executor via
   `setTmuxExecutor()`. Fast, deterministic.
-- Integration tests: real tmux server. File suffix
-  `.integration.test.ts` (e.g. `tmux.integration.test.ts`). Skipped
-  when `$TMUX` is unset. These tests typically opt out of the spawn
+- Fast tier: `npm run test:fast` runs `test/**/*.test.ts` while
+  excluding `*.integration.test.ts` and `*.smoke.test.ts`. Keep this
+  tier pure/in-process: mocked tmux/VCS, real SQLite only in per-test
+  temp DBs, no real tmux/git/jj/sl subprocess fixtures, no
+  filesystem-heavy export/import/snapshot paths, and no fixed sleeps
+  above 50ms.
+- Integration tests: full-only tests use the `.integration.test.ts`
+  suffix (e.g. `tmux.integration.test.ts`). They may touch real tmux
+  servers, git/jj/sl fixture repos, subprocess-backed smoke paths,
+  filesystem-heavy export/import/snapshot flows, or intentionally
+  slower in-process CLI flows. Real-tmux tests are skipped when
+  `$TMUX` is unset. These tests typically opt out of the spawn
   liveness check via `process.env.MU_SPAWN_LIVENESS_MS = "0"` in
   `beforeEach` since the long-running sh subprocesses they spawn are
   intentionally alive.
@@ -204,7 +218,7 @@ those tests skip themselves; CI runs inside tmux.
   the suite repeatedly with a per-run timeout and can simulate
   parallel full-suite runs via
   `MU_TEST_STRESS_MODE=parallel MU_TEST_STRESS_PARALLEL=2`.
-- The acceptance test in `test/acceptance.test.ts` is the
+- The acceptance test in `test/acceptance.integration.test.ts` is the
   "everything works" gate. Keep it passing.
 - **DB baseline**: `openDb()` refuses to open the user's REAL
   default DB (`<HOME or XDG_STATE_HOME>/mu/mu.db`) when
@@ -383,11 +397,12 @@ processes need time to settle. Use:
 Before opening a PR or marking a task complete:
 
 ```bash
-npm run typecheck && npm run lint && npm run test && npm run build
+npm run typecheck && npm run lint && npm run test:fast && npm run test && npm run build
 ```
 
-All four green. The acceptance test (`test/acceptance.test.ts`)
-must pass — it's the "end-to-end works" gate.
+All four green gates, plus the fast dev-loop tier. The acceptance
+test (`test/acceptance.integration.test.ts`) must pass — it's the
+"end-to-end works" gate.
 
 Checklist for any non-trivial change:
 

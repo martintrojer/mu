@@ -268,7 +268,7 @@ describe("getParallelTracks — diamond merge", () => {
 
 describe("getParallelTracks — MVP acceptance graph (10 tasks, 1 diamond)", () => {
   beforeEach(() => {
-    // Same graph the MVP acceptance test uses (test/acceptance.test.ts).
+    // Same graph the MVP acceptance test uses (test/acceptance.integration.test.ts).
     addTask(db, {
       localId: "specs",
       workstream: "test",

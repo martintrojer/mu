@@ -6,7 +6,7 @@
 // stuck task per call, not one per poll cycle).
 //
 // Split out of test/tasks.test.ts under
-// testreview_test_files_past_800loc — see test/tasks-crud.test.ts
+// testreview_test_files_past_800loc — see test/tasks-crud.integration.test.ts
 // for the full split rationale.
 
 import { mkdtempSync, rmSync } from "node:fs";

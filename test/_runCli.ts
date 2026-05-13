@@ -3,8 +3,8 @@
 // subprocesses.
 //
 // Three test files were each carrying a near-identical copy of this
-// logic before extraction (test/json-output.test.ts, test/sql-multi-
-// statement.test.ts, test/cli-task-add-blocked-by.test.ts). Centralised
+// logic before extraction (test/json-output.integration.test.ts, test/sql-multi-
+// statement.test.ts, test/cli-task-add-blocked-by.integration.test.ts). Centralised
 // here so a fix to the shimming logic lands once.
 //
 // Usage:

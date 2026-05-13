@@ -15,7 +15,7 @@
 //   yes    no      yes         → ink TUI with tabs
 //   yes    yes     any         → UsageError
 //
-// The static fallback is exercised by test/state-render.test.ts (the
+// The static fallback is exercised by test/state-render.integration.test.ts (the
 // existing suite). Here we ONLY verify the dispatch decisions.
 
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";

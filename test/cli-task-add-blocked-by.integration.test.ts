@@ -8,7 +8,7 @@
 // `mu task reparent --blocked-by`.
 //
 // We drive the program directly via buildProgram() + parseAsync() with
-// stdout captured (same pattern as test/json-output.test.ts) so we
+// stdout captured (same pattern as test/json-output.integration.test.ts) so we
 // exercise the real Commander wiring without spawning subprocesses.
 
 import { mkdtempSync, rmSync } from "node:fs";

@@ -14,7 +14,7 @@
 //   - CLI --json envelope shape (machine-friendly contract).
 //
 // The integration with the git backend uses a real `git init` repo
-// (matches workspace-refresh.test.ts pattern); the dirty-check tests
+// (matches workspace-refresh.integration.test.ts pattern); the dirty-check tests
 // also run on the `none` backend's _no-op_ dirty surface to document
 // that they don't refuse for an unanswerable question.
 
@@ -48,7 +48,7 @@ function git(args: readonly string[], cwd: string): string {
 function initGitProject(root: string): void {
   // The git backend's createWorkspace/refresh flow expects a real
   // repo with at least one commit (the worktree add needs a HEAD).
-  // mirror workspace-refresh.test.ts's setup with author identity
+  // mirror workspace-refresh.integration.test.ts's setup with author identity
   // configured so commit doesn't fail in CI containers without a
   // global gitconfig.
   git(["init", "-q", "-b", "main"], root);

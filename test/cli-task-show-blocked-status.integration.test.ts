@@ -18,7 +18,7 @@
 // scripts can filter by status without a second round-trip.
 //
 // Drives the CLI via buildProgram() + parseAsync() with stdout captured
-// (same pattern as test/json-output.test.ts).
+// (same pattern as test/json-output.integration.test.ts).
 
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";

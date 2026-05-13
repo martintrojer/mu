@@ -60,7 +60,7 @@ beforeEach(() => {
   // 'pi-alt' that aren't installed in the test env. The cases here
   // exercise the spawn machinery itself, not the PATH check; install
   // a permissive resolver so every binary appears present. The
-  // dedicated PATH-check tests live in test/cli-agent-spawn-validation.test.ts.
+  // dedicated PATH-check tests live in test/cli-agent-spawn-validation.integration.test.ts.
   setCommandResolverForTests(async (command) => {
     const binary = command.trim().split(/\s+/)[0] ?? "";
     return { ok: true, binary, resolvedPath: `/fake/bin/${binary}` };

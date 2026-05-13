@@ -2,7 +2,7 @@
 // (task_wait_stall_action_flag).
 //
 // Real SQLite (in-temp-dir), no tmux. Drives the CLI in-process via
-// runCli — same pattern as test/cli-task-wait-cross-ws.test.ts.
+// runCli — same pattern as test/cli-task-wait-cross-ws.integration.test.ts.
 // Determinism comes from running outside any tmux session: the
 // per-poll reconcile in cmdTaskWait wraps `reconcile()` in
 // try/catch, so the absence of tmux silently no-ops the reaper —

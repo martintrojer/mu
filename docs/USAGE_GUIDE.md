@@ -1137,7 +1137,7 @@ while (( ${#in_flight[@]} > 0 )); do
   fi
 
   # 2. Verify
-  npm run typecheck && npm run lint && npm run test && npm run build
+  npm run typecheck && npm run lint && npm run test:fast && npm run test && npm run build
 
   # 3. Refresh the workspace for the next dispatch (rebases onto
   #    fresh main WITHOUT killing the worker's LLM context). Default

@@ -10,7 +10,7 @@
 // Split out of test/workspace.test.ts under
 // testreview_test_files_past_800loc — the registry layer + close
 // integration + decorateWithStaleness now live in
-// test/workspace-sdk.test.ts and test/workspace-staleness-mem.test.ts.
+// test/workspace-sdk.integration.test.ts and test/workspace-staleness-mem.integration.test.ts.
 
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";

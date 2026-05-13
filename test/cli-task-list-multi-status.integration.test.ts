@@ -3,7 +3,7 @@
 // repeat OR comma-separate OR mix; result is the UNION of listed
 // statuses. Single value is back-compat-identical; missing is no-filter.
 //
-// Sister files: test/cli-task-next-multi-status.test.ts,
+// Sister files: test/cli-task-next-multi-status.integration.test.ts,
 // test/cli-approve-list-multi-status.test.ts.
 
 import { mkdtempSync, rmSync } from "node:fs";

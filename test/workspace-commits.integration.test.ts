@@ -14,7 +14,7 @@
 //   - The jj backend smoke test (skipped without jj on PATH).
 //
 // Mirrors the conditional-describe pattern in
-// test/workspace-backends.test.ts.
+// test/workspace-backends.integration.test.ts.
 
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";

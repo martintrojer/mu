@@ -5,8 +5,8 @@
 //
 // Split out of test/workspace.test.ts under
 // testreview_test_files_past_800loc — backends + commitsBehind live
-// in test/workspace-backends.test.ts; the workspace SDK + close
-// integration + orphan surfacing live in test/workspace-sdk.test.ts.
+// in test/workspace-backends.integration.test.ts; the workspace SDK + close
+// integration + orphan surfacing live in test/workspace-sdk.integration.test.ts.
 
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";

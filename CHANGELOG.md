@@ -124,6 +124,17 @@ called out under "Breaking" in each entry.
 
 ### Tests
 
+- **Test suite split into fast and full tiers.** `npm run test:fast`
+  now runs the pure/in-process unit tier for the dev loop and
+  concurrent worker checks, excluding `*.integration.test.ts` and
+  `*.smoke.test.ts`. `npm run test` keeps the full suite gate,
+  including integration tests that touch real tmux, git/jj/sl
+  fixture repos, filesystem-heavy export/import/snapshot paths, or
+  subprocess-style in-process CLI flows. The `.integration.test.ts`
+  suffix is promoted to the full-only tier marker; slow/substrate
+  tests that previously used plain `.test.ts` names were renamed
+  accordingly. The four-greens pre-commit gate still requires the
+  full `npm run test`.
 - **Test suite flake population audited and remediated.** The
   previously intermittent ~1/run failure rate (different test each
   time, passes on isolated re-run) was driven primarily by

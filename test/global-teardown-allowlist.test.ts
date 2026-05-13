@@ -90,7 +90,7 @@ describe("global-teardown allowlist sweep policy", () => {
 
   it("kills regex-prefixed test sessions when not allowlisted", () => {
     // The regression target the original sweep was designed for:
-    // `mu-acc-...` from a crashed test/acceptance.test.ts run.
+    // `mu-acc-...` from a crashed test/acceptance.integration.test.ts run.
     const allowlist = new Set(["mu-tui-impl"]);
     const sessions = ["mu-acc-h7g8x4", "mu-claim-jh3z9p", "mu-tui-impl"];
     expect(sessionsToKill(sessions, allowlist)).toEqual(["mu-acc-h7g8x4", "mu-claim-jh3z9p"]);

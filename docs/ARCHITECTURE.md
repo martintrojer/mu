@@ -493,9 +493,10 @@ action) so `mu doctor` can surface them readably.
 | `src/tracks.ts`                    | Pure functions; union-find + diamond-merge properties                           |
 | `src/agents.ts`                    | Mocked tmux executor via `setTmuxExecutor()`; reaper integration tests          |
 | `src/logs.ts`                      | Real SQLite; cursor semantics, AUTOINCREMENT durability, FK CASCADE             |
-| `src/vcs.ts` + `src/workspace.ts`  | Real git in `os.tmpdir()`; jj/sl tests feature-detect (skip if binary missing)  |
+| `src/vcs.ts` + `src/workspace.ts`  | `*.integration.test.ts` files use real git in `os.tmpdir()`; jj/sl tests feature-detect (skip if binary missing) |
 | `src/cli.ts` / verb integration    | `*.integration.test.ts` files; real tmux server, unique session per test        |
-| End-to-end                         | `test/acceptance.test.ts` — the canonical 10-task / 3-agent demo                |
+| Fast unit/dev-loop tier            | `npm run test:fast`; excludes `*.integration.test.ts` / `*.smoke.test.ts`, uses mocked tmux/VCS and per-test temp DBs |
+| End-to-end                         | `test/acceptance.integration.test.ts` — the canonical 10-task / 3-agent demo   |
 
 ## Distribution
 

@@ -5,9 +5,9 @@
 // Read-side queries (views / search / listTasksByOwner /
 // listTasks --status) live in test/tasks-views.test.ts.
 // Lifecycle (claim/release/status/reject/defer/evidence) lives in
-// test/tasks-lifecycle.test.ts. waitForTasks + sort helpers in
-// test/tasks-wait.test.ts. Pure helpers (slugify/idFromTitle/
-// isTaskStatus/relTime/TASK_STATUS_LIST) in test/tasks-meta.test.ts.
+// test/tasks-lifecycle.integration.test.ts. waitForTasks + sort helpers in
+// test/tasks-wait.integration.test.ts. Pure helpers (slugify/idFromTitle/
+// isTaskStatus/relTime/TASK_STATUS_LIST) in test/tasks-meta.integration.test.ts.
 // All five files split out of test/tasks.test.ts under
 // testreview_test_files_past_800loc — no behaviour change, just
 // file split + import-sort.
