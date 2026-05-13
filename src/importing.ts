@@ -752,11 +752,7 @@ export function importBucket(db: Db, opts: ImportBucketOptions): ImportBucketRes
     // fast on the cheap check.
     if (!dryRun) {
       const existing = db
-        .prepare(
-          `SELECT 1 AS x FROM workstreams ws WHERE ws.name = ? AND EXISTS (
-             SELECT 1 FROM tasks t WHERE t.workstream_id = ws.id
-           )`,
-        )
+        .prepare("SELECT 1 AS x FROM workstreams WHERE name = ?")
         .get(targetName) as { x: number } | undefined;
       if (existing !== undefined) {
         const err = new WorkstreamAlreadyExistsError(targetName);

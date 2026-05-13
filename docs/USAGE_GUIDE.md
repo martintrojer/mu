@@ -1675,7 +1675,7 @@ Key properties:
   imported in its own SQLite transaction. A failure in source A
   rolls back A; sibling source B is unaffected.
 - **Refuses silent merges.** If the target workstream already
-  exists in the DB with tasks, the import errors with
+  exists in the DB, the import errors with
   `WorkstreamAlreadyExistsError`. Recourse:
   `--workstream <new-name>` (single-source buckets only) or
   destroy the existing workstream first.

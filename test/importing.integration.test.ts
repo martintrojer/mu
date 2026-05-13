@@ -9,6 +9,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { insertAgent } from "../src/agents.js";
 import { type Db, openDb } from "../src/db.js";
 import {
   ImportBucketInvalidError,
@@ -171,11 +172,32 @@ describe("importBucket — --dry-run", () => {
 });
 
 describe("importBucket — idempotency / collision", () => {
-  it("imports cleanly into a destroyed-then-recreated empty workstream", async () => {
+  function expectImportAlreadyExists(bucket: string): WorkstreamAlreadyExistsError {
+    let caught: unknown;
+    try {
+      importBucket(db, { bucketDir: bucket });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(WorkstreamAlreadyExistsError);
+    const err = caught as WorkstreamAlreadyExistsError;
+    expect(err.errorNextSteps().map((step) => step.command)).toEqual([
+      "mu workstream import <bucket> --workstream <new-name>",
+      "mu workstream destroy -w auth --yes",
+    ]);
+    return err;
+  }
+
+  it("imports cleanly after destroy drops the workstreams row", async () => {
     seed("auth", ["design"]);
     const bucket = join(tmpDir, "bucket");
     exportWorkstream(db, { workstream: "auth", outDir: bucket });
     await destroyWorkstream(db, { workstream: "auth" });
+
+    const row = db.prepare("SELECT 1 AS x FROM workstreams WHERE name = ?").get("auth") as
+      | { x: number }
+      | undefined;
+    expect(row).toBeUndefined();
 
     importBucket(db, { bucketDir: bucket });
     expect(listTasks(db, "auth")).toHaveLength(1);
@@ -187,7 +209,45 @@ describe("importBucket — idempotency / collision", () => {
     exportWorkstream(db, { workstream: "auth", outDir: bucket });
     // Note: NOT destroying. The auth workstream is alive with tasks.
 
-    expect(() => importBucket(db, { bucketDir: bucket })).toThrow(WorkstreamAlreadyExistsError);
+    const err = expectImportAlreadyExists(bucket);
+    expect(err.message).toContain("refuses to merge silently");
+  });
+
+  it("refuses to merge into an existing workstream that has agents but zero tasks", async () => {
+    seed("auth", ["design"]);
+    const bucket = join(tmpDir, "bucket");
+    exportWorkstream(db, { workstream: "auth", outDir: bucket });
+    await destroyWorkstream(db, { workstream: "auth" });
+
+    insertAgent(db, { name: "worker-1", workstream: "auth", paneId: "%1", status: "busy" });
+    expect(listTasks(db, "auth")).toHaveLength(0);
+
+    expectImportAlreadyExists(bucket);
+    expect(listTasks(db, "auth")).toHaveLength(0);
+  });
+
+  it("refuses to merge into an existing workstream that has workspaces but zero tasks", async () => {
+    seed("auth", ["design"]);
+    const bucket = join(tmpDir, "bucket");
+    exportWorkstream(db, { workstream: "auth", outDir: bucket });
+    await destroyWorkstream(db, { workstream: "auth" });
+
+    insertAgent(db, { name: "worker-1", workstream: "auth", paneId: "%1", status: "busy" });
+    const ws = db.prepare("SELECT id FROM workstreams WHERE name = ?").get("auth") as
+      | { id: number }
+      | undefined;
+    const agent = db
+      .prepare("SELECT id FROM agents WHERE name = ? AND workstream_id = ?")
+      .get("worker-1", ws?.id ?? -1) as { id: number } | undefined;
+    if (ws === undefined || agent === undefined) throw new Error("failed to seed workspace");
+    db.prepare(
+      `INSERT INTO vcs_workspaces (agent_id, workstream_id, backend, path, parent_ref, created_at)
+       VALUES (?, ?, 'none', ?, NULL, ?)`,
+    ).run(agent.id, ws.id, join(tmpDir, "workspace-worker-1"), new Date().toISOString());
+    expect(listTasks(db, "auth")).toHaveLength(0);
+
+    expectImportAlreadyExists(bucket);
+    expect(listTasks(db, "auth")).toHaveLength(0);
   });
 });
 
