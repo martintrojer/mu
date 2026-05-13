@@ -27,18 +27,12 @@
 // feat_column_aligned_lists clipping policy: track number, ⋈ glyph,
 // counts are PROTECTED; the goal-name list is CLIPPABLE.
 
-import { Box, Text, useInput } from "ink";
+import { Box, Text, useInput, useStdout } from "ink";
 import { useEffect, useMemo, useState } from "react";
 import type { Db } from "../../../db.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
 import { type TaskRow, getTask } from "../../../tasks.js";
-import {
-  type ColumnSpec,
-  contentWidthFromCols,
-  layoutColumns,
-  renderRow,
-  termColsForLayout,
-} from "../columns.js";
+import { type ColumnSpec, contentWidthFromCols, layoutColumns, renderRow } from "../columns.js";
 import { type PopupAction, type PopupActionEnvelope, dispatchPopupKeyFromInk } from "../keys.js";
 import { ListRow } from "../list-row.js";
 import { PopupShell } from "../popup-shell.js";
@@ -107,7 +101,9 @@ export function TracksPopup({
   db,
   workstream,
 }: PopupProps): JSX.Element {
-  const contentWidth = contentWidthFromCols(termColsForLayout());
+  const { stdout } = useStdout();
+  const cols = stdout?.columns ?? 80;
+  const contentWidth = contentWidthFromCols(cols);
   // Per-render viewport from stdout.rows minus the popup chrome budget;
   // see popups/viewport.ts. Replaces the prior hardcoded VIEWPORT = 20.
   // Same `viewport` powers list, drill (task-list), AND task-detail

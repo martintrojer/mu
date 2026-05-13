@@ -30,9 +30,9 @@
 //
 // Per ROADMAP pledge: ink/react import limited to src/cli/tui/*.
 
-import { Box, Text } from "ink";
+import { Box, Text, useStdout } from "ink";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { cellWidth, contentWidthFromCols, termColsForLayout, truncateCell } from "../columns.js";
+import { cellWidth, contentWidthFromCols, truncateCell } from "../columns.js";
 import type { PopupAction } from "../keys.js";
 import { wrapAndPadAnsiLines } from "../wrap-ansi.js";
 import { applyScroll, clampScrollTop, isNavAction } from "./scroll.js";
@@ -78,8 +78,10 @@ export interface DrillKeymap {
   totalLines: number;
 }
 
-function drillWrapWidth(): number {
-  return Math.max(0, contentWidthFromCols(termColsForLayout()) - 2);
+function useDrillWrapWidth(): number {
+  const { stdout } = useStdout();
+  const cols = stdout?.columns ?? 80;
+  return Math.max(0, contentWidthFromCols(cols) - 2);
 }
 
 export function wrapDrillBody(body: string, wrapWidth: number): WrappedDrillBody {
@@ -120,7 +122,7 @@ export function useDrillKeymap({
     },
     [],
   );
-  const wrapWidth = drillWrapWidth();
+  const wrapWidth = useDrillWrapWidth();
   const wrappedBody = useWrappedBody(body, wrapWidth);
   const { totalLines } = wrappedBody;
 
@@ -202,7 +204,7 @@ export function DrillScrollView({
   emptyText,
   wrappedBody,
 }: DrillScrollViewProps): JSX.Element {
-  const wrapWidth = drillWrapWidth();
+  const wrapWidth = useDrillWrapWidth();
   const renderedBody = useMemo(
     () => wrappedBody ?? wrapDrillBody(body, wrapWidth),
     [body, wrapWidth, wrappedBody],

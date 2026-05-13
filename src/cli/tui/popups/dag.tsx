@@ -5,14 +5,14 @@
 // as `mu task tree --down`, separated by blank lines. No card owns this
 // popup; it is a dashboard-level graph affordance for large workstreams.
 
-import { Box, Text, useInput } from "ink";
+import { Box, Text, useInput, useStdout } from "ink";
 import { useMemo, useRef, useState } from "react";
 import { loadFullDag, renderForest } from "../../../dag.js";
 import type { Db } from "../../../db.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
 import type { TaskStatus } from "../../../tasks/status.js";
 import { colorStatus } from "../../format.js";
-import { contentWidthFromCols, termColsForLayout, truncateCell } from "../columns.js";
+import { contentWidthFromCols, truncateCell } from "../columns.js";
 import { dispatchPopupKeyFromInk } from "../keys.js";
 import { PopupShell } from "../popup-shell.js";
 import { StatusFilterStrip, useStatusFilter } from "../use-status-filter.js";
@@ -45,7 +45,9 @@ export function DagPopup({
 }: PopupProps): JSX.Element {
   const viewport = usePopupViewport();
   const statusFilter = useStatusFilter();
-  const contentWidth = contentWidthFromCols(termColsForLayout());
+  const { stdout } = useStdout();
+  const cols = stdout?.columns ?? 80;
+  const contentWidth = contentWidthFromCols(cols);
   const { body, roots } = useMemo<DagBody>(() => {
     void fastTickNonce;
     return buildDagBody(db, workstream, statusFilter.statuses, contentWidth);
@@ -117,7 +119,7 @@ export function buildDagBody(
   db: Db,
   workstream: string,
   statuses: ReadonlySet<TaskStatus>,
-  contentWidth: number = contentWidthFromCols(termColsForLayout()),
+  contentWidth: number = contentWidthFromCols(80),
 ): DagBody {
   const dag = loadFullDag(db, workstream, { statuses });
   const body = renderForest(dag.roots, dag.edges, (task) => colorStatus(task.status), dag.tasks, {

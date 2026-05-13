@@ -33,20 +33,14 @@
 //
 // Per ROADMAP pledge: ink/react import limited to src/cli/tui/*.
 
-import { Box, Text, useInput } from "ink";
+import { Box, Text, useInput, useStdout } from "ink";
 import { useMemo, useState } from "react";
 import type { Db } from "../../../db.js";
 import { type WorkstreamSnapshot, roiBucket } from "../../../state.js";
 import { type TaskRow, getTaskEdgesWithStatus } from "../../../tasks.js";
 import { inkColorForStatus } from "../../format.js";
 import { glyphFor, stillGating } from "../cards/blocked.js";
-import {
-  type ColumnSpec,
-  contentWidthFromCols,
-  layoutColumns,
-  renderRow,
-  termColsForLayout,
-} from "../columns.js";
+import { type ColumnSpec, contentWidthFromCols, layoutColumns, renderRow } from "../columns.js";
 import { colorForBucket, formatRoi } from "../format-helpers.js";
 import { type PopupAction, type PopupActionEnvelope, dispatchPopupKeyFromInk } from "../keys.js";
 import { ListRow } from "../list-row.js";
@@ -95,7 +89,9 @@ export function BlockedPopup({
   db,
   workstream,
 }: PopupProps): JSX.Element {
-  const contentWidth = contentWidthFromCols(termColsForLayout());
+  const { stdout } = useStdout();
+  const cols = stdout?.columns ?? 80;
+  const contentWidth = contentWidthFromCols(cols);
   // Per-render viewport from stdout.rows minus the popup chrome budget;
   // see popups/viewport.ts. Replaces the prior hardcoded VIEWPORT = 20.
   const viewport = usePopupViewport();

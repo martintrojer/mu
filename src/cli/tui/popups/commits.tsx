@@ -6,18 +6,12 @@
 // The popup never mutates: `y` yanks the backend-specific show command
 // for the focused commit.
 
-import { Box, Text, useInput } from "ink";
+import { Box, Text, useInput, useStdout } from "ink";
 import { useCallback, useEffect, useState } from "react";
 import type { Db } from "../../../db.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
 import { type CommitSummary, type VcsBackendName, detectBackend } from "../../../vcs.js";
-import {
-  type ColumnSpec,
-  contentWidthFromCols,
-  layoutColumns,
-  renderRow,
-  termColsForLayout,
-} from "../columns.js";
+import { type ColumnSpec, contentWidthFromCols, layoutColumns, renderRow } from "../columns.js";
 import { type PopupAction, type PopupActionEnvelope, dispatchPopupKeyFromInk } from "../keys.js";
 import { ListRow } from "../list-row.js";
 import { PopupShell } from "../popup-shell.js";
@@ -63,7 +57,9 @@ export function CommitsPopup({
   popupActions,
   onFooter,
 }: PopupProps): JSX.Element {
-  const contentWidth = contentWidthFromCols(termColsForLayout());
+  const { stdout } = useStdout();
+  const cols = stdout?.columns ?? 80;
+  const contentWidth = contentWidthFromCols(cols);
   const viewport = usePopupViewport();
   const drillViewport = usePopupViewport(DRILL_CHROME_ROWS);
   const [cursor, setCursor] = useState(0);

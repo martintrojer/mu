@@ -5,7 +5,7 @@
 // `s` through the same sort keys as `mu task list --sort`, Enter drills
 // into TaskDetailDrill, and `y` yanks `mu task show <id>`.
 
-import { Box, Text, useInput } from "ink";
+import { Box, Text, useInput, useStdout } from "ink";
 import { useMemo, useState } from "react";
 import type { Db } from "../../../db.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
@@ -17,13 +17,7 @@ import {
   sortTasks,
 } from "../../../tasks/sort.js";
 import { inkColorForStatus } from "../../format.js";
-import {
-  type ColumnSpec,
-  contentWidthFromCols,
-  layoutColumns,
-  renderRow,
-  termColsForLayout,
-} from "../columns.js";
+import { type ColumnSpec, contentWidthFromCols, layoutColumns, renderRow } from "../columns.js";
 import { formatRoi } from "../format-helpers.js";
 import { type PopupAction, type PopupActionEnvelope, dispatchPopupKeyFromInk } from "../keys.js";
 import { ListRow } from "../list-row.js";
@@ -76,7 +70,9 @@ export function AllTasksPopup({
   db,
   workstream,
 }: PopupProps): JSX.Element {
-  const contentWidth = contentWidthFromCols(termColsForLayout());
+  const { stdout } = useStdout();
+  const cols = stdout?.columns ?? 80;
+  const contentWidth = contentWidthFromCols(cols);
   const viewport = usePopupViewport(ALL_TASKS_CHROME_ROWS);
   const [cursor, setCursor] = useState(0);
   const [sortKey, setSortKey] = useState<TaskSortKey>("roi");

@@ -96,8 +96,8 @@ export function naturalWidths(rows: ReadonlyArray<ReadonlyArray<string>>): numbe
  *  (cli-table3 uses one + a vertical bar; we drop the bar). */
 export const COL_GUTTER = 2;
 
-/** Convert a terminal-column count (`process.stdout.columns`) into the
- *  content-area width inside a TitledBox / popup Shell.
+/** Convert a terminal-column count into the content-area width inside
+ *  a TitledBox / popup Shell.
  *
  *  Both containers stack the same chrome on each side:
  *    - 1 col rounded border
@@ -110,19 +110,19 @@ export const COL_GUTTER = 2;
  *
  *  Per bug_tui_long_lines_overflow: every card/popup needs to pass
  *  the resulting contentWidth to layoutColumns so clip columns
- *  actually clip instead of overflowing the row to a second line.
- *
- *  Why `process.stdout.columns` and not the `useStdout()` hook:
- *  card/popup FCs are also called as plain functions in unit tests
- *  (no ink renderer mounted, so React hook context is null), and
- *  ink already re-renders the entire tree on SIGWINCH so the bare
- *  property read is current at render time. */
-export function termColsForLayout(): number {
-  return process.stdout.columns ?? 80;
-}
-
+ *  actually clip instead of overflowing the row to a second line. */
 export function contentWidthFromCols(cols: number): number {
   return Math.max(0, cols - 4);
+}
+
+/**
+ * Deprecated back-compat alias for tests and out-of-tree callers that
+ * still need a non-hook fallback. Ink components should prefer
+ * `useStdout()` and then pass `stdout?.columns ?? 80` to
+ * `contentWidthFromCols()`.
+ */
+export function termColsForLayout(): number {
+  return process.stdout.columns ?? 80;
 }
 
 /**

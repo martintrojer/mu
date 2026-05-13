@@ -31,7 +31,7 @@
 //
 // Per ROADMAP pledge: ink/react import limited to src/cli/tui/*.
 
-import { Box, Text, useInput } from "ink";
+import { Box, Text, useInput, useStdout } from "ink";
 import { useState } from "react";
 import type { Db } from "../../../db.js";
 import {
@@ -42,13 +42,7 @@ import {
 } from "../../../doctor-summary.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
 import { colorForStatus, glyphFor } from "../cards/doctor.js";
-import {
-  type ColumnSpec,
-  contentWidthFromCols,
-  layoutColumns,
-  renderRow,
-  termColsForLayout,
-} from "../columns.js";
+import { type ColumnSpec, contentWidthFromCols, layoutColumns, renderRow } from "../columns.js";
 import { type PopupAction, type PopupActionEnvelope, dispatchPopupKeyFromInk } from "../keys.js";
 import { ListRow } from "../list-row.js";
 import { PopupShell } from "../popup-shell.js";
@@ -89,7 +83,9 @@ export function DoctorPopup({
   db,
   workstream: _workstream,
 }: PopupProps): JSX.Element {
-  const contentWidth = contentWidthFromCols(termColsForLayout());
+  const { stdout } = useStdout();
+  const cols = stdout?.columns ?? 80;
+  const contentWidth = contentWidthFromCols(cols);
   // Per-render viewport from stdout.rows minus the popup chrome
   // budget; see popups/viewport.ts.
   const viewport = usePopupViewport();
