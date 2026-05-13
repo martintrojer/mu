@@ -16,6 +16,7 @@ import {
   relTimeBasisForSort,
   sortTasks,
 } from "../../../tasks/sort.js";
+import { inkColorForStatus } from "../../format.js";
 import {
   type ColumnSpec,
   contentWidthFromCols,
@@ -52,14 +53,6 @@ const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
   { kind: "protect", align: "right" }, // ROI
   { kind: "clip", min: 1 }, // title
 ];
-
-const ALL_TASKS_COLORS = [
-  { bold: true }, // id
-  { dimColor: true }, // status
-  { dimColor: true }, // owner
-  { dimColor: true }, // ROI
-  undefined, // title
-] as const;
 
 // The list view renders two extra in-body chrome rows above the data
 // window: StatusFilterStrip + SortStrip. Account for those through
@@ -220,12 +213,19 @@ export function AllTasksPopup({
           const row = rows[i];
           if (row === undefined) return null;
           const padded = renderRow(row, widths, COLUMN_SPECS);
+          const colors = [
+            { bold: true }, // id
+            { color: inkColorForStatus(t.status) }, // status
+            { dimColor: true }, // owner
+            { dimColor: true }, // ROI
+            undefined, // title
+          ];
           return (
             <ListRow
               key={t.name}
               cells={padded}
               contentWidth={contentWidth}
-              colors={ALL_TASKS_COLORS}
+              colors={colors}
               selected={start + i === safeCursor}
             />
           );

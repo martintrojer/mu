@@ -26,6 +26,7 @@ import { Box, Text, useInput } from "ink";
 import { useMemo, useState } from "react";
 import type { Db } from "../../../db.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
+import { inkColorForStatus } from "../../format.js";
 import { glyphFor } from "../cards/recent.js";
 import {
   type ColumnSpec,
@@ -71,17 +72,6 @@ const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
   { kind: "protect", align: "right" }, // ROI label
   { kind: "clip", min: 1 }, // title
 ];
-
-const RECENT_COLORS = [
-  { color: "green" }, // glyph
-  { bold: true }, // id
-  { dimColor: true }, // status
-  { dimColor: true }, // when
-  { dimColor: true }, // impact
-  { dimColor: true }, // effort
-  { dimColor: true }, // roi
-  undefined, // title
-] as const;
 
 export function RecentPopup({
   yank,
@@ -228,12 +218,22 @@ export function RecentPopup({
           const row = rows[i];
           if (row === undefined) return null;
           const padded = renderRow(row, widths, COLUMN_SPECS);
+          const colors = [
+            { color: "green" }, // glyph
+            { bold: true }, // id
+            { color: inkColorForStatus(t.status) }, // status
+            { dimColor: true }, // when
+            { dimColor: true }, // impact
+            { dimColor: true }, // effort
+            { dimColor: true }, // roi
+            undefined, // title
+          ];
           return (
             <ListRow
               key={t.name}
               cells={padded}
               contentWidth={contentWidth}
-              colors={RECENT_COLORS}
+              colors={colors}
               selected={selected}
             />
           );

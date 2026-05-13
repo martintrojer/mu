@@ -13,6 +13,7 @@
 
 import { Text } from "ink";
 import { type WorkstreamSnapshot, roiBucket } from "../../../state.js";
+import { inkColorForStatus } from "../../format.js";
 import {
   type ColumnSpec,
   contentWidthFromCols,
@@ -36,6 +37,7 @@ export const cardConfig = CARD_CONFIGS[3];
 
 const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
   { kind: "protect" }, // task name
+  { kind: "protect" }, // status
   { kind: "protect", align: "right" }, // ROI label (e.g. "ROI 50")
   { kind: "clip", min: 1 }, // title
   { kind: "protect" }, // owner (or "—")
@@ -87,6 +89,7 @@ export function ReadyCard({ snapshot, rowBudget, cols }: ReadyCardProps): JSX.El
   });
   const rows = shown.map((t, i) => [
     t.name,
+    t.status,
     `ROI ${meta[i]?.roiText ?? ""}`,
     t.title,
     t.ownerName ?? "—",
@@ -109,6 +112,7 @@ export function ReadyCard({ snapshot, rowBudget, cols }: ReadyCardProps): JSX.El
         const padded = renderRow(row, widths, COLUMN_SPECS);
         const colors = [
           { bold: true }, // name
+          { color: inkColorForStatus(t.status) }, // status
           { color: colorForBucket(m.bucket) }, // roi
           { dimColor: true }, // title
           { dimColor: true }, // owner

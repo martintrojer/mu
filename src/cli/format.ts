@@ -16,6 +16,7 @@ import { type AgentRow, type AgentStatus, STATUS_EMOJI } from "../agents.js";
 import { type LogRow, displayEventPayload } from "../logs.js";
 import { muTable, pc } from "../output.js";
 import type { TaskRow } from "../tasks.js";
+import type { TaskStatus } from "../tasks/status.js";
 import type { Track } from "../tracks.js";
 import type { WorkspaceRow } from "../workspace.js";
 import type { WorkstreamSummary } from "../workstream.js";
@@ -61,6 +62,27 @@ export function colorStatus(status: TaskRow["status"]): string {
       return pc.red(status);
     case "DEFERRED":
       return pc.dim(status);
+  }
+}
+
+/** Ink colour equivalent of colorStatus(). The TUI must not embed
+ * picocolors ANSI strings inside <Text>; rows pass this value to Ink's
+ * color prop instead. DEFERRED maps to gray to mirror colorStatus()'s
+ * dim treatment in the static CLI tables. */
+export type InkColor = "cyan" | "yellow" | "green" | "red" | "gray";
+
+export function inkColorForStatus(status: TaskStatus): InkColor {
+  switch (status) {
+    case "OPEN":
+      return "cyan";
+    case "IN_PROGRESS":
+      return "yellow";
+    case "CLOSED":
+      return "green";
+    case "REJECTED":
+      return "red";
+    case "DEFERRED":
+      return "gray";
   }
 }
 

@@ -12,6 +12,7 @@ import {
 import type { WorkstreamSnapshot } from "../src/state.js";
 import type { TaskRow } from "../src/tasks.js";
 import { expectTextAbsent, expectTextOnce, renderCardToText } from "./_card-render.js";
+import { findListRowByCell } from "./_jsx-find.js";
 
 const EMPTY_SNAPSHOT: WorkstreamSnapshot = {
   workstreamName: "demo",
@@ -89,6 +90,18 @@ describe("RecentCard", () => {
     }
     expect(text.split("CLOSED").length - 1).toBe(3);
     expect(text.split("✓").length - 1).toBe(3);
+  });
+
+  it("colours the status cell per row", () => {
+    const snapshot: WorkstreamSnapshot = {
+      ...EMPTY_SNAPSHOT,
+      recentClosed: [task({ name: "feat_card_5", status: "CLOSED" })],
+    };
+
+    const row = findListRowByCell(RecentCard({ snapshot }), "CLOSED");
+
+    expect(row?.colors?.[2]?.color).toBe("green");
+    expect(row?.colors?.[2]?.dimColor).toBeUndefined();
   });
 
   it("truncates at the dynamic row budget with the bottomLabel '+N more · Shift+8'", () => {

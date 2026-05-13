@@ -24,6 +24,7 @@ import { Box, Text, useInput } from "ink";
 import { useMemo, useState } from "react";
 import type { Db } from "../../../db.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
+import { inkColorForStatus } from "../../format.js";
 import {
   type ColumnSpec,
   contentWidthFromCols,
@@ -51,13 +52,6 @@ export interface PopupProps {
   db: Db;
   workstream: string;
 }
-
-const READY_COLORS = [
-  { bold: true }, // name
-  { dimColor: true }, // status
-  { dimColor: true }, // owner
-  undefined, // title
-] as const;
 
 const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
   { kind: "protect" }, // task name
@@ -201,12 +195,18 @@ export function ReadyPopup({
           const row = rows[i];
           if (row === undefined) return null;
           const padded = renderRow(row, widths, COLUMN_SPECS);
+          const colors = [
+            { bold: true }, // name
+            { color: inkColorForStatus(t.status) }, // status
+            { dimColor: true }, // owner
+            undefined, // title
+          ];
           return (
             <ListRow
               key={t.name}
               cells={padded}
               contentWidth={contentWidth}
-              colors={READY_COLORS}
+              colors={colors}
               selected={selected}
             />
           );

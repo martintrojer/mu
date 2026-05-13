@@ -83,6 +83,7 @@ called out under "Breaking" in each entry.
 
 ### Changed
 
+- Every TUI task-list popup and card now colour-codes the status column (OPEN cyan, IN_PROGRESS yellow, CLOSED green, REJECTED red, DEFERRED gray/dim) — matching the existing static `mu task list` / `mu state` table colouring. Was: rendered as plain dim text in TUI.
 - TaskDetailDrill (the read-only drill that shows a task's note timeline) now renders each note's header (`── <ts>  <author> ──`) in bold cyan so multi-note tasks (especially umbrella tasks) are easy to scan top-to-bottom.
 - DAG popup (`g`) nodes now render `<name>  <status>` only — the long task summary trailing each node was clipped or wrapped at narrow widths and added little signal beyond the name. `mu task tree` CLI keeps the full label for static prints. DAG popup also truncates long lines per popup width (no more wrap).
 

@@ -470,7 +470,10 @@ mu                          # TTY: TUI across all workstreams; non-TTY: help
   shell. One narrow user-driven escape is `t` inside git-show drills:
   mu suspends its alt-screen, runs `tuicr -r <sha>` in the project
   root / workspace cwd, then restores the dashboard when tuicr exits.
-  Status-bar hint clusters show the always-available keys for
+  Task-list cards and popups colour-code status cells consistently with
+  the static CLI tables: OPEN cyan, IN_PROGRESS yellow, CLOSED green,
+  REJECTED red, and DEFERRED dim/gray. Status-bar hint clusters show
+  the always-available keys for
   the current mode; the `?` help overlay is the superset (including
   less-common paging, refresh, tick-rate, and sub-mode keys). Dashboard
   keymap: `0`-`9` toggle cards; `Shift+0` opens Commits,

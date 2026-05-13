@@ -64,6 +64,7 @@ import { Text } from "ink";
 import type { Db } from "../../../db.js";
 import { type WorkstreamSnapshot, roiBucket } from "../../../state.js";
 import { type TaskEdgeWithStatus, getTaskEdgesWithStatus } from "../../../tasks.js";
+import { inkColorForStatus } from "../../format.js";
 import {
   type ColumnSpec,
   contentWidthFromCols,
@@ -180,7 +181,7 @@ export function BlockedCard({
         const colors = [
           { dimColor: true }, // glyph
           { bold: true }, // id
-          { dimColor: true }, // status
+          { color: inkColorForStatus(t.status) }, // status
           { color: "yellow" }, // blocks
           { color: colorForBucket(m.bucket) }, // roi
           { dimColor: true }, // title

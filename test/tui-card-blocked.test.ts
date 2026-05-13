@@ -16,6 +16,7 @@ import { type Db, openDb } from "../src/db.js";
 import type { WorkstreamSnapshot } from "../src/state.js";
 import { type TaskEdgeWithStatus, type TaskRow, addBlockEdge, addTask } from "../src/tasks.js";
 import { expectTextAbsent, expectTextOnce, renderCardToText } from "./_card-render.js";
+import { findListRowByCell } from "./_jsx-find.js";
 
 const EMPTY_SNAPSHOT: WorkstreamSnapshot = {
   workstreamName: "demo",
@@ -140,6 +141,31 @@ describe("BlockedCard", () => {
       expectTextOnce(text, roi);
     }
     expect(text.split("⛓").length - 1).toBe(3);
+  });
+
+  it("colours the status cell per row", () => {
+    const db = fixtureDb();
+    addTask(db, {
+      workstream: "demo",
+      localId: "design_x",
+      title: "Design X",
+      impact: 20,
+      effortDays: 1,
+    });
+    addTask(db, {
+      workstream: "demo",
+      localId: "review_x",
+      title: "Review X",
+      impact: 75,
+      effortDays: 1,
+    });
+    addBlockEdge(db, "demo", "review_x", "design_x");
+    const snapshot = { ...EMPTY_SNAPSHOT, blocked: [task({ name: "review_x" })] };
+
+    const row = findListRowByCell(BlockedCard({ snapshot, db, workstream: "demo" }), "OPEN");
+
+    expect(row?.colors?.[2]?.color).toBe("cyan");
+    expect(row?.colors?.[2]?.dimColor).toBeUndefined();
   });
 
   it("truncates at the default row budget with the bottomLabel '+N more · Shift+7'", () => {

@@ -38,6 +38,7 @@ import { useMemo, useState } from "react";
 import type { Db } from "../../../db.js";
 import { type WorkstreamSnapshot, roiBucket } from "../../../state.js";
 import { getTaskEdgesWithStatus } from "../../../tasks.js";
+import { inkColorForStatus } from "../../format.js";
 import { glyphFor, stillGating } from "../cards/blocked.js";
 import {
   type ColumnSpec,
@@ -238,7 +239,7 @@ export function BlockedPopup({
           const colors = [
             { dimColor: true }, // glyph
             { bold: true }, // name
-            { dimColor: true }, // status
+            { color: inkColorForStatus(t.status) }, // status
             { color: "yellow" }, // nblock
             { dimColor: true }, // top
             { color: colorForBucket(bucket) }, // roi

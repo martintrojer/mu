@@ -3,6 +3,7 @@ import { ReadyCard } from "../src/cli/tui/cards/ready.js";
 import type { WorkstreamSnapshot } from "../src/state.js";
 import type { TaskRow } from "../src/tasks.js";
 import { expectTextAbsent, expectTextOnce, renderCardToText } from "./_card-render.js";
+import { findListRowByCell } from "./_jsx-find.js";
 
 const EMPTY_SNAPSHOT: WorkstreamSnapshot = {
   workstreamName: "demo",
@@ -59,7 +60,7 @@ describe("ReadyCard", () => {
     );
   });
 
-  it("renders title subtitle plus every task name and ROI label exactly once", () => {
+  it("renders title subtitle plus every task name, status, and ROI label exactly once", () => {
     const snapshot: WorkstreamSnapshot = {
       ...EMPTY_SNAPSHOT,
       ready: [
@@ -81,6 +82,18 @@ describe("ReadyCard", () => {
       expectTextOnce(text, title);
       expectTextOnce(text, roi);
     }
+  });
+
+  it("colours the status cell per row", () => {
+    const snapshot: WorkstreamSnapshot = {
+      ...EMPTY_SNAPSHOT,
+      ready: [task({ name: "build_x", title: "Build X", status: "OPEN" })],
+    };
+
+    const row = findListRowByCell(ReadyCard({ snapshot }), "OPEN");
+
+    expect(row?.colors?.[1]?.color).toBe("cyan");
+    expect(row?.colors?.[1]?.dimColor).toBeUndefined();
   });
 
   it("truncates at the default row budget with the bottomLabel '+N more · Shift+3'", () => {

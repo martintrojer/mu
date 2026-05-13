@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { relTime } from "../src/cli.js";
-import { relTimeAgo } from "../src/cli/format.js";
+import { inkColorForStatus, relTimeAgo } from "../src/cli/format.js";
 import { type Db, openDb } from "../src/db.js";
 import {
   TASK_STATUS_LIST,
@@ -258,6 +258,18 @@ describe("TASK_STATUS_LIST mirrors every TaskStatus", () => {
     // names statuses (--help, error messages, --status validators)
     // will silently lie. Guard rail against that.
     expect(TASK_STATUS_LIST).toBe("OPEN | IN_PROGRESS | CLOSED | REJECTED | DEFERRED");
+  });
+});
+
+// ─── status colours ─────────────────────────────────────────────────
+
+describe("inkColorForStatus", () => {
+  it("matches colorStatus's static CLI mapping for every task status", () => {
+    expect(inkColorForStatus("OPEN")).toBe("cyan");
+    expect(inkColorForStatus("IN_PROGRESS")).toBe("yellow");
+    expect(inkColorForStatus("CLOSED")).toBe("green");
+    expect(inkColorForStatus("REJECTED")).toBe("red");
+    expect(inkColorForStatus("DEFERRED")).toBe("gray");
   });
 });
 

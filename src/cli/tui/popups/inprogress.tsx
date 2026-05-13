@@ -25,6 +25,7 @@ import { Box, Text, useInput } from "ink";
 import { useMemo, useState } from "react";
 import type { Db } from "../../../db.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
+import { inkColorForStatus } from "../../format.js";
 import { glyphFor, isStale } from "../cards/inprogress.js";
 import {
   type ColumnSpec,
@@ -219,7 +220,7 @@ export function InProgressPopup({
           const colors = [
             { color: "yellow" }, // glyph
             { bold: true }, // id
-            { dimColor: true }, // status
+            { color: inkColorForStatus(t.status) }, // status
             { dimColor: true }, // owner
             stale ? { color: "yellow" } : { dimColor: true }, // since-claim
             { dimColor: true }, // roi

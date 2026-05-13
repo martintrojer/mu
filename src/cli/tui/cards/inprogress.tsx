@@ -50,6 +50,7 @@
 import { Text } from "ink";
 import { STATUS_EMOJI } from "../../../agents.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
+import { inkColorForStatus } from "../../format.js";
 import {
   type ColumnSpec,
   contentWidthFromCols,
@@ -85,6 +86,7 @@ export const STALE_CLAIM_THRESHOLD_MS = 300_000;
 const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
   { kind: "protect" }, // glyph
   { kind: "protect" }, // task id
+  { kind: "protect" }, // status
   { kind: "protect" }, // owner (or "—")
   { kind: "protect", align: "right" }, // since-claim
   { kind: "clip", min: 1 }, // title
@@ -135,6 +137,7 @@ export function InProgressCard({ snapshot, rowBudget, cols }: InProgressCardProp
   const rows = shown.map((t, i) => [
     glyphFor(),
     t.name,
+    t.status,
     t.ownerName ?? "—",
     formatSinceClaim(ages[i] ?? null),
     t.title,
@@ -159,6 +162,7 @@ export function InProgressCard({ snapshot, rowBudget, cols }: InProgressCardProp
         const colors = [
           { color: "yellow" }, // glyph
           { bold: true }, // id
+          { color: inkColorForStatus(t.status) }, // status
           { dimColor: true }, // owner
           stale ? { color: "yellow" } : { dimColor: true }, // since
           { dimColor: true }, // title

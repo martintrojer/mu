@@ -14,6 +14,7 @@ import {
 import type { WorkstreamSnapshot } from "../src/state.js";
 import type { TaskRow } from "../src/tasks.js";
 import { expectTextAbsent, expectTextOnce, renderCardToText } from "./_card-render.js";
+import { findListRowByCell } from "./_jsx-find.js";
 
 const EMPTY_SNAPSHOT: WorkstreamSnapshot = {
   workstreamName: "demo",
@@ -91,6 +92,18 @@ describe("InProgressCard", () => {
       expectTextOnce(text, title);
     }
     expect(text.split("").length - 1).toBe(3);
+  });
+
+  it("colours the status cell per row", () => {
+    const snapshot: WorkstreamSnapshot = {
+      ...EMPTY_SNAPSHOT,
+      inProgress: [task({ name: "design_x", title: "Design X", status: "IN_PROGRESS" })],
+    };
+
+    const row = findListRowByCell(InProgressCard({ snapshot }), "IN_PROGRESS");
+
+    expect(row?.colors?.[2]?.color).toBe("yellow");
+    expect(row?.colors?.[2]?.dimColor).toBeUndefined();
   });
 
   it("truncates at the default row budget with the bottomLabel '+N more · Shift+6'", () => {

@@ -52,6 +52,7 @@
 
 import { Text } from "ink";
 import type { WorkstreamSnapshot } from "../../../state.js";
+import { inkColorForStatus } from "../../format.js";
 import {
   type ColumnSpec,
   contentWidthFromCols,
@@ -152,7 +153,7 @@ export function RecentCard({ snapshot, rowBudget, cols }: RecentCardProps): JSX.
         const colors = [
           { color: "green" }, // glyph
           { bold: true }, // id
-          { dimColor: true }, // status
+          { color: inkColorForStatus(t.status) }, // status
           { dimColor: true }, // when
           { dimColor: true }, // title
         ];
