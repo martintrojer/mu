@@ -87,32 +87,51 @@ export function AllTasksPopup({
     () => allTasksFromSnapshotOrDb(snapshot, db, workstream),
     [snapshot, db, workstream],
   );
+  // Per bug_filter_drill_opens_wrong_task: text filter applied
+  // UNIFORMLY across list and drill modes. The previous
+  // mode-conditional dropped the filter on drill, which shifted
+  // visibleTasks under a constant cursor index and resolved the
+  // wrong task. mode dep removed.
   const visibleTasks = useMemo(() => {
     const filteredByStatus = sourceTasks.filter((t) => statusFilter.statuses.has(t.status));
-    const filteredByText =
-      mode === "drill"
-        ? filteredByStatus
-        : applyFilter(
-            filteredByStatus,
-            flt.query,
-            (t) => `${t.name} ${t.title} ${t.status} ${t.ownerName ?? ""}`,
-          );
+    const filteredByText = applyFilter(
+      filteredByStatus,
+      flt.query,
+      (t) => `${t.name} ${t.title} ${t.status} ${t.ownerName ?? ""}`,
+    );
     return sortTasks(filteredByText, sortKey);
-  }, [sourceTasks, statusFilter.statuses, mode, flt.query, sortKey]);
+  }, [sourceTasks, statusFilter.statuses, flt.query, sortKey]);
   const safeCursor = visibleTasks.length === 0 ? 0 : Math.min(cursor, visibleTasks.length - 1);
   const focused = visibleTasks[safeCursor];
 
-  const notesText = useNotesDrill({ mode, focused, db, workstream, fastTickNonce });
+  // Defensive: capture the focused task identity at the moment the
+  // user pressed Enter, so even if visibleTasks shifts underneath us
+  // (a future refactor re-introduces a mode-dep, snapshot tick lands
+  // a new row, etc.) the drill stays pinned to the row the user
+  // visually selected. Cleared on close.
+  const [drilledTask, setDrilledTask] = useState<TaskRow | null>(null);
+  const drillTask = mode === "drill" ? (drilledTask ?? focused) : focused;
+
+  const notesText = useNotesDrill({
+    mode,
+    focused: drillTask,
+    db,
+    workstream,
+    fastTickNonce,
+  });
 
   const drill = useDrillKeymap({
     body: notesText,
     viewport,
-    onClose: () => onModeChange("list"),
-    onYank: () => {
-      if (!focused) return;
-      return yank(allTasksYankCommand(focused.name, workstream));
+    onClose: () => {
+      setDrilledTask(null);
+      onModeChange("list");
     },
-    resetKey: focused?.name ?? "",
+    onYank: () => {
+      if (!drillTask) return;
+      return yank(allTasksYankCommand(drillTask.name, workstream));
+    },
+    resetKey: drillTask?.name ?? "",
   });
 
   const dispatchListAction = (action: PopupAction) => {
@@ -132,7 +151,10 @@ export function AllTasksPopup({
         flt.startEdit();
         return;
       case "drill":
-        if (focused) onModeChange("drill");
+        if (focused) {
+          setDrilledTask(focused);
+          onModeChange("drill");
+        }
         return;
       case "yank":
         if (focused) void yank(allTasksYankCommand(focused.name, workstream));
@@ -184,12 +206,12 @@ export function AllTasksPopup({
     );
   }
 
-  if (mode === "drill" && focused) {
+  if (mode === "drill" && drillTask) {
     return (
-      <PopupShell title={`All tasks · ${focused.name} (notes)`}>
+      <PopupShell title={`All tasks · ${drillTask.name} (notes)`}>
         <Box flexDirection="column" flexGrow={1}>
           <TaskDetailDrill
-            task={focused}
+            task={drillTask}
             db={db}
             workstream={workstream}
             scrollTop={drill.scrollTop}

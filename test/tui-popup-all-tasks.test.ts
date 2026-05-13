@@ -24,6 +24,7 @@ import {
   createInkCaptureStream,
   createInkInputStream,
   latestRenderedFrame,
+  simulateInput,
   waitForInkOutput,
 } from "./_ink-render.js";
 
@@ -240,6 +241,111 @@ describe("AllTasksPopup", () => {
     expect(src).toContain("StatusFilterStrip");
     expect(src).toContain('from "../../../tasks/sort.js"');
     expect(src).not.toContain('from "../../../cli.js"');
+  });
+
+  // Regression for bug_filter_drill_opens_wrong_task: with the '/'
+  // text filter active, pressing Enter on the cursor row must drill
+  // into the matched-and-cursored task — NOT a task at the same
+  // index in the unfiltered set. The pre-fix code dropped the text
+  // filter on mode === "drill", which shifted visibleTasks under a
+  // constant cursor and resolved the wrong task identity.
+  it("with text filter 'abc', cursor at row 1 of [match0, match1, match2], Enter drills into match1", async () => {
+    const db = fixtureDb();
+    // 50 noise tasks then 3 "abc" matches sprinkled among them. We
+    // pick three matches whose unfiltered indices are NOT 0, 1, 2 so
+    // the pre-fix bug ("drill into unfiltered[1]") would land on a
+    // visibly-different task than the filtered cursor target.
+    // Noise tasks at HIGHER impact than abc_* matches so the
+    // matches sort to the BOTTOM of the unfiltered ROI list. The
+    // pre-fix bug landed unfiltered[1] = noise; this seed makes the
+    // identity mismatch loud (drill title would say `noise_<X>`
+    // instead of `abc_second`).
+    for (let i = 0; i < 50; i++) {
+      const id = `noise_${String(i).padStart(2, "0")}`;
+      addTask(db, {
+        workstream: "demo",
+        localId: id,
+        title: `noise task ${i}`,
+        impact: 90,
+        effortDays: 1,
+      });
+    }
+    const matchIds = ["abc_first", "abc_second", "abc_third"];
+    for (const id of matchIds) {
+      addTask(db, {
+        workstream: "demo",
+        localId: id,
+        title: `${id} matches`,
+        impact: 10,
+        effortDays: 1,
+      });
+    }
+    const allTasks = sortTasks(listTasks(db, "demo"), "roi");
+
+    const stdin = createInkInputStream();
+    const stdout = createInkCaptureStream({ columns: 120, rows: 30 });
+    const modeChanges: Array<"list" | "drill"> = [];
+    let mode: "list" | "drill" = "list";
+    const props = {
+      yank: async () => {},
+      onClose: () => {},
+      snapshot: { allTasks } as WorkstreamSnapshot,
+      fastTickNonce: 0,
+      mode,
+      onModeChange: (next: "list" | "drill") => {
+        modeChanges.push(next);
+        mode = next;
+        instance.rerender(createElement(AllTasksPopup, { ...props, mode: next }));
+      },
+      db,
+      workstream: "demo",
+    };
+    const instance = render(createElement(AllTasksPopup, props), {
+      stdout,
+      stdin,
+      stderr: process.stderr,
+      debug: false,
+      patchConsole: false,
+    });
+
+    await waitForInkOutput(stdout);
+    // Open '/', type "abc", commit. Char-by-char so the reducer
+    // appends each printable individually (the helper writes the
+    // whole string verbatim, but ink's parse-keypress only emits
+    // one keypress per chunk and the reducer's appendChar guard
+    // requires single chars).
+    await simulateInput(stdin, "/");
+    await simulateInput(stdin, "a");
+    await simulateInput(stdin, "b");
+    await simulateInput(stdin, "c");
+    await simulateInput(stdin, "enter");
+    await waitForInkOutput(stdout);
+    // Move cursor down once → should now sit on the SECOND match
+    // (sort:roi puts the three abc_* matches first because they have
+    // the highest impact).
+    await simulateInput(stdin, "j");
+    await waitForInkOutput(stdout);
+    // Snapshot the list-mode title to confirm we are on visible row 2/3.
+    const listFrame = latestRenderedFrame(stdout).join("\n");
+    expect(listFrame).toContain("All tasks · popup (2/3)");
+    expect(listFrame).toContain("filter: 3 of 53");
+    // The cursored row in the filtered view is `abc_second`. The
+    // unfiltered position-1 row is `noise_01` (high impact) — used
+    // by the assertion below to prove the drill DID NOT shift to
+    // unfiltered[1] under the pre-fix bug.
+    expect(allTasks[1]?.name).toMatch(/^noise_/);
+    // Press Enter → drill. The drill title MUST contain the abc match
+    // identity, not a task from the unfiltered position-1 set
+    // (the pre-fix bug would have surfaced "noise_01" or similar
+    // here because dropping the text filter made visibleTasks shift
+    // back to all 53 rows).
+    await simulateInput(stdin, "enter");
+    await waitForInkOutput(stdout);
+    expect(modeChanges).toEqual(["drill"]);
+    const drillFrame = latestRenderedFrame(stdout).join("\n");
+    expect(drillFrame).toContain("abc_second");
+    expect(drillFrame).not.toMatch(/All tasks · noise_/);
+    instance.unmount();
   });
 
   it("renders only the visible task window, not every filtered task", async () => {

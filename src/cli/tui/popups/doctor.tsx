@@ -106,25 +106,34 @@ export function DoctorPopup({
   const sourceChecks: readonly DoctorCheck[] = snapshot ? loadDoctorChecks(db, snapshot) : [];
 
   // Per spec FILTER block: blob = `${name} ${status} ${detail}`.
-  const checks =
-    mode === "drill"
-      ? sourceChecks
-      : applyFilter(sourceChecks, flt.query, (c) => `${c.name} ${c.status} ${c.detail}`);
+  // Per bug_filter_drill_opens_wrong_task: text filter applied
+  // UNIFORMLY across list and drill modes (the previous mode-conditional
+  // dropped the filter on drill, shifting `checks` under a constant
+  // cursor index).
+  const checks = applyFilter(sourceChecks, flt.query, (c) => `${c.name} ${c.status} ${c.detail}`);
   const safeCursor = checks.length === 0 ? 0 : Math.min(cursor, checks.length - 1);
   const focused = checks[safeCursor];
 
+  // Defensive: capture focused check identity at Enter so the drill
+  // stays pinned even if checks shift.
+  const [drilledCheck, setDrilledCheck] = useState<DoctorCheck | null>(null);
+  const drillCheck = mode === "drill" ? (drilledCheck ?? focused) : focused;
+
   // Drill body: pre-formatted text rendered via DrillScrollView.
-  // Pure derivation from the focused check; no DB call.
-  const drillBody = focused ? renderDrillBody(focused) : "";
+  // Pure derivation from the captured check; no DB call.
+  const drillBody = drillCheck ? renderDrillBody(drillCheck) : "";
   const drill = useDrillKeymap({
     body: drillBody,
     viewport,
-    onClose: () => onModeChange("list"),
-    onYank: () => {
-      if (!focused) return;
-      return yank(yankCommandForCheck(focused));
+    onClose: () => {
+      setDrilledCheck(null);
+      onModeChange("list");
     },
-    resetKey: focused?.name ?? "",
+    onYank: () => {
+      if (!drillCheck) return;
+      return yank(yankCommandForCheck(drillCheck));
+    },
+    resetKey: drillCheck?.name ?? "",
   });
 
   const dispatchListAction = (action: PopupAction) => {
@@ -145,6 +154,7 @@ export function DoctorPopup({
         return;
       case "drill":
         if (focused) {
+          setDrilledCheck(focused);
           onModeChange("drill");
         }
         return;
@@ -183,18 +193,18 @@ export function DoctorPopup({
     );
   }
 
-  if (mode === "drill" && focused) {
+  if (mode === "drill" && drillCheck) {
     return (
-      <PopupShell title={`Doctor · ${focused.name} (detail)`}>
+      <PopupShell title={`Doctor · ${drillCheck.name} (detail)`}>
         <Box flexDirection="column" flexGrow={1}>
           <DrillScrollView
-            title={`${focused.name} · ${focused.status}`}
+            title={`${drillCheck.name} · ${drillCheck.status}`}
             body={drillBody}
             viewport={viewport}
             scrollTop={drill.scrollTop}
             wrappedBody={drill.wrappedBody}
             emptyText="(no detail)"
-            hint={`y yanks \`${yankCommandForCheck(focused)}\``}
+            hint={`y yanks \`${yankCommandForCheck(drillCheck)}\``}
           />
         </Box>
       </PopupShell>

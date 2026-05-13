@@ -19,7 +19,7 @@
 
 import { Box, Text, useInput } from "ink";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { STATUS_EMOJI, readAgent } from "../../../agents.js";
+import { type AgentRow, STATUS_EMOJI, readAgent } from "../../../agents.js";
 import type { Db } from "../../../db.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
 import {
@@ -89,14 +89,23 @@ export function AgentsPopup({
   const [scrollbackErr, setScrollbackErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const flt = usePopupFilter({ onEditingChange: onFilterEditingChange });
-  // Filter is suppressed in drill mode (drill view is not a list).
+  // Per bug_filter_drill_opens_wrong_task: text filter applied
+  // UNIFORMLY across list and drill modes (the previous mode-conditional
+  // dropped the filter on drill, shifting `agents` under a constant
+  // cursor index).
   const sourceAgents = snapshot?.view.agents ?? [];
-  const agents =
-    mode === "drill"
-      ? sourceAgents
-      : applyFilter(sourceAgents, flt.query, (a) => `${a.name} ${a.status} ${a.cli} ${a.role}`);
+  const agents = applyFilter(
+    sourceAgents,
+    flt.query,
+    (a) => `${a.name} ${a.status} ${a.cli} ${a.role}`,
+  );
   const safeCursor = agents.length === 0 ? 0 : Math.min(cursor, agents.length - 1);
   const focused = agents[safeCursor];
+  // Defensive: capture focused agent identity at Enter so the drill
+  // stays pinned to the agent the user visually selected even if the
+  // list shifts underneath us.
+  const [drilledAgent, setDrilledAgent] = useState<AgentRow | null>(null);
+  const drillAgent = mode === "drill" ? (drilledAgent ?? focused) : focused;
   const lastFocusedAgentName = useRef<string | null>(null);
   // Load scrollback when entering drill mode (or when the focused
   // row changes while in drill mode). Read-only: capturePane is a
@@ -125,15 +134,15 @@ export function AgentsPopup({
 
   useEffect(() => {
     void slowTickNonce;
-    if (mode === "drill" && focused) {
-      if (lastFocusedAgentName.current !== focused.name) {
+    if (mode === "drill" && drillAgent) {
+      if (lastFocusedAgentName.current !== drillAgent.name) {
         setScrollback("");
         setScrollbackErr(null);
       }
-      lastFocusedAgentName.current = focused.name;
-      void loadScrollback(focused.name);
+      lastFocusedAgentName.current = drillAgent.name;
+      void loadScrollback(drillAgent.name);
     }
-  }, [mode, focused, loadScrollback, slowTickNonce]);
+  }, [mode, drillAgent, loadScrollback, slowTickNonce]);
 
   useEffect(() => {
     if (mode !== "drill") {
@@ -148,14 +157,17 @@ export function AgentsPopup({
   const drill = useDrillKeymap({
     body: drillBody,
     viewport,
-    onClose: () => onModeChange("list"),
+    onClose: () => {
+      setDrilledAgent(null);
+      onModeChange("list");
+    },
     onYank: () => {
-      if (!focused || !snapshot) return;
+      if (!drillAgent || !snapshot) return;
       return yank(
-        `mu agent read ${focused.name} -n ${SCROLLBACK_LINES} -w ${snapshot.workstreamName}`,
+        `mu agent read ${drillAgent.name} -n ${SCROLLBACK_LINES} -w ${snapshot.workstreamName}`,
       );
     },
-    resetKey: focused?.name ?? "",
+    resetKey: drillAgent?.name ?? "",
   });
 
   const dispatchListAction = (action: PopupAction) => {
@@ -175,7 +187,10 @@ export function AgentsPopup({
         flt.startEdit();
         return;
       case "drill":
-        if (focused) onModeChange("drill");
+        if (focused) {
+          setDrilledAgent(focused);
+          onModeChange("drill");
+        }
         return;
       case "yank": {
         const a = agents[safeCursor];
@@ -234,12 +249,12 @@ export function AgentsPopup({
     );
   }
 
-  if (mode === "drill" && focused) {
+  if (mode === "drill" && drillAgent) {
     return (
-      <PopupShell title={`Agents · ${focused.name} (scrollback)`}>
+      <PopupShell title={`Agents · ${drillAgent.name} (scrollback)`}>
         <Box flexDirection="column" flexGrow={1}>
           <DrillScrollView
-            title={`mu agent read ${focused.name} -n ${SCROLLBACK_LINES}`}
+            title={`mu agent read ${drillAgent.name} -n ${SCROLLBACK_LINES}`}
             body={drillBody}
             viewport={viewport}
             scrollTop={drill.scrollTop}

@@ -165,17 +165,21 @@ export function WorkspacesPopup({
   const [showErr, setShowErr] = useState<string | null>(null);
 
   const sourceWorkspaces = snapshot?.workspaces ?? [];
-  const workspaces =
-    mode === "drill"
-      ? sourceWorkspaces
-      : applyFilter(
-          sourceWorkspaces,
-          flt.query,
-          (w) =>
-            `${w.agentName} ${w.backend} ${w.parentRef ?? ""} ${w.dirty === true ? "dirty" : ""}`,
-        );
+  // Per bug_filter_drill_opens_wrong_task: text filter applied
+  // UNIFORMLY across list and drill modes (the previous mode-conditional
+  // dropped the filter on drill, shifting `workspaces` under a constant
+  // cursor index).
+  const workspaces = applyFilter(
+    sourceWorkspaces,
+    flt.query,
+    (w) => `${w.agentName} ${w.backend} ${w.parentRef ?? ""} ${w.dirty === true ? "dirty" : ""}`,
+  );
   const safeCursor = workspaces.length === 0 ? 0 : Math.min(cursor, workspaces.length - 1);
-  const focused = workspaces[safeCursor];
+  const focusedListRow = workspaces[safeCursor];
+  // Defensive: capture focused workspace at Enter so the drill stays
+  // pinned to the workspace the user visually selected.
+  const [drilledWorkspace, setDrilledWorkspace] = useState<WorkspaceRow | null>(null);
+  const focused = mode === "drill" ? (drilledWorkspace ?? focusedListRow) : focusedListRow;
   const projectRoot = process.cwd();
 
   // The active filter pushed up to <App>: list-mode → flt;
@@ -239,6 +243,7 @@ export function WorkspacesPopup({
       setCommits([]);
       setDrillErr(null);
       setLoading(false);
+      setDrilledWorkspace(null);
     }
   }, [mode]);
 
@@ -308,6 +313,7 @@ export function WorkspacesPopup({
       }
       switch (action.kind) {
         case "close":
+          setDrilledWorkspace(null);
           onModeChange("list");
           return;
         case "filter":
@@ -344,10 +350,13 @@ export function WorkspacesPopup({
         flt.startEdit();
         return;
       case "drill":
-        if (focused) onModeChange("drill");
+        if (focusedListRow) {
+          setDrilledWorkspace(focusedListRow);
+          onModeChange("drill");
+        }
         return;
       case "yank": {
-        const w = workspaces[safeCursor];
+        const w = focusedListRow;
         if (!w || !snapshot) return;
         const ws = snapshot.workstreamName;
         // Default yank: `cd $(mu workspace path <agent> -w <ws>)` —
