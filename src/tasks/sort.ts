@@ -5,7 +5,7 @@
 // (that bundle cycle previously made `node dist/cli.js --help` exit
 // silently).
 
-import type { TaskRow } from "../tasks.js";
+import type { TaskRow } from "./core.js";
 
 export const TASK_SORT_KEYS = ["roi", "recency", "age", "id"] as const;
 export type TaskSortKey = (typeof TASK_SORT_KEYS)[number];

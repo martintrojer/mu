@@ -27,8 +27,8 @@
 
 import type { Db } from "../db.js";
 import { emitEvent } from "../logs.js";
-import { getTask } from "../tasks.js";
 import { StallDetectedDuringWaitError, TaskNotFoundError } from "./errors.js";
+import { getTask } from "./queries.js";
 import type { TaskStatus } from "./status.js";
 
 // ─── Test seams: poll-sleep + poll counter + stuck-warn writer ─────────

@@ -15,8 +15,10 @@
 import type { Db } from "../db.js";
 import { emitEvent } from "../logs.js";
 import { captureSnapshot } from "../snapshots.js";
-import { addNote, getTask, getTaskEdgesWithStatus } from "../tasks.js";
+import { getTaskEdgesWithStatus } from "./edges.js";
+import { addNote } from "./edit.js";
 import { TaskHasOpenDependentsError, TaskNotFoundError } from "./errors.js";
+import { getTask } from "./queries.js";
 import type { TaskStatus } from "./status.js";
 
 export interface SetStatusResult {

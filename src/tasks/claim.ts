@@ -16,10 +16,10 @@
 import type { Db } from "../db.js";
 import { emitEvent, formatClaimEvent } from "../logs.js";
 import { captureSnapshot } from "../snapshots.js";
-import { getTask } from "../tasks.js";
 import { currentAgentName } from "../tmux.js";
 import { ClaimerNotRegisteredError, TaskAlreadyOwnedError, TaskNotFoundError } from "./errors.js";
 import { type EvidenceOption, evidenceSuffix } from "./lifecycle.js";
+import { getTask } from "./queries.js";
 import type { TaskStatus } from "./status.js";
 
 export interface ReleaseResult {

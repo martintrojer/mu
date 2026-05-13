@@ -15,8 +15,8 @@
 // Extracted from src/tasks.ts as part of refactor_split_large_src_files.
 
 import type { HasNextSteps, NextStep } from "../output.js";
-import { sanitiseTaskId } from "../tasks.js";
 import { WORKSPACE_STALE_THRESHOLD, type WorkspaceStaleness } from "../workspace.js";
+import { sanitiseTaskId } from "./id.js";
 
 export class TaskNotFoundError extends Error implements HasNextSteps {
   override readonly name = "TaskNotFoundError";

@@ -291,8 +291,9 @@ Key properties:
 Mostly-flat `src/`: root `.ts` modules plus cohesive subclusters
 (`src/agents/`, `src/tasks/`, and `src/cli/` wrappers with their own
 `src/cli/tasks/` and `src/cli/tui/` sub-clusters). No `core/`
-subdirectory; no anticipatory layering. Subclusters obey
-the AGENTS.md rule: imports flow cluster → root, never upward.
+subdirectory; no anticipatory layering. Subclusters obey the
+AGENTS.md rule: cluster files import from neighbours and root
+substrate modules, never from the hub they're re-exported through.
 Each module is concrete and consumed today.
 
 | Module                | Responsibility                                                                            |
@@ -304,8 +305,8 @@ Each module is concrete and consumed today.
 | `src/agents.ts`       | Hub: CRUD + send / read / list / close / free + liveness + reaper. Re-exports `src/agents/*` (spawn, adopt, errors); pane-title composition (`composeAgentTitle`) lives here. |
 | `src/agents/*.ts`     | Cohesive cluster of agent-lifecycle internals: `spawn.ts` (spawnAgent + resolveCliCommand / awaitSpawnLiveness / pane create-or-reuse / prestage / rollback), `adopt.ts` (register an existing tmux pane as a managed agent), `kick.ts` (signal the foreground pgid of an agent pane's TTY — escape hatch for wedged tool subprocesses), `errors.ts` (typed agent error classes — `AgentNotFoundError`, `AgentDiedOnSpawnError`, …). |
 | `src/dag.ts`          | Shared DAG read/render helpers: `loadFullDag(db, workstream)` for whole-workstream root+edge forests and pure `renderForest` / `renderTaskTree` ASCII rendering reused by `mu task tree` and the TUI DAG popup. |
-| `src/tasks.ts`        | Hub: every read/write verb on the DAG (edit / edges / queries) + cycle check + auto-event emission. Re-exports `src/tasks/*` (status, claim, lifecycle, wait, errors). |
-| `src/tasks/*.ts`      | Cohesive cluster of task-graph internals: `status.ts` (TaskStatus enum + helpers — single source of truth), `sort.ts` (shared task sort keys/comparators for CLI + TUI), `claim.ts` (claim/release + `resolveActorIdentity`, atomic CAS), `lifecycle.ts` (setTaskStatus / closeTask / openTask / rejectTask / deferTask + cascade), `wait.ts` (waitForTasks: block until tasks reach a target status), `errors.ts` (typed task error classes — `TaskAlreadyOwnedError`, `CycleError`, …). |
+| `src/tasks.ts`        | Task SDK hub: re-exports the concrete task-graph cluster so external imports keep using `./tasks.js`; no implementation logic. |
+| `src/tasks/*.ts`      | Cohesive cluster of task-graph internals: `core.ts` (row-shape mapping, surrogate-id resolution, `touchTask`), `id.ts` (task-id validation + title slug helpers), `queries.ts` (get/list/ready/blocked/goals/notes/owned/search reads), `edit.ts` (add task/note, update, delete), `edges.ts` (edge reads, cycle check, block/unblock/reparent), `status.ts` (TaskStatus enum + helpers — single source of truth), `sort.ts` (shared task sort keys/comparators for CLI + TUI), `claim.ts` (claim/release + `resolveActorIdentity`, atomic CAS), `lifecycle.ts` (setTaskStatus / closeTask / openTask / rejectTask / deferTask + cascade), `wait.ts` (waitForTasks: block until tasks reach a target status), `errors.ts` (typed task error classes — `TaskAlreadyOwnedError`, `CycleError`, …). Cluster files import neighbours/root substrate modules directly, never the `src/tasks.ts` hub. |
 | `src/tracks.ts`       | Parallel-tracks union-find with diamond merge                                             |
 | `src/staleness.ts`    | Shared workspace staleness threshold (`WORKSPACE_STALE_THRESHOLD = 10`) and pure `isWorkspaceStale` predicate consumed by static state, the TUI Workspaces card, and dispatch-time warn/refuse checks. |
 | `src/workstream.ts`   | ensureWorkstream / list / summarize / destroy / export (thin wrapper around the bucket renderer) |
