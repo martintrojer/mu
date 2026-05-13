@@ -193,7 +193,11 @@ describe("loadWorkstreamSnapshot", () => {
     // Compile-time structural check: this assignment must compile.
     const _example: WorkstreamSnapshot = {
       workstreamName: "demo",
-      view: { agents: [], orphans: [], report: { reaped: [], pruned: [] } },
+      view: {
+        agents: [],
+        orphans: [],
+        report: { prunedGhosts: 0, statusChanges: 0, orphans: [], mode: "status-only" },
+      },
       tracks: [],
       ready: [],
       inProgress: [],

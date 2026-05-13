@@ -132,7 +132,7 @@ mu/
 ```bash
 npm install
 npm run build            # tsup → dist/
-npm run typecheck        # tsc --noEmit
+npm run typecheck        # source + test TypeScript checks
 npm run lint             # biome check src test
 npm run test:fast        # fast unit/dev-loop tier (excludes *.integration.test.ts / *.smoke.test.ts)
 npm run test             # full vitest suite, including integration tests

@@ -13,7 +13,6 @@ import {
 } from "../src/cli/tui/popups/all-tasks.js";
 import { applyCursor, centredVisibleSlice } from "../src/cli/tui/popups/scroll.js";
 import { type Db, openDb } from "../src/db.js";
-import type { WorkstreamSnapshot } from "../src/state.js";
 import { type TaskRow, addTask, listTasks, setTaskStatus } from "../src/tasks.js";
 import { sortTasks } from "../src/tasks/sort.js";
 import { TASK_STATUSES } from "../src/tasks/status.js";
@@ -84,9 +83,7 @@ describe("AllTasksPopup", () => {
   it("falls back to listTasks(db, workstream) when snapshot.allTasks is not populated", () => {
     const db = fixtureDb();
     seedOnePerStatus(db);
-    const snapshot = { allTasks: [] } as WorkstreamSnapshot;
-
-    expect(allTasksFromSnapshotOrDb(snapshot, db, "demo").map((t) => t.name)).toEqual([
+    expect(allTasksFromSnapshotOrDb(null, db, "demo").map((t) => t.name)).toEqual([
       "closed",
       "deferred",
       "in_progress",

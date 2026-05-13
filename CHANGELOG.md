@@ -179,6 +179,7 @@ called out under "Breaking" in each entry.
 
 ### Tests
 
+- `tsconfig.test.json` is now wired into `npm run typecheck`; 48 long-buried test type errors were cleaned up across five commits, so test-file TypeScript regressions no longer escape typecheck.
 - `classifyError()` and `errorNextSteps()` tests now cover every exported typed error class with recovery hints, including archive/import/snapshot/workspace/spawn/wait lanes, and include an inventory drift check so new typed errors cannot silently miss the user-facing recovery contract.
 - **Test suite split into fast and full tiers.** `npm run test:fast`
   now runs the pure/in-process unit tier for the dev loop and

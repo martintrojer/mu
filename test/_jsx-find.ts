@@ -1,4 +1,4 @@
-import { isValidElement } from "react";
+import { type ReactElement, isValidElement } from "react";
 
 export function findElementsByTypeName(node: unknown, typeName: string): unknown[] {
   const found: unknown[] = [];
@@ -11,14 +11,15 @@ export function findElementsByTypeName(node: unknown, typeName: string): unknown
     }
     if (!isValidElement(n)) return;
 
-    const component = n.type;
+    const element = n as ReactElement<{ children?: unknown }>;
+    const component = element.type;
     if (typeof component === "function") {
-      if (component.name === typeName) found.push(n);
-      walk(n.props.children);
+      if (component.name === typeName) found.push(element);
+      walk(element.props.children);
       return;
     }
 
-    walk(n.props.children);
+    walk(element.props.children);
   }
 
   walk(node);

@@ -65,8 +65,8 @@ describe("TaskDetailDrill", () => {
     addNote(db, "t1", "first body", { workstream: "demo", author: "alice" });
     addNote(db, "t1", "second body", { workstream: "demo", author: "bob" });
     const out = renderNotes(db, "t1", "demo");
-    expect(out.matchAll(new RegExp(escapeRegExp(ansiBoldCyan), "g")).toArray()).toHaveLength(2);
-    expect(out.matchAll(new RegExp(escapeRegExp(ansiReset), "g")).toArray()).toHaveLength(2);
+    expect([...out.matchAll(new RegExp(escapeRegExp(ansiBoldCyan), "g"))]).toHaveLength(2);
+    expect([...out.matchAll(new RegExp(escapeRegExp(ansiReset), "g"))]).toHaveLength(2);
     expect(out).toContain(`${ansiReset}\nfirst body\n\n${ansiBoldCyan}`);
     expect(out).toContain("  alice ──");
     expect(out).toContain("  bob ──");
