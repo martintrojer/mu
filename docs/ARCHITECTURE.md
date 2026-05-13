@@ -485,7 +485,16 @@ action) so `mu doctor` can surface them readably.
 | `src/vcs.ts` + `src/workspace.ts`  | `*.integration.test.ts` files use real git in `os.tmpdir()`; jj/sl tests feature-detect (skip if binary missing) |
 | `src/cli.ts` / verb integration    | `*.integration.test.ts` files; real tmux server, unique session per test        |
 | Fast unit/dev-loop tier            | `npm run test:fast`; excludes `*.integration.test.ts` / `*.smoke.test.ts`, uses mocked tmux/VCS and per-test temp DBs |
+| Stress / flake audit               | `npm run test:stress`; repeats the full suite with per-run logs/timeouts and can run parallel full-suite waves (`MU_TEST_STRESS_MODE=parallel`) to simulate multiple mu agents testing concurrently |
 | End-to-end                         | `test/acceptance.integration.test.ts` — the canonical 10-task / 3-agent demo   |
+
+Historical flake audit summary: the closed
+`bug_test_suite_flakes_audit_and_remediate` task found no separate
+product seam. The durable lessons are: treat pass-alone/fail-under-load
+cases as concurrency bugs first; use retrying temp-dir cleanup for VCS
+fixtures whose subprocesses keep files alive briefly; drive wait/reaper
+integration tests from poll-loop seams instead of fixed timers; and wait
+for stable Ink output instead of sleeping a fixed number of ms.
 
 ## Distribution
 
