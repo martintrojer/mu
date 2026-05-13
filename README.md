@@ -122,7 +122,31 @@ npx skills add ./skills/mu              # local-path source format
 ```
 
 More install patterns (alias-to-dist for fastest dev iteration) in
-[docs/USAGE_GUIDE.md § 1 Setup](docs/USAGE_GUIDE.md#1-setup).
+[docs/USAGE_GUIDE.md § 1 Setup](docs/USAGE_GUIDE.md#1-setup). After
+installing, run bare `mu` (or `mu state --tui`) for the dashboard tour.
+
+---
+
+## TUI dashboard
+
+Bare `mu` in a TTY launches the flagship read-only dashboard across
+all workstreams; `mu state --tui -w <workstream>` is the explicit
+single/multi-workstream form. Non-TTY callers and scripts keep the
+static/help path, and `mu state --json` is the API.
+
+The dashboard has ten cards: Commits, Agents, Tracks, Ready, Activity
+log, Workspaces, In-progress, Blocked, Recent, and Doctor. Drill into
+any numbered card fullscreen with `Shift+0`-`Shift+9`; `g` opens the
+full DAG and `t` opens the all-tasks list. `?` shows the complete
+keymap. Keyboard and mouse both work: navigate with keys, double-click
+cards or rows to drill, and scroll popup bodies with the mouse wheel.
+
+The TUI is read-only by design. `y` yanks the canonical `mu` command
+for the focused row to your clipboard; you run it in a shell, so every
+mutation still goes through a short-lived typed CLI invocation. The
+one exception is user-driven: `t` inside a commit/show drill suspends
+mu's alt-screen and hands off to `tuicr -r <sha>`, then restores the
+dashboard when tuicr exits.
 
 ---
 
@@ -144,7 +168,8 @@ mu task add --title "Review auth"        --impact 60 --effort-days 1 --blocks bu
 mu agent spawn worker-1   --workspace
 mu agent spawn reviewer-1 --workspace --role read-only
 
-# Human home base: interactive read-only TUI across every workstream.
+# Human home base: interactive read-only TUI across every workstream
+# (same dashboard is explicit with: mu state --tui -w auth-refactor).
 mu
 
 # Agent/script API: static state stays explicit and JSON-friendly.
@@ -163,7 +188,8 @@ mu log --tail
 mu workstream destroy --yes
 ```
 
-Full tour: [docs/USAGE_GUIDE.md](docs/USAGE_GUIDE.md).
+Full tour: [docs/USAGE_GUIDE.md](docs/USAGE_GUIDE.md), including the
+expanded [dashboard/state guide](docs/USAGE_GUIDE.md#5-see-the-graph-dashboard--state-api).
 
 ---
 
