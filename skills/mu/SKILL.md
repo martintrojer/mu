@@ -333,9 +333,11 @@ running a wave.
   drills (in the Activity log popup it opens the focused event's
   full untruncated payload; the Workspaces popup chains `Enter`
   three levels deep → commits-since-fork → `git show <sha>` diff
-  view, with `y` yanking `git show <sha>` at every level; the
-  Commits popup shows recent project-root commits and `Enter` opens
-  the backend show view: `git show`, `jj show`, or `sl show`), `/`
+  view, with `y` yanking `git show <sha>` at every level and `t`
+  launching `tuicr -r <sha>` in the TUI launch cwd; the Commits popup
+  shows recent project-root commits and `Enter` opens the backend
+  show view: `git show`, `jj show`, or `sl show`, with `t` launching
+  `tuicr -r <sha>` in the project-root cwd), `/`
   filters list popups incrementally, mouse support lets you
   double-click a dashboard card to open its popup, scroll the mouse
   wheel inside popup lists / drill bodies, and double-click a popup

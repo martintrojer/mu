@@ -85,6 +85,7 @@ export interface AppProps {
 export interface FooterState {
   command: string;
   copied: boolean;
+  tone?: "normal" | "info" | "error";
 }
 
 type PopupId = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | "dag" | "allTasks" | null;
@@ -170,6 +171,10 @@ export function App({ db, workstreams, initialActive = 0 }: AppProps): JSX.Eleme
     const { yank } = await import("./yank.js");
     const r = await yank(command, clipboardRef.current ?? null);
     setFooter({ command, copied: r.copied });
+  }, []);
+
+  const footerFn = useCallback((command: string, copied: boolean, tone?: FooterState["tone"]) => {
+    setFooter({ command, copied, tone });
   }, []);
 
   useMouse((event) => {
@@ -434,6 +439,7 @@ export function App({ db, workstreams, initialActive = 0 }: AppProps): JSX.Eleme
   function renderPopup(id: NonNullable<PopupId>): JSX.Element {
     const props = {
       yank: yankFn,
+      onFooter: footerFn,
       onClose: () => {
         setPopup(null);
         setPopupMode("list");

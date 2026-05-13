@@ -64,6 +64,7 @@ const POPUP_DRILL_HINTS: readonly StatusHintEntry[] = [
   hint("j/k", "scroll", ["j", "k"]),
   hint("Ctrl-D/U", "page", ["Ctrl-D", "Ctrl-U"]),
   hint("y", "yank", ["y"]),
+  hint("t", "tuicr", ["t"]),
   hint("?", "help", ["?"]),
   hint("Esc", "back", ["Esc"]),
 ];
@@ -162,6 +163,7 @@ export const HELP_PANES: readonly HelpPaneSpec[] = [
       row("g/G", "top / bottom", ["g", "G"]),
       row("/", "filter/search when the drill is a list", ["/"]),
       row("y", "yank drill-specific command", ["y"]),
+      row("t", "launch tuicr for the focused git-show revision (user-driven TUI escape)", ["t"]),
       row("Esc/q", "back one drill level", ["Esc", "q"]),
       row("?", "toggle this overlay", ["?"]),
     ],

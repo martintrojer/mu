@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  HELP_PANES,
   type StatusHintContext,
   helpOverlayKeyIds,
   statusHintEntries,
@@ -27,5 +28,18 @@ describe("TUI status-bar/help keymap consistency", () => {
   it.each(MODES)("status hint specs have no duplicate key ids: %o", (context) => {
     const ids = statusHintEntries(context).flatMap((entry) => entry.keyIds);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("advertises `t tuicr` in both popup-drill hints and help", () => {
+    const drillHints = statusHintEntries({ mode: "popup-drill" });
+    expect(drillHints).toEqual(
+      expect.arrayContaining([expect.objectContaining({ key: "t", label: "tuicr" })]),
+    );
+    const drillPane = HELP_PANES.find((pane) => pane.title === "keys · popup drill");
+    expect(drillPane?.rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ keys: "t", effect: expect.stringContaining("tuicr") }),
+      ]),
+    );
   });
 });

@@ -467,7 +467,10 @@ mu                          # TTY: TUI across all workstreams; non-TTY: help
   act-intents `y`-yank
   the canonical `mu` command to the clipboard — the TUI never
   executes a mutation; the user runs the yanked command in their
-  shell. Status-bar hint clusters show the always-available keys for
+  shell. One narrow user-driven escape is `t` inside git-show drills:
+  mu suspends its alt-screen, runs `tuicr -r <sha>` in the project
+  root / workspace cwd, then restores the dashboard when tuicr exits.
+  Status-bar hint clusters show the always-available keys for
   the current mode; the `?` help overlay is the superset (including
   less-common paging, refresh, tick-rate, and sub-mode keys). Dashboard
   keymap: `0`-`9` toggle cards; `Shift+0` opens Commits,
@@ -508,10 +511,12 @@ mu                          # TTY: TUI across all workstreams; non-TTY: help
   the commits-since-fork list → `Enter` on a focused commit opens
   a read-only inline view of `git show <sha> --stat -p` (j/k
   scroll, Ctrl-D/U half page, `y` yanks the bare `git show <sha>`
-  command, Esc/q backs out one level). The Commits popup (`Shift+0`)
+  command, `t` launches `tuicr -r <sha>` in the TUI launch cwd,
+  Esc/q backs out one level). The Commits popup (`Shift+0`)
   lists the recent project-root commits (git / jj / sl) and `Enter`
   opens the backend's show view (`git show`, `jj show`, or `sl show`);
-  `y` yanks that show command.
+  `y` yanks that show command and `t` launches `tuicr -r <sha>` in
+  the project-root cwd.
 
   **Popup search/filter**: `/` inside any list popup enters an
   incremental case-insensitive substring filter (lazygit / k9s

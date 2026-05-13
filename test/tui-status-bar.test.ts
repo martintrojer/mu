@@ -163,6 +163,8 @@ describe("StatusBar", () => {
     expect(text).toContain("page");
     expect(text).toContain("y");
     expect(text).toContain("yank");
+    expect(text).toContain("t");
+    expect(text).toContain("tuicr");
     expect(text).toContain("?");
     expect(text).toContain("help");
     expect(text).toContain("Esc");

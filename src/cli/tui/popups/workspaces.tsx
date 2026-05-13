@@ -51,7 +51,7 @@ import { Box, Text, useInput } from "ink";
 import { useCallback, useEffect, useState } from "react";
 import type { Db } from "../../../db.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
-import type { CommitSummary } from "../../../vcs.js";
+import { type CommitSummary, detectBackend } from "../../../vcs.js";
 import { type WorkspaceRow, listCommitsForWorkspace } from "../../../workspace.js";
 import { colorForBehind, colorForGlyph, formatBehind, glyphFor } from "../cards/workspaces.js";
 import {
@@ -61,19 +61,14 @@ import {
   renderRow,
   termColsForLayout,
 } from "../columns.js";
-import { runGitShow } from "../git-show.js";
 import { dispatchPopupKeyFromInk } from "../keys.js";
 import { ListRow } from "../list-row.js";
 import { PopupShell } from "../popup-shell.js";
+import { runTuicrInteractive } from "../tuicr.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
 import { DrillScrollView, useDrillKeymap } from "./drill.js";
 import { applyCursor, centredVisibleSlice, isNavAction } from "./scroll.js";
 import { usePopupViewport } from "./viewport.js";
-
-// SHOW_MAX_CHARS + the actual `git show` invocation live in
-// ../git-show.ts so they're testable against a real tiny git repo
-// fixture without spinning up an ink renderer (per
-// review_tests_workspaces_show_loadshow_unmocked).
 
 export interface PopupProps {
   yank: (command: string) => Promise<void>;
@@ -83,6 +78,7 @@ export interface PopupProps {
   onModeChange: (mode: "list" | "drill") => void;
   /** Bubbles the filter-prompt edit state up to <App> for StatusBar mode. */
   onFilterEditingChange?: (editing: boolean) => void;
+  onFooter?: (command: string, copied: boolean, tone?: "normal" | "info" | "error") => void;
   db: Db;
   workstream: string;
 }
@@ -119,6 +115,7 @@ export function WorkspacesPopup({
   mode,
   onModeChange,
   onFilterEditingChange,
+  onFooter,
   db,
   workstream,
 }: PopupProps): JSX.Element {
@@ -173,6 +170,7 @@ export function WorkspacesPopup({
         );
   const safeCursor = workspaces.length === 0 ? 0 : Math.min(cursor, workspaces.length - 1);
   const focused = workspaces[safeCursor];
+  const projectRoot = process.cwd();
 
   // The active filter pushed up to <App>: list-mode → flt;
   // drill-mode → drillFlt. Either way the StatusBar flips to
@@ -184,16 +182,14 @@ export function WorkspacesPopup({
     onFilterEditingChange?.(activeFilterEditing);
   }, [activeFilterEditing, onFilterEditingChange]);
 
-  /** Thin React glue around runGitShow (the real git invocation +
-   *  truncation logic lives in ../git-show.ts so it's testable
-   *  against a real fixture). The body here is just state-setter
-   *  bookkeeping. */
+  /** Thin React glue around the shared VcsBackend.showCommit seam. */
   const loadShow = useCallback(async (path: string, sha: string) => {
     setShowLoading(true);
     setShowErr(null);
     setShowText("");
-    const r = await runGitShow(path, sha);
-    if (r.error !== null) setShowErr(r.error);
+    const backend = await detectBackend(path);
+    const r = await backend.showCommit(path, sha);
+    if (r.error !== undefined) setShowErr(r.error);
     else setShowText(r.text);
     setShowLoading(false);
   }, []);
@@ -202,6 +198,7 @@ export function WorkspacesPopup({
   const filteredCommits = applyFilter(commits, drillFlt.query, (c) => `${c.sha} ${c.subject}`);
   const safeDrillCursor =
     filteredCommits.length === 0 ? 0 : Math.min(drillCursor, filteredCommits.length - 1);
+  const focusedCommit = filteredCommits[safeDrillCursor];
 
   // Load commits when entering drill mode (or when the focused row
   // changes while in drill mode — same-shape lazy fetch as
@@ -271,6 +268,12 @@ export function WorkspacesPopup({
     onYank: () => {
       if (showSha !== null) return yank(`git show ${showSha}`);
     },
+    onTuicr: () => {
+      if (showSha === null) return;
+      const r = runTuicrInteractive({ rev: showSha, cwd: projectRoot });
+      if (!r.ok) onFooter?.(r.error ?? "tuicr failed", false, "error");
+      else onFooter?.(`tuicr -r ${showSha}`, true, "info");
+    },
   });
 
   useInput((input, key) => {
@@ -305,14 +308,14 @@ export function WorkspacesPopup({
           drillFlt.startEdit();
           return;
         case "drill": {
-          const c = filteredCommits[safeDrillCursor];
+          const c = focusedCommit;
           if (!c || !focused) return;
           setShowSha(c.sha);
           void loadShow(focused.path, c.sha);
           return;
         }
         case "yank": {
-          const c = filteredCommits[safeDrillCursor];
+          const c = focusedCommit;
           if (!c) return;
           // Cherry-pick recipe per skills/mu: `git cherry-pick <sha>`
           // is the canonical follow-on. Yank the bare `git show` for
@@ -364,7 +367,7 @@ export function WorkspacesPopup({
             body={showBody}
             viewport={drillViewport}
             scrollTop={showDrill.scrollTop}
-            hint={`y yanks \`git show ${shortSha}\``}
+            hint={`y yanks \`git show ${shortSha}\` · t tuicr`}
             emptyText={showLoading ? "loading…" : "(empty diff)"}
           />
         </Box>

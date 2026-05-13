@@ -94,6 +94,15 @@ describe("CommitsPopup source invariants", () => {
     expect(SRC).toMatch(/onYank:[\s\S]*yank\(showCommand\)/);
     expect(SRC).toMatch(/case "yank":[\s\S]*showCommandForBackend/);
   });
+
+  it("drill-mode `t` launches tuicr for the focused sha in the project cwd", () => {
+    expect(SRC).toContain('from "../tuicr.js"');
+    expect(SRC).toMatch(
+      /onTuicr:[\s\S]*runTuicrInteractive\(\{ rev: focused\.sha, cwd: projectRoot \}\)/,
+    );
+    expect(SRC).toContain("onFooter?.(r.error");
+    expect(SRC).toContain("t tuicr");
+  });
 });
 
 describe("App / keys wiring for Commits popup", () => {

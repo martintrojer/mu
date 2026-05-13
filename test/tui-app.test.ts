@@ -87,6 +87,10 @@ describe("App popup-lifecycle state-restore (structural)", () => {
       // (per feat_popup_search_filter).
       "onFilterEditingChange",
       "setPopupFilterEditing",
+      // tuicr escape-hatch result plumbing: popups can write a
+      // success/error footer without receiving setFooter directly.
+      "onFooter",
+      "footerFn",
       "false",
     ]);
     for (const id of identifiers) {

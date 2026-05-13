@@ -40,6 +40,8 @@ describe("useDrillKeymap", () => {
     expect(DRILL_SRC).toMatch(/applyScroll\(s, action, totalLines, viewport\)/);
     expect(DRILL_SRC).toMatch(/case "close":/);
     expect(DRILL_SRC).toMatch(/case "yank":/);
+    expect(DRILL_SRC).toMatch(/case "verb":/);
+    expect(DRILL_SRC).toMatch(/action\.key === "t"/);
   });
 
   for (const { name, src } of ALL_POPUP_CASES) {

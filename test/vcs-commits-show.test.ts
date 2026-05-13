@@ -7,6 +7,8 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { gitBackend, jjBackend, noneBackend, slBackend } from "../src/vcs.js";
 
+const ANSI_RE = new RegExp(`${String.fromCharCode(0x1b)}\\[`);
+
 let dirs: string[] = [];
 
 function tmp(prefix: string): string {
@@ -67,6 +69,7 @@ gitDescribe("gitBackend recentCommits + showCommit", () => {
     expect(shown.truncated).toBe(false);
     expect(shown.text).toContain("second commit");
     expect(shown.text).toContain("b.txt");
+    expect(shown.text).toMatch(ANSI_RE);
   });
 });
 
@@ -97,6 +100,7 @@ jjDescribe("jjBackend recentCommits + showCommit", () => {
     const shown = await jjBackend.showCommit(repo, commits[0]?.sha ?? "@");
     expect(shown.error).toBeUndefined();
     expect(shown.text).toContain("jj second");
+    expect(shown.text).toMatch(ANSI_RE);
   });
 });
 
@@ -136,6 +140,7 @@ slDescribe("slBackend recentCommits + showCommit", () => {
     const shown = await slBackend.showCommit(repo, second);
     expect(shown.error).toBeUndefined();
     expect(shown.text).toContain("sl second");
+    expect(shown.text).toMatch(ANSI_RE);
   });
 });
 

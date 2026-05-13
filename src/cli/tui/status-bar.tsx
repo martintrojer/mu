@@ -77,7 +77,13 @@ export function StatusBar({
   return (
     <Box justifyContent="space-between" width={cols}>
       <Box>
-        <Text dimColor>{leftClipped}</Text>
+        {footer?.tone === "error" ? (
+          <Text color="red" dimColor>
+            {leftClipped}
+          </Text>
+        ) : (
+          <Text dimColor>{leftClipped}</Text>
+        )}
       </Box>
       <Box>{renderHints(hintTokens)}</Box>
       <Box>

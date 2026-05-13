@@ -49,6 +49,8 @@ export interface DrillKeymapOptions {
   onClose: () => void;
   /** Optional y action for this drill view. */
   onYank?: () => void | Promise<void>;
+  /** Optional user-driven escape hatch for git-show drills. */
+  onTuicr?: () => void | Promise<void>;
 }
 
 export interface DrillKeymap {
@@ -66,6 +68,7 @@ export function useDrillKeymap({
   viewport,
   onClose,
   onYank,
+  onTuicr,
 }: DrillKeymapOptions): DrillKeymap {
   const [scrollTop, setScrollTop] = useState(0);
   const totalLines = useMemo(() => (body === "" ? 0 : body.split("\n").length), [body]);
@@ -89,11 +92,14 @@ export function useDrillKeymap({
         case "yank":
           void onYank?.();
           return;
+        case "verb":
+          if (action.key === "t") void onTuicr?.();
+          return;
         default:
           return;
       }
     },
-    [onClose, onYank, totalLines, viewport],
+    [onClose, onTuicr, onYank, totalLines, viewport],
   );
 
   return { scrollTop, dispatch };

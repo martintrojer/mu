@@ -21,6 +21,7 @@ import {
 import { dispatchPopupKeyFromInk } from "../keys.js";
 import { ListRow } from "../list-row.js";
 import { PopupShell } from "../popup-shell.js";
+import { runTuicrInteractive } from "../tuicr.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
 import { DrillScrollView, useDrillKeymap } from "./drill.js";
 import { applyCursor, centredVisibleSlice, isNavAction } from "./scroll.js";
@@ -33,6 +34,7 @@ export interface PopupProps {
   mode: "list" | "drill";
   onModeChange: (mode: "list" | "drill") => void;
   onFilterEditingChange?: (editing: boolean) => void;
+  onFooter?: (command: string, copied: boolean, tone?: "normal" | "info" | "error") => void;
   db: Db;
   workstream: string;
 }
@@ -53,6 +55,7 @@ export function CommitsPopup({
   mode,
   onModeChange,
   onFilterEditingChange,
+  onFooter,
 }: PopupProps): JSX.Element {
   const contentWidth = contentWidthFromCols(termColsForLayout());
   const viewport = usePopupViewport();
@@ -76,20 +79,23 @@ export function CommitsPopup({
   const focused = commits[safeCursor];
   const showCommand =
     focused && backendName !== null ? showCommandForBackend(backendName, focused.sha) : null;
+  const projectRoot = process.cwd();
   const showBody = showErr !== null ? `error: ${showErr}` : showText;
 
-  const loadShow = useCallback(async (sha: string) => {
-    setShowLoading(true);
-    setShowErr(null);
-    setShowText("");
-    const projectRoot = process.cwd();
-    const backend = await detectBackend(projectRoot);
-    setBackendName(backend.name);
-    const r = await backend.showCommit(projectRoot, sha);
-    if (r.error !== undefined) setShowErr(r.error);
-    else setShowText(r.text);
-    setShowLoading(false);
-  }, []);
+  const loadShow = useCallback(
+    async (sha: string) => {
+      setShowLoading(true);
+      setShowErr(null);
+      setShowText("");
+      const backend = await detectBackend(projectRoot);
+      setBackendName(backend.name);
+      const r = await backend.showCommit(projectRoot, sha);
+      if (r.error !== undefined) setShowErr(r.error);
+      else setShowText(r.text);
+      setShowLoading(false);
+    },
+    [projectRoot],
+  );
 
   useEffect(() => {
     if (snapshot?.commitsBackend !== undefined) setBackendName(snapshot.commitsBackend);
@@ -109,6 +115,12 @@ export function CommitsPopup({
     onClose: () => onModeChange("list"),
     onYank: () => {
       if (showCommand !== null) return yank(showCommand);
+    },
+    onTuicr: () => {
+      if (!focused) return;
+      const r = runTuicrInteractive({ rev: focused.sha, cwd: projectRoot });
+      if (!r.ok) onFooter?.(r.error ?? "tuicr failed", false, "error");
+      else onFooter?.(`tuicr -r ${focused.sha}`, true, "info");
     },
   });
 
@@ -159,7 +171,11 @@ export function CommitsPopup({
             body={showBody}
             viewport={drillViewport}
             scrollTop={drill.scrollTop}
-            hint={showCommand === null ? "y yanks show command" : `y yanks \`${showCommand}\``}
+            hint={
+              showCommand === null
+                ? "y yanks show command · t tuicr"
+                : `y yanks \`${showCommand}\` · t tuicr`
+            }
             emptyText={showLoading ? "loading…" : "(empty show output)"}
           />
         </Box>

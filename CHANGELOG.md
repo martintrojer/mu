@@ -24,6 +24,8 @@ called out under "Breaking" in each entry.
 
 ### Added
 
+- Commits/Workspaces popup drills now render the underlying VCS show output in color (red/green/cyan diff highlighting; the existing `--color=never` was disabling the natural ANSI output).
+- New `t` shortcut in any `git show` drill: launches `tuicr -r <sha>` in the TUI launch cwd, suspending mu's TUI alt-screen until tuicr exits. This is the one user-driven escape from the read-only TUI pledge: it invokes another TUI tool the operator explicitly drives, then restores mu.
 - TUI mouse support: double-click a card to drill into its popup, scroll the mouse wheel inside a list/drill to navigate, double-click a row to drill into its detail. Esc/q remain the canonical 'back' (no mouse back binding by design).
 - DAG popup gains per-status toggle keys (o/i/c/r/d) so you can compose the visible task set without leaving the popup. Filter strip shows current toggle state. Default all-on; reopening resets.
 - TUI all-tasks popup (`t` keybind, no card slot — keybind-only like DAG). Per-status toggle keys (o/i/c/r/d) reuse the same useStatusFilter hook the DAG popup uses. Sort cycle key (`s`) walks roi → recency → age → id. Enter drills into TaskDetailDrill; `y` yanks `mu task show <id>`.

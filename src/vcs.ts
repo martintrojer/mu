@@ -718,7 +718,7 @@ export const gitBackend: VcsBackend = {
   },
 
   async showCommit(projectRoot, sha) {
-    return runShow("git", ["show", sha, "--stat", "-p", "--color=never"], projectRoot);
+    return runShow("git", ["show", sha, "--stat", "-p", "--color=always"], projectRoot);
   },
 
   async freeWorkspace(opts) {
@@ -1115,7 +1115,7 @@ export const jjBackend: VcsBackend = {
   },
 
   async showCommit(projectRoot, sha) {
-    return runShow("jj", ["show", sha, "--color", "never"], projectRoot);
+    return runShow("jj", ["show", sha, "--color", "always"], projectRoot);
   },
 
   // jj is always-snapshotted: there is no "uncommitted" state. The
@@ -1362,7 +1362,7 @@ export const slBackend: VcsBackend = {
   },
 
   async showCommit(projectRoot, sha) {
-    return runShow("sl", ["show", sha], projectRoot);
+    return runShow("sl", ["show", sha, "--color=always"], projectRoot);
   },
 
   async listDirtyFiles(workspacePath) {

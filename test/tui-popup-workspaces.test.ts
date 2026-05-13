@@ -96,19 +96,9 @@ describe("WorkspacesPopup: drill is the commits-since-fork list (NOT TaskDetailD
 });
 
 describe("WorkspacesPopup: Enter on focused commit drills into git show diff (feat_workspaces_drill_git_show)", () => {
-  it("delegates the git show invocation + truncation to runGitShow (../git-show.ts)", () => {
-    // The git invocation, the arg vector, and the SHOW_MAX_CHARS
-    // truncation now live in src/cli/tui/git-show.ts where they're
-    // exercised by a REAL git-repo fixture (test/tui-git-show.test.ts).
-    // The popup's responsibility shrinks to wiring: call runGitShow,
-    // route { text, error } to the right state setters. Static-source
-    // assertions on "--color=never" / SHOW_MAX_CHARS belong to the
-    // helper module's tests now.
-    expect(SRC).toContain('from "../git-show.js"');
-    expect(SRC).toContain("runGitShow(path, sha)");
-    // The popup must NOT shell out to git itself anymore (any direct
-    // execFile call here is a regression that bypasses the helper's
-    // arg-vector + truncation guarantees).
+  it("delegates git show through the shared VcsBackend.showCommit seam", () => {
+    expect(SRC).toContain("detectBackend(path)");
+    expect(SRC).toContain("backend.showCommit(path, sha)");
     expect(SRC).not.toContain("node:child_process");
     expect(SRC).not.toMatch(/\bexecFile\b/);
   });
@@ -147,6 +137,15 @@ describe("WorkspacesPopup: Enter on focused commit drills into git show diff (fe
     // drill mode — operator wants the command, not the captured
     // output)."
     expect(SRC).toMatch(/yank\(`git show \$\{showSha\}`\)/);
+  });
+
+  it("t in show mode launches tuicr for the focused commit in the project cwd", () => {
+    expect(SRC).toContain('from "../tuicr.js"');
+    expect(SRC).toMatch(
+      /onTuicr:[\s\S]*runTuicrInteractive\(\{ rev: showSha, cwd: projectRoot \}\)/,
+    );
+    expect(SRC).toContain("onFooter?.(r.error");
+    expect(SRC).toContain("t tuicr");
   });
 
   it("resets show-state on focused-workspace change + on leaving drill", () => {
