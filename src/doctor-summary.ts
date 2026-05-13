@@ -240,3 +240,128 @@ export function loadDoctorChecks(
 ): readonly DoctorCheck[] {
   return loadDoctorSummary(db, snapshot).checks;
 }
+
+// ─── pure helpers (per-check remediation hints) ────────────────────
+//
+// These map a `DoctorCheck.name` to either (a) a single-line
+// informational shell command suitable for yank/paste, or (b) a
+// short multi-line paragraph explaining the failure shape. They
+// originally lived next to the slot-9 Doctor popup
+// (src/cli/tui/popups/doctor.tsx) but moved here per
+// review_tui_doctor_remediation_lives_in_popup: neither function
+// has any rendering concern (both return plain strings) and the
+// popup's `renderDrillBody` was the only render-layer caller.
+// Living here keeps every per-check fact in one file so adding a
+// new check is a single touchpoint, and lets future SDK consumers
+// (e.g. a `mu doctor --remediation` flag) reach the same data
+// without depending on the TUI render layer.
+//
+// READ-ONLY by construction. Even when a check is `fail`, the yank
+// recipe is the diagnostic verb the operator should RUN MANUALLY,
+// never a mutating fix. Schema-shape checks (no actionable
+// mutation) yank a `# ...` comment line so the muscle-memory of
+// `y` still gives feedback.
+
+/**
+ * Map a check row to the most useful informational command the
+ * operator might paste. Read-only by construction: `mu agent list`,
+ * `mu workspace orphans`, `mu doctor` are all SELECT-shape verbs;
+ * `# ...` lines are visibly inert. Per the slot-9 popup spec KEY
+ * MAP block this is INFORMATIONAL, never a mutating recipe — so
+ * even when the check is `fail`, we yank the diagnostic verb the
+ * operator should RUN MANUALLY, not a fix command.
+ *
+ * Pure; exported for unit tests + SDK reuse.
+ */
+export function yankCommandForCheck(check: Pick<DoctorCheck, "name" | "status">): string {
+  switch (check.name) {
+    case "agents":
+      // Diagnostic: list live + ghost panes. Operator decides
+      // whether to `mu agent close` from the list output.
+      return "mu agent list";
+    case "panes":
+      // Orphan tmux panes — the standard adoption recipe.
+      return "mu agent adopt";
+    case "workspaces":
+      // Diagnostic: list orphan workspace dirs. Operator decides
+      // whether to `mu workspace free` from the list output.
+      return "mu workspace orphans";
+    case "schema":
+    case "schema_version":
+    case "journal_mode":
+    case "foreign_keys":
+      // No actionable mutation an operator should yank for
+      // schema-shape checks (the migration runner is the SDK seam,
+      // not a CLI verb). Yank a no-op comment so the muscle memory
+      // of `y` still gives feedback. When fail, the textual
+      // `mu doctor` carries the full diagnostic.
+      return `# ${check.name}: see \`mu doctor\` for full diagnostic`;
+    default:
+      // Forward-compat: any future check name falls back to the
+      // textual `mu doctor` verb. Read-only.
+      return "mu doctor";
+  }
+}
+
+/**
+ * A short paragraph (one paragraph per check name) explaining the
+ * shape of the failure / warning. Returned as a `readonly string[]`
+ * so the popup's drill body can interleave the lines with other
+ * content; CLI consumers can `.join("\n")` themselves.
+ *
+ * Pure; exported for unit tests + SDK reuse.
+ */
+export function remediationParagraph(check: DoctorCheck): readonly string[] {
+  switch (check.name) {
+    case "agents":
+      return [
+        "A 'ghost pane' is a tmux pane that mu's reconcile pass would",
+        "prune on the next mutation. Run `mu agent list` to see the",
+        "current state, then `mu agent close <name>` if the agent is",
+        "stale. The TUI is read-only — no auto-prune.",
+      ];
+    case "panes":
+      return [
+        "An 'orphan pane' is a live tmux pane in the workstream's",
+        "session that mu doesn't know about. Adopt it via",
+        "`mu agent adopt <pane-id>` to register it as a managed agent,",
+        "or kill it manually if it's not yours.",
+      ];
+    case "workspaces":
+      return [
+        "An 'orphan workspace dir' is a per-agent VCS workspace under",
+        "the workstream that has no matching mu agent row. Run",
+        "`mu workspace orphans -w <ws>` to list them, then",
+        "`mu workspace free <agent>` to release each one.",
+      ];
+    case "schema":
+      return [
+        "Missing tables typically mean an older mu binary opened the",
+        "DB without running migrations. Rebuild mu (npm run build)",
+        "and re-open; openDb runs the migration block on every",
+        "process start.",
+      ];
+    case "schema_version":
+      return [
+        "Schema version mismatch means the DB was opened by a",
+        "different mu binary than the one running now. If `<` the",
+        "expected version, openDb should have migrated — check the",
+        "build. If `>` the expected, you may have a downgrade in",
+        "progress; restore from a snapshot rather than continuing.",
+      ];
+    case "journal_mode":
+      return [
+        "WAL is the default journal mode for SQLite under mu. A",
+        "different mode (e.g. `delete`) means an external tool",
+        "rewrote the DB pragma. Re-open the DB with mu to restore.",
+      ];
+    case "foreign_keys":
+      return [
+        "Foreign keys must be ON for mu's CASCADE deletes to work.",
+        "An OFF value usually means an external SQLite client opened",
+        "the DB without `PRAGMA foreign_keys = ON`. Re-open with mu.",
+      ];
+    default:
+      return ["See `mu doctor` for the canonical textual diagnostic."];
+  }
+}

@@ -358,6 +358,8 @@ export {
   type DoctorSummary,
   loadDoctorChecks,
   loadDoctorSummary,
+  remediationParagraph,
+  yankCommandForCheck,
 } from "./doctor-summary.js";
 export {
   captureSnapshot,

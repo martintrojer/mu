@@ -12,13 +12,12 @@
 
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { DoctorPopup, renderDrillBody } from "../src/cli/tui/popups/doctor.js";
 import {
-  DoctorPopup,
+  type DoctorCheck,
   remediationParagraph,
-  renderDrillBody,
   yankCommandForCheck,
-} from "../src/cli/tui/popups/doctor.js";
-import type { DoctorCheck } from "../src/doctor-summary.js";
+} from "../src/doctor-summary.js";
 
 const SRC_RAW = readFileSync("./src/cli/tui/popups/doctor.tsx", "utf-8");
 // Strip `// ...` line comments + `/* ... */` block comments so the
@@ -99,7 +98,11 @@ describe("DoctorPopup: yank intents — informational only (read-only pledge)", 
     // returned-from `yankCommandForCheck` so the prose remediation
     // paragraphs (which legitimately mention `mu agent close` as
     // an instruction the operator may RUN MANUALLY, not paste
-    // blindly) don't false-positive.
+    // blindly) don't false-positive. Note: yankCommandForCheck
+    // itself now lives in src/doctor-summary.ts (per task
+    // review_tui_doctor_remediation_lives_in_popup) so the
+    // popup-source scope only has to police the inline `yank(...)`
+    // call sites here.
     const yankSites = SRC.split("\n")
       .filter((line) => /\byank\s*\(/.test(line) || /\breturn\s+"mu /.test(line))
       .join("\n");
@@ -122,26 +125,6 @@ describe("DoctorPopup: yank intents — informational only (read-only pledge)", 
     ]) {
       expect(yankSites, `forbidden mutating yank: ${forbidden}`).not.toContain(forbidden);
     }
-  });
-
-  it("yankCommandForCheck maps each known check name to a SELECT-shape verb", () => {
-    expect(yankCommandForCheck({ name: "agents", status: "warn" })).toBe("mu agent list");
-    expect(yankCommandForCheck({ name: "panes", status: "warn" })).toBe("mu agent adopt");
-    expect(yankCommandForCheck({ name: "workspaces", status: "warn" })).toBe(
-      "mu workspace orphans",
-    );
-  });
-
-  it("schema-shape checks yank a `# ...` comment line (no actionable mutation)", () => {
-    for (const name of ["schema", "schema_version", "journal_mode", "foreign_keys"]) {
-      const cmd = yankCommandForCheck({ name, status: "fail" });
-      expect(cmd.startsWith("#"), `expected '# ...' for ${name}, got: ${cmd}`).toBe(true);
-      expect(cmd).toContain("mu doctor");
-    }
-  });
-
-  it("forward-compat: unknown check name falls back to `mu doctor`", () => {
-    expect(yankCommandForCheck({ name: "future_check", status: "ok" })).toBe("mu doctor");
   });
 });
 

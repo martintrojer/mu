@@ -8,7 +8,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type Db, openDb } from "../src/db.js";
-import { countProblems, loadDoctorSummary } from "../src/doctor-summary.js";
+import {
+  type DoctorCheck,
+  countProblems,
+  loadDoctorSummary,
+  remediationParagraph,
+  yankCommandForCheck,
+} from "../src/doctor-summary.js";
 import type { WorkstreamSnapshot } from "../src/state.js";
 
 const EMPTY_VIEW = {
@@ -138,6 +144,62 @@ describe("loadDoctorSummary", () => {
     const s = loadDoctorSummary(db, snap);
     // agents (warn) + workspaces (warn) = 2; everything else ok.
     expect(s.problemCount).toBe(2);
+  });
+});
+
+// These two helpers used to live in src/cli/tui/popups/doctor.tsx;
+// they're pure DoctorCheck-shape utilities and moved here per
+// review_tui_doctor_remediation_lives_in_popup. Tests moved
+// alongside.
+describe("yankCommandForCheck", () => {
+  it("maps each known check name to a SELECT-shape verb", () => {
+    expect(yankCommandForCheck({ name: "agents", status: "warn" })).toBe("mu agent list");
+    expect(yankCommandForCheck({ name: "panes", status: "warn" })).toBe("mu agent adopt");
+    expect(yankCommandForCheck({ name: "workspaces", status: "warn" })).toBe(
+      "mu workspace orphans",
+    );
+  });
+
+  it("schema-shape checks yank a `# ...` comment line (no actionable mutation)", () => {
+    for (const name of ["schema", "schema_version", "journal_mode", "foreign_keys"]) {
+      const cmd = yankCommandForCheck({ name, status: "fail" });
+      expect(cmd.startsWith("#"), `expected '# ...' for ${name}, got: ${cmd}`).toBe(true);
+      expect(cmd).toContain("mu doctor");
+    }
+  });
+
+  it("forward-compat: unknown check name falls back to `mu doctor`", () => {
+    expect(yankCommandForCheck({ name: "future_check", status: "ok" })).toBe("mu doctor");
+  });
+});
+
+describe("remediationParagraph", () => {
+  function check(name: string): DoctorCheck {
+    return { name, status: "warn", detail: "" };
+  }
+
+  it("returns a non-empty paragraph for every known check name", () => {
+    for (const name of [
+      "agents",
+      "panes",
+      "workspaces",
+      "schema",
+      "schema_version",
+      "journal_mode",
+      "foreign_keys",
+    ]) {
+      const lines = remediationParagraph(check(name));
+      expect(lines.length, `expected non-empty paragraph for ${name}`).toBeGreaterThan(0);
+      // Each paragraph line should be non-empty prose (not just
+      // whitespace) so the popup drill body renders cleanly.
+      for (const ln of lines) expect(ln.trim().length).toBeGreaterThan(0);
+    }
+  });
+
+  it("forward-compat: unknown check name falls back to a `mu doctor` hint", () => {
+    const lines = remediationParagraph(check("future_check"));
+    expect(lines.length).toBeGreaterThan(0);
+    expect(lines.join(" ")).toContain("mu doctor");
   });
 });
 
