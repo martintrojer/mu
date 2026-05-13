@@ -163,8 +163,11 @@ describe("StatusBar", () => {
     expect(text).toContain("page");
     expect(text).toContain("y");
     expect(text).toContain("yank");
-    expect(text).toContain("t");
-    expect(text).toContain("tuicr");
+    // `t tuicr` is per-drill (only git-show drills want it). It rides
+    // each consumer's bottom-border hint via `bottomLabel`, NOT the
+    // global popup-drill cluster, so generic drill modes (notes etc)
+    // don't falsely advertise a no-op key.
+    expect(text).not.toContain("tuicr");
     expect(text).toContain("?");
     expect(text).toContain("help");
     expect(text).toContain("Esc");

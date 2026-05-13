@@ -59,12 +59,19 @@ const POPUP_LIST_HINTS: readonly StatusHintEntry[] = [
   hint("Esc", "back", ["Esc"]),
 ];
 
+// `t tuicr` is intentionally NOT here. It is a per-drill verb that
+// only fires in git-show drills (Commits popup + Workspaces popup
+// commits drill). Each consumer inserts "· t tuicr" into its drill's
+// `hint` prop — which TitledBox renders inset into the bottom border
+// next to the per-drill yank string. Putting it in the GLOBAL
+// status-bar drill cluster would advertise it in every drill
+// (TaskDetailDrill notes, agent scrollback, etc) where pressing `t`
+// does nothing.
 const POPUP_DRILL_HINTS: readonly StatusHintEntry[] = [
   label("drill", "magenta"),
   hint("j/k", "scroll", ["j", "k"]),
   hint("Ctrl-D/U", "page", ["Ctrl-D", "Ctrl-U"]),
   hint("y", "yank", ["y"]),
-  hint("t", "tuicr", ["t"]),
   hint("?", "help", ["?"]),
   hint("Esc", "back", ["Esc"]),
 ];

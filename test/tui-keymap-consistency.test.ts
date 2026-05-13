@@ -30,9 +30,16 @@ describe("TUI status-bar/help keymap consistency", () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  it("advertises `t tuicr` in both popup-drill hints and help", () => {
+  it("keeps `t tuicr` in the help overlay but NOT in the global popup-drill hint cluster", () => {
+    // `t` only does something in git-show drills (Commits popup +
+    // Workspaces popup commits drill). Each consumer inserts the
+    // `· t tuicr` text into its own drill's bottom-border hint via
+    // the per-drill `hint` prop. Putting it in the GLOBAL status-bar
+    // cluster would falsely advertise it in TaskDetailDrill / agent
+    // scrollback / etc where pressing `t` is a no-op. Help overlay is
+    // the global reference and SHOULD list it.
     const drillHints = statusHintEntries({ mode: "popup-drill" });
-    expect(drillHints).toEqual(
+    expect(drillHints).not.toEqual(
       expect.arrayContaining([expect.objectContaining({ key: "t", label: "tuicr" })]),
     );
     const drillPane = HELP_PANES.find((pane) => pane.title === "keys · popup drill");
