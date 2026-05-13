@@ -95,9 +95,7 @@ export {
   SchemaTooOldError,
   defaultDbPath,
   defaultStateDir,
-  ensureWorkstreamStateDir,
   openDb,
-  workstreamStateDir,
   type Db,
   type OpenDbOptions,
 } from "./db.js";

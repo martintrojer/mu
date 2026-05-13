@@ -24,6 +24,14 @@ called out under "Breaking" in each entry.
 
 ### Removed
 
+- **SDK: `workstreamStateDir` and `ensureWorkstreamStateDir` removed
+  from `src/db.ts` (and the `mu` SDK re-exports in `src/index.ts`).**
+  Both functions had zero in-tree consumers; the `<state-dir>/
+  workstreams/<workstream>/` artifact directory they computed has
+  never been written to. Paper-only break for any external SDK
+  caller — mu itself ships no callers, and the directory layout is
+  not a stable surface. If a future feature needs per-workstream
+  artifact dirs we'll reintroduce a single helper at the call site.
 - `docs/test-flakes-audit.md` and `docs/plans/` deleted. The flake
   audit's durable lessons live in AGENTS.md and ARCHITECTURE.md;
   closed task notes (`mu task notes

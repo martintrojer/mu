@@ -68,18 +68,6 @@ export function defaultDbPath(): string {
 }
 
 /**
- * Per-workstream artifact directory: <state-dir>/workstreams/<workstream>/
- *
- * Created lazily by callers. 0.1.0 doesn't write to it yet — reserved
- * for future snapshots / tracing logs / forensic pane captures. The DB
- * stays canonical and shared; this directory is only for things that
- * naturally don't need cross-workstream queries.
- */
-export function workstreamStateDir(workstream: string): string {
-  return join(defaultStateDir(), "workstreams", workstream);
-}
-
-/**
  * Open the mu database. Creates the parent directory and applies the schema
  * idempotently on every open. Safe to call from many short-lived processes
  * concurrently — WAL mode handles cross-process writes.
@@ -310,13 +298,6 @@ function detectExistingSchemaVersion(db: Db): number | null {
     .get() as { name: string } | undefined;
   if (hasWorkstreams) return 1;
   return null;
-}
-
-/** Test seam: ensure a workstream's artifact dir exists. Unused today. */
-export function ensureWorkstreamStateDir(workstream: string): string {
-  const path = workstreamStateDir(workstream);
-  mkdirSync(path, { recursive: true });
-  return path;
 }
 
 /**
