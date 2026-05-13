@@ -184,6 +184,7 @@ export function DoctorPopup({
             body={drillBody}
             viewport={viewport}
             scrollTop={drill.scrollTop}
+            wrappedBody={drill.wrappedBody}
             emptyText="(no detail)"
             hint={`y yanks \`${yankCommandForCheck(focused)}\``}
           />

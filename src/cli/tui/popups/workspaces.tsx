@@ -377,6 +377,7 @@ export function WorkspacesPopup({
             body={showBody}
             viewport={drillViewport}
             scrollTop={showDrill.scrollTop}
+            wrappedBody={showDrill.wrappedBody}
             hint={`y yanks \`git show ${shortSha}\` · t tuicr`}
             emptyText={showLoading ? "loading…" : "(empty diff)"}
           />

@@ -95,7 +95,8 @@ describe("CommitsPopup source invariants", () => {
     expect(SRC).toContain("centredVisibleSlice");
     expect(SRC).toContain("useDrillKeymap");
     expect(SRC).toContain("<DrillScrollView");
-    expect(DRILL_SRC).toContain("wrapAnsiLines");
+    expect(DRILL_SRC).toContain("useWrappedBody");
+    expect(DRILL_SRC).toContain("wrappedBody ?? wrapDrillBody(body, wrapWidth)");
   });
 
   it("reads snapshot.recentCommits and filters sha + subject + author + relTime", () => {

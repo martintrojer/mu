@@ -62,9 +62,32 @@ export interface DrillKeymapOptions {
   resetKey?: string | number;
 }
 
+export interface WrappedDrillBody {
+  wrapped: string;
+  lines: readonly string[];
+  totalLines: number;
+}
+
 export interface DrillKeymap {
   scrollTop: number;
   dispatch: (action: PopupAction) => void;
+  wrappedBody: WrappedDrillBody;
+  wrappedLines: readonly string[];
+  totalLines: number;
+}
+
+function drillWrapWidth(): number {
+  return Math.max(0, contentWidthFromCols(termColsForLayout()) - 2);
+}
+
+export function wrapDrillBody(body: string, wrapWidth: number): WrappedDrillBody {
+  const wrapped = wrapAnsiLines(body, wrapWidth);
+  const lines = wrapped === "" ? [] : wrapped.split("\n");
+  return { wrapped, lines, totalLines: lines.length };
+}
+
+export function useWrappedBody(body: string, wrapWidth: number): WrappedDrillBody {
+  return useMemo(() => wrapDrillBody(body, wrapWidth), [body, wrapWidth]);
 }
 
 /**
@@ -81,12 +104,9 @@ export function useDrillKeymap({
   resetKey,
 }: DrillKeymapOptions): DrillKeymap {
   const [scrollTop, setScrollTop] = useState(0);
-  const wrapWidth = Math.max(0, contentWidthFromCols(termColsForLayout()) - 2);
-  const wrappedBody = useMemo(() => wrapAnsiLines(body, wrapWidth), [body, wrapWidth]);
-  const totalLines = useMemo(
-    () => (wrappedBody === "" ? 0 : wrappedBody.split("\n").length),
-    [wrappedBody],
-  );
+  const wrapWidth = drillWrapWidth();
+  const wrappedBody = useWrappedBody(body, wrapWidth);
+  const { totalLines } = wrappedBody;
 
   const resetSignal = resetKey ?? body;
 
@@ -123,7 +143,13 @@ export function useDrillKeymap({
     [onClose, onTuicr, onYank, totalLines, viewport],
   );
 
-  return { scrollTop, dispatch };
+  return {
+    scrollTop,
+    dispatch,
+    wrappedBody,
+    wrappedLines: wrappedBody.lines,
+    totalLines,
+  };
 }
 
 export interface DrillScrollViewProps {
@@ -142,6 +168,8 @@ export interface DrillScrollViewProps {
   hint?: string;
   /** Optional fallback rendered when the body is empty. */
   emptyText?: string;
+  /** Already-wrapped body from useDrillKeymap; avoids wrapping twice. */
+  wrappedBody?: WrappedDrillBody;
 }
 
 /**
@@ -156,11 +184,15 @@ export function DrillScrollView({
   scrollTop,
   hint,
   emptyText,
+  wrappedBody,
 }: DrillScrollViewProps): JSX.Element {
-  const wrapWidth = Math.max(0, contentWidthFromCols(termColsForLayout()) - 2);
-  const wrappedBody = useMemo(() => wrapAnsiLines(body, wrapWidth), [body, wrapWidth]);
-  const lines = useMemo(() => (wrappedBody === "" ? [] : wrappedBody.split("\n")), [wrappedBody]);
-  const totalLines = lines.length;
+  const wrapWidth = drillWrapWidth();
+  const renderedBody = useMemo(
+    () => wrappedBody ?? wrapDrillBody(body, wrapWidth),
+    [body, wrapWidth, wrappedBody],
+  );
+  const lines = renderedBody.lines;
+  const totalLines = renderedBody.totalLines;
   const start = Math.max(0, Math.min(Math.max(0, totalLines - viewport), scrollTop));
   const visible = lines.slice(start, start + viewport);
   const showFallback = totalLines === 0;

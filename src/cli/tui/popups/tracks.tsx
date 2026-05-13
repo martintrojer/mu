@@ -282,6 +282,8 @@ export function TracksPopup({
             scrollTop={taskDetailDrill.scrollTop}
             viewport={viewport}
             tickNonce={fastTickNonce}
+            body={notesBody}
+            wrappedBody={taskDetailDrill.wrappedBody}
           />
         </Box>
       </PopupShell>

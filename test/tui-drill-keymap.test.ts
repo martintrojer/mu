@@ -36,7 +36,9 @@ const ALL_POPUP_CASES = [...DRILL_POPUP_CASES, ...SPECIAL_DRILL_POPUP_CASES];
 describe("useDrillKeymap", () => {
   it("lives beside DrillScrollView and owns scroll/close/yank dispatch", () => {
     expect(DRILL_SRC).toMatch(/export function useDrillKeymap\b/);
-    expect(DRILL_SRC).toMatch(/wrappedBody === "" \? 0 : wrappedBody\.split\("\\n"\)\.length/);
+    expect(DRILL_SRC).toMatch(/export function useWrappedBody\b/);
+    expect(DRILL_SRC).toMatch(/export function wrapDrillBody\b/);
+    expect(DRILL_SRC).toContain("totalLines: lines.length");
     expect(DRILL_SRC).toMatch(/isNavAction\(action\)/);
     expect(DRILL_SRC).toMatch(/applyScroll\(s, action, totalLines, viewport\)/);
     expect(DRILL_SRC).toMatch(/case "close":/);
@@ -46,6 +48,16 @@ describe("useDrillKeymap", () => {
     expect(DRILL_SRC).toContain("resetKey?: string | number");
     expect(DRILL_SRC).toContain("const resetSignal = resetKey ?? body");
     expect(DRILL_SRC).toMatch(/clampScrollTop\(s, totalLines, viewport\)/);
+    expect(DRILL_SRC).toContain("wrappedBody: WrappedDrillBody");
+    expect(DRILL_SRC).toContain("wrappedLines: wrappedBody.lines");
+  });
+
+  it("wraps drill bodies through one shared helper instead of two raw wrapAnsiLines call sites", () => {
+    const stripped = DRILL_SRC.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+    const rawWrapCalls = stripped.match(/wrapAnsiLines\(/g) ?? [];
+    expect(rawWrapCalls).toHaveLength(1);
+    expect(stripped).toContain("const wrapped = wrapAnsiLines(body, wrapWidth)");
+    expect(stripped).toContain("wrappedBody ?? wrapDrillBody(body, wrapWidth)");
   });
 
   for (const { name, src } of ALL_POPUP_CASES) {

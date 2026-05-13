@@ -178,6 +178,8 @@ export function InProgressPopup({
             scrollTop={drill.scrollTop}
             viewport={viewport}
             tickNonce={fastTickNonce}
+            body={notesText}
+            wrappedBody={drill.wrappedBody}
           />
         </Box>
       </PopupShell>

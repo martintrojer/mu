@@ -235,6 +235,7 @@ export function AgentsPopup({
             body={drillBody}
             viewport={viewport}
             scrollTop={drill.scrollTop}
+            wrappedBody={drill.wrappedBody}
             hint={`y yanks \`mu agent read -n ${SCROLLBACK_LINES}\``}
             emptyText={loading ? "loading…" : "(no scrollback yet)"}
           />

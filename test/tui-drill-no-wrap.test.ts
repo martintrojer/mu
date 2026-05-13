@@ -72,7 +72,7 @@ describe("DrillScrollView renders inline (no nested TitledBox)", () => {
       branch,
       "drill body <Text> must NOT carry wrap=… (lines should wrap within the popup width, not clip)",
     ).not.toMatch(/<Text[^>]*\bwrap=/);
-    expect(stripped).toContain("wrapAnsiLines");
+    expect(stripped).toContain("wrapDrillBody");
   });
 
   it("title + position label render as a single inline header row", () => {

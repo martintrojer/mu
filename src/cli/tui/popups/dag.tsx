@@ -64,8 +64,10 @@ export function DagPopup({
     resetKey: workstream,
   });
 
-  const lineToRoot = useMemo(() => rootForBodyLines(body, roots), [body, roots]);
-  const totalLines = body === "" ? 0 : body.split("\n").length;
+  const lineToRoot = useMemo(
+    () => rootForBodyLines(drill.wrappedLines, roots),
+    [drill.wrappedLines, roots],
+  );
 
   useInput((input, key) => {
     if (statusFilter.onKey(input, key)) return;
@@ -84,7 +86,7 @@ export function DagPopup({
     // before the current top line (or first root). This keeps the
     // command useful without cursor-row plumbing in the text drill.
     if (isNavAction(action)) {
-      const nextTop = applyScroll(before, action, totalLines, viewport);
+      const nextTop = applyScroll(before, action, drill.totalLines, viewport);
       setFocusedRoot(lineToRoot[nextTop] ?? roots[0] ?? null);
     }
   });
@@ -109,6 +111,7 @@ export function DagPopup({
           body={body}
           viewport={viewport}
           scrollTop={drill.scrollTop}
+          wrappedBody={drill.wrappedBody}
           emptyText="(no tasks)"
           hint="y yanks `mu task tree <root-id>`"
         />
@@ -145,11 +148,10 @@ export function truncateDagBody(body: string, contentWidth: number): string {
     .join("\n");
 }
 
-function rootForBodyLines(body: string, roots: readonly string[]): string[] {
+function rootForBodyLines(lines: readonly string[], roots: readonly string[]): string[] {
   const rootSet = new Set(roots);
   const out: string[] = [];
   let current = roots[0] ?? "";
-  const lines = body === "" ? [] : body.split("\n");
   for (const line of lines) {
     const maybeRoot = line.split(/\s+/)[0];
     if (maybeRoot !== undefined && rootSet.has(maybeRoot)) current = maybeRoot;

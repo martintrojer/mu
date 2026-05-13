@@ -186,6 +186,7 @@ export function CommitsPopup({
             body={showBody}
             viewport={drillViewport}
             scrollTop={drill.scrollTop}
+            wrappedBody={drill.wrappedBody}
             hint={
               showCommand === null
                 ? "y yanks show command · t tuicr"

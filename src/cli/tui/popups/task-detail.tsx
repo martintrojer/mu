@@ -21,7 +21,7 @@
 import { useMemo } from "react";
 import type { Db } from "../../../db.js";
 import { type TaskRow, listNotes } from "../../../tasks.js";
-import { DrillScrollView } from "./drill.js";
+import { DrillScrollView, type WrappedDrillBody } from "./drill.js";
 
 export type RenderNotesFn = (db: Db, taskId: string, workstream: string) => string;
 
@@ -38,8 +38,12 @@ export interface TaskDetailDrillProps {
   viewport: number;
   /** Refresh signal for SQL-backed note bodies. */
   tickNonce: number;
+  /** Already-rendered body shared with useDrillKeymap. */
+  body?: string;
   /** Injection seam for behaviour tests; production uses renderNotes. */
   renderNotesFn?: RenderNotesFn;
+  /** Already-wrapped body from useDrillKeymap; avoids wrapping twice. */
+  wrappedBody?: WrappedDrillBody;
 }
 
 /**
@@ -55,18 +59,22 @@ export function TaskDetailDrill({
   scrollTop,
   viewport,
   tickNonce,
+  body,
   renderNotesFn = renderNotes,
+  wrappedBody,
 }: TaskDetailDrillProps): JSX.Element {
-  const body = useMemo<string>(() => {
+  const renderedBody = useMemo<string>(() => {
+    if (body !== undefined) return body;
     void tickNonce;
     return renderNotesFn(db, task.name, workstream);
-  }, [db, task, workstream, tickNonce, renderNotesFn]);
+  }, [body, db, task, workstream, tickNonce, renderNotesFn]);
   return (
     <DrillScrollView
       title={`mu task notes ${task.name}`}
-      body={body}
+      body={renderedBody}
       viewport={viewport}
       scrollTop={scrollTop}
+      wrappedBody={wrappedBody}
       emptyText="(no notes)"
       hint={`y yanks \`mu task notes ${task.name}\``}
     />

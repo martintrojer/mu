@@ -164,6 +164,7 @@ export function LogPopup({
             body={drillBody}
             viewport={viewport}
             scrollTop={drill.scrollTop}
+            wrappedBody={drill.wrappedBody}
             emptyText="(empty payload)"
             hint="y yanks `mu log --since N -n 1`"
           />
