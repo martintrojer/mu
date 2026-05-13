@@ -200,22 +200,27 @@ called out under "Breaking" in each entry.
 
 ### Tests
 
-- **`test/tui-popup-{agents,log,recent}.test.ts`: converted from
-  `readFileSync` source-greps to behaviour tests on the
-  `simulateInput` + `CaptureStream` seam.** Each popup now mounts
-  with a fixture `WorkstreamSnapshot`, drives keystrokes through
-  the new seam, and asserts on visible text + `vi.fn()` yank /
-  `onModeChange` / `onClose` callbacks. The agents popup stubs
-  `setTmuxExecutor` so drill-mode `readAgent` → `capturePane`
-  returns a deterministic in-memory scrollback. Each conversion was
+- **`test/tui-popup-{agents,log,recent,tasks,inprogress,blocked}.test.ts`:
+  converted from `readFileSync` source-greps to behaviour tests on
+  the `simulateInput` + `CaptureStream` seam.** Each popup now
+  mounts with a fixture `WorkstreamSnapshot`, drives keystrokes
+  through the new seam, and asserts on visible text + `vi.fn()`
+  yank / `onModeChange` / `onClose` callbacks. Yank-and-frame
+  assertions cover `mu task claim ready_a -w demo` (OPEN-no-owner
+  ReadyPopup row), `mu task close alpha_run -w demo --evidence
+  "..."` (IN_PROGRESS row), `mu task tree paint -w demo`
+  (Blocked-popup diagnostic), and `mu task notes <id>`
+  (drill-mode yank). The agents popup stubs `setTmuxExecutor` so
+  drill-mode `readAgent` → `capturePane` returns a deterministic
+  in-memory scrollback. Drill mode also asserts the focused task's
+  notes show in the rendered body. Each conversion was
   pre-flight-tested against a deliberate regression (renaming the
-  yank verb, removing the drill case) and confirmed to fail. The
-  remaining source-grep block in `tui-popup-recent.test.ts` is the
-  load-bearing App ↔ keys ↔ layout wiring guard, which is
-  structural by intent. First slice of the
-  `testreview_tui_static_source_grep_pervasive` umbrella; sibling
-  popup tests (blocked / doctor / inprogress / tracks / workspaces)
-  follow the same pattern.
+  yank verb, removing the drill case) and confirmed to fail.
+  Structural greps that pin slot id ↔ App registry ↔ keys glue
+  (e.g. in-progress at slot 6 / `^`, blocked at slot 7 / `&`)
+  stay because they're import-graph guards — the seam header
+  explicitly carves those out. Closes the
+  `testreview_tui_static_source_grep_pervasive` umbrella.
 - `test/_ink-render.ts`: added a `simulateInput(stdin, key, opts?)`
   helper plus a header comment block documenting the
   CaptureStream-based behaviour-test seam (the 4-step pattern:
