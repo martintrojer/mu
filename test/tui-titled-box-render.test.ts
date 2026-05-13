@@ -1,43 +1,16 @@
-import { Writable } from "node:stream";
 import { Box, Text, render } from "ink";
 import { createElement } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import { TitledBox } from "../src/cli/tui/titled-box.js";
-import { waitForInkOutput } from "./_ink-render.js";
-
-class CaptureStream extends Writable {
-  output = "";
-  columns: number;
-  rows: number;
-
-  constructor({ columns, rows }: { columns: number; rows: number }) {
-    super();
-    this.columns = columns;
-    this.rows = rows;
-  }
-
-  _write(
-    chunk: Buffer | string,
-    _encoding: BufferEncoding,
-    callback: (error?: Error | null) => void,
-  ) {
-    this.output += chunk.toString();
-    callback();
-  }
-}
-
-const streams: CaptureStream[] = [];
+import { CaptureStream, createInkCaptureStream, waitForInkOutput } from "./_ink-render.js";
 
 afterEach(() => {
-  for (const stream of streams.splice(0)) {
-    stream.removeAllListeners();
-  }
+  CaptureStream.cleanup();
 });
 
 describe("TitledBox constrained-frame rendering", () => {
   it("does not draw child body text inside the rounded bottom border when cards shrink", async () => {
-    const stdout = new CaptureStream({ columns: 34, rows: 20 });
-    streams.push(stdout);
+    const stdout = createInkCaptureStream({ columns: 34, rows: 20 });
 
     const cards = Array.from({ length: 9 }, (_, i) => {
       const n = i + 1;
@@ -62,8 +35,7 @@ describe("TitledBox constrained-frame rendering", () => {
   });
 
   it("does not pad a phantom blank body row above an inset bottom label", async () => {
-    const stdout = new CaptureStream({ columns: 34, rows: 34 });
-    streams.push(stdout);
+    const stdout = createInkCaptureStream({ columns: 34, rows: 34 });
 
     const trackRows = Array.from({ length: 8 }, (_, i) =>
       createElement(Text, { key: i }, `Track ${i + 1}`),

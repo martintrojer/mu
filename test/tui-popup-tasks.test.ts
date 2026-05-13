@@ -9,7 +9,7 @@ import { ReadyPopup } from "../src/cli/tui/popups/ready.js";
 import { TaskDetailDrill } from "../src/cli/tui/popups/task-detail.js";
 import type { Db } from "../src/db.js";
 import type { TaskRow } from "../src/tasks.js";
-import { CaptureStream, waitForInkOutput } from "./_ink-render.js";
+import { CaptureStream, createInkCaptureStream, waitForInkOutput } from "./_ink-render.js";
 
 const task: TaskRow = {
   name: "t1",
@@ -47,7 +47,7 @@ describe("ReadyPopup (Tasks popup)", () => {
   });
 
   it("TaskDetailDrill calls renderNotes once initially and again when tickNonce changes", async () => {
-    const stdout = new CaptureStream({ columns: 80, rows: 20 });
+    const stdout = createInkCaptureStream({ columns: 80, rows: 20 });
     let calls = 0;
     const renderNotesFn = () => `body-${++calls}`;
 

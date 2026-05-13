@@ -26,7 +26,7 @@ import { renderNotes } from "../src/cli/tui/popups/task-detail.js";
 import { useNotesDrill } from "../src/cli/tui/use-notes-drill.js";
 import { type Db, openDb } from "../src/db.js";
 import { type TaskRow, addNote, addTask, listTasks } from "../src/tasks.js";
-import { CaptureStream, waitForInkOutput } from "./_ink-render.js";
+import { CaptureStream, createInkCaptureStream, waitForInkOutput } from "./_ink-render.js";
 
 const openDbs: Db[] = [];
 
@@ -79,7 +79,7 @@ describe("useNotesDrill", () => {
     expect(task).toBeDefined();
     if (!task) return;
 
-    const stdout = new CaptureStream({ columns: 80, rows: 20 });
+    const stdout = createInkCaptureStream({ columns: 80, rows: 20 });
     const capture = { values: [] as string[] };
 
     const instance = render(
@@ -101,7 +101,7 @@ describe("useNotesDrill", () => {
 
   it("returns '' when focused is undefined (even in drill mode)", async () => {
     const db = fixtureDb();
-    const stdout = new CaptureStream({ columns: 80, rows: 20 });
+    const stdout = createInkCaptureStream({ columns: 80, rows: 20 });
     const capture = { values: [] as string[] };
 
     const instance = render(
@@ -132,7 +132,7 @@ describe("useNotesDrill", () => {
     const expected = renderNotes(db, task.name, "demo");
     expect(expected).toContain("hello world");
 
-    const stdout = new CaptureStream({ columns: 80, rows: 20 });
+    const stdout = createInkCaptureStream({ columns: 80, rows: 20 });
     const capture = { values: [] as string[] };
 
     const instance = render(
@@ -160,7 +160,7 @@ describe("useNotesDrill", () => {
     expect(task).toBeDefined();
     if (!task) return;
 
-    const stdout = new CaptureStream({ columns: 80, rows: 20 });
+    const stdout = createInkCaptureStream({ columns: 80, rows: 20 });
     const capture = { values: [] as string[] };
 
     const instance = render(

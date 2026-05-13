@@ -10,7 +10,7 @@ import {
 } from "../src/cli/tui/layout.js";
 import { TitledBox } from "../src/cli/tui/titled-box.js";
 import { renderCardToText } from "./_card-render.js";
-import { CaptureStream, collectRenderedLines } from "./_ink-render.js";
+import { CaptureStream, collectRenderedLines, createInkCaptureStream } from "./_ink-render.js";
 
 const ALL: CardId[] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
 const ROWS = [5, 10, 20, 40] as const;
@@ -103,7 +103,7 @@ function dashboardTreeForRows(rows: number): JSX.Element {
 }
 
 async function renderDashboardFrame(rows: number): Promise<string[]> {
-  const stdout = new CaptureStream({ columns: 140, rows });
+  const stdout = createInkCaptureStream({ columns: 140, rows });
   const instance = render(dashboardTreeForRows(rows), {
     stdout,
     stdin: process.stdin,

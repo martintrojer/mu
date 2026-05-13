@@ -10,7 +10,7 @@ import { TaskDetailDrill } from "../src/cli/tui/popups/task-detail.js";
 import { type Db, openDb } from "../src/db.js";
 import { type TaskRow, addNote, addTask } from "../src/tasks.js";
 import { ensureWorkstream } from "../src/workstream.js";
-import { CaptureStream, waitForInkOutput } from "./_ink-render.js";
+import { CaptureStream, createInkCaptureStream, waitForInkOutput } from "./_ink-render.js";
 
 let dir: string;
 let db: Db;
@@ -42,7 +42,7 @@ afterEach(() => {
 describe("TaskDetailDrill tick refresh", () => {
   it("open all-tasks-style task detail drill shows a note inserted mid-test after fast tickNonce changes", async () => {
     addNote(db, "t1", "initial note", { workstream: "demo", author: "alice" });
-    const stdout = new CaptureStream({ columns: 100, rows: 24 });
+    const stdout = createInkCaptureStream({ columns: 100, rows: 24 });
 
     const instance = render(drillElement(0), {
       stdout,
@@ -73,7 +73,7 @@ describe("TaskDetailDrill tick refresh", () => {
 describe("useDrillKeymap refresh semantics", () => {
   it("preserves scrollTop across body refresh when resetKey is unchanged", async () => {
     const capture = { scrolls: [] as number[] };
-    const stdout = new CaptureStream({ columns: 100, rows: 24 });
+    const stdout = createInkCaptureStream({ columns: 100, rows: 24 });
     const instance = render(
       keymapElement({
         body: numberedLines(20, "before"),
@@ -113,7 +113,7 @@ describe("useDrillKeymap refresh semantics", () => {
 
   it("resets scrollTop to 0 when resetKey changes", async () => {
     const capture = { scrolls: [] as number[] };
-    const stdout = new CaptureStream({ columns: 100, rows: 24 });
+    const stdout = createInkCaptureStream({ columns: 100, rows: 24 });
     const instance = render(
       keymapElement({
         body: numberedLines(20, "same"),
@@ -153,7 +153,7 @@ describe("useDrillKeymap refresh semantics", () => {
 
   it("clamps scrollTop when body shrinks below the current offset", async () => {
     const capture = { scrolls: [] as number[] };
-    const stdout = new CaptureStream({ columns: 100, rows: 24 });
+    const stdout = createInkCaptureStream({ columns: 100, rows: 24 });
     const instance = render(
       keymapElement({
         body: numberedLines(20, "long"),

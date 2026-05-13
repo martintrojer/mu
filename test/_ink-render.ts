@@ -14,7 +14,7 @@ export class CaptureStream extends Writable {
     CaptureStream.streams.push(this);
   }
 
-  _write(
+  override _write(
     chunk: Buffer | string,
     _encoding: BufferEncoding,
     callback: (error?: Error | null) => void,
@@ -28,6 +28,13 @@ export class CaptureStream extends Writable {
       stream.removeAllListeners();
     }
   }
+}
+
+export type InkCaptureStream = CaptureStream & NodeJS.WriteStream;
+
+export function createInkCaptureStream(opts: { columns: number; rows: number }): InkCaptureStream {
+  const capture = new CaptureStream(opts);
+  return capture as unknown as InkCaptureStream;
 }
 
 export async function collectRenderedLines(stdout: CaptureStream): Promise<string[]> {
