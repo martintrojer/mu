@@ -35,7 +35,7 @@ const ALL_POPUP_CASES = [...DRILL_POPUP_CASES, ...SPECIAL_DRILL_POPUP_CASES];
 describe("useDrillKeymap", () => {
   it("lives beside DrillScrollView and owns scroll/close/yank dispatch", () => {
     expect(DRILL_SRC).toMatch(/export function useDrillKeymap\b/);
-    expect(DRILL_SRC).toMatch(/body === "" \? 0 : body\.split\("\\n"\)\.length/);
+    expect(DRILL_SRC).toMatch(/wrappedBody === "" \? 0 : wrappedBody\.split\("\\n"\)\.length/);
     expect(DRILL_SRC).toMatch(/isNavAction\(action\)/);
     expect(DRILL_SRC).toMatch(/applyScroll\(s, action, totalLines, viewport\)/);
     expect(DRILL_SRC).toMatch(/case "close":/);

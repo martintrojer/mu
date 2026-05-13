@@ -87,6 +87,8 @@ called out under "Breaking" in each entry.
 
 ### Fixed
 
+- git-show drills (Commits popup + Workspaces popup) now wrap long lines by visual width instead of byte count. Previously the new `--color=always` ANSI escape sequences inflated Ink's wrap math, breaking lines mid-escape and corrupting the popup chrome / colours. Wrap-within-borders is now clean at any pane width.
+
 - TUI keyboard popup-opens (`t`, `1`-`9`, `Shift+0`-`9`) no longer replay a stale mouse double-click event; the replay queue is consume-once via a ref. Symptom that's now fixed: pressing `t` on the dashboard could land the cursor on a random row + drill into TaskDetailDrill if you'd previously used a mouse double-click.
 
 - **TUI mouse double-click hit-test no longer points at the wrong card.** Empty-state cards (for example Doctor with no warnings) now render at their allocated `chrome + rowBudget` height instead of shrinking to only their minimum padding, so dashboard hit-test rectangles stay aligned with the Ink-rendered card grid all the way down the pane.

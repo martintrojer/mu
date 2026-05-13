@@ -9,11 +9,19 @@ import {
   shortSha,
   showCommandForBackend,
 } from "../src/cli/tui/popups/commits.js";
+import { wrapAnsiLines } from "../src/cli/tui/wrap-ansi.js";
 import type { CommitSummary } from "../src/vcs.js";
 
 const SRC = readFileSync("./src/cli/tui/popups/commits.tsx", "utf-8");
+const DRILL_SRC = readFileSync("./src/cli/tui/popups/drill.tsx", "utf-8");
 const APP_SRC = readFileSync("./src/cli/tui/app.tsx", "utf-8");
 const KEYS_SRC = readFileSync("./src/cli/tui/keys.ts", "utf-8");
+const ESC = "\u001B";
+const RED = `${ESC}[31m`;
+const GREEN = `${ESC}[32m`;
+const RESET = `${ESC}[0m`;
+const ANSI_RE = new RegExp(`${ESC}\\[[0-?]*[ -/]*[@-~]`, "g");
+const PARTIAL_ANSI_RE = new RegExp(`${ESC}(?:$|\\[[0-?]*[ -/]?$)`);
 
 function commit(over: Partial<CommitSummary> = {}): CommitSummary {
   return {
@@ -56,6 +64,27 @@ describe("CommitsPopup export + pure helpers", () => {
   });
 });
 
+describe("CommitsPopup ANSI wrapping", () => {
+  it("wraps ANSI show output without splitting escape sequences or leaking active SGR", () => {
+    const body = `${RED}-${"a".repeat(12)}${RESET}\n${GREEN}+${"b".repeat(12)}${RESET}`;
+    const wrapped = wrapAnsiLines(body, 5).split("\n");
+
+    expect(wrapped.map((line) => line.replace(ANSI_RE, ""))).toEqual([
+      "-aaaa",
+      "aaaaa",
+      "aaa",
+      "+bbbb",
+      "bbbbb",
+      "bbb",
+    ]);
+    for (const line of wrapped) {
+      expect(line).not.toMatch(PARTIAL_ANSI_RE);
+      expect(line.match(ANSI_RE)?.join("") ?? "").not.toContain("\n");
+      expect(line.endsWith(RESET)).toBe(true);
+    }
+  });
+});
+
 describe("CommitsPopup source invariants", () => {
   it("uses shared PopupShell, ListRow, usePopupFilter, central scroll, and useDrillKeymap", () => {
     expect(SRC).toContain('from "../popup-shell.js"');
@@ -66,6 +95,7 @@ describe("CommitsPopup source invariants", () => {
     expect(SRC).toContain("centredVisibleSlice");
     expect(SRC).toContain("useDrillKeymap");
     expect(SRC).toContain("<DrillScrollView");
+    expect(DRILL_SRC).toContain("wrapAnsiLines");
   });
 
   it("reads snapshot.recentCommits and filters sha + subject + author + relTime", () => {

@@ -32,7 +32,9 @@
 
 import { Box, Text } from "ink";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { cellWidth, contentWidthFromCols, termColsForLayout, truncateCell } from "../columns.js";
 import type { PopupAction } from "../keys.js";
+import { wrapAnsiLines } from "../wrap-ansi.js";
 import { applyScroll, isNavAction } from "./scroll.js";
 
 // Re-export so existing `import { clampScrollTop } from "./drill.js"`
@@ -71,7 +73,12 @@ export function useDrillKeymap({
   onTuicr,
 }: DrillKeymapOptions): DrillKeymap {
   const [scrollTop, setScrollTop] = useState(0);
-  const totalLines = useMemo(() => (body === "" ? 0 : body.split("\n").length), [body]);
+  const wrapWidth = Math.max(0, contentWidthFromCols(termColsForLayout()) - 2);
+  const wrappedBody = useMemo(() => wrapAnsiLines(body, wrapWidth), [body, wrapWidth]);
+  const totalLines = useMemo(
+    () => (wrappedBody === "" ? 0 : wrappedBody.split("\n").length),
+    [wrappedBody],
+  );
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: scroll resets when the rendered drill body changes, even if the new body has the same line count.
   useEffect(() => {
@@ -136,7 +143,9 @@ export function DrillScrollView({
   hint,
   emptyText,
 }: DrillScrollViewProps): JSX.Element {
-  const lines = useMemo(() => (body === "" ? [] : body.split("\n")), [body]);
+  const wrapWidth = Math.max(0, contentWidthFromCols(termColsForLayout()) - 2);
+  const wrappedBody = useMemo(() => wrapAnsiLines(body, wrapWidth), [body, wrapWidth]);
+  const lines = useMemo(() => (wrappedBody === "" ? [] : wrappedBody.split("\n")), [wrappedBody]);
   const totalLines = lines.length;
   const start = Math.max(0, Math.min(Math.max(0, totalLines - viewport), scrollTop));
   const visible = lines.slice(start, start + viewport);
@@ -145,6 +154,9 @@ export function DrillScrollView({
     ? "0/0"
     : `${start + 1}-${Math.min(totalLines, start + viewport)}/${totalLines}`;
   const hasHint = hint !== undefined && hint !== "";
+  const headerTitleWidth = Math.max(1, wrapWidth - cellWidth(positionLabel) - 3);
+  const headerTitle = truncateCell(title, headerTitleWidth);
+  const hintText = hasHint ? truncateCell(hint, wrapWidth) : undefined;
 
   // Drill body renders inline inside the popup's existing chrome
   // (cyan rounded border + paddingX). NO nested TitledBox here:
@@ -167,7 +179,7 @@ export function DrillScrollView({
     <Box flexDirection="column" flexGrow={1}>
       <Box>
         <Text bold color="magenta">
-          {title}
+          {headerTitle}
         </Text>
         <Text dimColor> · {positionLabel}</Text>
       </Box>
@@ -183,7 +195,7 @@ export function DrillScrollView({
       </Box>
       {hasHint ? (
         <Box>
-          <Text dimColor>{hint}</Text>
+          <Text dimColor>{hintText}</Text>
         </Box>
       ) : null}
     </Box>

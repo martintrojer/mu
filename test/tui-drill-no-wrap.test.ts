@@ -30,7 +30,9 @@
 //   - DrillScrollView does NOT import TitledBox.
 //   - DrillScrollView does NOT render a nested <TitledBox>.
 //   - Body lines do NOT carry wrap="truncate" (so long lines wrap
-//     within the popup's inner width instead of clipping).
+//     within the popup's inner width instead of clipping), and
+//     ANSI-coloured lines are pre-wrapped by visible width before
+//     reaching Ink's byte-oriented Text wrapping.
 //   - The magenta-coloured title still renders (visual consistency
 //     with the prior nested-TitledBox magenta border).
 
@@ -58,7 +60,7 @@ describe("DrillScrollView renders inline (no nested TitledBox)", () => {
     expect(stripComments(DRILL_SRC)).not.toMatch(/<TitledBox\b/);
   });
 
-  it("body lines wrap-within-borders (no wrap prop on body Text)", () => {
+  it("body lines wrap-within-borders (ANSI-aware pre-wrap, no wrap prop on body Text)", () => {
     // Find the visible.map(...) → <Text>{ln}</Text> render branch
     // and assert the <Text> there does NOT carry `wrap="..."`.
     // ink's default is wrap-on-overflow, which is what we want.
@@ -70,6 +72,7 @@ describe("DrillScrollView renders inline (no nested TitledBox)", () => {
       branch,
       "drill body <Text> must NOT carry wrap=… (lines should wrap within the popup width, not clip)",
     ).not.toMatch(/<Text[^>]*\bwrap=/);
+    expect(stripped).toContain("wrapAnsiLines");
   });
 
   it("title + position label render as a single inline header row", () => {
