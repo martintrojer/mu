@@ -277,7 +277,11 @@ export function parseClaimEventActor(payload: string): string | null {
  * The structured prefix (CLAIM_EVENT_PREFIX) makes the match
  * robust against payload-prose churn.
  */
-export function lastClaimActor(db: Db, workstream: string, localId: string): string | null {
+function lastClaimEvent(
+  db: Db,
+  workstream: string,
+  localId: string,
+): { payload: string; created_at: string } | null {
   // localId is validated by isValidTaskId — alnum + `_` + `-`. The
   // `_` is a LIKE wildcard, so escape it (and `%` and `\` for
   // completeness, even though they can't appear in a valid id).
@@ -287,13 +291,17 @@ export function lastClaimActor(db: Db, workstream: string, localId: string): str
   if (wsId === null) return null;
   const row = db
     .prepare(
-      `SELECT payload FROM agent_logs
+      `SELECT payload, created_at FROM agent_logs
         WHERE workstream_id = ? AND kind = 'event' AND payload LIKE ? ESCAPE '\\'
         ORDER BY seq DESC LIMIT 1`,
     )
-    .get(wsId, pattern) as { payload: string } | undefined;
-  if (!row) return null;
-  return parseClaimEventActor(row.payload);
+    .get(wsId, pattern) as { payload: string; created_at: string } | undefined;
+  return row ?? null;
+}
+
+export function lastClaimActor(db: Db, workstream: string, localId: string): string | null {
+  const row = lastClaimEvent(db, workstream, localId);
+  return row ? parseClaimEventActor(row.payload) : null;
 }
 
 /**
@@ -313,18 +321,7 @@ export function lastClaimActor(db: Db, workstream: string, localId: string): str
  * cross-match.
  */
 export function lastClaimEventAt(db: Db, workstream: string, localId: string): string | null {
-  const escaped = localId.replace(/[\\%_]/g, (c) => `\\${c}`);
-  const pattern = `${CLAIM_EVENT_PREFIX}\t${escaped}\t%`;
-  const wsId = tryResolveWorkstreamId(db, workstream);
-  if (wsId === null) return null;
-  const row = db
-    .prepare(
-      `SELECT created_at FROM agent_logs
-        WHERE workstream_id = ? AND kind = 'event' AND payload LIKE ? ESCAPE '\\'
-        ORDER BY seq DESC LIMIT 1`,
-    )
-    .get(wsId, pattern) as { created_at: string } | undefined;
-  return row ? row.created_at : null;
+  return lastClaimEvent(db, workstream, localId)?.created_at ?? null;
 }
 
 /**
