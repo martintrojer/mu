@@ -36,12 +36,12 @@ describe("mu task add --blocked-by", () => {
     rmSync(tempDir, { recursive: true, force: true });
   });
 
-  it("--blocked-by inserts incoming edges", async () => {
+  it("--blocked-by inserts incoming edges and renders the human hint", async () => {
     await runCli(
       ["task", "add", "design", "-w", "test", "-t", "Design", "-i", "80", "-e", "2"],
       dbPath,
     );
-    await runCli(
+    const { stdout } = await runCli(
       [
         "task",
         "add",
@@ -63,6 +63,28 @@ describe("mu task add --blocked-by", () => {
     const edges = getTaskEdges(db, "build", "test");
     db.close();
     expect(edges.blockers).toEqual(["design"]);
+    expect(stdout).toContain("blocked by: design");
+  });
+
+  it("omits the blocked-by hint when no blockers were supplied", async () => {
+    const { stdout } = await runCli(
+      [
+        "task",
+        "add",
+        "foo",
+        "-w",
+        "test",
+        "--title",
+        "Foo",
+        "--impact",
+        "1",
+        "--effort-days",
+        "0.1",
+      ],
+      dbPath,
+    );
+
+    expect(stdout).not.toContain("blocked by:");
   });
 
   it("-b is a short form for --blocked-by", async () => {

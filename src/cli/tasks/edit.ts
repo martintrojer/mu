@@ -151,13 +151,14 @@ export async function cmdTaskAdd(
   }
   const id = derivation.id;
   const blockedBy = parseCsvFlag(opts.blockedBy);
+  const hasBlockers = blockedBy.length > 0;
   const task = addTask(db, {
     localId: id,
     workstream,
     title: opts.title,
     impact: opts.impact,
     effortDays: opts.effortDays,
-    ...(blockedBy.length > 0 ? { blockedBy } : {}),
+    ...(hasBlockers ? { blockedBy } : {}),
   });
   const nextSteps: NextStep[] = [
     { intent: "Show this task", command: `mu task show ${task.name} -w ${workstream}` },
@@ -221,7 +222,7 @@ export async function cmdTaskAdd(
       `(workstream=${workstream}, impact=${task.impact}, effort=${task.effortDays})`,
     )}`,
   );
-  if (blockedBy) console.log(pc.dim(`  blocked by: ${blockedBy.join(", ")}`));
+  if (hasBlockers) console.log(pc.dim(`  blocked by: ${blockedBy.join(", ")}`));
   printNextSteps(nextSteps);
 }
 
