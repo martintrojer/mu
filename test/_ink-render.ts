@@ -7,7 +7,8 @@
 // This module is the canonical seam for testing ink components from the
 // outside, the way the user would experience them: render the component
 // into a fake stdout, optionally simulate keystrokes against a fake
-// stdin, and assert on the visible text that comes out.
+// stdin, and assert on the visible text that comes out. See
+// `test/README.md` for the TUI behaviour-test/source-grep policy.
 //
 // WHEN TO USE THIS SEAM (vs source-greps)
 // ---------------------------------------

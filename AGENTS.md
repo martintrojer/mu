@@ -191,6 +191,9 @@ not in tmux, those tests skip themselves; CI runs inside tmux.
 
 - Unit tests: real SQLite (in-temp-dir), mocked tmux executor via
   `setTmuxExecutor()`. Fast, deterministic.
+- TUI popup/card behaviour tests should follow `test/README.md`:
+  prefer the `test/_ink-render.ts` CaptureStream seam over
+  `readFileSync` source-greps except for narrow structural guards.
 - Fast tier: `npm run test:fast` runs `test/**/*.test.ts` while
   excluding `*.integration.test.ts` and `*.smoke.test.ts`. Keep this
   tier pure/in-process: mocked tmux/VCS, real SQLite only in per-test
