@@ -5,9 +5,9 @@
 // (no race possible by construction), tick rate adjustable live with
 // +/- (floor 100ms, ceiling 10s, default 1s), no persistence.
 //
-// The hook pauses fetches when `enabled === false` so the dashboard
-// can stop ticking while a popup is open. Popups can run their own
-// fetch loops if they need data not in the dashboard snapshot.
+// The hook pauses fetches when `enabled === false`. <App> keeps it
+// enabled while popups are open so visible drill-down views can share
+// the same fast/slow refresh cadence as the dashboard.
 //
 // Re-render guard (bug_tui_flicker_on_every_tick, workstream
 // `tui-impl`):
@@ -89,6 +89,14 @@ export const DEFAULT_CARD_VISIBILITY: CardVisibility = {
 
 export interface DashboardSnapshot {
   data: WorkstreamSnapshot | null;
+  /** Increments at the start of every fast SQL-only tick. Drill
+   *  views that read SQLite directly include this in memo deps so
+   *  notes / DAG bodies refresh even when snapshotKey is unchanged. */
+  fastTickNonce: number;
+  /** Increments at the start of every slow subprocess tick. Drill
+   *  views that shell out (tmux scrollback, VCS show) include this
+   *  instead of fastTickNonce to avoid 1s subprocess churn. */
+  slowTickNonce: number;
   /** Measured fetch duration of the most recent fast tick (ms). Lives
    *  in its OWN useState (Layer B); decoupled from `data` so the
    *  StatusBar's tick display can refresh without re-rendering the
@@ -157,9 +165,12 @@ export function useDashboardSnapshot(
     data: null,
     error: null,
   });
-  // Layer B: tick duration lives by itself so its update doesn't
-  // ripple into the card render path.
+  // Layer B: tick duration + explicit nonces live by themselves so
+  // snapshotKey can keep the data reference stable while visible
+  // drills still get a refresh signal.
   const [lastTickMs, setLastTickMs] = useState(0);
+  const [fastTickNonce, setFastTickNonce] = useState(0);
+  const [slowTickNonce, setSlowTickNonce] = useState(0);
   const latestFastRef = useRef<WorkstreamSnapshot | null>(null);
   const slowRef = useRef<WorkstreamSnapshotSlowFields | null>(null);
 
@@ -205,6 +216,7 @@ export function useDashboardSnapshot(
     let cancelled = false;
     const tick = async () => {
       if (cancelled) return;
+      setFastTickNonce((n) => n + 1);
       const t0 = performance.now();
       try {
         const fast = await loaders.fast(db, workstream, FAST_OPTS);
@@ -239,6 +251,7 @@ export function useDashboardSnapshot(
     let cancelled = false;
     const slowTick = async () => {
       if (cancelled) return;
+      setSlowTickNonce((n) => n + 1);
       try {
         const slow = await loaders.slow(
           db,
@@ -264,7 +277,7 @@ export function useDashboardSnapshot(
     };
   }, [db, workstream, enabled, refreshNonce, loaders]);
 
-  return { data: data.data, lastTickMs, error: data.error };
+  return { data: data.data, fastTickNonce, slowTickNonce, lastTickMs, error: data.error };
 }
 
 /**

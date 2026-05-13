@@ -74,6 +74,7 @@ export interface PopupProps {
   yank: (command: string) => Promise<void>;
   onClose: () => void;
   snapshot: WorkstreamSnapshot | null;
+  slowTickNonce: number;
   mode: "list" | "drill";
   onModeChange: (mode: "list" | "drill") => void;
   /** Bubbles the filter-prompt edit state up to <App> for StatusBar mode. */
@@ -112,6 +113,7 @@ export function WorkspacesPopup({
   yank,
   onClose,
   snapshot,
+  slowTickNonce,
   mode,
   onModeChange,
   onFilterEditingChange,
@@ -229,10 +231,11 @@ export function WorkspacesPopup({
   );
 
   useEffect(() => {
-    if (mode === "drill" && focused) {
+    void slowTickNonce;
+    if (mode === "drill" && !inShow && focused) {
       void loadCommits(focused.agentName);
     }
-  }, [mode, focused, loadCommits]);
+  }, [mode, inShow, focused, loadCommits, slowTickNonce]);
 
   // Reset show-mode state when the popup leaves drill (back to
   // workspace list) or when the focused workspace changes. Mirrors
@@ -261,6 +264,13 @@ export function WorkspacesPopup({
   }, [focused?.agentName]);
 
   const showBody = showErr !== null ? `error: ${showErr}` : showText;
+  useEffect(() => {
+    void slowTickNonce;
+    if (inShow && focused !== undefined && showSha !== null) {
+      void loadShow(focused.path, showSha);
+    }
+  }, [inShow, focused, showSha, loadShow, slowTickNonce]);
+
   const showDrill = useDrillKeymap({
     body: showBody,
     viewport: drillViewport,
@@ -311,7 +321,6 @@ export function WorkspacesPopup({
           const c = focusedCommit;
           if (!c || !focused) return;
           setShowSha(c.sha);
-          void loadShow(focused.path, c.sha);
           return;
         }
         case "yank": {

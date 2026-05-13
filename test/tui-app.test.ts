@@ -68,6 +68,8 @@ describe("App popup-lifecycle state-restore (structural)", () => {
       "snapshot",
       "snap",
       "data",
+      "fastTickNonce",
+      "slowTickNonce",
       "null",
       // popup-mode wiring: <App> owns popupMode so the StatusBar's
       // drill hint cluster works; popups call setPopupMode when

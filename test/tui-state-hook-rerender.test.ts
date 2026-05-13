@@ -301,10 +301,12 @@ describe("app.tsx — refresh-now wiring (static)", () => {
   const here = dirname(fileURLToPath(import.meta.url));
   const src = readFileSync(resolve(here, "..", "src", "cli", "tui", "app.tsx"), "utf8");
 
-  it("passes refreshNonce as the 5th arg to useDashboardSnapshot", () => {
+  it("keeps useDashboardSnapshot enabled so open popups receive tick nonces", () => {
     expect(src).toMatch(
-      /useDashboardSnapshot\s*\(\s*db\s*,\s*workstream\s*,\s*tickMs\s*,\s*popup === null\s*,\s*refreshNonce\s*\)/,
+      /useDashboardSnapshot\s*\(\s*db\s*,\s*workstream\s*,\s*tickMs\s*,\s*true\s*,\s*refreshNonce\s*\)/,
     );
+    expect(src).toContain("fastTickNonce: snap.fastTickNonce");
+    expect(src).toContain("slowTickNonce: snap.slowTickNonce");
   });
 
   it("does NOT keep a no-op `void refreshNonce` useEffect", () => {

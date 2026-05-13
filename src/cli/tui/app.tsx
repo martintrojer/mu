@@ -10,11 +10,11 @@
 //   - Yank backend probe (memoised once per session)
 //   - Quit / Ctrl-C
 //
-// Per design_card_iface + design_popup_lifecycle: when a popup is
-// open, the dashboard pauses its tick (popups can fetch their own
-// data if needed). On popup close, the dashboard tick resumes; card
-// visibility + tick rate + footer are preserved as a side effect of
-// living in <App> state, not the popup.
+// Per design_card_iface + design_popup_lifecycle: card visibility +
+// tick rate + footer are preserved as a side effect of living in
+// <App> state, not the popup. The snapshot tick keeps running while
+// popups are open; drill-down bodies consume explicit fast/slow tick
+// nonces so visible details refresh without closing/reopening.
 
 import { Box, Text, useApp, useInput, useStdin, useStdout } from "ink";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -174,7 +174,7 @@ export function App({ db, workstreams, initialActive = 0 }: AppProps): JSX.Eleme
   const safeActive = Math.max(0, Math.min(activeWs, workstreams.length - 1));
   const workstream = workstreams[safeActive] ?? "";
 
-  const snap = useDashboardSnapshot(db, workstream, tickMs, popup === null, refreshNonce);
+  const snap = useDashboardSnapshot(db, workstream, tickMs, true, refreshNonce);
 
   // Terminal-resize handling per design_resize. ink's stdout exposes
   // columns/rows; we only use them to render a 'too small' guard.
@@ -483,6 +483,8 @@ export function App({ db, workstreams, initialActive = 0 }: AppProps): JSX.Eleme
         setPopupFilterEditing(false);
       },
       snapshot: snap.data,
+      fastTickNonce: snap.fastTickNonce,
+      slowTickNonce: snap.slowTickNonce,
       mode: popupMode,
       onModeChange: setPopupMode,
       onFilterEditingChange: setPopupFilterEditing,

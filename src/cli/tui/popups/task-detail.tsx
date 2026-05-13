@@ -23,6 +23,8 @@ import type { Db } from "../../../db.js";
 import { type TaskRow, listNotes } from "../../../tasks.js";
 import { DrillScrollView } from "./drill.js";
 
+export type RenderNotesFn = (db: Db, taskId: string, workstream: string) => string;
+
 const ANSI_BOLD_CYAN = "\x1b[1;36m";
 const ANSI_RESET = "\x1b[0m";
 
@@ -34,6 +36,10 @@ export interface TaskDetailDrillProps {
   scrollTop: number;
   /** Visible lines; caller picks based on terminal height. */
   viewport: number;
+  /** Refresh signal for SQL-backed note bodies. */
+  tickNonce: number;
+  /** Injection seam for behaviour tests; production uses renderNotes. */
+  renderNotesFn?: RenderNotesFn;
 }
 
 /**
@@ -48,11 +54,13 @@ export function TaskDetailDrill({
   workstream,
   scrollTop,
   viewport,
+  tickNonce,
+  renderNotesFn = renderNotes,
 }: TaskDetailDrillProps): JSX.Element {
-  const body = useMemo<string>(
-    () => renderNotes(db, task.name, workstream),
-    [db, task, workstream],
-  );
+  const body = useMemo<string>(() => {
+    void tickNonce;
+    return renderNotesFn(db, task.name, workstream);
+  }, [db, task, workstream, tickNonce, renderNotesFn]);
   return (
     <DrillScrollView
       title={`mu task notes ${task.name}`}

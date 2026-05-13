@@ -45,6 +45,7 @@ export interface PopupProps {
   yank: (command: string) => Promise<void>;
   onClose: () => void;
   snapshot: WorkstreamSnapshot | null;
+  fastTickNonce: number;
   mode: "list" | "drill";
   onModeChange: (mode: "list" | "drill") => void;
   /** Bubbles the filter-prompt edit state up to <App> for StatusBar mode. */
@@ -64,6 +65,7 @@ export function ReadyPopup({
   yank,
   onClose,
   snapshot,
+  fastTickNonce,
   mode,
   onModeChange,
   onFilterEditingChange,
@@ -95,9 +97,10 @@ export function ReadyPopup({
   // clamp scroll. The shared formatter (renderNotes) is the single
   // source of truth.
   const notesText = useMemo<string>(() => {
+    void fastTickNonce;
     if (mode !== "drill" || !focused) return "";
     return renderNotes(db, focused.name, workstream);
-  }, [mode, focused, db, workstream]);
+  }, [mode, focused, db, workstream, fastTickNonce]);
 
   const drill = useDrillKeymap({
     body: notesText,
@@ -174,6 +177,7 @@ export function ReadyPopup({
             workstream={workstream}
             scrollTop={drill.scrollTop}
             viewport={viewport}
+            tickNonce={fastTickNonce}
           />
         </Box>
       </PopupShell>

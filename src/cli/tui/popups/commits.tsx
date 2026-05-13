@@ -31,6 +31,7 @@ export interface PopupProps {
   yank: (command: string) => Promise<void>;
   onClose: () => void;
   snapshot: WorkstreamSnapshot | null;
+  slowTickNonce: number;
   mode: "list" | "drill";
   onModeChange: (mode: "list" | "drill") => void;
   onFilterEditingChange?: (editing: boolean) => void;
@@ -52,6 +53,7 @@ export function CommitsPopup({
   yank,
   onClose,
   snapshot,
+  slowTickNonce,
   mode,
   onModeChange,
   onFilterEditingChange,
@@ -109,6 +111,13 @@ export function CommitsPopup({
     }
   }, [mode]);
 
+  useEffect(() => {
+    void slowTickNonce;
+    if (mode === "drill" && focused !== undefined) {
+      void loadShow(focused.sha);
+    }
+  }, [mode, focused, loadShow, slowTickNonce]);
+
   const drill = useDrillKeymap({
     body: showBody,
     viewport: drillViewport,
@@ -146,7 +155,6 @@ export function CommitsPopup({
         const c = commits[safeCursor];
         if (!c) return;
         onModeChange("drill");
-        void loadShow(c.sha);
         return;
       }
       case "yank": {

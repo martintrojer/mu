@@ -115,11 +115,14 @@ describe("WorkspacesPopup: Enter on focused commit drills into git show diff (fe
     expect(SRC).not.toContain("setShowScrollTop");
   });
 
-  it("Enter in drill mode triggers the show-fetch (loadShow + setShowSha)", () => {
-    // The drill-mode keymap's `case "drill"` branch must wire the
-    // show fetch (the "third level" of the state machine).
+  it("Enter in drill mode triggers show mode; slow tick/effect fetches the body", () => {
+    // The drill-mode keymap's `case "drill"` branch enters the
+    // third level; the slow-tick effect owns the subprocess fetch so
+    // the body also refreshes while held open.
     expect(SRC).toMatch(/case "drill":\s*\{[^}]*setShowSha\(c\.sha\)/);
-    expect(SRC).toMatch(/loadShow\(focused\.path,\s*c\.sha\)/);
+    expect(SRC).toMatch(/if \(inShow && focused !== undefined && showSha !== null\)/);
+    expect(SRC).toMatch(/loadShow\(focused\.path,\s*showSha\)/);
+    expect(SRC).toMatch(/\[inShow, focused, showSha, loadShow, slowTickNonce\]/);
   });
 
   it("show mode is popup-local (does NOT widen <App>'s PopupMode union)", () => {

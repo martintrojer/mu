@@ -122,6 +122,20 @@ describe("useDashboardSnapshot slow tier contract", () => {
     expect(src).toMatch(/\[db,\s*workstream,\s*enabled,\s*refreshNonce,\s*loaders\]/);
   });
 
+  it("exposes fast and slow tick nonces for visible drill refresh", () => {
+    expect(src).toMatch(/fastTickNonce:\s*number/);
+    expect(src).toMatch(/slowTickNonce:\s*number/);
+    expect(src).toMatch(/const \[fastTickNonce, setFastTickNonce\] = useState\(0\)/);
+    expect(src).toMatch(/const \[slowTickNonce, setSlowTickNonce\] = useState\(0\)/);
+    expect(src).toMatch(
+      /setFastTickNonce\(\(n\) => n \+ 1\);[\s\S]*?const t0 = performance\.now\(\)/,
+    );
+    expect(src).toMatch(/setSlowTickNonce\(\(n\) => n \+ 1\);[\s\S]*?loaders\.slow/);
+    expect(src).toMatch(
+      /return \{ data: data\.data, fastTickNonce, slowTickNonce, lastTickMs, error: data\.error \}/,
+    );
+  });
+
   it("workstream switch clears cached slow values", () => {
     expect(src).toMatch(/slowRef\.current = null/);
     expect(src).toMatch(/latestFastRef\.current = null/);

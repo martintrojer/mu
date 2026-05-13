@@ -52,6 +52,7 @@ export interface PopupProps {
   yank: (command: string) => Promise<void>;
   onClose: () => void;
   snapshot: WorkstreamSnapshot | null;
+  fastTickNonce: number;
   mode: "list" | "drill";
   onModeChange: (mode: "list" | "drill") => void;
   /** Bubbles the filter-prompt edit state up to <App> for StatusBar mode. */
@@ -96,6 +97,7 @@ export function TracksPopup({
   yank,
   onClose,
   snapshot,
+  fastTickNonce,
   mode,
   onModeChange,
   onFilterEditingChange,
@@ -155,10 +157,11 @@ export function TracksPopup({
   }, [mode, focusedTrack, db, workstream]);
 
   const focusedTask = drillTasks[drillCursor];
-  const notesBody =
-    mode === "drill" && drillSubMode === "task-detail" && focusedTask
-      ? renderNotes(db, focusedTask.name, workstream)
-      : "";
+  const notesBody = useMemo<string>(() => {
+    void fastTickNonce;
+    if (mode !== "drill" || drillSubMode !== "task-detail" || !focusedTask) return "";
+    return renderNotes(db, focusedTask.name, workstream);
+  }, [mode, drillSubMode, focusedTask, db, workstream, fastTickNonce]);
   const taskDetailDrill = useDrillKeymap({
     body: notesBody,
     viewport,
@@ -277,6 +280,7 @@ export function TracksPopup({
             workstream={workstream}
             scrollTop={taskDetailDrill.scrollTop}
             viewport={viewport}
+            tickNonce={fastTickNonce}
           />
         </Box>
       </PopupShell>

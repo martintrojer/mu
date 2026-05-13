@@ -41,6 +41,7 @@ export interface PopupProps {
   yank: (command: string) => Promise<void>;
   onClose: () => void;
   snapshot: WorkstreamSnapshot | null;
+  slowTickNonce: number;
   mode: "list" | "drill";
   onModeChange: (mode: "list" | "drill") => void;
   /** Bubbles the filter-prompt edit state up to <App> for StatusBar mode. */
@@ -69,6 +70,7 @@ export function AgentsPopup({
   yank,
   onClose,
   snapshot,
+  slowTickNonce,
   mode,
   onModeChange,
   onFilterEditingChange,
@@ -116,10 +118,11 @@ export function AgentsPopup({
   );
 
   useEffect(() => {
+    void slowTickNonce;
     if (mode === "drill" && focused) {
       void loadScrollback(focused.name);
     }
-  }, [mode, focused, loadScrollback]);
+  }, [mode, focused, loadScrollback, slowTickNonce]);
 
   const drillBody = scrollbackErr !== null ? `error: ${scrollbackErr}` : scrollback;
   const drill = useDrillKeymap({

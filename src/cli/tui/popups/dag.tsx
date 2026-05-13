@@ -24,6 +24,7 @@ export interface PopupProps {
   yank: (command: string) => Promise<void>;
   onClose: () => void;
   snapshot: WorkstreamSnapshot | null;
+  fastTickNonce: number;
   mode: "list" | "drill";
   onModeChange: (mode: "list" | "drill") => void;
   onFilterEditingChange?: (editing: boolean) => void;
@@ -36,14 +37,20 @@ interface DagBody {
   roots: string[];
 }
 
-export function DagPopup({ yank, onClose, db, workstream }: PopupProps): JSX.Element {
+export function DagPopup({
+  yank,
+  onClose,
+  db,
+  workstream,
+  fastTickNonce,
+}: PopupProps): JSX.Element {
   const viewport = usePopupViewport();
   const statusFilter = useStatusFilter();
   const contentWidth = contentWidthFromCols(termColsForLayout());
-  const { body, roots } = useMemo<DagBody>(
-    () => buildDagBody(db, workstream, statusFilter.statuses, contentWidth),
-    [db, workstream, statusFilter.statuses, contentWidth],
-  );
+  const { body, roots } = useMemo<DagBody>(() => {
+    void fastTickNonce;
+    return buildDagBody(db, workstream, statusFilter.statuses, contentWidth);
+  }, [db, workstream, statusFilter.statuses, contentWidth, fastTickNonce]);
   const [focusedRoot, setFocusedRoot] = useState<string | null>(() => roots[0] ?? null);
   const focusedTask = focusedRoot !== null && roots.includes(focusedRoot) ? focusedRoot : roots[0];
   const drill = useDrillKeymap({
