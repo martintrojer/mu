@@ -15,10 +15,9 @@ import { join } from "node:path";
 import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { closeAgent, getAgent, insertAgent } from "../src/agents.js";
-import { CURRENT_SCHEMA_VERSION, type Db, defaultStateDir, openDb } from "../src/db.js";
+import { CURRENT_SCHEMA_VERSION, type Db, openDb } from "../src/db.js";
 import { reconcile } from "../src/reconcile.js";
 import {
-  CaptureSnapshotResult,
   SnapshotFileMissingError,
   SnapshotNotFoundError,
   SnapshotVersionMismatchError,

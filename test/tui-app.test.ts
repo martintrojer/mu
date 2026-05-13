@@ -14,7 +14,7 @@
 
 import { Writable } from "node:stream";
 import { Box, Text } from "ink";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 // We can't easily render <App> directly in unit tests (it needs a Db
 // + workstream that loadWorkstreamSnapshot can hit). The keymap

@@ -153,7 +153,7 @@ describeIfTmux("MVP acceptance — full demo end-to-end", () => {
     expect(tracks0[0]?.taskIds.size).toBe(10);
 
     // ── Spawn a 3-agent crew ──────────────────────────────────────────
-    const alice = await spawnAgent(db, {
+    await spawnAgent(db, {
       name: "alice",
       workstream,
       cli: "sh",
@@ -165,7 +165,7 @@ describeIfTmux("MVP acceptance — full demo end-to-end", () => {
       cli: "sh",
       command: SH_COMMAND,
     });
-    const revv = await spawnAgent(db, {
+    await spawnAgent(db, {
       name: "revv",
       workstream,
       cli: "sh",

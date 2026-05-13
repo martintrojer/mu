@@ -13,11 +13,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { DoctorPopup, renderDrillBody } from "../src/cli/tui/popups/doctor.js";
-import {
-  type DoctorCheck,
-  remediationParagraph,
-  yankCommandForCheck,
-} from "../src/doctor-summary.js";
+import { type DoctorCheck, remediationParagraph } from "../src/doctor-summary.js";
 
 const SRC_RAW = readFileSync("./src/cli/tui/popups/doctor.tsx", "utf-8");
 // Strip `// ...` line comments + `/* ... */` block comments so the

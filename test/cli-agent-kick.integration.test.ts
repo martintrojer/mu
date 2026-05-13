@@ -235,7 +235,7 @@ describe("kickAgent (unit)", () => {
 
   it("happy path: SIGINT default, signals foreground pgid, emits event", async () => {
     mockTmuxReturnsTty("/dev/ttys012");
-    const calls = mockProcExec((cmd, args) => {
+    const calls = mockProcExec((cmd) => {
       if (cmd === "ps") return { stdout: "12345 12345 R+ find\n" };
       if (cmd === "kill") return {};
       return { exitCode: 1 };

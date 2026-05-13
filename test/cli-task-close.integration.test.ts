@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { insertAgent } from "../src/agents.js";
-import { type Db, openDb } from "../src/db.js";
+import { openDb } from "../src/db.js";
 import { addTask } from "../src/tasks.js";
 import { type WorkspaceRow, createWorkspace } from "../src/workspace.js";
 import { ensureWorkstream } from "../src/workstream.js";
