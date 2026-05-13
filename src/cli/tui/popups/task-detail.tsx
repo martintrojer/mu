@@ -23,6 +23,9 @@ import type { Db } from "../../../db.js";
 import { type TaskRow, listNotes } from "../../../tasks.js";
 import { DrillScrollView } from "./drill.js";
 
+const ANSI_BOLD_CYAN = "\x1b[1;36m";
+const ANSI_RESET = "\x1b[0m";
+
 export interface TaskDetailDrillProps {
   task: TaskRow;
   db: Db;
@@ -75,7 +78,7 @@ export function renderNotes(db: Db, taskId: string, workstream: string): string 
     .map((n) => {
       const ts = n.createdAt.replace("T", " ").slice(0, 19);
       const author = n.author ?? "?";
-      return `── ${ts}  ${author} ──\n${n.content}`;
+      return `${ANSI_BOLD_CYAN}── ${ts}  ${author} ──${ANSI_RESET}\n${n.content}`;
     })
     .join("\n\n");
 }

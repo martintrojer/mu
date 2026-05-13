@@ -35,6 +35,9 @@ afterEach(() => {
 });
 
 describe("TaskDetailDrill", () => {
+  const ansiBoldCyan = "\x1b[1;36m";
+  const ansiReset = "\x1b[0m";
+
   it("is exported as a function", () => {
     expect(typeof TaskDetailDrill).toBe("function");
   });
@@ -44,19 +47,43 @@ describe("TaskDetailDrill", () => {
     expect(renderNotes(db, "t1", "demo")).toBe("");
   });
 
-  it("renderNotes formats every note with a `── <ts>  <author> ──` header", () => {
+  it("renderNotes wraps a single note header in bold cyan ANSI", () => {
+    addTask(db, { localId: "t1", title: "T1", impact: 50, effortDays: 0.1, workstream: "demo" });
+    addNote(db, "t1", "first body", { workstream: "demo", author: "alice" });
+    const out = renderNotes(db, "t1", "demo");
+    const [header, body] = out.split("\n");
+    expect(header).toMatch(
+      new RegExp(
+        `^${escapeRegExp(ansiBoldCyan)}── \\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}  alice ──${escapeRegExp(ansiReset)}$`,
+      ),
+    );
+    expect(body).toBe("first body");
+  });
+
+  it("renderNotes wraps every note header with its own ANSI reset", () => {
     addTask(db, { localId: "t1", title: "T1", impact: 50, effortDays: 0.1, workstream: "demo" });
     addNote(db, "t1", "first body", { workstream: "demo", author: "alice" });
     addNote(db, "t1", "second body", { workstream: "demo", author: "bob" });
     const out = renderNotes(db, "t1", "demo");
-    expect(out).toContain("── ");
+    expect(out.matchAll(new RegExp(escapeRegExp(ansiBoldCyan), "g")).toArray()).toHaveLength(2);
+    expect(out.matchAll(new RegExp(escapeRegExp(ansiReset), "g")).toArray()).toHaveLength(2);
+    expect(out).toContain(`${ansiReset}\nfirst body\n\n${ansiBoldCyan}`);
     expect(out).toContain("  alice ──");
     expect(out).toContain("  bob ──");
-    expect(out).toContain("first body");
-    expect(out).toContain("second body");
     // Notes joined with a blank line so DrillScrollView paints them
     // as visually-separated blocks.
     expect(out).toContain("\n\n");
+  });
+
+  it("renderNotes leaves body content unchanged with no added ANSI", () => {
+    addTask(db, { localId: "t3", title: "T3", impact: 50, effortDays: 0.1, workstream: "demo" });
+    const body = "plain body\n> quoted text\n$ echo hi";
+    addNote(db, "t3", body, { workstream: "demo", author: "alice" });
+    const out = renderNotes(db, "t3", "demo");
+    const renderedBody = out.split("\n").slice(1).join("\n");
+    expect(renderedBody).toBe(body);
+    expect(renderedBody).not.toContain(ansiBoldCyan);
+    expect(renderedBody).not.toContain(ansiReset);
   });
 
   it("renderNotes uses '?' as the author when none recorded", () => {
@@ -67,6 +94,10 @@ describe("TaskDetailDrill", () => {
     expect(out).toContain("anon body");
   });
 });
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 
 describe("TaskDetailDrill source contract (no anticipatory abstraction)", () => {
   it("source consumes DrillScrollView (re-uses the existing primitive)", async () => {
