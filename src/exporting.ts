@@ -187,7 +187,8 @@ export function renderTaskMarkdown(
     lines.push(`## Notes (${notes.length})`);
     lines.push("");
     for (const [i, note] of notes.entries()) {
-      lines.push(`### #${i + 1} by ${note.author ?? "system"}, ${note.createdAt}`);
+      const author = note.author === null ? "null" : yamlScalar(note.author);
+      lines.push(`### #${i + 1} by ${author}, ${note.createdAt}`);
       lines.push("");
       const fence = fenceForBody(note.content);
       lines.push(fence);

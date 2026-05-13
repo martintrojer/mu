@@ -332,7 +332,7 @@ function parseTaskMarkdown(path: string): ParsedFrontmatter {
         throw new ImportFrontmatterParseError(path, i + 1, line);
       }
       const authorRaw = headerRest.slice(0, lastComma);
-      const author = authorRaw === "system" ? null : authorRaw;
+      const author = unquote(authorRaw);
       const createdAtNote = headerRest.slice(lastComma + 2);
       i += 1;
       // Skip any blank line.

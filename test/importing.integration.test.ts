@@ -99,6 +99,24 @@ describe("importBucket — round-trip", () => {
     const designNotes = listNotes(db, "design", "auth");
     expect(designNotes.map((n) => n.content)).toEqual(["DECISION: JWT", "context follow-up"]);
     expect(designNotes.map((n) => n.author)).toEqual(["alice", "alice"]);
+    const shipNotes = listNotes(db, "ship", "auth");
+    expect(shipNotes.map((n) => n.content)).toEqual(["checklist done"]);
+    expect(shipNotes.map((n) => n.author)).toEqual(["system"]);
+  });
+
+  it("preserves NULL note authors distinctly from literal system", async () => {
+    seed("auth", ["ship"]);
+    addNote(db, "ship", "operator-less note", { workstream: "auth" });
+
+    const bucket = join(tmpDir, "bucket");
+    exportWorkstream(db, { workstream: "auth", outDir: bucket });
+
+    await destroyWorkstream(db, { workstream: "auth" });
+    importBucket(db, { bucketDir: bucket });
+
+    const shipNotes = listNotes(db, "ship", "auth");
+    expect(shipNotes.map((n) => n.content)).toEqual(["operator-less note"]);
+    expect(shipNotes.map((n) => n.author)).toEqual([null]);
   });
 });
 

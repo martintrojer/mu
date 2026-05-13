@@ -809,7 +809,7 @@ describe("exportWorkstream", () => {
     expect(designMd).toMatch(/status: OPEN/);
     expect(designMd).toMatch(/blocks: \["build"\]/);
     expect(designMd).toMatch(/# Design/);
-    expect(designMd).toMatch(/### #1 by system,/);
+    expect(designMd).toMatch(/### #1 by null,/);
     expect(designMd).toMatch(/DECISION: JWT/);
     // Manifest sha matches the file we just read.
     const sha = require("node:crypto").createHash("sha256").update(designMd, "utf8").digest("hex");
