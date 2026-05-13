@@ -103,6 +103,38 @@ export function dashboardAvailableRows(
   return Math.max(1, rows - tabRows - snapshotErrorRows - statusRows);
 }
 
+interface PendingMouseEventRef {
+  current: MouseEvent | null;
+}
+
+export function replayPendingMouseEvent(
+  pendingMouseEvent: PendingMouseEventRef,
+  opts: {
+    popupOpen: boolean;
+    filterEditing: boolean;
+    emitKey: (key: string, delayMs: number) => void;
+  },
+): boolean {
+  if (!opts.popupOpen || opts.filterEditing) return false;
+  const event = pendingMouseEvent.current;
+  pendingMouseEvent.current = null;
+  if (event === null) return false;
+  if (event.kind === "scroll") {
+    opts.emitKey(event.direction === "up" ? "k" : "j", 0);
+    return true;
+  }
+  if (event.kind === "doubleclick") {
+    const rowIndex = Math.max(0, event.y - 2);
+    const keys = `g${"j".repeat(rowIndex)}\r`;
+    for (let i = 0; i < keys.length; i++) {
+      const key = keys[i];
+      if (key !== undefined) opts.emitKey(key, i * 8);
+    }
+    return true;
+  }
+  return false;
+}
+
 export function App({ db, workstreams, initialActive = 0 }: AppProps): JSX.Element {
   const { exit } = useApp();
   const stdin = useStdin();
@@ -126,7 +158,8 @@ export function App({ db, workstreams, initialActive = 0 }: AppProps): JSX.Eleme
   const [helpOpen, setHelpOpen] = useState<boolean>(false);
   const [footer, setFooter] = useState<FooterState | null>(null);
   const [refreshNonce, setRefreshNonce] = useState<number>(0);
-  const [popupMouseEvent, setPopupMouseEvent] = useState<MouseEvent | null>(null);
+  const pendingMouseEvent = useRef<MouseEvent | null>(null);
+  const [popupMouseTick, setPopupMouseTick] = useState<number>(0);
 
   // Probe clipboard backend once per session and memoise.
   const clipboardRef = useRef<ClipboardBackend | undefined>(undefined);
@@ -196,29 +229,28 @@ export function App({ db, workstreams, initialActive = 0 }: AppProps): JSX.Eleme
       return;
     }
     if (popupFilterEditing) return;
-    if (event.kind === "scroll" || event.kind === "doubleclick") setPopupMouseEvent(event);
+    if (event.kind === "scroll" || event.kind === "doubleclick") {
+      pendingMouseEvent.current = event;
+      setPopupMouseTick((n) => n + 1);
+    }
   });
   useEffect(() => {
-    if (popup === null || popupFilterEditing || popupMouseEvent === null) return;
+    void popupMouseTick;
     // Ink's public useInput hook is backed by this internal emitter;
     // replay the same bytes keyboard users type so mouse scroll/drill
     // stays routed through each popup's existing keymap switch.
     const emitKey = (key: string, delayMs: number) => {
       setTimeout(() => stdin.internal_eventEmitter.emit("input", Buffer.from(key)), delayMs);
     };
-    if (popupMouseEvent.kind === "scroll") {
-      emitKey(popupMouseEvent.direction === "up" ? "k" : "j", 0);
-      return;
-    }
-    if (popupMouseEvent.kind === "doubleclick") {
-      const rowIndex = Math.max(0, popupMouseEvent.y - 2);
-      const keys = `g${"j".repeat(rowIndex)}\r`;
-      for (let i = 0; i < keys.length; i++) {
-        const key = keys[i];
-        if (key !== undefined) emitKey(key, i * 8);
-      }
-    }
-  }, [popup, popupFilterEditing, popupMouseEvent, stdin.internal_eventEmitter]);
+    replayPendingMouseEvent(pendingMouseEvent, {
+      popupOpen: popup !== null,
+      filterEditing: popupFilterEditing,
+      emitKey,
+    });
+  }, [popupMouseTick, popup, popupFilterEditing, stdin.internal_eventEmitter]);
+  useEffect(() => {
+    if (popup === null) pendingMouseEvent.current = null;
+  }, [popup]);
 
   // Global keymap. Rendered before popup rendering so popups can
   // override Esc / q / y handling locally via their own useInput
