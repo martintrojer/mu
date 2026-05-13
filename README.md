@@ -29,10 +29,14 @@ mu log --tail                 # subscribe to every state change
 The crew is real (tmux panes you can attach to), the work graph is
 real (SQLite + a parallel-tracks algorithm with diamond-merge), the
 workspaces are real (jj workspace / sl share / git worktree), and
-**mu does not get in your model's way.** Bare `mu` is the human front
-door when stdout is attached to a TTY: it launches the read-only TUI
-with every workstream loaded. Piped/scripted calls print help instead;
-use typed verbs plus `--json` (or `MU_NO_TUI=1`) for agent/API flows.
+**mu stays out of the model's way.** Tasks, workspaces, panes, notes,
+and logs persist state and coordinate handoffs; the model still
+decides what to do. Workers use the bundled
+[SKILL.md](skills/mu/SKILL.md) when they need the full in-pane ground
+truth. Bare `mu` is the human front door when stdout is attached to a
+TTY: it launches the read-only TUI with every workstream loaded.
+Piped/scripted calls print help instead; use typed verbs plus `--json`
+(or `MU_NO_TUI=1`) for agent/API flows.
 
 ---
 
@@ -43,17 +47,16 @@ use typed verbs plus `--json` (or `MU_NO_TUI=1`) for agent/API flows.
   task DAG with **deterministic parallel-track detection +
   diamond-merge** so two agents are never assigned tasks that share
   a prerequisite.
-- **Get out of the model's way.** Mu coordinates agents; it does
-  not reason about them. No model selection, no thinking-effort
-  knobs, no system-prompt templating, no tool routing. `--cli <key>`
-  uppercases to `$MU_<KEY>_COMMAND` — your shell rc owns the
-  mapping. Swap your whole stack in one line.
-- **A deliberate refusal to over-engineer.** One CLI. One SQLite
-  file. ~60 typed verbs. No daemon, no config file, no plugin
-  runtime, no DSL, no codegen, no web UI, no chat integration, no
-  hosted service. Each missing piece is an
-  **[anti-feature pledge](docs/ROADMAP.md#anti-feature-pledges-still-in-force-reinforced-by-an-internal-critique)**,
-  not an oversight.
+- **Stay out of the model's way.** Mu coordinates handoffs; it does
+  not make choices on behalf of the model. `--cli <key>` uppercases
+  to `$MU_<KEY>_COMMAND`, so your shell rc owns model/provider
+  selection and thinking-effort flags. The orchestrator and workers
+  drive; mu records, scopes, and yanks the next command.
+- **A local typed state surface.** One CLI, one SQLite registry,
+  typed verbs, `--json` everywhere useful, and a read-only dashboard
+  for humans. Contributor-facing boundaries and rejected ideas live
+  in [ROADMAP.md](docs/ROADMAP.md); the README stays focused on how
+  mu feels to use.
 
 ## What mu is NOT
 
