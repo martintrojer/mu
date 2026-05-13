@@ -193,6 +193,22 @@ called out under "Breaking" in each entry.
 
 ### Tests
 
+- **`test/tui-popup-{agents,log,recent}.test.ts`: converted from
+  `readFileSync` source-greps to behaviour tests on the
+  `simulateInput` + `CaptureStream` seam.** Each popup now mounts
+  with a fixture `WorkstreamSnapshot`, drives keystrokes through
+  the new seam, and asserts on visible text + `vi.fn()` yank /
+  `onModeChange` / `onClose` callbacks. The agents popup stubs
+  `setTmuxExecutor` so drill-mode `readAgent` → `capturePane`
+  returns a deterministic in-memory scrollback. Each conversion was
+  pre-flight-tested against a deliberate regression (renaming the
+  yank verb, removing the drill case) and confirmed to fail. The
+  remaining source-grep block in `tui-popup-recent.test.ts` is the
+  load-bearing App ↔ keys ↔ layout wiring guard, which is
+  structural by intent. First slice of the
+  `testreview_tui_static_source_grep_pervasive` umbrella; sibling
+  popup tests (blocked / doctor / inprogress / tracks / workspaces)
+  follow the same pattern.
 - `test/_ink-render.ts`: added a `simulateInput(stdin, key, opts?)`
   helper plus a header comment block documenting the
   CaptureStream-based behaviour-test seam (the 4-step pattern:

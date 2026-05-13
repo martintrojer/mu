@@ -1,16 +1,125 @@
-// Tests for the Recent popup (popups/recent.tsx). The full keymap
-// is covered via dispatchPopupKey in test/tui-keys.test.ts; here we
-// exercise the small set of pure helpers + the static-source
-// invariants that pin the popup to the precedent (popups/ready.tsx
-// and popups/inprogress.tsx for the list-of-tasks pattern;
-// cards/recent.tsx for column + glyph re-use; task-detail.tsx for
-// the recursion contract).
+// Tests for the Recent popup (popups/recent.tsx).
+//
+// Behaviour-test conversion (tests_tui_convert_agents_log_recent):
+// the prior version of this file leaned heavily on `readFileSync`
+// source-greps over `popups/recent.tsx`. Those have been swapped
+// for mount-and-assert tests built on the CaptureStream seam in
+// test/_ink-render.ts. Source-greps survive only for the small
+// import-graph guard that pins App + keys wiring (a structural
+// invariant, not a behaviour assertion).
 
-import { readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
+import { mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { render } from "ink";
+import { createElement } from "react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { RecentPopup, formatRoi, yankCommandForTask } from "../src/cli/tui/popups/recent.js";
+import { type Db, openDb } from "../src/db.js";
+import type { WorkstreamSnapshot } from "../src/state.js";
+import { addNote, addTask, listTasks, setTaskStatus } from "../src/tasks.js";
+import {
+  CaptureStream,
+  type InkInputStream,
+  createInkCaptureStream,
+  createInkInputStream,
+  latestRenderedFrame,
+  simulateInput,
+  waitForInkOutput,
+} from "./_ink-render.js";
 
-const SRC = readFileSync("./src/cli/tui/popups/recent.tsx", "utf-8");
+let openDbs: Db[] = [];
+
+afterEach(() => {
+  for (const db of openDbs) db.close();
+  openDbs = [];
+  CaptureStream.cleanup();
+});
+
+function fixtureDb(): Db {
+  const dir = mkdtempSync(join(tmpdir(), "mu-tui-popup-recent-"));
+  const db = openDb({ path: join(dir, "mu.db") });
+  openDbs.push(db);
+  return db;
+}
+
+function seedRecentClosed(db: Db): void {
+  // Three CLOSED tasks plus one OPEN one (which the popup must NOT
+  // surface — the popup pulls only `snapshot.recentClosed`).
+  for (const id of ["alpha", "beta", "gamma"]) {
+    addTask(db, {
+      workstream: "demo",
+      localId: id,
+      title: `Title ${id}`,
+      impact: 50,
+      effortDays: 1,
+    });
+    setTaskStatus(db, id, "CLOSED", { workstream: "demo", evidence: "done" });
+  }
+  addTask(db, {
+    workstream: "demo",
+    localId: "still_open",
+    title: "Title still_open",
+    impact: 50,
+    effortDays: 1,
+  });
+}
+
+interface MountOpts {
+  db: Db;
+  snapshot: WorkstreamSnapshot;
+  mode?: "list" | "drill";
+  yank?: (cmd: string) => Promise<void>;
+  onClose?: () => void;
+  onModeChange?: (mode: "list" | "drill") => void;
+  rows?: number;
+}
+
+function mountRecentPopup(opts: MountOpts): {
+  stdin: InkInputStream;
+  stdout: CaptureStream;
+  unmount: () => void;
+} {
+  const stdin = createInkInputStream();
+  const stdout = createInkCaptureStream({ columns: 120, rows: opts.rows ?? 24 });
+  const instance = render(
+    createElement(RecentPopup, {
+      yank: opts.yank ?? (async () => {}),
+      onClose: opts.onClose ?? (() => {}),
+      snapshot: opts.snapshot,
+      fastTickNonce: 0,
+      mode: opts.mode ?? "list",
+      onModeChange: opts.onModeChange ?? (() => {}),
+      db: opts.db,
+      workstream: opts.snapshot.workstreamName,
+    }),
+    { stdout, stdin, stderr: process.stderr, debug: false, patchConsole: false },
+  );
+  return { stdin, stdout, unmount: () => instance.unmount() };
+}
+
+function snapshotFor(db: Db): WorkstreamSnapshot {
+  return {
+    workstreamName: "demo",
+    view: {
+      agents: [],
+      orphans: [],
+      report: { prunedGhosts: 0, statusChanges: 0, orphans: [], mode: "status-only" },
+    },
+    tracks: [],
+    ready: [],
+    inProgress: [],
+    blocked: [],
+    recentClosed: listTasks(db, "demo").filter((t) => t.status === "CLOSED"),
+    allTasks: [],
+    workspaces: [],
+    workspaceOrphans: [],
+    recent: [],
+    recentCommits: [],
+    commitsBackend: null,
+    doctor: null,
+  };
+}
 
 describe("RecentPopup (export contract)", () => {
   it("is exported as a function", () => {
@@ -49,71 +158,186 @@ describe("formatRoi", () => {
   });
 });
 
-describe("popups/recent.tsx static-source invariants", () => {
-  it("re-uses Card 8 helpers (glyphFor / formatWhen / ageMs)", () => {
-    // Visual lockstep with the card; new card-level helpers should
-    // surface in the popup automatically.
-    expect(SRC).toMatch(/from "\.\.\/cards\/recent\.js"/);
-    expect(SRC).toContain("glyphFor");
-    expect(SRC).toContain("formatWhen");
-    expect(SRC).toContain("ageMs");
+describe("RecentPopup behaviour (mount + simulateInput)", () => {
+  it("renders only snapshot.recentClosed rows (not OPEN tasks)", async () => {
+    const db = fixtureDb();
+    seedRecentClosed(db);
+    const snap = snapshotFor(db);
+
+    const { stdout, unmount } = mountRecentPopup({ db, snapshot: snap });
+    await waitForInkOutput(stdout);
+    const text = latestRenderedFrame(stdout).join("\n");
+    unmount();
+
+    expect(text).toContain("alpha");
+    expect(text).toContain("beta");
+    expect(text).toContain("gamma");
+    expect(text).not.toContain("still_open");
+    // Title tracks the cursor position in the visible list.
+    expect(text).toMatch(/Recent · popup \(1\/3\)/);
   });
 
-  it("consumes the shared TaskDetailDrill + useNotesDrill hook (recursion contract)", () => {
-    // Per feat_track_drill_chains_to_task_drill: rows ARE tasks, so
-    // Enter must chain into TaskDetailDrill. We assert the import
-    // and the mode flip wired by the keymap switch.
-    expect(SRC).toContain("TaskDetailDrill");
-    // Post-review_tui_task_popups_duplicated_template: the per-popup
-    // renderNotes useMemo moved into the shared useNotesDrill hook.
-    expect(SRC).toContain("useNotesDrill");
-    expect(SRC).toContain('onModeChange("drill")');
-    expect(SRC).toContain('onModeChange("list")');
+  it("j/k move the cursor; selection drives the yanked id", async () => {
+    const db = fixtureDb();
+    seedRecentClosed(db);
+    const snap = snapshotFor(db);
+    const yank = vi.fn(async (_cmd: string) => {});
+
+    const { stdin, stdout, unmount } = mountRecentPopup({
+      db,
+      snapshot: snap,
+      yank,
+    });
+    await waitForInkOutput(stdout);
+
+    // First yank → cursor at 0 → first recentClosed entry.
+    await simulateInput(stdin, "y");
+    const firstYank = yank.mock.calls[0]?.[0];
+    expect(firstYank).toMatch(/^mu task open \w+ -w demo$/);
+    const firstId = firstYank?.split(" ")[3];
+
+    // Move down twice and yank again → different id.
+    await simulateInput(stdin, "j");
+    await simulateInput(stdin, "j");
+    await simulateInput(stdin, "y");
+    const secondYank = yank.mock.calls[1]?.[0];
+    expect(secondYank).toMatch(/^mu task open \w+ -w demo$/);
+    const secondId = secondYank?.split(" ")[3];
+
+    expect(firstId).not.toBe(secondId);
+    expect(["alpha", "beta", "gamma"]).toContain(firstId);
+    expect(["alpha", "beta", "gamma"]).toContain(secondId);
+
+    unmount();
   });
 
-  it("consumes usePopupFilter (per feat_popup_search_filter pledge)", () => {
-    expect(SRC).toContain("usePopupFilter");
-    expect(SRC).toContain("applyFilter");
-    expect(SRC).toContain("FilterPrompt");
+  it("'/' filter narrows the visible rows by id substring", async () => {
+    const db = fixtureDb();
+    seedRecentClosed(db);
+    const snap = snapshotFor(db);
+
+    const { stdin, stdout, unmount } = mountRecentPopup({ db, snapshot: snap });
+    await waitForInkOutput(stdout);
+
+    // Open the filter prompt and type "alph".
+    await simulateInput(stdin, "/");
+    await simulateInput(stdin, "a");
+    await simulateInput(stdin, "l");
+    await simulateInput(stdin, "p");
+    await simulateInput(stdin, "h");
+    await waitForInkOutput(stdout);
+    const text = latestRenderedFrame(stdout).join("\n");
+    unmount();
+
+    expect(text).toContain("alpha");
+    expect(text).not.toContain("│ beta");
+    expect(text).not.toContain("│ gamma");
   });
 
-  it("filter blob covers id + title + owner (matching rules)", () => {
-    expect(SRC).toMatch(/\$\{t\.name\} \$\{t\.title\} \$\{t\.ownerName \?\? ""\}/);
+  it("Enter on a row asks the parent to flip into drill mode", async () => {
+    const db = fixtureDb();
+    seedRecentClosed(db);
+    const snap = snapshotFor(db);
+    const onModeChange = vi.fn();
+
+    const { stdin, stdout, unmount } = mountRecentPopup({
+      db,
+      snapshot: snap,
+      onModeChange,
+    });
+    await waitForInkOutput(stdout);
+
+    await simulateInput(stdin, "enter");
+    unmount();
+
+    expect(onModeChange).toHaveBeenCalledWith("drill");
   });
 
-  it("reads only snapshot.recentClosed (no other task-list source)", () => {
-    expect(SRC).toContain("snapshot.recentClosed");
-    // Defensive: should not pull from snapshot.ready / .inProgress / .blocked.
-    expect(SRC).not.toContain("snapshot.ready");
-    expect(SRC).not.toContain("snapshot.inProgress");
-    expect(SRC).not.toContain("snapshot.blocked");
+  it("Esc / q in list mode calls onClose", async () => {
+    const db = fixtureDb();
+    seedRecentClosed(db);
+    const snap = snapshotFor(db);
+    const onClose = vi.fn();
+
+    const { stdin, stdout, unmount } = mountRecentPopup({
+      db,
+      snapshot: snap,
+      onClose,
+    });
+    await waitForInkOutput(stdout);
+
+    await simulateInput(stdin, "q");
+    unmount();
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it("yanks ONLY mu task open + mu task notes (no mutating verbs)", () => {
-    // List-mode yank → open; drill-mode yank → notes. Anything
-    // that mutates state (claim / release / close / reject / defer
-    // / delete) would violate the read-only TUI pledge.
-    // (`mu task open` toggles status back to OPEN but the TUI
-    // itself never executes — it only puts the command on the
-    // clipboard; the operator runs it in a shell.)
-    expect(SRC).toContain("mu task open");
-    expect(SRC).toContain("mu task notes");
-    expect(SRC).not.toContain("mu task close");
-    expect(SRC).not.toContain("mu task claim");
-    expect(SRC).not.toContain("mu task release");
-    expect(SRC).not.toContain("mu task reject");
-    expect(SRC).not.toContain("mu task defer");
-    expect(SRC).not.toContain("mu task delete");
+  it("drill mode renders task notes and yanks `mu task notes` (not `mu task open`)", async () => {
+    const db = fixtureDb();
+    seedRecentClosed(db);
+    addNote(db, "alpha", "first note about alpha", {
+      workstream: "demo",
+      author: "tester",
+    });
+    const snap = snapshotFor(db);
+    const yank = vi.fn(async (_cmd: string) => {});
+    const onModeChange = vi.fn();
+
+    const { stdin, stdout, unmount } = mountRecentPopup({
+      db,
+      snapshot: snap,
+      mode: "drill",
+      yank,
+      onModeChange,
+    });
+    await waitForInkOutput(stdout);
+    const text = latestRenderedFrame(stdout).join("\n");
+
+    // Drill body must include the note content.
+    expect(text).toContain("first note about alpha");
+    // Title shifts to the focused task's notes view.
+    expect(text).toContain("alpha");
+
+    // 'y' in drill mode → yanks `mu task notes` (NOT `mu task open`).
+    await simulateInput(stdin, "y");
+    const cmd = yank.mock.calls[0]?.[0];
+    expect(cmd).toBe("mu task notes alpha -w demo");
+
+    // Esc in drill mode → asks the parent to flip back to list.
+    await simulateInput(stdin, "escape");
+    expect(onModeChange).toHaveBeenLastCalledWith("list");
+
+    unmount();
+  });
+
+  it("renders an empty-state when there are no recently-closed tasks", async () => {
+    const db = fixtureDb();
+    // Only OPEN tasks: snapshot.recentClosed is empty.
+    addTask(db, {
+      workstream: "demo",
+      localId: "open_only",
+      title: "open only",
+      impact: 50,
+      effortDays: 1,
+    });
+    const snap = snapshotFor(db);
+
+    const { stdout, unmount } = mountRecentPopup({ db, snapshot: snap });
+    await waitForInkOutput(stdout);
+    const text = latestRenderedFrame(stdout).join("\n");
+    unmount();
+
+    expect(text).toContain("none recently closed");
   });
 });
 
-describe("popups/recent.tsx ↔ App / keys wiring", () => {
+describe("popups/recent.tsx ↔ App / keys wiring (structural)", () => {
+  // These are the load-bearing import-graph guards: keep them as
+  // source-greps because they pin a wiring invariant across
+  // module boundaries (App / layout / keys), not popup behaviour.
   it("App.tsx still renders RecentPopup for popup id 8", () => {
     const app = readFileSync("./src/cli/tui/app.tsx", "utf-8");
     expect(app).toContain("RecentPopup");
     expect(app).toMatch(/8: RecentPopup/);
-    // Post-review_tui_card_key_from_id_redundant: popupNameForId
-    // reads CARD_CONFIGS[id].label instead of a 24-line switch.
     const layout = readFileSync("./src/cli/tui/layout.ts", "utf-8");
     expect(layout).toMatch(/8:\s*\{[^}]*label:\s*"Recent"/);
   });
