@@ -4,8 +4,9 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { type Db, defaultDbPath, openDb } from "../src/db.js";
+import { type Db, SchemaTooOldError, defaultDbPath, openDb } from "../src/db.js";
 import { addBlockEdge, addTask } from "../src/tasks.js";
 import { TaskNotFoundError } from "../src/tasks/errors.js";
 
@@ -29,7 +30,7 @@ describe("openDb", () => {
     // No throw = parent dirs created.
   });
 
-  it("applies the expected tables (v7: approvals dropped vs v6)", () => {
+  it("applies the expected tables (v8: sync substrate added, approvals still dropped)", () => {
     const db = openDb({ path: dbPath });
     const tables = (
       db
@@ -46,19 +47,21 @@ describe("openDb", () => {
       "archived_notes",
       "archived_tasks",
       "archives",
+      "machine_identity",
       "schema_version",
       "snapshots",
       "task_edges",
       "task_notes",
       "tasks",
       "vcs_workspaces",
+      "workstream_sync",
       "workstreams",
     ]);
-    // schema_version stamped to current (v7).
+    // schema_version stamped to current (v8).
     const v = (
       db.prepare("SELECT version FROM schema_version WHERE id = 1").get() as { version: number }
     ).version;
-    expect(v).toBe(7);
+    expect(v).toBe(8);
     db.close();
   });
 
@@ -97,8 +100,93 @@ describe("openDb", () => {
     const v = (
       db2.prepare("SELECT version FROM schema_version WHERE id = 1").get() as { version: number }
     ).version;
-    expect(v).toBe(7);
+    expect(v).toBe(8);
     db2.close();
+  });
+
+  it("seeds exactly one machine_identity row on a fresh DB", () => {
+    const db = openDb({ path: dbPath });
+    const rows = db
+      .prepare("SELECT machine_id, hostname, created_at FROM machine_identity")
+      .all() as {
+      machine_id: string;
+      hostname: string | null;
+      created_at: string;
+    }[];
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.machine_id).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+    );
+    expect(rows[0]?.created_at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    db.close();
+  });
+
+  it("does not insert a second machine_identity row when reopened", () => {
+    const db1 = openDb({ path: dbPath });
+    const first = db1.prepare("SELECT machine_id FROM machine_identity WHERE id = 1").get() as {
+      machine_id: string;
+    };
+    db1.close();
+
+    const db2 = openDb({ path: dbPath });
+    const rows = db2.prepare("SELECT machine_id FROM machine_identity").all() as {
+      machine_id: string;
+    }[];
+    expect(rows).toEqual([first]);
+    db2.close();
+  });
+
+  it("leaves workstream_sync empty after openDb", () => {
+    const db = openDb({ path: dbPath });
+    const count = (
+      db.prepare("SELECT COUNT(*) AS count FROM workstream_sync").get() as {
+        count: number;
+      }
+    ).count;
+    expect(count).toBe(0);
+    db.close();
+  });
+
+  it("seeds machine_identity when upgrading a v7 DB in place", () => {
+    {
+      const raw = new Database(dbPath);
+      raw.exec(
+        `CREATE TABLE schema_version (id INTEGER PRIMARY KEY CHECK (id = 1), version INTEGER NOT NULL);
+         CREATE TABLE workstreams (
+           id          INTEGER PRIMARY KEY AUTOINCREMENT,
+           name        TEXT UNIQUE NOT NULL,
+           created_at  TEXT NOT NULL
+         );
+         INSERT INTO schema_version (id, version) VALUES (1, 7);`,
+      );
+      raw.close();
+    }
+
+    const db = openDb({ path: dbPath });
+    const row = db.prepare("SELECT version FROM schema_version WHERE id = 1").get() as {
+      version: number;
+    };
+    expect(row.version).toBe(8);
+    const identities = db.prepare("SELECT machine_id FROM machine_identity").all() as {
+      machine_id: string;
+    }[];
+    expect(identities).toHaveLength(1);
+    expect(identities[0]?.machine_id).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+    );
+    db.close();
+  });
+
+  it("still rejects pre-v5 DBs with SchemaTooOldError", () => {
+    {
+      const raw = new Database(dbPath);
+      raw.exec(
+        `CREATE TABLE schema_version (id INTEGER PRIMARY KEY CHECK (id = 1), version INTEGER NOT NULL);
+         INSERT INTO schema_version (id, version) VALUES (1, 4);`,
+      );
+      raw.close();
+    }
+    expect(() => openDb({ path: dbPath })).toThrow(SchemaTooOldError);
   });
 
   it("creates the ready/blocked/goals views", () => {
@@ -145,12 +233,14 @@ describe("openDb", () => {
       "archived_notes",
       "archived_tasks",
       "archives",
+      "machine_identity",
       "schema_version",
       "snapshots",
       "task_edges",
       "task_notes",
       "tasks",
       "vcs_workspaces",
+      "workstream_sync",
       "workstreams",
     ]);
     db2.close();

@@ -4,10 +4,11 @@
 // applies the schema idempotently, and exposes the live Database handle.
 //
 // Schema (see CHANGELOG.md §"Schema"):
-//   - 8 tables: workstreams, agents, tasks, task_edges, task_notes,
-//               agent_logs, vcs_workspaces, snapshots
-//     (+5 v6 archive_* tables; -1 approvals dropped in v7)
-//   - 1 meta table: schema_version (single row, integer)
+//   - core tables: workstreams, agents, tasks, task_edges, task_notes,
+//                  agent_logs, vcs_workspaces, snapshots
+//     (+5 v6 archive_* tables; -1 approvals dropped in v7;
+//      +2 v8 sync-substrate tables)
+//   - 2 singleton-ish meta tables: schema_version, machine_identity
 //   - 3 views:  ready, blocked, goals
 //
 // v5 (this version) is the surrogate-INTEGER-PK shape per
@@ -25,8 +26,9 @@
 // loud-fail hook below catching every pre-v5 DB before openDb
 // returns, none of those migration paths could ever run.
 
+import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
-import { homedir } from "node:os";
+import { homedir, hostname } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import Database, { type Database as DatabaseType } from "better-sqlite3";
 import type { HasNextSteps, NextStep } from "./output.js";
@@ -101,6 +103,7 @@ export function openDb(options: OpenDbOptions = {}): Db {
       throw new SchemaTooOldError(detectedVersion, MIN_ACCEPTED_SCHEMA_VERSION);
     }
     applySchema(db);
+    seedMachineIdentity(db);
   } else {
     db.pragma("foreign_keys = ON");
   }
@@ -321,7 +324,22 @@ function detectExistingSchemaVersion(db: Db): number | null {
  * v7-stamped DB with the v6 table still present. Gated on the
  * detected pre-bump version so it's a one-shot for v6 DBs and a
  * harmless `IF EXISTS` no-op for fresh v7 DBs.
+ *
+ * v7 → v8 in-place bump: v8 is additive (machine_identity and
+ * workstream_sync tables). openDb seeds machine_identity after this
+ * schema block so v7 DBs upgraded in place get an identity too.
  */
+function seedMachineIdentity(db: Db): void {
+  const row = db.prepare("SELECT COUNT(*) AS count FROM machine_identity").get() as {
+    count: number;
+  };
+  if (row.count !== 0) return;
+  db.prepare(
+    `INSERT OR IGNORE INTO machine_identity (id, machine_id, hostname, created_at)
+     VALUES (1, ?, ?, ?)`,
+  ).run(randomUUID(), hostname(), new Date().toISOString());
+}
+
 function applySchema(db: Db): void {
   // Sniff the recorded version BEFORE the schema CREATEs land — needed
   // to decide whether the v6 → v7 destructive migration runs (only on
@@ -353,18 +371,18 @@ function applySchema(db: Db): void {
   );
 }
 
-/** The schema version a fresh DB starts at. v7 drops the
- *  `approvals` table on top of v6 (which added 5 archive_* tables
- *  on top of v5's surrogate-PK substrate; docs/ARCHITECTURE.md §
- *  Surrogate-PK + SDK-boundary discipline). The refusal floor is
- *  v5 — pre-v5 DBs throw `SchemaTooOldError`; v5 → v6 → v7 DBs
- *  are forward-bumped in place by `applySchema`. */
-export const CURRENT_SCHEMA_VERSION = 7;
+/** The schema version a fresh DB starts at. v8 adds the
+ *  machine_identity and workstream_sync sync substrate on top of v7
+ *  (which dropped the approvals table), v6 (which added 5 archive_*
+ *  tables), and v5's surrogate-PK substrate. The refusal floor is
+ *  v5 — pre-v5 DBs throw `SchemaTooOldError`; v5+ DBs are
+ *  forward-bumped in place by `applySchema`. */
+export const CURRENT_SCHEMA_VERSION = 8;
 
-/** The lowest schema version `openDb` will accept. v5 / v6 DBs are
+/** The lowest schema version `openDb` will accept. v5+ DBs are
  *  forward-bumped to the current version in place (v5 → v6 added
- *  archive tables; v6 → v7 dropped the approvals table). Pre-v5
- *  DBs throw `SchemaTooOldError`. */
+ *  archive tables; v6 → v7 dropped the approvals table; v7 → v8
+ *  adds the sync substrate). Pre-v5 DBs throw `SchemaTooOldError`. */
 const MIN_ACCEPTED_SCHEMA_VERSION = 5;
 
 /** Tables a healthy DB must contain. Single source of truth so
@@ -382,12 +400,14 @@ export const EXPECTED_TABLES: readonly string[] = [
   "archived_notes",
   "archived_tasks",
   "archives",
+  "machine_identity",
   "schema_version",
   "snapshots",
   "task_edges",
   "task_notes",
   "tasks",
   "vcs_workspaces",
+  "workstream_sync",
   "workstreams",
 ];
 
@@ -475,6 +495,15 @@ CREATE TABLE IF NOT EXISTS schema_version (
   version INTEGER NOT NULL
 );
 
+-- machine_identity: one durable identity per DB/machine, seeded by
+-- openDb after schema creation. hostname is advisory only.
+CREATE TABLE IF NOT EXISTS machine_identity (
+  id         INTEGER PRIMARY KEY CHECK (id = 1),
+  machine_id TEXT NOT NULL,
+  hostname   TEXT,
+  created_at TEXT NOT NULL
+);
+
 -- ─── Tables ───────────────────────────────────────────────────────────
 
 -- workstreams: top of the hierarchy. name stays globally unique
@@ -484,6 +513,13 @@ CREATE TABLE IF NOT EXISTS workstreams (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   name        TEXT UNIQUE NOT NULL,
   created_at  TEXT NOT NULL                  -- ISO 8601
+);
+
+-- workstream_sync: per-workstream cross-machine drift state. Rows are
+-- created on demand by db import/export code, not pre-seeded.
+CREATE TABLE IF NOT EXISTS workstream_sync (
+  workstream_id        INTEGER PRIMARY KEY REFERENCES workstreams (id) ON DELETE CASCADE,
+  last_known_peer_seqs TEXT NOT NULL DEFAULT '{}'
 );
 
 -- agents: one row per managed pane. Per-workstream unique on name.
