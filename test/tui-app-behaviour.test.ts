@@ -103,6 +103,19 @@ vi.mock("../src/cli/tui/mouse.ts", async (importOriginal) => {
   };
 });
 
+// Parked-detection: the App calls parkedStatus(db, ws) per slow-tick
+// to drive the tab-strip dim. The mocked db here is `{} as Db`, so
+// the SQL inside parkedStatus would crash with `db.prepare is not a
+// function`. Stub it to a no-op (no workstream is parked in these
+// tests).
+vi.mock("../src/parked.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/parked.js")>();
+  return {
+    ...actual,
+    parkedStatus: () => ({ parked: false }),
+  };
+});
+
 // Yank backend probe: don't shell out to pbcopy/wl-copy/xclip during
 // tests. Returning a no-op backend keeps the footer state-machine
 // reachable (footer assertions aren't in scope for v1 of this file).

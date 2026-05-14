@@ -25,16 +25,25 @@ export interface TabStripProps {
    *  hook-free (and therefore safe to call from outside an ink
    *  render tree, e.g. unit tests). */
   terminalColumns: number;
+  /** Set of workstream names presumed parked on another machine
+   *  (`parkedStatus(db, ws).parked === true`). Tabs in this set
+   *  render with a `~` prefix to nudge the user away from
+   *  destroying them; the canonical fix is to re-import from the
+   *  other side. Optional so existing callers / tests stay valid. */
+  parked?: ReadonlySet<string>;
 }
 
 export function TabStrip({
   workstreams,
   active,
   terminalColumns,
+  parked,
 }: TabStripProps): JSX.Element | null {
   if (workstreams.length <= 1) return null;
   const layout = layoutTabStrip(workstreams, active, terminalColumns);
   if (layout === null) return null;
+  const isParked = (name: string): boolean => parked?.has(name) ?? false;
+  const decorate = (name: string): string => (isParked(name) ? `~${name}` : name);
   const tabs: JSX.Element[] = [];
   for (let i = 0; i < layout.visible.length; i++) {
     const tab = layout.visible[i];
@@ -42,13 +51,13 @@ export function TabStrip({
     if (tab.isActive) {
       tabs.push(
         <Text key={`t-${i}`} bold color="cyan">
-          {`▸ ${tab.name}`}
+          {`▸ ${decorate(tab.name)}`}
         </Text>,
       );
     } else {
       tabs.push(
         <Text key={`t-${i}`} dimColor>
-          {tab.name}
+          {decorate(tab.name)}
         </Text>,
       );
     }

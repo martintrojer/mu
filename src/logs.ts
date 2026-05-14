@@ -391,6 +391,11 @@ export const EVENT_VERB_PREFIXES: readonly string[] = [
   // as a machine-wide event (workstream=null; the export spans every
   // source-ws in the archive).
   "archive export",
+  // src/db-sync.ts — emitted per-workstream after a successful
+  // `mu db export`. Used as the marker for src/parked.ts (the
+  // "presumed parked on another machine" heuristic for `mu workstream
+  // list` / TUI tab strip).
+  "db export",
 ];
 
 // ─── Verb classification (for renderers that colour by verb) ──────

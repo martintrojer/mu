@@ -25,6 +25,7 @@ import {
 } from "./exporting.js";
 import { emitEvent } from "./logs.js";
 import type { HasNextSteps, NextStep } from "./output.js";
+import { parkedStatus } from "./parked.js";
 import { captureSnapshot } from "./snapshots.js";
 import { killSession, listSessions, sessionExists, tmux } from "./tmux.js";
 import { type VcsBackend, type VcsBackendName, backendByName } from "./vcs.js";
@@ -180,6 +181,13 @@ export interface WorkstreamSummary {
    *  otherwise such rows are orphaned forever (the previous
    *  `nothingToDo` heuristic short-circuited on them). */
   registered: boolean;
+  /** "Presumed parked on another machine" derived signal. Present
+   *  iff `parkedStatus(db, name)` reports `parked: true` (most recent
+   *  agent_logs row is a `db export` event, no alive agents, no
+   *  IN_PROGRESS tasks, threshold elapsed). Consumed by
+   *  `mu workstream list` and the TUI tab strip / workstreams card.
+   *  See src/parked.ts. */
+  parked?: { sinceDays: number };
 }
 
 export interface DestroyResult {
@@ -355,6 +363,7 @@ export async function summarizeWorkstream(
   opts: WorkstreamOptions,
 ): Promise<WorkstreamSummary> {
   const tmuxSession = opts.tmuxSession ?? `mu-${opts.workstream}`;
+  const parked = parkedStatus(db, opts.workstream);
   return {
     name: opts.workstream,
     tmuxSession,
@@ -365,6 +374,7 @@ export async function summarizeWorkstream(
     edgeCount: countEdges(db, opts.workstream),
     workspaceCount: listWorkspaces(db, opts.workstream).length,
     registered: isRegistered(db, opts.workstream),
+    ...(parked.parked ? { parked: { sinceDays: parked.sinceDays ?? 0 } } : {}),
   };
 }
 

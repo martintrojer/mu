@@ -18,8 +18,9 @@
 
 import type { EventEmitter } from "node:events";
 import { Box, Text, useApp, useInput, useStdin, useStdout } from "ink";
-import { type ComponentType, useCallback, useEffect, useRef, useState } from "react";
+import { type ComponentType, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Db } from "../../db.js";
+import { parkedStatus } from "../../parked.js";
 import { AgentsCard } from "./cards/agents.js";
 import { BlockedCard } from "./cards/blocked.js";
 import { CommitsCard } from "./cards/commits.js";
@@ -270,6 +271,21 @@ export function App({ db, workstreams, initialActive = 0 }: AppProps): JSX.Eleme
   const workstream = workstreams[safeActive] ?? "";
 
   const snap = useDashboardSnapshot(db, workstream, tickMs, true, refreshNonce);
+
+  // Parked-workstream set for the tab strip. Recomputed on each slow
+  // tick (cheap N small SQL queries; N is the workstream count). The
+  // signal flips at most once per `mu db export` for a given
+  // workstream so the cadence is well below the slow-tick rate.
+  const parkedSet = useMemo(() => {
+    // Reference the slow-tick nonce so this memo recomputes when the
+    // tick fires, even though the value itself is not used in the body.
+    void snap.slowTickNonce;
+    const set = new Set<string>();
+    for (const ws of workstreams) {
+      if (parkedStatus(db, ws).parked) set.add(ws);
+    }
+    return set;
+  }, [db, workstreams, snap.slowTickNonce]);
 
   // Terminal-resize handling per design_resize. ink's stdout exposes
   // columns/rows; we only use them to render a 'too small' guard.
@@ -542,7 +558,12 @@ export function App({ db, workstreams, initialActive = 0 }: AppProps): JSX.Eleme
           frame. The strip lives INSIDE the height-pinned + clipping
           parent so flexbox accounts for its 1-row height when
           allocating space to the cards below it. */}
-      <TabStrip workstreams={workstreams} active={safeActive} terminalColumns={cols} />
+      <TabStrip
+        workstreams={workstreams}
+        active={safeActive}
+        terminalColumns={cols}
+        parked={parkedSet}
+      />
       {hasSnapshotError && (
         <Box borderStyle="round" borderColor="red" paddingX={1}>
           <Text color="red">snapshot error: {snap.error}</Text>

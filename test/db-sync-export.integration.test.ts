@@ -96,6 +96,10 @@ describe("exportDb", () => {
       /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
     );
     expect(parsed.workstreams).toHaveLength(2);
+    // exportDb emits a `db export` agent_logs event per included
+    // workstream BEFORE building the manifest (parked-detection seam,
+    // src/parked.ts), so manifest seq == post-event local seq. This
+    // also makes re-importing the export classify as IDENTICAL.
     expect(parsed.workstreams.find((w) => w.name === "alpha")?.latestSeq).toBe(
       latestSeq(db, alphaId),
     );

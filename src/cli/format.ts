@@ -333,10 +333,11 @@ export function formatWorkstreamsTable(rows: WorkstreamSummary[]): string {
   // is a small int / fixed-shape token. Cap the name column so a long
   // workstream name doesn't push the row counts off-screen.
   const table = muTable({
-    head: ["name", "tmux", "agents", "tasks", "edges", "notes"].map((h) => pc.bold(h)),
-    colWidths: [40, null, null, null, null, null],
+    head: ["name", "tmux", "agents", "tasks", "edges", "notes", "parked"].map((h) => pc.bold(h)),
+    colWidths: [40, null, null, null, null, null, null],
   });
   for (const r of rows) {
+    const parkedCell = r.parked ? pc.yellow(`${r.parked.sinceDays}d`) : pc.dim("—");
     table.push([
       r.name,
       r.tmuxAlive ? pc.green("alive") : pc.dim("—"),
@@ -344,6 +345,7 @@ export function formatWorkstreamsTable(rows: WorkstreamSummary[]): string {
       String(r.taskCount),
       String(r.edgeCount),
       String(r.noteCount),
+      parkedCell,
     ]);
   }
   return table.toString();

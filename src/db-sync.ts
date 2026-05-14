@@ -10,7 +10,7 @@ import { hostname } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CURRENT_SCHEMA_VERSION, type Db, defaultStateDir, openDb } from "./db.js";
-import { latestSeq } from "./logs.js";
+import { emitEvent, latestSeq } from "./logs.js";
 import type { HasNextSteps, NextStep } from "./output.js";
 import { captureSnapshot } from "./snapshots.js";
 
@@ -240,6 +240,22 @@ export function exportDb(db: Db, file: string, opts: ExportDbOptions = {}): Expo
   const manifestPath = `${target}.manifest.json`;
   const targetExists = existsSync(target);
   if (targetExists && opts.force !== true) throw new DbExportTargetExistsError(target);
+
+  // Emit one `db export` event per included workstream BEFORE
+  // VACUUM INTO + manifest capture. Two reasons:
+  //  1. The exported file should contain the events themselves so the
+  //     parked-detection heuristic (src/parked.ts) works against the
+  //     exported DB if anyone ever opens it directly.
+  //  2. Capturing the manifest AFTER the events means re-importing the
+  //     export back into the source DB classifies as IDENTICAL (manifest
+  //     seq == local seq); without this, the post-export seq bump would
+  //     trip the LOCAL_AHEAD branch in buildImportPlan.
+  // The seq token in the payload is for human readers; nothing parses
+  // it. The event verb-prefix is `db export` (registered in src/logs.ts).
+  const preEventManifest = buildExportManifest(db);
+  for (const ws of preEventManifest.workstreams) {
+    emitEvent(db, ws.name, `db export ${ws.name} seq=${ws.latestSeq}`);
+  }
 
   const manifest = buildExportManifest(db);
   mkdirSync(dirname(target), { recursive: true });
