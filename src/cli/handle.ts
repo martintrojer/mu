@@ -50,6 +50,8 @@ import {
   DbImportSchemaTooNewError,
   DbImportSchemaTooOldError,
   DbImportSourceStaleError,
+  DbReplayLocalIdConflictError,
+  DbReplayWorkstreamMissingError,
 } from "../db-sync.js";
 import { type Db, SchemaTooOldError, WorkstreamNotFoundError, openDb } from "../db.js";
 import {
@@ -270,6 +272,12 @@ export function classifyError(err: unknown): { label: string; exitCode: number }
   }
   if (err instanceof DbImportConflictError) {
     return { label: "db import conflict", exitCode: 12 };
+  }
+  if (err instanceof DbReplayWorkstreamMissingError) {
+    return { label: "db replay workstream missing", exitCode: 13 };
+  }
+  if (err instanceof DbReplayLocalIdConflictError) {
+    return { label: "db replay local-id conflict", exitCode: 14 };
   }
   if (
     err instanceof NameAmbiguousError ||

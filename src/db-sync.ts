@@ -833,3 +833,17 @@ function readPackageVersion(): string {
 function shellQuote(s: string): string {
   return `'${s.replace(/'/g, `'"'"'`)}'`;
 }
+
+export {
+  DbReplayLocalIdConflictError,
+  DbReplayWorkstreamMissingError,
+  buildReplayPlan,
+  replayDb,
+  type DbReplayEdgeItem,
+  type DbReplayNoteItem,
+  type DbReplayPlan,
+  type DbReplayResult,
+  type DbReplayTaskConflict,
+  type DbReplayTaskItem,
+  type ReplayDbOptions,
+} from "./db-sync-replay.js";

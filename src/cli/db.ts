@@ -4,10 +4,12 @@ import type { Command } from "commander";
 import { JSON_OPT, emitJson, handle } from "../cli.js";
 import {
   type DbImportSummaryItem,
+  type DbReplayResult,
   type ExportDbResult,
   type ImportDbResult,
   exportDb,
   importDb,
+  replayDb,
 } from "../db-sync.js";
 import type { Db } from "../db.js";
 import { type NextStep, muTable, pc, printNextSteps } from "../output.js";
@@ -21,6 +23,14 @@ interface DbImportCliOptions {
   apply?: boolean;
   forceSource?: boolean;
   onlyWs?: string[];
+  json?: boolean;
+}
+
+interface DbReplayCliOptions {
+  apply?: boolean;
+  task?: string[];
+  note?: string[];
+  all?: boolean;
   json?: boolean;
 }
 
@@ -56,6 +66,30 @@ function importNextSteps(result: ImportDbResult): NextStep[] {
   return [
     { intent: "Undo if needed", command: "mu undo --yes" },
     { intent: "Inspect workstreams", command: "mu state --json" },
+  ];
+}
+
+function replayNextSteps(result: DbReplayResult): NextStep[] {
+  if (result.dryRun) {
+    const firstTask = result.tasks[0]?.localId;
+    return [
+      ...(firstTask
+        ? [
+            {
+              intent: "Replay one parked task",
+              command: `mu db replay ${result.sourceFile} --task ${firstTask} --apply`,
+            },
+          ]
+        : []),
+      {
+        intent: "Replay all parked rows",
+        command: `mu db replay ${result.sourceFile} --all --apply`,
+      },
+    ];
+  }
+  return [
+    { intent: "Undo if needed", command: "mu undo --yes" },
+    { intent: "Inspect the workstream", command: `mu task list -w ${result.workstream}` },
   ];
 }
 
@@ -125,7 +159,78 @@ function renderImportSummary(summary: readonly DbImportSummaryItem[]): string {
   return table.toString();
 }
 
+export async function cmdDbReplay(
+  db: Db,
+  file: string,
+  opts: DbReplayCliOptions = {},
+): Promise<void> {
+  const result = replayDb(db, file, {
+    apply: opts.apply,
+    tasks: opts.task,
+    notes: opts.note,
+    all: opts.all,
+  });
+  const nextSteps = replayNextSteps(result);
+  if (opts.json) {
+    emitJson({ ...result, nextSteps });
+    return;
+  }
+
+  console.log(
+    `${result.dryRun ? "Dry-run" : "Applied"} DB replay from ${pc.bold(result.sourceFile)} ${pc.dim(
+      `(workstream=${result.workstream})`,
+    )}`,
+  );
+  if (result.snapshotId !== undefined) {
+    console.log(pc.dim(`Safety snapshot #${result.snapshotId} captured before replay.`));
+  }
+  console.log(renderReplaySummary(result));
+  for (const warning of result.warnings) console.warn(pc.yellow(`warning: ${warning}`));
+  printNextSteps(nextSteps);
+}
+
+function renderReplaySummary(result: DbReplayResult): string {
+  const table = muTable({ head: ["kind", "count", "details"] });
+  table.push([
+    "tasks",
+    String(result.tasks.length),
+    result.tasks.map((t) => `${t.localId} (${t.status})`).join(", "),
+  ]);
+  table.push([
+    "notes",
+    String(result.notes.length),
+    result.notes.map((n) => `${n.taskLocalId}@${n.createdAt}`).join(", "),
+  ]);
+  table.push([
+    "edges",
+    String(result.edges.length),
+    result.edges.map((e) => `${e.fromLocalId}->${e.toLocalId}`).join(", "),
+  ]);
+  table.push([
+    "conflicts",
+    String(result.conflicts.length),
+    result.conflicts
+      .map(
+        (c) =>
+          `${c.localId}: local=${c.local.status}/${c.local.title}; sidecar=${c.sidecar.status}/${c.sidecar.title}`,
+      )
+      .join(", "),
+  ]);
+  if (!result.dryRun) {
+    table.push([
+      "added",
+      String(result.added.tasks + result.added.notes + result.added.edges),
+      `tasks=${result.added.tasks}, notes=${result.added.notes}, edges=${result.added.edges}`,
+    ]);
+  }
+  return table.toString();
+}
+
 function collectOnlyWs(value: string, previous: string[] = []): string[] {
+  return collectRepeatedCsv(value, previous);
+}
+
+function collectRepeatedCsv(value: string, previous: string[] = []): string[] {
   return [
     ...previous,
     ...value
@@ -165,5 +270,29 @@ export function wireDbCommands(program: Command): void {
     .action(function (file: string) {
       const opts = (this as Command).opts() as DbImportCliOptions;
       return handle((dbHandle) => cmdDbImport(dbHandle, file, opts), this as Command)();
+    });
+
+  db.command("replay <sidecar-file>")
+    .description(
+      "Manually cherry-pick tasks, notes, and eligible edges from a divergence sidecar parked by mu db import --force-source. Dry-run by default; pass --apply to write.",
+    )
+    .option("--apply", "actually apply the replay selection (default is dry-run)")
+    .option(
+      "--task <id>",
+      "replay a missing task plus its notes and eligible edges; repeat or comma-separate",
+      collectRepeatedCsv,
+      [],
+    )
+    .option(
+      "--note <task-id>",
+      "replay missing notes for a task; repeat or comma-separate",
+      collectRepeatedCsv,
+      [],
+    )
+    .option("--all", "replay every missing local-only item from the sidecar")
+    .option(...JSON_OPT)
+    .action(function (file: string) {
+      const opts = (this as Command).opts() as DbReplayCliOptions;
+      return handle((dbHandle) => cmdDbReplay(dbHandle, file, opts), this as Command)();
     });
 }
