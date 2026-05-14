@@ -63,6 +63,76 @@ These have a clear design but haven't yet hit promotion criterion
 1 (friction in ≥2 real workflows). They earn implementation when
 real use surfaces them.
 
+### Multi-machine sync (db export/import + archive restore)
+
+Problem: one user wants to move a workstream between two machines
+(laptop ↔ devserver) over multi-day stretches without losing the task
+DAG, notes, owners, archives, or activity log. The hard operating rule
+is **no concurrent edits to the same workstream on two machines**;
+other workstreams may continue locally on either machine. The current
+markdown bucket round-trip is intentionally human-readable but too
+lossy for this job (no full event log, drift on re-import), and raw
+SQLite copying has no machine identity or drift guard.
+
+Sketch: make the safe, explicit DB-file handoff a typed CLI surface,
+not a daemon. `mu db export <file>` writes a SQLite copy plus a tiny
+manifest (source machine id, per-workstream latest log seq, mu version,
+schema version). `mu db import <file>` compares that manifest against
+local `machine_identity` / `workstream_sync` rows, defaults to a
+dry-run preview, then applies only when the caller passes `--apply`.
+Fast-forward cases import cleanly. Divergence refuses by default;
+`--force-source` replaces the whole workstream from the source file,
+but first parks the losing local state under
+`<state-dir>/divergence/<ws>-<ts>.db` so nothing is silently lost.
+`mu db replay` is the later manual recovery verb for inspecting or
+re-applying parked sidecar state; it is not automatic merge.
+
+Directional verb map (target state):
+
+| direction                                | verb                            |
+| ---------------------------------------- | ------------------------------- |
+| workstream → archive                     | `mu archive add` (existing)     |
+| archive → workstream                     | `mu archive restore` (NEW)      |
+| workstream → bucket markdown (read-only) | `mu workstream export` (existing) |
+| archive → bucket markdown (read-only)    | `mu archive export` (existing)  |
+| db → file (whole-machine sync)           | `mu db export` (NEW)            |
+| file → db (whole-machine sync)           | `mu db import` (NEW)            |
+
+`mu archive restore <label> --as <new-ws> [--source <orig-ws>]`
+restores directly from the `archived_*` tables into a new workstream,
+losslessly and without a markdown bucket round-trip. It refuses if
+`--as` collides and auto-snapshots before writing. Once those typed
+surfaces exist, remove `mu workstream import`; bucket exports remain
+read-only artifacts for humans and git, not the load-bearing DB
+round-trip path.
+
+Schema call-out: this is schema **v8**. Add `machine_identity` (one
+row, generated once per state directory) and `workstream_sync`
+(per-workstream last-seen peer sequence map). Do not require identical
+`workstreams.id` values across machines; import is keyed by
+workstream name and rewires local task/edge ids inside the target DB.
+A clean-machine import is just the "source workstream not local"
+branch.
+
+Promotion criteria:
+
+1. **Proven friction.** At least two real workflows hit the laptop ↔
+   devserver handoff problem or the lossy bucket-import workaround.
+2. **No pillar refactor.** Fits the existing SQLite + typed-verb +
+   snapshot substrate; no tmux, VCS, or task-DAG redesign.
+3. **Bounded scope.** At least one useful subset fits in <300 LOC
+   (`mu archive restore` or `mu db export` + manifest), and the rest
+   decomposes into small typed verbs.
+
+Anti-feature alignment: no daemon, watcher, live sync, remote backend,
+config file, conflict UI, or row-level merge. The user owns transport
+(`scp`, `rsync`, removable disk, etc.). Machine identity is generated
+and stored in SQLite, not configured. Conflict handling is sharp and
+whole-workstream: refuse, or `--force-source` after parking the loser
+sidecar. This narrows the old "cross-machine sync" rejection to mean
+live/automatic synchronization; explicit file export/import can earn
+promotion without violating the local-first pillar.
+
 ### Per-CLI status detection (claude, codex, …)
 
 mu is a pi orchestrator today. v0.2's Braille-spinner fallback
@@ -157,8 +227,9 @@ reasoning per item.
   integration needs one transactional surface.
 - **`TaskSurface` adapter abstraction** — the built-in graph IS
   the killer feature.
-- **Cross-machine state sync** — local-first SQLite; layer
-  syncthing on top if you want it.
+- **Live cross-machine state sync** — local-first SQLite; explicit
+  DB-file export/import may earn its way in, but no watcher, daemon,
+  remote backend, or live row merge.
 - **HTTP API on top of SQLite** — write your own RPC if you need
   one.
 - **A "hosted" mu** — your machine is the deployment.
