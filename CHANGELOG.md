@@ -9,7 +9,7 @@ called out under "Breaking" in each entry.
 ---
 
 
-## [0.4.0] — unreleased
+## [0.4.0] — 2026-05-14
 
 Feature theme: **interactive TUI**. Bare `mu` opens an ink-based,
 read-only dashboard (rounded-border cards, fullscreen popups,
