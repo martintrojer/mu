@@ -56,8 +56,11 @@ defined here, fix the doc. If you need a new term, add it here first.
 | **detector**          | Per-CLI pattern matcher for busy/permission/ready. Today mu has one (`detectPiStatus` in `src/detect.ts`); covers vanilla pi + any TUI wrapper that uses Braille spinner glyphs. Other CLIs spawned via `--cli <other>` may misclassify; trust scrollback over the emoji. | "matcher", "parser"                                |
 | **snapshot**          | A whole-DB backup (`<state-dir>/snapshots/<id>.db`) auto-captured before each destructive verb (workstream destroy, agent close, task close/reject/defer/release/delete, workspace free). Indexed by the `snapshots` table; restore via `mu undo`. | "checkpoint", "backup"                             |
 | **prune**             | Verb: bulk-drop rows from the snapshots collection per a policy (`mu snapshot prune` with `--keep-last`, `--older-than <D>d`, `--stale-version`, `--all`, or the bare GC-policy form). Sibling of the auto-GC that runs on every capture; the explicit verb is for the dogfood case where the auto-GC's count + age caps need an operator-driven supplement (e.g. "drop every snapshot whose schema_version is now stale"). Surgical single-row removal is `mu snapshot delete <id>`. | "reap", "sweep" (overloaded by workstream-destroy --empty) |
-| **export**            | A directory of plain markdown files produced by `mu workstream export` (one `.md` per task + `INDEX.md` + `README.md` + `manifest.json`). Survives `mu workstream destroy` (auto-run pre-destroy to `<state-dir>/exports/<ws>-<ts>/` unless `--no-export`). Idempotent: re-export against the same dir rewrites only changed files; deleted tasks are preserved with a banner. Markdown-only by design — no HTML/PDF, no embedded VCS. The inverse is **import** (markdown only; never `.db`). | "dump", "snapshot" (snapshot is the binary `.db`)  |
-| **import**            | The inverse of **export**: `mu workstream import <bucket-dir>` walks a v0.3 bucket directory and rebuilds every source-ws subdir as live tasks + edges + notes in the DB. Markdown-only by design (cross-machine `.db` is `mu undo` + snapshots). Per-source-ws transactional; refuses to merge silently into an existing workstream (use `--workstream <name>` for single-source rename, or destroy the existing one first). Owners reset to NULL on import (agents aren't restored); the original owner name survives in the markdown frontmatter. | "rehydrate", "restore" (restore = `mu undo`)       |
+| **machine_id**        | Per-state-directory uuid seeded on first `openDb` and stored in `machine_identity`. Identifies one mu DB across `mu db export` / `mu db import`; users do not configure it. | "device id", "host id"                              |
+| **db sync**           | The `mu db {export, import, replay}` cluster of verbs: whole-DB SQLite copy with manifest, per-workstream drift-detecting import, and manual replay from parked divergence sidecars. Explicit file handoff only; not live synchronization. | "live sync", "replication", "collab"              |
+| **divergence sidecar** | SQLite file at `<state-dir>/divergence/<ws>-<ts>.db` parked by `mu db import --force-source` before clobbering local divergent state. Later inspected or cherry-picked via `mu db replay`. | "conflict backup", "loser DB"                       |
+| **export**            | A directory of plain markdown files produced by `mu workstream export` (one `.md` per task + `INDEX.md` + `README.md` + `manifest.json`). Survives `mu workstream destroy` (auto-run pre-destroy to `<state-dir>/exports/<ws>-<ts>/` unless `--no-export`). Idempotent: re-export against the same dir rewrites only changed files; deleted tasks are preserved with a banner. Markdown-only by design — no HTML/PDF, no embedded VCS. Exports are now read-only artifacts for humans / git / docs; the lossless movement paths are **db sync** and `mu archive restore`. | "dump", "snapshot" (snapshot is the binary `.db`)  |
+| **import**            | Avoid as a generic noun unless naming `mu db import`. The removed `mu workstream import` bucket→DB round-trip was replaced by **db sync** for cross-machine handoff and `mu archive restore` for un-archive. | "rehydrate", "restore" (restore has specific meanings) |
 | **archive**           | An operator-named bucket of preserved task graphs (rows in `archives` + `archived_tasks` + `archived_edges` + `archived_notes` + `archived_events`). Cross-workstream and additive: one archive may accumulate snapshots from many workstreams under the same label. Outlives every source workstream; `archived_tasks.source_workstream` is intentionally TEXT (not an FK) so destroyed-workstream attribution survives. Distinct from a **snapshot** (binary whole-DB backup for `mu undo`) and an **export** (markdown files on disk). | "backup", "vault"                                 |
 | **archived task**     | A row in `archived_tasks`: a snapshot of a `tasks` row at archive time. Pins `status`, `impact`, `effort_days`, `owner_name`, and the original `created_at`/`updated_at` for retrospect ordering. The `(archive_id, source_workstream, original_local_id)` composite UNIQUE makes `mu archive add` idempotent at the (archive, workstream) granularity. | "closed task" (status-orthogonal)                  |
 | **archive label**     | The operator-facing TEXT name of an **archive**. Globally unique across the machine (NOT per-workstream — archives outlive workstreams). Shape: `/^[a-z][a-z0-9_-]{0,63}$/` (wider than workstream names because labels often encode workstream + date + purpose, e.g. `auth-2026-q1`). | "archive name" (in code; `label` only)             |
@@ -235,7 +238,19 @@ For worked examples of each verb, see
 [USAGE_GUIDE.md](USAGE_GUIDE.md).
 
 This document is a *vocabulary* doc; it doesn't try to be a verb
-reference too.
+reference too. Rows here exist to keep names canonical, not to replace
+`--help`.
+
+| Operation | Canonical meaning |
+| --------- | ----------------- |
+| `mu db export <file>` | Whole-DB SQLite copy via `VACUUM INTO` plus `<file>.manifest.json` (`machineId`, `schemaVersion`, per-workstream `latestSeq`). |
+| `mu db import <file>` | Drift-detecting per-workstream import from an exported DB. Dry-run by default; `--apply` commits; five case branches: `IDENTICAL` / `FAST_FORWARD` / `LOCAL_AHEAD` / `CONFLICT` / `IMPORT`. |
+| `mu db replay <sidecar>` | Manual cherry-pick of tasks, notes, and eligible edges from a divergence sidecar parked by `mu db import --force-source`. |
+| `mu archive restore <label> --as <new-ws> [--source <orig-ws>]` | Lossless un-archive from `archived_*` rows into a fresh workstream. |
+
+Removed operation: `mu workstream import`. Use `mu db import` for
+cross-machine sync and `mu archive restore` for un-archive. Bucket
+exports remain read-only artifacts.
 
 ---
 
@@ -308,6 +323,9 @@ XDG-Base-Directory-Spec compliant. The state directory resolves as:
   `mu snapshot show <id>`). Default colocation: snapshots live
   next to the live DB, so per-test isolation works without env
   gymnastics.
+- `<state-dir>/divergence/<workstream>-<timestamp>-<suffix>.db` —
+  divergence sidecars parked by `mu db import --force-source` before
+  clobbering local state. Replay selected rows with `mu db replay`.
 - mu does NOT consult any agent-template directory. If pi-subagents
   is installed, its `~/.pi/agent/agents/` and `.pi/agents/` paths
   are pi-subagents' concern — not mu's.

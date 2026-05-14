@@ -9,6 +9,66 @@ called out under "Breaking" in each entry.
 ---
 
 
+## [0.5.0] — unreleased
+
+Feature theme: **multi-machine sync**. A single user can now move a
+mu DB between two machines for multi-day laptop ↔ devserver stretches
+with typed drift detection, sharp conflict handling, and lossless
+un-archive.
+
+### Added
+
+- **`mu db export <file>`** — write the whole SQLite DB to `<file>`
+  via `VACUUM INTO`, plus a `<file>.manifest.json` sidecar containing
+  `machineId`, `schemaVersion`, and per-workstream `latestSeq`.
+- **`mu db import <file>`** — drift-detecting per-workstream merge
+  from an exported DB. Dry-run by default; `--apply` commits. Five
+  case branches: `IDENTICAL` / `FAST_FORWARD` / `LOCAL_AHEAD` /
+  `CONFLICT` / `IMPORT` (source-only or clean-machine import). On
+  `CONFLICT`, refuses by default; `--force-source` clobbers from the
+  source but first parks the local divergent state to
+  `<state-dir>/divergence/<ws>-<ts>.db` for later inspection.
+- **`mu db replay <sidecar>`** — manual cherry-pick of parked
+  divergent state. Dry-run by default; `--task <id>` / `--all` apply.
+  Idempotent; refuses on `local_id` collision with diverged content.
+- **`mu archive restore <label> --as <new-ws> [--source <orig-ws>]`**
+  — lossless un-archive from `archived_*` tables directly. No bucket
+  round-trip. Refuses if `--as` collides; auto-snapshots before
+  writing.
+- **Schema v8**: `machine_identity` (one row per
+  `~/.local/state/mu` DB; uuid + hostname seeded on first `openDb`),
+  `workstream_sync` (per-workstream last-seen-peer-seq map for drift
+  detection).
+
+### Changed
+
+- Bucket exports (`mu workstream export`, `mu archive export`) are now
+  **read-only** artifacts for humans / git / docs. The lossless
+  un-archive path is `mu archive restore`; the cross-machine sync path
+  is `mu db {export,import}`.
+- Help text on `mu archive export` and `mu archive add --destroy` now
+  points to `mu archive restore` as the reverse-of-record.
+- Multi-line tasks/notes in the TUI DAG popup: recurrence marker
+  shortened to dim `(↻)` (was wordy English).
+
+### Removed
+
+- **`mu workstream import`** — replaced by `mu db import`
+  (cross-machine sync) and `mu archive restore` (un-archive). Removing
+  the lossy bucket→DB round-trip is the whole point of the new typed
+  surfaces. Removed `src/importing.ts` (~800 LOC).
+
+### Known limitations
+
+- `mu db import` does **not** carry task owners (`owner_id` is an FK
+  into the machine-local `agents` table). The hard rule for safe
+  operation: no concurrent edits to the same workstream on two
+  machines. Finish or release in-flight claims before `mu db export`.
+  `mu agent list -w <ws>` shows current owners.
+- `mu archive restore` does not restore `agent_logs` (archives don't
+  snapshot the live event log).
+
+
 ## [0.4.0] — 2026-05-14
 
 Feature theme: **interactive TUI**. Bare `mu` opens an ink-based,

@@ -204,7 +204,8 @@ git cherry-pick "$sha" && npm test
 ## CLI overview (only gotchas; use `--help` for full syntax)
 
 - **Workstream:** `init`, `list`, `destroy` (auto-snapshot;
-  `--archive <label>` preserves graph), `export`, `import`.
+  `--archive <label>` preserves graph), `export` (read-only
+  markdown bucket for humans/git/docs).
 - **Agents:** `spawn` (`--workspace`, `--role read-only`,
   `--command`), `send`, `read`, `show`, `list`, `close`, `free`,
   `kick`, `adopt <pane-id|title>` for orphan panes.
@@ -224,8 +225,12 @@ git cherry-pick "$sha" && npm test
   restores DB only, not tmux/workspace dirs. No redo; each restore
   takes a pre-restore snapshot.
 - **Archives:** `create`, `list`, `show`, `add <label> -w <ws>
-  [--destroy]`, `remove`, `delete`, `search`, `export`. Labels are
-  global.
+  [--destroy]`, `restore <label> --as <new-ws> [--source <orig-ws>]`,
+  `remove`, `delete`, `search`, `export` (read-only bucket). Labels
+  are global.
+- **DB sync:** `mu db export <file>`, `mu db import <file>` (dry-run;
+  `--apply` commits; `--force-source` parks conflicts),
+  `mu db replay <sidecar>` (dry-run; `--task <id>` / `--all --apply`).
 - **State/TUI:** bare `mu` opens the all-workstream TUI on a TTY;
   agents/scripts use `mu state --json`. `mu state --tui` is
   read-only, yanks commands, `?` shows keys, `/` filters popups,

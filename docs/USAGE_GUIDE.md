@@ -1,26 +1,27 @@
 # mu — Usage Guide
 
-A practical, copy-pasteable tour of mu (current main; v0.4-track).
+A practical, copy-pasteable tour of mu (current main; v0.5-track).
 Everything below works against the built CLI. Terms are canonical
 — see [VOCABULARY.md](VOCABULARY.md) for definitions; the complete
 current verb list is in `## CLI — complete verb list` of
 [skills/mu/SKILL.md](../skills/mu/SKILL.md).
 
-> **Status:** v0.4 wave (pre-1.0). ~60 typed verbs across 8
+> **Status:** v0.5 wave (pre-1.0). ~65 typed verbs across 9
 > namespaces (`workstream`, `agent`, `task`, `workspace`, `log`,
-> `snapshot`, `archive`, `me`) plus bare top-level verbs
-> (`state`, `doctor`, `sql`, `undo`, `adopt`). Every verb accepts
-> `--json` (one allow-listed exception, `mu agent attach`),
-> per-agent VCS workspaces (jj/sl/git/none), activity log with
-> `--tail` subscription, bare `mu` TTY dashboard, canonical static
-> state card (`mu state` default / `--tui` render modes), whole-DB
-> snapshots auto-captured before destructive verbs +
-> `mu undo` / `mu snapshot {list,show}`, evidence on lifecycle
-> verbs, schema v7 (v5 surrogate INTEGER PKs + per-workstream
-> UNIQUE on operator-facing names; v6 added the `archive_*`
-> family additively; v7 dropped the dead `approvals` table).
+> `snapshot`, `archive`, `db`, `me`) plus bare top-level verbs
+> (`state`, `doctor`, `sql`, `undo`). Every verb accepts `--json`
+> (one allow-listed exception, `mu agent attach`), per-agent VCS
+> workspaces (jj/sl/git/none), activity log with `--tail`
+> subscription, bare `mu` TTY dashboard, canonical static state card
+> (`mu state` default / `--tui` render modes), whole-DB snapshots
+> auto-captured before destructive verbs + `mu undo` /
+> `mu snapshot {list,show}`, evidence on lifecycle verbs, schema v8
+> (v5 surrogate INTEGER PKs + per-workstream UNIQUE on
+> operator-facing names; v6 added the `archive_*` family additively;
+> v7 dropped the dead `approvals` table; v8 adds `machine_identity`
+> and `workstream_sync` for db sync).
 > See [CHANGELOG.md](../CHANGELOG.md) for the release entry,
-> and [§ Not in 0.4.0](#whats-not-in-040-and-how-to-work-around-it)
+> and [§ Not in 0.5.0](#whats-not-in-050-and-how-to-work-around-it)
 > at the bottom for the gaps that still need workarounds.
 
 *If anything below disagrees with `mu --help`, trust `mu --help`.*
@@ -46,9 +47,10 @@ current verb list is in `## CLI — complete verb list` of
 14. [Recovery scenarios](#14-recovery-scenarios)
 15. [Cleanup](#15-cleanup)
 15.5. [Archives — cross-workstream preservation](#155-archives--cross-workstream-preservation-of-task-graphs)
+15.6. [Multi-machine sync](#156-multi-machine-sync)
 16. [One-shot demo script](#16-one-shot-demo-script)
 17. [Mental model in three sentences](#mental-model-in-three-sentences)
-18. [What's NOT in 0.4.0](#whats-not-in-040-and-how-to-work-around-it)
+18. [What's NOT in 0.5.0](#whats-not-in-050-and-how-to-work-around-it)
 19. [Where to go from here](#where-to-go-from-here)
 
 ---
@@ -1162,8 +1164,9 @@ verbs don't cover: ad-hoc joins, manual recovery, exploring schema.
 The schema is 8 core tables (`workstreams`, `agents`, `tasks`,
 `task_edges`, `task_notes`, `agent_logs`, `vcs_workspaces`,
 `snapshots`), 5 archive tables (`archives`, `archived_tasks`,
-`archived_edges`, `archived_notes`, `archived_events`), 1 meta table
-(`schema_version`), plus three views (`ready`, `blocked`, `goals`):
+`archived_edges`, `archived_notes`, `archived_events`), 2 meta tables
+(`schema_version`, `machine_identity`), 1 sync table
+(`workstream_sync`), plus three views (`ready`, `blocked`, `goals`):
 
 ```bash
 mu sql "SELECT name FROM sqlite_master WHERE type IN ('table','view') ORDER BY type, name"
@@ -1725,75 +1728,20 @@ Markdown only by design — no HTML/PDF, no embedded VCS, no
 cross-workstream merge. Operators can pandoc / `git init`
 themselves.
 
-### Cross-machine + collab — `mu workstream import`
+### Bucket exports are read-only artifacts
 
-The export above plus `mu workstream import <bucket-dir>` is the
-cross-machine + collaboration story. Push the bucket directory to
-git on machine A; pull it on machine B (or share it with a
-teammate); `mu workstream import` rebuilds the workstream + every
-task + edge + note locally.
+Bucket exports (`mu workstream export` and `mu archive export`) are
+now **read-only** artifacts for humans / git / docs. They are still
+excellent for grep, code review, project handoff, and historical
+write-ups, but they are no longer a load-bearing DB round-trip path.
 
-```bash
-# Machine A — author
-mu workstream export -w auth-refactor --out exports/auth
-(cd exports/auth && git init && git add . && git commit -m 'auth snapshot')
-git push origin main
+Use the typed surfaces for recovery and movement:
 
-# Machine B — pull + rehydrate
-git pull
-mu workstream import exports/auth                 # → workstream `auth-refactor`
-mu workstream import exports/auth --workstream auth-v2   # rename on import
-mu workstream import exports/auth --dry-run       # walk + parse + report; no DB writes
-mu workstream import exports/auth --json          # machine-readable per-source-ws result
-
-# Partial bucket import — multi-source bucket, but you only want
-# one (or a subset) restored. Two equivalent forms:
-mu workstream import exports/mu/roadmap-v0-2                  # Form 1 — per-source-ws subdir path
-mu workstream import exports/mu --source-ws roadmap-v0-2      # Form 2 — bucket + filter
-mu workstream import exports/mu --source-ws auth,ui           # Form 2 — X+Y, leave Z behind
-mu workstream import exports/mu --source-ws auth --source-ws ui  # repeat OR comma-separate; or both
-```
-
-Key properties:
-
-- **Markdown-only.** `.db` files are never imported (binary +
-  machine-specific). `mu undo` + snapshot files cover the
-  same-machine case; this verb covers cross-machine + collab.
-- **Per-source-ws transactional.** Each source-ws subdirectory is
-  imported in its own SQLite transaction. A failure in source A
-  rolls back A; sibling source B is unaffected.
-- **Refuses silent merges.** If the target workstream already
-  exists in the DB, the import errors with
-  `WorkstreamAlreadyExistsError`. Recourse:
-  `--workstream <new-name>` (single-source buckets only) or
-  destroy the existing workstream first.
-- **Owners reset.** Agents aren't exported, so the imported tasks
-  are unowned. The original owner name survives in the markdown
-  frontmatter — that's the audit trail.
-- **Tombstones skipped.** Files starting with the
-  `> **Deleted from DB on …**` banner (preserved by re-export of
-  a deleted task) are counted as `tombstones_skipped` and not
-  re-inserted.
-- **Forward edge refs are deferred.** `blocked_by` / `blocks`
-  arrays are validated against the bucket's id-set up front, then
-  inserted after every task in the source-ws is created.
-- **Partial import.** Multi-source buckets accept either a
-  per-source-ws subdir path (auto-detected via
-  `README.md` + `INDEX.md` + `tasks/` + a parent
-  `manifest.json` listing the subdir as a source) OR a
-  `--source-ws <names...>` filter on the bucket root
-  (variadic per `cli_audit_plurality_uniformity`: repeat,
-  comma-separate, or both). The two forms are equivalent for
-  single-source restores. `--workstream <new-name>` is allowed
-  whenever the resolved source-ws list has exactly one entry
-  (Form 1; or Form 2 with a single name); rejected for
-  multi-source filters. Passing `--source-ws` against a Form 1
-  per-source-ws subdir is refused (the subdir already implies one
-  source). A `--source-ws` name not in the bucket manifest raises
-  `ImportSourceNotInBucketError` (exit 4) and lists the valid
-  names. `--source-ws ',,'` (canonicalises to zero names) is a
-  `UsageError` (exit 2) so a typo doesn't silently fall back to
-  importing the entire bucket.
+| Need | Verb |
+| ---- | ---- |
+| Lossless un-archive | `mu archive restore <label> --as <new-ws> [--source <orig-ws>]` |
+| Laptop ↔ devserver handoff | `mu db export <file>` + `mu db import <file>` |
+| Manual recovery from a parked conflict | `mu db replay <sidecar>` |
 
 ---
 
@@ -1816,7 +1764,8 @@ mu archive add v0-3-wave -w roadmap-v0-3 --destroy   # cascade: archive THEN des
 mu archive list                                       # label | tasks | sources | created | last_added
 mu archive show v0-3-wave                             # detail card + per-source-workstream summary
 mu archive search 'oauth' [--label v0-3-wave]         # LIKE-search archived titles + note content (--limit N, --json)
-mu archive export v0-3-wave --out exports/v0-3-wave   # render every source-ws to a bucket directory (markdown)
+mu archive restore v0-3-wave --as restored-auth --source auth-refactor
+mu archive export v0-3-wave --out exports/v0-3-wave   # read-only markdown bucket for humans/git/docs
 ```
 
 Key properties:
@@ -1837,6 +1786,12 @@ Key properties:
 - **Outlives the source.** `archived_tasks.source_workstream` is
   TEXT (not an FK), so the source workstream can be destroyed and
   the archive's snapshot of it stays queryable forever.
+- **Lossless un-archive.** `mu archive restore <label> --as <new-ws>
+  [--source <orig-ws>]` copies tasks, edges, and notes directly from
+  `archived_*` tables into a fresh workstream. It refuses if `--as`
+  collides and snapshots before writing. Archives do not snapshot live
+  panes or the live event log, so agents, workspace paths, and
+  `agent_logs` are not restored.
 - **Reversible.** `mu archive delete <label> --yes` captures a
   snapshot first; `mu undo --yes` brings the whole archive back.
   `mu archive remove <label> -w <ws>` is the surgical version
@@ -1881,15 +1836,80 @@ mu archive add mu-v0-3 -w mufeedback-v03 --destroy
 - **No "default" / auto-archive.** `mu workstream destroy` does
   NOT auto-add to a fallback bucket. Either you picked a label
   deliberately or you didn't want one.
-- **No re-import.** The archive IS the workstream's afterlife.
-  If you need an archived task back as live work, copy it via
-  `mu sql` into a fresh workstream + `mu task add`.
+- **No bucket re-import.** The archive IS the workstream's afterlife.
+  If you need an archived source workstream back as live work, use
+  `mu archive restore <label> --as <new-ws> [--source <orig-ws>]`.
 - **No archive→archive merge / rename.** Operator-managed via
   `mu sql` if it ever matters.
 - **Snapshots vs archives are separate concerns.** Snapshots are
   whole-DB binary backups for one-shot recovery (`mu undo`).
   Archives are first-class queryable structured data with their
   own lifecycle. Don't confuse them.
+
+---
+
+## 15.6 Multi-machine sync
+
+Use `mu db {export,import,replay}` when one user alternates a
+workstream between two machines (for example laptop ↔ devserver) over
+multi-day stretches. You own the transport: `rsync`, `scp`, Dropbox,
+git-lfs, USB, whatever moves a SQLite file plus its manifest.
+
+**Hard rule / user contract:** do not edit the same workstream on two
+machines concurrently. Other workstreams may keep moving locally, but
+for one workstream, finish or release in-flight claims before export:
+`mu agent list -w <ws>` shows current owners. `mu db import` does not
+carry owners because `owner_id` points at the machine-local `agents`
+table.
+
+```bash
+# Machine A — export the whole DB copy + ~/Dropbox/mu.db.manifest.json
+mu db export ~/Dropbox/mu.db --force
+# ship file (rsync / scp / Dropbox / git-lfs / USB)
+
+# Machine B — preview first, then commit
+mu db import ~/Dropbox/mu.db          # dry-run preview
+mu db import ~/Dropbox/mu.db --apply  # commits FAST_FORWARD / IMPORT rows
+```
+
+Dry-run output is a per-workstream decision table:
+
+```
+workstream   decision      delta
+-----------  ------------  -------------------------------
+auth         FAST_FORWARD  source 42, local 39, last_synced 39
+docs         IDENTICAL     source 12, local 12, last_synced 12
+local-only   LOCAL_AHEAD   source 0,  local 7,  re-export from this machine
+experiment   CONFLICT      source 55, local 58, needs --force-source
+```
+
+(The actual CLI also prints the numeric columns separately:
+`source_seq`, `local_seq`, `last_synced`, and `needs`.)
+
+Five case branches exist: `IDENTICAL` / `FAST_FORWARD` /
+`LOCAL_AHEAD` / `CONFLICT` / `IMPORT` (source-only or clean-machine
+import). `LOCAL_AHEAD` means the incoming file is stale for that
+workstream; re-export from this machine instead of applying it.
+`CONFLICT` means both sides advanced since the last sync and mu
+refuses by default.
+
+Recovery from an accidental concurrent edit is intentionally sharp:
+
+```bash
+mu db import ~/Dropbox/mu.db --apply --force-source
+# prints a parked loser like:
+# <state-dir>/divergence/auth-2026-05-14T10:00:00.000Z-a1b2c3d4.db
+
+mu db replay <state-dir>/divergence/auth-2026-05-14T10:00:00.000Z-a1b2c3d4.db
+mu db replay <state-dir>/divergence/auth-2026-05-14T10:00:00.000Z-a1b2c3d4.db --task local_fix --apply
+mu db replay <state-dir>/divergence/auth-2026-05-14T10:00:00.000Z-a1b2c3d4.db --all --apply
+```
+
+`--force-source` replaces the whole local workstream from the source
+file, but first parks the local divergent state as a divergence
+sidecar. `mu db replay` is the manual cherry-pick tool for that
+sidecar; it is dry-run by default, idempotent, and refuses when the
+same `local_id` exists locally with diverged content.
 
 ---
 
@@ -1951,9 +1971,9 @@ service of those three.
 
 ---
 
-## What's NOT in 0.4.0 (and how to work around it)
+## What's NOT in 0.5.0 (and how to work around it)
 
-<a id="whats-not-in-040-and-how-to-work-around-it"></a>
+<a id="whats-not-in-050-and-how-to-work-around-it"></a>
 
 The full roadmap with promotion criteria lives in
 [ROADMAP.md](ROADMAP.md). The short list of gaps you might hit

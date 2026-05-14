@@ -14,7 +14,7 @@ write code. Follow the conventions below.
 1. **[docs/USAGE_GUIDE.md](docs/USAGE_GUIDE.md)** — what mu does
    from a user's perspective. ~10 minutes.
 2. **[CHANGELOG.md](CHANGELOG.md)** — the upcoming version's
-   entry (currently `[0.4.0] — unreleased`). Single source of truth
+   entry (currently `[0.5.0] — unreleased`). Single source of truth
    for the verb list, schema, env vars.
 3. **[docs/VISION.md](docs/VISION.md)** — the load-bearing pillars.
    The design principles you must not violate.
@@ -60,7 +60,7 @@ mu/
 ├── src/                   # all source (root files: SDK + shared infra; one
 │                          # level of subdirs OK for cohesive clusters — see
 │                          # `src/cli/`, `src/agents/`, `src/tasks/` below)
-│   ├── db.ts              # SQLite schema + openDb (single CREATE-IF-NOT-EXISTS block; v7)
+│   ├── db.ts              # SQLite schema + openDb (single CREATE-IF-NOT-EXISTS block; v8)
 │   ├── tmux.ts            # tmux wrapper, send protocol, pane validation
 │   ├── detect.ts          # pi status detector + Braille-spinner fallback for other CLIs
 │   ├── reconcile.ts       # ghost prune + status detect + orphan surface
@@ -86,8 +86,9 @@ mu/
 │   ├── tracks.ts          # parallel-tracks union-find with diamond merge
 │   ├── workstream.ts      # ensureWorkstream / list / summarize / destroy / export
 │   ├── archives.ts        # cross-workstream archive bucket SDK hub (re-exports src/archives/*)
-│   ├── exporting.ts       # unified bucket renderer (workstream + archive export)
-│   ├── importing.ts       # inverse of exporting.ts: parse a bucket dir → live DB rows
+│   ├── exporting.ts       # unified bucket renderer (workstream + archive export; read-only buckets)
+│   ├── db-sync.ts         # whole-DB export/import + drift detection + sidecar park SDK
+│   ├── db-sync-replay.ts  # manual replay of divergence sidecars parked by db import --force-source
 │   ├── logs.ts            # agent_logs SDK (append, list, latestSeq, emitEvent)
 │   ├── vcs.ts             # VcsBackend hub (re-exports src/vcs/*: jj/sl/git/none impls)
 │   ├── workspace.ts       # per-agent VCS workspaces hub (re-exports src/workspace/*)
@@ -113,7 +114,7 @@ mu/
 │   │   │   └── wire.ts       # Commander glue
 │   │   ├── workspace.ts   # workspace create / list / free / path / orphans / refresh / commits
 │   │   ├── log.ts         # log read / write / tail
-│   │   ├── archive.ts     # archive create / list / show / add / remove / delete
+│   │   ├── archive.ts     # archive create / list / show / add / restore / remove / delete
 │   │   ├── state.ts       # `mu state` (canonical state card); --tui dispatches to src/cli/tui/
 │   │   ├── staleness.ts   # shared workspace-staleness CLI helpers + warn formatter
 │   │   ├── tui-launch-focus.ts # initial-tab focus ladder for bare `mu` and `mu state --tui`
@@ -150,6 +151,7 @@ mu/
 │   │   │                          # cursor-row.tsx, scroll.ts (applyCursor/applyScroll), viewport.ts,
 │   │   │                          # show-loader.ts (shared subprocess-preserving loader)
 │   │   ├── snapshot.ts    # undo / snapshot list / snapshot show
+│   │   ├── db.ts          # db export / import / replay
 │   │   ├── sql.ts         # sql escape hatch
 │   │   ├── doctor.ts      # doctor diagnostic
 │   │   ├── format.ts      # pure rendering helpers (table renderers, status colourers, truncate/relTime)
@@ -377,21 +379,24 @@ real friction proves itself.
 
 ### "Update the schema"
 
-1. Current schema version is **v7** (see `CURRENT_SCHEMA_VERSION`
+1. Current schema version is **v8** (see `CURRENT_SCHEMA_VERSION`
    in `src/db.ts`). The schema lives in `src/db.ts` as the
    `applySchema(db)` block, which is idempotent CREATE-IF-NOT-EXISTS
    plus targeted `DROP TABLE IF EXISTS` for retired tables
-   (e.g. v7's `DROP TABLE IF EXISTS approvals`). `openDb` rejects
-   pre-current DBs with `SchemaTooOldError` (exit 4) and a
-   migration hint.
+   (e.g. v7's `DROP TABLE IF EXISTS approvals`). v8 is additive:
+   `machine_identity` and `workstream_sync` are
+   `CREATE TABLE IF NOT EXISTS`, and `openDb` seeds the single
+   `machine_identity` row on first open. `openDb` rejects pre-current
+   DBs with `SchemaTooOldError` (exit 4) and a migration hint.
 2. Bump `CURRENT_SCHEMA_VERSION` in `src/db.ts` and mirror the new
-   shape in `CURRENT_SCHEMA`. Two of the last three bumps were
+   shape in `CURRENT_SCHEMA`. Three of the last four bumps were
    script-free: v5 → v6 was purely additive (existing
    CREATE-TABLE-IF-NOT-EXISTS picked up new tables); v6 → v7 was a
-   destructive-but-idempotent `DROP TABLE` block. Reach for a
-   one-shot migration script only when the change can't be
-   expressed that way (the v4 → v5 surrogate-PK substrate switch
-   was the canonical example).
+   destructive-but-idempotent `DROP TABLE` block; v7 → v8 is
+   additive plus the `machine_identity` seed. Reach for a one-shot
+   migration script only when the change can't be expressed that way
+   (the v4 → v5 surrogate-PK substrate switch was the canonical
+   example).
 3. Update tests that exercise the schema (`test/db.test.ts`).
 4. Update [CHANGELOG.md](CHANGELOG.md) under the upcoming version's
    `### Changed` section.

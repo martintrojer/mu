@@ -57,17 +57,17 @@ above:
 
 ---
 
-## Possible — small additions with an obvious shape
+## Shipped
 
-These have a clear design but haven't yet hit promotion criterion
-1 (friction in ≥2 real workflows). They earn implementation when
-real use surfaces them.
+### Multi-machine sync (db export/import + archive restore) — shipped in v0.5.0
 
-### Multi-machine sync (db export/import + archive restore)
+Shipped in v0.5.0. The design note remains here as the historical
+promotion record and to make the local-first boundary explicit.
 
 Problem: one user wants to move a workstream between two machines
 (laptop ↔ devserver) over multi-day stretches without losing the task
-DAG, notes, owners, archives, or activity log. The hard operating rule
+DAG, notes, archives, or activity log. Task owners are intentionally
+machine-local and are not imported. The hard operating rule
 is **no concurrent edits to the same workstream on two machines**;
 other workstreams may continue locally on either machine. The current
 markdown bucket round-trip is intentionally human-readable but too
@@ -92,19 +92,19 @@ Directional verb map (target state):
 | direction                                | verb                            |
 | ---------------------------------------- | ------------------------------- |
 | workstream → archive                     | `mu archive add` (existing)     |
-| archive → workstream                     | `mu archive restore` (NEW)      |
+| archive → workstream                     | `mu archive restore` (shipped v0.5.0) |
 | workstream → bucket markdown (read-only) | `mu workstream export` (existing) |
 | archive → bucket markdown (read-only)    | `mu archive export` (existing)  |
-| db → file (whole-machine sync)           | `mu db export` (NEW)            |
-| file → db (whole-machine sync)           | `mu db import` (NEW)            |
+| db → file (whole-machine sync)           | `mu db export` (shipped v0.5.0) |
+| file → db (whole-machine sync)           | `mu db import` (shipped v0.5.0) |
 
 `mu archive restore <label> --as <new-ws> [--source <orig-ws>]`
 restores directly from the `archived_*` tables into a new workstream,
 losslessly and without a markdown bucket round-trip. It refuses if
-`--as` collides and auto-snapshots before writing. Once those typed
-surfaces exist, remove `mu workstream import`; bucket exports remain
-read-only artifacts for humans and git, not the load-bearing DB
-round-trip path.
+`--as` collides and auto-snapshots before writing. With those typed
+surfaces shipped, `mu workstream import` was removed; bucket exports
+remain read-only artifacts for humans and git, not the load-bearing
+DB round-trip path.
 
 Schema call-out: this is schema **v8**. Add `machine_identity` (one
 row, generated once per state directory) and `workstream_sync`
@@ -130,8 +130,16 @@ config file, conflict UI, or row-level merge. The user owns transport
 and stored in SQLite, not configured. Conflict handling is sharp and
 whole-workstream: refuse, or `--force-source` after parking the loser
 sidecar. This narrows the old "cross-machine sync" rejection to mean
-live/automatic synchronization; explicit file export/import can earn
+live/automatic synchronization; explicit file export/import earned
 promotion without violating the local-first pillar.
+
+---
+
+## Possible — small additions with an obvious shape
+
+These have a clear design but haven't yet hit promotion criterion
+1 (friction in ≥2 real workflows). They earn implementation when
+real use surfaces them.
 
 ### Per-CLI status detection (claude, codex, …)
 
@@ -227,8 +235,8 @@ reasoning per item.
   integration needs one transactional surface.
 - **`TaskSurface` adapter abstraction** — the built-in graph IS
   the killer feature.
-- **Live cross-machine state sync** — local-first SQLite; explicit
-  DB-file export/import may earn its way in, but no watcher, daemon,
+- **Live cross-machine state sync** — local-first SQLite. Explicit
+  DB-file export/import shipped in v0.5.0, but no watcher, daemon,
   remote backend, or live row merge.
 - **HTTP API on top of SQLite** — write your own RPC if you need
   one.
