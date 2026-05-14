@@ -109,17 +109,20 @@ describe("dashboard low-row card culler", () => {
     expect(cullCardsForRows(ALL, 80)).toEqual({ cards: ALL, hidden: [] });
   });
 
-  it("culls Doctor, Recent, and Workspaces first at 30 rows", () => {
-    expect(cullCardsForRows(ALL, 30)).toEqual({
-      cards: [0, 1, 2, 3, 4, 6, 7],
-      hidden: [9, 8, 5],
-    });
+  it("keeps every card at 30 rows once chrome shrank to its true 2-row cost", () => {
+    // pack_dashboard_cards_tighter lowered CARD_CHROME_ROWS from 4 to
+    // 2 (the actual TitledBox top+bottom border cost). At 30 rows the
+    // tallest min-stack column is now 25 rows so nothing needs culling.
+    expect(cullCardsForRows(ALL, 30)).toEqual({ cards: ALL, hidden: [] });
   });
 
   it("culls aggressively at 10 rows and keeps only the highest-priority cards", () => {
+    // Same chrome=2 retune: cull stops once 4 cards' min-stack fits in
+    // 10 rows (one column = (2+2)+(3+2) = 9 ≤ 10) instead of needing
+    // to drop down to a 2-card stack like the chrome=4 era.
     expect(cullCardsForRows(ALL, 10)).toEqual({
-      cards: [1, 3],
-      hidden: [9, 8, 5, 2, 7, 6, 4, 0],
+      cards: [0, 1, 3, 4],
+      hidden: [9, 8, 5, 2, 7, 6],
     });
   });
 
@@ -166,14 +169,15 @@ describe("dashboard row-budget allocator", () => {
   });
 
   it("uses largest-remainder leftover distribution after min rows", () => {
-    const budgets = allocateRowBudgets(29, [
+    const budgets = allocateRowBudgets(23, [
       { id: 3, dataCount: 9 },
       { id: 6, dataCount: 5 },
       { id: 7, dataCount: 5 },
     ]);
-    // bodyAvailable = 29 - chrome(12) = 17. Min total = 9. The
-    // weighted 8-row remainder is 3.78 / 2.10 / 2.10, so Ready wins
-    // the largest-remainder row after floors.
+    // bodyAvailable = 23 - chrome(6) = 17. Min total = 9. The 8-row
+    // weighted remainder is 3.78 / 2.10 / 2.10, so Ready wins the
+    // largest-remainder row after floors of (3, 2, 2). chrome=2 here
+    // mirrors what chrome=4 + availableRows=29 used to exercise.
     expect([budgets[3], budgets[6], budgets[7]]).toEqual([7, 5, 5]);
   });
 

@@ -97,6 +97,13 @@ is the static card; both stay opt-in for non-TTY callers.
 
 ### Changed
 
+- **TUI dashboard cards pack tighter** (`pack_dashboard_cards_tighter`):
+  `CARD_CHROME_ROWS` lowered from 4 to 2 — the true cost of
+  `TitledBox`'s top + bottom border. The old value over-reserved 2
+  rows per card, leaving visible blank space at the bottom of every
+  card and forcing premature culling on short panes. Cards now stack
+  flush; the cull threshold and largest-remainder row distributor
+  re-tuned to match (more cards survive at a given pane height).
 - **Schema v4 → v7**: snapshots table (v4 — auto-snapshot before
   every destructive verb), surrogate-PK normalisation
   (`tasks.id INTEGER PK + (workstream_id, local_id) UNIQUE`,

@@ -39,10 +39,15 @@ describe("dashboard low-row overflow regression", () => {
   );
 
   it("walk-introspection sees only surviving cards plus the hidden-cards hint on a small pane", () => {
+    // pack_dashboard_cards_tighter (chrome 4 → 2): the cull keeps the
+    // four highest-priority slots at 10 rows now (mirrors the unit
+    // expectation in test/tui-dashboard-layout.test.ts).
     const node = dashboardTreeForRows(10);
     const text = renderCardToText(node);
     expect(text).toContain("Agents");
     expect(text).toContain("Ready");
+    expect(text).toContain("Commits");
+    expect(text).toContain("Activity log");
     for (const hiddenTitle of [
       "Doctor",
       "Recent",
@@ -50,12 +55,10 @@ describe("dashboard low-row overflow regression", () => {
       "Tracks",
       "Blocked",
       "In-progress",
-      "Activity log",
-      "Commits",
     ]) {
       expect(text).not.toContain(hiddenTitle);
     }
-    expect(text).toContain("+8 cards hidden · resize taller");
+    expect(text).toContain("+6 cards hidden · resize taller");
   });
 });
 

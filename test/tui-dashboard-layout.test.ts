@@ -73,10 +73,16 @@ describe("dashboard responsive-layout wiring", () => {
   });
 
   it("small-pane dashboard walk renders surviving cards plus the hidden-card hint", () => {
+    // pack_dashboard_cards_tighter (chrome 4 → 2) means more cards
+    // survive at the same pane height: at 10 rows the cull keeps the
+    // four highest-priority slots (Commits/Agents/Ready/Activity log)
+    // and hides the other six.
     const text = renderCardToText(smallDashboardTree(10));
     expect(text).toContain("Agents");
     expect(text).toContain("Ready");
-    expect(text).toContain("+8 cards hidden · resize taller");
+    expect(text).toContain("Commits");
+    expect(text).toContain("Activity log");
+    expect(text).toContain("+6 cards hidden · resize taller");
     for (const hiddenTitle of [
       "Doctor",
       "Recent",
@@ -84,8 +90,6 @@ describe("dashboard responsive-layout wiring", () => {
       "Tracks",
       "Blocked",
       "In-progress",
-      "Activity log",
-      "Commits",
     ]) {
       expect(text).not.toContain(hiddenTitle);
     }

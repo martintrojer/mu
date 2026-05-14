@@ -47,7 +47,15 @@ export interface CardRowConfig {
 
 export type CardConfigMap = Readonly<Record<CardId, CardRowConfig>>;
 
-const CARD_CHROME_ROWS = 4;
+// Two rows of TitledBox chrome: 1 top-border line + 1 bottom-border
+// line. The body is rendered by the inner Box (paddingY=0) and the
+// PaddedRows helper fills it to exactly `rowBudget` text rows, so the
+// declared outer height is `chrome + rowBudget` with no slack.
+// Historically this was 4 (over-reservation) which left 2 blank rows
+// at the bottom of every card and made the dashboard feel loose; the
+// pack_dashboard_cards_tighter polish lowered it to the true chrome
+// cost so cards stack flush against each other.
+const CARD_CHROME_ROWS = 2;
 
 export const CARD_CONFIGS: CardConfigMap = {
   0: {
