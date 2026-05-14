@@ -43,7 +43,14 @@ import {
   ArchiveNotFoundError,
   ArchiveSourceAmbiguousError,
 } from "../archives.js";
-import { DbExportTargetExistsError } from "../db-sync.js";
+import {
+  DbExportTargetExistsError,
+  DbImportConflictError,
+  DbImportManifestMissingError,
+  DbImportSchemaTooNewError,
+  DbImportSchemaTooOldError,
+  DbImportSourceStaleError,
+} from "../db-sync.js";
 import { type Db, SchemaTooOldError, WorkstreamNotFoundError, openDb } from "../db.js";
 import {
   ImportBucketInvalidError,
@@ -248,6 +255,21 @@ export function classifyError(err: unknown): { label: string; exitCode: number }
     // operators of the same -> exit-3 mapping that AgentNotFoundError /
     // TaskNotFoundError get. (schema_v5_cli_boundary)
     return { label: "not found", exitCode: 3 };
+  }
+  if (err instanceof DbImportManifestMissingError) {
+    return { label: "db import manifest missing", exitCode: 8 };
+  }
+  if (err instanceof DbImportSchemaTooOldError) {
+    return { label: "db import schema too old", exitCode: 9 };
+  }
+  if (err instanceof DbImportSchemaTooNewError) {
+    return { label: "db import schema too new", exitCode: 10 };
+  }
+  if (err instanceof DbImportSourceStaleError) {
+    return { label: "db import source stale", exitCode: 11 };
+  }
+  if (err instanceof DbImportConflictError) {
+    return { label: "db import conflict", exitCode: 12 };
   }
   if (
     err instanceof NameAmbiguousError ||

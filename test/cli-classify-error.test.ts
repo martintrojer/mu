@@ -28,6 +28,13 @@ import {
   ArchiveSourceAmbiguousError,
 } from "../src/archives.js";
 import { NameAmbiguousError, UsageError, classifyError } from "../src/cli.js";
+import {
+  DbImportConflictError,
+  DbImportManifestMissingError,
+  DbImportSchemaTooNewError,
+  DbImportSchemaTooOldError,
+  DbImportSourceStaleError,
+} from "../src/db-sync.js";
 import { SchemaTooOldError, WorkstreamNotFoundError } from "../src/db.js";
 import {
   ImportBucketInvalidError,
@@ -128,7 +135,14 @@ describe("classifyError exit-code map", () => {
     [new WorkstreamAlreadyExistsError("existing-ws"), 4, "conflict"],
     [new WorkstreamExistsError("existing-ws"), 4, "conflict"],
 
-    // switch branches 4-6: spawn failures
+    // switch branches 4-8: db import typed failures
+    [new DbImportManifestMissingError("/tmp/mu.db.manifest.json"), 8, "db import manifest missing"],
+    [new DbImportSchemaTooOldError(7), 9, "db import schema too old"],
+    [new DbImportSchemaTooNewError(9), 10, "db import schema too new"],
+    [new DbImportSourceStaleError(["alpha"]), 11, "db import source stale"],
+    [new DbImportConflictError(["alpha"]), 12, "db import conflict"],
+
+    // switch branches 9-11: spawn failures
     [
       new AgentSpawnCliNotFoundError("pi-meta", "pi-meta", "MU_PI_META_COMMAND"),
       1,

@@ -105,11 +105,22 @@ export {
 } from "./db.js";
 export {
   DbExportTargetExistsError,
+  DbImportConflictError,
+  DbImportManifestMissingError,
+  DbImportSchemaTooNewError,
+  DbImportSchemaTooOldError,
+  DbImportSourceStaleError,
   type DbExportManifest,
   type DbExportManifestWorkstream,
+  type DbImportDecision,
+  type DbImportSummaryItem,
   type ExportDbOptions,
   type ExportDbResult,
+  type ImportDbOptions,
+  type ImportDbResult,
+  buildImportPlan,
   exportDb,
+  importDb,
 } from "./db-sync.js";
 export {
   detectPiStatus,
