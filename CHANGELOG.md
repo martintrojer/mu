@@ -9,7 +9,7 @@ called out under "Breaking" in each entry.
 ---
 
 
-## [0.5.0] — unreleased
+## [0.4.1] — 2026-05-14
 
 Feature theme: **multi-machine sync**. A single user can now move a
 mu DB between two machines for multi-day laptop ↔ devserver stretches

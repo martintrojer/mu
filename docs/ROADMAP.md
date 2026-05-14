@@ -59,9 +59,9 @@ above:
 
 ## Shipped
 
-### Multi-machine sync (db export/import + archive restore) — shipped in v0.5.0
+### Multi-machine sync (db export/import + archive restore) — shipped in v0.4.1
 
-Shipped in v0.5.0. The design note remains here as the historical
+Shipped in v0.4.1. The design note remains here as the historical
 promotion record and to make the local-first boundary explicit.
 
 Problem: one user wants to move a workstream between two machines
@@ -92,11 +92,11 @@ Directional verb map (target state):
 | direction                                | verb                            |
 | ---------------------------------------- | ------------------------------- |
 | workstream → archive                     | `mu archive add` (existing)     |
-| archive → workstream                     | `mu archive restore` (shipped v0.5.0) |
+| archive → workstream                     | `mu archive restore` (shipped v0.4.1) |
 | workstream → bucket markdown (read-only) | `mu workstream export` (existing) |
 | archive → bucket markdown (read-only)    | `mu archive export` (existing)  |
-| db → file (whole-machine sync)           | `mu db export` (shipped v0.5.0) |
-| file → db (whole-machine sync)           | `mu db import` (shipped v0.5.0) |
+| db → file (whole-machine sync)           | `mu db export` (shipped v0.4.1) |
+| file → db (whole-machine sync)           | `mu db import` (shipped v0.4.1) |
 
 `mu archive restore <label> --as <new-ws> [--source <orig-ws>]`
 restores directly from the `archived_*` tables into a new workstream,
@@ -236,7 +236,7 @@ reasoning per item.
 - **`TaskSurface` adapter abstraction** — the built-in graph IS
   the killer feature.
 - **Live cross-machine state sync** — local-first SQLite. Explicit
-  DB-file export/import shipped in v0.5.0, but no watcher, daemon,
+  DB-file export/import shipped in v0.4.1, but no watcher, daemon,
   remote backend, or live row merge.
 - **HTTP API on top of SQLite** — write your own RPC if you need
   one.

@@ -26,17 +26,15 @@ mu state -w auth-refactor --json  # agent/script API: typed static state for jq
 mu log --tail                 # subscribe to every state change
 ```
 
-The crew is real (tmux panes you can attach to), the work graph is
-real (SQLite + a parallel-tracks algorithm with diamond-merge), the
-workspaces are real (jj workspace / sl share / git worktree), and
-**mu stays out of the model's way.** Tasks, workspaces, panes, notes,
-and logs persist state and coordinate handoffs; the model still
-decides what to do. Workers use the bundled
-[SKILL.md](skills/mu/SKILL.md) when they need the full in-pane ground
-truth. Bare `mu` is the human front door when stdout is attached to a
-TTY: it launches the read-only TUI with every workstream loaded.
-Piped/scripted calls print help instead; use typed verbs plus `--json`
-(or `MU_NO_TUI=1`) for agent/API flows.
+Crew, graph, and workspaces are all real things you can poke at:
+tmux panes (`tmux attach`), a SQLite DAG with parallel-tracks +
+diamond-merge, and jj workspace / sl share / git worktree on disk.
+**mu persists state and coordinates handoffs; the model still
+decides what to do.** Workers reach for the bundled
+[SKILL.md](skills/mu/SKILL.md) when they need in-pane ground truth.
+Bare `mu` on a TTY launches the read-only multi-workstream TUI;
+piped/scripted calls print help, so use typed verbs + `--json` (or
+`MU_NO_TUI=1`) for agent/API flows.
 
 ---
 
@@ -54,9 +52,7 @@ Piped/scripted calls print help instead; use typed verbs plus `--json`
   drive; mu records, scopes, and yanks the next command.
 - **A local typed state surface.** One CLI, one SQLite registry,
   typed verbs, `--json` everywhere useful, and a read-only dashboard
-  for humans. Contributor-facing boundaries and rejected ideas live
-  in [ROADMAP.md](docs/ROADMAP.md); the README stays focused on how
-  mu feels to use.
+  for humans.
 
 ## What mu is NOT
 
@@ -190,6 +186,24 @@ mu workstream destroy --yes
 
 Full tour: [docs/USAGE_GUIDE.md](docs/USAGE_GUIDE.md), including the
 expanded [dashboard/state guide](docs/USAGE_GUIDE.md#5-see-the-graph-dashboard--state-api).
+
+---
+
+## Portability and handoff
+
+State lives in one SQLite DB, so it travels. `mu db export <file>`
+writes a consistent whole-DB copy plus a manifest sidecar; `mu db
+import <file>` ships it back, with per-workstream drift detection
+(dry-run by default; `--apply` commits) and a sharp `--force-source`
+that parks the loser to a sidecar before clobbering. Hard rule: don't
+edit the same workstream on two machines concurrently.
+
+For humans / git / docs, `mu workstream export` and `mu archive
+export` render a workstream (or an archive bucket) as Markdown:
+per-task `.md` files plus an `INDEX.md`, suitable for committing,
+reviewing, or pasting. Bucket exports are read-only artifacts; the
+lossless un-archive path back into a live workstream is `mu archive
+restore <label> --as <new-ws>`.
 
 ---
 

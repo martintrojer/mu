@@ -1,12 +1,12 @@
 # mu — Usage Guide
 
-A practical, copy-pasteable tour of mu (current main; v0.5-track).
+A practical, copy-pasteable tour of mu (current main; v0.4.1).
 Everything below works against the built CLI. Terms are canonical
 — see [VOCABULARY.md](VOCABULARY.md) for definitions; the complete
 current verb list is in `## CLI — complete verb list` of
 [skills/mu/SKILL.md](../skills/mu/SKILL.md).
 
-> **Status:** v0.5 wave (pre-1.0). ~65 typed verbs across 9
+> **Status:** v0.4.1 (pre-1.0). ~65 typed verbs across 9
 > namespaces (`workstream`, `agent`, `task`, `workspace`, `log`,
 > `snapshot`, `archive`, `db`, `me`) plus bare top-level verbs
 > (`state`, `doctor`, `sql`, `undo`). Every verb accepts `--json`
@@ -21,7 +21,7 @@ current verb list is in `## CLI — complete verb list` of
 > v7 dropped the dead `approvals` table; v8 adds `machine_identity`
 > and `workstream_sync` for db sync).
 > See [CHANGELOG.md](../CHANGELOG.md) for the release entry,
-> and [§ Not in 0.5.0](#whats-not-in-050-and-how-to-work-around-it)
+> and [§ Not in 0.4.1](#whats-not-in-041-and-how-to-work-around-it)
 > at the bottom for the gaps that still need workarounds.
 
 *If anything below disagrees with `mu --help`, trust `mu --help`.*
@@ -50,7 +50,7 @@ current verb list is in `## CLI — complete verb list` of
 15.6. [Multi-machine sync](#156-multi-machine-sync)
 16. [One-shot demo script](#16-one-shot-demo-script)
 17. [Mental model in three sentences](#mental-model-in-three-sentences)
-18. [What's NOT in 0.5.0](#whats-not-in-050-and-how-to-work-around-it)
+18. [What's NOT in 0.4.1](#whats-not-in-041-and-how-to-work-around-it)
 19. [Where to go from here](#where-to-go-from-here)
 
 ---
@@ -1971,7 +1971,7 @@ service of those three.
 
 ---
 
-## What's NOT in 0.5.0 (and how to work around it)
+## What's NOT in 0.4.1 (and how to work around it)
 
 <a id="whats-not-in-050-and-how-to-work-around-it"></a>
 
