@@ -4,9 +4,16 @@
 // popup. Pure rendering lives here so the box-drawing characters and
 // diamond-collapse semantics have one implementation.
 
+import pc from "picocolors";
 import type { Db } from "./db.js";
 import { type TaskRow, getTask, listTasks } from "./tasks.js";
 import type { TaskStatus } from "./tasks/status.js";
+
+// One-line marker appended to a tree node when its subtree was already
+// rendered earlier in the forest (DAG diamond collapse). Symbol-only
+// + dimmed: the ↻ glyph carries the recurrence semantics, the dim
+// keeps it from competing with the task title for the eye.
+const RECURRENCE_MARKER = `  ${pc.dim("(↻)")}`;
 
 export interface FullDag {
   /** Root tasks: no incoming `blocks` edge (no blockers). */
@@ -87,7 +94,7 @@ export function renderForest(
     if (!byName.has(root.name)) byName.set(root.name, root);
     const lines = [formatTreeNodeLabel(root, statusFn, opts)];
     if (seen.has(root.name)) {
-      lines[0] = `${lines[0]}  (↻ already shown above)`;
+      lines[0] = `${lines[0]}${RECURRENCE_MARKER}`;
     } else {
       seen.add(root.name);
       renderForestChildren(root.name, "", edges, byName, statusFn, seen, lines, opts);
@@ -181,7 +188,7 @@ function renderForestChildren(
 
     if (seen.has(childName)) {
       lines.push(
-        `${prefix}${branch}${formatTreeNodeLabel(child, statusFn, opts)}  (↻ already shown above)`,
+        `${prefix}${branch}${formatTreeNodeLabel(child, statusFn, opts)}${RECURRENCE_MARKER}`,
       );
       continue;
     }
