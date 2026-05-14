@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by test-reviewer-1, 2026-05-08T11:26:00.510Z
+### #1 by "test-reviewer-1", 2026-05-08T11:26:00.510Z
 
 ```
 FILES: test/hud.test.ts:107-111 ; src/cli.ts:3367-3380 (resolveHudMode default branch).

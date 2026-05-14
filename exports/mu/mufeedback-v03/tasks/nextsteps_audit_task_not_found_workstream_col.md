@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by worker-5, 2026-05-10T13:34:15.608Z
+### #1 by "worker-5", 2026-05-10T13:34:15.608Z
 
 ```
 FILES: src/tasks/errors.ts:25-32

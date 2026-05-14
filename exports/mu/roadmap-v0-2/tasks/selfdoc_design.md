@@ -16,7 +16,7 @@ blocks: ["selfdoc_infra"]
 
 ## Notes (1)
 
-### #1 by system, 2026-05-08T06:21:50.619Z
+### #1 by null, 2026-05-08T06:21:50.619Z
 
 ```
 AUDIT: making mu commands self-documenting + SKILL.md cleanup.

@@ -16,7 +16,7 @@ blocks: ["idle_assigned_agent_detection", "task_wait_cross_workstream"]
 
 ## Notes (1)
 
-### #1 by π - mu, 2026-05-10T07:49:47.803Z
+### #1 by "π - mu", 2026-05-10T07:49:47.803Z
 
 ```
 mu task wait — should reconcile each poll so dead-pane workers get reaped → fail fast instead of timing out.

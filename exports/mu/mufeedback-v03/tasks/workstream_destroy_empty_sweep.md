@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by π - mu, 2026-05-10T07:11:14.975Z
+### #1 by "π - mu", 2026-05-10T07:11:14.975Z
 
 ```
 mu workstream destroy --empty — sweep every empty workstream.

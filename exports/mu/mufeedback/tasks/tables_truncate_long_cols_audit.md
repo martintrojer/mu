@@ -16,7 +16,7 @@ blocks: ["docs_staleness_review_capstone"]
 
 ## Notes (1)
 
-### #1 by π - mu, 2026-05-09T08:30:08.641Z
+### #1 by "π - mu", 2026-05-09T08:30:08.641Z
 
 ```
 SURFACED LIVE: `mu workspace list` blew the terminal width during this session — the `path` column rendered the full ~70-char absolute path uncut, pushing the table out to ~200 chars and forcing a horizontal-scrollback or wrap (the wrap actually broke the box-drawing chars in some test/output snapshots). Same shape risk in any verb that emits a Table where one column has user-data of unpredictable length (titles, paths, evidence strings, JSON payloads).

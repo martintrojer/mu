@@ -16,7 +16,7 @@ blocks: ["archive_phase3_destroy_integration", "archive_phase4_export_renderer_u
 
 ## Notes (2)
 
-### #1 by π - mu, 2026-05-09T17:16:34.836Z
+### #1 by "π - mu", 2026-05-09T17:16:34.836Z
 
 ```
 Phase 2 — mu archive create/list/show/add/remove/delete CLI verbs.
@@ -114,7 +114,7 @@ Drive each verb via the CLI entrypoint (or via the SDK + format-result helpers i
 ⚠️ git commit -am '...' THEN mu task close archive_phase2_cli_verbs -w roadmap-v0-3 --evidence 'typecheck + lint + test + build green; six verbs + tests + docs'
 ```
 
-### #2 by worker-1, 2026-05-10T05:48:27.828Z
+### #2 by "worker-1", 2026-05-10T05:48:27.828Z
 
 ```
 FILES

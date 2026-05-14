@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by system, 2026-05-08T07:37:32.132Z
+### #1 by null, 2026-05-08T07:37:32.132Z
 
 ```
 FILES: src/cli.ts (cmdTaskAdd opts type + handler; task add command options/help), test/cli-blocked-by.test.ts (NEW, 5 CLI-level tests via buildProgram + parseAsync)

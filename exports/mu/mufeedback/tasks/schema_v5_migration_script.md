@@ -16,7 +16,7 @@ blocks: ["docs_staleness_review_capstone", "schema_v5_drop_migrations_ts", "sche
 
 ## Notes (1)
 
-### #1 by worker-mf-3, 2026-05-09T10:40:29.177Z
+### #1 by "worker-mf-3", 2026-05-09T10:40:29.177Z
 
 ```
 Per docs/SCHEMA_v5_DESIGN.md "Migration strategy" section.

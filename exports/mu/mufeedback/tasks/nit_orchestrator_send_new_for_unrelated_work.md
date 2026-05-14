@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (2)
 
-### #1 by π - mu, 2026-05-08T13:27:06.077Z
+### #1 by "π - mu", 2026-05-08T13:27:06.077Z
 
 ```
 SURFACED LIVE during the multi-agent dogfood waves.
@@ -49,7 +49,7 @@ PROMOTION CRITERION
 Mention in SKILL.md is the smallest. Promote to a typed verb if "did the orchestrator forget /new again?" comes up ≥2 more times.
 ```
 
-### #2 by π - mu, 2026-05-09T05:26:29.208Z
+### #2 by "π - mu", 2026-05-09T05:26:29.208Z
 
 ```
 FILES: skills/mu/SKILL.md (new "Sending follow-on work to an existing agent" subsection between "After spawning, observe" and "Tear down a workstream"; new DOs bullet).

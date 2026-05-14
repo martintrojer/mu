@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (2)
 
-### #1 by worker-mf-1, 2026-05-09T11:11:19.191Z
+### #1 by "worker-mf-1", 2026-05-09T11:11:19.191Z
 
 ```
 From verb audit (docs/VERB_AUDIT.md). The three top-level "self" verbs (`whoami`, `my-tasks`, `my-next`) score 2/4, 1/4, 1/4 respectively. They are obviously a cluster — three doors into the same agent-self room.
@@ -41,7 +41,7 @@ CALIBRATION: this matches operator priors in audit_verbs_typed_vs_sql note #398.
 OPERATOR: may reject in favour of keeping the three verbs for in-pane brevity (`mu my-next` IS shorter than `mu me next`). Audit recommendation: merge, because 3 top-level entries crowd `mu --help` and the three verbs sharing the same `resolveSelf(db)` logic + identical render shape is the smell.
 ```
 
-### #2 by π - mu, 2026-05-09T11:20:08.355Z
+### #2 by "π - mu", 2026-05-09T11:20:08.355Z
 
 ```
 DEFERRED by orchestrator: ship after schema_v5 lands. Schema_v5 rewrites SDK signatures (workstream context), so the audit-removal commits would conflict. Re-claim after schema_v5_cleanups closes; the SQL recipe in this task's audit notes still applies.

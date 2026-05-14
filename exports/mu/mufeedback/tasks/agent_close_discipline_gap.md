@@ -16,7 +16,7 @@ blocks: ["audit_verbs_typed_vs_sql", "docs_staleness_review_capstone"]
 
 ## Notes (2)
 
-### #1 by π - mu, 2026-05-09T08:56:29.718Z
+### #1 by "π - mu", 2026-05-09T08:56:29.718Z
 
 ```
 SURFACED LIVE wave 3 (this very session). 4 dispatches, 2 closed cleanly (worker-mf-2 state_hud, worker-mf-3 evidence_suffix), 2 stuck IN_PROGRESS (worker-mf-1 should_overwrite, worker-mf-4 destroy_count) — both workers committed their patches AND printed "done / committed as <sha>" in their pane, but neither ran `mu task close <id>`. Orchestrator's `mu task wait` correctly kept polling because the DB row was still IN_PROGRESS. Looked like a hang; was actually agent-side discipline drift.
@@ -85,7 +85,7 @@ Phase 3 (deferred unless ≥2 more hits) — agent-runtime hook
 After phase 1 + 2 land, this bug closes; audit_verbs_typed_vs_sql gains the calibration data point.
 ```
 
-### #2 by worker-mf-1, 2026-05-09T09:11:11.322Z
+### #2 by "worker-mf-1", 2026-05-09T09:11:11.322Z
 
 ```
 FILES: src/tasks/wait.ts (TaskWaitOptions.stuckAfterMs default 300_000; TaskWaitTaskState.stuck; per-task dedupe via Set<localId>; setWaitStuckWarnForTests test seam emitting yellow ANSI single line to stderr); src/cli/tasks.ts (cmdTaskWait wires stuckAfter seconds → stuckAfterMs; --stuck-after <seconds> CLI flag with parseLines); src/tasks.ts + src/index.ts (re-export setWaitStuckWarnForTests); skills/mu/SKILL.md (one bullet under Working loop: skipped-close → hang); test/tasks.test.ts (2 new cases in waitForTasks describe — stuck-warn fires exactly once across ~8 polls; stuckAfterMs:0 disables — plus updated existing equality assertion for new stuck:false field); CHANGELOG.md (Added + Changed under [Unreleased]).

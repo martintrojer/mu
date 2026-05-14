@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (2)
 
-### #1 by worker-1, 2026-05-08T14:38:50.371Z
+### #1 by "worker-1", 2026-05-08T14:38:50.371Z
 
 ```
 SHIPPED: Option C, narrowed to "post-restore reconcile is dry-run".
@@ -216,7 +216,7 @@ LOC: 13 net non-comment source + ~107 LOC tests. Well under the
     [Unreleased] block; no version stamp needed.
 ```
 
-### #2 by π - mu, 2026-05-08T16:28:24.178Z
+### #2 by "π - mu", 2026-05-08T16:28:24.178Z
 
 ```
 MERGED: worker-1 patch (CHANGELOG + src/cli.ts + src/reconcile.ts + 3 test files) merged to main as commit 08a1045 by orchestrator. Gate green: typecheck + lint + 710/710 tests + build. mu undo --yes round-trip live in /opt/homebrew/bin/mu (symlink into this checkout).

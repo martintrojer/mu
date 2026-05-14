@@ -16,7 +16,7 @@ blocks: ["remove_scripts_dir"]
 
 ## Notes (1)
 
-### #1 by π - mu, 2026-05-09T17:09:48.119Z
+### #1 by "π - mu", 2026-05-09T17:09:48.119Z
 
 ```
 SURFACED post-v0.2: scripts/ holds 4 files, all active CI guards wired into `npm run lint`. Operator flagged for cleanup; orchestrator pushed back (the guards are doing real work). PARK the decision until the v0.3 release boundary; revisit then with a clearer view of how much they're catching.

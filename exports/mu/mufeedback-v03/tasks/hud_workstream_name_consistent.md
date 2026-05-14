@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (2)
 
-### #1 by π - mu, 2026-05-10T07:15:24.161Z
+### #1 by "π - mu", 2026-05-10T07:15:24.161Z
 
 ```
 mu hud — workstream name rendered inconsistently across tables.
@@ -62,7 +62,7 @@ Tiny: ~5 LOC of code, ~10 LOC of test churn (snapshot updates).
 ⚠️ git commit -am '...' THEN mu task close hud_workstream_name_consistent -w mufeedback-v03 --evidence 'bare workstream name in both tables; tests updated'
 ```
 
-### #2 by reaper, 2026-05-10T07:45:50.969Z
+### #2 by "reaper", 2026-05-10T07:45:50.969Z
 
 ```
 [reaper] previous owner worker-2 gone (agent removed); status reverted IN_PROGRESS → OPEN, owner cleared

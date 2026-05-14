@@ -16,7 +16,7 @@ blocks: ["docs_staleness_review_capstone"]
 
 ## Notes (1)
 
-### #1 by test-reviewer-1, 2026-05-08T11:24:31.605Z
+### #1 by "test-reviewer-1", 2026-05-08T11:24:31.605Z
 
 ```
 FILES: test/workstream.test.ts:288-433 (destroyWorkstream describe block); src/workstream.ts:240-330 (workspace cleanup + failedWorkspaces accumulation); src/cli.ts:572-585 (WARNING render of failedWorkspaces).

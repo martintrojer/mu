@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (4)
 
-### #1 by system, 2026-05-08T07:52:30.531Z
+### #1 by null, 2026-05-08T07:52:30.531Z
 
 ```
 SURFACED during the multi-agent dogfood teardown.
@@ -95,7 +95,7 @@ occurrence is low (a few MB per orphaned workspace) so I lean
 need to consider workspace lifetime anyway).
 ```
 
-### #2 by system, 2026-05-08T08:50:55.661Z
+### #2 by null, 2026-05-08T08:50:55.661Z
 
 ```
 FILES: mu CLI/runtime behavior observed after closing worker-1 in infer-rs.
@@ -107,7 +107,7 @@ VERIFIED: Also logged in infer-rs event #250/process note.
 ODDITIES: May relate to workspace registry migration or agent close dropping rows before workspace cleanup.
 ```
 
-### #3 by system, 2026-05-08T08:59:00.654Z
+### #3 by null, 2026-05-08T08:59:00.654Z
 
 ```
 FILES: mu task metadata.
@@ -119,7 +119,7 @@ VERIFIED: task show/list in mufeedback after move.
 ODDITIES: Moved via mu sql because mu has no typed task-move verb.
 ```
 
-### #4 by π - infer-rs, 2026-05-08T13:01:06.023Z
+### #4 by "π - infer-rs", 2026-05-08T13:01:06.023Z
 
 ```
 FILES: cross-reference from infer-rs incident on 2026-05-08.

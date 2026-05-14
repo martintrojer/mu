@@ -16,7 +16,7 @@ blocks: ["docs_staleness_review_capstone"]
 
 ## Notes (1)
 
-### #1 by test-reviewer-1, 2026-05-09T08:36:16.317Z
+### #1 by "test-reviewer-1", 2026-05-09T08:36:16.317Z
 
 ```
 FILES: test/tasks.test.ts:1061-1090 ("returns tasks owned by an agent across workstreams"); src/tasks.ts (listTasksByOwner SQL).

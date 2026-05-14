@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by π - mu, 2026-05-09T17:17:31.151Z
+### #1 by "π - mu", 2026-05-09T17:17:31.151Z
 
 ```
 Phase 3 — mu workstream destroy --archive <label>.

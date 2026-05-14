@@ -16,7 +16,7 @@ blocks: ["docs_staleness_review_capstone"]
 
 ## Notes (1)
 
-### #1 by code-reviewer-1, 2026-05-09T08:33:20.597Z
+### #1 by "code-reviewer-1", 2026-05-09T08:33:20.597Z
 
 ```
 FILES: src/tasks/wait.ts:35-65 (setWaitSleepForTests, getWaitPollCount, resetWaitPollCount, currentWaitSleep)

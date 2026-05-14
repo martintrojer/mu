@@ -16,7 +16,7 @@ blocks: ["docs_staleness_review_capstone"]
 
 ## Notes (1)
 
-### #1 by test-reviewer-1, 2026-05-09T08:35:46.558Z
+### #1 by "test-reviewer-1", 2026-05-09T08:35:46.558Z
 
 ```
 FILES: test/tmux.test.ts:843-863 (parseAgentNameFromTitle); test/agents.test.ts:329-417 (composeAgentTitle); src/agents.ts:225-233 (STATUS_EMOJI: 7 entries — spawning, busy, needs_input, needs_permission, free, unreachable, terminated).

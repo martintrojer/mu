@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by worker-5, 2026-05-10T13:35:33.415Z
+### #1 by "worker-5", 2026-05-10T13:35:33.415Z
 
 ```
 FILES: src/cli/tasks/queries.ts (cmdMyTasks, cmdMyNext, cmdTaskList, cmdTaskNext, cmdTaskOwnedBy), src/cli/tasks/tree.ts, src/cli/tasks/edit.ts (cmdTaskShow, cmdTaskNotes), src/cli/state.ts (cmdState all 3 modes), src/cli/doctor.ts (cmdDoctor), src/cli/log.ts (cmdLog read mode), src/cli/workspace.ts (cmdWorkspaceList, cmdWorkspacePath), src/cli/agents.ts (cmdRead, cmdAgentShow, cmdList, cmdAttach, cmdMe), src/cli/archive.ts (cmdArchiveShow happy path on populated archive)

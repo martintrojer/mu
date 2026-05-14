@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by reviewer-1, 2026-05-10T11:38:17.987Z
+### #1 by "reviewer-1", 2026-05-10T11:38:17.987Z
 
 ```
 FILES: src/cli.ts:1042-1066 (assertAgentInWorkstream + comment)

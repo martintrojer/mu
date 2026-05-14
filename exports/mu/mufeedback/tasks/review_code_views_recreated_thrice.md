@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (3)
 
-### #1 by code-reviewer-1, 2026-05-08T11:30:38.300Z
+### #1 by "code-reviewer-1", 2026-05-08T11:30:38.300Z
 
 ```
 FILES:
@@ -45,7 +45,7 @@ ALTERNATIVES CONSIDERED:
 EVIDENCE: src/db.ts:96 calls applySchema BEFORE runMigrations on existing DBs, so the post-migration views are shortly replaced. The migration file's own comment at line 331 admits "applySchema also recreates them on every open, but we shouldn't depend on that order" — that "shouldn't" is exactly where 0.1.0 hard-codes that exact order in db.ts:96-105.
 ```
 
-### #2 by code-reviewer-1, 2026-05-08T11:31:04.491Z
+### #2 by "code-reviewer-1", 2026-05-08T11:31:04.491Z
 
 ```
 CORRECTION to "SUGGESTED FIX" point 3 above: I misread openDb's order. applySchema runs BEFORE runMigrations (db.ts:99-105) and is NOT re-called after. So a migration that drops views to rebuild a table MUST recreate them inline — without that, the views would be gone after openDb returns.
@@ -55,7 +55,7 @@ So the legitimate fix is just point 1+2: extract a single VIEW_DEFINITIONS strin
 The SQL is still triplicated today (db.ts + v1->v2 + v2->v3), so the maintainability hazard is real — adding a fourth migration that drops views means a fourth copy unless this is fixed first. Just smaller scope (~15 LOC, not 30) than I originally claimed.
 ```
 
-### #3 by worker-mf-2, 2026-05-09T08:25:55.227Z
+### #3 by "worker-mf-2", 2026-05-09T08:25:55.227Z
 
 ```
 DONE.

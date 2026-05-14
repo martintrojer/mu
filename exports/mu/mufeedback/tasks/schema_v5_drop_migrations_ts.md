@@ -16,7 +16,7 @@ blocks: ["docs_staleness_review_capstone"]
 
 ## Notes (1)
 
-### #1 by worker-mf-3, 2026-05-09T10:40:40.414Z
+### #1 by "worker-mf-3", 2026-05-09T10:40:40.414Z
 
 ```
 Per docs/SCHEMA_v5_DESIGN.md "Piece 3 (optional cleanup)".

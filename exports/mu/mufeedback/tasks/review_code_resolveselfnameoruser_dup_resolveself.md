@@ -16,7 +16,7 @@ blocks: ["docs_staleness_review_capstone"]
 
 ## Notes (1)
 
-### #1 by code-reviewer-1, 2026-05-09T08:36:16.629Z
+### #1 by "code-reviewer-1", 2026-05-09T08:36:16.629Z
 
 ```
 FILES: src/cli/approve.ts:213-219 (resolveSelfNameOrUser), src/cli.ts:481-498 (resolveSelf), src/tasks/claim.ts:331-340 (resolveActorIdentity)

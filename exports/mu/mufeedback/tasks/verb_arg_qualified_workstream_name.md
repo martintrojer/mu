@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by worker-mf-2, 2026-05-09T13:23:36.557Z
+### #1 by "worker-mf-2", 2026-05-09T13:23:36.557Z
 
 ```
 PHASE 3 of OUTPUT_LABELS_AUDIT. Orthogonal to the JSON/label rename — can ship before, with, or after.

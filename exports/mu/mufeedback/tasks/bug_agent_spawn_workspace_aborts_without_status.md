@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (4)
 
-### #1 by π - infer-rs, 2026-05-08T12:58:40.968Z
+### #1 by "π - infer-rs", 2026-05-08T12:58:40.968Z
 
 ```
 FILES: mu agent spawn/workspace path; infer-rs workstream.
@@ -28,7 +28,7 @@ VERIFIED: Reproduced after avoiding known stale dirs and logged task. Existing r
 ODDITIES: The aborted shell did not print the loop exit line even though the command was redirected and the script had no set -e.
 ```
 
-### #2 by π - infer-rs, 2026-05-08T13:01:05.888Z
+### #2 by "π - infer-rs", 2026-05-08T13:01:05.888Z
 
 ```
 FILES: mu agent spawn --workspace path; infer-rs workstream; /tmp/mu-spawn-sil-1.out and /tmp/mu-spawn-sil-1.err; tmux/db state.
@@ -40,7 +40,7 @@ VERIFIED: Follow-up inspection showed empty /tmp/mu-spawn-sil-1.{out,err}, no si
 ODDITIES: The command harness prints Command aborted when the tool call process aborts; even with redirection, mu produced no captured diagnostic for sil-1. This made parallel setup unsafe, so I stopped spawning --workspace agents in infer-rs.
 ```
 
-### #3 by π - infer-rs, 2026-05-08T13:05:53.016Z
+### #3 by "π - infer-rs", 2026-05-08T13:05:53.016Z
 
 ```
 FILES: /Users/mtrojer/hacking/mu/src/workspace.ts; /Users/mtrojer/hacking/mu/src/vcs.ts; failed workspace /Users/mtrojer/.local/state/mu/workspaces/infer-rs/sil-1.
@@ -52,7 +52,7 @@ VERIFIED: /Users/mtrojer/infer-rs/infer-rs has no .git; /Users/mtrojer/infer-rs 
 ODDITIES: The state invisibility bug still applies independently: sil-1 is now an orphan dir not visible in mu state/workspace list.
 ```
 
-### #4 by π - infer-rs, 2026-05-08T13:53:49.044Z
+### #4 by "π - infer-rs", 2026-05-08T13:53:49.044Z
 
 ```
 FILES: /Users/mtrojer/.local/state/mu/workspaces/infer-rs/{sil-1,worker-2,worker-4,worker-7}.

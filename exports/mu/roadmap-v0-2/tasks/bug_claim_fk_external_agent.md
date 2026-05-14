@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (2)
 
-### #1 by system, 2026-05-08T05:30:22.837Z
+### #1 by null, 2026-05-08T05:30:22.837Z
 
 ```
 Surfaced immediately after the v2 ON UPDATE CASCADE migration cleaned 46 orphan owners on the live DB. The FK on tasks.owner is now strictly enforced, so 'mu task claim' from a pi session that wasn't itself spawned by mu (the same pattern that historically created the 46 orphans) errors with bare 'FOREIGN KEY constraint failed' instead of silently writing the orphan.
@@ -53,7 +53,7 @@ Recommendation: option (d). Wait until mu adopt ships, then update the claim pat
 Side note: this same FK-failure mode exists for any verb that writes tasks.owner from outside mus spawn loop. mu task release is OK (sets owner=NULL). mu agent close is OK (cascade SET NULL). The only entry points that create orphans are claim and direct SQL.
 ```
 
-### #2 by system, 2026-05-08T05:48:50.835Z
+### #2 by null, 2026-05-08T05:48:50.835Z
 
 ```
 SHIPPED. The bare 'FOREIGN KEY constraint failed' has been replaced with a typed ClaimerNotRegisteredError. The error includes:

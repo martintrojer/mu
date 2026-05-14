@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (3)
 
-### #1 by π - mu, 2026-05-08T13:13:55.098Z
+### #1 by "π - mu", 2026-05-08T13:13:55.098Z
 
 ```
 SURFACED LIVE during snap_schema dispatch.
@@ -50,7 +50,7 @@ NICE-TO-HAVE:
 ESTIMATE: ~30 LOC + 2 snapshot tests. Promotion criterion: trivially small, tractable, makes the verb feel like a peer of mu state. Filed during the snap dispatch hand-off.
 ```
 
-### #2 by π - mu, 2026-05-08T13:14:21.395Z
+### #2 by "π - mu", 2026-05-08T13:14:21.395Z
 
 ```
 ADDITION: dynamic width.
@@ -69,7 +69,7 @@ cli-table3 supports `colWidths: [N, N, ...]` and `wordWrap: false`. The dynamic 
 Same constraint applies to the existing mu state tables — they currently overflow on narrow terminals — so the helper, once built, could be reused there.
 ```
 
-### #3 by π - mu, 2026-05-08T14:43:50.957Z
+### #3 by "π - mu", 2026-05-08T14:43:50.957Z
 
 ```
 FILES: src/cli.ts (cmdHud + 4 new format helpers + hudPaneSize + tableLineCost/maxRowsForLineBudget); src/tmux.ts (new currentPaneSize export); test/hud.test.ts (rewritten: 7 cases); CHANGELOG.md (Breaking + Added under [Unreleased]); README.md + skills/mu/SKILL.md (verb line).

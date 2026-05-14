@@ -16,7 +16,7 @@ blocks: ["docs_staleness_review_capstone", "schema_v5_cleanups"]
 
 ## Notes (1)
 
-### #1 by worker-mf-3, 2026-05-09T10:41:04.740Z
+### #1 by "worker-mf-3", 2026-05-09T10:41:04.740Z
 
 ```
 Per docs/SCHEMA_v5_DESIGN.md "Boundary discipline" section.

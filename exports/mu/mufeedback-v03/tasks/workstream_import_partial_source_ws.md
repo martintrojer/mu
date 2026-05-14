@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by π - mu, 2026-05-10T07:44:18.602Z
+### #1 by "π - mu", 2026-05-10T07:44:18.602Z
 
 ```
 mu workstream import — partial bucket import (one source-ws at a time).

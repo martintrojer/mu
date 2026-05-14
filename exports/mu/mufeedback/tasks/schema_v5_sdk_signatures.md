@@ -16,7 +16,7 @@ blocks: ["docs_staleness_review_capstone", "schema_v5_cleanups", "schema_v5_cli_
 
 ## Notes (1)
 
-### #1 by worker-mf-3, 2026-05-09T10:40:53.564Z
+### #1 by "worker-mf-3", 2026-05-09T10:40:53.564Z
 
 ```
 Per docs/SCHEMA_v5_DESIGN.md "Boundary discipline for the SDK surface".

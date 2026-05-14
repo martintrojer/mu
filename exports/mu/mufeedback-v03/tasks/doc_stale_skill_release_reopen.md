@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by reviewer-3, 2026-05-10T13:23:13.449Z
+### #1 by "reviewer-3", 2026-05-10T13:23:13.449Z
 
 ```
 FILES: skills/mu/SKILL.md:183, :287-289, :408

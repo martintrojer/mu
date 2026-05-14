@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by system, 2026-05-07T18:03:52.392Z
+### #1 by null, 2026-05-07T18:03:52.392Z
 
 ```
 REPRO: `mu task next -w roadmap-v0-2 -n 5 --json | jq '.[].roi'` returns 'null' for every row, but the table view shows 600.0, 233.3, etc. Likely the JSON serialiser is reading a column that was renamed/removed, or the SQL view exposes ROI but the typed-row mapper drops it. Affects task next, ready, blocked, goals (anything that surfaces ROI). Probably a 5-line fix in the read path.

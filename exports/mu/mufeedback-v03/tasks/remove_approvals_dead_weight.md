@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by π - mu, 2026-05-10T08:11:38.866Z
+### #1 by "π - mu", 2026-05-10T08:11:38.866Z
 
 ```
 REMOVE: mu approve verbs + approvals table.

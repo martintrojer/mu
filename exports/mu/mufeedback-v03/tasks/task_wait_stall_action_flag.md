@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by π - mu, 2026-05-10T09:13:49.319Z
+### #1 by "π - mu", 2026-05-10T09:13:49.319Z
 
 ```
 mu task wait --on-stall warn|exit — expose the stall action.

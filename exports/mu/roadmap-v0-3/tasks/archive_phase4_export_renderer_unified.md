@@ -16,7 +16,7 @@ blocks: ["workstream_import_from_markdown"]
 
 ## Notes (1)
 
-### #1 by π - mu, 2026-05-09T17:17:31.274Z
+### #1 by "π - mu", 2026-05-09T17:17:31.274Z
 
 ```
 Phase 4 — unified bucket renderer + additive mu workstream export + mu archive export.

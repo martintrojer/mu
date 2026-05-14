@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by reviewer-3, 2026-05-10T13:21:34.592Z
+### #1 by "reviewer-3", 2026-05-10T13:21:34.592Z
 
 ```
 FILES: skills/mu/SKILL.md:441-451, docs/USAGE_GUIDE.md:885-905, docs/ROADMAP.md:162-170, docs/VERB_AUDIT.md:603-609, skills/mu/SKILL.md:26

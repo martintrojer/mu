@@ -16,7 +16,7 @@ blocks: ["docs_staleness_review_capstone", "schema_v5_migration_script"]
 
 ## Notes (1)
 
-### #1 by π - mu, 2026-05-09T11:02:44.125Z
+### #1 by "π - mu", 2026-05-09T11:02:44.125Z
 
 ```
 ORCHESTRATOR REVIEW of docs/SCHEMA_v5_DESIGN.md (commit beb5546). Gaps to fix BEFORE schema_v5_migration_script lands.

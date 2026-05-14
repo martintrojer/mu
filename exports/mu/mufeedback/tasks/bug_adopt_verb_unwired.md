@@ -16,7 +16,7 @@ blocks: ["docs_staleness_review_capstone"]
 
 ## Notes (1)
 
-### #1 by worker-mf-1, 2026-05-09T11:11:43.284Z
+### #1 by "worker-mf-1", 2026-05-09T11:11:43.284Z
 
 ```
 Surfaced incidentally during the verb audit (audit_verbs_typed_vs_sql). NOT a typed-vs-sql finding — a regression introduced during the wireXxxCommands refactor (commit f42e86d, 2026-05-08).

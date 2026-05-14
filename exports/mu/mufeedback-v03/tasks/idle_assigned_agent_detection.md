@@ -16,7 +16,7 @@ blocks: ["task_wait_stall_action_flag"]
 
 ## Notes (1)
 
-### #1 by π - mu, 2026-05-10T08:25:07.141Z
+### #1 by "π - mu", 2026-05-10T08:25:07.141Z
 
 ```
 Detect 'idle but assigned' agents (third lifecycle state).

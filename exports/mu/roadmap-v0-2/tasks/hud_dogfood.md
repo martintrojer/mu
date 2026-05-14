@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by π - mu, 2026-05-09T08:03:39.122Z
+### #1 by "π - mu", 2026-05-09T08:03:39.122Z
 
 ```
 DOGFOODED MANUALLY by the operator across this session's multi-agent dispatches (mu state -w X, mu hud -w X, pane border watching, mu workspace list, mu task wait — all exercised live while the crew worked through cross_workstream_claim_for, hud_colors_stripped_under_watch_and, workspace_create_partial_dir_on_failure, bug_workspace_stale_parent_silent_drift, tmux_pane_border_top_and_bottom_plus_glyph_audit, nit_invalid_id_typeerror, nit_task_list_sort_by_recency).

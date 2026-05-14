@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (2)
 
-### #1 by π - mu, 2026-05-09T05:42:57.992Z
+### #1 by "π - mu", 2026-05-09T05:42:57.992Z
 
 ```
 SURFACED LIVE while orchestrating worker-1 (roadmap-v0-2 workstream) on cross_workstream_claim_for.
@@ -88,7 +88,7 @@ This task surfaced the bug live; the dispatch is being recovered by extracting t
 - The reaper note saying worker-1 was on "claude-opus-4-7 • high" is in the pane footer, not the workspace. So even if the substrate moves, the model+effort context is separately observable.
 ```
 
-### #2 by worker-mf-1, 2026-05-09T06:05:12.762Z
+### #2 by "worker-mf-1", 2026-05-09T06:05:12.762Z
 
 ```
 FILES

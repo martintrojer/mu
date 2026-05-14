@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (4)
 
-### #1 by π - infer-rs, 2026-05-08T12:56:33.438Z
+### #1 by "π - infer-rs", 2026-05-08T12:56:33.438Z
 
 ```
 FILES: mu CLI/workspace state; infer-rs workstream.
@@ -28,7 +28,7 @@ VERIFIED: Isolated spawn reproduced explicit conflict.
 ODDITIES: Similar to earlier bug_workspace_orphaned_after_agent_close note; this adds the state invisibility/spawn-blocking angle.
 ```
 
-### #2 by π - infer-rs, 2026-05-08T13:01:05.757Z
+### #2 by "π - infer-rs", 2026-05-08T13:01:05.757Z
 
 ```
 FILES: mu workspace reconciliation/state display; infer-rs workstream workspace root /Users/mtrojer/.local/state/mu/workspaces/infer-rs.
@@ -40,7 +40,7 @@ VERIFIED: Reproduced with worker-4 and worker-7. After failure, find showed orph
 ODDITIES: The older task bug_workspace_orphaned_after_agent_close is related, but this report captures the separate dashboard invisibility and spawn-blocking behavior encountered while trying to run infer-rs parallel tracks.
 ```
 
-### #3 by π - infer-rs, 2026-05-08T13:53:48.818Z
+### #3 by "π - infer-rs", 2026-05-08T13:53:48.818Z
 
 ```
 FILES: /Users/mtrojer/.local/state/mu/workspaces/infer-rs; git worktree registry /Users/mtrojer/infer-rs.
@@ -52,7 +52,7 @@ VERIFIED: Final mu state shows Workspaces (0) and no Workspace orphans section; 
 ODDITIES: The user correctly noticed that I had created workspace orphans; cleanup has now removed them.
 ```
 
-### #4 by π - infer-rs, 2026-05-08T13:56:11.645Z
+### #4 by "π - infer-rs", 2026-05-08T13:56:11.645Z
 
 ```
 FILES: mu workspace orphans command.

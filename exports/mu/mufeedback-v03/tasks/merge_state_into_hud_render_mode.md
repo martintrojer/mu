@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (2)
 
-### #1 by π - mu, 2026-05-10T08:15:38.139Z
+### #1 by "π - mu", 2026-05-10T08:15:38.139Z
 
 ```
 Merge mu state + mu hud into one verb; render mode is the only difference.
@@ -157,7 +157,7 @@ PROMOTE for v0.3.
 ⚠️ git commit -am '...' THEN mu task close merge_state_into_hud_render_mode -w mufeedback-v03 --evidence 'mu state + mu hud merged; --hud flag selects renderer; net -500 LOC; tests + docs'
 ```
 
-### #2 by π - mu, 2026-05-10T08:16:49.777Z
+### #2 by "π - mu", 2026-05-10T08:16:49.777Z
 
 ```
 DECISIONS (operator):

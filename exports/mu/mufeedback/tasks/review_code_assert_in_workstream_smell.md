@@ -16,7 +16,7 @@ blocks: ["docs_staleness_review_capstone"]
 
 ## Notes (1)
 
-### #1 by code-reviewer-1, 2026-05-09T08:35:49.721Z
+### #1 by "code-reviewer-1", 2026-05-09T08:35:49.721Z
 
 ```
 FILES: src/cli.ts:716-727 (assertAgentInWorkstream), src/cli.ts:735-746 (assertTaskInWorkstream), src/cli/approve.ts:217-225 (assertApprovalInWorkstream)

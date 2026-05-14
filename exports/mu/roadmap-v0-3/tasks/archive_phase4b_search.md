@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by π - mu, 2026-05-09T17:17:31.422Z
+### #1 by "π - mu", 2026-05-09T17:17:31.422Z
 
 ```
 Phase 4b — mu archive search <pattern> [--label <l>].

@@ -16,7 +16,7 @@ blocks: ["snap_undo_verb"]
 
 ## Notes (1)
 
-### #1 by worker-1, 2026-05-08T13:03:33.187Z
+### #1 by "worker-1", 2026-05-08T13:03:33.187Z
 
 ```
 SHIPPED: snap_schema per design note #293.

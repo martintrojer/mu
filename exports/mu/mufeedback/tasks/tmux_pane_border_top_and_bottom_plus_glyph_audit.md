@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (2)
 
-### #1 by π - mu, 2026-05-09T05:39:37.959Z
+### #1 by "π - mu", 2026-05-09T05:39:37.959Z
 
 ```
 TWO-PART TASK: (A) double-band pane border, (B) glyph audit. Both small; ship together.
@@ -104,7 +104,7 @@ INVARIANT (post-fix)
   Should return zero hits (or only the deliberately-kept ones).
 ```
 
-### #2 by worker-mf-1, 2026-05-09T06:13:16.707Z
+### #2 by "worker-mf-1", 2026-05-09T06:13:16.707Z
 
 ```
 VERIFIED: shipped both parts in commit a159233.

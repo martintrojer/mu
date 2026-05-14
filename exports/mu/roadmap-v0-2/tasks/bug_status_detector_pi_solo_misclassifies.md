@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by system, 2026-05-08T07:38:53.741Z
+### #1 by null, 2026-05-08T07:38:53.741Z
 
 ```
 SURFACED LIVE during the multi-agent dogfood (3 workers spawned with --command "/Users/mtrojer/.local/bin/pi-meta --solo-name mu-worker-X --solo-force"; user noticed the misclassification mid-session).

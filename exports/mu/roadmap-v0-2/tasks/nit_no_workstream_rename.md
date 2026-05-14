@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by system, 2026-05-07T17:58:43.867Z
+### #1 by null, 2026-05-07T17:58:43.867Z
 
 ```
 Surfaced when fixing bug_workstream_name_dot_mangle: the existing 'roadmap-v0.2' workstream had to be renamed and there's no typed verb. The migration touched 4 statements (insert new workstreams row, update tasks.workstream, update agent_logs.workstream, delete old workstreams row) plus a tmux session kill. A typed verb would: validate the new name, do all of those in one transaction, kill+recreate the tmux session if alive, emit a 'workstream rename' event. Maybe 60 LOC.

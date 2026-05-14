@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by reviewer-1, 2026-05-10T11:38:33.240Z
+### #1 by "reviewer-1", 2026-05-10T11:38:33.240Z
 
 ```
 FILES: src/cli.ts (1318 LOC); src/cli/state.ts (914); src/tasks.ts (1115); src/archives.ts (940); src/importing.ts (823); src/tmux.ts (807)

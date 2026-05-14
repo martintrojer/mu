@@ -16,7 +16,7 @@ blocks: ["docs_staleness_review_capstone"]
 
 ## Notes (1)
 
-### #1 by test-reviewer-1, 2026-05-09T08:32:35.779Z
+### #1 by "test-reviewer-1", 2026-05-09T08:32:35.779Z
 
 ```
 FILES: test/workspace-staleness.test.ts:117-127 ("workspace list table renders a 'behind' column with a number"); src/cli.ts:377-407 (formatWorkspacesTable + formatBehind).

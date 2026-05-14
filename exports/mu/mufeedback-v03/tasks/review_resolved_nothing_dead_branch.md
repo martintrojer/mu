@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by reviewer-1, 2026-05-10T11:38:43.774Z
+### #1 by "reviewer-1", 2026-05-10T11:38:43.774Z
 
 ```
 FILES: src/cli/state.ts:160-184 (resolveWorkstreamSet) and src/cli/state.ts:218-225 (cmdState dispatch)

@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (2)
 
-### #1 by system, 2026-05-08T08:57:26.621Z
+### #1 by null, 2026-05-08T08:57:26.621Z
 
 ```
 FILES: mu CLI/runtime behavior observed in infer-rs workstream.
@@ -28,7 +28,7 @@ VERIFIED: infer-rs events #602/#606 notes and task close events #603/#607 after 
 ODDITIES: May be specific to custom --command 'pi-meta --no-solo' or commands launched from pi shell tool; spawned agent registry rows existed.
 ```
 
-### #2 by system, 2026-05-08T08:59:00.555Z
+### #2 by null, 2026-05-08T08:59:00.555Z
 
 ```
 FILES: mu task metadata.

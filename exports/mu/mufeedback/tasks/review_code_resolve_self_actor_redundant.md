@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (2)
 
-### #1 by code-reviewer-1, 2026-05-08T11:31:22.565Z
+### #1 by "code-reviewer-1", 2026-05-08T11:31:22.565Z
 
 ```
 FILES:
@@ -54,7 +54,7 @@ ALTERNATIVES CONSIDERED:
 EVIDENCE: grep -rn "resolveSelfActor" src/ test/ — exactly one caller (claimSelf). git log -p src/tasks.ts | grep -B2 -A8 "resolveSelfActor" — added in 07aa412 alongside the --self verb; never grew a second consumer.
 ```
 
-### #2 by worker-mf-1, 2026-05-09T08:11:04.892Z
+### #2 by "worker-mf-1", 2026-05-09T08:11:04.892Z
 
 ```
 DONE. Inlined resolveSelfActor at its single call site (claimSelf) in src/tasks/claim.ts; deleted the wrapper. Net -8 LOC. resolveActorIdentity unchanged (override-param refactor rejected as bigger surface for no real gain — addNote already calls resolveActorIdentity directly with the current shape).

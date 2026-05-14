@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (5)
 
-### #1 by π - mu, 2026-05-09T08:45:39.787Z
+### #1 by "π - mu", 2026-05-09T08:45:39.787Z
 
 ```
 CAPSTONE TASK: runs LAST. Blocked by every other open mufeedback task in this wave so the orchestrator's `mu task ready` naturally surfaces it only when the rest are done.
@@ -105,7 +105,7 @@ VERIFIED should include: word-count or grep-based diff between pre and post for 
 ~0.5 days. The audit IS the work. ~150-300 LOC of .md changes is the realistic budget; bigger means scope-creep into "docs rewrite" which is out.
 ```
 
-### #2 by π - mu, 2026-05-09T08:46:05.376Z
+### #2 by "π - mu", 2026-05-09T08:46:05.376Z
 
 ```
 ADDENDUM (operator request): SKILL.md must stay TERSE and to the point.
@@ -130,7 +130,7 @@ If the audit finds SKILL.md is ALREADY too long — file it as a follow-up `skil
 The bar: a fresh agent loading the skill should reach the "ok I get it" point in well under one minute of reading. Today's SKILL.md is ~620 lines; if this audit pushes it over 700 without commensurate genuine value, push back.
 ```
 
-### #3 by π - mu, 2026-05-09T10:22:07.481Z
+### #3 by "π - mu", 2026-05-09T10:22:07.481Z
 
 ```
 ADDENDUM (operator request): drastically compress the [Unreleased] CHANGELOG entries.
@@ -195,7 +195,7 @@ VERIFY
   for id in $(grep -oE "review_[a-z_]+\|nit_[a-z_]+\|bug_[a-z_]+\|fix_[a-z_]+\|feat_[a-z_]+" CHANGELOG.md | sort -u); do mu task show "$id" -w mufeedback --json >/dev/null 2>&1 || echo "STALE LINK: $id"; done
 ```
 
-### #4 by π - mu, 2026-05-09T13:13:06.914Z
+### #4 by "π - mu", 2026-05-09T13:13:06.914Z
 
 ```
 ADDENDUM (operator request): three concrete checks during the capstone audit pass.
@@ -280,7 +280,7 @@ The README is a sales-and-onboarding doc. The deep docs are for users who decide
   - Don't auto-generate the verb list in the README; link to USAGE_GUIDE which has it.
 ```
 
-### #5 by π - mu, 2026-05-09T13:13:55.677Z
+### #5 by "π - mu", 2026-05-09T13:13:55.677Z
 
 ```
 ADDENDUM (operator request): drop temporary implementation-plan artifacts once they've shipped.

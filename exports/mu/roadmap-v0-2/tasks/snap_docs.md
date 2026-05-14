@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by π - mu, 2026-05-08T14:27:28.283Z
+### #1 by "π - mu", 2026-05-08T14:27:28.283Z
 
 ```
 FILES: docs/USAGE_GUIDE.md, docs/ROADMAP.md, skills/mu/SKILL.md, docs/VOCABULARY.md, README.md, CHANGELOG.md

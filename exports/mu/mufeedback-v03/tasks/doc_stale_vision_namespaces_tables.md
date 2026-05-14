@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by reviewer-3, 2026-05-10T13:22:54.187Z
+### #1 by "reviewer-3", 2026-05-10T13:22:54.187Z
 
 ```
 FILES: docs/VISION.md:140, :155, :186

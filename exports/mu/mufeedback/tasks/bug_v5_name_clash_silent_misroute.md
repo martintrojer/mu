@@ -16,7 +16,7 @@ blocks: ["docs_staleness_review_capstone", "schema_v5_cleanups", "v5_prune_v4_fa
 
 ## Notes (1)
 
-### #1 by π - mu, 2026-05-09T13:09:42.941Z
+### #1 by "π - mu", 2026-05-09T13:09:42.941Z
 
 ```
 SURFACED LIVE post-v5: surrogate-id schema introduced per-workstream-unique TEXT names (tasks.local_id, agents.name, approvals.slug). The DB invariant is correct — UNIQUE (workstream_id, local_id) — but the SDK still has many SELECT-by-name-only paths that take the FIRST row and silently misroute to the wrong workstream when the same name exists in multiple workstreams.

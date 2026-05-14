@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (5)
 
-### #1 by π - infer-rs, 2026-05-08T13:06:12.563Z
+### #1 by "π - infer-rs", 2026-05-08T13:06:12.563Z
 
 ```
 FILES: /Users/mtrojer/hacking/mu/src/agents.ts spawnAgent workspace staging; /Users/mtrojer/hacking/mu/src/workspace.ts createWorkspace; /Users/mtrojer/hacking/mu/src/db.ts schema for agents/vcs_workspaces.
@@ -28,7 +28,7 @@ VERIFIED: Correct-root spawn returned exit=1 and stderr foreign key constraint f
 ODDITIES: This might be data/schema-specific to current DB migrations or agents/vcs_workspaces FK shape; compare against roadmap-v0-2 where existing git workspace rows exist.
 ```
 
-### #2 by π - infer-rs, 2026-05-08T13:06:44.354Z
+### #2 by "π - infer-rs", 2026-05-08T13:06:44.354Z
 
 ```
 FILES: git worktree registry under /Users/mtrojer/infer-rs; workspace dir /Users/mtrojer/.local/state/mu/workspaces/infer-rs/silgit-1.
@@ -40,7 +40,7 @@ VERIFIED: git worktree list shows silgit-1; du shows 226M dir.
 ODDITIES: The nested-root none backend orphans are ~1.8G copies; the correct-root git orphan is smaller but registered in git.
 ```
 
-### #3 by π - infer-rs, 2026-05-08T13:53:48.928Z
+### #3 by "π - infer-rs", 2026-05-08T13:53:48.928Z
 
 ```
 FILES: /Users/mtrojer/.local/state/mu/workspaces/infer-rs/silgit-1; git worktree registry under /Users/mtrojer/infer-rs.
@@ -50,7 +50,7 @@ NEXT: Reproducer should create a temporary git repo/workstream and assert rollba
 VERIFIED: git worktree list now shows only /Users/mtrojer/infer-rs main worktree.
 ```
 
-### #4 by π - infer-rs, 2026-05-08T14:34:32.556Z
+### #4 by "π - infer-rs", 2026-05-08T14:34:32.556Z
 
 ```
 FILES: installed mu /opt/homebrew/bin/mu v0.1.0; infer-rs workstream.
@@ -62,7 +62,7 @@ VERIFIED: /opt/homebrew/bin/mu version 0.1.0 reproduced exit=1; no orphans left 
 ODDITIES: bug_agent_spawn_workspace_fk_failure showed CLOSED already, but the user-visible issue persists.
 ```
 
-### #5 by π - mu, 2026-05-08T16:56:06.734Z
+### #5 by "π - mu", 2026-05-08T16:56:06.734Z
 
 ```
 ROOT CAUSE FOUND + FIXED on main (commit 462e3a7).

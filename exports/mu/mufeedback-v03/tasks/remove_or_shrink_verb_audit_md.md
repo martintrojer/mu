@@ -16,7 +16,7 @@ blocks: ["doc_stale_skill_schema_sql", "doc_stale_verb_audit_v01"]
 
 ## Notes (1)
 
-### #1 by π - mu, 2026-05-10T13:26:04.567Z
+### #1 by "π - mu", 2026-05-10T13:26:04.567Z
 
 ```
 docs/VERB_AUDIT.md = 1122 LOC of v0.2-vintage verb-by-verb audit tables (typed-vs-sql / impact-of-removal / output-shape).

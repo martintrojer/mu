@@ -16,7 +16,7 @@ blocks: ["docs_staleness_review_capstone"]
 
 ## Notes (2)
 
-### #1 by code-reviewer-1, 2026-05-09T08:35:01.273Z
+### #1 by "code-reviewer-1", 2026-05-09T08:35:01.273Z
 
 ```
 FILES: src/tasks/lifecycle.ts:42-50 (evidenceSuffix declaration)
@@ -40,7 +40,7 @@ Delete lines 42-43 (the first JSDoc); keep the second which is more complete.
 EVIDENCE: src/tasks/lifecycle.ts lines 42-50 visible in single read.
 ```
 
-### #2 by worker-mf-3, 2026-05-09T08:50:39.893Z
+### #2 by "worker-mf-3", 2026-05-09T08:50:39.893Z
 
 ```
 Merged the two adjacent JSDoc blocks above evidenceSuffix in src/tasks/lifecycle.ts into one (kept the more complete second block describing the --evidence payload + cross-cluster export). Pure cosmetic, -2 LOC.

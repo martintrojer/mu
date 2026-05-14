@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (2)
 
-### #1 by worker-mf-1, 2026-05-09T11:10:45.134Z
+### #1 by "worker-mf-1", 2026-05-09T11:10:45.134Z
 
 ```
 From verb audit (docs/VERB_AUDIT.md). SCORE 1/4: 0 atomicity, 0 side-effect, 0 typed errors, 1 output value (cli-table format).
@@ -39,7 +39,7 @@ CHECKLIST AT REMOVAL TIME (from AGENTS.md "Add a new CLI verb" inverted):
 The verb is an ergonomic loss for interactive humans (one extra word `sql` and quoting), so the operator may prefer to keep it; the audit is advisory.
 ```
 
-### #2 by π - mu, 2026-05-09T11:20:08.786Z
+### #2 by "π - mu", 2026-05-09T11:20:08.786Z
 
 ```
 DEFERRED by orchestrator: ship after schema_v5 lands. Schema_v5 rewrites SDK signatures (workstream context), so the audit-removal commits would conflict. Re-claim after schema_v5_cleanups closes; the SQL recipe in this task's audit notes still applies.

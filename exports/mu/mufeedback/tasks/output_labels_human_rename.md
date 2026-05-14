@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by worker-mf-2, 2026-05-09T13:22:54.633Z
+### #1 by "worker-mf-2", 2026-05-09T13:22:54.633Z
 
 ```
 PHASE 2 (non-breaking subset) of OUTPUT_LABELS_AUDIT. Scope: cli-table3 column header rename ONLY. JSON keys preserved (the JSON rename is `output_json_keys_rename_v5`, separate breaking commit).

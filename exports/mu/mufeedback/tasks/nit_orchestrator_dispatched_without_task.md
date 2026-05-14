@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (2)
 
-### #1 by π - mu, 2026-05-08T11:37:51.365Z
+### #1 by "π - mu", 2026-05-08T11:37:51.365Z
 
 ```
 SURFACED LIVE during the code-reviewer / test-reviewer dispatch.
@@ -51,7 +51,7 @@ VERIFIED
 - agent status alone is too noisy as a completion signal (worker idles between tool calls; status flips back to needs_input).
 ```
 
-### #2 by π - mu, 2026-05-09T05:26:18.334Z
+### #2 by "π - mu", 2026-05-09T05:26:18.334Z
 
 ```
 FILES: skills/mu/SKILL.md (Orchestrator loop step 3 + DOs).

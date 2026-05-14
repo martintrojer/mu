@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by π - mu, 2026-05-10T07:04:42.416Z
+### #1 by "π - mu", 2026-05-10T07:04:42.416Z
 
 ```
 Unify -w/--workstream and --workstreams on mu hud.

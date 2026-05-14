@@ -16,7 +16,7 @@ blocks: ["docs_staleness_review_capstone"]
 
 ## Notes (1)
 
-### #1 by π - mu, 2026-05-09T08:11:25.145Z
+### #1 by "π - mu", 2026-05-09T08:11:25.145Z
 
 ````
 USE CASE: a workstream's task graph + notes IS the project memory — durable history of what was decided and why. Today destroying a workstream auto-snapshots the DB, but that's binary, not human-readable, and tied to mu. Operators want to PRESERVE the conversation as plain markdown OUTSIDE mu before destroying — for code review, for project handoff, for grep, for git-checked-in artifacts.

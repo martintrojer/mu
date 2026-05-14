@@ -16,7 +16,7 @@ blocks: ["docs_staleness_review_capstone"]
 
 ## Notes (1)
 
-### #1 by π - mu, 2026-05-09T11:24:43.362Z
+### #1 by "π - mu", 2026-05-09T11:24:43.362Z
 
 ```
 WAVE-ORCHESTRATING TASK. Tracks the 5 audit follow-ups that were deferred until schema_v5 lands.

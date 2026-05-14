@@ -16,7 +16,7 @@ blocks: ["docs_staleness_review_capstone"]
 
 ## Notes (1)
 
-### #1 by test-reviewer-1, 2026-05-09T08:33:54.276Z
+### #1 by "test-reviewer-1", 2026-05-09T08:33:54.276Z
 
 ```
 FILES: test/claim.integration.test.ts (3 fixtures); src/tasks/claim.ts:194-220 (cross-workstream guard).

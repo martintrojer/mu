@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by worker-1, 2026-05-09T05:58:52.060Z
+### #1 by "worker-1", 2026-05-09T05:58:52.060Z
 
 ```
 FIXED workspace_create_partial_dir_on_failure (snap_dogfood Finding 4).

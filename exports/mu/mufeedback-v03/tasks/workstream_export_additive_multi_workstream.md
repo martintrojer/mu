@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (3)
 
-### #1 by π - mu, 2026-05-09T17:05:49.766Z
+### #1 by "π - mu", 2026-05-09T17:05:49.766Z
 
 ```
 SURFACED post-archive-design (per operator): export needs to mirror the archive's additive shape. Today `mu workstream export -w X --out d` writes only X's tasks to d/. The operator's pattern is "one exports/mu/ dir that accumulates every mu-related wave over time".
@@ -134,7 +134,7 @@ PHASING:
 PROMOTE for v0.3 alongside the archive verb. They ship as a coherent feature pair.
 ```
 
-### #2 by π - mu, 2026-05-09T17:07:01.485Z
+### #2 by "π - mu", 2026-05-09T17:07:01.485Z
 
 ```
 ADDENDUM (operator suggestion: move export under archive entirely): half-agree, half-pushback.
@@ -217,7 +217,7 @@ Operator picks:
 Either way: the underlying renderer is unified, the bucket layout is identical, the additive semantics are the same. The CLI surface is the only difference.
 ```
 
-### #3 by π - mu, 2026-05-09T17:13:04.735Z
+### #3 by "π - mu", 2026-05-09T17:13:04.735Z
 
 ```
 DECISION (operator, v0.3 kickoff): option (a) — keep mu workstream export as a thin sugar wrapper over the unified archive renderer. NOT removing the verb.

@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by reviewer-1, 2026-05-10T11:40:11.616Z
+### #1 by "reviewer-1", 2026-05-10T11:40:11.616Z
 
 ```
 FILES: see per-item below; six minor smells, none worth a dedicated task.

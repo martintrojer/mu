@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (2)
 
-### #1 by system, 2026-05-08T08:22:17.743Z
+### #1 by null, 2026-05-08T08:22:17.743Z
 
 ```
 REPRO:
@@ -48,7 +48,7 @@ CONTEXT: hit immediately after the spawn-fails bug above, while
 recovering from the pi -> pi-meta switch.
 ```
 
-### #2 by system, 2026-05-08T09:04:27.221Z
+### #2 by null, 2026-05-08T09:04:27.221Z
 
 ```
 DUPLICATE of bug_workspace_orphaned_after_agent_close (filed in same workstream by this orchestrator earlier today and shipped as commit cccba88).

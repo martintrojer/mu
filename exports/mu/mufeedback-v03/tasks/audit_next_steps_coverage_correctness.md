@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (2)
 
-### #1 by π - mu, 2026-05-10T13:26:04.440Z
+### #1 by "π - mu", 2026-05-10T13:26:04.440Z
 
 ```
 Audit every CLI verb's success and error nextSteps: presence + correctness post-v0.3.
@@ -83,7 +83,7 @@ Likely findings: ~5-15. The doc-staleness reviewer already noted 'mu sql snippet
 (If you only file finding-tasks and don't change code, the commit is just the SUMMARY note + close; no git commit needed.)
 ```
 
-### #2 by worker-5, 2026-05-10T13:36:02.646Z
+### #2 by "worker-5", 2026-05-10T13:36:02.646Z
 
 ```
 SUMMARY (worker-5):

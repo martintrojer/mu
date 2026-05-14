@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by test-reviewer-1, 2026-05-08T11:23:21.715Z
+### #1 by "test-reviewer-1", 2026-05-08T11:23:21.715Z
 
 ```
 FILES: test/hud.test.ts:130-133 ; src/cli.ts:3408-3412 (eventLimit/listLogs path in cmdHud)

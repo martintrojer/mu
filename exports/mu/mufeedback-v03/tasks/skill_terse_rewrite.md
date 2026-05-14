@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by π - mu, 2026-05-10T13:52:58.517Z
+### #1 by "π - mu", 2026-05-10T13:52:58.517Z
 
 ```
 Terse rewrite of skills/mu/SKILL.md.

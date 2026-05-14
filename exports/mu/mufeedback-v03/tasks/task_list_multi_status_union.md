@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (2)
 
-### #1 by π - mu, 2026-05-10T07:25:02.789Z
+### #1 by "π - mu", 2026-05-10T07:25:02.789Z
 
 ```
 mu task list --status accepts multi; returns the union.
@@ -102,7 +102,7 @@ PROMOTE for v0.3.
 ⚠️ git commit -am '...' THEN mu task close task_list_multi_status_union -w mufeedback-v03 --evidence 'multi --status on task list / task next / approve list; SDK + CLI + tests + docs'
 ```
 
-### #2 by reaper, 2026-05-10T07:45:50.970Z
+### #2 by "reaper", 2026-05-10T07:45:50.970Z
 
 ```
 [reaper] previous owner worker-4 gone (agent removed); status reverted IN_PROGRESS → OPEN, owner cleared

@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (2)
 
-### #1 by π - mu, 2026-05-08T10:46:10.273Z
+### #1 by "π - mu", 2026-05-08T10:46:10.273Z
 
 ```
 USE CASE
@@ -44,7 +44,7 @@ ESTIMATE
 ~30 LOC + 4 tests. Promotion criterion: "what did I touch most recently / what's stale" surfaces ≥2 more times in real workflows. Filed during roadmap-v0-2 design pass.
 ```
 
-### #2 by worker-mf-1, 2026-05-09T07:03:22.642Z
+### #2 by "worker-mf-1", 2026-05-09T07:03:22.642Z
 
 ```
 Implemented in worker-mf-1 (commit b6585eb).

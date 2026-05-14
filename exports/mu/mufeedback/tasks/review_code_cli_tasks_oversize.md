@@ -16,7 +16,7 @@ blocks: ["docs_staleness_review_capstone"]
 
 ## Notes (1)
 
-### #1 by code-reviewer-1, 2026-05-09T08:36:44.508Z
+### #1 by "code-reviewer-1", 2026-05-09T08:36:44.508Z
 
 ```
 FILES: src/cli/tasks.ts (1234 LOC; second-largest file in src/ after src/cli.ts at 945)

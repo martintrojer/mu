@@ -16,7 +16,7 @@ blocks: ["hud_visual_cue_impl"]
 
 ## Notes (1)
 
-### #1 by π - mu, 2026-05-08T10:21:15.817Z
+### #1 by "π - mu", 2026-05-08T10:21:15.817Z
 
 ```
 DESIGN: spawn-time one-line banner

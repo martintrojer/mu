@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by system, 2026-05-08T05:40:23.885Z
+### #1 by null, 2026-05-08T05:40:23.885Z
 
 ```
 SHIPPED as part of adopt_impl commit. USAGE_GUIDE § 6 has the 'Adopt an existing tmux pane' subsection. SKILL.md verb list has the 'Registration (1)' entry. CHANGELOG has the verb-shipping entry. The 'What's NOT in 0.1.0' table no longer lists adopt as missing.

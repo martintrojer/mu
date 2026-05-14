@@ -16,7 +16,7 @@ blocks: ["docs_staleness_review_capstone"]
 
 ## Notes (1)
 
-### #1 by test-reviewer-1, 2026-05-09T08:33:13.435Z
+### #1 by "test-reviewer-1", 2026-05-09T08:33:13.435Z
 
 ```
 FILES: test/workspace.test.ts:441-491 ("createWorkspace cleanup on backend throw"); src/vcs.ts (noneBackend singleton export); src/workspace.ts:303-320 (createWorkspace try/catch around backend.createWorkspace).

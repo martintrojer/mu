@@ -16,7 +16,7 @@ blocks: ["docs_staleness_review_capstone", "reconcile_split_dryrun_into_status_o
 
 ## Notes (2)
 
-### #1 by code-reviewer-1, 2026-05-09T08:32:06.201Z
+### #1 by "code-reviewer-1", 2026-05-09T08:32:06.201Z
 
 ```
 FILES: src/cli/state.ts:165-170 (in-progress raw query), src/cli/hud.ts:336-342 (identical raw query)
@@ -60,7 +60,7 @@ EVIDENCE:
 - listTasks already accepts a `status` filter (src/tasks.ts:262), so the SDK surface is half-built for this.
 ```
 
-### #2 by worker-mf-2, 2026-05-09T08:49:28.246Z
+### #2 by "worker-mf-2", 2026-05-09T08:49:28.246Z
 
 ```
 VERIFIED ALREADY FIXED by commit 21582cc (review_code_raw_task_state_duplicate).

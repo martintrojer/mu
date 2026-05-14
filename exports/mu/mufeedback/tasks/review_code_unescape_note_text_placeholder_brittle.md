@@ -16,7 +16,7 @@ blocks: ["docs_staleness_review_capstone"]
 
 ## Notes (1)
 
-### #1 by code-reviewer-1, 2026-05-09T08:37:06.619Z
+### #1 by "code-reviewer-1", 2026-05-09T08:37:06.619Z
 
 ```
 FILES: src/cli/tasks.ts:84-101 (unescapeNoteText)

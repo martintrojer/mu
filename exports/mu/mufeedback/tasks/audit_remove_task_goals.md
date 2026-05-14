@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (2)
 
-### #1 by worker-mf-1, 2026-05-09T11:10:51.126Z
+### #1 by "worker-mf-1", 2026-05-09T11:10:51.126Z
 
 ```
 From verb audit (docs/VERB_AUDIT.md). SCORE 1/4: same shape as audit_remove_task_blocked.
@@ -35,7 +35,7 @@ CHECKLIST AT REMOVAL TIME:
 Same caveat as audit_remove_task_blocked: ergonomic loss for interactive humans; operator decides.
 ```
 
-### #2 by π - mu, 2026-05-09T11:20:08.999Z
+### #2 by "π - mu", 2026-05-09T11:20:08.999Z
 
 ```
 DEFERRED by orchestrator: ship after schema_v5 lands. Schema_v5 rewrites SDK signatures (workstream context), so the audit-removal commits would conflict. Re-claim after schema_v5_cleanups closes; the SQL recipe in this task's audit notes still applies.

@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by reviewer-2, 2026-05-10T11:33:17.809Z
+### #1 by "reviewer-2", 2026-05-10T11:33:17.809Z
 
 ```
 FILES: src/tasks/wait.ts:294 (the emitEvent call); src/logs.ts:339 (the EVENT_VERB_PREFIXES entry); test/tasks.test.ts:1980-2078 (the existing stuck-warn tests — assert ONLY on stderr warnings)

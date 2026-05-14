@@ -16,7 +16,7 @@ blocks: ["docs_staleness_review_capstone"]
 
 ## Notes (1)
 
-### #1 by code-reviewer-1, 2026-05-09T08:34:46.721Z
+### #1 by "code-reviewer-1", 2026-05-09T08:34:46.721Z
 
 ```
 FILES: src/workstream.ts:285-301 (destroyWorkstream's per-workspace loop)

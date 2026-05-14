@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (2)
 
-### #1 by worker-mf-1, 2026-05-09T11:10:31.560Z
+### #1 by "worker-mf-1", 2026-05-09T11:10:31.560Z
 
 ```
 From verb audit (docs/VERB_AUDIT.md): `mu task ready` and `mu task next` execute IDENTICAL queries against the `ready` view (sorted by --sort, default roi). The ONLY difference: `next` defaults to `LIMIT 1` (overridable with `-n <k>`); `ready` has no LIMIT. SCORE for both: 1/4 on its own — output value alone via formatTaskListTable.
@@ -28,7 +28,7 @@ BACK-COMPAT: alias `task ready` for one release cycle, then remove. The skill (`
 SQL fallback if anyone has a use-case the audit missed: `mu sql "SELECT local_id, status, impact, effort_days FROM ready WHERE workstream=X ORDER BY (impact*1.0/effort_days) DESC"`. The `ready` view itself stays; verbs over it consolidate.
 ```
 
-### #2 by π - mu, 2026-05-09T11:20:08.571Z
+### #2 by "π - mu", 2026-05-09T11:20:08.571Z
 
 ```
 DEFERRED by orchestrator: ship after schema_v5 lands. Schema_v5 rewrites SDK signatures (workstream context), so the audit-removal commits would conflict. Re-claim after schema_v5_cleanups closes; the SQL recipe in this task's audit notes still applies.

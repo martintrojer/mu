@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by worker-mf-2, 2026-05-09T13:23:15.855Z
+### #1 by "worker-mf-2", 2026-05-09T13:23:15.855Z
 
 ```
 PHASE 2 BREAKING REWRITE per OUTPUT_LABELS_AUDIT.md "JSON keys cleanup table". No compat layer; no --json-shape v4 flag; no dual-emit.

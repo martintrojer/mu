@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by reviewer-2, 2026-05-10T11:33:41.247Z
+### #1 by "reviewer-2", 2026-05-10T11:33:41.247Z
 
 ```
 FILES: test/acceptance.test.ts (line 203 sleep 200ms; line 213 sleep 100ms; line 247 view4 race)

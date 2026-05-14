@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by reviewer-1, 2026-05-10T11:39:10.780Z
+### #1 by "reviewer-1", 2026-05-10T11:39:10.780Z
 
 ```
 FILES: src/workstream.ts:454-499 (countAgents/Tasks/Notes/Edges); src/cli/doctor.ts:255-321 (countAgentsByWorkstream/countTasksByWorkstream/countInProgressByWorkstream/countLogsByWorkstream/countReady/countBlocked)

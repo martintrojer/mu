@@ -16,7 +16,7 @@ blocks: ["docs_staleness_review_capstone", "reconcile_split_dryrun_into_status_o
 
 ## Notes (2)
 
-### #1 by code-reviewer-1, 2026-05-09T08:30:55.574Z
+### #1 by "code-reviewer-1", 2026-05-09T08:30:55.574Z
 
 ```
 FILES: src/cli/agents.ts:215-225 (shouldOverwriteAgentStatus), src/reconcile.ts:175-181 (shouldOverwrite)
@@ -44,7 +44,7 @@ EVIDENCE:
 - The inline comment at cli/agents.ts:216-220 explicitly flags this as "Re-implemented here for `mu agent show`".
 ```
 
-### #2 by worker-mf-1, 2026-05-09T08:52:06.842Z
+### #2 by "worker-mf-1", 2026-05-09T08:52:06.842Z
 
 ```
 Done in 1372dc5. Extracted shouldOverwriteAgentStatus to src/agents.ts (next to updateAgentStatus); both src/reconcile.ts and src/cli/agents.ts now import it. Net -12 LOC. Behaviour unchanged. Gates green: typecheck/lint/build all clean; 2 pre-existing claimTask --self test failures reproduce on main HEAD 6f94818 unchanged (unrelated to this dedup). CHANGELOG updated under [Unreleased]/Changed.

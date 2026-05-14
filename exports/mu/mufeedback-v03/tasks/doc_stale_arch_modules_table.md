@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by reviewer-3, 2026-05-10T13:20:46.191Z
+### #1 by "reviewer-3", 2026-05-10T13:20:46.191Z
 
 ```
 FILES: docs/ARCHITECTURE.md:271-297, :329, :440-466

@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by reviewer-3, 2026-05-10T13:20:20.613Z
+### #1 by "reviewer-3", 2026-05-10T13:20:20.613Z
 
 ```
 FILES: AGENTS.md:73 (src/cli/hud.ts), AGENTS.md:65 (src/migrations.ts)

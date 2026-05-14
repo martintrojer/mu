@@ -16,7 +16,7 @@ blocks: ["snap_destroy_safety", "snap_docs", "snap_dogfood"]
 
 ## Notes (2)
 
-### #1 by worker-1, 2026-05-08T13:26:43.058Z
+### #1 by "worker-1", 2026-05-08T13:26:43.058Z
 
 ```
 SHIPPED: snap_undo_verb per snap_design §UNDO GRAPH.
@@ -248,7 +248,7 @@ End-to-end smoke (see ODDITIES for the bug it caught):
     capability. Honoured the design.
 ```
 
-### #2 by π - mu, 2026-05-08T14:15:36.217Z
+### #2 by "π - mu", 2026-05-08T14:15:36.217Z
 
 ```
 MERGED: worker-1's patch (CHANGELOG + src/cli.ts + src/snapshots.ts + test/cli-snapshot.test.ts) merged to main as commit 5660416 by orchestrator. Gate green: typecheck + lint + 704/704 tests + build. mu undo / mu snapshot {list,show} live in /opt/homebrew/bin/mu (symlink into this checkout). Doc updates remain in snap_docs.

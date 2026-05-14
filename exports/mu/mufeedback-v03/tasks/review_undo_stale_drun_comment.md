@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by reviewer-1, 2026-05-10T11:38:56.746Z
+### #1 by "reviewer-1", 2026-05-10T11:38:56.746Z
 
 ```
 FILES: src/cli/snapshot.ts:140-158 (cmdUndo reconcile section)

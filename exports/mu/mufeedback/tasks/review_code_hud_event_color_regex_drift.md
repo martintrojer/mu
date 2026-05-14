@@ -16,7 +16,7 @@ blocks: ["docs_staleness_review_capstone"]
 
 ## Notes (1)
 
-### #1 by code-reviewer-1, 2026-05-09T08:30:32.306Z
+### #1 by "code-reviewer-1", 2026-05-09T08:30:32.306Z
 
 ```
 FILES: src/cli/hud.ts:255-262 (colorEventPayload regex)

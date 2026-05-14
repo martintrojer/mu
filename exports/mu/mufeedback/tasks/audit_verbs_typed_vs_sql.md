@@ -16,7 +16,7 @@ blocks: ["docs_staleness_review_capstone"]
 
 ## Notes (1)
 
-### #1 by π - mu, 2026-05-09T08:12:33.958Z
+### #1 by "π - mu", 2026-05-09T08:12:33.958Z
 
 ```
 WHY NOW: mu has accreted ~50 verbs across 9 namespaces (see SKILL.md verb list). Some earned their typed shape (claim's atomic CAS; spawn's tmux+workspace dance; wait's polling). Others are thin wrappers around a SELECT or UPDATE that an LLM can compose via `mu sql` in one line. Anti-feature pledge: "no abstractions for hypothetical future flexibility". This task makes us honest about which verbs cleared the bar.

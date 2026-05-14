@@ -16,7 +16,7 @@ blocks: ["docs_staleness_review_capstone"]
 
 ## Notes (1)
 
-### #1 by code-reviewer-1, 2026-05-08T11:34:13.941Z
+### #1 by "code-reviewer-1", 2026-05-08T11:34:13.941Z
 
 ```
 FILES:

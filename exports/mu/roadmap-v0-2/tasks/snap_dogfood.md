@@ -16,7 +16,7 @@ blocks: ["cross_workstream_claim_for", "snap_undo_reconcile_destroys_recovered_a
 
 ## Notes (1)
 
-### #1 by worker-1, 2026-05-08T14:23:02.992Z
+### #1 by "worker-1", 2026-05-08T14:23:02.992Z
 
 ```
 DOGFOODED snap_undo_verb against a real workstream (dogfood-snap on

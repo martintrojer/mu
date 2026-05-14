@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (2)
 
-### #1 by system, 2026-05-08T06:40:24.348Z
+### #1 by null, 2026-05-08T06:40:24.348Z
 
 ```
 Today --json is on every read verb (mu task list/show/next/ready/blocked/goals/owned-by/search/tree/notes, mu agent list/show, mu workstream list, mu workspace list, mu approve list, mu whoami/my-tasks/my-next, mu state, bare mu) and on FOUR write verbs after selfdoc_infra (mu task add/claim/release/close).
@@ -80,7 +80,7 @@ Why blocking selfdoc_skill_cleanup: SKILL.md needs to assert "every verb support
 Estimated LOC: ~200 across cli.ts (mostly per-verb threading), no new infra needed.
 ```
 
-### #2 by system, 2026-05-08T06:41:25.713Z
+### #2 by null, 2026-05-08T06:41:25.713Z
 
 ```
 CLOSED as DUPLICATE of selfdoc_verbs_round2. Both touch the same code area (every remaining cmdXxx in src/cli.ts); user agreed (option C) to ship as a single commit.

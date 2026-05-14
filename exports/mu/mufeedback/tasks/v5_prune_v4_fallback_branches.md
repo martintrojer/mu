@@ -16,7 +16,7 @@ blocks: ["docs_staleness_review_capstone"]
 
 ## Notes (2)
 
-### #1 by π - mu, 2026-05-09T13:39:11.291Z
+### #1 by "π - mu", 2026-05-09T13:39:11.291Z
 
 ```
 SURFACED LIVE post-v5-landing: grep for "v4" / "legacy" / "backward-compat" in src/ shows ~25 hits across 8+ files where the v5 SDK code still carries a fallback branch labelled "preserves the v4 SDK contract". Per operator: pre-1.0, no third-party consumers, and v4 has been deleted (migrations.ts is gone, the loud-fail hook in openDb refuses any pre-v5 DB). Those fallbacks are dead-pretending-to-be-alive: the path can never trigger, but readers of the code don't know that.
@@ -124,7 +124,7 @@ For each "v4" / "legacy" / "backward-compat" hit in src/:
   - Don't bundle this with bug_v5_name_clash_silent_misroute. That task's diff should be the FIX; this task's diff is the CLEANUP. Two separate readable commits.
 ```
 
-### #2 by π - mu, 2026-05-09T13:39:44.949Z
+### #2 by "π - mu", 2026-05-09T13:39:44.949Z
 
 ```
 SCOPE SIMPLIFIED (per operator): just remove all v4 fallback branches. No audit-per-case framing. Pre-1.0; no compat needed.

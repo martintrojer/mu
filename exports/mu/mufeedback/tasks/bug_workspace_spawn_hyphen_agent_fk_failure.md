@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (2)
 
-### #1 by π - infer-rs, 2026-05-08T16:50:52.863Z
+### #1 by "π - infer-rs", 2026-05-08T16:50:52.863Z
 
 ```
 FILES: mu agent spawn --workspace; infer-rs workstream.
@@ -28,7 +28,7 @@ VERIFIED: sil-a exit=1 FK; sila exit=0 with backend=git and workspace row.
 ODDITIES: fkrepro2 also succeeded; likely names with digits are fine.
 ```
 
-### #2 by worker-mf-2, 2026-05-09T06:42:34.515Z
+### #2 by "worker-mf-2", 2026-05-09T06:42:34.515Z
 
 ```
 FILES: src/agents/spawn.ts; src/cli.ts (dryRun call sites); commit 462e3a7.

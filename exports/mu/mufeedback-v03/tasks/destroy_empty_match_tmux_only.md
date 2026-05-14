@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (2)
 
-### #1 by π - mu, 2026-05-10T07:33:11.760Z
+### #1 by "π - mu", 2026-05-10T07:33:11.760Z
 
 ```
 fix: mu workstream destroy --empty should also match tmux-only sessions.
@@ -122,7 +122,7 @@ Total ~120 LOC.
 ⚠️ git commit -am '...' THEN mu task close destroy_empty_match_tmux_only -w mufeedback-v03 --evidence 'tmux-only sessions matched; tests + docs'
 ```
 
-### #2 by reaper, 2026-05-10T07:45:50.969Z
+### #2 by "reaper", 2026-05-10T07:45:50.969Z
 
 ```
 [reaper] previous owner worker-3 gone (agent removed); status reverted IN_PROGRESS → OPEN, owner cleared

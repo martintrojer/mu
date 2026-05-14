@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (2)
 
-### #1 by π - infer-rs, 2026-05-08T09:53:56.898Z
+### #1 by "π - infer-rs", 2026-05-08T09:53:56.898Z
 
 ```
 FILES: mu CLI hint/output behavior.
@@ -28,7 +28,7 @@ VERIFIED: Infer-rs note #254 lost inline snippets; note #255 corrected using a q
 ODDITIES: This is fundamentally shell behavior, but mu can steer users away from it in hints.
 ```
 
-### #2 by π - infer-rs, 2026-05-08T09:54:12.557Z
+### #2 by "π - infer-rs", 2026-05-08T09:54:12.557Z
 
 ```
 CORRECTION: The first note on this task also demonstrated the same problem by losing the literal example containing backticks.

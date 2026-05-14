@@ -16,7 +16,7 @@ blocks: ["docs_staleness_review_capstone"]
 
 ## Notes (2)
 
-### #1 by code-reviewer-1, 2026-05-09T08:32:45.344Z
+### #1 by "code-reviewer-1", 2026-05-09T08:32:45.344Z
 
 ```
 FILES: src/agents/spawn.ts:140-180 (the placeholder-pane-id dance) + src/agents/spawn.ts:215-245 (the patch-then-rollback)
@@ -75,7 +75,7 @@ EVIDENCE:
 - bug_agent_spawn_workspace_fk_failure in CHANGELOG / mufeedback history.
 ```
 
-### #2 by worker-mf-4, 2026-05-09T10:10:18.840Z
+### #2 by "worker-mf-4", 2026-05-09T10:10:18.840Z
 
 ```
 ANALYSIS — investigated the four options below. SHIPPING Option 4 (named-helpers + drop the apologetic narration); DEFERRING Option 2 (eliminate the placeholder by reordering ws-dir-create → pane-create → atomic dual insert) as a separate, larger task.

@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by π - mu, 2026-05-08T14:27:28.083Z
+### #1 by "π - mu", 2026-05-08T14:27:28.083Z
 
 ```
 FILES: src/cli.ts (cmdWorkstreamDestroy: dry-run, --yes, JSON paths)

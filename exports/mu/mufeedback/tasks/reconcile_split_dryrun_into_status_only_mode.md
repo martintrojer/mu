@@ -16,7 +16,7 @@ blocks: ["bug_pane_title_glyph_stuck_at_needs_input", "docs_staleness_review_cap
 
 ## Notes (1)
 
-### #1 by π - mu, 2026-05-09T08:21:28.440Z
+### #1 by "π - mu", 2026-05-09T08:21:28.440Z
 
 ```
 SURFACED LIVE while orchestrating today's waves. mu state and mu hud SHOULD update agent status (operator's primary signal: "is worker-X busy or idle right now?") but should NOT do the dangerous bits (ghost prune, mid-spawn placeholder cleanup, the reaper that flips IN_PROGRESS tasks back to OPEN with reaper notes).

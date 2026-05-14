@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by test-reviewer-1, 2026-05-08T11:23:45.420Z
+### #1 by "test-reviewer-1", 2026-05-08T11:23:45.420Z
 
 ```
 FILES: test/cli-task-add-blocked-by.test.ts:106-138 ; src/cli.ts (mu task add option list)

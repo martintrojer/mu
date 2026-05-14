@@ -16,7 +16,7 @@ blocks: ["docs_staleness_review_capstone"]
 
 ## Notes (1)
 
-### #1 by test-reviewer-1, 2026-05-09T08:31:22.208Z
+### #1 by "test-reviewer-1", 2026-05-09T08:31:22.208Z
 
 ```
 FILES: test/output.test.ts:104-150 (printNextSteps describe block); src/output.ts:91-108 (printNextSteps + printNextStepsTo).

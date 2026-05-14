@@ -16,7 +16,7 @@ blocks: ["snap_schema"]
 
 ## Notes (1)
 
-### #1 by worker-1, 2026-05-08T11:20:48.113Z
+### #1 by "worker-1", 2026-05-08T11:20:48.113Z
 
 ````
 DESIGN: snapshots + undo for v0.2

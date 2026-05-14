@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by reviewer-1, 2026-05-10T11:39:40.546Z
+### #1 by "reviewer-1", 2026-05-10T11:39:40.546Z
 
 ```
 FILES: src/tasks/claim.ts:40-95 (releaseTask)

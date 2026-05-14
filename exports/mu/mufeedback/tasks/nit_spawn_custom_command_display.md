@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (2)
 
-### #1 by system, 2026-05-08T08:50:55.562Z
+### #1 by null, 2026-05-08T08:50:55.562Z
 
 ```
 FILES: mu CLI/runtime behavior observed via agent spawn output.
@@ -28,7 +28,7 @@ VERIFIED: Observed in infer-rs workstream for code-reviewer-1 and test-reviewer-
 ODDITIES: Not blocking; agents started correctly.
 ```
 
-### #2 by system, 2026-05-08T08:59:00.457Z
+### #2 by null, 2026-05-08T08:59:00.457Z
 
 ```
 FILES: mu task metadata.

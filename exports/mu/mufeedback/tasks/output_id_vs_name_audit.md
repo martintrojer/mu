@@ -16,7 +16,7 @@ blocks: ["docs_staleness_review_capstone", "output_json_keys_rename_v5", "output
 
 ## Notes (2)
 
-### #1 by π - mu, 2026-05-09T13:05:36.307Z
+### #1 by "π - mu", 2026-05-09T13:05:36.307Z
 
 ```
 SURFACED LIVE post-schema-v5: the CLI's column headers and JSON keys still call the operator-facing identifier "id" / "localId" everywhere, but post-v5 those are NAMES (per-workstream-unique strings the operator chose), distinct from the internal surrogate INTEGER `id` that lives in the DB and never escapes to the operator.
@@ -101,7 +101,7 @@ Should this block the docs_staleness_review_capstone? YES — the capstone audit
 (Orchestrator action: add edge after filing.)
 ```
 
-### #2 by π - mu, 2026-05-09T13:06:23.114Z
+### #2 by "π - mu", 2026-05-09T13:06:23.114Z
 
 ```
 ADDENDUM (operator request): clean up JSON keys too. Don't preserve v4 backward compat.

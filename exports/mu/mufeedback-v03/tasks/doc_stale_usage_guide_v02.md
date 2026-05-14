@@ -16,7 +16,7 @@ blocks: ["doc_stale_skill_schema_sql"]
 
 ## Notes (1)
 
-### #1 by reviewer-3, 2026-05-10T13:21:11.201Z
+### #1 by "reviewer-3", 2026-05-10T13:21:11.201Z
 
 ```
 FILES: docs/USAGE_GUIDE.md:3, :9-21, :17, :160, :731-733, :1408 ("§ Not in 0.2.0"), :1432

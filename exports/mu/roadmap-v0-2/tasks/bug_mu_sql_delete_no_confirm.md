@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (2)
 
-### #1 by system, 2026-05-08T07:22:04.470Z
+### #1 by null, 2026-05-08T07:22:04.470Z
 
 ```
 Surfaced just now while cleaning up dogfood test rows for nit_long_auto_slug.
@@ -74,7 +74,7 @@ Promotion criterion: hit ONCE so far (just now), but the cost was severe (5 real
 Alternative: ship just the dogfood lesson (always count first with SELECT before running DELETE). But 'mu sql is a power-user escape hatch, you should know better' is exactly the kind of guidance that fails because it's the orchestrator at 2am that hits it.
 ```
 
-### #2 by system, 2026-05-08T07:37:00.170Z
+### #2 by null, 2026-05-08T07:37:00.170Z
 
 ```
 FILES: src/cli.ts, test/sql-multi-statement.test.ts

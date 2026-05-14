@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by reviewer-2, 2026-05-10T11:34:48.787Z
+### #1 by "reviewer-2", 2026-05-10T11:34:48.787Z
 
 ```
 FILES: test/state-render.test.ts:430-475 ("every emitEvent callsite under src/ uses a payload prefix in EVENT_VERB_PREFIXES")

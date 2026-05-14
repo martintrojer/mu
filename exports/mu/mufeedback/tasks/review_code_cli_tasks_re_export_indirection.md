@@ -16,7 +16,7 @@ blocks: ["docs_staleness_review_capstone", "review_code_cli_tasks_oversize"]
 
 ## Notes (1)
 
-### #1 by code-reviewer-1, 2026-05-09T08:31:20.505Z
+### #1 by "code-reviewer-1", 2026-05-09T08:31:20.505Z
 
 ```
 FILES: src/cli/tasks.ts:14-41 (the dual import + re-export of cmdTask{Blocked,Goals,List,Next,OwnedBy,Ready,Search,Close,Defer,Open,Reject})

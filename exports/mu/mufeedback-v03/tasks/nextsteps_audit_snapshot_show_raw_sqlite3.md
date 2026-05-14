@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by worker-5, 2026-05-10T13:35:01.133Z
+### #1 by "worker-5", 2026-05-10T13:35:01.133Z
 
 ```
 FILES: src/cli/snapshot.ts:289-292 (cmdSnapshotShow nextSteps)

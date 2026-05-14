@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by test-reviewer-1, 2026-05-08T11:25:40.576Z
+### #1 by "test-reviewer-1", 2026-05-08T11:25:40.576Z
 
 ```
 FILES: test/output.test.ts:38-58 ; src/output.ts:43-49 (printNextSteps).

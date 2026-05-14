@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (2)
 
-### #1 by π - mu, 2026-05-10T05:30:44.356Z
+### #1 by "π - mu", 2026-05-10T05:30:44.356Z
 
 ```
 mu workstream import <dir> — INVERSE of mu workstream export.
@@ -131,7 +131,7 @@ All errors typed; no partial commits (whole import in one transaction per source
 PROMOTE for v0.3 alongside the archive feature. Critical-path-coherent: the export shape and the import shape must be designed together (which is why this is blocked-by Phase 4, not Phase 2).
 ```
 
-### #2 by reaper, 2026-05-10T06:55:27.507Z
+### #2 by "reaper", 2026-05-10T06:55:27.507Z
 
 ```
 [reaper] previous owner worker-1 gone (agent removed); status reverted IN_PROGRESS → OPEN, owner cleared

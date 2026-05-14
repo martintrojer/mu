@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (3)
 
-### #1 by reviewer-2, 2026-05-10T11:32:21.257Z
+### #1 by "reviewer-2", 2026-05-10T11:32:21.257Z
 
 ```
 FILES: test/cli-task-wait.integration.test.ts (line 247-267, the cross-ws qualified-refs test)
@@ -29,13 +29,13 @@ WHY: The flake masks real signal. CI gates mention 4-green-before-commit; a recu
 FIX-SKETCH: Add per-test timeout: it("cross-ws qualified refs: ...", { timeout: 15000 }, async () => { ... }) — the canonical it(name, opts, fn) form. 15s gives 7x headroom over the observed isolation time without making the suite noticeably slower. Same treatment for the sister "reaper-flip on UNWATCHED workstream B" test (1.9s isolation; one tmux + 2 panes; same risk).
 ```
 
-### #2 by π - mu, 2026-05-10T11:42:18.761Z
+### #2 by "π - mu", 2026-05-10T11:42:18.761Z
 
 ```
 OPERATOR: rejected my own duplicate cli_task_wait_integration_flakes_under_load (filed minutes apart; same bug; same root cause; same recommended fix). reviewer-2 got there first via the test-review path. THIS task remains the canonical filing; consult my rejected task for additional spec details (vitest config sequential pool + 30s timeout belt-and-suspenders + suite-split open question). Worker on this task should also defer the suite-split decision back to operator.
 ```
 
-### #3 by worker-5, 2026-05-10T12:05:05.902Z
+### #3 by "worker-5", 2026-05-10T12:05:05.902Z
 
 ```
 DEFER TO OPERATOR (suite-split): operator's rejected duplicate raised the suite-split open question. Not addressed here — current fix (singleFork + 30s testTimeout) keeps test/ flat and lands all 1032 tests green in ~58s. Suite-split (unit/ vs integration/) is a layout decision that touches CI scripts + AGENTS.md test docs; worth its own task if someone hits the wall-clock cost in CI.

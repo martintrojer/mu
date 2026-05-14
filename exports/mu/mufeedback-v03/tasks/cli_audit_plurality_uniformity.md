@@ -16,7 +16,7 @@ blocks: ["hud_multi_workstream"]
 
 ## Notes (2)
 
-### #1 by π - mu, 2026-05-10T05:35:24.802Z
+### #1 by "π - mu", 2026-05-10T05:35:24.802Z
 
 ```
 CLI plurality — pick one convention, fix divergences.
@@ -135,7 +135,7 @@ PROMOTE for v0.3. Lives in mufeedback-v03 (codification of CLI surface; not a pl
 ⚠️ git commit -am '...' THEN mu task close cli_audit_plurality_uniformity -w mufeedback-v03 --evidence 'helper extracted; convention documented; hud task amended'
 ```
 
-### #2 by π - mu, 2026-05-10T05:36:06.909Z
+### #2 by "π - mu", 2026-05-10T05:36:06.909Z
 
 ```
 ADDENDUM (operator): better convention — accept BOTH repeated-flag AND comma-separated, uniformly. Operators get to pick whichever ergonomics fit the moment; the parser canonicalises.

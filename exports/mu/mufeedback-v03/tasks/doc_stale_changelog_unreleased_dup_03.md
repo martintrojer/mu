@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by reviewer-3, 2026-05-10T13:23:34.061Z
+### #1 by "reviewer-3", 2026-05-10T13:23:34.061Z
 
 ```
 FILES: CHANGELOG.md:11-200 ([Unreleased]), :211 ([0.3.0] — unreleased)

@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by π - mu, 2026-05-10T12:30:24.924Z
+### #1 by "π - mu", 2026-05-10T12:30:24.924Z
 
 ```
 REMOVE: scripts/ folder.

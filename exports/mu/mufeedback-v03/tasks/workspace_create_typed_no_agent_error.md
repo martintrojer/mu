@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by π - mu, 2026-05-10T08:06:15.088Z
+### #1 by "π - mu", 2026-05-10T08:06:15.088Z
 
 ```
 mu workspace create errors as AgentNotFoundError (not raw FK violation) when no agent row exists.

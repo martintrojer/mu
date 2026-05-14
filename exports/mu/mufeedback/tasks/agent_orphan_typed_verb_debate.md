@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (2)
 
-### #1 by π - mu, 2026-05-09T05:30:45.016Z
+### #1 by "π - mu", 2026-05-09T05:30:45.016Z
 
 ```
 DEBATE: should mu surface "agent rows whose pane is gone" as a first-class concept, or is the current silent-auto-prune via reconcile the right answer?
@@ -111,7 +111,7 @@ This task's resolution is one of:
 Operator decides (a/b/c). This task is deliberately scoped as DEBATE only — no code change. If the operator picks (c), the impl task inherits the spec and verifies against the dryRun substrate added in snap_undo_reconcile_destroys_recovered_agents.
 ```
 
-### #2 by π - mu, 2026-05-09T05:32:42.702Z
+### #2 by "π - mu", 2026-05-09T05:32:42.702Z
 
 ```
 RESOLUTION: REJECTED (operator pick: (a)).

@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by π - mu, 2026-05-10T06:58:30.531Z
+### #1 by "π - mu", 2026-05-10T06:58:30.531Z
 
 ```
 Sort `--help` Commands list alphabetically.

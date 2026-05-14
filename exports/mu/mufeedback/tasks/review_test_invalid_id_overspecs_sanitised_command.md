@@ -16,7 +16,7 @@ blocks: ["docs_staleness_review_capstone"]
 
 ## Notes (1)
 
-### #1 by test-reviewer-1, 2026-05-09T08:35:15.359Z
+### #1 by "test-reviewer-1", 2026-05-09T08:35:15.359Z
 
 ````
 FILES: test/tasks.test.ts:152-204 (TaskIdInvalidError typed-error + reserved-prefix tests); test/cli-task-add-invalid-id.test.ts:75-86 (sanitised assertion); src/tasks/errors.ts:78-87 (TaskIdInvalidError.errorNextSteps).

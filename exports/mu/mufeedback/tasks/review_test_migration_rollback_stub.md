@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by test-reviewer-1, 2026-05-08T11:22:40.588Z
+### #1 by "test-reviewer-1", 2026-05-08T11:22:40.588Z
 
 ```
 FILES: test/db.test.ts:710-737 ; src/db.ts:155-170 (openDb migration loop) ; src/migrations.ts (runMigrations + transaction)

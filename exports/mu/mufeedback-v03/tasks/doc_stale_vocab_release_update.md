@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by reviewer-3, 2026-05-10T13:22:37.815Z
+### #1 by "reviewer-3", 2026-05-10T13:22:37.815Z
 
 ```
 FILES: docs/VOCABULARY.md:148, docs/VOCABULARY.md:287

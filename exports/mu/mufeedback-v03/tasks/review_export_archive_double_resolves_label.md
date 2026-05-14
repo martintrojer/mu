@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by reviewer-1, 2026-05-10T11:39:23.687Z
+### #1 by "reviewer-1", 2026-05-10T11:39:23.687Z
 
 ```
 FILES: src/cli/archive.ts:445-484 (cmdArchiveExport); src/exporting.ts:723-751 (exportArchive)

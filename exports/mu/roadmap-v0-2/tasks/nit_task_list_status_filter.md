@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by system, 2026-05-07T18:01:34.481Z
+### #1 by null, 2026-05-07T18:01:34.481Z
 
 ```
 Workaround: `mu task list --json | jq '.[] | select(.status == "OPEN")'` or `mu sql`. Easy add: --status <OPEN|IN_PROGRESS|CLOSED|RESOLVED> filter on the SQL WHERE clause.

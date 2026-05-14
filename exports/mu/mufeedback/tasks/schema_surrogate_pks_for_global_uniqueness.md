@@ -16,7 +16,7 @@ blocks: ["audit_verbs_typed_vs_sql", "docs_staleness_review_capstone", "review_c
 
 ## Notes (3)
 
-### #1 by π - mu, 2026-05-09T08:37:58.041Z
+### #1 by "π - mu", 2026-05-09T08:37:58.041Z
 
 ```
 ═══ THE GAP ═══
@@ -177,7 +177,7 @@ DELIBERATE OVER-ESTIMATION ABOVE: marked effort-days=2 for THIS task to reflect 
 Operator decides: ship the design? defer? reject?
 ```
 
-### #2 by π - mu, 2026-05-09T08:39:03.567Z
+### #2 by "π - mu", 2026-05-09T08:39:03.567Z
 
 ```
 ESCALATION (per operator): this is a SCHEMA-WIDE PATTERN, not a one-table fix.
@@ -322,7 +322,7 @@ Then 4 follow-up tasks filed (schema_v5_migration_impl, schema_v5_sdk_signatures
 Operator approves the pattern? File the design phase as the work. Or defer the whole stack and live with TEXT keys until the namespace pain forces it (the staleness-of-this-bug clock is now ticking — mufeedback alone has 50+ task ids in the global namespace).
 ```
 
-### #3 by π - mu, 2026-05-09T08:39:39.630Z
+### #3 by "π - mu", 2026-05-09T08:39:39.630Z
 
 ```
 ADDENDUM: aggressive migration strategy.

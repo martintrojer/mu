@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by test-reviewer-1, 2026-05-08T11:23:01.608Z
+### #1 by "test-reviewer-1", 2026-05-08T11:23:01.608Z
 
 ```
 FILES: test/cli-json-universal.test.ts:33-50 ; src/cli.ts (every `.command(...)...action(...)` block)

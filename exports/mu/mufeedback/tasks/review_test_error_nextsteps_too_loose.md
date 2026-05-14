@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by test-reviewer-1, 2026-05-08T11:24:08.925Z
+### #1 by "test-reviewer-1", 2026-05-08T11:24:08.925Z
 
 ```
 FILES: test/error-nextsteps.test.ts:43-66 ; src/agents.ts / src/tasks.ts / src/approvals.ts / src/workspace.ts / src/workstream.ts (errorNextSteps methods)

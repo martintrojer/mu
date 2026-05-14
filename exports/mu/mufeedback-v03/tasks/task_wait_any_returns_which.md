@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by π - mu, 2026-05-10T07:57:11.394Z
+### #1 by "π - mu", 2026-05-10T07:57:11.394Z
 
 ```
 REJECTED: skill update (commit 17186ef "pipeline cherry-picks; don't barrier") teaches the orchestrator to poll per-iteration with mu task show --json, which gives WHICH task fired for free. mu task wait --any not extended. Re-promote if friction recurs.

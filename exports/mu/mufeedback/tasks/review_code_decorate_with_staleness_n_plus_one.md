@@ -16,7 +16,7 @@ blocks: ["docs_staleness_review_capstone", "review_test_workspace_staleness_behi
 
 ## Notes (1)
 
-### #1 by code-reviewer-1, 2026-05-09T08:34:24.677Z
+### #1 by "code-reviewer-1", 2026-05-09T08:34:24.677Z
 
 ```
 FILES: src/workspace.ts:419-432 (decorateWithStaleness), src/vcs.ts:227-237 + :318-336 + :412-432 (per-backend commitsBehind impls)

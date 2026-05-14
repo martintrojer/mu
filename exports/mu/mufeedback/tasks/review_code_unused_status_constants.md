@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by code-reviewer-1, 2026-05-08T11:33:17.769Z
+### #1 by "code-reviewer-1", 2026-05-08T11:33:17.769Z
 
 ```
 FILES:

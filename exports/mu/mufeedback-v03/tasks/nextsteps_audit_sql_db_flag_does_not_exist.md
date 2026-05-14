@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by worker-5, 2026-05-10T13:34:31.206Z
+### #1 by "worker-5", 2026-05-10T13:34:31.206Z
 
 ```
 FILES: src/snapshots.ts:158-161 (SnapshotVersionMismatchError.errorNextSteps)

@@ -16,7 +16,7 @@ blocks: ["docs_staleness_review_capstone"]
 
 ## Notes (1)
 
-### #1 by π - mu, 2026-05-09T08:50:57.087Z
+### #1 by "π - mu", 2026-05-09T08:50:57.087Z
 
 ```
 SAME ROOT CAUSE as reconcile_split_dryrun_into_status_only_mode (added as blocker).

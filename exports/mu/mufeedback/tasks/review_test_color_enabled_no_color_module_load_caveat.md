@@ -16,7 +16,7 @@ blocks: ["docs_staleness_review_capstone"]
 
 ## Notes (1)
 
-### #1 by test-reviewer-1, 2026-05-09T08:32:01.245Z
+### #1 by "test-reviewer-1", 2026-05-09T08:32:01.245Z
 
 ```
 FILES: test/output.test.ts:13-101 (colorEnabled describe + loadColorEnabledWith helper); src/output.ts:33-44 (colorEnabled).

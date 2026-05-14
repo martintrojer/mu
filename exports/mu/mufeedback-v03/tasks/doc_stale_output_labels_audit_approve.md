@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (2)
 
-### #1 by reviewer-3, 2026-05-10T13:22:24.348Z
+### #1 by "reviewer-3", 2026-05-10T13:22:24.348Z
 
 ```
 FILES: docs/OUTPUT_LABELS_AUDIT.md:1, :11, :54, :59, :131-139, :155 (whoami/my-tasks/my-next), :164-170 (state/hud/sql/doctor/whoami), :205-208 (ApprovalRow), :270 (ApprovalRow rename), :298, :311, :322
@@ -29,7 +29,7 @@ WHY: Anyone scripting against `mu --json` who hits this doc gets pointed at remo
 FIX-SKETCH: add a top-of-file banner: "Status: shipped in v0.2; superseded for `mu approve` / `mu hud` / `mu whoami` / `mu my-*` (all removed in v0.3 — see CHANGELOG)." Strike or delete the four affected sections; keep the still-correct rename tables for the live entities.
 ```
 
-### #2 by worker-2, 2026-05-10T13:30:20.434Z
+### #2 by "worker-2", 2026-05-10T13:30:20.434Z
 
 ```
 parent doc removed; see remove_output_labels_audit_md

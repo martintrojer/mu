@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (2)
 
-### #1 by worker-mf-1, 2026-05-09T11:11:04.448Z
+### #1 by "worker-mf-1", 2026-05-09T11:11:04.448Z
 
 ```
 From verb audit (docs/VERB_AUDIT.md). SCORE 1/4: 0 atomicity, 0 side-effect, 0 typed errors, 1 output value.
@@ -45,7 +45,7 @@ CHECKLIST: cmdTaskSearch in src/cli/tasks/queries.ts; wire entry; SDK searchTask
 Operator may keep this verb for ergonomics — search-with-quoting is annoying via `mu sql`. Audit stands by REMOVE because the `mu sql` alternative is exactly the muscle-memory the operator already builds for ad-hoc questions.
 ```
 
-### #2 by π - mu, 2026-05-09T11:20:09.226Z
+### #2 by "π - mu", 2026-05-09T11:20:09.226Z
 
 ```
 DEFERRED by orchestrator: ship after schema_v5 lands. Schema_v5 rewrites SDK signatures (workstream context), so the audit-removal commits would conflict. Re-claim after schema_v5_cleanups closes; the SQL recipe in this task's audit notes still applies.

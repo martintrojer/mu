@@ -16,7 +16,7 @@ blocks: ["audit_cleanups_post_schema_v5_wave", "docs_staleness_review_capstone"]
 
 ## Notes (1)
 
-### #1 by worker-mf-3, 2026-05-09T10:41:21.693Z
+### #1 by "worker-mf-3", 2026-05-09T10:41:21.693Z
 
 ```
 Per docs/SCHEMA_v5_DESIGN.md "Obsoleted workarounds" table.

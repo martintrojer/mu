@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by system, 2026-05-08T07:39:50.832Z
+### #1 by null, 2026-05-08T07:39:50.832Z
 
 ```
 SURFACED LIVE during the multi-agent dogfood. After dispatching 3 workers via mu task claim --for, I needed to wait for all three to close their tasks before reviewing/merging. mu has no primitive for this; I hand-rolled a polling loop:

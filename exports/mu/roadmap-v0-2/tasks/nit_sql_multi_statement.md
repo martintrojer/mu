@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by system, 2026-05-07T17:58:43.678Z
+### #1 by null, 2026-05-07T17:58:43.678Z
 
 ```
 Surfaced while migrating the roadmap-v0.2 workstream to roadmap-v0-2 after the dot-mangle bug fix. Ideally `mu sql` would accept either a single statement OR a BEGIN...COMMIT block. better-sqlite3's `Database.exec()` handles multi-statement; current code path uses `prepare()` which doesn't. Workaround: issue one statement at a time.

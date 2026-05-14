@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (2)
 
-### #1 by π - mu, 2026-05-10T05:33:40.569Z
+### #1 by "π - mu", 2026-05-10T05:33:40.569Z
 
 ```
 mu hud — accept multiple workstreams; render compactly when N>1.
@@ -154,7 +154,7 @@ Hard cap: src/cli/hud.ts is at 544 LOC; +200 keeps it well under 1500.
 PROMOTE for v0.3. Standalone (no dependency on the archive feature); could ship at any phase boundary. Lives in mufeedback-v03 (friction-filing workstream), not roadmap-v0-3 — it's a friction observation, not part of the planned archive feature.
 ```
 
-### #2 by worker-2, 2026-05-10T05:43:40.545Z
+### #2 by "worker-2", 2026-05-10T05:43:40.545Z
 
 ```
 CONVENTION SETTLED (per cli_audit_plurality_uniformity): use commander variadic on the multi-workstream flag — declare as `--workstreams <names...>`, run values through parseCsvFlag(). Operator gets repeat OR comma-separate OR both for free. Drop -W; drop --all (or keep --all as a separate boolean if useful, but it is NOT needed for the multi-flag mechanism).

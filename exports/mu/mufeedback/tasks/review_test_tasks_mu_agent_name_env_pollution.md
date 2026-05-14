@@ -16,7 +16,7 @@ blocks: ["docs_staleness_review_capstone"]
 
 ## Notes (1)
 
-### #1 by test-reviewer-1, 2026-05-09T08:34:43.083Z
+### #1 by "test-reviewer-1", 2026-05-09T08:34:43.083Z
 
 ```
 FILES: test/tasks.test.ts:781-794 ("--self falls back to 'orchestrator' when no $MU_AGENT_NAME, $TMUX_PANE, or $USER"); test/tasks.test.ts:1836-1851 ("falls back to pane title when MU_AGENT_NAME is unset"); src/tasks/claim.ts:281-289 (resolveActorIdentity); src/tmux.ts:678-682 (currentAgentName).

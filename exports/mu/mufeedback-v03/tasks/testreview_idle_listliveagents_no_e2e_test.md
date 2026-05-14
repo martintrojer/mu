@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by reviewer-2, 2026-05-10T11:32:40.955Z
+### #1 by "reviewer-2", 2026-05-10T11:32:40.955Z
 
 ```
 FILES: test/agent-idle.test.ts (lines 71-130 predicate tests; 135-169 JSON shape); compare against test/verbs.test.ts listLiveAgents block (810-967), which never exercises the idle field; src/agents.ts:733 (listLiveAgents enrichment site)

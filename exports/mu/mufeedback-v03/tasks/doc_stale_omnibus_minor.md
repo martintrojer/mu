@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by reviewer-3, 2026-05-10T13:23:59.527Z
+### #1 by "reviewer-3", 2026-05-10T13:23:59.527Z
 
 ```
 FILES + FINDINGS (one-liners; pick up as polish):

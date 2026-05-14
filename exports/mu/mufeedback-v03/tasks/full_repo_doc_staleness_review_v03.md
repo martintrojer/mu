@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by reviewer-3, 2026-05-10T13:24:19.033Z
+### #1 by "reviewer-3", 2026-05-10T13:24:19.033Z
 
 ```
 SUMMARY: filed 11 tasks: doc_stale_agentsmd_tree, doc_stale_arch_modules_table, doc_stale_usage_guide_v02, doc_stale_skill_schema_sql, doc_stale_verb_audit_v01, doc_stale_output_labels_audit_approve, doc_stale_vocab_release_update, doc_stale_vision_namespaces_tables, doc_stale_skill_release_reopen, doc_stale_changelog_unreleased_dup_03, doc_stale_omnibus_minor.

@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (3)
 
-### #1 by test-reviewer-1, 2026-05-08T11:24:53.923Z
+### #1 by "test-reviewer-1", 2026-05-08T11:24:53.923Z
 
 ```
 FILES: test/tasks.test.ts:1571-1685 (waitForTasks describe) ; src/tasks.ts:1354-1411 (waitForTasks implementation).
@@ -27,7 +27,7 @@ WHY IT MATTERS: waitForTasks is the first 'long-lived' verb in mu (R4 in the roa
 SUGGESTED FIX: Inject a poll-count side channel: replace the `setTimeout` await with a test-overridable sleep (mirror src/tmux.ts's setSleepForTests pattern). One new test asserts `pollCount === expected`. Add a test for `pollMs > timeoutMs` asserting the function returns within `<= timeoutMs + small slack` not within `<= pollMs`.
 ```
 
-### #2 by π - mu, 2026-05-09T08:06:36.034Z
+### #2 by "π - mu", 2026-05-09T08:06:36.034Z
 
 ```
 TRIAGE during deferred-task review (operator hypothesis: refactor made these defunct).
@@ -63,7 +63,7 @@ PROMOTION JUSTIFIED BECAUSE:
   - The fix is small (~1 LOC for the clamp + ~30 LOC for the test infrastructure).
 ```
 
-### #3 by worker-mf-2, 2026-05-09T08:12:57.606Z
+### #3 by "worker-mf-2", 2026-05-09T08:12:57.606Z
 
 ```
 FIXED. Shipped as commit 5430a28 on worker-mf-2.

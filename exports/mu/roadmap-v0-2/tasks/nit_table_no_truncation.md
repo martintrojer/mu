@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by system, 2026-05-07T17:52:34.839Z
+### #1 by null, 2026-05-07T17:52:34.839Z
 
 ```
 Use cli-table3's wordWrap option, or truncate to e.g. 60 chars with ellipsis. Bare `mu` mission control likely has the same issue. Compare against `mu agent list` which I haven't tested yet — see if it truncates differently.

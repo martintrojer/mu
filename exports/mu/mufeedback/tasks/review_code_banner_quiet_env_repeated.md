@@ -16,7 +16,7 @@ blocks: ["docs_staleness_review_capstone"]
 
 ## Notes (1)
 
-### #1 by code-reviewer-1, 2026-05-09T08:33:46.856Z
+### #1 by "code-reviewer-1", 2026-05-09T08:33:46.856Z
 
 ```
 FILES: src/agents/spawn.ts:208-213, src/cli/agents.ts:397-401 (cmdAdopt), src/cli/workstream.ts:58-62 (cmdInit)

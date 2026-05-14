@@ -16,7 +16,7 @@ blocks: ["workstream_export_additive_multi_workstream"]
 
 ## Notes (2)
 
-### #1 by π - mu, 2026-05-09T17:02:27.382Z
+### #1 by "π - mu", 2026-05-09T17:02:27.382Z
 
 ```
 SURFACED LIVE post-v0.2: after a big multi-wave session like the one that just shipped v0.2 (~150 closed tasks across mufeedback + roadmap-v0-2), the operator wants to:
@@ -193,7 +193,7 @@ This is the v0.3 anchor task. Subsequent phases block on it. No upstream blocker
 Operator decides: claim this design task (~0.3d to write the design doc + file phases) or defer until the cleanup pressure surfaces ≥1 more time. Recommend claim now while the context is fresh.
 ```
 
-### #2 by π - mu, 2026-05-09T17:03:45.033Z
+### #2 by "π - mu", 2026-05-09T17:03:45.033Z
 
 ```
 ADDENDUM (operator request): make the additive nature explicit and load-bearing. The use case is "I keep archiving every mu-related workstream into a single 'mu' bucket over time".

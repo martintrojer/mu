@@ -16,7 +16,7 @@ blocks: ["docs_staleness_review_capstone"]
 
 ## Notes (1)
 
-### #1 by code-reviewer-1, 2026-05-09T08:31:39.036Z
+### #1 by "code-reviewer-1", 2026-05-09T08:31:39.036Z
 
 ```
 FILES: src/cli/log.ts:65-83 (resolveLogContext)

@@ -16,7 +16,7 @@ blocks: ["hud_extension_skeleton"]
 
 ## Notes (1)
 
-### #1 by π - mu, 2026-05-08T11:05:07.731Z
+### #1 by "π - mu", 2026-05-08T11:05:07.731Z
 
 ```
 DESIGN OUTCOME (in conversation, ratified by code in commits a974775 + this)

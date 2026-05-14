@@ -16,7 +16,7 @@ blocks: ["task_claim_for_cross_workstream", "task_wait_stall_action_flag"]
 
 ## Notes (3)
 
-### #1 by π - mu, 2026-05-10T07:55:19.420Z
+### #1 by "π - mu", 2026-05-10T07:55:19.420Z
 
 ```
 mu task wait — accept cross-workstream qualified refs.
@@ -101,13 +101,13 @@ PROMOTE for v0.3.
 ⚠️ git commit -am '...' THEN mu task close task_wait_cross_workstream -w mufeedback-v03 --evidence 'qualified-ref support; reconcile per affected ws; tests'
 ```
 
-### #2 by π - mu, 2026-05-10T07:57:11.287Z
+### #2 by "π - mu", 2026-05-10T07:57:11.287Z
 
 ```
 REJECTED: skill update (SKILL.md cross-ws wait carve-out, commit 17186ef) documents the hand-roll workaround. Smart-orchestrator guidance is preferred over a code change here. Re-promote if friction surfaces ≥1 more time AND the hand-roll proves insufficient.
 ```
 
-### #3 by π - mu, 2026-05-10T08:00:43.376Z
+### #3 by "π - mu", 2026-05-10T08:00:43.376Z
 
 ```
 RE-OPENED + EXPANDED scope per operator (commit 17186ef SKILL note didn't survive contact with the loop; orchestrator kept barriering).

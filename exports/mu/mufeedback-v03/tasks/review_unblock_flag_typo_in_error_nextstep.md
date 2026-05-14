@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by reviewer-1, 2026-05-10T11:37:53.115Z
+### #1 by "reviewer-1", 2026-05-10T11:37:53.115Z
 
 ```
 FILES: src/tasks/errors.ts:165-172 (TaskHasOpenDependentsError.errorNextSteps)

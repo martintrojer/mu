@@ -16,7 +16,7 @@ blocks: ["docs_staleness_review_capstone"]
 
 ## Notes (1)
 
-### #1 by code-reviewer-1, 2026-05-09T08:35:25.449Z
+### #1 by "code-reviewer-1", 2026-05-09T08:35:25.449Z
 
 ```
 FILES: src/tasks/errors.ts:36-58 (sanitiseTaskId), src/tasks.ts:163-235 (slugifyTitle / idFromTitle)

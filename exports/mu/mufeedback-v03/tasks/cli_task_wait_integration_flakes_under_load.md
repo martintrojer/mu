@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by π - mu, 2026-05-10T11:40:47.242Z
+### #1 by "π - mu", 2026-05-10T11:40:47.242Z
 
 ```
 cli-task-wait integration test flakes under full-suite parallelism.

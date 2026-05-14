@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by π - mu, 2026-05-10T13:26:04.694Z
+### #1 by "π - mu", 2026-05-10T13:26:04.694Z
 
 ```
 docs/OUTPUT_LABELS_AUDIT.md (382 LOC) = single-purpose v0.2 audit comparing CLI output label phrasing. Same anti-anticipatory rule as approvals/scripts removal: work landed, no live readers.

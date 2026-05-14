@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by π - mu, 2026-05-10T08:06:14.963Z
+### #1 by "π - mu", 2026-05-10T08:06:14.963Z
 
 ```
 mu task claim --for accepts cross-workstream qualified ref.

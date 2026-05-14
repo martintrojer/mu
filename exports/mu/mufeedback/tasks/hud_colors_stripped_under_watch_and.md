@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (3)
 
-### #1 by π - src, 2026-05-08T17:07:59.898Z
+### #1 by "π - src", 2026-05-08T17:07:59.898Z
 
 ```
 SYMPTOM: Inside `watch --no-title -n 2 --color mu hud -w roadmap-v0-2`,
@@ -66,13 +66,13 @@ NEXT: pick this up alongside any other small HUD-quality task; do not
 inflate to a "color refactor" — keep it the helper + 2 import sites.
 ```
 
-### #2 by reaper, 2026-05-09T05:34:56.085Z
+### #2 by "reaper", 2026-05-09T05:34:56.085Z
 
 ```
 [reaper] previous owner worker-mf-1 gone (agent removed); status reverted IN_PROGRESS → OPEN, owner cleared
 ```
 
-### #3 by worker-mf-1, 2026-05-09T05:48:14.027Z
+### #3 by "worker-mf-1", 2026-05-09T05:48:14.027Z
 
 ```
 FILES:

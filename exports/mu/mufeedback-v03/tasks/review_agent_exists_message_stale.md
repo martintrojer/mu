@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by reviewer-1, 2026-05-10T11:38:06.735Z
+### #1 by "reviewer-1", 2026-05-10T11:38:06.735Z
 
 ```
 FILES: src/agents/errors.ts:18-32 (AgentExistsError)

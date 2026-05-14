@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by reviewer-2, 2026-05-10T11:34:22.852Z
+### #1 by "reviewer-2", 2026-05-10T11:34:22.852Z
 
 ```
 FILES: test/cli-task-wait-cross-ws.test.ts:184-208 (two `bad ref` tests)

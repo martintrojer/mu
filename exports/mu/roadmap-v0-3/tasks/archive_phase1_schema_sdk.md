@@ -16,7 +16,7 @@ blocks: ["archive_phase2_cli_verbs"]
 
 ## Notes (2)
 
-### #1 by π - mu, 2026-05-09T17:15:59.102Z
+### #1 by "π - mu", 2026-05-09T17:15:59.102Z
 
 ```
 Phase 1 — schema migration v5→v6 + SDK module.
@@ -176,7 +176,7 @@ scripts/grep-v4-references.sh: shouldn't fire (no v4 mentions in v6 work).
 ⚠️ When done: git commit -am '...' THEN mu task close archive_phase1_schema_sdk -w roadmap-v0-3 --evidence 'typecheck + lint + test + build green; new tables + SDK + tests'
 ```
 
-### #2 by worker-1, 2026-05-09T17:32:12.272Z
+### #2 by "worker-1", 2026-05-09T17:32:12.272Z
 
 ```
 FILES

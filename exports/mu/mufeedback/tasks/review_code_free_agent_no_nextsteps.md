@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (2)
 
-### #1 by code-reviewer-1, 2026-05-08T11:35:07.426Z
+### #1 by "code-reviewer-1", 2026-05-08T11:35:07.426Z
 
 ```
 FILES:
@@ -53,7 +53,7 @@ ALTERNATIVES CONSIDERED:
 EVIDENCE: grep -n "nextSteps" src/cli.ts | wc -l shows nextSteps is wired in every cmdX EXCEPT cmdFree. The 6115800 commit message explicitly says "every CLI verb"; cmdFree was missed (probably because freeAgent was added in be15fdf BEFORE the universalisation pass and never revisited).
 ```
 
-### #2 by code-reviewer-1, 2026-05-08T11:35:27.876Z
+### #2 by "code-reviewer-1", 2026-05-08T11:35:27.876Z
 
 ```
 ADDENDUM (broader scope): cmdApprovalGrant (cli.ts:2778) and cmdApprovalDeny (cli.ts:2793) ALSO emit no nextSteps and have the same JSON-shape divergence (`emitJson(row)` instead of `emitJson({ ...row, nextSteps })`). Same root cause: the approve verbs landed before the universalisation pass.

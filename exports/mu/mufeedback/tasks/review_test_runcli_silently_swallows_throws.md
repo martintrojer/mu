@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by test-reviewer-1, 2026-05-08T11:25:17.417Z
+### #1 by "test-reviewer-1", 2026-05-08T11:25:17.417Z
 
 ```
 FILES: test/_runCli.ts:79-99 (try/catch swallow) ; every test file using runCli (test/hud.test.ts, test/cli-json-universal.test.ts -- not directly, test/cli-task-add-blocked-by.test.ts, test/sql-multi-statement.test.ts, test/json-output.test.ts).

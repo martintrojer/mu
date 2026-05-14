@@ -16,7 +16,7 @@ blocks: ["selfdoc_skill_cleanup"]
 
 ## Notes (1)
 
-### #1 by system, 2026-05-08T06:41:25.616Z
+### #1 by null, 2026-05-08T06:41:25.616Z
 
 ```
 SCOPE EXPANDED: this task now also covers selfdoc_json_universal (which is closed as a duplicate). Doing both as one commit since each remaining verb needs both --json plumbing AND nextSteps hints in the same handler. Splitting them would mean touching every cmd handler twice. See selfdoc_json_universal note #110 for the full --json verb audit.

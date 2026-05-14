@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (2)
 
-### #1 by π - mu, 2026-05-08T10:21:55.565Z
+### #1 by "π - mu", 2026-05-08T10:21:55.565Z
 
 ```
 SURFACED while doing roadmap-v0-2 design pass.
@@ -42,7 +42,7 @@ FIX:
 ~30 LOC; substrate is in place (the TaskExistsError / errorNextSteps pattern).
 ```
 
-### #2 by worker-mf-2, 2026-05-09T06:59:58.974Z
+### #2 by "worker-mf-2", 2026-05-09T06:59:58.974Z
 
 ```
 DONE on worker-mf-2 (commit ba70014).

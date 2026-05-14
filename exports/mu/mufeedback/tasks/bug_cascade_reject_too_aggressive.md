@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by π - mu, 2026-05-08T11:06:14.592Z
+### #1 by "π - mu", 2026-05-08T11:06:14.592Z
 
 ```
 SURFACED LIVE during roadmap-v0-2 hud cleanup.

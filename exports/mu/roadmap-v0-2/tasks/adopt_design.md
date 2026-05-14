@@ -16,7 +16,7 @@ blocks: ["adopt_impl"]
 
 ## Notes (1)
 
-### #1 by system, 2026-05-07T18:04:56.937Z
+### #1 by null, 2026-05-07T18:04:56.937Z
 
 ```
 DESIGN: mu adopt — register an orphan tmux pane as a managed agent.

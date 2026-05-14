@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (2)
 
-### #1 by system, 2026-05-08T07:26:49.411Z
+### #1 by null, 2026-05-08T07:26:49.411Z
 
 ```
 Surfaced when user asked "what if agents have the same name across workstreams?".
@@ -47,7 +47,7 @@ Implementation (~10 LOC):
   - Test: update the snapshot/assertion in test/error-nextsteps.test.ts for the new shape.
 ```
 
-### #2 by system, 2026-05-08T07:33:25.687Z
+### #2 by null, 2026-05-08T07:33:25.687Z
 
 ```
 FILES: src/agents.ts (test/error-nextsteps.test.ts unchanged — existing assertions check shape only, not text)

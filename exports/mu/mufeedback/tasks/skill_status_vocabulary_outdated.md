@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (1)
 
-### #1 by π - infer-rs, 2026-05-08T10:11:01.745Z
+### #1 by "π - infer-rs", 2026-05-08T10:11:01.745Z
 
 ```
 FILES: /Users/mtrojer/.agents/skills/mu/SKILL.md

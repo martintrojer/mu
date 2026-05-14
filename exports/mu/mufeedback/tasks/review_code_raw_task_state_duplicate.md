@@ -16,7 +16,7 @@ blocks: []
 
 ## Notes (2)
 
-### #1 by code-reviewer-1, 2026-05-08T11:29:57.699Z
+### #1 by "code-reviewer-1", 2026-05-08T11:29:57.699Z
 
 ```
 FILES:
@@ -42,7 +42,7 @@ ALTERNATIVES CONSIDERED:
 EVIDENCE: diff -q the converter functions: identical word-for-word (snake_case → camelCase, same field set). cli.ts comment at line 3320 admits the choice was deliberate but doesn't justify the converter duplication, only the query ownership.
 ```
 
-### #2 by worker-mf-1, 2026-05-09T08:23:51.256Z
+### #2 by "worker-mf-1", 2026-05-09T08:23:51.256Z
 
 ```
 DECISION: Option B (SDK helpers), per the reviewer note's recommendation. RawTaskRowForState was a *type* duplicate, not just a converter duplicate — the row shape was byte-identical to the private RawTaskRow inside src/tasks.ts. Option A (export raw row + converter) would have leaked the snake_case shape into the SDK surface; Option B keeps the raw shape private and adds two narrow named helpers that match the existing listReady/listBlocked/listGoals pattern, so callers compose with withRoiAll / formatTaskListTable / sortTasks like every other list slice.
