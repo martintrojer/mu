@@ -104,6 +104,14 @@ export {
   type OpenDbOptions,
 } from "./db.js";
 export {
+  DbExportTargetExistsError,
+  type DbExportManifest,
+  type DbExportManifestWorkstream,
+  type ExportDbOptions,
+  type ExportDbResult,
+  exportDb,
+} from "./db-sync.js";
+export {
   detectPiStatus,
   extractTail,
   type AgentStatus,

@@ -43,6 +43,7 @@ import {
   ArchiveNotFoundError,
   ArchiveSourceAmbiguousError,
 } from "../archives.js";
+import { DbExportTargetExistsError } from "../db-sync.js";
 import { type Db, SchemaTooOldError, WorkstreamNotFoundError, openDb } from "../db.js";
 import {
   ImportBucketInvalidError,
@@ -271,6 +272,7 @@ export function classifyError(err: unknown): { label: string; exitCode: number }
     err instanceof TaskIdInvalidError ||
     err instanceof ArchiveAlreadyExistsError ||
     err instanceof ArchiveSourceAmbiguousError ||
+    err instanceof DbExportTargetExistsError ||
     err instanceof ImportSourceNotInBucketError ||
     err instanceof WorkstreamAlreadyExistsError ||
     err instanceof WorkstreamExistsError

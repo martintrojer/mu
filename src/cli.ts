@@ -23,6 +23,7 @@ import { Command, InvalidArgumentError } from "commander";
 import { AgentNotInWorkstreamError, type AgentRow, getAgentByPane } from "./agents.js";
 import { wireAgentCommands, wireSelfCommands } from "./cli/agents.js";
 import { wireArchiveCommands } from "./cli/archive.js";
+import { wireDbCommands } from "./cli/db.js";
 import { wireDoctorCommand } from "./cli/doctor.js";
 import {
   NameAmbiguousError,
@@ -692,6 +693,7 @@ export function buildProgram(): Command {
   wireStateCommands(program);
   wireSqlCommand(program);
   wireSnapshotCommands(program);
+  wireDbCommands(program);
   wireDoctorCommand(program);
   applyAlphabeticalHelpSort(program);
   // audit_cli_validation_uniformity: every node in the command tree

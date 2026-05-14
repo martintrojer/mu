@@ -181,8 +181,13 @@ export function listLogs(db: Db, opts: ListLogsOptions = {}): LogRow[] {
  * by `mu log --tail` to start the cursor at "now" so the subscriber
  * only sees NEW entries unless they explicitly pass `--since 0`.
  */
-export function latestSeq(db: Db): number {
-  const row = db.prepare("SELECT MAX(seq) AS s FROM agent_logs").get() as { s: number | null };
+export function latestSeq(db: Db, workstreamId?: number): number {
+  const row =
+    workstreamId === undefined
+      ? (db.prepare("SELECT MAX(seq) AS s FROM agent_logs").get() as { s: number | null })
+      : (db
+          .prepare("SELECT MAX(seq) AS s FROM agent_logs WHERE workstream_id = ?")
+          .get(workstreamId) as { s: number | null });
   return row.s ?? 0;
 }
 
