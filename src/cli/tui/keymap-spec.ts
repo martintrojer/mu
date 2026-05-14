@@ -59,14 +59,19 @@ const POPUP_LIST_HINTS: readonly StatusHintEntry[] = [
   hint("Esc", "back", ["Esc"]),
 ];
 
-// `t tuicr` is intentionally NOT here. It is a per-drill verb that
-// only fires in git-show drills (Commits popup + Workspaces popup
-// commits drill). Each consumer inserts "· t tuicr" into its drill's
-// `hint` prop — which TitledBox renders inset into the bottom border
-// next to the per-drill yank string. Putting it in the GLOBAL
-// status-bar drill cluster would advertise it in every drill
-// (TaskDetailDrill notes, agent scrollback, etc) where pressing `t`
-// does nothing.
+// `t tuicr` and `l lazygit` are intentionally NOT in the global
+// drill / list status-bar clusters below. Both are per-popup verbs
+// scoped to specific surfaces:
+//   - `t tuicr` fires only in git-show drills (Commits popup +
+//     Workspaces popup commits drill).
+//   - `l lazygit` fires only in the Commits popup list mode
+//     (lazygit operates on a cwd, not a single revision, so the
+//     natural surface is the list-level repo browse, not a drill).
+// Each consumer inserts the per-popup hint into its `hint` prop
+// — which TitledBox renders inset into the bottom border. Putting
+// either in a global cluster would advertise it everywhere it does
+// nothing (TaskDetailDrill notes, agent scrollback, every other
+// popup, etc).
 const POPUP_DRILL_HINTS: readonly StatusHintEntry[] = [
   label("drill", "magenta"),
   hint("j/k", "scroll", ["j", "k"]),
@@ -156,6 +161,9 @@ export const HELP_PANES: readonly HelpPaneSpec[] = [
       row("/", "filter/search rows", ["/"]),
       row("Enter", "drill into focused row", ["Enter"]),
       row("y", "yank action for focused row", ["y"]),
+      row("l", "launch lazygit in the project root (Commits popup only; user-driven TUI escape)", [
+        "l",
+      ]),
       row("Shift 0-9", "switch numbered popup", ["Shift 0-9"]),
       row("Esc/q", "back to dashboard", ["Esc", "q"]),
       row("?", "toggle this overlay", ["?"]),

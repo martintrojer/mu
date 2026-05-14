@@ -13,6 +13,7 @@ import type { WorkstreamSnapshot } from "../../../state.js";
 import { type CommitSummary, type VcsBackendName, detectBackend } from "../../../vcs.js";
 import { type ColumnSpec, contentWidthFromCols, layoutColumns, renderRow } from "../columns.js";
 import { type PopupAction, type PopupActionEnvelope, dispatchPopupKeyFromInk } from "../keys.js";
+import { runLazygitInteractive } from "../lazygit.js";
 import { ListRow } from "../list-row.js";
 import { PopupShell } from "../popup-shell.js";
 import { runTuicrInteractive } from "../tuicr.js";
@@ -167,6 +168,13 @@ export function CommitsPopup({
         void yank(showCommandForBackend(backendName, c.sha));
         return;
       }
+      case "verb":
+        if (action.key === "l") {
+          const r = runLazygitInteractive({ cwd: projectRoot });
+          if (!r.ok) onFooter?.(r.error ?? "lazygit failed", false, "error");
+          else onFooter?.("lazygit", true, "info");
+        }
+        return;
     }
   };
 
@@ -227,7 +235,7 @@ export function CommitsPopup({
   return (
     <PopupShell
       title={`Commits · ${formatBackend(backendName)} (${safeCursor + 1}/${commits.length})`}
-      hint="y yanks VCS show command"
+      hint="y yanks VCS show command · l lazygit"
     >
       <Box flexDirection="column" flexGrow={1}>
         {visible.map((c, i) => {
