@@ -3,12 +3,12 @@
   "manifest_version": 2,
   "bucketLabel": "mu",
   "bucketCreatedAt": "2026-05-10T07:39:54.416Z",
-  "bucketLastUpdatedAt": "2026-05-14T07:19:10.884Z",
-  "muVersion": "0.4.0",
+  "bucketLastUpdatedAt": "2026-05-14T11:16:22.785Z",
+  "muVersion": "0.4.1",
   "sources": {
     "mufeedback": {
       "addedAt": "2026-05-10T07:39:54.416Z",
-      "lastReExportedAt": "2026-05-14T07:19:10.884Z",
+      "lastReExportedAt": "2026-05-14T11:16:22.785Z",
       "eventsSeqAtExport": 1644,
       "tasks": [
         {
@@ -1065,7 +1065,7 @@
     },
     "roadmap-v0-2": {
       "addedAt": "2026-05-10T07:39:54.416Z",
-      "lastReExportedAt": "2026-05-14T07:19:10.884Z",
+      "lastReExportedAt": "2026-05-14T11:16:22.785Z",
       "eventsSeqAtExport": 1645,
       "tasks": [
         {
@@ -1522,7 +1522,7 @@
     },
     "mufeedback-v03": {
       "addedAt": "2026-05-10T14:06:43.666Z",
-      "lastReExportedAt": "2026-05-14T07:19:10.884Z",
+      "lastReExportedAt": "2026-05-14T11:16:22.785Z",
       "eventsSeqAtExport": 2211,
       "tasks": [
         {
@@ -2189,7 +2189,7 @@
     },
     "roadmap-v0-3": {
       "addedAt": "2026-05-10T14:06:43.666Z",
-      "lastReExportedAt": "2026-05-14T07:19:10.884Z",
+      "lastReExportedAt": "2026-05-14T11:16:22.785Z",
       "eventsSeqAtExport": 1762,
       "tasks": [
         {
@@ -2256,7 +2256,7 @@
     },
     "tui": {
       "addedAt": "2026-05-14T07:19:10.884Z",
-      "lastReExportedAt": "2026-05-14T07:19:10.884Z",
+      "lastReExportedAt": "2026-05-14T11:16:22.785Z",
       "eventsSeqAtExport": 3517,
       "tasks": [
         {
@@ -2573,7 +2573,7 @@
     },
     "tui-impl": {
       "addedAt": "2026-05-14T07:19:10.884Z",
-      "lastReExportedAt": "2026-05-14T07:19:10.884Z",
+      "lastReExportedAt": "2026-05-14T11:16:22.785Z",
       "eventsSeqAtExport": 6799,
       "tasks": [
         {
@@ -5125,6 +5125,213 @@
           "effortDays": 0.1,
           "path": "tui-impl/tasks/tui_impl_complete.md",
           "sha256": "397c9ec69132fa26b29251af93817afe3c297409d9caeef7404a3914c965eefc"
+        }
+      ]
+    },
+    "multimachine": {
+      "addedAt": "2026-05-14T11:16:22.785Z",
+      "lastReExportedAt": "2026-05-14T11:16:22.785Z",
+      "eventsSeqAtExport": 7290,
+      "tasks": [
+        {
+          "id": "archive_cleanup",
+          "name": "archive_cleanup",
+          "title": "Archive verb cleanup: help-text audit + round-trip test conversion (archive add → archive restore)",
+          "status": "CLOSED",
+          "impact": 50,
+          "effortDays": 0.25,
+          "path": "multimachine/tasks/archive_cleanup.md",
+          "sha256": "7b4f20c943e85aaae05e966cd72ebdd85a986309b72417dd09bd3c5c25936dd0"
+        },
+        {
+          "id": "archive_restore",
+          "name": "archive_restore",
+          "title": "mu archive restore <label> --as <new-ws>: lossless un-archive (no bucket round-trip)",
+          "status": "CLOSED",
+          "impact": 65,
+          "effortDays": 0.75,
+          "path": "multimachine/tasks/archive_restore.md",
+          "sha256": "223b70615154173ce568cd60361cb82dae8aba7a4e09c1cfe43af1e7862835a9"
+        },
+        {
+          "id": "code_review",
+          "name": "code_review",
+          "title": "Code review: db-sync + archive-restore (file findings as new blockers of umbrella)",
+          "status": "CLOSED",
+          "impact": 70,
+          "effortDays": 0.5,
+          "path": "multimachine/tasks/code_review.md",
+          "sha256": "a90de74c9b813ecc72123f72693b66e5519c33eae19e06f57750e2f3c0900a81"
+        },
+        {
+          "id": "cr_db_import_nextstep_invalid",
+          "name": "cr_db_import_nextstep_invalid",
+          "title": "Code review: db export next step points to unsupported --dry-run flag",
+          "status": "CLOSED",
+          "impact": 50,
+          "effortDays": 0.1,
+          "path": "multimachine/tasks/cr_db_import_nextstep_invalid.md",
+          "sha256": "4b4da552fff9a525bafdf11191f2aeccbc4b6f8d03b35de9e778f6420d44b2b9"
+        },
+        {
+          "id": "cr_docs_stale_sync_surface",
+          "name": "cr_docs_stale_sync_surface",
+          "title": "Code review: docs still advertise removed workstream import and omit new sync verbs",
+          "status": "REJECTED",
+          "impact": 60,
+          "effortDays": 0.4,
+          "path": "multimachine/tasks/cr_docs_stale_sync_surface.md",
+          "sha256": "e55a1fa9fde07ef2185af54e319a08894a9a315a1b8fcdbe67d5d00b0eef267e"
+        },
+        {
+          "id": "cr_import_owners_dropped",
+          "name": "cr_import_owners_dropped",
+          "title": "Code review: db import drops task owners despite lossless handoff goal",
+          "status": "REJECTED",
+          "impact": 70,
+          "effortDays": 0.3,
+          "path": "multimachine/tasks/cr_import_owners_dropped.md",
+          "sha256": "ca70b8ff5838b305fa46f6a7d74cf5b225d25f67be51e6b06c66b5ae09cd5527"
+        },
+        {
+          "id": "db_export",
+          "name": "db_export",
+          "title": "mu db export <file>: whole-DB copy + manifest",
+          "status": "CLOSED",
+          "impact": 70,
+          "effortDays": 0.5,
+          "path": "multimachine/tasks/db_export.md",
+          "sha256": "1c324dbce14bb7bd9f55b879f858139a0a7d6800b3bf6a59c450368c04c5f7c6"
+        },
+        {
+          "id": "db_import",
+          "name": "db_import",
+          "title": "mu db import <file>: drift detection, sharp --force-source, sidecar park",
+          "status": "CLOSED",
+          "impact": 80,
+          "effortDays": 1.5,
+          "path": "multimachine/tasks/db_import.md",
+          "sha256": "cdc30cb4d6e4f603843a32312e37a0596bf8fda55ae0ac4dc9dedf93e4ce9b55"
+        },
+        {
+          "id": "db_replay",
+          "name": "db_replay",
+          "title": "mu db replay <sidecar>: manual cherry-pick of parked divergent state",
+          "status": "CLOSED",
+          "impact": 50,
+          "effortDays": 0.75,
+          "path": "multimachine/tasks/db_replay.md",
+          "sha256": "319eda11a9c3a08759f5cc83a4a34714c6dd48075d88683055e790b930f3db45"
+        },
+        {
+          "id": "docs_pass",
+          "name": "docs_pass",
+          "title": "Docs: USAGE_GUIDE + VOCABULARY + ARCHITECTURE + SKILL.md + CHANGELOG",
+          "status": "CLOSED",
+          "impact": 60,
+          "effortDays": 0.5,
+          "path": "multimachine/tasks/docs_pass.md",
+          "sha256": "9114382fae1ffbaaf2041303cca27f9d7583c93381844a4e33019ef0502b5593"
+        },
+        {
+          "id": "remove_ws_import",
+          "name": "remove_ws_import",
+          "title": "Remove mu workstream import (replaced by mu db import + mu archive restore)",
+          "status": "CLOSED",
+          "impact": 50,
+          "effortDays": 0.25,
+          "path": "multimachine/tasks/remove_ws_import.md",
+          "sha256": "cabfa37166513053ded143d18ff572bf70936149bd9d3f2796e3ea081caea919"
+        },
+        {
+          "id": "roadmap_entry",
+          "name": "roadmap_entry",
+          "title": "ROADMAP entry: multi-machine sync (db export/import + archive restore + workstream import removal)",
+          "status": "CLOSED",
+          "impact": 70,
+          "effortDays": 0.25,
+          "path": "multimachine/tasks/roadmap_entry.md",
+          "sha256": "e1bc2c7531e73b1ba01d1fcf7e75adfb2acf3e1629727ccc7db041bcaf0e3849"
+        },
+        {
+          "id": "schema_v8",
+          "name": "schema_v8",
+          "title": "Schema v8: machine_identity + workstream_sync tables",
+          "status": "CLOSED",
+          "impact": 60,
+          "effortDays": 0.5,
+          "path": "multimachine/tasks/schema_v8.md",
+          "sha256": "43c1696e3e3af8498e3fe69f11175faabf8927f482eb170073ae309f5ad808c4"
+        },
+        {
+          "id": "test_review",
+          "name": "test_review",
+          "title": "Test review: db-sync + archive-restore (file findings as new blockers of umbrella)",
+          "status": "CLOSED",
+          "impact": 70,
+          "effortDays": 0.5,
+          "path": "multimachine/tasks/test_review.md",
+          "sha256": "55d78aa53700304ef38378b49ec82d72d89ae22f9b5ab05d00bd4b363f14b549"
+        },
+        {
+          "id": "tr_db_import_lossless_rows",
+          "name": "tr_db_import_lossless_rows",
+          "title": "Test review: db import lacks lossless row-property assertions",
+          "status": "CLOSED",
+          "impact": 75,
+          "effortDays": 0.4,
+          "path": "multimachine/tasks/tr_db_import_lossless_rows.md",
+          "sha256": "6beabc3649977b472f5d7402c4258a52b87fb2ca98649fbe751fbda0324c3d79"
+        },
+        {
+          "id": "tr_db_sync_error_inventory",
+          "name": "tr_db_sync_error_inventory",
+          "title": "Test review: new db sync errors are missing from error coverage inventory",
+          "status": "CLOSED",
+          "impact": 60,
+          "effortDays": 0.2,
+          "path": "multimachine/tasks/tr_db_sync_error_inventory.md",
+          "sha256": "d6bc218857a942e3ce1245fe36186e610b99577cc9c501316c40b2e0352460c1"
+        },
+        {
+          "id": "tr_fast_tier_heavy_fs",
+          "name": "tr_fast_tier_heavy_fs",
+          "title": "Test review: filesystem-heavy sync tests are in fast tier",
+          "status": "CLOSED",
+          "impact": 70,
+          "effortDays": 0.3,
+          "path": "multimachine/tasks/tr_fast_tier_heavy_fs.md",
+          "sha256": "a8fb53cc10df5b3df294e133e3aa4859da3386ccb5288b8357835e96cbe42b25"
+        },
+        {
+          "id": "tr_import_replaces_local_agents",
+          "name": "tr_import_replaces_local_agents",
+          "title": "Test review: import does not test dropping destination machine-local rows",
+          "status": "CLOSED",
+          "impact": 65,
+          "effortDays": 0.25,
+          "path": "multimachine/tasks/tr_import_replaces_local_agents.md",
+          "sha256": "e096a079c567f314fd9d1c8762d2c49dd33ed390ee1626b315ee01a299262972"
+        },
+        {
+          "id": "tr_sidecar_lossless_coverage",
+          "name": "tr_sidecar_lossless_coverage",
+          "title": "Test review: conflict sidecar test only checks task titles",
+          "status": "CLOSED",
+          "impact": 70,
+          "effortDays": 0.3,
+          "path": "multimachine/tasks/tr_sidecar_lossless_coverage.md",
+          "sha256": "9ec1801bcbba7efdd5ed573bffe88d27403a306f761551f6e60ecacb68b41bae"
+        },
+        {
+          "id": "umbrella",
+          "name": "umbrella",
+          "title": "Multi-machine sync: db export/import + archive restore (umbrella)",
+          "status": "CLOSED",
+          "impact": 80,
+          "effortDays": 0.1,
+          "path": "multimachine/tasks/umbrella.md",
+          "sha256": "7d0eebe8ae49802f137eebd83e148b76a15786db3a610a06b44c84e40ba91fe0"
         }
       ]
     }
