@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   type CardId,
   allocateRowBudgets,
+  balanceColumns,
   columnWidths,
   cullCardsForRows,
   dashboardColumnCount,
@@ -95,6 +96,73 @@ describe("dashboard responsive layout", () => {
       [1, 2, 5],
       [3, 7],
     ]);
+  });
+
+  it("balanceColumns: stable when all 10 cards are visible", () => {
+    // Default 4-col layout. Touching this shape with all cards visible
+    // would change the dashboard's baseline glanceability for every
+    // user; the balancer must be a no-op when nothing has been
+    // toggled off.
+    const packed = layoutColumns(260, ALL);
+    const balanced = balanceColumns(packed, () => 5);
+    expect(balanced.map((c) => c.cards)).toEqual(packed.map((c) => c.cards));
+  });
+
+  it("balanceColumns: redistributes a card from the tall column to the short column post-toggle", () => {
+    // 3-col layout with the small-pair column reduced to one card
+    // (slot 1). Ready (slot 3) anchors the middle column with a tall
+    // task list (high dataCount). The balancer must move at least one
+    // task-list card to the short column or to the stream column.
+    const visible: CardId[] = [1, 3, 6, 7, 4];
+    const packed = layoutColumns(200, visible);
+    expect(packed.map((c) => c.cards)).toEqual([[1], [3, 6, 7], [4]]);
+    const balanced = balanceColumns(packed, (id) => (id === 3 || id === 6 || id === 7 ? 12 : 1));
+    const heights = balanced.map((col) => col.cards.length);
+    const spread = Math.max(...heights) - Math.min(...heights);
+    expect(spread).toBeLessThan(2);
+    // Slot 3 (Ready) is anchored — must stay where layoutColumns put it.
+    const readyColumn = balanced.findIndex((col) => col.cards.includes(3));
+    expect(readyColumn).toBe(1);
+  });
+
+  it("balanceColumns: anchored cards (slot 0 Commits, slot 3 Ready) never move", () => {
+    // Wide-spread setup: tall left column has both anchors; short
+    // right column has nothing. Balancer should still leave both
+    // anchors in the left column even though moving them would
+    // perfectly balance heights.
+    const assignments = [{ cards: [3, 0, 7] as CardId[] }, { cards: [1] as CardId[] }];
+    const balanced = balanceColumns(assignments, () => 5);
+    expect(balanced[0]?.cards).toContain(0);
+    expect(balanced[0]?.cards).toContain(3);
+  });
+
+  it("balanceColumns: never strips a column to empty", () => {
+    // Both columns have one card; the taller would be the natural
+    // donor, but doing so would leave it empty. The balancer must
+    // refuse — empty-column filtering belongs upstream in
+    // layoutColumns, not here.
+    const assignments = [{ cards: [1] as CardId[] }, { cards: [7] as CardId[] }];
+    const balanced = balanceColumns(assignments, (id) => (id === 7 ? 30 : 1));
+    expect(balanced[0]?.cards).toEqual([1]);
+    expect(balanced[1]?.cards).toEqual([7]);
+  });
+
+  it("balanceColumns: no-op on a single column", () => {
+    const assignments = [{ cards: [1, 3, 6] as CardId[] }];
+    const balanced = balanceColumns(assignments, () => 5);
+    expect(balanced.map((c) => c.cards)).toEqual([[1, 3, 6]]);
+  });
+
+  it("balanceColumns: preserves slot ordering on the receiver column", () => {
+    // After moving slot 2 from donor to receiver, receiver's cards
+    // must be sorted by compareSlot (slot 0 trailing).
+    const assignments = [{ cards: [1, 2, 7] as CardId[] }, { cards: [4, 0] as CardId[] }];
+    const balanced = balanceColumns(assignments, () => 5);
+    // Slot 0 trails in the receiver column wherever 2 lands.
+    const receiver = balanced[1]?.cards ?? [];
+    if (receiver.includes(0)) {
+      expect(receiver[receiver.length - 1]).toBe(0);
+    }
   });
 
   it("computes gap-aware integer column widths", () => {

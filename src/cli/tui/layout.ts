@@ -325,6 +325,101 @@ export function cullCardsForRows(
 }
 
 /**
+ * Post-pack column rebalancer. Pure.
+ *
+ * `layoutColumns` packs cards by static group (small-pair / task-list
+ * / stream). When the user toggles cards off, that grouping can leave
+ * one column tall and another short — the spatial intuition is
+ * preserved, but the screen feels half-empty.
+ *
+ * `balanceColumns` is a single greedy pass that moves the most-
+ * spread-reducing card from the tallest column to the shortest, until
+ * no further move strictly reduces (maxHeight − minHeight). The pass
+ * runs after `layoutColumns` and before `allocateRowBudgets`, so the
+ * downstream pipeline sees a balanced assignment.
+ *
+ * Invariants:
+ *   - Stable-when-all-visible: the default 10-card layout is never
+ *     touched. Balance only fires when at least one card has been
+ *     toggled off (totalCards < TOTAL_CARD_COUNT). User-driven
+ *     toggling is what triggers the reflow.
+ *   - Anchored cards never move: slot 0 (Commits, conventionally
+ *     last) and slot 3 (Ready, the task-list anchor that motivates
+ *     the dashboard's primary column).
+ *   - Slot ordering within each receiver column is preserved via
+ *     `compareSlot` (slot 0 trailing).
+ *   - Column count is preserved: the balancer never strips a donor
+ *     column to empty (the empty-column filter is upstream in
+ *     `layoutColumns`; the balancer respects whatever it produced).
+ */
+const TOTAL_CARD_COUNT = 10;
+
+export function balanceColumns(
+  assignments: ReadonlyArray<ColumnAssignment>,
+  dataCountFn: (id: CardId) => number,
+): ColumnAssignment[] {
+  if (assignments.length < 2) return assignments.map((a) => ({ cards: [...a.cards] }));
+  const totalCards = assignments.reduce((sum, a) => sum + a.cards.length, 0);
+  if (totalCards >= TOTAL_CARD_COUNT) return assignments.map((a) => ({ cards: [...a.cards] }));
+
+  const cols = assignments.map((a) => [...a.cards]);
+  const heightOf = (id: CardId): number => {
+    const config = CARD_CONFIGS[id];
+    const data = Math.max(0, Math.floor(dataCountFn(id)));
+    return config.chrome + clamp(data, config.minRows, config.maxRows);
+  };
+  const isAnchored = (id: CardId): boolean => id === 0 || id === 3;
+  const heightsOf = (lanes: ReadonlyArray<ReadonlyArray<CardId>>): number[] =>
+    lanes.map((lane) => lane.reduce<number>((sum, id) => sum + heightOf(id), 0));
+
+  // Greedy outer loop. Each iteration takes one strictly-improving
+  // move; bounded by columnCount * cardCount as a hard safety net
+  // since each move shrinks the spread (no cycles possible).
+  const safetyMax = cols.length * TOTAL_CARD_COUNT;
+  for (let iter = 0; iter < safetyMax; iter++) {
+    const heights = heightsOf(cols);
+    const startSpread = Math.max(...heights) - Math.min(...heights);
+    if (startSpread <= 0) break;
+
+    let best: { donor: number; receiver: number; cardIndex: number; spread: number } | null = null;
+    for (let donor = 0; donor < cols.length; donor++) {
+      const donorCards = cols[donor];
+      const donorH = heights[donor];
+      if (donorCards === undefined || donorH === undefined) continue;
+      if (donorCards.length <= 1) continue; // never strip a column to empty
+      for (let cardIndex = 0; cardIndex < donorCards.length; cardIndex++) {
+        const card = donorCards[cardIndex];
+        if (card === undefined || isAnchored(card)) continue;
+        const cardH = heightOf(card);
+        for (let receiver = 0; receiver < cols.length; receiver++) {
+          if (receiver === donor) continue;
+          const receiverH = heights[receiver];
+          if (receiverH === undefined) continue;
+          const newHeights = heights.slice();
+          newHeights[donor] = donorH - cardH;
+          newHeights[receiver] = receiverH + cardH;
+          const newSpread = Math.max(...newHeights) - Math.min(...newHeights);
+          if (newSpread < startSpread && (best === null || newSpread < best.spread)) {
+            best = { donor, receiver, cardIndex, spread: newSpread };
+          }
+        }
+      }
+    }
+    if (best === null) break;
+
+    const donorCards = cols[best.donor];
+    const receiverCards = cols[best.receiver];
+    if (donorCards === undefined || receiverCards === undefined) break;
+    const moved = donorCards.splice(best.cardIndex, 1)[0];
+    if (moved === undefined) break;
+    receiverCards.push(moved);
+    receiverCards.sort(compareSlot);
+  }
+
+  return cols.map((cards) => ({ cards }));
+}
+
+/**
  * Allocate BODY rows among the cards in one dashboard column.
  *
  * `availableRows` is the total vertical budget for the column,

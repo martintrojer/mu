@@ -45,6 +45,7 @@ import {
   type ColumnWidth,
   type RowBudgetMap,
   allocateRowBudgets,
+  balanceColumns,
   columnWidths,
   cullCardsForRows,
   dashboardCardHitRegions,
@@ -619,7 +620,8 @@ function buildDashboardLayoutModel(
   const cullBudget = firstCull.hidden.length > 0 ? Math.max(1, rows - 1) : rows;
   const culled = cullBudget === rows ? firstCull : cullCardsForRows(visible, cullBudget);
   const cardsRows = culled.hidden.length > 0 ? Math.max(1, rows - 1) : rows;
-  const assignments = layoutDashboardColumns(cols, culled.cards);
+  const packed = layoutDashboardColumns(cols, culled.cards);
+  const assignments = balanceColumns(packed, (id) => dataCountForCard(id, snapshot));
   const widths = columnWidths(cols, assignments.length);
   const budgetsByColumn = assignments.map((assignment) =>
     capRowBudgetsForColumn(
