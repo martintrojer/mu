@@ -572,7 +572,7 @@ export async function cmdArchiveExport(
   );
   console.log(
     pc.dim(
-      "This bucket is a read-only artifact for humans/git/docs; use `mu archive restore`, not `mu workstream import`, for lossless un-archive.",
+      "This bucket is a read-only artifact for humans/git/docs; use `mu archive restore` for lossless un-archive.",
     ),
   );
   printNextSteps(nextSteps);
@@ -716,7 +716,7 @@ export function wireArchiveCommands(program: Command): void {
   archive
     .command("export <label>")
     .description(
-      "Render every source workstream in an archive to a READ-ONLY bucket directory of markdown for humans/git/docs. Idempotent + additive: re-running refreshes only changed task files. For lossless un-archive, use `mu archive restore`, not `mu workstream import` on this bucket.",
+      "Render every source workstream in an archive to a READ-ONLY bucket directory of markdown for humans/git/docs. Idempotent + additive: re-running refreshes only changed task files. For lossless un-archive, use `mu archive restore`.",
     )
     .option("--out <dir>", "output directory (the bucket); required")
     .option(...JSON_OPT)

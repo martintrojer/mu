@@ -37,13 +37,6 @@ import {
 } from "../src/db-sync.js";
 import { SchemaTooOldError, WorkstreamNotFoundError } from "../src/db.js";
 import {
-  ImportBucketInvalidError,
-  ImportEdgeRefMissingError,
-  ImportFrontmatterParseError,
-  ImportSourceNotInBucketError,
-  WorkstreamAlreadyExistsError,
-} from "../src/importing.js";
-import {
   PruneOptionsInvalidError,
   SnapshotFileMissingError,
   SnapshotNotFoundError,
@@ -84,9 +77,6 @@ describe("classifyError exit-code map", () => {
     [new UsageError("bad flag"), 2, "error"],
     [new WorkstreamNameInvalidError("Bad-Name"), 2, "error"],
     [new ArchiveLabelInvalidError("Bad Label!"), 2, "error"],
-    [new ImportBucketInvalidError("/tmp/bucket", "manifest.json missing"), 2, "error"],
-    [new ImportFrontmatterParseError("/tmp/bucket/ws/tasks/foo.md", 3, "bad"), 2, "error"],
-    [new ImportEdgeRefMissingError("from", "missing", "blocked_by"), 2, "error"],
     [new PruneOptionsInvalidError("--keep-last requires a number"), 2, "error"],
 
     // switch branch 2: resolve-time misses
@@ -131,8 +121,6 @@ describe("classifyError exit-code map", () => {
     [new TaskIdInvalidError("Bad ID"), 4, "conflict"],
     [new ArchiveAlreadyExistsError("release-v1"), 4, "conflict"],
     [new ArchiveSourceAmbiguousError("wave", ["alpha", "beta"]), 4, "conflict"],
-    [new ImportSourceNotInBucketError("/tmp/bucket", "ghost", ["alpha"]), 4, "conflict"],
-    [new WorkstreamAlreadyExistsError("existing-ws"), 4, "conflict"],
     [new WorkstreamExistsError("existing-ws"), 4, "conflict"],
 
     // switch branches 4-8: db import typed failures

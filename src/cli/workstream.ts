@@ -1,10 +1,11 @@
-// mu — `mu workstream` verbs (init / list / destroy).
+// mu — `mu workstream` verbs (init / list / destroy / export).
 //
 // A workstream = one tmux session (`mu-<name>`) + every DB row tagged
 // with that name (agents / tasks / edges / notes / workspaces / logs).
 // `init` creates the session + DB row pair; `list` shows
 // every workstream on the machine; `destroy` is the symmetric inverse,
-// two-phase by default (dry-run; `--yes` commits).
+// two-phase by default (dry-run; `--yes` commits); `export` renders a
+// read-only markdown bucket.
 //
 // Extracted from src/cli.ts as part of refactor_split_large_src_files.
 
@@ -15,11 +16,9 @@ import {
   emitJson,
   emitJsonCollection,
   formatWorkstreamsTable,
-  parseCsvFlag,
   resolveWorkstream,
 } from "../cli.js";
 import { type Db, defaultStateDir } from "../db.js";
-import { type ImportBucketResult, importBucket } from "../importing.js";
 import { type NextStep, muTable, pc, printNextSteps } from "../output.js";
 import { captureSnapshot } from "../snapshots.js";
 import {
@@ -158,91 +157,6 @@ export async function cmdWorkstreamExport(
       `(written=${result.written}, unchanged=${result.unchanged}, preserved=${result.preserved}; bucket sources=${Object.keys(result.manifest.sources).length})`,
     )}`,
   );
-  printNextSteps(nextSteps);
-}
-
-export async function cmdWorkstreamImport(
-  db: Db,
-  bucketDir: string,
-  opts: {
-    workstream?: string;
-    dryRun?: boolean;
-    json?: boolean;
-    sourceWs?: string[];
-  },
-): Promise<void> {
-  // Canonicalise --source-ws via parseCsvFlag (repeat OR comma-separate
-  // OR both, per cli_audit_plurality_uniformity). Distinguish "flag
-  // not passed" (undefined) from "passed but every entry is empty"
-  // (e.g. --source-ws ',,'): the latter is a UsageError so a typo
-  // doesn't silently fall back to importing the entire bucket.
-  let sourceWs: string[] | undefined;
-  if (opts.sourceWs !== undefined) {
-    const canonical = parseCsvFlag(opts.sourceWs);
-    if (canonical.length === 0) {
-      throw new UsageError(
-        "--source-ws was passed but resolved to zero names (empty strings / commas only); pass at least one source-ws name or drop the flag",
-      );
-    }
-    sourceWs = canonical;
-  }
-  const result: ImportBucketResult = importBucket(db, {
-    bucketDir,
-    workstreamOverride: opts.workstream,
-    sourceWs,
-    dryRun: opts.dryRun,
-  });
-  const totalTasks = result.sources.reduce((acc, s) => acc + s.tasksImported, 0);
-  const totalEdges = result.sources.reduce((acc, s) => acc + s.edgesImported, 0);
-  const totalNotes = result.sources.reduce((acc, s) => acc + s.notesImported, 0);
-  const totalTombstones = result.sources.reduce((acc, s) => acc + s.tombstonesSkipped, 0);
-  const importedNames = result.sources.map((s) => s.workstreamName);
-  const nextSteps: NextStep[] = [];
-  if (!opts.dryRun) {
-    for (const name of importedNames) {
-      nextSteps.push({
-        intent: `Inspect ${name}`,
-        command: `mu task tree -w ${name}`,
-      });
-    }
-    nextSteps.push({
-      intent: "Re-export to verify the round trip is byte-stable",
-      command: `mu workstream export -w ${importedNames[0] ?? "<ws>"} --out <new-dir>`,
-    });
-  } else {
-    const sourceWsFlag =
-      sourceWs !== undefined && sourceWs.length > 0 ? ` --source-ws ${sourceWs.join(",")}` : "";
-    nextSteps.push({
-      intent: "Run the import for real",
-      command: `mu workstream import ${bucketDir}${opts.workstream ? ` --workstream ${opts.workstream}` : ""}${sourceWsFlag}`,
-    });
-  }
-  if (opts.json) {
-    emitJson({
-      ...result,
-      bucketDir,
-      dryRun: opts.dryRun === true,
-      totals: {
-        tasks: totalTasks,
-        edges: totalEdges,
-        notes: totalNotes,
-        tombstones: totalTombstones,
-      },
-      nextSteps,
-    });
-    return;
-  }
-  const verb = opts.dryRun ? "Would import" : "Imported";
-  console.log(
-    `${verb} ${pc.bold(String(result.sources.length))} source-ws from ${pc.bold(bucketDir)} ${pc.dim(
-      `(bucketVersion=${result.bucketVersion}${result.bucketLabel ? `, label=${result.bucketLabel}` : ""}; tasks=${totalTasks}, edges=${totalEdges}, notes=${totalNotes}, tombstones_skipped=${totalTombstones})`,
-    )}`,
-  );
-  for (const s of result.sources) {
-    console.log(
-      `  ${pc.bold(s.workstreamName)}: tasks=${s.tasksImported}, edges=${s.edgesImported}, notes=${s.notesImported}, tombstones=${s.tombstonesSkipped}`,
-    );
-  }
   printNextSteps(nextSteps);
 }
 
@@ -731,31 +645,6 @@ export function wireWorkstreamCommands(program: Command): void {
         empty?: boolean;
       };
       return handle((db) => cmdDestroy(db, opts), this as Command)();
-    });
-
-  workstream
-    .command("import <bucket-dir>")
-    .description(
-      "Rebuild a workstream (or a multi-source bucket of workstreams) from a v0.3 markdown export. Accepts EITHER a bucket directory (top-level manifest.json + per-source-ws subdirs) OR a single per-source-ws subdir (auto-detected via README.md + INDEX.md + tasks/, validated against the parent bucket's manifest). Per source-ws transactional: each source-ws is imported in its own SQLite transaction; siblings are unaffected by a sibling's failure. Refuses to merge silently into an existing workstream — pass --workstream <name> (single-source after any --source-ws filter only) or destroy the existing one first.",
-    )
-    .option(
-      "--workstream <name>",
-      "override the imported workstream's name (single-source after any --source-ws filter only)",
-    )
-    .option(
-      "--source-ws <names...>",
-      "restrict the import to a subset of source-ws subdirs (repeat or comma-separate; or both)",
-    )
-    .option("--dry-run", "walk + parse + validate; report what WOULD be created; no DB writes")
-    .option(...JSON_OPT)
-    .action(function (bucketDir: string) {
-      const opts = (this as Command).opts() as {
-        workstream?: string;
-        dryRun?: boolean;
-        json?: boolean;
-        sourceWs?: string[];
-      };
-      return handle((db) => cmdWorkstreamImport(db, bucketDir, opts), this as Command)();
     });
 
   workstream

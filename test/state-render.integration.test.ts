@@ -250,7 +250,6 @@ describe("classifyEventVerb", () => {
     );
     const { openDb } = await import("../src/db.js");
     const { exportArchive } = await import("../src/exporting.js");
-    const { importBucket } = await import("../src/importing.js");
     const { classifyEventVerb, displayEventPayload, listLogs } = await import("../src/logs.js");
     const {
       addBlockEdge,
@@ -475,17 +474,13 @@ describe("classifyEventVerb", () => {
       await captureNewEvents(() => removeFromArchive(db, "arc", "events"));
       await captureNewEvents(() => deleteArchive(db, "arc"));
 
-      const bucketRoot = join(tempDir, "bucket");
-      await captureNewEvents(() =>
-        importBucket(db, { bucketDir: bucketRoot, workstreamOverride: "imported" }),
-      );
-
+      ensureWorkstream(db, "doomed");
       await captureNewEvents(async () => {
         setTmuxExecutor(async (args) => {
           if (args[0] === "has-session") return { stdout: "", stderr: "missing", exitCode: 1 };
           return { stdout: "", stderr: "unexpected tmux call", exitCode: 1 };
         });
-        await destroyWorkstream(db, { workstream: "imported" });
+        await destroyWorkstream(db, { workstream: "doomed" });
       });
       resetTmuxExecutor();
 
@@ -512,7 +507,6 @@ describe("classifyEventVerb", () => {
         "task unblock",
         "workstream destroy",
         "workstream export",
-        "workstream import",
         "workstream init",
         "workspace create",
         "workspace free",

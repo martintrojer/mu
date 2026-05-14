@@ -29,13 +29,6 @@ import {
 } from "../src/archives.js";
 import { NameAmbiguousError } from "../src/cli.js";
 import { SchemaTooOldError, WorkstreamNotFoundError, openDb } from "../src/db.js";
-import {
-  ImportBucketInvalidError,
-  ImportEdgeRefMissingError,
-  ImportFrontmatterParseError,
-  ImportSourceNotInBucketError,
-  WorkstreamAlreadyExistsError,
-} from "../src/importing.js";
 import { hasNextSteps } from "../src/output.js";
 import {
   PruneOptionsInvalidError,
@@ -311,33 +304,6 @@ const cases: NextStepsCase[] = [
     expectedTokens: ["--source alpha", "--source beta"],
   },
 
-  // src/importing.ts
-  {
-    error: new ImportBucketInvalidError("/tmp/mu-bucket", "manifest.json missing"),
-    label: "ImportBucketInvalidError",
-    expectedTokens: ["/tmp/mu-bucket", "manifest.json"],
-  },
-  {
-    error: new ImportSourceNotInBucketError("/tmp/mu-bucket", "ghost", ["alpha", "beta"]),
-    label: "ImportSourceNotInBucketError",
-    expectedTokens: ["/tmp/mu-bucket", "manifest.json"],
-  },
-  {
-    error: new WorkstreamAlreadyExistsError("existing-ws"),
-    label: "WorkstreamAlreadyExistsError",
-    expectedTokens: ["existing-ws", "--workstream <new-name>"],
-  },
-  {
-    error: new ImportFrontmatterParseError("/tmp/mu-bucket/ws/tasks/foo.md", 3, "bad"),
-    label: "ImportFrontmatterParseError",
-    expectedTokens: ["/tmp/mu-bucket/ws/tasks/foo.md"],
-  },
-  {
-    error: new ImportEdgeRefMissingError("from_task", "missing_task", "blocks"),
-    label: "ImportEdgeRefMissingError",
-    expectedTokens: ["from_task", "<bucket>"],
-  },
-
   // src/cli/handle.ts
   {
     error: new NameAmbiguousError("dupe", ["ws-a", "ws-b"], "task"),
@@ -383,7 +349,6 @@ describe("typed errors all carry actionable errorNextSteps()", () => {
       import("../src/agents.js"),
       import("../src/tasks.js"),
       import("../src/archives.js"),
-      import("../src/importing.js"),
       import("../src/snapshots.js"),
       import("../src/vcs.js"),
       import("../src/workspace.js"),

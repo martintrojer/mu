@@ -380,7 +380,6 @@ export const EVENT_VERB_PREFIXES: readonly string[] = [
   "workstream init",
   "workstream destroy",
   "workstream export",
-  "workstream import",
   // src/archives.ts — v6 archive verbs. Machine-wide events
   // (workstream=null) because archives outlive workstreams.
   "archive create",
