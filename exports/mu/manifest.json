@@ -3,12 +3,12 @@
   "manifest_version": 2,
   "bucketLabel": "mu",
   "bucketCreatedAt": "2026-05-10T07:39:54.416Z",
-  "bucketLastUpdatedAt": "2026-05-14T11:16:22.785Z",
+  "bucketLastUpdatedAt": "2026-05-14T13:31:50.328Z",
   "muVersion": "0.4.1",
   "sources": {
     "mufeedback": {
       "addedAt": "2026-05-10T07:39:54.416Z",
-      "lastReExportedAt": "2026-05-14T11:16:22.785Z",
+      "lastReExportedAt": "2026-05-14T13:31:50.328Z",
       "eventsSeqAtExport": 1644,
       "tasks": [
         {
@@ -1065,7 +1065,7 @@
     },
     "roadmap-v0-2": {
       "addedAt": "2026-05-10T07:39:54.416Z",
-      "lastReExportedAt": "2026-05-14T11:16:22.785Z",
+      "lastReExportedAt": "2026-05-14T13:31:50.328Z",
       "eventsSeqAtExport": 1645,
       "tasks": [
         {
@@ -1522,7 +1522,7 @@
     },
     "mufeedback-v03": {
       "addedAt": "2026-05-10T14:06:43.666Z",
-      "lastReExportedAt": "2026-05-14T11:16:22.785Z",
+      "lastReExportedAt": "2026-05-14T13:31:50.328Z",
       "eventsSeqAtExport": 2211,
       "tasks": [
         {
@@ -2189,7 +2189,7 @@
     },
     "roadmap-v0-3": {
       "addedAt": "2026-05-10T14:06:43.666Z",
-      "lastReExportedAt": "2026-05-14T11:16:22.785Z",
+      "lastReExportedAt": "2026-05-14T13:31:50.328Z",
       "eventsSeqAtExport": 1762,
       "tasks": [
         {
@@ -2256,7 +2256,7 @@
     },
     "tui": {
       "addedAt": "2026-05-14T07:19:10.884Z",
-      "lastReExportedAt": "2026-05-14T11:16:22.785Z",
+      "lastReExportedAt": "2026-05-14T13:31:50.328Z",
       "eventsSeqAtExport": 3517,
       "tasks": [
         {
@@ -2573,7 +2573,7 @@
     },
     "tui-impl": {
       "addedAt": "2026-05-14T07:19:10.884Z",
-      "lastReExportedAt": "2026-05-14T11:16:22.785Z",
+      "lastReExportedAt": "2026-05-14T13:31:50.328Z",
       "eventsSeqAtExport": 6799,
       "tasks": [
         {
@@ -5130,7 +5130,7 @@
     },
     "multimachine": {
       "addedAt": "2026-05-14T11:16:22.785Z",
-      "lastReExportedAt": "2026-05-14T11:16:22.785Z",
+      "lastReExportedAt": "2026-05-14T13:31:50.328Z",
       "eventsSeqAtExport": 7290,
       "tasks": [
         {
@@ -5332,6 +5332,323 @@
           "effortDays": 0.1,
           "path": "multimachine/tasks/umbrella.md",
           "sha256": "7d0eebe8ae49802f137eebd83e148b76a15786db3a610a06b44c84e40ba91fe0"
+        }
+      ]
+    },
+    "feedback": {
+      "addedAt": "2026-05-14T13:31:50.328Z",
+      "lastReExportedAt": "2026-05-14T13:31:50.328Z",
+      "eventsSeqAtExport": 5561,
+      "tasks": [
+        {
+          "id": "add_mu_workspace_recreate_free_create",
+          "name": "add_mu_workspace_recreate_free_create",
+          "title": "Add mu workspace recreate (free + create) shortcut",
+          "status": "CLOSED",
+          "impact": 25,
+          "effortDays": 0.2,
+          "path": "feedback/tasks/add_mu_workspace_recreate_free_create.md",
+          "sha256": "d734585a300b64a841968c1efb02e343a350d121d1c9dc4f7eada907e57799e2"
+        },
+        {
+          "id": "agent_send_messages_queue_silently",
+          "name": "agent_send_messages_queue_silently",
+          "title": "agent send messages queue silently behind unresponsive shell tools",
+          "status": "REJECTED",
+          "impact": 15,
+          "effortDays": 0.3,
+          "path": "feedback/tasks/agent_send_messages_queue_silently.md",
+          "sha256": "588b912c6c6b9720035571316cd799089d9dec440bd2becdd63cc02e9206c560"
+        },
+        {
+          "id": "agent_spawn_abort_leaves_orphan_workspace",
+          "name": "agent_spawn_abort_leaves_orphan_workspace",
+          "title": "agent spawn abort can leave orphan workspace without surfaced cleanup command",
+          "status": "CLOSED",
+          "impact": 18,
+          "effortDays": 0.3,
+          "path": "feedback/tasks/agent_spawn_abort_leaves_orphan_workspace.md",
+          "sha256": "fd7d48a1c0e590081f0224707ab0cd82029f81f575e2b456955adfd298fe70c5"
+        },
+        {
+          "id": "agent_spawn_liveness_check_trips_on",
+          "name": "agent_spawn_liveness_check_trips_on",
+          "title": "agent spawn liveness check trips on solo-locked CLIs (e.g. pi-meta --solo)",
+          "status": "CLOSED",
+          "impact": 15,
+          "effortDays": 0.2,
+          "path": "feedback/tasks/agent_spawn_liveness_check_trips_on.md",
+          "sha256": "a49a75df59e3e8c3566f7e198b305f61b7d6070ecfdaef2efa250d3892905926"
+        },
+        {
+          "id": "agent_spawn_model_auth_failure_counts_as_live",
+          "name": "agent_spawn_model_auth_failure_counts_as_live",
+          "title": "agent spawn with unavailable model/provider counts as live worker until task wait stalls",
+          "status": "CLOSED",
+          "impact": 16,
+          "effortDays": 0.3,
+          "path": "feedback/tasks/agent_spawn_model_auth_failure_counts_as_live.md",
+          "sha256": "65321424eb94d08c1a1b7754fdf42d120e27b7c2d2595ccba2611c64572a7a02"
+        },
+        {
+          "id": "agents_close_tasks_without_committing",
+          "name": "agents_close_tasks_without_committing",
+          "title": "agents close tasks without committing when prompt lacks explicit FINAL ACTION block",
+          "status": "CLOSED",
+          "impact": 30,
+          "effortDays": 1,
+          "path": "feedback/tasks/agents_close_tasks_without_committing.md",
+          "sha256": "63f7325749855b8fa3b2923c11e567cf53525d3284dbe6c9e947687f04dc5314"
+        },
+        {
+          "id": "allow_mu_agent_close_without_discard",
+          "name": "allow_mu_agent_close_without_discard",
+          "title": "Allow mu agent close without --discard-workspace when workspace is empty",
+          "status": "CLOSED",
+          "impact": 30,
+          "effortDays": 0.3,
+          "path": "feedback/tasks/allow_mu_agent_close_without_discard.md",
+          "sha256": "cfa9624230dafed25ee213e2c081dd584a10e0e3b060f77260d5fa70458cad0b"
+        },
+        {
+          "id": "bare_verb_namespaces_mu_workspace_task",
+          "name": "bare_verb_namespaces_mu_workspace_task",
+          "title": "bare verb-namespaces (mu workspace / task / agent / archive / snapshot) print nothing and exit 0; should default to --help",
+          "status": "CLOSED",
+          "impact": 12,
+          "effortDays": 0.1,
+          "path": "feedback/tasks/bare_verb_namespaces_mu_workspace_task.md",
+          "sha256": "b4d4ce18dddb2d975f99bba7651c52d6bbfc90dd3bbc2d1f9fd74467ef70a1be"
+        },
+        {
+          "id": "drop_legacy_mu_task_wait_json_fields",
+          "name": "drop_legacy_mu_task_wait_json_fields",
+          "title": "drop legacy mu task wait --json fields (tasks/allReached/anyReached/elapsedMs/boolean timedOut); keep firing/all/timedOut(array)",
+          "status": "CLOSED",
+          "impact": 8,
+          "effortDays": 0.2,
+          "path": "feedback/tasks/drop_legacy_mu_task_wait_json_fields.md",
+          "sha256": "812caf2fe9bd3ee055546025ff27b02e5cf65b51bf706559768b1c138cc76b5d"
+        },
+        {
+          "id": "drop_legacyexportlayouterror",
+          "name": "drop_legacyexportlayouterror",
+          "title": "drop LegacyExportLayoutError + ImportLegacyLayoutError + the v1 export bucket probe (pre-v0.3 format)",
+          "status": "CLOSED",
+          "impact": 10,
+          "effortDays": 0.2,
+          "path": "feedback/tasks/drop_legacyexportlayouterror.md",
+          "sha256": "db2f13881f3252e93432bf046e258825d92db167df28e342b6297cd44667750c"
+        },
+        {
+          "id": "drop_taskrow_localid_duplicate_of_name",
+          "name": "drop_taskrow_localid_duplicate_of_name",
+          "title": "drop TaskRow.localId duplicate of name (was added 1 day ago for jq recipe symmetry; sole user, prefer single canonical key)",
+          "status": "CLOSED",
+          "impact": 7,
+          "effortDays": 0.1,
+          "path": "feedback/tasks/drop_taskrow_localid_duplicate_of_name.md",
+          "sha256": "61c24226d8de74a7a3cb761e008b154c7f98d65fa70dc7cab824593235223a26"
+        },
+        {
+          "id": "externally_blocked_tasks_show_as_ready",
+          "name": "externally_blocked_tasks_show_as_ready",
+          "title": "externally-blocked tasks show as ready; no waiting-on-condition state",
+          "status": "REJECTED",
+          "impact": 12,
+          "effortDays": 0.3,
+          "path": "feedback/tasks/externally_blocked_tasks_show_as_ready.md",
+          "sha256": "698d7918fd2b9ab530542a72db6f792533061fc39fc61aa9a10b37d5ee6e8b1f"
+        },
+        {
+          "id": "fb_agent_spawn_no_validation",
+          "name": "fb_agent_spawn_no_validation",
+          "title": "agent spawn silently succeeds when --cli is broken/unavailable",
+          "status": "CLOSED",
+          "impact": 80,
+          "effortDays": 0.5,
+          "path": "feedback/tasks/fb_agent_spawn_no_validation.md",
+          "sha256": "22ae5c28d2012bf9c8820df185a2b2308f824624bf6bf2c2e5b33d821570ffd4"
+        },
+        {
+          "id": "fb_close_post_emit_commit_hint",
+          "name": "fb_close_post_emit_commit_hint",
+          "title": "NIT: post-emit Next: hint after mu task close — 'commit your workspace edits before the next wave: cd $(mu workspace path) && git status'",
+          "status": "CLOSED",
+          "impact": 25,
+          "effortDays": 0.1,
+          "path": "feedback/tasks/fb_close_post_emit_commit_hint.md",
+          "sha256": "99c0cf5369321c25835081bd714ab33de9a912758a71e9c63e37d07ff696b91b"
+        },
+        {
+          "id": "fb_close_require_clean",
+          "name": "fb_close_require_clean",
+          "title": "FEAT: mu task close --require-clean opt-in flag — refuse to close when workspace has uncommitted changes (orchestrator safety net for the 'agent closed without committing' failure)",
+          "status": "DEFERRED",
+          "impact": 35,
+          "effortDays": 0.3,
+          "path": "feedback/tasks/fb_close_require_clean.md",
+          "sha256": "ef072a906586b6664af0e688e5fcc8825f6e55564be510558f56deae13558515"
+        },
+        {
+          "id": "fb_task_notes_tail",
+          "name": "fb_task_notes_tail",
+          "title": "task notes --tail N to skim recent notes when spec is long",
+          "status": "CLOSED",
+          "impact": 30,
+          "effortDays": 0.2,
+          "path": "feedback/tasks/fb_task_notes_tail.md",
+          "sha256": "b87069134f5791ff848a6a238fb2d90ff714b3a69a6f7b80b87ca98c079aee75"
+        },
+        {
+          "id": "fb_wait_nextsteps_robust_no_commits",
+          "name": "fb_wait_nextsteps_robust_no_commits",
+          "title": "BUG: mu task wait --first nextSteps cherry-pick recipe silently picks wrong sha when worker closed without committing — surface 'no commits between fork and HEAD' explicitly",
+          "status": "CLOSED",
+          "impact": 60,
+          "effortDays": 0.2,
+          "path": "feedback/tasks/fb_wait_nextsteps_robust_no_commits.md",
+          "sha256": "ad9e822dbcedf1d0275fba1a685fcd5d79ddd89af37d66794b2439b656cd5cef"
+        },
+        {
+          "id": "mu_adopt_should_be_mu_agent_adopt_for",
+          "name": "mu_adopt_should_be_mu_agent_adopt_for",
+          "title": "mu adopt should be mu agent adopt for consistency with the agent-namespace verb cluster",
+          "status": "CLOSED",
+          "impact": 8,
+          "effortDays": 0.2,
+          "path": "feedback/tasks/mu_adopt_should_be_mu_agent_adopt_for.md",
+          "sha256": "42e06a1cfac55b10e9b230d6ba4ed70e449daee29813d63c551542088ee9b6ff"
+        },
+        {
+          "id": "remove_top_level_mu_adopt_alias_now_was",
+          "name": "remove_top_level_mu_adopt_alias_now_was",
+          "title": "remove top-level mu adopt alias now (was deprecated in eaad4b7; nobody depends on it yet)",
+          "status": "CLOSED",
+          "impact": 8,
+          "effortDays": 0.1,
+          "path": "feedback/tasks/remove_top_level_mu_adopt_alias_now_was.md",
+          "sha256": "d0168fc3c98da7ed37e520ba7f6824adccb5e983aa6b5f57e2a206b5914d26c1"
+        },
+        {
+          "id": "skill_cherry_pick_recipe_assumes_commit",
+          "name": "skill_cherry_pick_recipe_assumes_commit",
+          "title": "skill cherry-pick recipe assumes commit subject starts with task-id; workers don't",
+          "status": "CLOSED",
+          "impact": 12,
+          "effortDays": 0.2,
+          "path": "feedback/tasks/skill_cherry_pick_recipe_assumes_commit.md",
+          "sha256": "37a8f8689b627fcc8d1f0ef0bb29ce02acaf28baffc483d9889d32535f011d12"
+        },
+        {
+          "id": "slugifytitle_silently_drops_clauses",
+          "name": "slugifytitle_silently_drops_clauses",
+          "title": "slugifyTitle silently drops clauses past 40 chars; truncated id can flip the meaning of a title",
+          "status": "CLOSED",
+          "impact": 15,
+          "effortDays": 0.3,
+          "path": "feedback/tasks/slugifytitle_silently_drops_clauses.md",
+          "sha256": "6faf7f7652439dca4c3797eff631226d17c12220a87250fe22781e2f8e8396a5"
+        },
+        {
+          "id": "snapshot_gc_caps_too_lax_no_cleanup_verb",
+          "name": "snapshot_gc_caps_too_lax_no_cleanup_verb",
+          "title": "snapshot GC: AND-of-caps is too lax; no manual cleanup verb; defaults outgrow disk on busy days",
+          "status": "CLOSED",
+          "impact": 35,
+          "effortDays": 0.5,
+          "path": "feedback/tasks/snapshot_gc_caps_too_lax_no_cleanup_verb.md",
+          "sha256": "5d173d9a78e5392ef70d61f6efbdae17bc81d8bc4da6236fd0675398a8dc174a"
+        },
+        {
+          "id": "task_add_slugify_silently_truncates_ids",
+          "name": "task_add_slugify_silently_truncates_ids",
+          "title": "task add slugify silently truncates ids; tail -N hides the warning",
+          "status": "CLOSED",
+          "impact": 8,
+          "effortDays": 0.1,
+          "path": "feedback/tasks/task_add_slugify_silently_truncates_ids.md",
+          "sha256": "ee4173544b6e77b6ae12c15e4e7c94f937c46184bbabac97c5931073a26cc7ad"
+        },
+        {
+          "id": "task_close_evidence_does_not_append_the",
+          "name": "task_close_evidence_does_not_append_the",
+          "title": "task close --evidence does not append the evidence as a final note",
+          "status": "CLOSED",
+          "impact": 10,
+          "effortDays": 0.2,
+          "path": "feedback/tasks/task_close_evidence_does_not_append_the.md",
+          "sha256": "e126f9cc0a2692e555bce756732facd64304fc9c0676d5139625f0d4897a5794"
+        },
+        {
+          "id": "task_list_show_json_omits_localid_only",
+          "name": "task_list_show_json_omits_localid_only",
+          "title": "task list/show JSON omits localId; only top-level 'name' is exposed",
+          "status": "CLOSED",
+          "impact": 25,
+          "effortDays": 0.3,
+          "path": "feedback/tasks/task_list_show_json_omits_localid_only.md",
+          "sha256": "787c2852b82d12d5569b2a497f142408d6e1e8aa9745ed9f8edab2adcb6b0034"
+        },
+        {
+          "id": "task_show_blocked_by_renders_closed",
+          "name": "task_show_blocked_by_renders_closed",
+          "title": "task show 'blocked by' renders CLOSED blockers identically to OPEN ones",
+          "status": "CLOSED",
+          "impact": 10,
+          "effortDays": 0.2,
+          "path": "feedback/tasks/task_show_blocked_by_renders_closed.md",
+          "sha256": "ecf766651bc60a9e575a9a46abc5a916c36ca543c7768ada0eaf37c96bc9c68f"
+        },
+        {
+          "id": "task_updatedat_not_bumped_by_reparent",
+          "name": "task_updatedat_not_bumped_by_reparent",
+          "title": "task.updatedAt not bumped by reparent / unblock / note (only by status change?)",
+          "status": "CLOSED",
+          "impact": 20,
+          "effortDays": 0.3,
+          "path": "feedback/tasks/task_updatedat_not_bumped_by_reparent.md",
+          "sha256": "a4c16573d189311c0892bff430814decc0bfbc1e81309370af990923cb65704f"
+        },
+        {
+          "id": "task_wait_json_nextsteps_cherry_pick",
+          "name": "task_wait_json_nextsteps_cherry_pick",
+          "title": "task wait --json nextSteps cherry-pick verify command is JS-specific (npm run ...)",
+          "status": "CLOSED",
+          "impact": 60,
+          "effortDays": 0.3,
+          "path": "feedback/tasks/task_wait_json_nextsteps_cherry_pick.md",
+          "sha256": "0ab0d52a124a9bbb9546679fc0f3a015558552f9ca3b932a45ce80e8eaf06056"
+        },
+        {
+          "id": "workers_commonly_attempt_unbounded_find",
+          "name": "workers_commonly_attempt_unbounded_find",
+          "title": "workers commonly attempt unbounded find / scans, costing >1h wall",
+          "status": "CLOSED",
+          "impact": 25,
+          "effortDays": 0.3,
+          "path": "feedback/tasks/workers_commonly_attempt_unbounded_find.md",
+          "sha256": "40faa059cedddc6a9fff0d8f8e1c5ebcc2022babf5cf2966078a130c183db5ec"
+        },
+        {
+          "id": "workspace_orphans_misses_destroyed_workstreams",
+          "name": "workspace_orphans_misses_destroyed_workstreams",
+          "title": "mu workspace orphans misses dirs from destroyed workstreams",
+          "status": "CLOSED",
+          "impact": 30,
+          "effortDays": 0.4,
+          "path": "feedback/tasks/workspace_orphans_misses_destroyed_workstreams.md",
+          "sha256": "20fe181579d75f7db3eb3a8ef77f421e772e18f8c9b1f49fd3c065657705a10d"
+        },
+        {
+          "id": "workstream_init_name_rejected_mu",
+          "name": "workstream_init_name_rejected_mu",
+          "title": "workstream init <name> rejected 'mu-feedback' silently (suggested 'feedback')",
+          "status": "CLOSED",
+          "impact": 10,
+          "effortDays": 0.1,
+          "path": "feedback/tasks/workstream_init_name_rejected_mu.md",
+          "sha256": "303e73cbc9083a81698cfb626408276b340954eb58c4cf3ff77362a5a3a2f182"
         }
       ]
     }
