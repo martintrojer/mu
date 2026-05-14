@@ -398,7 +398,11 @@ function replaceWorkstreamFromSource(
     const existing = localDb.prepare("SELECT id FROM workstreams WHERE name = ?").get(workstream) as
       | { id: number }
       | undefined;
-    if (existing) localDb.prepare("DELETE FROM workstreams WHERE id = ?").run(existing.id);
+    if (existing) {
+      localDb.prepare("DELETE FROM vcs_workspaces WHERE workstream_id = ?").run(existing.id);
+      localDb.prepare("DELETE FROM agents WHERE workstream_id = ?").run(existing.id);
+      localDb.prepare("DELETE FROM workstreams WHERE id = ?").run(existing.id);
+    }
     copyWorkstreamRows(sourceDb, localDb, workstream, {
       includeMachineLocalRows: false,
       preserveLogSeq: false,
