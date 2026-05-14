@@ -7,6 +7,7 @@ import { type DbExportManifest, DbExportTargetExistsError, exportDb } from "../s
 import { CURRENT_SCHEMA_VERSION, type Db, openDb } from "../src/db.js";
 import { appendLog, latestSeq } from "../src/logs.js";
 import { addBlockEdge, addNote, addTask } from "../src/tasks.js";
+import { runCli } from "./_runCli.js";
 
 let tempDir: string;
 let db: Db;
@@ -125,5 +126,15 @@ describe("exportDb", () => {
     } finally {
       copied.close();
     }
+  });
+
+  it("CLI nextSteps suggest the default dry-run import without a bogus --dry-run flag", async () => {
+    const target = join(tempDir, "cli-export.db");
+    const result = await runCli(["db", "export", target], join(tempDir, "cli-source.db"));
+
+    expect(result.error).toBeUndefined();
+    expect(result.exitCode).toBeNull();
+    expect(result.stdout).toContain("mu db import /tmp/mu.db");
+    expect(result.stdout).not.toContain("--dry-run");
   });
 });

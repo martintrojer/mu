@@ -29,11 +29,14 @@ import {
 } from "../src/archives.js";
 import { NameAmbiguousError, UsageError, classifyError } from "../src/cli.js";
 import {
+  DbExportTargetExistsError,
   DbImportConflictError,
   DbImportManifestMissingError,
   DbImportSchemaTooNewError,
   DbImportSchemaTooOldError,
   DbImportSourceStaleError,
+  DbReplayLocalIdConflictError,
+  DbReplayWorkstreamMissingError,
 } from "../src/db-sync.js";
 import { SchemaTooOldError, WorkstreamNotFoundError } from "../src/db.js";
 import {
@@ -123,14 +126,29 @@ describe("classifyError exit-code map", () => {
     [new ArchiveSourceAmbiguousError("wave", ["alpha", "beta"]), 4, "conflict"],
     [new WorkstreamExistsError("existing-ws"), 4, "conflict"],
 
-    // switch branches 4-8: db import typed failures
+    // switch branches 4-10: db sync typed failures
     [new DbImportManifestMissingError("/tmp/mu.db.manifest.json"), 8, "db import manifest missing"],
     [new DbImportSchemaTooOldError(7), 9, "db import schema too old"],
     [new DbImportSchemaTooNewError(9), 10, "db import schema too new"],
     [new DbImportSourceStaleError(["alpha"]), 11, "db import source stale"],
     [new DbImportConflictError(["alpha"]), 12, "db import conflict"],
+    [new DbReplayWorkstreamMissingError("alpha"), 13, "db replay workstream missing"],
+    [
+      new DbReplayLocalIdConflictError("alpha", [
+        {
+          localId: "t1",
+          local: { title: "Local", status: "OPEN" },
+          sidecar: { title: "Sidecar", status: "CLOSED" },
+        },
+      ]),
+      14,
+      "db replay local-id conflict",
+    ],
 
-    // switch branches 9-11: spawn failures
+    // switch branch 11: export target conflict
+    [new DbExportTargetExistsError("/tmp/export.db"), 4, "conflict"],
+
+    // switch branches 12-14: spawn failures
     [
       new AgentSpawnCliNotFoundError("pi-meta", "pi-meta", "MU_PI_META_COMMAND"),
       1,

@@ -28,6 +28,16 @@ import {
   ArchiveSourceAmbiguousError,
 } from "../src/archives.js";
 import { NameAmbiguousError } from "../src/cli.js";
+import {
+  DbExportTargetExistsError,
+  DbImportConflictError,
+  DbImportManifestMissingError,
+  DbImportSchemaTooNewError,
+  DbImportSchemaTooOldError,
+  DbImportSourceStaleError,
+  DbReplayLocalIdConflictError,
+  DbReplayWorkstreamMissingError,
+} from "../src/db-sync.js";
 import { SchemaTooOldError, WorkstreamNotFoundError, openDb } from "../src/db.js";
 import { hasNextSteps } from "../src/output.js";
 import {
@@ -304,6 +314,54 @@ const cases: NextStepsCase[] = [
     expectedTokens: ["--source alpha", "--source beta"],
   },
 
+  // src/db-sync.ts + src/db-sync-replay.ts
+  {
+    error: new DbExportTargetExistsError("/tmp/export.db"),
+    label: "DbExportTargetExistsError",
+    expectedTokens: ["/tmp/export.db", "--force"],
+  },
+  {
+    error: new DbImportManifestMissingError("/tmp/mu.db.manifest.json"),
+    label: "DbImportManifestMissingError",
+    expectedTokens: ["mu db export", "/tmp/mu.db.manifest.json"],
+  },
+  {
+    error: new DbImportSchemaTooOldError(7),
+    label: "DbImportSchemaTooOldError",
+    expectedTokens: ["npm run build", "mu db import"],
+  },
+  {
+    error: new DbImportSchemaTooNewError(9),
+    label: "DbImportSchemaTooNewError",
+    expectedTokens: ["git pull", "mu db import"],
+  },
+  {
+    error: new DbImportSourceStaleError(["alpha"]),
+    label: "DbImportSourceStaleError",
+    expectedTokens: ["mu db export", "mu db import <file>"],
+  },
+  {
+    error: new DbImportConflictError(["alpha"]),
+    label: "DbImportConflictError",
+    expectedTokens: ["--json", "--force-source"],
+  },
+  {
+    error: new DbReplayWorkstreamMissingError("alpha"),
+    label: "DbReplayWorkstreamMissingError",
+    expectedTokens: ["mu db import <file> --apply", "mu archive restore", "alpha"],
+  },
+  {
+    error: new DbReplayLocalIdConflictError("alpha", [
+      {
+        localId: "t1",
+        local: { title: "Local task", status: "OPEN" },
+        sidecar: { title: "Sidecar task", status: "CLOSED" },
+      },
+    ]),
+    label: "DbReplayLocalIdConflictError",
+    expectedTokens: ["t1-replay", "alpha", "Sidecar task", "mu db replay"],
+  },
+
   // src/cli/handle.ts
   {
     error: new NameAmbiguousError("dupe", ["ws-a", "ws-b"], "task"),
@@ -353,6 +411,8 @@ describe("typed errors all carry actionable errorNextSteps()", () => {
       import("../src/vcs.js"),
       import("../src/workspace.js"),
       import("../src/db.js"),
+      import("../src/db-sync.js"),
+      import("../src/db-sync-replay.js"),
       import("../src/workstream.js"),
       import("../src/tmux.js"),
       import("../src/cli.js"),

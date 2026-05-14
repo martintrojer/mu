@@ -38,7 +38,7 @@ function exportNextSteps(file: string): NextStep[] {
   return [
     { intent: "Ship the DB copy", command: `scp ${file} <other-machine>:/tmp/mu.db` },
     { intent: "Ship the manifest too", command: `scp ${file}.manifest.json <other-machine>:/tmp/` },
-    { intent: "Import on the other side", command: "mu db import /tmp/mu.db --dry-run" },
+    { intent: "Import on the other side", command: "mu db import /tmp/mu.db" },
   ];
 }
 
