@@ -72,6 +72,26 @@ export function isValidWorkstreamName(name: string): boolean {
 
 /** Thrown by `ensureWorkstream` and `mu workstream init` when the name
  *  doesn't match the rules. */
+export class WorkstreamExistsError extends Error implements HasNextSteps {
+  override readonly name: string = "WorkstreamExistsError";
+  constructor(public readonly workstream: string) {
+    super(`workstream already exists: ${workstream}`);
+  }
+  errorNextSteps(): NextStep[] {
+    return [
+      {
+        intent: "Pick a different workstream name",
+        command: "mu archive restore <label> --as <new-name>",
+      },
+      { intent: "List existing workstreams", command: "mu workstream list" },
+      {
+        intent: "Destroy the existing workstream first",
+        command: `mu workstream destroy -w ${this.workstream} --yes`,
+      },
+    ];
+  }
+}
+
 export class WorkstreamNameInvalidError extends Error implements HasNextSteps {
   override readonly name = "WorkstreamNameInvalidError";
   constructor(public readonly attempted: string) {

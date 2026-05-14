@@ -382,6 +382,7 @@ export const EVENT_VERB_PREFIXES: readonly string[] = [
   "archive delete",
   "archive add",
   "archive remove",
+  "archive restore",
   // src/exporting.ts — archive export emits the bucket-render summary
   // as a machine-wide event (workstream=null; the export spans every
   // source-ws in the archive).

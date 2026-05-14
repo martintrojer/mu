@@ -34,7 +34,7 @@ import { DELETED_BANNER_PREFIX, type ExportManifest, readManifest } from "./expo
 import { emitEvent } from "./logs.js";
 import type { HasNextSteps, NextStep } from "./output.js";
 import { type TaskStatus, isTaskStatus } from "./tasks/status.js";
-import { ensureWorkstream } from "./workstream.js";
+import { WorkstreamExistsError, ensureWorkstream } from "./workstream.js";
 
 // ─── Typed errors ────────────────────────────────────────────────────
 
@@ -84,14 +84,13 @@ export class ImportSourceNotInBucketError extends Error implements HasNextSteps 
   }
 }
 
-export class WorkstreamAlreadyExistsError extends Error implements HasNextSteps {
+export class WorkstreamAlreadyExistsError extends WorkstreamExistsError {
   override readonly name = "WorkstreamAlreadyExistsError";
-  constructor(public readonly workstream: string) {
-    super(
-      `workstream "${workstream}" already exists in the DB; mu workstream import refuses to merge silently. Pass --workstream <new-name> to import under a different name (single-source buckets only), or destroy the existing workstream first.`,
-    );
+  constructor(workstream: string) {
+    super(workstream);
+    this.message = `workstream "${workstream}" already exists in the DB; mu workstream import refuses to merge silently. Pass --workstream <new-name> to import under a different name (single-source buckets only), or destroy the existing workstream first.`;
   }
-  errorNextSteps(): NextStep[] {
+  override errorNextSteps(): NextStep[] {
     return [
       {
         intent: "Import under a new name (single-source bucket only)",

@@ -37,3 +37,9 @@ export {
   listArchives,
   searchArchives,
 } from "./archives/query.js";
+export {
+  ArchiveSourceAmbiguousError,
+  type RestoreArchiveOptions,
+  type RestoreArchiveResult,
+  restoreArchive,
+} from "./archives/restore.js";

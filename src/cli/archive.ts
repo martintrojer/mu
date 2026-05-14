@@ -1,16 +1,17 @@
-// mu — `mu archive` verbs (create / list / show / add / remove / delete).
+// mu — `mu archive` verbs (create / list / show / add / remove / restore / delete).
 //
 // Phase 2 of the v0.3 archive feature (workstream_archive_verb).
 // Phase 1 landed the schema (v6) + SDK (src/archives.ts); this file
 // is the thin commander glue that surfaces them.
 //
-// Six verbs:
+// Archive verbs:
 //
 //   mu archive create <label> [--description "..."]
 //   mu archive list
 //   mu archive show <label>
 //   mu archive add <label> -w <workstream> [--destroy]
 //   mu archive remove <label> -w <workstream>
+//   mu archive restore <label> --as <new-ws> [--source <orig-ws>]
 //   mu archive delete <label> [--yes]
 //
 // Mirrors src/cli/workspace.ts's wiring shape (one-file-per-verb-
@@ -23,13 +24,16 @@ import {
   ArchiveLabelInvalidError,
   ArchiveNotFoundError,
   type ArchiveSearchHit,
+  ArchiveSourceAmbiguousError,
   type ArchiveSummary,
+  type RestoreArchiveResult,
   addToArchive,
   createArchive,
   deleteArchive,
   getArchive,
   listArchives,
   removeFromArchive,
+  restoreArchive,
   searchArchives,
 } from "../archives.js";
 import {
@@ -293,6 +297,43 @@ export async function cmdArchiveRemove(
   ]);
 }
 
+// ─── restore ────────────────────────────────────────────────────────
+
+export async function cmdArchiveRestore(
+  db: Db,
+  label: string,
+  opts: { as?: string; source?: string; json?: boolean } = {},
+): Promise<void> {
+  if (!opts.as || opts.as.trim().length === 0) {
+    throw new UsageError("--as <new-ws-name> is required for `mu archive restore`");
+  }
+  const result: RestoreArchiveResult = restoreArchive(db, label, opts.as, {
+    sourceWorkstream: opts.source,
+  });
+  const nextSteps: NextStep[] = [
+    { intent: "Inspect restored tasks", command: `mu task list -w ${result.workstreamName}` },
+    { intent: "Undo (a snapshot was taken before the restore)", command: "mu undo --yes" },
+  ];
+
+  if (opts.json) {
+    emitJson({ ...result, nextSteps });
+    return;
+  }
+  console.log(
+    `Restored archive ${pc.bold(label)} source ${pc.bold(result.sourceWorkstream)} as workstream ${pc.bold(
+      result.workstreamName,
+    )} ${pc.dim(
+      `(tasks=${result.restoredTasks}, edges=${result.restoredEdges}, notes=${result.restoredNotes})`,
+    )}`,
+  );
+  console.log(
+    pc.dim(
+      "agents, workspace_path, and agent_logs are not restored (archives preserve task graph rows, not live panes or the live event log).",
+    ),
+  );
+  printNextSteps(nextSteps);
+}
+
 // ─── delete ──────────────────────────────────────────────────────────
 
 export async function cmdArchiveDelete(
@@ -525,7 +566,12 @@ import { JSON_OPT, WORKSTREAM_OPT, handle } from "../cli.js";
 // classes are wired there. This module just throws them via the SDK.
 // Re-exports here let test files (and downstream skills) import from
 // one consistent place.
-export { ArchiveAlreadyExistsError, ArchiveLabelInvalidError, ArchiveNotFoundError };
+export {
+  ArchiveAlreadyExistsError,
+  ArchiveLabelInvalidError,
+  ArchiveNotFoundError,
+  ArchiveSourceAmbiguousError,
+};
 
 export function wireArchiveCommands(program: Command): void {
   const archive = program
@@ -636,6 +682,22 @@ export function wireArchiveCommands(program: Command): void {
     .action(function (label: string) {
       const opts = (this as Command).opts() as { out?: string; json?: boolean };
       return handle((db) => cmdArchiveExport(db, label, opts), this as Command)();
+    });
+
+  archive
+    .command("restore <label>")
+    .description(
+      "Restore one archived source workstream into a fresh workstream directly from archived_* tables. Does not restore agents, workspace_path, or agent_logs (archives do not snapshot live panes or the live event log).",
+    )
+    .requiredOption("--as <new-ws-name>", "fresh workstream name to create; refuses collisions")
+    .option(
+      "--source <orig-ws-name>",
+      "required when the archive contains multiple source workstreams",
+    )
+    .option(...JSON_OPT)
+    .action(function (label: string) {
+      const opts = (this as Command).opts() as { as?: string; source?: string; json?: boolean };
+      return handle((db) => cmdArchiveRestore(db, label, opts), this as Command)();
     });
 
   archive

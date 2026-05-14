@@ -25,6 +25,7 @@ import {
   ArchiveAlreadyExistsError,
   ArchiveLabelInvalidError,
   ArchiveNotFoundError,
+  ArchiveSourceAmbiguousError,
 } from "../src/archives.js";
 import { NameAmbiguousError, UsageError, classifyError } from "../src/cli.js";
 import { SchemaTooOldError, WorkstreamNotFoundError } from "../src/db.js";
@@ -67,7 +68,7 @@ import {
   WorkspaceNotFoundError,
   WorkspacePathNotEmptyError,
 } from "../src/workspace.js";
-import { WorkstreamNameInvalidError } from "../src/workstream.js";
+import { WorkstreamExistsError, WorkstreamNameInvalidError } from "../src/workstream.js";
 
 describe("classifyError exit-code map", () => {
   // (instance, expected exit code, expected label)
@@ -122,8 +123,10 @@ describe("classifyError exit-code map", () => {
     [new SchemaTooOldError(4, 5), 4, "conflict"],
     [new TaskIdInvalidError("Bad ID"), 4, "conflict"],
     [new ArchiveAlreadyExistsError("release-v1"), 4, "conflict"],
+    [new ArchiveSourceAmbiguousError("wave", ["alpha", "beta"]), 4, "conflict"],
     [new ImportSourceNotInBucketError("/tmp/bucket", "ghost", ["alpha"]), 4, "conflict"],
     [new WorkstreamAlreadyExistsError("existing-ws"), 4, "conflict"],
+    [new WorkstreamExistsError("existing-ws"), 4, "conflict"],
 
     // switch branches 4-6: spawn failures
     [

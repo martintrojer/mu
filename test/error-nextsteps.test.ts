@@ -25,6 +25,7 @@ import {
   ArchiveAlreadyExistsError,
   ArchiveLabelInvalidError,
   ArchiveNotFoundError,
+  ArchiveSourceAmbiguousError,
 } from "../src/archives.js";
 import { NameAmbiguousError } from "../src/cli.js";
 import { SchemaTooOldError, WorkstreamNotFoundError, openDb } from "../src/db.js";
@@ -68,7 +69,7 @@ import {
   WorkspaceNotFoundError,
   WorkspacePathNotEmptyError,
 } from "../src/workspace.js";
-import { WorkstreamNameInvalidError } from "../src/workstream.js";
+import { WorkstreamExistsError, WorkstreamNameInvalidError } from "../src/workstream.js";
 
 interface NextStepLike {
   intent: string;
@@ -251,6 +252,11 @@ const cases: NextStepsCase[] = [
     expectedTokens: ["ghost"],
   },
   {
+    error: new WorkstreamExistsError("existing-ws"),
+    label: "WorkstreamExistsError",
+    expectedTokens: ["existing-ws"],
+  },
+  {
     error: new SchemaTooOldError(4, 5),
     label: "SchemaTooOldError",
     expectedTokens: ["migrate-v4-to-v5", "sqlite3"],
@@ -298,6 +304,11 @@ const cases: NextStepsCase[] = [
     error: new ArchiveLabelInvalidError("Bad Label!"),
     label: "ArchiveLabelInvalidError",
     expectedTokens: ["bad_label_"],
+  },
+  {
+    error: new ArchiveSourceAmbiguousError("wave", ["alpha", "beta"]),
+    label: "ArchiveSourceAmbiguousError",
+    expectedTokens: ["--source alpha", "--source beta"],
   },
 
   // src/importing.ts

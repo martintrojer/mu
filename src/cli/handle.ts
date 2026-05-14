@@ -41,6 +41,7 @@ import {
   ArchiveAlreadyExistsError,
   ArchiveLabelInvalidError,
   ArchiveNotFoundError,
+  ArchiveSourceAmbiguousError,
 } from "../archives.js";
 import { type Db, SchemaTooOldError, WorkstreamNotFoundError, openDb } from "../db.js";
 import {
@@ -88,7 +89,7 @@ import {
   WorkspaceNotFoundError,
   WorkspacePathNotEmptyError,
 } from "../workspace.js";
-import { WorkstreamNameInvalidError } from "../workstream.js";
+import { WorkstreamExistsError, WorkstreamNameInvalidError } from "../workstream.js";
 
 export class UsageError extends Error {
   override readonly name = "UsageError";
@@ -269,8 +270,10 @@ export function classifyError(err: unknown): { label: string; exitCode: number }
     err instanceof SchemaTooOldError ||
     err instanceof TaskIdInvalidError ||
     err instanceof ArchiveAlreadyExistsError ||
+    err instanceof ArchiveSourceAmbiguousError ||
     err instanceof ImportSourceNotInBucketError ||
-    err instanceof WorkstreamAlreadyExistsError
+    err instanceof WorkstreamAlreadyExistsError ||
+    err instanceof WorkstreamExistsError
   ) {
     return { label: "conflict", exitCode: 4 };
   }
