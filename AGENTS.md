@@ -25,12 +25,21 @@ write code. Follow the conventions below.
    **Source of truth for every word** in code, docs, and error
    messages. If you use a term not defined there, fix the docs first.
 6. **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** — module layout,
-   reconciliation algorithm, key seams.
+   reconciliation algorithm, TUI architecture, key seams.
 
 Design rationale for rejected and unbuilt features (DSL, snapshots,
 task_artifacts, ...) is now folded into
 [docs/ROADMAP.md](docs/ROADMAP.md) per item, alongside its
 promotion criteria.
+
+> **If you are an orchestrator** — a coding agent driving a crew of
+> pi worker agents on this repo via `mu` — read
+> **[docs/HANDOVER.md](docs/HANDOVER.md)** instead of the order
+> above. It is the goto reset doc for orchestrators: onboarding
+> steps, the 8-phase dispatch loop, conflict-resolution playbook,
+> known gotchas, and end-of-session checklist. AGENTS.md is for
+> workers (and humans editing the repo directly); HANDOVER.md is for
+> orchestrators.
 
 ---
 
@@ -42,11 +51,12 @@ mu/
 ├── AGENTS.md              # this file
 ├── CHANGELOG.md           # release notes
 ├── docs/                  # everything else
-│   ├── USAGE_GUIDE.md
-│   ├── ROADMAP.md         # what's next; promotion criteria
-│   ├── VISION.md
-│   ├── VOCABULARY.md
-│   └── ARCHITECTURE.md
+│   ├── USAGE_GUIDE.md     # user-facing tour (§ 5b is the TUI reference)
+│   ├── HANDOVER.md        # orchestrator goto reset doc (8-phase loop + gotchas)
+│   ├── ROADMAP.md         # what's next; promotion criteria; anti-feature pledges
+│   ├── VISION.md          # load-bearing pillars
+│   ├── VOCABULARY.md      # canonical terms (single source of truth)
+│   └── ARCHITECTURE.md    # module layout, TUI architecture, key seams
 ├── src/                   # all source (root files: SDK + shared infra; one
 │                          # level of subdirs OK for cohesive clusters — see
 │                          # `src/cli/`, `src/agents/`, `src/tasks/` below)

@@ -347,10 +347,8 @@ DON'T:
 - Not a build tool, deploy tool, or chat protocol.
 - Not a replacement for `pi-subagents`; mu is for long-lived crews.
 - Not a place to add config files, daemons, wrapper layers, codegen,
-  template discovery, or a render layer beyond current deps. See
-  `docs/ROADMAP.md` anti-feature pledges before expanding surface.
+  template discovery, or a render layer beyond current deps.
 
 ## See also
 
 - `mu --help`, `mu <verb> --help` — canonical CLI reference.
-- `docs/USAGE_GUIDE.md`, `CHANGELOG.md`, `docs/VOCABULARY.md`.

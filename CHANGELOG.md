@@ -126,6 +126,10 @@ is the static card; both stay opt-in for non-TTY callers.
   pledges, per-CLI detector sketch, open questions.
 - **`skills/mu/SKILL.md`** trimmed 590 → 356 lines (filler,
   redundant warnings, restated examples).
+- **`docs/HANDOVER.md`** added: orchestrator goto reset doc —
+  onboarding, the 8-phase dispatch loop, conflict-resolution
+  playbook, gotchas, end-of-session checklist. Cross-linked from
+  AGENTS.md so a fresh orchestrator agent finds it immediately.
 - **Notes model** standardised on FILES / DECISION / VERIFIED
   conventions (already de facto; documented).
 - Many smaller pure-refactor TUI consolidations: shared
