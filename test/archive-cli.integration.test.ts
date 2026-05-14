@@ -29,7 +29,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { listArchives } from "../src/archives.js";
 import { type Db, openDb } from "../src/db.js";
 import { listSnapshots } from "../src/snapshots.js";
-import { addNote, addTask } from "../src/tasks.js";
+import { addNote, addTask, listTasks } from "../src/tasks.js";
 import { ensureWorkstream } from "../src/workstream.js";
 import { runCli } from "./_runCli.js";
 
@@ -271,7 +271,7 @@ describe("mu archive add / remove", () => {
 // ─── add --destroy: cascade ─────────────────────────────────────────
 
 describe("mu archive add --destroy", () => {
-  it("after a successful add, the source workstream rows are gone; archive intact", async () => {
+  it("after a successful add, the source workstream rows are gone and restore can recover it", async () => {
     await runCli(["archive", "create", "wave"], dbPath);
 
     const { error, stdout, exitCode } = await runCli(
@@ -297,7 +297,8 @@ describe("mu archive add --destroy", () => {
       .all("alpha") as { local_id: string }[];
     expect(live).toEqual([]);
 
-    // Archive's snapshot of alpha is intact.
+    // Archive's snapshot of alpha is intact, and archive restore is
+    // the reverse-of-record for rebuilding a live workstream.
     const archived = ws
       .prepare(
         "SELECT original_local_id FROM archived_tasks t JOIN archives a ON a.id = t.archive_id WHERE a.label = ? AND t.source_workstream = ?",
@@ -305,6 +306,19 @@ describe("mu archive add --destroy", () => {
       .all("wave", "alpha") as { original_local_id: string }[];
     expect(archived.map((t) => t.original_local_id).sort()).toEqual(["build", "design"]);
     ws.close();
+
+    const restore = await runCli(
+      ["archive", "restore", "wave", "--as", "alpha-restored", "--source", "alpha"],
+      dbPath,
+    );
+    expect(restore.error).toBeUndefined();
+    const restoredDb = openDb({ path: dbPath });
+    expect(
+      listTasks(restoredDb, "alpha-restored")
+        .map((t) => t.name)
+        .sort(),
+    ).toEqual(["build", "design"]);
+    restoredDb.close();
   });
 });
 
@@ -329,6 +343,7 @@ describe("mu archive delete", () => {
     expect(real.error).toBeUndefined();
     expect(real.exitCode).toBeNull();
     expect(real.stdout).toContain("Deleted archive");
+    expect(real.stdout).toContain("mu undo --yes");
 
     post = openDb({ path: dbPath });
     expect(listArchives(post)).toHaveLength(0);
@@ -352,11 +367,13 @@ describe("mu archive delete", () => {
       deleted: boolean;
       dryRun: boolean;
       summary: { label: string; totalTasks: number };
+      nextSteps: Array<{ command: string }>;
     };
     expect(obj.archiveLabel).toBe("wave");
     expect(obj.deleted).toBe(false);
     expect(obj.dryRun).toBe(true);
     expect(obj.summary.label).toBe("wave");
+    expect(obj.nextSteps.map((step) => step.command).join("\n")).toContain("mu archive restore");
   });
 
   it("delete missing archive → ArchiveNotFoundError; exit 3 (also in dry-run mode)", async () => {

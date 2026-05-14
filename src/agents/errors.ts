@@ -333,6 +333,10 @@ export class WorkspacePreservedError extends Error implements HasNextSteps {
         command: `mu agent close ${this.agentName} --discard-workspace`,
       },
       {
+        intent: "If the workstream was archived, restore task memory under a fresh name",
+        command: "mu archive restore <label> --as <new-workstream> --source <workstream>",
+      },
+      {
         intent: "Or just inspect what's in the workspace",
         command: `cd ${this.workspacePath}`,
       },

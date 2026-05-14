@@ -652,11 +652,13 @@ export function buildProgram(): Command {
     // help dump (commander's then ours). We suppress commander's stderr
     // entirely in applyExitOverride below; this comment is the load-
     // bearing explanation of why we don't reach for showHelpAfterError().
-    // Sort the Commands list (NOT the Options list) alphabetically in
-    // every --help screen. Commander v14 inherits configureHelp via
-    // copyInheritedSettings() when subcommands are created with
-    // .command(), but we also walk the tree below for certainty —
-    // future subcommand groups added via .addCommand() do not inherit.
+    // Sort most Commands lists (NOT the Options list) alphabetically.
+    // `mu archive --help` keeps semantic registration order so the
+    // archive lifecycle reads create/list/show → add/restore/remove/delete.
+    // Commander v14 inherits configureHelp via copyInheritedSettings()
+    // when subcommands are created with .command(), but we also walk the
+    // tree below for certainty — future subcommand groups added via
+    // .addCommand() do not inherit.
     .configureHelp({ sortSubcommands: true })
     // Without this, `mu task list --json` would bind --json to the
     // program (where we declare it for the bare `mu --json` help path)
@@ -710,9 +712,11 @@ export function buildProgram(): Command {
 // holds regardless of how a subcommand was attached (.command() vs
 // .addCommand()) and regardless of inheritance behaviour across
 // commander versions. Preserves any other help-configuration keys
-// already set on a subcommand.
+// already set on a subcommand. Exception: archive help is lifecycle-
+// ordered so add/restore/remove/delete read as one coherent cluster.
 function applyAlphabeticalHelpSort(cmd: Command): void {
-  cmd.configureHelp({ ...cmd.configureHelp(), sortSubcommands: true });
+  const keepSemanticOrder = cmd.name() === "archive";
+  cmd.configureHelp({ ...cmd.configureHelp(), sortSubcommands: !keepSemanticOrder });
   for (const sub of cmd.commands) {
     applyAlphabeticalHelpSort(sub);
   }

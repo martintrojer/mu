@@ -1,4 +1,4 @@
-// mu — `mu archive` verbs (create / list / show / add / remove / restore / delete).
+// mu — `mu archive` verbs (create / list / show / add / restore / remove / delete).
 //
 // Phase 2 of the v0.3 archive feature (workstream_archive_verb).
 // Phase 1 landed the schema (v6) + SDK (src/archives.ts); this file
@@ -10,8 +10,8 @@
 //   mu archive list
 //   mu archive show <label>
 //   mu archive add <label> -w <workstream> [--destroy]
-//   mu archive remove <label> -w <workstream>
 //   mu archive restore <label> --as <new-ws> [--source <orig-ws>]
+//   mu archive remove <label> -w <workstream>
 //   mu archive delete <label> [--yes]
 //
 // Mirrors src/cli/workspace.ts's wiring shape (one-file-per-verb-
@@ -257,12 +257,20 @@ export async function cmdArchiveAdd(
     },
     {
       intent: opts.destroy
-        ? "Undo the destroy (DB only; tmux NOT rolled back)"
+        ? "Restore the archived workstream under a fresh name"
         : "Destroy the source workstream now that its memory is preserved",
       command: opts.destroy
-        ? "mu undo --yes"
+        ? `mu archive restore ${label} --as <new-workstream> --source ${workstream}`
         : `mu archive add ${label} -w ${workstream} --destroy`,
     },
+    ...(opts.destroy
+      ? [
+          {
+            intent: "Undo the destroy (DB only; tmux NOT rolled back)",
+            command: "mu undo --yes",
+          },
+        ]
+      : []),
   ]);
 }
 
@@ -357,6 +365,10 @@ export async function cmdArchiveDelete(
             intent: "Confirm and actually delete (a snapshot is taken first)",
             command: `mu archive delete ${label} --yes`,
           },
+          {
+            intent: "Recover a source before deleting the archive",
+            command: `mu archive restore ${label} --as <new-workstream> --source <workstream>`,
+          },
         ],
       });
       return;
@@ -378,6 +390,10 @@ export async function cmdArchiveDelete(
       {
         intent: "Confirm and actually delete",
         command: `mu archive delete ${label} --yes`,
+      },
+      {
+        intent: "Recover a source before deleting the archive",
+        command: `mu archive restore ${label} --as <new-workstream> --source <workstream>`,
       },
       {
         intent: "Surgically remove a single source workstream instead",
@@ -402,7 +418,7 @@ export async function cmdArchiveDelete(
       removedTasks: summary.totalTasks,
       nextSteps: [
         {
-          intent: "Undo (a snapshot was taken before the delete)",
+          intent: "Recover the deleted archive (a snapshot was taken before the delete)",
           command: "mu undo --yes",
         },
       ],
@@ -416,7 +432,7 @@ export async function cmdArchiveDelete(
   );
   printNextSteps([
     {
-      intent: "Undo (a snapshot was taken before the delete)",
+      intent: "Recover the deleted archive (a snapshot was taken before the delete)",
       command: "mu undo --yes",
     },
   ]);
@@ -520,7 +536,11 @@ export async function cmdArchiveExport(
     0,
   );
   const nextSteps: NextStep[] = [
-    { intent: "Browse the bucket", command: `ls ${result.outDir}` },
+    { intent: "Browse the read-only human/git/docs bucket", command: `ls ${result.outDir}` },
+    {
+      intent: "Restore losslessly from the archive (not from this bucket)",
+      command: `mu archive restore ${label} --as <new-workstream> --source <workstream>`,
+    },
     {
       intent: "Re-export to refresh (additive; existing source-ws subdirs untouched)",
       command: `mu archive export ${label} --out ${result.outDir}`,
@@ -549,6 +569,11 @@ export async function cmdArchiveExport(
     `Exported archive ${pc.bold(label)} → ${pc.bold(result.outDir)} ${pc.dim(
       `(sources=${result.sourceCount}, tasks=${totalTasks}, written=${result.written}, unchanged=${result.unchanged}, preserved=${result.preserved})`,
     )}`,
+  );
+  console.log(
+    pc.dim(
+      "This bucket is a read-only artifact for humans/git/docs; use `mu archive restore`, not `mu workstream import`, for lossless un-archive.",
+    ),
   );
   printNextSteps(nextSteps);
 }
@@ -618,12 +643,12 @@ export function wireArchiveCommands(program: Command): void {
   archive
     .command("add <label>")
     .description(
-      "Snapshot a workstream's task graph (tasks + edges + notes + events) into an existing archive. Idempotent at (archive, source_workstream) granularity. With --destroy, cascades to `mu workstream destroy --yes` after the archive succeeds.",
+      "Snapshot a workstream's task graph (tasks + edges + notes + events) into an existing archive. Idempotent at (archive, source_workstream) granularity. With --destroy, cascades to `mu workstream destroy --yes` after the archive succeeds; reverse with `mu archive restore <label> --as <new>`.",
     )
     .option(...WORKSTREAM_OPT)
     .option(
       "--destroy",
-      "After a successful archive, also destroy the source workstream (kills tmux + frees workspaces + cascade-deletes DB rows).",
+      "After a successful archive, also destroy the source workstream (kills tmux + frees workspaces + cascade-deletes DB rows). Recover later with `mu archive restore <label> --as <new>`.",
     )
     .option(...JSON_OPT)
     .action(function (label: string) {
@@ -637,6 +662,22 @@ export function wireArchiveCommands(program: Command): void {
         json?: boolean;
       };
       return handle((db) => cmdArchiveAdd(db, label, opts), this as Command)();
+    });
+
+  archive
+    .command("restore <label>")
+    .description(
+      "Restore one archived source workstream into a fresh workstream directly from archived_* tables. This is the lossless un-archive path; does not restore agents, workspace_path, or agent_logs (archives do not snapshot live panes or the live event log).",
+    )
+    .requiredOption("--as <new-ws-name>", "fresh workstream name to create; refuses collisions")
+    .option(
+      "--source <orig-ws-name>",
+      "required when the archive contains multiple source workstreams",
+    )
+    .option(...JSON_OPT)
+    .action(function (label: string) {
+      const opts = (this as Command).opts() as { as?: string; source?: string; json?: boolean };
+      return handle((db) => cmdArchiveRestore(db, label, opts), this as Command)();
     });
 
   archive
@@ -675,29 +716,13 @@ export function wireArchiveCommands(program: Command): void {
   archive
     .command("export <label>")
     .description(
-      "Render every source workstream in an archive to a bucket directory of markdown (one subdir per source-ws + bucket-level README/INDEX/manifest). Idempotent + additive: re-running refreshes only changed task files.",
+      "Render every source workstream in an archive to a READ-ONLY bucket directory of markdown for humans/git/docs. Idempotent + additive: re-running refreshes only changed task files. For lossless un-archive, use `mu archive restore`, not `mu workstream import` on this bucket.",
     )
     .option("--out <dir>", "output directory (the bucket); required")
     .option(...JSON_OPT)
     .action(function (label: string) {
       const opts = (this as Command).opts() as { out?: string; json?: boolean };
       return handle((db) => cmdArchiveExport(db, label, opts), this as Command)();
-    });
-
-  archive
-    .command("restore <label>")
-    .description(
-      "Restore one archived source workstream into a fresh workstream directly from archived_* tables. Does not restore agents, workspace_path, or agent_logs (archives do not snapshot live panes or the live event log).",
-    )
-    .requiredOption("--as <new-ws-name>", "fresh workstream name to create; refuses collisions")
-    .option(
-      "--source <orig-ws-name>",
-      "required when the archive contains multiple source workstreams",
-    )
-    .option(...JSON_OPT)
-    .action(function (label: string) {
-      const opts = (this as Command).opts() as { as?: string; source?: string; json?: boolean };
-      return handle((db) => cmdArchiveRestore(db, label, opts), this as Command)();
     });
 
   archive

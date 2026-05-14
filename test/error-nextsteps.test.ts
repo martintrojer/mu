@@ -474,6 +474,12 @@ describe("error-specific structured-step assertions", () => {
     expect(mangleInit?.intent).toBe("Try a sanitized name (best guess)");
   });
 
+  it("WorkspacePreservedError includes archive restore in the preserve-before-discard path", () => {
+    const err = new WorkspacePreservedError("alice", "/path/to/ws");
+    const commands = err.errorNextSteps().map((step) => step.command);
+    expect(commands.some((command) => command.includes("mu archive restore"))).toBe(true);
+  });
+
   it("PaneNotFoundError suggests scanning for live panes", () => {
     const err = new PaneNotFoundError("%999");
     const steps = err.errorNextSteps();
