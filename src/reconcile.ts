@@ -155,6 +155,8 @@ export async function reconcile(db: Db, opts: ReconcileOptions): Promise<Reconci
   for (const agent of dbAgents) {
     if (tmuxByPaneId.has(agent.paneId)) {
       survivors.push(agent);
+    } else if (isPendingPaneId(agent.paneId)) {
+      survivors.push(agent);
     } else {
       if (mode === "full") deleteAgent(db, agent.name, agent.workstreamName);
       prunedGhosts++;
