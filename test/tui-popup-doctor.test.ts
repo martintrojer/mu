@@ -246,11 +246,12 @@ describe("DoctorPopup: behaviour", () => {
       expect(text).toContain("agents · warn");
       expect(text).toContain("status:  warn");
       expect(text).toContain("detail:  2 ghost panes");
+      expect(text).toContain("mu state");
       expect(text).toContain("mu agent list");
       expect(text).not.toContain("TaskDetailDrill");
 
       await simulateInput(r.stdin, "y");
-      expect(r.yanked).toEqual(["mu agent list"]);
+      expect(r.yanked).toEqual(["mu state"]);
 
       await simulateInput(r.stdin, "escape");
       text = await waitForFrame(r.stdout, "Doctor · popup (5/7)");
@@ -315,7 +316,7 @@ describe("DoctorPopup: drill body renderer (pure)", () => {
   const sample: DoctorCheck = {
     name: "agents",
     status: "warn",
-    detail: "2 ghost panes; run `mu agent list`",
+    detail: "2 ghost panes; run `mu state` or `mu agent list` to reap",
   };
 
   it("includes the check name + status + detail + remediation hint", () => {
@@ -324,6 +325,7 @@ describe("DoctorPopup: drill body renderer (pure)", () => {
     expect(body).toContain("status:  warn");
     expect(body).toContain("2 ghost panes");
     expect(body).toContain("remediation hint");
+    expect(body).toContain("mu state");
     expect(body).toContain("mu agent list");
   });
 

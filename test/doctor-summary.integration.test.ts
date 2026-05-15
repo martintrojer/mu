@@ -153,7 +153,7 @@ describe("loadDoctorSummary", () => {
 // alongside.
 describe("yankCommandForCheck", () => {
   it("maps each known check name to a SELECT-shape verb", () => {
-    expect(yankCommandForCheck({ name: "agents", status: "warn" })).toBe("mu agent list");
+    expect(yankCommandForCheck({ name: "agents", status: "warn" })).toBe("mu state");
     expect(yankCommandForCheck({ name: "panes", status: "warn" })).toBe("mu agent adopt");
     expect(yankCommandForCheck({ name: "workspaces", status: "warn" })).toBe(
       "mu workspace orphans",

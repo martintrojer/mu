@@ -548,12 +548,14 @@ export async function cmdAttach(
   const { name } = await resolveEntityRef(db, rawName, opts, "agent");
   const workstream = await resolveWorkstream(opts.workstream);
   const sessionName = `mu-${workstream}`;
+  // Reconcile before the friendly session precheck. If the whole tmux
+  // session/server vanished, listLiveAgents observes an empty pane set
+  // and reaps registered agents before we tell the operator there is no
+  // session to attach to.
+  const view = await listLiveAgents(db, { workstream });
   if (!(await sessionExists(sessionName))) {
     throw new UsageError(`workstream "${workstream}" has no tmux session yet`);
   }
-  // Reconcile first so attach reports reality and reaps a disappeared pane
-  // instead of trying to capture scrollback from a ghost.
-  const view = await listLiveAgents(db, { workstream });
   const agent = view.agents.find((a) => a.name === name);
   if (!agent) {
     throw new AgentNotFoundError(name);

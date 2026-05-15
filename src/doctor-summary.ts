@@ -186,7 +186,7 @@ export function loadDoctorSummary(db: Db, snapshot: WorkstreamSnapshot | null): 
       checks.push({
         name: "agents",
         status: "warn",
-        detail: `${ghosts} ghost pane${ghosts === 1 ? "" : "s"}; run \`mu agent list\``,
+        detail: `${ghosts} ghost pane${ghosts === 1 ? "" : "s"}; run \`mu state\` or \`mu agent list\` to reap`,
       });
     }
     const orphanPanes = snapshot.view.orphans.length;
@@ -275,9 +275,10 @@ export function loadDoctorChecks(
 export function yankCommandForCheck(check: Pick<DoctorCheck, "name" | "status">): string {
   switch (check.name) {
     case "agents":
-      // Diagnostic: list live + ghost panes. Operator decides
-      // whether to `mu agent close` from the list output.
-      return "mu agent list";
+      // Diagnostic/reaping read: `mu state` and `mu agent list` both
+      // reconcile missing panes. Prefer the canonical state card; the
+      // detailed agent list remains in the doctor detail text.
+      return "mu state";
     case "panes":
       // Orphan tmux panes — the standard adoption recipe.
       return "mu agent adopt";
@@ -314,10 +315,10 @@ export function remediationParagraph(check: DoctorCheck): readonly string[] {
   switch (check.name) {
     case "agents":
       return [
-        "A 'ghost pane' is a tmux pane that mu's reconcile pass would",
-        "prune on the next mutation. Run `mu agent list` to see the",
-        "current state, then `mu agent close <name>` if the agent is",
-        "stale. The TUI is read-only — no auto-prune.",
+        "A 'ghost pane' is a registered agent whose tmux pane is gone.",
+        "Doctor only reports the count. Run `mu state` or `mu agent list`",
+        "to reap ghost agents and return their IN_PROGRESS tasks to OPEN.",
+        "The TUI is read-only, but its slow tick uses the same state reap.",
       ];
     case "panes":
       return [

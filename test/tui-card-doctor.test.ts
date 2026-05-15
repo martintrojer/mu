@@ -34,7 +34,11 @@ const PROBLEMS_DOCTOR: DoctorSummary = {
     { name: "schema_version", status: "ok", detail: "7" },
     { name: "journal_mode", status: "warn", detail: "delete (expected wal)" },
     { name: "foreign_keys", status: "ok", detail: "on" },
-    { name: "agents", status: "warn", detail: "2 ghost panes; run `mu agent list`" },
+    {
+      name: "agents",
+      status: "warn",
+      detail: "2 ghost panes; run `mu state` or `mu agent list` to reap",
+    },
     { name: "panes", status: "ok", detail: "no orphan panes" },
     { name: "workspaces", status: "fail", detail: "1 orphan dir; run `mu workspace orphans`" },
   ],
@@ -87,7 +91,7 @@ describe("DoctorCard", () => {
     expect(text).toContain("3");
     for (const [name, detail] of [
       ["journal_mode", "delete (expected wal)"],
-      ["agents", "2 ghost panes; run `mu agent list`"],
+      ["agents", "2 ghost panes; run `mu state`"],
       ["workspaces", "1 orphan dir; run `mu workspace orphans`"],
     ] as const) {
       expectTextOnce(text, name);

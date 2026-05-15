@@ -135,9 +135,12 @@ export async function cmdDoctor(db: Db, opts: { json?: boolean } = {}): Promise<
     // bug_agent_spawn_workspace_fk_failure).
     try {
       const view = await listLiveAgents(db, { workstream: ws, mode: "report-only" });
+      const ghosts = view.report.prunedGhosts;
       const ghostNote =
-        view.report.prunedGhosts > 0
-          ? pc.yellow(`pruned ${view.report.prunedGhosts} during this check`)
+        ghosts > 0
+          ? pc.yellow(
+              `${ghosts} ghost pane${ghosts === 1 ? "" : "s"} would be reaped by \`mu state\` or \`mu agent list\``,
+            )
           : pc.green("none");
       console.log(`  ghosts           : ${ghostNote}`);
       const orphanColor = view.orphans.length > 0 ? pc.yellow : pc.green;
