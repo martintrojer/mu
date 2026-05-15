@@ -405,15 +405,11 @@ const MAX_TITLE_LEN = 64;
  * So we insert the agent with a placeholder pane_id, then create the
  * workspace, then the real pane, then patch pane_id.
  *
- * Because no real tmux pane has this prefix, ANY mutating reconcile
+ * Because no real tmux pane has this prefix, a naive mutating reconcile
  * pass would treat the placeholder row as a ghost and prune it
- * (→ FK-failure on the workspace insert mid-spawn). Callers MUST:
- *   - either guard against it explicitly (refreshAgentTitle), OR
- *   - run reconcile in mode: "status-only" or "report-only"
- *     (status pollers and read-only diagnostic verbs; see
- *     `listLiveAgents.mode` rationale below). status-only also
- *     skips status detection on placeholder rows directly
- *     (reconcile() uses isPendingPaneId for that).
+ * (→ FK-failure on the workspace insert mid-spawn). Reconcile now guards
+ * against it explicitly via isPendingPaneId(), and refreshAgentTitle skips
+ * placeholders for the same reason.
  *
  * Bug surfaced as bug_agent_spawn_workspace_fk_failure.
  */
@@ -743,22 +739,16 @@ export interface ListLiveAgentsOptions {
   /**
    * Which kind of reconciliation pass to run. Forwarded to
    * `reconcile()`'s same-name option. Default `"full"` (the
-   * documented mutating behaviour `mu agent list` has always had).
+   * documented mutating behaviour `mu agent list` has always had,
+   * now also used by `mu state` and `mu agent attach`).
    *
-   * Read-only callers split two ways:
-   *   - `mu state`, `mu agent attach` →
-   *     `"status-only"`: refresh status + title (writes to DB),
-   *     skip prune + reap. The operator's primary signal
-   *     (busy/needs_input) stays fresh without a periodic poll
-   *     racing in-flight spawns.
-   *   - `mu doctor`, `mu undo` → `"report-only"`: count drift,
-   *     mutate nothing. `mu undo` MUST use this so a post-restore
-   *     reconcile doesn't delete the rows the snapshot just
-   *     restored (snap_undo_reconcile_destroys_recovered_agents).
+   * `mu doctor` and `mu undo` pass `"report-only"`: count drift,
+   * mutate nothing. `mu undo` MUST use this so a post-restore
+   * reconcile doesn't delete the rows the snapshot just restored
+   * (snap_undo_reconcile_destroys_recovered_agents).
    *
-   * Skipping prune is what protects mid-spawn placeholders (pane
-   * id `%pending-<name>`) from being treated as ghosts and pruned
-   * out from under `createWorkspace`'s FK insert
+   * Mid-spawn placeholders (pane id `%pending-<name>`) are protected
+   * directly in reconcile's prune loop, independent of mode
    * (bug_agent_spawn_workspace_fk_failure).
    *
    * BREAKING: this replaces the previous `dryRun?: boolean`
@@ -779,11 +769,10 @@ export interface LiveAgentsView {
 
 /**
  * Return the live, reality-reconciled view of agents in a workstream.
- * `mu agent list` calls this with `mode: "full"` (mutating); status
- * pollers (`mu state`, `mu agent attach`) call it with
- * `mode: "status-only"` to refresh status without pruning; read-only
- * diagnostic / restore paths (`mu doctor`, `mu undo`) call it with
- * `mode: "report-only"` to mutate nothing at all.
+ * `mu state`, `mu agent list`, and `mu agent attach` call this with the
+ * default `mode: "full"` (mutating); read-only diagnostic / restore paths
+ * (`mu doctor`, `mu undo`) call it with `mode: "report-only"` to mutate
+ * nothing at all.
  */
 export async function listLiveAgents(db: Db, opts: ListLiveAgentsOptions): Promise<LiveAgentsView> {
   const report = await reconcile(db, {

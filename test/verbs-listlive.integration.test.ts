@@ -1,6 +1,5 @@
-// listLiveAgents (full + status-only + report-only modes) + the
-// end-to-end multi-agent verbs scenario (spawn × 3 → list → send →
-// close all).
+// listLiveAgents (full + report-only modes) + the end-to-end multi-agent
+// verbs scenario (spawn × 3 → list → send → close all).
 //
 // Split out of test/verbs.test.ts under
 // testreview_test_files_past_800loc — see test/_verbs-mock.ts for
@@ -106,30 +105,8 @@ describe("listLiveAgents", () => {
     expect(getAgent(db, "ghost", "auth")).toBeUndefined();
   });
 
-  // mode propagation — status pollers (mu state / mu attach)
-  // MUST pass mode: "status-only" and read-only diagnostic verbs (mu
-  // doctor / mu undo) MUST pass mode: "report-only" so the periodic
-  // poll doesn't race a long-running spawn (see
-  // bug_agent_spawn_workspace_fk_failure: a watched state card was
-  // pruning the spawn's placeholder agent row mid-`git worktree add`,
-  // surfacing as a confusing FOREIGN KEY constraint failure on the
-  // subsequent vcs_workspaces INSERT).
   describe("mode propagation", () => {
-    it("mode: 'status-only' does NOT prune ghost rows (the row survives)", async () => {
-      insertAgent(db, { name: "ghost", workstream: "auth", paneId: "%999", status: "busy" });
-      const { executor } = mockTmux(state);
-      setTmuxExecutor(executor);
-
-      const view = await listLiveAgents(db, { workstream: "auth", mode: "status-only" });
-      // The report still COUNTS the would-be-pruned ghost (so callers
-      // can surface drift) but the row is intact.
-      expect(view.report.prunedGhosts).toBe(1);
-      expect(view.report.mode).toBe("status-only");
-      expect(view.agents.map((a) => a.name)).toEqual(["ghost"]);
-      expect(getAgent(db, "ghost", "auth")?.name).toBe("ghost");
-    });
-
-    it("mode: 'report-only' does NOT prune ghost rows either", async () => {
+    it("mode: 'report-only' does NOT prune ghost rows", async () => {
       insertAgent(db, { name: "ghost", workstream: "auth", paneId: "%999", status: "busy" });
       const { executor } = mockTmux(state);
       setTmuxExecutor(executor);
@@ -151,7 +128,7 @@ describe("listLiveAgents", () => {
       expect(getAgent(db, "ghost", "auth")).toBeUndefined();
     });
 
-    it("mode: 'status-only' STILL surfaces orphans (orphan-detection is pure read)", async () => {
+    it("mode: 'full' surfaces orphans (orphan-detection is pure read)", async () => {
       const { executor } = mockTmux(state);
       setTmuxExecutor(executor);
       // Spawn one real agent so the auth session exists in mockTmux,
@@ -167,9 +144,9 @@ describe("listLiveAgents", () => {
         command: "pi",
       });
 
-      const view = await listLiveAgents(db, { workstream: "auth", mode: "status-only" });
+      const view = await listLiveAgents(db, { workstream: "auth" });
       expect(view.orphans).toHaveLength(1);
-      expect(view.report.mode).toBe("status-only");
+      expect(view.report.mode).toBe("full");
     });
   });
 });

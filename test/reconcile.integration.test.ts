@@ -8,7 +8,9 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type AgentStatus, getAgent, insertAgent, listAgents } from "../src/agents.js";
 import { type Db, openDb } from "../src/db.js";
+import { listLogs } from "../src/logs.js";
 import { reconcile } from "../src/reconcile.js";
+import { addTask, claimTask, getTask, listNotes } from "../src/tasks.js";
 import {
   type TmuxExecResult,
   type TmuxExecutor,
@@ -567,76 +569,84 @@ describe("reconcile — mode: 'report-only' does not mutate (snap_undo_reconcile
   });
 });
 
-describe("reconcile — mode: 'status-only' refreshes status without pruning (bug_pane_title_glyph_stuck_at_needs_input)", () => {
-  it("DOES update status from scrollback (the whole point of status-only)", async () => {
+describe("reconcile — full mode refreshes status and protects placeholders", () => {
+  it("updates status from scrollback", async () => {
     insertAgent(db, { name: "alice", workstream: "auth", paneId: "%15", status: "spawning" });
     const { executor } = mockTmux([
       { windowId: "@1", paneId: "%15", title: "alice", command: "pi", scrollback: BUSY_SCROLLBACK },
     ]);
     setTmuxExecutor(executor);
 
-    const report = await reconcile(db, { workstream: "auth", mode: "status-only" });
-    expect(report.mode).toBe("status-only");
+    const report = await reconcile(db, { workstream: "auth" });
+    expect(report.mode).toBe("full");
     expect(report.statusChanges).toBe(1);
     expect(getAgent(db, "alice", "auth")?.status).toBe("busy");
   });
 
-  it("DOES NOT prune ghost rows (the whole point of NOT being mode:'full')", async () => {
-    insertAgent(db, { name: "ghost", workstream: "auth", paneId: "%999", status: "busy" });
-    const { executor } = mockTmux([]); // ghost's pane is gone
-    setTmuxExecutor(executor);
-
-    const report = await reconcile(db, { workstream: "auth", mode: "status-only" });
-    expect(report.mode).toBe("status-only");
-    expect(report.prunedGhosts).toBe(1); // counted…
-    expect(getAgent(db, "ghost", "auth")).toBeDefined(); // …but row survives
-  });
-
-  it("SKIPS status detection on placeholder agents whose pane id starts with %pending- (mid-spawn safety)", async () => {
-    // Mid-spawn: spawnAgent has inserted the agent row with the
-    // %pending-<name> sentinel pane id; createWorkspace is still
-    // running. status-only must not capturePane on the placeholder.
+  it("skips status detection on placeholder agents whose pane id starts with %pending-", async () => {
     insertAgent(db, {
       name: "alice",
       workstream: "auth",
       paneId: "%pending-alice",
       status: "spawning",
     });
-    // Empty tmux session (placeholder doesn't exist as a real pane).
     const { executor, calls } = mockTmux([]);
     setTmuxExecutor(executor);
 
-    const report = await reconcile(db, { workstream: "auth", mode: "status-only" });
-    expect(report.mode).toBe("status-only");
-    // Status unchanged (no scrollback capture, no detector run).
+    const report = await reconcile(db, { workstream: "auth" });
+    expect(report.mode).toBe("full");
     expect(getAgent(db, "alice", "auth")?.status).toBe("spawning");
     expect(report.statusChanges).toBe(0);
     expect(report.prunedGhosts).toBe(0);
-    // No capturePane against the fake pane id (would have errored).
-    const sawCapture = calls.some((c) => c[0] === "capture-pane" && c.includes("%pending-alice"));
-    expect(sawCapture).toBe(false);
-    // Placeholder is NOT in tmux but status-only doesn't prune
-    // (load-bearing for bug_agent_spawn_workspace_fk_failure):
-    // the row survives so createWorkspace's FK insert succeeds.
-    expect(getAgent(db, "alice", "auth")).toBeDefined();
-  });
-
-  it("skips placeholder pane ids during prune before status-only mode handling", async () => {
-    insertAgent(db, {
-      name: "alice",
-      workstream: "auth",
-      paneId: "%pending-alice",
-      status: "spawning",
-    });
-    const { executor, calls } = mockTmux([]);
-    setTmuxExecutor(executor);
-
-    const report = await reconcile(db, { workstream: "auth", mode: "status-only" });
-
-    expect(report.mode).toBe("status-only");
-    expect(report.prunedGhosts).toBe(0);
-    expect(getAgent(db, "alice", "auth")).toBeDefined();
     expect(calls.some((c) => c[0] === "capture-pane" && c.includes("%pending-alice"))).toBe(false);
+  });
+});
+
+describe("reconcile — wholesale tmux crash recovery", () => {
+  it("deletes all lost agents and reaps their IN_PROGRESS tasks", async () => {
+    insertAgent(db, { name: "worker-1", workstream: "auth", paneId: "%1", status: "busy" });
+    insertAgent(db, { name: "worker-2", workstream: "auth", paneId: "%2", status: "busy" });
+    addTask(db, {
+      localId: "design",
+      workstream: "auth",
+      title: "Design auth",
+      impact: 80,
+      effortDays: 2,
+    });
+    addTask(db, {
+      localId: "impl",
+      workstream: "auth",
+      title: "Implement auth",
+      impact: 90,
+      effortDays: 3,
+    });
+    await claimTask(db, "design", { agentName: "worker-1", workstream: "auth" });
+    await claimTask(db, "impl", { agentName: "worker-2", workstream: "auth" });
+
+    const { executor } = mockTmux([]);
+    setTmuxExecutor(async (args) => {
+      if (args[0] === "has-session") return fail("no server running");
+      return executor(args);
+    });
+
+    const report = await reconcile(db, { workstream: "auth" });
+
+    expect(report.mode).toBe("full");
+    expect(report.prunedGhosts).toBe(2);
+    expect(listAgents(db, { workstream: "auth" })).toEqual([]);
+    for (const id of ["design", "impl"]) {
+      const task = getTask(db, id, "auth");
+      expect(task?.status).toBe("OPEN");
+      expect(task?.ownerName).toBeNull();
+      expect(listNotes(db, id, "auth").some((n) => n.author === "reaper")).toBe(true);
+    }
+    const reapEvents = listLogs(db, { workstream: "auth", kind: "event" }).filter((r) =>
+      r.payload.startsWith("task reap "),
+    );
+    expect(reapEvents.map((r) => r.payload).sort()).toEqual([
+      "task reap design (previous owner worker-1 gone, IN_PROGRESS → OPEN)",
+      "task reap impl (previous owner worker-2 gone, IN_PROGRESS → OPEN)",
+    ]);
   });
 });
 

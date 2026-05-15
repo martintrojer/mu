@@ -106,7 +106,7 @@ function snapshotFor(slot: keyof WorkstreamSnapshot, tasks: TaskRow[]): Workstre
     view: {
       agents: [],
       orphans: [],
-      report: { prunedGhosts: 0, statusChanges: 0, orphans: [], mode: "status-only" },
+      report: { prunedGhosts: 0, statusChanges: 0, orphans: [], mode: "report-only" },
     },
     tracks: [],
     ready: [],

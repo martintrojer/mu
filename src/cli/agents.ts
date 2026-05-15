@@ -551,10 +551,9 @@ export async function cmdAttach(
   if (!(await sessionExists(sessionName))) {
     throw new UsageError(`workstream "${workstream}" has no tmux session yet`);
   }
-  // mu agent attach prints scrollback + an attach hint; it has no
-  // business pruning the registry. status-only so the operator still
-  // sees fresh agent status when they run it interactively.
-  const view = await listLiveAgents(db, { workstream, mode: "status-only" });
+  // Reconcile first so attach reports reality and reaps a disappeared pane
+  // instead of trying to capture scrollback from a ghost.
+  const view = await listLiveAgents(db, { workstream });
   const agent = view.agents.find((a) => a.name === name);
   if (!agent) {
     throw new AgentNotFoundError(name);

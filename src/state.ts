@@ -129,8 +129,9 @@ export async function loadWorkstreamSnapshotFast(
  * doctor, which reports over those slow-tier observations). Returns only the
  * fields the fast snapshot deliberately leaves empty or undecorated.
  *
- * status-only refresh: don't prune mid-spawn placeholders or reap
- * unreachable agents — every render-mode is a polling read surface.
+ * The slow snapshot tier runs full reconciliation: missing panes are
+ * reaped, while mid-spawn placeholders remain protected by the prune
+ * loop's pending-pane guard.
  */
 export async function loadWorkstreamSnapshotSlow(
   db: Db,
@@ -138,7 +139,7 @@ export async function loadWorkstreamSnapshotSlow(
   opts: LoadWorkstreamSnapshotOptions = {},
   baseSnapshot?: WorkstreamSnapshot,
 ): Promise<WorkstreamSnapshotSlowFields> {
-  const view = await listLiveAgents(db, { workstream, mode: "status-only" });
+  const view = await listLiveAgents(db, { workstream });
   let workspaces = listWorkspaces(db, workstream);
   if (opts.withDirty === true) workspaces = await decorateWithDirty(workspaces);
   const commits = await loadRecentCommits(opts.withRecentCommits);
@@ -196,7 +197,7 @@ function emptyLiveAgentsView(): LiveAgentsView {
   return {
     agents: [],
     orphans: [],
-    report: { prunedGhosts: 0, statusChanges: 0, orphans: [], mode: "status-only" },
+    report: { prunedGhosts: 0, statusChanges: 0, orphans: [], mode: "full" },
   };
 }
 

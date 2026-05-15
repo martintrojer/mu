@@ -237,9 +237,9 @@ export async function cmdUndo(
         wouldBePrunedGhosts: totalGhostsWouldBePruned,
         orphansSurfaced: totalOrphans,
         // Reconcile mode: "report-only" preserves the snapshot's
-        // restored rows verbatim. (Was `dryRun: true` before the
-        // status-only/report-only split — BREAKING for SDK consumers
-        // reading this field; see CHANGELOG.)
+        // restored rows verbatim. (Was `dryRun: true` before named
+        // modes — BREAKING for SDK consumers reading this field; see
+        // CHANGELOG.)
         mode: "report-only",
         perWorkstream: reconcilePerWorkstream,
       },

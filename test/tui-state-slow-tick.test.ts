@@ -12,7 +12,7 @@ function fastSnapshot(label: string): WorkstreamSnapshot {
     view: {
       agents: [],
       orphans: [],
-      report: { prunedGhosts: 0, statusChanges: 0, orphans: [], mode: "status-only" },
+      report: { prunedGhosts: 0, statusChanges: 0, orphans: [], mode: "report-only" },
     },
     tracks: [],
     ready: [
@@ -67,7 +67,7 @@ function slowFields(label: string): WorkstreamSnapshotSlowFields {
         },
       ],
       orphans: [],
-      report: { prunedGhosts: 0, statusChanges: 0, orphans: [], mode: "status-only" },
+      report: { prunedGhosts: 0, statusChanges: 0, orphans: [], mode: "report-only" },
     },
     workspaces: [
       {

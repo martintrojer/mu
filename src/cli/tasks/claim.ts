@@ -395,9 +395,8 @@ export async function cmdTaskWait(
   sdkOpts.beforePoll = async () => {
     // Reconcile each unique workstream in the wait set. Each call is
     // a cheap (~few ms) tmux list-panes + per-survivor capture-pane.
-    // "status-only" mode would skip the prune — but the prune is
-    // exactly what fires the reaper that flips the task. Use
-    // "full" mode so dead panes get cleaned up AND the reaper runs.
+    // Full mode prunes dead panes, which fires the reaper that flips
+    // tasks back to OPEN.
     for (const wsName of workstreamSet) {
       try {
         await reconcile(db, { workstream: wsName, mode: "full" });

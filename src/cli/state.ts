@@ -26,13 +26,11 @@
 // stacks per-workstream full cards. In TUI mode N≥2
 // switches workstreams via tabs.
 //
-// Static snapshots pass mode: "status-only" to listLiveAgents —
-// refresh status + pane title (the operator's primary signal) but skip
-// prune + reap, so static renders never delete mid-spawn placeholders
-// (bug_agent_spawn_workspace_fk_failure) and the pane border indicator
-// stays fresh between mutating verbs
-// (bug_pane_title_glyph_stuck_at_needs_input). The TUI launches first
-// and performs its own fast/slow polling after Ink renders.
+// Static snapshots run full reconciliation: refresh status + pane title
+// (the operator's primary signal) and reap missing panes. Mid-spawn
+// placeholders remain protected by reconcile's pending-pane skip
+// (bug_agent_spawn_workspace_fk_failure). The TUI launches first and
+// performs its own fast/slow polling after Ink renders.
 
 import {
   JSON_OPT,

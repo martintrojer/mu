@@ -5,11 +5,12 @@
 //   1. Prune ghost rows whose pane no longer exists in tmux.
 //   2. Detect status from pane scrollback for surviving agents.
 //   3. Surface orphan panes that look like agents but have no DB row.
-//      Do NOT auto-adopt — `mu list` shows orphans under a separate
-//      section and the user runs `mu agent adopt` (roadmap) to formally claim.
+//      Do NOT auto-adopt — `mu agent list` shows orphans under a separate
+//      section and the user runs `mu agent adopt` to formally claim.
 //
-// `mu list` and `mu doctor` both call this. It's the only place where
-// the registry's view of the world is reconciled against tmux's view.
+// `mu state`, `mu agent list`, and `mu doctor` all call this. It's the only
+// place where the registry's view of the world is reconciled against tmux's
+// view.
 
 import {
   type AgentRow,
@@ -28,23 +29,11 @@ import { type TmuxPane, capturePane, listPanesInSession } from "./tmux.js";
 /**
  * What kind of reconciliation pass to run.
  *
- *   "full"        Default for `mu agent list`. Prunes ghosts (deleting
- *                 the registry row, which fires the deleteAgent reaper
- *                 that flips IN_PROGRESS tasks back to OPEN with
- *                 [reaper] notes), runs status detection against
- *                 surviving panes, surfaces orphans.
- *
- *   "status-only" The "freshen the operator's view" mode. Runs status
- *                 detection (DB writes that update agent status +
- *                 pane title — desired side-effects of a refresh) and
- *                 orphan surface. Does NOT prune (so a dead pane's
- *                 row stays visible until a real `mu agent list`) and
- *                 does NOT reap. Used by `mu state` and
- *                 `mu agent attach` — the verbs an operator polls to
- *                 answer "is worker-X busy or idle right
- *                 now?". Status detection skips placeholder agents
- *                 whose pane id starts with `%pending-` (mid-spawn,
- *                 no usable scrollback yet).
+ *   "full"        Default for `mu state` and `mu agent list`. Prunes
+ *                 ghosts (deleting the registry row, which fires the
+ *                 deleteAgent reaper that flips IN_PROGRESS tasks back
+ *                 to OPEN with [reaper] notes), runs status detection
+ *                 against surviving panes, surfaces orphans.
  *
  *   "report-only" Pure observation. Counts would-be-pruned ghosts
  *                 without deleting; skips status detection entirely
@@ -55,13 +44,11 @@ import { type TmuxPane, capturePane, listPanesInSession } from "./tmux.js";
  *                 snap_undo_reconcile_destroys_recovered_agents) and
  *                 `mu doctor` (read-only diagnostic).
  *
- * Surfaced live by bug_pane_title_glyph_stuck_at_needs_input: the
- * old `dryRun: boolean` flag conflated "don't prune" with "don't
- * detect status", so state-card pollers showed stale status
- * indefinitely. Splitting prune-suppression from status-suppression
- * is the fix.
+ * Mid-spawn placeholders are protected directly in the prune loop via
+ * isPendingPaneId(), so read paths no longer need a separate mode just to
+ * avoid racing spawn's workspace pre-stage.
  */
-export type ReconcileMode = "full" | "status-only" | "report-only";
+export type ReconcileMode = "full" | "report-only";
 
 export interface ReconcileOptions {
   /** The workstream whose registry rows we're reconciling. */
@@ -85,9 +72,9 @@ export interface ReconcileOptions {
 }
 
 export interface ReconcileReport {
-  /** Number of registry rows whose pane was gone. In status-only and
-   *  report-only modes this is the count of rows that WOULD have
-   *  been pruned; in `full` mode it's the count actually deleted. */
+  /** Number of registry rows whose pane was gone. In `report-only` mode
+   *  this is the count of rows that WOULD have been pruned; in `full`
+   *  mode it's the count actually deleted. */
   prunedGhosts: number;
   /** Number of agents whose status was changed by scrollback detection.
    *  Always 0 in `report-only` mode (status detection is skipped). */
@@ -146,11 +133,11 @@ export async function reconcile(db: Db, opts: ReconcileOptions): Promise<Reconci
   const orphans: TmuxPane[] = [];
 
   // 1. Prune ghosts (DB row references a pane that no longer exists).
-  //    Only `full` mode actually deletes; `status-only` and
-  //    `report-only` count the would-be-prunes so callers can surface
-  //    drift, but leave the row in place. The orphan-surface step
-  //    always treats them as "not-in-tmux" so the orphan list
-  //    semantics don't change.
+  //    `full` mode deletes (and therefore reaps); `report-only` counts
+  //    the would-be-prunes so callers can surface drift, but leaves the
+  //    row in place. Mid-spawn placeholder pane ids are treated as
+  //    survivors directly, which is the defensive skip that lets read
+  //    paths use full mode safely.
   const survivors: AgentRow[] = [];
   for (const agent of dbAgents) {
     if (tmuxByPaneId.has(agent.paneId)) {
@@ -170,14 +157,12 @@ export async function reconcile(db: Db, opts: ReconcileOptions): Promise<Reconci
   //    the DB (updateAgentStatus + refreshAgentTitle), and the
   //    report-only contract is "no mutation".
   //
-  //    `status-only` runs detection but skips placeholder agents
-  //    whose pane id starts with `%pending-` — those have no usable
-  //    scrollback yet (mid-spawn) and the placeholder pane id won't
-  //    resolve to a real tmux pane anyway. The pending sentinel is
-  //    documented in src/agents.ts (PENDING_PANE_PREFIX). Without
-  //    this skip, status-only would still try to capturePane on a
-  //    fake id and tmux would error.
-  if (mode !== "report-only") {
+  //    Full mode skips placeholder agents whose pane id starts with
+  //    `%pending-` — those have no usable scrollback yet (mid-spawn)
+  //    and the placeholder pane id won't resolve to a real tmux pane
+  //    anyway. The pending sentinel is documented in src/agents.ts
+  //    (PENDING_PANE_PREFIX).
+  if (mode === "full") {
     for (const agent of survivors) {
       if (isPendingPaneId(agent.paneId)) continue;
       const scrollback = await capturePane(agent.paneId, { lines: 100 });

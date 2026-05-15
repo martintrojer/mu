@@ -308,15 +308,13 @@ describe("listLiveAgents — idle enrichment wiring", () => {
     expect(view.agents[0]?.idle).toBeUndefined();
   });
 
-  // Mode propagation: status-pollers (`mu state`, `mu agent attach`)
-  // call listLiveAgents with mode:"status-only";
-  // read-only diagnostic verbs (`mu doctor`, `mu undo`) call it with
-  // mode:"report-only". The idle enrichment runs after `reconcile`
-  // returns and is therefore mode-independent — these tests pin that
-  // contract so a future refactor that gates enrichment on `mode ===
-  // 'full'` (or skips it on report-only because "no mutation") gets
-  // caught here.
-  for (const mode of ["full", "status-only", "report-only"] as const) {
+  // Mode propagation: status-pollers (`mu state`, `mu agent attach`) use
+  // full mode; read-only diagnostic verbs (`mu doctor`, `mu undo`) use
+  // report-only. The idle enrichment runs after `reconcile` returns and is
+  // therefore mode-independent — these tests pin that contract so a future
+  // refactor that gates enrichment on `mode === 'full'` (or skips it on
+  // report-only because "no mutation") gets caught here.
+  for (const mode of ["full", "report-only"] as const) {
     it(`enriches idle on mode:'${mode}'`, async () => {
       setupAgentOwningTask(db, {
         name: "alice",

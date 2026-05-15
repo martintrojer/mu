@@ -20,7 +20,7 @@ import type { WorkstreamSnapshot } from "../src/state.js";
 const EMPTY_VIEW = {
   agents: [],
   orphans: [],
-  report: { prunedGhosts: 0, statusChanges: 0, orphans: [], mode: "status-only" as const },
+  report: { prunedGhosts: 0, statusChanges: 0, orphans: [], mode: "report-only" as const },
 };
 
 function emptySnapshot(over: Partial<WorkstreamSnapshot> = {}): WorkstreamSnapshot {

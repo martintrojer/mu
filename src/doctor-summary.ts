@@ -14,9 +14,8 @@
 //   - Synchronous DB pragmas + COUNT(*)-shape SELECTs only.
 //   - Reads `view.report.prunedGhosts` and `view.orphans` straight
 //     out of the WorkstreamSnapshot — `loadWorkstreamSnapshot`
-//     already runs `listLiveAgents(..., mode: "status-only")` once
-//     per tick, which populates `report.prunedGhosts` (the
-//     would-be-pruned count; status-only is non-mutating).
+//     already runs `listLiveAgents(...)` once per tick, which populates
+//     `report.prunedGhosts`.
 //   - Reads `workspaceOrphans` straight out of the snapshot too.
 //   - NO subprocess shellouts. The `tmux -V` check from the textual
 //     `mu doctor` is intentionally OMITTED here — the TUI is

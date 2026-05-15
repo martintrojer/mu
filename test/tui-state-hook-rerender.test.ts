@@ -75,7 +75,7 @@ function makeSnap(overrides: Partial<WorkstreamSnapshot> = {}): WorkstreamSnapsh
     view: {
       agents: [],
       orphans: [],
-      report: { prunedGhosts: 0, statusChanges: 0, orphans: [], mode: "status-only" },
+      report: { prunedGhosts: 0, statusChanges: 0, orphans: [], mode: "report-only" },
     },
     tracks: [],
     ready: [],
@@ -117,14 +117,14 @@ describe("snapshotKey — visible-affecting field projection", () => {
       view: {
         agents: [agent],
         orphans: [],
-        report: { prunedGhosts: 0, statusChanges: 0, orphans: [], mode: "status-only" },
+        report: { prunedGhosts: 0, statusChanges: 0, orphans: [], mode: "report-only" },
       },
     });
     const b = makeSnap({
       view: {
         agents: [{ ...agent, status: "needs_input" }],
         orphans: [],
-        report: { prunedGhosts: 0, statusChanges: 0, orphans: [], mode: "status-only" },
+        report: { prunedGhosts: 0, statusChanges: 0, orphans: [], mode: "report-only" },
       },
     });
     expect(snapshotKeyString(a)).not.toBe(snapshotKeyString(b));
@@ -239,14 +239,14 @@ describe("snapshotKey — visible-affecting field projection", () => {
       view: {
         agents: [],
         orphans: [],
-        report: { prunedGhosts: 0, statusChanges: 0, orphans: [], mode: "status-only" },
+        report: { prunedGhosts: 0, statusChanges: 0, orphans: [], mode: "report-only" },
       },
     });
     const b = makeSnap({
       view: {
         agents: [],
         orphans: [],
-        report: { prunedGhosts: 5, statusChanges: 3, orphans: [], mode: "status-only" },
+        report: { prunedGhosts: 5, statusChanges: 3, orphans: [], mode: "report-only" },
       },
     });
     expect(snapshotKeyString(a)).toBe(snapshotKeyString(b));
@@ -342,7 +342,7 @@ function makeLoaders(fastSequence: WorkstreamSnapshot[]): {
     view: {
       agents: [],
       orphans: [],
-      report: { prunedGhosts: 0, statusChanges: 0, orphans: [], mode: "status-only" },
+      report: { prunedGhosts: 0, statusChanges: 0, orphans: [], mode: "report-only" },
     },
     workspaces: [],
     recentCommits: [],

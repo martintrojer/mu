@@ -9,6 +9,26 @@ called out under "Breaking" in each entry.
 ---
 
 
+## [0.4.2] — Unreleased
+
+### Changed
+
+- **TUI dashboard / `mu state`** now reap agents whose tmux pane has
+  disappeared on the next reconcile pass (slow tick in the TUI,
+  immediate in CLI invocations). Previously these reads skipped
+  reaping, so ghost agents could linger until `mu agent list`. When a
+  tmux session disappears (server crash, manual `tmux kill-server`,
+  etc.), `mu state` and the TUI now report the truth: agents removed
+  from the registry, their IN_PROGRESS tasks reverted to OPEN with
+  `[reaper]` notes. Closes `bug_no_recovery_after_tmux_server_crash`.
+
+### Removed
+
+- Internal `ReconcileMode = "status-only"` variant. The placeholder-pane
+  protection that motivated it is now defensive in the `reconcile()`
+  prune loop itself, independent of mode.
+
+
 ## [0.4.1] — 2026-05-14
 
 Feature theme: **multi-machine sync**. A single user can now move a
