@@ -393,6 +393,44 @@ form `<workstream>/<id>` when a global scope is needed. Blocks-edges
 are always same-workstream — if a blocker resolves outside the target
 workstream, mu refuses with a `CrossWorkstreamEdgeError`.
 
+### Modeling external dependencies
+
+When a task is waiting on something outside this repo (an upstream PR
+shipping, a vendor releasing v3 of an API, a coworker's review), don't
+reach for a new status — add a **placeholder task** for the external
+thing and `--blocked-by` it. The DAG already encodes "blocked":
+
+```bash
+mu task add upstream_react_19_lands -w gchatui-node \
+  --title "Wait for React 19 release (vendor)" \
+  --impact 30 --effort-days 0.1
+mu task note upstream_react_19_lands -w gchatui-node \
+  "Tracking https://github.com/facebook/react/issues/...
+Last checked: 2026-05-15.
+When this lands: bump react in package.json + re-run upgrade tasks."
+
+mu task add migrate_to_use_action -w gchatui-node \
+  --title "Migrate ChatInput to React 19 useActionState" \
+  --impact 60 --effort-days 1 \
+  --blocked-by upstream_react_19_lands
+```
+
+When the upstream lands, `mu task close upstream_react_19_lands
+--evidence "shipped 2026-08-12"` — the dependent flips from blocked
+to ready in the same render. If the upstream gets cancelled, `mu task
+reject upstream_react_19_lands --cascade --yes` propagates REJECTED
+through every dependent so you re-think the cascade explicitly.
+
+Benefits over a hypothetical `BLOCKED` status:
+
+- The placeholder's notes are the audit trail ("who I nudged, when").
+- One placeholder cleanly blocks N downstream tasks.
+- Reject cascade just works.
+- No new vocabulary; anyone who knows `--blocked-by` already knows this.
+- The placeholder's own status carries nuance (`OPEN` = someone
+  external is working it, `DEFERRED` = parked indefinitely,
+  `IN_PROGRESS` = you're actively chasing it).
+
 ---
 
 ## 5. See the graph (dashboard + state API)
