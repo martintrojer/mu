@@ -3,12 +3,12 @@
   "manifest_version": 2,
   "bucketLabel": "mu",
   "bucketCreatedAt": "2026-05-10T07:39:54.416Z",
-  "bucketLastUpdatedAt": "2026-05-14T13:31:50.328Z",
+  "bucketLastUpdatedAt": "2026-05-15T11:55:19.986Z",
   "muVersion": "0.4.1",
   "sources": {
     "mufeedback": {
       "addedAt": "2026-05-10T07:39:54.416Z",
-      "lastReExportedAt": "2026-05-14T13:31:50.328Z",
+      "lastReExportedAt": "2026-05-15T11:55:19.986Z",
       "eventsSeqAtExport": 1644,
       "tasks": [
         {
@@ -1065,7 +1065,7 @@
     },
     "roadmap-v0-2": {
       "addedAt": "2026-05-10T07:39:54.416Z",
-      "lastReExportedAt": "2026-05-14T13:31:50.328Z",
+      "lastReExportedAt": "2026-05-15T11:55:19.986Z",
       "eventsSeqAtExport": 1645,
       "tasks": [
         {
@@ -1522,7 +1522,7 @@
     },
     "mufeedback-v03": {
       "addedAt": "2026-05-10T14:06:43.666Z",
-      "lastReExportedAt": "2026-05-14T13:31:50.328Z",
+      "lastReExportedAt": "2026-05-15T11:55:19.986Z",
       "eventsSeqAtExport": 2211,
       "tasks": [
         {
@@ -2189,7 +2189,7 @@
     },
     "roadmap-v0-3": {
       "addedAt": "2026-05-10T14:06:43.666Z",
-      "lastReExportedAt": "2026-05-14T13:31:50.328Z",
+      "lastReExportedAt": "2026-05-15T11:55:19.986Z",
       "eventsSeqAtExport": 1762,
       "tasks": [
         {
@@ -2256,7 +2256,7 @@
     },
     "tui": {
       "addedAt": "2026-05-14T07:19:10.884Z",
-      "lastReExportedAt": "2026-05-14T13:31:50.328Z",
+      "lastReExportedAt": "2026-05-15T11:55:19.986Z",
       "eventsSeqAtExport": 3517,
       "tasks": [
         {
@@ -2573,7 +2573,7 @@
     },
     "tui-impl": {
       "addedAt": "2026-05-14T07:19:10.884Z",
-      "lastReExportedAt": "2026-05-14T13:31:50.328Z",
+      "lastReExportedAt": "2026-05-15T11:55:19.986Z",
       "eventsSeqAtExport": 6799,
       "tasks": [
         {
@@ -5130,7 +5130,7 @@
     },
     "multimachine": {
       "addedAt": "2026-05-14T11:16:22.785Z",
-      "lastReExportedAt": "2026-05-14T13:31:50.328Z",
+      "lastReExportedAt": "2026-05-15T11:55:19.986Z",
       "eventsSeqAtExport": 7290,
       "tasks": [
         {
@@ -5337,7 +5337,7 @@
     },
     "feedback": {
       "addedAt": "2026-05-14T13:31:50.328Z",
-      "lastReExportedAt": "2026-05-14T13:31:50.328Z",
+      "lastReExportedAt": "2026-05-15T11:55:19.986Z",
       "eventsSeqAtExport": 5561,
       "tasks": [
         {
@@ -5649,6 +5649,123 @@
           "effortDays": 0.1,
           "path": "feedback/tasks/workstream_init_name_rejected_mu.md",
           "sha256": "303e73cbc9083a81698cfb626408276b340954eb58c4cf3ff77362a5a3a2f182"
+        }
+      ]
+    },
+    "mubugs": {
+      "addedAt": "2026-05-15T11:55:19.986Z",
+      "lastReExportedAt": "2026-05-15T11:55:19.986Z",
+      "eventsSeqAtExport": 8057,
+      "tasks": [
+        {
+          "id": "bug_no_recovery_after_tmux_server_crash",
+          "name": "bug_no_recovery_after_tmux_server_crash",
+          "title": "BUG: mu state inconsistent after tmux server crash — agents reported alive, panes gone, no auto-detect or recovery path",
+          "status": "CLOSED",
+          "impact": 75,
+          "effortDays": 1,
+          "path": "mubugs/tasks/bug_no_recovery_after_tmux_server_crash.md",
+          "sha256": "47cf74c2231bd00879e1f001af7282ca8a6021029f869dc3044cc3a0d8814e40"
+        },
+        {
+          "id": "code_review",
+          "name": "code_review",
+          "title": "Code review: reconciler mode collapse (file findings as new blockers of umbrella)",
+          "status": "CLOSED",
+          "impact": 70,
+          "effortDays": 0.4,
+          "path": "mubugs/tasks/code_review.md",
+          "sha256": "e63ec39f1fb6eb917b28a75d14d7f5f6a825995f474e8731ccab21bb1361cb55"
+        },
+        {
+          "id": "collapse_status_only_mode",
+          "name": "collapse_status_only_mode",
+          "title": "Collapse status-only → full; mu state and mu agent list use one mode",
+          "status": "CLOSED",
+          "impact": 75,
+          "effortDays": 0.5,
+          "path": "mubugs/tasks/collapse_status_only_mode.md",
+          "sha256": "598bc3807ec5137ead184a511419509704ba8dc2b94af597f3779ca01c0725d1"
+        },
+        {
+          "id": "cr_attach_precheck",
+          "name": "cr_attach_precheck",
+          "title": "Code review: agent attach skips reaping when session is gone",
+          "status": "CLOSED",
+          "impact": 65,
+          "effortDays": 0.2,
+          "path": "mubugs/tasks/cr_attach_precheck.md",
+          "sha256": "5fa3dfc699abd5502f303e5fe4a7f82431c9e288d47f4a4119eb76ea725b548d"
+        },
+        {
+          "id": "cr_doctor_ghost_wording",
+          "name": "cr_doctor_ghost_wording",
+          "title": "Code review: doctor reports ghost count as pruned in report-only mode",
+          "status": "CLOSED",
+          "impact": 50,
+          "effortDays": 0.1,
+          "path": "mubugs/tasks/cr_doctor_ghost_wording.md",
+          "sha256": "9560640b09c57aceb68b258229fec72c1ee5a0c48586436a9d2ff0d618094207"
+        },
+        {
+          "id": "cr_pending_leak",
+          "name": "cr_pending_leak",
+          "title": "Code review: placeholder skip leaks past prune loop",
+          "status": "CLOSED",
+          "impact": 55,
+          "effortDays": 0.2,
+          "path": "mubugs/tasks/cr_pending_leak.md",
+          "sha256": "ff1108002738964e3126dfa29cea68e2042b5a2581048326042c1e9cc2fe3bbf"
+        },
+        {
+          "id": "reconcile_pending_skip",
+          "name": "reconcile_pending_skip",
+          "title": "Defensive: reconcile() skips placeholder pane ids during prune in ALL modes",
+          "status": "CLOSED",
+          "impact": 60,
+          "effortDays": 0.25,
+          "path": "mubugs/tasks/reconcile_pending_skip.md",
+          "sha256": "1c8c55c47baa3277350afdddf426a687a541789d6aca6a641f0d5bef4c162136"
+        },
+        {
+          "id": "test_review",
+          "name": "test_review",
+          "title": "Test review: reconciler mode collapse (file findings as new blockers of umbrella)",
+          "status": "CLOSED",
+          "impact": 70,
+          "effortDays": 0.4,
+          "path": "mubugs/tasks/test_review.md",
+          "sha256": "6b8be11f86b582ee5284490a891220d3955f761a9b82733cd51009127e986e96"
+        },
+        {
+          "id": "tr_placeholder_report_only",
+          "name": "tr_placeholder_report_only",
+          "title": "Test review: placeholder skip lacks report-only coverage",
+          "status": "CLOSED",
+          "impact": 55,
+          "effortDays": 0.2,
+          "path": "mubugs/tasks/tr_placeholder_report_only.md",
+          "sha256": "f92aac347fb6d4b1280175d2e16339a9a31f1220798bddab3a3ed61a9472ef34"
+        },
+        {
+          "id": "tr_state_crash_entrypoint",
+          "name": "tr_state_crash_entrypoint",
+          "title": "Test review: wholesale crash test bypasses mu state/no-server path",
+          "status": "CLOSED",
+          "impact": 80,
+          "effortDays": 0.3,
+          "path": "mubugs/tasks/tr_state_crash_entrypoint.md",
+          "sha256": "5215247c900e6bead768a5a1c366c524ceee110d16b286560f9a81ee74089bb2"
+        },
+        {
+          "id": "umbrella",
+          "name": "umbrella",
+          "title": "Reconciler: collapse status-only into full mode (closes bug_no_recovery_after_tmux_server_crash)",
+          "status": "CLOSED",
+          "impact": 75,
+          "effortDays": 0.1,
+          "path": "mubugs/tasks/umbrella.md",
+          "sha256": "be39ba506a2b0944d187962826f1dc55a59ff81000e80429517a51da6d0516dc"
         }
       ]
     }

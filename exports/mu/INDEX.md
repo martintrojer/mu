@@ -33,6 +33,17 @@
 | feedback | [`workers_commonly_attempt_unbounded_find`](feedback/tasks/workers_commonly_attempt_unbounded_find.md) | CLOSED | 25 | 0.3 | 83.33 | workers commonly attempt unbounded find / scans, costing >1h wall |
 | feedback | [`workspace_orphans_misses_destroyed_workstreams`](feedback/tasks/workspace_orphans_misses_destroyed_workstreams.md) | CLOSED | 30 | 0.4 | 75.00 | mu workspace orphans misses dirs from destroyed workstreams |
 | feedback | [`workstream_init_name_rejected_mu`](feedback/tasks/workstream_init_name_rejected_mu.md) | CLOSED | 10 | 0.1 | 100.00 | workstream init <name> rejected 'mu-feedback' silently (suggested 'feedback') |
+| mubugs | [`bug_no_recovery_after_tmux_server_crash`](mubugs/tasks/bug_no_recovery_after_tmux_server_crash.md) | CLOSED | 75 | 1 | 75.00 | BUG: mu state inconsistent after tmux server crash — agents reported alive, panes gone, no auto-detect or recovery path |
+| mubugs | [`code_review`](mubugs/tasks/code_review.md) | CLOSED | 70 | 0.4 | 175.00 | Code review: reconciler mode collapse (file findings as new blockers of umbrella) |
+| mubugs | [`collapse_status_only_mode`](mubugs/tasks/collapse_status_only_mode.md) | CLOSED | 75 | 0.5 | 150.00 | Collapse status-only → full; mu state and mu agent list use one mode |
+| mubugs | [`cr_attach_precheck`](mubugs/tasks/cr_attach_precheck.md) | CLOSED | 65 | 0.2 | 325.00 | Code review: agent attach skips reaping when session is gone |
+| mubugs | [`cr_doctor_ghost_wording`](mubugs/tasks/cr_doctor_ghost_wording.md) | CLOSED | 50 | 0.1 | 500.00 | Code review: doctor reports ghost count as pruned in report-only mode |
+| mubugs | [`cr_pending_leak`](mubugs/tasks/cr_pending_leak.md) | CLOSED | 55 | 0.2 | 275.00 | Code review: placeholder skip leaks past prune loop |
+| mubugs | [`reconcile_pending_skip`](mubugs/tasks/reconcile_pending_skip.md) | CLOSED | 60 | 0.25 | 240.00 | Defensive: reconcile() skips placeholder pane ids during prune in ALL modes |
+| mubugs | [`test_review`](mubugs/tasks/test_review.md) | CLOSED | 70 | 0.4 | 175.00 | Test review: reconciler mode collapse (file findings as new blockers of umbrella) |
+| mubugs | [`tr_placeholder_report_only`](mubugs/tasks/tr_placeholder_report_only.md) | CLOSED | 55 | 0.2 | 275.00 | Test review: placeholder skip lacks report-only coverage |
+| mubugs | [`tr_state_crash_entrypoint`](mubugs/tasks/tr_state_crash_entrypoint.md) | CLOSED | 80 | 0.3 | 266.67 | Test review: wholesale crash test bypasses mu state/no-server path |
+| mubugs | [`umbrella`](mubugs/tasks/umbrella.md) | CLOSED | 75 | 0.1 | 750.00 | Reconciler: collapse status-only into full mode (closes bug_no_recovery_after_tmux_server_crash) |
 | mufeedback | [`agent_close_discipline_gap`](mufeedback/tasks/agent_close_discipline_gap.md) | CLOSED | 70 | 0.4 | 175.00 | BUG: agents do work + commit + report done in pane, but skip mu task close — orchestrator's mu task wait hangs indefinitely |
 | mufeedback | [`agent_close_orphans_workspace_dir_from`](mufeedback/tasks/agent_close_orphans_workspace_dir_from.md) | CLOSED | 50 | 1 | 50.00 | agent close orphans workspace dir from registry; workspace free cant find it |
 | mufeedback | [`agent_orphan_typed_verb_debate`](mufeedback/tasks/agent_orphan_typed_verb_debate.md) | REJECTED | 30 | 0.2 | 150.00 | DEBATE: typed verb / view for agent rows whose pane is gone (today: silently auto-pruned 'ghosts') |
