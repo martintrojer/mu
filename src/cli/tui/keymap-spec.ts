@@ -161,6 +161,9 @@ export const HELP_PANES: readonly HelpPaneSpec[] = [
       row("/", "filter/search rows", ["/"]),
       row("Enter", "drill into focused row", ["Enter"]),
       row("y", "yank action for focused row", ["y"]),
+      row("a", "attach to focused agent's tmux pane (Agents popup only; user-driven TUI escape)", [
+        "a",
+      ]),
       row("l", "launch lazygit in the project root (Commits popup only; user-driven TUI escape)", [
         "l",
       ]),

@@ -26,6 +26,7 @@ import { type ColumnSpec, contentWidthFromCols, layoutColumns, renderRow } from 
 import { type PopupAction, type PopupActionEnvelope, dispatchPopupKeyFromInk } from "../keys.js";
 import { ListRow } from "../list-row.js";
 import { PopupShell } from "../popup-shell.js";
+import { runTmuxAttachInteractive } from "../tmux-attach.js";
 import { usePopupActionQueue } from "../use-popup-action-queue.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
 import { DrillScrollView, useDrillKeymap } from "./drill.js";
@@ -42,6 +43,9 @@ export interface PopupProps {
   /** Bubbles the filter-prompt edit state up to <App> for StatusBar mode. */
   onFilterEditingChange?: (editing: boolean) => void;
   popupActions?: readonly PopupActionEnvelope[];
+  /** Surface tmux-attach success/error in the footer status bar.
+   *  Optional so existing callers / tests stay valid. */
+  onFooter?: (command: string, copied: boolean, tone?: "normal" | "info" | "error") => void;
   db: Db;
   workstream: string;
 }
@@ -71,6 +75,7 @@ export function AgentsPopup({
   onModeChange,
   onFilterEditingChange,
   popupActions,
+  onFooter,
   db,
   workstream,
 }: PopupProps): JSX.Element {
@@ -209,6 +214,19 @@ export function AgentsPopup({
           void yank(`mu agent close ${a.name} -w ${ws}`);
           return;
         }
+        if (action.key === "a") {
+          // Per-popup TUI escape: hand off to tmux to switch the
+          // user's client to the agent's pane. Mirrors `t tuicr` /
+          // `l lazygit`. Read-only-by-design TUI is preserved — we
+          // don't mutate state, we just let the user look at /
+          // interact with the pane until they navigate back.
+          const session = `mu-${ws}`;
+          const window = a.tab ?? a.name;
+          const r = runTmuxAttachInteractive({ session, window });
+          if (!r.ok) onFooter?.(r.error ?? "tmux attach failed", false, "error");
+          else onFooter?.(`tmux switch-client → ${session}:${window}`, true, "info");
+          return;
+        }
         return;
       }
     }
@@ -270,7 +288,7 @@ export function AgentsPopup({
   return (
     <PopupShell
       title={`Agents · popup (${safeCursor + 1}/${agents.length})`}
-      hint="f free · x close · y yanks `mu agent send`"
+      hint="a attach · f free · x close · y yanks `mu agent send`"
     >
       <Box flexDirection="column" flexGrow={1}>
         {visible.map((a, i) => {
