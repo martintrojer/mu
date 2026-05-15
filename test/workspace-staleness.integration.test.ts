@@ -43,7 +43,18 @@ beforeEach(() => {
   dbPath = join(dbDir, "mu.db");
   db = openDb({ path: dbPath });
   ensureWorkstream(db, "auth");
-  insertAgent(db, { name: "worker-1", workstream: "auth", paneId: "%1", status: "busy" });
+  // Use a placeholder pane id so the agent isn't reaped on the first
+  // `mu state` call (post-status-only-collapse: full reconciliation
+  // runs on read paths, and a fake `%1` paneId not in any tmux session
+  // would be pruned, cascading to vcs_workspaces via the FK and
+  // emptying the test fixture). Placeholder pane ids are defensively
+  // skipped by the prune loop in all modes (see reconcile_pending_skip).
+  insertAgent(db, {
+    name: "worker-1",
+    workstream: "auth",
+    paneId: "%pending-worker-1",
+    status: "busy",
+  });
   db.close();
 });
 
