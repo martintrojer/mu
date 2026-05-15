@@ -530,6 +530,24 @@ describe("reconcile — mode: 'report-only' does not mutate (snap_undo_reconcile
     expect(getAgent(db, "alice", "auth")?.status).toBe("spawning");
   });
 
+  it("skips placeholder pane ids during report-only prune", async () => {
+    insertAgent(db, {
+      name: "alice",
+      workstream: "auth",
+      paneId: "%pending-alice",
+      status: "spawning",
+    });
+    const { executor, calls } = mockTmux([]);
+    setTmuxExecutor(executor);
+
+    const report = await reconcile(db, { workstream: "auth", mode: "report-only" });
+
+    expect(report.mode).toBe("report-only");
+    expect(report.prunedGhosts).toBe(0);
+    expect(getAgent(db, "alice", "auth")).toBeDefined();
+    expect(calls.some((c) => c[0] === "capture-pane" && c.includes("%pending-alice"))).toBe(false);
+  });
+
   it("orphan-surface still runs in report-only mode", async () => {
     // No agents in DB; one pi pane exists in tmux.
     const { executor } = mockTmux([

@@ -12,16 +12,7 @@
 // place where the registry's view of the world is reconciled against tmux's
 // view.
 
-import {
-  type AgentRow,
-  deleteAgent,
-  isPendingPaneId,
-  listAgents,
-  refreshAgentTitle,
-  resolveCliCommand,
-  shouldOverwriteAgentStatus,
-  updateAgentStatus,
-} from "./agents.js";
+import * as agentSdk from "./agents.js";
 import type { Db } from "./db.js";
 import { detectPiStatus } from "./detect.js";
 import { type TmuxPane, capturePane, listPanesInSession } from "./tmux.js";
@@ -44,9 +35,9 @@ import { type TmuxPane, capturePane, listPanesInSession } from "./tmux.js";
  *                 snap_undo_reconcile_destroys_recovered_agents) and
  *                 `mu doctor` (read-only diagnostic).
  *
- * Mid-spawn placeholders are protected directly in the prune loop via
- * isPendingPaneId(), so read paths no longer need a separate mode just to
- * avoid racing spawn's workspace pre-stage.
+ * Mid-spawn placeholders are protected directly in the prune loop, so read
+ * paths no longer need a separate mode just to avoid racing spawn's workspace
+ * pre-stage.
  */
 export type ReconcileMode = "full" | "report-only";
 
@@ -102,7 +93,7 @@ const BASE_AGENT_CLIS: readonly string[] = ["pi", "claude", "codex"];
 function knownAgentCommands(): ReadonlySet<string> {
   const names = new Set<string>(BASE_AGENT_CLIS);
   for (const cli of BASE_AGENT_CLIS) {
-    names.add(resolveCliCommand(cli));
+    names.add(agentSdk.resolveCliCommand(cli));
   }
   return names;
 }
@@ -124,7 +115,7 @@ function buildAgentPaneRecogniser(): (pane: TmuxPane) => boolean {
 export async function reconcile(db: Db, opts: ReconcileOptions): Promise<ReconcileReport> {
   const sessionName = opts.tmuxSession ?? `mu-${opts.workstream}`;
   const mode: ReconcileMode = opts.mode ?? "full";
-  const dbAgents = listAgents(db, { workstream: opts.workstream });
+  const dbAgents = agentSdk.listAgents(db, { workstream: opts.workstream });
   const tmuxPanes = await listPanesInSession(sessionName);
   const tmuxByPaneId = new Map(tmuxPanes.map((p) => [p.paneId, p]));
 
@@ -135,17 +126,19 @@ export async function reconcile(db: Db, opts: ReconcileOptions): Promise<Reconci
   // 1. Prune ghosts (DB row references a pane that no longer exists).
   //    `full` mode deletes (and therefore reaps); `report-only` counts
   //    the would-be-prunes so callers can surface drift, but leaves the
-  //    row in place. Mid-spawn placeholder pane ids are treated as
-  //    survivors directly, which is the defensive skip that lets read
-  //    paths use full mode safely.
-  const survivors: AgentRow[] = [];
+  //    row in place. Mid-spawn placeholder pane ids are protected by
+  //    the defensive skip that lets read paths use full mode safely.
+  //    Placeholder rows survive this step, but are split out so status
+  //    detection and orphan exclusion only reason about real tmux panes.
+  const survivors: agentSdk.AgentRow[] = [];
+  const pendingSurvivors: agentSdk.AgentRow[] = [];
   for (const agent of dbAgents) {
-    if (tmuxByPaneId.has(agent.paneId)) {
-      survivors.push(agent);
-    } else if (isPendingPaneId(agent.paneId)) {
+    if (agentSdk.isPendingPaneId(agent.paneId)) {
+      pendingSurvivors.push(agent);
+    } else if (tmuxByPaneId.has(agent.paneId)) {
       survivors.push(agent);
     } else {
-      if (mode === "full") deleteAgent(db, agent.name, agent.workstreamName);
+      if (mode === "full") agentSdk.deleteAgent(db, agent.name, agent.workstreamName);
       prunedGhosts++;
     }
   }
@@ -157,18 +150,18 @@ export async function reconcile(db: Db, opts: ReconcileOptions): Promise<Reconci
   //    the DB (updateAgentStatus + refreshAgentTitle), and the
   //    report-only contract is "no mutation".
   //
-  //    Full mode skips placeholder agents whose pane id starts with
-  //    `%pending-` — those have no usable scrollback yet (mid-spawn)
-  //    and the placeholder pane id won't resolve to a real tmux pane
-  //    anyway. The pending sentinel is documented in src/agents.ts
-  //    (PENDING_PANE_PREFIX).
+  //    Full mode iterates real-pane survivors only. Mid-spawn
+  //    placeholders have no usable scrollback yet and were split out in
+  //    step 1, so no sentinel-aware branch belongs here.
   if (mode === "full") {
     for (const agent of survivors) {
-      if (isPendingPaneId(agent.paneId)) continue;
       const scrollback = await capturePane(agent.paneId, { lines: 100 });
       const detected = detectPiStatus(scrollback);
-      if (shouldOverwriteAgentStatus(agent.status, detected) && detected !== agent.status) {
-        updateAgentStatus(db, agent.name, detected, agent.workstreamName);
+      if (
+        agentSdk.shouldOverwriteAgentStatus(agent.status, detected) &&
+        detected !== agent.status
+      ) {
+        agentSdk.updateAgentStatus(db, agent.name, detected, agent.workstreamName);
         statusChanges++;
       }
       // ALWAYS refresh the pane title (even when status didn't change),
@@ -180,7 +173,7 @@ export async function reconcile(db: Db, opts: ReconcileOptions): Promise<Reconci
       //      (claim / release / close) re-propagate even if the status
       //      detector didn't flip.
       // Best-effort: a tmux failure here never blocks the reconcile report.
-      await refreshAgentTitle(db, agent.name, agent.workstreamName);
+      await agentSdk.refreshAgentTitle(db, agent.name, agent.workstreamName);
     }
   }
 
