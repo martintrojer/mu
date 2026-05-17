@@ -276,6 +276,8 @@ describe("classifyEventVerb", () => {
     const { freshMockState, mockTmux } = await import("./_verbs-mock.js");
 
     const tempDir = mkdtempSync(join(tmpdir(), "mu-state-render-events-"));
+    const noneProjectRoot = mkdtempSync(join(tmpdir(), "mu-state-render-events-project-"));
+    writeFileSync(join(noneProjectRoot, "README"), "hello\n");
     const db = openDb({ path: join(tempDir, "mu.db") });
     const previousWaitSleep = setWaitSleepForTests(async () => {});
     const previousStuckWarn = setWaitStuckWarnForTests(() => {});
@@ -370,14 +372,14 @@ describe("classifyEventVerb", () => {
         createWorkspace(db, {
           agent: "worker-1",
           workstream: "events",
-          projectRoot: tempDir,
+          projectRoot: noneProjectRoot,
           backend: "none",
         }),
       );
       await captureNewEvents(() =>
         recreateWorkspace(db, "worker-1", {
           workstream: "events",
-          projectRoot: tempDir,
+          projectRoot: noneProjectRoot,
         }),
       );
       await captureNewEvents(() =>
@@ -387,7 +389,7 @@ describe("classifyEventVerb", () => {
         createWorkspace(db, {
           agent: "ghost-1",
           workstream: "events",
-          projectRoot: tempDir,
+          projectRoot: noneProjectRoot,
           backend: "none",
         }),
       ).rejects.toBeInstanceOf(AgentNotFoundError);
@@ -522,6 +524,7 @@ describe("classifyEventVerb", () => {
       resetKickProcessExecutor();
       db.close();
       rmSync(tempDir, { recursive: true, force: true });
+      rmSync(noneProjectRoot, { recursive: true, force: true });
       if (originalStateDir === undefined) {
         const key = "MU_STATE_DIR";
         delete process.env[key];

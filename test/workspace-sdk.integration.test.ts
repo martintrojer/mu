@@ -652,10 +652,13 @@ gitDescribe("closeAgent + workspace integration (git backend, dirty / commits-si
 
 describe("listWorkspaceOrphans", () => {
   let tempDir: string;
+  let orphanProjectRoot: string;
   let db: Db;
 
   beforeEach(() => {
     tempDir = mkdtempSync(join(tmpdir(), "mu-orphans-"));
+    orphanProjectRoot = mkdtempSync(join(tmpdir(), "mu-orphans-project-"));
+    writeFileSync(join(orphanProjectRoot, "README"), "hello\n");
     process.env.MU_STATE_DIR = tempDir;
     db = openDb({ path: join(tempDir, "mu.db") });
     ensureWorkstream(db, "auth");
@@ -667,6 +670,7 @@ describe("listWorkspaceOrphans", () => {
     delete process.env[key];
     try {
       rmSync(tempDir, { recursive: true, force: true });
+      rmSync(orphanProjectRoot, { recursive: true, force: true });
     } catch {
       // best effort
     }
@@ -681,7 +685,7 @@ describe("listWorkspaceOrphans", () => {
     await createWorkspace(db, {
       agent: "w1",
       workstream: "auth",
-      projectRoot: tempDir,
+      projectRoot: orphanProjectRoot,
       backend: "none",
     });
     expect(listWorkspaceOrphans(db, "auth")).toEqual([]);
@@ -694,7 +698,7 @@ describe("listWorkspaceOrphans", () => {
     const ws = await createWorkspace(db, {
       agent: "w1",
       workstream: "auth",
-      projectRoot: tempDir,
+      projectRoot: orphanProjectRoot,
       backend: "none",
     });
     db.prepare(
@@ -713,13 +717,13 @@ describe("listWorkspaceOrphans", () => {
     await createWorkspace(db, {
       agent: "live",
       workstream: "auth",
-      projectRoot: tempDir,
+      projectRoot: orphanProjectRoot,
       backend: "none",
     });
     await createWorkspace(db, {
       agent: "orphaned",
       workstream: "auth",
-      projectRoot: tempDir,
+      projectRoot: orphanProjectRoot,
       backend: "none",
     });
     db.prepare(
@@ -736,11 +740,14 @@ describe("listWorkspaceOrphans", () => {
 
 describe("listAllOrphanWorkspaces", () => {
   let tempDir: string;
+  let orphanProjectRoot: string;
   let db: Db;
   let dbPath: string;
 
   beforeEach(() => {
     tempDir = mkdtempSync(join(tmpdir(), "mu-orphans-all-"));
+    orphanProjectRoot = mkdtempSync(join(tmpdir(), "mu-orphans-all-project-"));
+    writeFileSync(join(orphanProjectRoot, "README"), "hello\n");
     process.env.MU_STATE_DIR = tempDir;
     dbPath = join(tempDir, "mu.db");
     db = openDb({ path: dbPath });
@@ -752,6 +759,7 @@ describe("listAllOrphanWorkspaces", () => {
     delete process.env[key];
     try {
       rmSync(tempDir, { recursive: true, force: true });
+      rmSync(orphanProjectRoot, { recursive: true, force: true });
     } catch {
       // best effort
     }
@@ -785,13 +793,13 @@ describe("listAllOrphanWorkspaces", () => {
     await createWorkspace(db, {
       agent: "live",
       workstream: "auth",
-      projectRoot: tempDir,
+      projectRoot: orphanProjectRoot,
       backend: "none",
     });
     await createWorkspace(db, {
       agent: "orphaned",
       workstream: "auth",
-      projectRoot: tempDir,
+      projectRoot: orphanProjectRoot,
       backend: "none",
     });
     db.prepare(
@@ -814,11 +822,14 @@ describe("listAllOrphanWorkspaces", () => {
 
 describe("`mu workspace orphans` CLI", () => {
   let tempDir: string;
+  let orphanProjectRoot: string;
   let db: Db;
   let dbPath: string;
 
   beforeEach(() => {
     tempDir = mkdtempSync(join(tmpdir(), "mu-orphans-cli-"));
+    orphanProjectRoot = mkdtempSync(join(tmpdir(), "mu-orphans-cli-project-"));
+    writeFileSync(join(orphanProjectRoot, "README"), "hello\n");
     process.env.MU_STATE_DIR = tempDir;
     dbPath = join(tempDir, "mu.db");
     db = openDb({ path: dbPath });
@@ -830,6 +841,7 @@ describe("`mu workspace orphans` CLI", () => {
     delete process.env[key];
     try {
       rmSync(tempDir, { recursive: true, force: true });
+      rmSync(orphanProjectRoot, { recursive: true, force: true });
     } catch {
       // best effort
     }
@@ -852,7 +864,7 @@ describe("`mu workspace orphans` CLI", () => {
     await createWorkspace(db, {
       agent: "orphaned",
       workstream: "auth",
-      projectRoot: tempDir,
+      projectRoot: orphanProjectRoot,
       backend: "none",
     });
     db.prepare(
