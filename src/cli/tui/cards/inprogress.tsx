@@ -16,7 +16,7 @@
 //   ⚙      design_x    worker-1    3m            Design X
 //   ⚙      review_x    reviewer-1  12m           Review X
 //
-// Glyph ⚙ matches STATUS_EMOJI.busy (the cog) used in the Agents
+// Glyph ⚙ matches agent-display's busy status glyph used in the Agents
 // card — the operator already reads it as "this thing is running".
 // Consistency over novelty.
 //
@@ -47,9 +47,9 @@
 //         is exactly that primitive).
 //   Until then, Shift+6 stays a reserved noop in keys.ts.
 
-import { STATUS_EMOJI } from "../../../agents.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
 import { inkColorForStatus } from "../../format.js";
+import { agentByName, agentStatusGlyph, formatAgentRefDisplayName } from "../agent-display.js";
 import {
   type ColumnSpec,
   contentWidthFromCols,
@@ -76,8 +76,8 @@ export interface InProgressCardProps {
 
 export const cardConfig = CARD_CONFIGS[6];
 
-/** Glyph for every IN_PROGRESS task. Mirrors STATUS_EMOJI.busy. */
-export const GLYPH = STATUS_EMOJI.busy ?? "⚙";
+/** Glyph for every IN_PROGRESS task. Mirrors the busy agent status glyph. */
+export const GLYPH = agentStatusGlyph("busy");
 
 /** ≥5min since the last lifecycle flip → "stale claim". Matches the
  *  default value of MU_IDLE_THRESHOLD_MS (300_000ms / 5min) used by
@@ -128,11 +128,12 @@ export function InProgressCard({ snapshot, rowBudget, cols }: InProgressCardProp
   const shown = inProgress.slice(0, rowBudget ?? cardConfig.maxRows);
   const more = inProgress.length - shown.length;
   const bottomLabel = more > 0 ? `+${more} more · Shift+6` : undefined;
+  const agentLookup = agentByName(snapshot);
   const rows = shown.map((t, i) => [
     GLYPH,
     t.name,
     t.status,
-    t.ownerName ?? "—",
+    formatAgentRefDisplayName(t.ownerName, agentLookup),
     formatSinceClaim(ages[i] ?? null),
     t.title,
   ]);

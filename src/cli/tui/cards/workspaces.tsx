@@ -38,6 +38,7 @@ import {
   type WorkspaceRow,
   isWorkspaceStale,
 } from "../../../workspace.js";
+import { agentByName, formatAgentRefDisplayName } from "../agent-display.js";
 import {
   type ColumnSpec,
   contentWidthFromCols,
@@ -102,9 +103,10 @@ export function WorkspacesCard({ snapshot, rowBudget, cols }: WorkspacesCardProp
   const shown = workspaces.slice(0, rowBudget ?? cardConfig.maxRows);
   const more = workspaces.length - shown.length;
   const bottomLabel = more > 0 ? `+${more} more · Shift+5` : undefined;
+  const agentLookup = agentByName(snapshot);
   const rows = shown.map((w) => [
     glyphFor(w),
-    w.agentName,
+    formatAgentRefDisplayName(w.agentName, agentLookup),
     w.backend,
     formatBehind(w.commitsBehindMain),
     w.parentRef ? w.parentRef.slice(0, 12) : "—",

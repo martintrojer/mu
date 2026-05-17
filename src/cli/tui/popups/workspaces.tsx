@@ -53,6 +53,7 @@ import type { Db } from "../../../db.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
 import { type CommitSummary, detectBackend } from "../../../vcs.js";
 import { type WorkspaceRow, listCommitsForWorkspace } from "../../../workspace.js";
+import { agentByName, formatAgentRefDisplayName } from "../agent-display.js";
 import { colorForBehind, colorForGlyph, formatBehind, glyphFor } from "../cards/workspaces.js";
 import { type ColumnSpec, contentWidthFromCols, layoutColumns, renderRow } from "../columns.js";
 import { type PopupAction, type PopupActionEnvelope, dispatchPopupKeyFromInk } from "../keys.js";
@@ -487,9 +488,10 @@ export function WorkspacesPopup({
   }
 
   const { start, visible } = centredVisibleSlice(workspaces, safeCursor, viewport);
+  const agentLookup = agentByName(snapshot);
   const rows = visible.map((w) => [
     glyphFor(w),
-    w.agentName,
+    formatAgentRefDisplayName(w.agentName, agentLookup),
     w.backend,
     formatBehind(w.commitsBehindMain),
     formatDirty(w.dirty),

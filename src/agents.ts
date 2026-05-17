@@ -389,6 +389,12 @@ export const STATUS_EMOJI: Record<AgentStatus, string> = {
   terminated: "\uf057", // nf-fa-times_circle
 };
 
+/** Single rendering helper for agent status glyphs. Keep callers off
+ *  STATUS_EMOJI indexing so glyph fallback policy stays centralised. */
+export function agentStatusGlyph(status: AgentStatus): string {
+  return STATUS_EMOJI[status] ?? "?";
+}
+
 /** Maximum total length for a composed pane title. tmux truncates
  *  silently in some chrome positions; we truncate the task id
  *  ourselves so the suffix is predictable. */
@@ -437,7 +443,7 @@ export function composeAgentTitle(db: Db, agent: AgentRow): string {
   const tasks = listTasksByOwner(db, agent.workstreamName, agent.name);
   let title = agent.name;
   if (showStatus) {
-    title += ` · ${STATUS_EMOJI[agent.status]}`;
+    title += ` · ${agentStatusGlyph(agent.status)}`;
   }
   if (tasks.length === 1) {
     title += ` · ${tasks[0]?.name}`;

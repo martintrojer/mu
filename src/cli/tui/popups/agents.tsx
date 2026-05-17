@@ -19,9 +19,10 @@
 
 import { Box, Text, useInput, useStdout } from "ink";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { type AgentRow, STATUS_EMOJI, readAgent } from "../../../agents.js";
+import { type AgentRow, readAgent } from "../../../agents.js";
 import type { Db } from "../../../db.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
+import { agentStatusGlyph } from "../agent-display.js";
 import { type ColumnSpec, contentWidthFromCols, layoutColumns, renderRow } from "../columns.js";
 import { type PopupAction, type PopupActionEnvelope, dispatchPopupKeyFromInk } from "../keys.js";
 import { ListRow } from "../list-row.js";
@@ -282,7 +283,7 @@ export function AgentsPopup({
   }
 
   const { start, visible } = centredVisibleSlice(agents, safeCursor, viewport);
-  const rows = visible.map((a) => [STATUS_EMOJI[a.status] ?? "?", a.name, a.status, a.role]);
+  const rows = visible.map((a) => [agentStatusGlyph(a.status), a.name, a.status, a.role]);
   const widths = layoutColumns(rows, COLUMN_SPECS, contentWidth);
 
   return (

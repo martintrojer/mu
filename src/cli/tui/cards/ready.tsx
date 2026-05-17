@@ -14,6 +14,7 @@
 import { Text } from "ink";
 import { type WorkstreamSnapshot, roiBucket } from "../../../state.js";
 import { inkColorForStatus } from "../../format.js";
+import { agentByName, formatAgentRefDisplayName } from "../agent-display.js";
 import {
   type ColumnSpec,
   contentWidthFromCols,
@@ -81,12 +82,13 @@ export function ReadyCard({ snapshot, rowBudget, cols }: ReadyCardProps): JSX.El
     const roiText = formatRoi(t.impact, t.effortDays);
     return { bucket, roiText };
   });
+  const agentLookup = agentByName(snapshot);
   const rows = shown.map((t, i) => [
     t.name,
     t.status,
     `ROI ${meta[i]?.roiText ?? ""}`,
     t.title,
-    t.ownerName ?? "—",
+    formatAgentRefDisplayName(t.ownerName, agentLookup),
   ]);
   const widths = layoutColumns(rows, COLUMN_SPECS, contentWidth);
 

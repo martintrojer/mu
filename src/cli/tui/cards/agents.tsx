@@ -1,8 +1,8 @@
 // Agents card — glanceable summary of every agent in the workstream.
 //
 // Per design_card_agents (workstream `tui`): name | status | task |
-// idle. Header includes agentStatusHistogram. Reuses STATUS_EMOJI from
-// src/agents.ts so the glyph language matches `mu agent list`.
+// idle. Header includes agentStatusHistogram. Status glyph rendering goes
+// through agent-display.ts so glyph selection stays centralised.
 //
 // Aesthetic: rounded border, dim border colour, section header inset
 // into the top.
@@ -14,12 +14,12 @@
 // the full version).
 
 import { Text } from "ink";
-import { STATUS_EMOJI } from "../../../agents.js";
 import {
   type WorkstreamSnapshot,
   agentStatusHistogram,
   summarizeOwnedTasks,
 } from "../../../state.js";
+import { agentStatusGlyph } from "../agent-display.js";
 import {
   type ColumnSpec,
   contentWidthFromCols,
@@ -86,7 +86,7 @@ export function AgentsCard({ snapshot, rowBudget, cols }: AgentsCardProps): JSX.
     const owned = snapshot.inProgress.filter((t) => t.ownerName === a.name);
     const taskBit = summarizeOwnedTasks(owned).bit;
     const idle = a.idle ? "⚠ idle" : "";
-    return [STATUS_EMOJI[a.status] ?? "?", a.name, taskBit, idle];
+    return [agentStatusGlyph(a.status), a.name, taskBit, idle];
   });
   const widths = layoutColumns(rows, COLUMN_SPECS, contentWidth);
 

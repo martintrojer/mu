@@ -27,6 +27,7 @@ import type { Db } from "../../../db.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
 import type { TaskRow } from "../../../tasks.js";
 import { inkColorForStatus } from "../../format.js";
+import { agentByName, formatAgentRefDisplayName } from "../agent-display.js";
 import { glyphFor, isStale } from "../cards/inprogress.js";
 import { type ColumnSpec, contentWidthFromCols, layoutColumns, renderRow } from "../columns.js";
 import { ageMs, formatRoi, formatSinceClaim } from "../format-helpers.js";
@@ -205,13 +206,14 @@ export function InProgressPopup({
   const now = Date.now();
   const ages = tasks.map((t) => ageMs(t, now));
   const { start, visible } = centredVisibleSlice(tasks, safeCursor, viewport);
+  const agentLookup = agentByName(snapshot);
   const rows = visible.map((t, i) => {
     const absoluteIndex = start + i;
     return [
       glyphFor(),
       t.name,
       t.status,
-      t.ownerName ?? "—",
+      formatAgentRefDisplayName(t.ownerName, agentLookup),
       formatSinceClaim(ages[absoluteIndex] ?? null),
       formatRoi(t.impact, t.effortDays),
       t.title,

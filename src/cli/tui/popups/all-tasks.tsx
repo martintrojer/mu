@@ -17,6 +17,7 @@ import {
   sortTasks,
 } from "../../../tasks/sort.js";
 import { inkColorForStatus } from "../../format.js";
+import { agentByName, formatAgentRefDisplayName } from "../agent-display.js";
 import { type ColumnSpec, contentWidthFromCols, layoutColumns, renderRow } from "../columns.js";
 import { formatRoi } from "../format-helpers.js";
 import { type PopupAction, type PopupActionEnvelope, dispatchPopupKeyFromInk } from "../keys.js";
@@ -222,10 +223,11 @@ export function AllTasksPopup({
   }
 
   const { start, visible: windowed } = centredVisibleSlice(visibleTasks, safeCursor, viewport);
+  const agentLookup = agentByName(snapshot);
   const rows = windowed.map((t) => [
     t.name,
     t.status,
-    t.ownerName ?? "—",
+    formatAgentRefDisplayName(t.ownerName, agentLookup),
     formatRoi(t.impact, t.effortDays),
     t.title,
   ]);

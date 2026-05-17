@@ -12,7 +12,7 @@
 // renderer. cli.ts re-exports every symbol for back-compat with the
 // existing import surface (tests + cli/* importers).
 
-import { type AgentRow, type AgentStatus, STATUS_EMOJI } from "../agents.js";
+import { type AgentRow, type AgentStatus, agentStatusGlyph } from "../agents.js";
 import { type LogRow, displayEventPayload } from "../logs.js";
 import { muTable, pc } from "../output.js";
 import type { TaskRow } from "../tasks.js";
@@ -24,7 +24,7 @@ import type { WorkstreamSummary } from "../workstream.js";
 // ─── Status colours / icons ────────────────────────────────────────────
 
 /** Per-status colour for the table view. The glyph itself comes from
- *  STATUS_EMOJI in src/agents.ts — single source of truth so the
+ *  agentStatusGlyph in src/agents.ts — single source of truth so the
  *  table view and the pane-border / composeAgentTitle never drift
  *  (review_code_status_emoji_two_sources caught a 2-of-7 disagreement). */
 const STATUS_COLORS: Record<AgentStatus, (s: string) => string> = {
@@ -38,7 +38,7 @@ const STATUS_COLORS: Record<AgentStatus, (s: string) => string> = {
 };
 
 export function statusIcon(status: AgentStatus): string {
-  return STATUS_COLORS[status](STATUS_EMOJI[status]);
+  return STATUS_COLORS[status](agentStatusGlyph(status));
 }
 
 /**
@@ -46,7 +46,7 @@ export function statusIcon(status: AgentStatus): string {
  * (`AgentRow.idle === true`; idle_assigned_agent_detection). Plain
  * Unicode warning sign so it renders the same in cli-table3 cells
  * AND in single-line prose without needing a Nerd Font (the agent's
- * primary status glyph still uses Nerd Font via STATUS_EMOJI).
+ * primary status glyph still uses Nerd Font via agentStatusGlyph).
  */
 export const IDLE_GLYPH = "⚠";
 

@@ -11,6 +11,7 @@ export {
   AgentSpawnCliNotFoundError,
   AgentSpawnStartupError,
   NoForegroundProcessError,
+  agentStatusGlyph,
   adoptAgent,
   checkCommandResolvable,
   foregroundPgid,

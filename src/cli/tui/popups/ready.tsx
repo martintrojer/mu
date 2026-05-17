@@ -26,6 +26,7 @@ import type { Db } from "../../../db.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
 import type { TaskRow } from "../../../tasks.js";
 import { inkColorForStatus } from "../../format.js";
+import { agentByName, formatAgentRefDisplayName } from "../agent-display.js";
 import { type ColumnSpec, contentWidthFromCols, layoutColumns, renderRow } from "../columns.js";
 import { type PopupAction, type PopupActionEnvelope, dispatchPopupKeyFromInk } from "../keys.js";
 import { ListRow } from "../list-row.js";
@@ -194,7 +195,13 @@ export function ReadyPopup({
   }
 
   const { start, visible } = centredVisibleSlice(tasks, safeCursor, viewport);
-  const rows = visible.map((t) => [t.name, t.status, t.ownerName ?? "—", t.title]);
+  const agentLookup = agentByName(snapshot);
+  const rows = visible.map((t) => [
+    t.name,
+    t.status,
+    formatAgentRefDisplayName(t.ownerName, agentLookup),
+    t.title,
+  ]);
   const widths = layoutColumns(rows, COLUMN_SPECS, contentWidth);
 
   return (
