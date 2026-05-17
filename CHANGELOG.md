@@ -9,9 +9,16 @@ called out under "Breaking" in each entry.
 ---
 
 
-## [0.4.2] — Unreleased
+## [0.4.2] — 2026-05-17
 
 ### Changed
+
+- **TUI task owner and workspace agent columns** now prefix known agent
+  references with the live agent status glyph (for example busy,
+  waiting-for-input, or permission-needed) while preserving raw names
+  for anonymous or stale references. The Agents card/popup keep their
+  dedicated glyph column, and all TUI status-glyph formatting now goes
+  through the shared `agent-display` helper.
 
 - **TUI dashboard / `mu state`** now reap agents whose tmux pane has
   disappeared on the next reconcile pass (slow tick in the TUI,
