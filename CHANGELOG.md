@@ -9,6 +9,18 @@ called out under "Breaking" in each entry.
 ---
 
 
+## [0.4.3] — 2026-05-23
+
+### Performance
+
+- **TUI stable-frame rendering** now keeps no-op fast ticks render-silent
+  instead of bumping hook-level scalar state every poll interval. The
+  dashboard fast tier also stops preloading the exhaustive all-tasks
+  list; the All-tasks popup reads SQLite directly while open. This
+  reduces full-frame repaint pressure and large-task-list churn while
+  preserving slow-tick refresh for subprocess-backed drills.
+
+
 ## [0.4.2] — 2026-05-17
 
 ### Changed
@@ -28,15 +40,6 @@ called out under "Breaking" in each entry.
   etc.), `mu state` and the TUI now report the truth: agents removed
   from the registry, their IN_PROGRESS tasks reverted to OPEN with
   `[reaper]` notes. Closes `bug_no_recovery_after_tmux_server_crash`.
-
-### Performance
-
-- **TUI stable-frame rendering** now keeps no-op fast ticks render-silent
-  instead of bumping hook-level scalar state every poll interval. The
-  dashboard fast tier also stops preloading the exhaustive all-tasks
-  list; the All-tasks popup reads SQLite directly while open. This
-  reduces full-frame repaint pressure and large-task-list churn while
-  preserving slow-tick refresh for subprocess-backed drills.
 
 ### Removed
 
