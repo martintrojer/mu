@@ -119,7 +119,9 @@ describe("useDashboardSnapshot slow tier contract", () => {
     expect(src).toMatch(/void refreshNonce;[\s\S]*?const tick = async/);
     expect(src).toMatch(/void refreshNonce;[\s\S]*?const slowTick = async/);
     expect(src).toMatch(/\[db,\s*workstream,\s*tickMs,\s*enabled,\s*refreshNonce,\s*loaders\]/);
-    expect(src).toMatch(/\[db,\s*workstream,\s*enabled,\s*refreshNonce,\s*loaders\]/);
+    expect(src).toMatch(
+      /\[db,\s*workstream,\s*enabled,\s*refreshNonce,\s*loaders,\s*publishNoopSlowTicks\]/,
+    );
   });
 
   it("exposes fast and slow tick nonces for visible drill refresh", () => {
@@ -128,9 +130,11 @@ describe("useDashboardSnapshot slow tier contract", () => {
     expect(src).toMatch(/const \[fastTickNonce, setFastTickNonce\] = useState\(0\)/);
     expect(src).toMatch(/const \[slowTickNonce, setSlowTickNonce\] = useState\(0\)/);
     expect(src).toMatch(
-      /setFastTickNonce\(\(n\) => n \+ 1\);[\s\S]*?const t0 = performance\.now\(\)/,
+      /publishSnapshot\(fresh, setData, publishedKeyRef, errorRef\)[\s\S]*?setLastTickMs\(dur\);[\s\S]*?setFastTickNonce\(\(n\) => n \+ 1\)/,
     );
-    expect(src).toMatch(/setSlowTickNonce\(\(n\) => n \+ 1\);[\s\S]*?loaders\.slow/);
+    expect(src).toMatch(
+      /const changed =[\s\S]*?publishSnapshot\(mergeSnapshotFastSlow\(fast, slow\), setData, publishedKeyRef, errorRef\)[\s\S]*?changed \|\| \(fast !== null && publishNoopSlowTicks\)[\s\S]*?setSlowTickNonce\(\(n\) => n \+ 1\)/,
+    );
     expect(src).toMatch(
       /return \{ data: data\.data, fastTickNonce, slowTickNonce, lastTickMs, error: data\.error \}/,
     );

@@ -8,13 +8,11 @@
 //           plus byte-equal `snapshotKeyString` (the suite at the
 //           top).
 //
-// LAYER B — `lastTickMs` lives in its own useState in
-//           useDashboardSnapshot so its 1×/sec churn doesn't
-//           ripple into the card render path. Tested by mounting
-//           the hook with a controllable loader, returning
-//           byte-equal-but-non-identity snapshots across ticks,
-//           and asserting the hook's `data` reference is
-//           preserved (Object.is) across the no-op ticks.
+// LAYER B — tick-duration and drill-refresh nonces are updated
+//           only when a tick publishes changed visible content. A
+//           stable workstream therefore produces no hook-level state
+//           update after the first loaded frame, so <App> does not
+//           repaint once per poll interval.
 //
 // refreshNonce — bumping the nonce mid-interval re-runs the
 //           effect, which fires `tick()` synchronously. Tested
@@ -40,6 +38,7 @@ import { createElement, useEffect, useRef } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   type DashboardSnapshotLoaders,
+  type DashboardSnapshotOptions,
   snapshotKey,
   snapshotKeyString,
   useDashboardSnapshot,
@@ -290,6 +289,7 @@ interface CapturedFrame {
   data: WorkstreamSnapshot | null;
   lastTickMs: number;
   fastTickNonce: number;
+  slowTickNonce: number;
   error: string | null;
 }
 
@@ -299,6 +299,7 @@ interface HarnessProps {
   tickMs: number;
   refreshNonce: number;
   loaders: DashboardSnapshotLoaders;
+  options?: DashboardSnapshotOptions;
   /** Test sink: each render appends the frame returned by the hook. */
   capture: { values: CapturedFrame[] };
 }
@@ -309,15 +310,17 @@ function HookHarness({
   tickMs,
   refreshNonce,
   loaders,
+  options,
   capture,
 }: HarnessProps): JSX.Element {
-  const snap = useDashboardSnapshot(db, workstream, tickMs, true, refreshNonce, loaders);
+  const snap = useDashboardSnapshot(db, workstream, tickMs, true, refreshNonce, loaders, options);
   const sink = useRef(capture);
   useEffect(() => {
     sink.current.values.push({
       data: snap.data,
       lastTickMs: snap.lastTickMs,
       fastTickNonce: snap.fastTickNonce,
+      slowTickNonce: snap.slowTickNonce,
       error: snap.error,
     });
   });
@@ -427,13 +430,12 @@ describe("useDashboardSnapshot — Layer B preserves data reference across no-op
     instance.unmount();
   });
 
-  // The OTHER half of the Layer B contract: even though `data` is
-  // pinned, `lastTickMs` lives in its own useState and DOES update
-  // every tick. This is what lets the StatusBar's tick display
-  // refresh 1×/sec without dragging the cards along. Without
-  // separating the two pieces of state into two useStates, a cure
-  // that pinned `data` would also freeze `lastTickMs`.
-  it("still advances lastTickMs across no-op ticks", async () => {
+  // The OTHER half of the Layer B contract: no-op ticks should not
+  // publish scalar state either. Earlier fixes preserved the `data`
+  // reference but still bumped fastTickNonce / lastTickMs, which made
+  // <App> repaint every interval and kept the visible flicker. The
+  // loader still polls, but byte-equal results are render-silent.
+  it("does not advance fastTickNonce across no-op ticks", async () => {
     const db = fixtureDb();
     const snap = makeSnap();
     const { loaders, fastCalls } = makeLoaders([snap, snap, snap, snap, snap]);
@@ -452,15 +454,54 @@ describe("useDashboardSnapshot — Layer B preserves data reference across no-op
       { stdout, stdin: process.stdin, stderr: process.stderr, debug: true, patchConsole: false },
     );
 
-    // Need ≥2 fast ticks for fastTickNonce to advance from 0 → 1+.
+    // Need ≥3 fast loads to prove the poll loop continued running
+    // after the first visible publish.
     await waitFor(() => fastCalls.count >= 3, 1500);
     await waitForInkOutput(stdout);
 
-    const nonces = new Set(capture.values.map((f) => f.fastTickNonce));
-    // The fast tick nonce is the observable proxy for "Layer B
-    // scalar state advanced even though `data` reference held".
-    // It MUST take more than one distinct value across the run.
-    expect(nonces.size).toBeGreaterThanOrEqual(2);
+    const dataFrames = capture.values.filter((f) => f.data !== null);
+    expect(dataFrames.length).toBeGreaterThanOrEqual(1);
+    const nonces = dataFrames.map((f) => f.fastTickNonce);
+    // Initial publish may commit as two React frames (data first,
+    // nonce second), so 0 and 1 can both appear. No-op ticks after
+    // that must not keep incrementing to 2, 3, ...
+    expect(Math.max(...nonces)).toBe(1);
+
+    instance.unmount();
+  });
+  it("bumps slowTickNonce on byte-equal slow ticks when requested for subprocess drills", async () => {
+    const db = fixtureDb();
+    const { loaders, fastCalls } = makeLoaders([makeSnap(), makeSnap(), makeSnap()]);
+    const stdout = createInkCaptureStream({ columns: 40, rows: 10 });
+    const capture = { values: [] as CapturedFrame[] };
+
+    const props: HarnessProps = {
+      db,
+      workstream: "demo",
+      tickMs: 10_000,
+      refreshNonce: 0,
+      loaders,
+      options: { publishNoopSlowTicks: true },
+      capture,
+    };
+    const instance = render(createElement(HookHarness, props), {
+      stdout,
+      stdin: process.stdin,
+      stderr: process.stderr,
+      debug: true,
+      patchConsole: false,
+    });
+
+    await waitFor(() => fastCalls.count >= 1, 1500);
+    await waitFor(() => Math.max(...capture.values.map((f) => f.slowTickNonce)) >= 1, 1500);
+    const beforeSlow = Math.max(...capture.values.map((f) => f.slowTickNonce));
+    const beforeFast = Math.max(...capture.values.map((f) => f.fastTickNonce));
+
+    instance.rerender(createElement(HookHarness, { ...props, refreshNonce: 1 }));
+
+    await waitFor(() => Math.max(...capture.values.map((f) => f.slowTickNonce)) > beforeSlow, 500);
+    const afterFast = Math.max(...capture.values.map((f) => f.fastTickNonce));
+    expect(afterFast).toBe(beforeFast);
 
     instance.unmount();
   });

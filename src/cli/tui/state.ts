@@ -17,20 +17,23 @@
 //   which in turn re-rendered every card body — a perceptible
 //   full-frame flash 1×/sec on any stable workstream.
 //
-//   Two-layer fix lives here:
+//   Three-layer fix lives here:
 //     LAYER A: stringify a `snapshotKey()` of the visible-affecting
 //              fields and short-circuit setData when the key is
 //              byte-equal to the previous one. The hook returns the
 //              SAME `data` reference across no-op ticks so ink's
 //              prop-diff bottoms out at the cards.
-//     LAYER B: lastTickMs lives in its OWN useState, so the
-//              StatusBar's tick-rate display can update every tick
-//              without dragging the cards along.
+//     LAYER B: tick-duration and drill-refresh nonces publish only
+//              when the snapshot key changes (or an error clears), so
+//              no-op poll intervals do not force a whole-App render.
+//     LAYER C: the dashboard fast tick does NOT preload the exhaustive
+//              all-tasks list; the All-tasks popup reads SQLite
+//              directly while open.
 //
-//   Layer C (per-card useMemo) is intentionally skipped — Layer A
-//   stops the new-prop cascade at the top-level `data` reference,
-//   which is enough in practice. Revisit only if visible flicker
-//   regresses against a stable workstream.
+//   Per-card useMemo is intentionally skipped — Layers A/B stop the
+//   new-prop cascade at the top-level `data` reference, which is
+//   enough in practice. Revisit only if visible flicker regresses
+//   against a stable workstream.
 
 import { useEffect, useRef, useState } from "react";
 import type { Db } from "../../db.js";
@@ -78,18 +81,18 @@ export const DEFAULT_CARD_VISIBILITY: CardVisibility = {
 
 export interface DashboardSnapshot {
   data: WorkstreamSnapshot | null;
-  /** Increments at the start of every fast SQL-only tick. Drill
-   *  views that read SQLite directly include this in memo deps so
-   *  notes / DAG bodies refresh even when snapshotKey is unchanged. */
+  /** Increments after a fast SQL-only tick publishes a changed
+   *  snapshot. Drill views that read SQLite directly include this in
+   *  memo deps, while no-op ticks stay render-silent. */
   fastTickNonce: number;
-  /** Increments at the start of every slow subprocess tick. Drill
-   *  views that shell out (tmux scrollback, VCS show) include this
-   *  instead of fastTickNonce to avoid 1s subprocess churn. */
+  /** Increments after a slow subprocess tick publishes a changed
+   *  snapshot. Drill views that shell out (tmux scrollback, VCS show)
+   *  include this instead of fastTickNonce to avoid 1s subprocess
+   *  churn; no-op slow ticks stay render-silent. */
   slowTickNonce: number;
-  /** Measured fetch duration of the most recent fast tick (ms). Lives
-   *  in its OWN useState (Layer B); decoupled from `data` so the
-   *  StatusBar's tick display can refresh without re-rendering the
-   *  cards. */
+  /** Measured fetch duration of the most recent published fast tick
+   *  (ms). No-op ticks intentionally leave this unchanged so the
+   *  status path does not repaint an otherwise stable frame. */
   lastTickMs: number;
   error: string | null;
 }
@@ -115,7 +118,6 @@ const DEFAULT_LOADERS: DashboardSnapshotLoaders = {
 
 const FAST_OPTS: LoadWorkstreamSnapshotOptions = {
   eventLimit: 200,
-  withAllTasks: true,
 };
 
 const SLOW_OPTS: LoadWorkstreamSnapshotOptions = {
@@ -124,15 +126,27 @@ const SLOW_OPTS: LoadWorkstreamSnapshotOptions = {
   withRecentCommits: { limit: 25 },
 };
 
+export interface DashboardSnapshotOptions {
+  /**
+   * When true, slowTickNonce advances even if the slow-tier snapshot
+   * is byte-equal. Used only for subprocess-backed popup drills
+   * (agent scrollback / git show) whose body can change without a DB
+   * snapshot change. Dashboard and task-list views keep this false so
+   * stable frames stay render-silent.
+   */
+  publishNoopSlowTicks?: boolean;
+}
+
 /**
  * Subscribe to the workstream snapshot via a setInterval-owned poll
  * loop. Re-fetches every `tickMs` while `enabled` is true.
  *
  * Re-render guard: returns the SAME `data` reference across ticks
  * whose visible content (`snapshotKey`) is unchanged, so React/ink
- * diff against the cards bottoms out cheaply. `lastTickMs` is in a
- * separate useState (Layer B) so its 1×/sec update does not force a
- * card re-render.
+ * diff against the cards bottoms out cheaply. Tick-duration and
+ * drill-refresh nonces publish only when the visible snapshot changes
+ * (or an error clears), so stable workstreams do not repaint once per
+ * poll interval.
  *
  * `refreshNonce` is the optional refresh-now signal
  * (review_dead_code_refresh_now): every distinct value forces an
@@ -148,20 +162,24 @@ export function useDashboardSnapshot(
   enabled: boolean,
   refreshNonce = 0,
   loaders: DashboardSnapshotLoaders = DEFAULT_LOADERS,
+  options: DashboardSnapshotOptions = {},
 ): DashboardSnapshot {
+  const publishNoopSlowTicks = options.publishNoopSlowTicks === true;
   // Layer A: data + error (the stuff the cards read).
   const [data, setData] = useState<{ data: WorkstreamSnapshot | null; error: string | null }>({
     data: null,
     error: null,
   });
-  // Layer B: tick duration + explicit nonces live by themselves so
-  // snapshotKey can keep the data reference stable while visible
-  // drills still get a refresh signal.
+  // Layer B: tick duration + explicit nonces only publish when
+  // snapshotKey changes, so no-op poll intervals do not force <App>
+  // (and therefore the whole Ink tree) to repaint.
   const [lastTickMs, setLastTickMs] = useState(0);
   const [fastTickNonce, setFastTickNonce] = useState(0);
   const [slowTickNonce, setSlowTickNonce] = useState(0);
   const latestFastRef = useRef<WorkstreamSnapshot | null>(null);
   const slowRef = useRef<WorkstreamSnapshotSlowFields | null>(null);
+  const publishedKeyRef = useRef("");
+  const errorRef = useRef<string | null>(null);
 
   // Snap-to-null on workstream change
   // (bug_tui_tab_switch_stale_render, workstream `tui-impl`).
@@ -189,6 +207,8 @@ export function useDashboardSnapshot(
     lastWsRef.current = workstream;
     slowRef.current = null;
     latestFastRef.current = null;
+    publishedKeyRef.current = "";
+    errorRef.current = null;
     setData({ data: null, error: null });
     setLastTickMs(0);
   }
@@ -205,7 +225,6 @@ export function useDashboardSnapshot(
     let cancelled = false;
     const tick = async () => {
       if (cancelled) return;
-      setFastTickNonce((n) => n + 1);
       const t0 = performance.now();
       try {
         const fast = await loaders.fast(db, workstream, FAST_OPTS);
@@ -213,12 +232,13 @@ export function useDashboardSnapshot(
         latestFastRef.current = fast;
         const fresh = mergeSnapshotFastSlow(fast, slowRef.current);
         const dur = performance.now() - t0;
-        setLastTickMs(dur);
-        publishSnapshot(fresh, setData);
+        if (publishSnapshot(fresh, setData, publishedKeyRef, errorRef)) {
+          setLastTickMs(dur);
+          setFastTickNonce((n) => n + 1);
+        }
       } catch (err) {
         if (cancelled) return;
-        const msg = String(err);
-        setData((prev) => (prev.error === msg ? prev : { ...prev, error: msg }));
+        publishError(String(err), setData, errorRef);
       }
     };
     void tick();
@@ -240,7 +260,6 @@ export function useDashboardSnapshot(
     let cancelled = false;
     const slowTick = async () => {
       if (cancelled) return;
-      setSlowTickNonce((n) => n + 1);
       try {
         const slow = await loaders.slow(
           db,
@@ -251,11 +270,15 @@ export function useDashboardSnapshot(
         if (cancelled) return;
         slowRef.current = slow;
         const fast = latestFastRef.current;
-        if (fast !== null) publishSnapshot(mergeSnapshotFastSlow(fast, slow), setData);
+        const changed =
+          fast !== null &&
+          publishSnapshot(mergeSnapshotFastSlow(fast, slow), setData, publishedKeyRef, errorRef);
+        if (changed || (fast !== null && publishNoopSlowTicks)) {
+          setSlowTickNonce((n) => n + 1);
+        }
       } catch (err) {
         if (cancelled) return;
-        const msg = String(err);
-        setData((prev) => (prev.error === msg ? prev : { ...prev, error: msg }));
+        publishError(String(err), setData, errorRef);
       }
     };
     void slowTick();
@@ -264,7 +287,7 @@ export function useDashboardSnapshot(
       cancelled = true;
       clearInterval(id);
     };
-  }, [db, workstream, enabled, refreshNonce, loaders]);
+  }, [db, workstream, enabled, refreshNonce, loaders, publishNoopSlowTicks]);
 
   return { data: data.data, fastTickNonce, slowTickNonce, lastTickMs, error: data.error };
 }
@@ -289,13 +312,30 @@ function publishSnapshot(
       error: string | null;
     },
   ) => void,
-): void {
+  publishedKeyRef: { current: string },
+  errorRef: { current: string | null },
+): boolean {
   const freshKey = snapshotKeyString(fresh);
-  writeData((prev) => {
-    const prevKey = prev.data === null ? "" : snapshotKeyString(prev.data);
-    if (prev.error === null && prevKey === freshKey) return prev;
-    return { data: fresh, error: null };
-  });
+  if (errorRef.current === null && publishedKeyRef.current === freshKey) return false;
+  publishedKeyRef.current = freshKey;
+  errorRef.current = null;
+  writeData(() => ({ data: fresh, error: null }));
+  return true;
+}
+
+function publishError(
+  message: string,
+  writeData: (
+    updater: (prev: { data: WorkstreamSnapshot | null; error: string | null }) => {
+      data: WorkstreamSnapshot | null;
+      error: string | null;
+    },
+  ) => void,
+  errorRef: { current: string | null },
+): void {
+  if (errorRef.current === message) return;
+  errorRef.current = message;
+  writeData((prev) => ({ ...prev, error: message }));
 }
 
 /** Clamp a desired tick rate to [floor, ceiling]. */

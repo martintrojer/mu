@@ -270,7 +270,9 @@ export function App({ db, workstreams, initialActive = 0 }: AppProps): JSX.Eleme
   const safeActive = Math.max(0, Math.min(activeWs, workstreams.length - 1));
   const workstream = workstreams[safeActive] ?? "";
 
-  const snap = useDashboardSnapshot(db, workstream, tickMs, true, refreshNonce);
+  const snap = useDashboardSnapshot(db, workstream, tickMs, true, refreshNonce, undefined, {
+    publishNoopSlowTicks: popup === 0 || popup === 1 || popup === 5,
+  });
 
   // Parked-workstream set for the tab strip. Recomputed on each slow
   // tick (cheap N small SQL queries; N is the workstream count). The
