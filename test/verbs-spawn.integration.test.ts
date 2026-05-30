@@ -15,6 +15,7 @@ import {
   AgentExistsError,
   AgentSpawnStartupError,
   defaultSpawnLivenessMs,
+  defaultSpawnReadinessMs,
   getAgent,
   insertAgent,
   resetCommandResolverForTests,
@@ -41,6 +42,7 @@ import {
   mockTmux,
   withMuPiCommand,
   withMuSpawnLivenessMs,
+  withMuSpawnReadinessMs,
 } from "./_verbs-mock.js";
 
 // ─── Setup / teardown ──────────────────────────────────────────────────
@@ -428,6 +430,20 @@ describe("spawn liveness check", () => {
     const agent = await spawnAgent(db, { name: "alice", workstream: "auth" });
     expect(agent.status).toBe("spawning");
     expect(getAgent(db, "alice", "auth")).toBeDefined();
+  });
+});
+
+describe("spawn readiness check", () => {
+  it("defaultSpawnReadinessMs is 10000 by default and respects the env var", async () => {
+    await withMuSpawnReadinessMs(undefined, () => {
+      expect(defaultSpawnReadinessMs()).toBe(10_000);
+    });
+    await withMuSpawnReadinessMs("5000", () => {
+      expect(defaultSpawnReadinessMs()).toBe(5000);
+    });
+    await withMuSpawnReadinessMs("0", () => {
+      expect(defaultSpawnReadinessMs()).toBe(0);
+    });
   });
 });
 

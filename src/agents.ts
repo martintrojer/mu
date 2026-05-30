@@ -36,6 +36,7 @@ export {
   type SpawnAgentOptions,
   checkCommandResolvable,
   defaultSpawnLivenessMs,
+  defaultSpawnReadinessMs,
   envVarNameForCli,
   resetCommandResolverForTests,
   resolveCliCommand,
