@@ -9,6 +9,39 @@ called out under "Breaking" in each entry.
 ---
 
 
+## [0.4.4] — 2026-05-30
+
+### Added
+
+- **All-tasks popup (`t`): blocked indicator + filter toggle**. Tasks
+  with unsatisfied blockers now show a `⛓` chain-link glyph next to
+  their status column (yellow-coloured when blocked). New `b` key
+  cycles a three-state blocked filter: all → only-blocked →
+  hide-blocked → all. Displayed as a `[b]locked:` strip between the
+  status-filter and sort-indicator rows. Keymap help (`?`) updated.
+
+### Fixed
+
+- **TUI re-renders on terminal resize**. Shrinking or growing the
+  tmux pane now immediately reflows the dashboard and all popups.
+  Previously ink did not re-render on resize because `useStdout()`
+  values were read once per render with no subscription to the
+  `resize` event. New shared `useTerminalSize()` hook subscribes to
+  stdout's `resize` event and forces a state update; all 17 consumers
+  (app, titled-box, help overlay, viewport, and 13 popup files)
+  migrated from the ad-hoc `useStdout()` pattern.
+
+- **Agent spawn waits for CLI readiness before returning**. After the
+  existing liveness check (pane alive + no startup errors),
+  `spawnAgent` now polls the pane's scrollback via `detectPiStatus`
+  until the CLI reaches a recognisable state (`needs_input`, `busy`,
+  or `needs_permission`). Prevents orchestrators from sending
+  commands to agents that haven't finished loading. Controlled by
+  `MU_SPAWN_READINESS_MS` (default 10 000 ms; 0 disables). Budget
+  exhaustion is not an error — the agent row is already committed and
+  reconcile picks up status on the next tick.
+
+
 ## [0.4.3] — 2026-05-23
 
 ### Performance
