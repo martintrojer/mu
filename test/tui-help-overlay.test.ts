@@ -66,10 +66,10 @@ describe("TUI help overlay", () => {
   it("renders only the fixed viewport on low-row panes", () => {
     const viewport = helpViewport(15);
     expect(viewport).toBe(12);
-    expect(HELP_ROWS).toHaveLength(55);
+    expect(HELP_ROWS).toHaveLength(56);
 
     const text = visibleText(15);
-    expect(text).toContain("keys · 1-12/55");
+    expect(text).toContain("keys · 1-12/56");
     expect(text).toContain("keys · dashboard");
     expect(text).toContain("toggle this overlay");
     expect(text).not.toContain("keys · popup list");
@@ -79,23 +79,23 @@ describe("TUI help overlay", () => {
   it("scrolls with popup navigation semantics and clamps at the bottom", () => {
     expect(applyHelpScroll(0, { kind: "moveDown" }, 15, HELP_ROWS.length)).toBe(1);
     expect(applyHelpScroll(1, { kind: "pageDown", half: true }, 15, HELP_ROWS.length)).toBe(7);
-    expect(applyHelpScroll(7, { kind: "jumpBottom" }, 15, HELP_ROWS.length)).toBe(43);
-    expect(applyHelpScroll(43, { kind: "moveDown" }, 15, HELP_ROWS.length)).toBe(43);
-    expect(applyHelpScroll(43, { kind: "jumpTop" }, 15, HELP_ROWS.length)).toBe(0);
+    expect(applyHelpScroll(7, { kind: "jumpBottom" }, 15, HELP_ROWS.length)).toBe(44);
+    expect(applyHelpScroll(44, { kind: "moveDown" }, 15, HELP_ROWS.length)).toBe(44);
+    expect(applyHelpScroll(44, { kind: "jumpTop" }, 15, HELP_ROWS.length)).toBe(0);
     expect(applyHelpScroll(3, { kind: "noop" }, 15, HELP_ROWS.length)).toBe(3);
   });
 
   it("computes the inset position indicator from the visible range", () => {
-    expect(helpPositionLabel(0, 12, HELP_ROWS.length)).toBe("1-12/55");
-    expect(helpPositionLabel(11, 12, HELP_ROWS.length)).toBe("12-23/55");
-    expect(helpPositionLabel(43, 12, HELP_ROWS.length)).toBe("44-55/55");
-    expect(visibleText(15, 11)).toContain("keys · 12-23/55");
+    expect(helpPositionLabel(0, 12, HELP_ROWS.length)).toBe("1-12/56");
+    expect(helpPositionLabel(11, 12, HELP_ROWS.length)).toBe("12-23/56");
+    expect(helpPositionLabel(44, 12, HELP_ROWS.length)).toBe("45-56/56");
+    expect(visibleText(15, 11)).toContain("keys · 12-23/56");
   });
 
   it("hides the position indicator and renders all rows when the pane is tall enough", () => {
     const text = visibleText(200);
     expect(helpPositionLabel(0, helpViewport(200), HELP_ROWS.length)).toBeUndefined();
-    expect(text).not.toContain("1-12/55");
+    expect(text).not.toContain("1-12/56");
     expect(text).toContain("keys · dashboard");
     expect(text).toContain("keys · popup list");
     expect(text).toContain("keys · popup drill");

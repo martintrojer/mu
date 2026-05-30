@@ -205,6 +205,7 @@ export const HELP_PANES: readonly HelpPaneSpec[] = [
         "r",
         "d",
       ]),
+      row("b", "all-tasks blocked filter cycle (all → only → hide)", ["b"]),
       row("s", "all-tasks sort cycle (roi → recency → age → id)", ["s"]),
       row("/", "all-tasks row search", ["/"]),
     ],

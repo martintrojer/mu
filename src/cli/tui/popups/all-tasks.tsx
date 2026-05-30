@@ -47,7 +47,7 @@ export interface PopupProps {
 
 const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
   { kind: "protect" }, // task id
-  { kind: "protect" }, // status
+  { kind: "protect" }, // status + blocked glyph
   { kind: "protect" }, // owner
   { kind: "protect", align: "right" }, // ROI
   { kind: "clip", min: 1 }, // title
@@ -57,7 +57,7 @@ const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
 // window: StatusFilterStrip + SortStrip. Account for those through
 // the central viewport hook's chrome override so the popup's top
 // border does not get clipped on shorter panes.
-const ALL_TASKS_CHROME_ROWS = 5;
+const ALL_TASKS_CHROME_ROWS = 6;
 
 export function AllTasksPopup({
   yank,
@@ -84,6 +84,11 @@ export function AllTasksPopup({
     () => allTasksFromSnapshotOrDb(snapshot, db, workstream),
     [snapshot, db, workstream],
   );
+  const blockedNames = useMemo(
+    () => new Set((snapshot?.blocked ?? []).map((t) => t.name)),
+    [snapshot?.blocked],
+  );
+  const [blockedFilter, setBlockedFilter] = useState<BlockedFilterMode>("all");
   // Per bug_filter_drill_opens_wrong_task: text filter applied
   // UNIFORMLY across list and drill modes. The previous
   // mode-conditional dropped the filter on drill, which shifted
@@ -91,13 +96,14 @@ export function AllTasksPopup({
   // wrong task. mode dep removed.
   const visibleTasks = useMemo(() => {
     const filteredByStatus = sourceTasks.filter((t) => statusFilter.statuses.has(t.status));
+    const filteredByBlocked = applyBlockedFilter(filteredByStatus, blockedNames, blockedFilter);
     const filteredByText = applyFilter(
-      filteredByStatus,
+      filteredByBlocked,
       flt.query,
       (t) => `${t.name} ${t.title} ${t.status} ${t.ownerName ?? ""}`,
     );
     return sortTasks(filteredByText, sortKey);
-  }, [sourceTasks, statusFilter.statuses, flt.query, sortKey]);
+  }, [sourceTasks, statusFilter.statuses, blockedFilter, blockedNames, flt.query, sortKey]);
   const safeCursor = visibleTasks.length === 0 ? 0 : Math.min(cursor, visibleTasks.length - 1);
   const focused = visibleTasks[safeCursor];
 
@@ -167,6 +173,11 @@ export function AllTasksPopup({
   useInput((input, key) => {
     if (mode !== "drill" && flt.onKey(input, key) === "consumed") return;
     if (mode !== "drill" && statusFilter.onKey(input, key)) return;
+    // b toggles blocked filter — intercept before generic popup dispatch
+    if (mode !== "drill" && !key.ctrl && !key.meta && input === "b") {
+      setBlockedFilter(nextBlockedFilter);
+      return;
+    }
     dispatchListAction(dispatchPopupKeyFromInk(input, key));
   });
 
@@ -179,6 +190,7 @@ export function AllTasksPopup({
       <PopupShell title="All tasks · popup">
         <Box flexDirection="column" flexGrow={1}>
           <StatusFilterStrip statuses={statusFilter.statuses} />
+          <BlockedFilterStrip mode={blockedFilter} />
           <SortStrip sortKey={sortKey} visible={0} total={0} />
           <Text dimColor>(no tasks)</Text>
         </Box>
@@ -191,6 +203,7 @@ export function AllTasksPopup({
       <PopupShell title="All tasks · popup">
         <Box flexDirection="column" flexGrow={1}>
           <StatusFilterStrip statuses={statusFilter.statuses} />
+          <BlockedFilterStrip mode={blockedFilter} />
           <SortStrip sortKey={sortKey} visible={0} total={sourceTasks.length} />
           <Text dimColor>
             {flt.query === ""
@@ -226,7 +239,7 @@ export function AllTasksPopup({
   const agentLookup = agentByName(snapshot);
   const rows = windowed.map((t) => [
     t.name,
-    t.status,
+    blockedNames.has(t.name) ? `${t.status} ⛓` : t.status,
     formatAgentRefDisplayName(t.ownerName, agentLookup),
     formatRoi(t.impact, t.effortDays),
     t.title,
@@ -240,14 +253,16 @@ export function AllTasksPopup({
     >
       <Box flexDirection="column" flexGrow={1}>
         <StatusFilterStrip statuses={statusFilter.statuses} />
+        <BlockedFilterStrip mode={blockedFilter} />
         <SortStrip sortKey={sortKey} visible={visibleTasks.length} total={sourceTasks.length} />
         {windowed.map((t, i) => {
           const row = rows[i];
           if (row === undefined) return null;
           const padded = renderRow(row, widths, COLUMN_SPECS);
+          const isBlocked = blockedNames.has(t.name);
           const colors = [
             { bold: true }, // id
-            { color: inkColorForStatus(t.status) }, // status
+            { color: isBlocked ? "yellow" : inkColorForStatus(t.status) }, // status + blocked glyph
             { dimColor: true }, // owner
             { dimColor: true }, // ROI
             undefined, // title
@@ -316,6 +331,53 @@ function SortStrip({
     <Box>
       <Text dimColor>
         {sortIndicator(sortKey)} (filter: {visible} of {total})
+      </Text>
+    </Box>
+  );
+}
+
+// ─── Blocked filter ───────────────────────────────────────────────
+
+export type BlockedFilterMode = "all" | "only" | "hide";
+
+export function nextBlockedFilter(current: BlockedFilterMode): BlockedFilterMode {
+  switch (current) {
+    case "all":
+      return "only";
+    case "only":
+      return "hide";
+    case "hide":
+      return "all";
+  }
+}
+
+export function applyBlockedFilter<T extends { name: string }>(
+  tasks: T[],
+  blockedNames: ReadonlySet<string>,
+  mode: BlockedFilterMode,
+): T[] {
+  switch (mode) {
+    case "all":
+      return tasks;
+    case "only":
+      return tasks.filter((t) => blockedNames.has(t.name));
+    case "hide":
+      return tasks.filter((t) => !blockedNames.has(t.name));
+  }
+}
+
+const BLOCKED_FILTER_LABELS: Readonly<Record<BlockedFilterMode, string>> = {
+  all: "all",
+  only: "only blocked",
+  hide: "hide blocked",
+};
+
+function BlockedFilterStrip({ mode }: { mode: BlockedFilterMode }): JSX.Element {
+  return (
+    <Box>
+      <Text dimColor>
+        [<Text bold>b</Text>]locked: {BLOCKED_FILTER_LABELS[mode]}
+        {mode === "all" ? "" : " ●"}
       </Text>
     </Box>
   );

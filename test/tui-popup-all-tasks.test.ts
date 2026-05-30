@@ -6,10 +6,13 @@ import { createElement } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   AllTasksPopup,
+  type BlockedFilterMode,
   allTasksFromSnapshotOrDb,
   allTasksListTitle,
   allTasksScrollPercent,
   allTasksYankCommand,
+  applyBlockedFilter,
+  nextBlockedFilter,
   nextTaskSortKey,
   sortIndicator,
 } from "../src/cli/tui/popups/all-tasks.js";
@@ -17,6 +20,7 @@ import { applyCursor, centredVisibleSlice } from "../src/cli/tui/popups/scroll.j
 import { type Db, openDb } from "../src/db.js";
 import type { WorkstreamSnapshot } from "../src/state.js";
 import { type TaskRow, addTask, listTasks, setTaskStatus } from "../src/tasks.js";
+import { addBlockEdge } from "../src/tasks/edges.js";
 import { sortTasks } from "../src/tasks/sort.js";
 import { TASK_STATUSES } from "../src/tasks/status.js";
 import {
@@ -178,9 +182,9 @@ describe("AllTasksPopup", () => {
     unmount();
 
     const taskRows = lines.filter((line) => /│ task_\d{3}/.test(line));
-    expect(taskRows).toHaveLength(15);
+    expect(taskRows).toHaveLength(14);
     expect(taskRows.map((line) => line.match(/task_\d{3}/)?.[0])).toEqual(
-      Array.from({ length: 15 }, (_, i) => `task_${String(i + 93).padStart(3, "0")}`),
+      Array.from({ length: 14 }, (_, i) => `task_${String(i + 93).padStart(3, "0")}`),
     );
     expect(taskRows.at(7) ?? "").toContain("task_100");
     expect(lines.at(0) ?? "").toContain("All tasks · popup (101/200) · 50%");
@@ -366,8 +370,142 @@ describe("AllTasksPopup", () => {
     expect(text).not.toContain("task_000");
     expect(text).not.toContain("task_092");
     expect(text).toContain("task_093");
-    expect(text).toContain("task_107");
-    expect(text).not.toContain("task_108");
+    expect(text).toContain("task_106");
+    expect(text).not.toContain("task_107");
     expect(text).not.toContain("task_199");
+  });
+
+  // ─── Blocked indicator + filter ──────────────────────────────────
+
+  it("nextBlockedFilter cycles all → only → hide → all", () => {
+    expect(nextBlockedFilter("all")).toBe("only");
+    expect(nextBlockedFilter("only")).toBe("hide");
+    expect(nextBlockedFilter("hide")).toBe("all");
+  });
+
+  it("applyBlockedFilter filters correctly in each mode", () => {
+    const tasks = [{ name: "a" }, { name: "b" }, { name: "c" }];
+    const blockedNames = new Set(["b"]);
+    expect(applyBlockedFilter(tasks, blockedNames, "all").map((t) => t.name)).toEqual([
+      "a",
+      "b",
+      "c",
+    ]);
+    expect(applyBlockedFilter(tasks, blockedNames, "only").map((t) => t.name)).toEqual(["b"]);
+    expect(applyBlockedFilter(tasks, blockedNames, "hide").map((t) => t.name)).toEqual(["a", "c"]);
+  });
+
+  it("shows ⛓ glyph next to status for blocked tasks", async () => {
+    const db = fixtureDb();
+    addTask(db, {
+      workstream: "demo",
+      localId: "blocker",
+      title: "Blocker",
+      impact: 90,
+      effortDays: 1,
+    });
+    addTask(db, {
+      workstream: "demo",
+      localId: "blocked",
+      title: "Blocked",
+      impact: 50,
+      effortDays: 1,
+    });
+    addBlockEdge(db, "demo", "blocked", "blocker");
+
+    const allTasks = sortTasks(listTasks(db, "demo"), "roi");
+    const blocked = allTasks.filter((t) => t.name === "blocked");
+
+    const stdin = createInkInputStream();
+    const stdout = createInkCaptureStream({ columns: 120, rows: 20 });
+    const instance = render(
+      createElement(AllTasksPopup, {
+        yank: async () => {},
+        onClose: () => {},
+        snapshot: { allTasks, blocked } as unknown as WorkstreamSnapshot,
+        fastTickNonce: 0,
+        mode: "list",
+        onModeChange: () => {},
+        db,
+        workstream: "demo",
+      }),
+      { stdout, stdin, stderr: process.stderr, debug: false, patchConsole: false },
+    );
+    await waitForInkOutput(stdout);
+    const text = latestRenderedFrame(stdout).join("\n");
+    // The blocked task should show the chain glyph in its status column
+    expect(text).toMatch(/blocked.*OPEN ⛓/);
+    // The non-blocked task should NOT show the chain glyph
+    expect(text).toMatch(/blocker.*OPEN(?! ⛓)/);
+    instance.unmount();
+  });
+
+  it("b key cycles through blocked filter modes and filters the list", async () => {
+    const db = fixtureDb();
+    addTask(db, {
+      workstream: "demo",
+      localId: "blocker",
+      title: "Blocker",
+      impact: 90,
+      effortDays: 1,
+    });
+    addTask(db, {
+      workstream: "demo",
+      localId: "blocked_one",
+      title: "Blocked One",
+      impact: 50,
+      effortDays: 1,
+    });
+    addBlockEdge(db, "demo", "blocked_one", "blocker");
+
+    const allTasks = sortTasks(listTasks(db, "demo"), "roi");
+    const blocked = allTasks.filter((t) => t.name === "blocked_one");
+
+    const stdin = createInkInputStream();
+    const stdout = createInkCaptureStream({ columns: 120, rows: 20 });
+    const instance = render(
+      createElement(AllTasksPopup, {
+        yank: async () => {},
+        onClose: () => {},
+        snapshot: { allTasks, blocked } as unknown as WorkstreamSnapshot,
+        fastTickNonce: 0,
+        mode: "list",
+        onModeChange: () => {},
+        db,
+        workstream: "demo",
+      }),
+      { stdout, stdin, stderr: process.stderr, debug: false, patchConsole: false },
+    );
+    await waitForInkOutput(stdout);
+
+    // Initial: all tasks visible
+    let text = latestRenderedFrame(stdout).join("\n");
+    expect(text).toContain("blocker");
+    expect(text).toContain("blocked_one");
+    expect(text).toContain("filter: 2 of 2");
+
+    // Press b → only blocked
+    await simulateInput(stdin, "b");
+    await waitForInkOutput(stdout);
+    text = latestRenderedFrame(stdout).join("\n");
+    expect(text).toContain("only blocked");
+    expect(text).toContain("blocked_one");
+    expect(text).toContain("filter: 1 of 2");
+
+    // Press b → hide blocked
+    await simulateInput(stdin, "b");
+    await waitForInkOutput(stdout);
+    text = latestRenderedFrame(stdout).join("\n");
+    expect(text).toContain("hide blocked");
+    expect(text).toContain("blocker");
+    expect(text).toContain("filter: 1 of 2");
+
+    // Press b → back to all
+    await simulateInput(stdin, "b");
+    await waitForInkOutput(stdout);
+    text = latestRenderedFrame(stdout).join("\n");
+    expect(text).toContain("filter: 2 of 2");
+
+    instance.unmount();
   });
 });

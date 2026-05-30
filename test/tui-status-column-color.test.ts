@@ -66,13 +66,19 @@ describe("TUI status column colours", () => {
     ["src/cli/tui/popups/inprogress.tsx", 2],
     ["src/cli/tui/popups/blocked.tsx", 2],
     ["src/cli/tui/popups/recent.tsx", 2],
-    ["src/cli/tui/popups/all-tasks.tsx", 1],
   ] as const)("%s derives row colours from inkColorForStatus(status)", (path, statusColumn) => {
     const src = readFileSync(path, "utf-8");
     expect(src).toContain("inkColorForStatus");
     expect(src).toContain("{ color: inkColorForStatus(t.status) }, // status");
     expect(src).not.toContain("{ dimColor: true }, // status");
     expect(statusColumn).toBeGreaterThan(0);
+  });
+
+  it("all-tasks popup derives row colours from inkColorForStatus with blocked override", () => {
+    const src = readFileSync("src/cli/tui/popups/all-tasks.tsx", "utf-8");
+    expect(src).toContain("inkColorForStatus");
+    // Blocked tasks get yellow; non-blocked use inkColorForStatus
+    expect(src).toContain('isBlocked ? "yellow" : inkColorForStatus(t.status)');
   });
 
   it("all task statuses have the expected Ink colour", () => {
