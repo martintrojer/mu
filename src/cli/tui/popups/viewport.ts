@@ -46,7 +46,7 @@
 // This module is in src/cli/tui/popups/, so the hook's `useStdout`
 // import is in-bounds.
 
-import { useStdout } from "ink";
+import { useTerminalSize } from "../use-terminal-size.js";
 
 /** Default rows of chrome consumed inside a popup Shell.
  *  Subtracted from `stdout.rows` to get the body slice budget.
@@ -93,6 +93,6 @@ export function popupViewport(rows: number, chromeOverride?: number): number {
  * pane height (bug_tui_inprogress_recent_drill_viewport_clipped).
  */
 export function usePopupViewport(chromeOverride?: number): number {
-  const { stdout } = useStdout();
-  return popupViewport(stdout?.rows ?? 24, chromeOverride);
+  const { rows } = useTerminalSize();
+  return popupViewport(rows, chromeOverride);
 }

@@ -9,6 +9,7 @@ import { HELP_PANES } from "./keymap-spec.js";
 import { type PopupAction, dispatchPopupKeyFromInk } from "./keys.js";
 import { applyScroll, clampScrollTop, isNavAction } from "./popups/scroll.js";
 import { TitledBox } from "./titled-box.js";
+import { useTerminalSize } from "./use-terminal-size.js";
 
 export type HelpRenderRow =
   | { kind: "header"; text: string }
@@ -64,6 +65,7 @@ export interface HelpProps {
 }
 
 export function Help({ rows }: HelpProps): JSX.Element {
+  const { cols } = useTerminalSize();
   const flatRows = useMemo(() => flattenHelpRows(), []);
   const [scrollTop, setScrollTop] = useState(0);
   const totalRows = flatRows.length;
@@ -73,21 +75,24 @@ export function Help({ rows }: HelpProps): JSX.Element {
     setScrollTop((s) => applyHelpScroll(s, action, rows, totalRows));
   });
 
-  return <HelpView rows={rows} scrollTop={scrollTop} flatRows={flatRows} />;
+  return <HelpView rows={rows} scrollTop={scrollTop} flatRows={flatRows} cols={cols} />;
 }
 
 export interface HelpViewProps {
   rows: number;
   scrollTop?: number;
   flatRows?: readonly HelpRenderRow[];
+  /** Terminal columns. When omitted, falls back to process.stdout. */
+  cols?: number;
 }
 
 export function HelpView({
   rows,
   scrollTop = 0,
   flatRows = flattenHelpRows(),
+  cols: colsOverride,
 }: HelpViewProps): JSX.Element {
-  const cols = process.stdout.columns ?? 80;
+  const cols = colsOverride ?? process.stdout.columns ?? 80;
   const contentWidth = Math.max(1, cols - 4); // border + paddingX on both sides
   const viewport = helpViewport(rows);
   const totalRows = flatRows.length;

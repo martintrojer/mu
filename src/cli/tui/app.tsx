@@ -17,7 +17,7 @@
 // nonces so visible details refresh without closing/reopening.
 
 import type { EventEmitter } from "node:events";
-import { Box, Text, useApp, useInput, useStdin, useStdout } from "ink";
+import { Box, Text, useApp, useInput, useStdin } from "ink";
 import { type ComponentType, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Db } from "../../db.js";
 import { parkedStatus } from "../../parked.js";
@@ -78,6 +78,7 @@ import {
 } from "./state.js";
 import { StatusBar } from "./status-bar.js";
 import { TabStrip } from "./tab-strip.js";
+import { useTerminalSize } from "./use-terminal-size.js";
 import { type ClipboardBackend, probeClipboardBackend } from "./yank.js";
 
 export interface AppProps {
@@ -289,13 +290,11 @@ export function App({ db, workstreams, initialActive = 0 }: AppProps): JSX.Eleme
     return set;
   }, [db, workstreams, snap.slowTickNonce]);
 
-  // Terminal-resize handling per design_resize. ink's stdout exposes
-  // columns/rows; we only use them to render a 'too small' guard.
-  // Cards self-shrink within the dashboard's flex layout; the
-  // explicit guard catches the pathological 10x5 case.
-  const { stdout } = useStdout();
-  const cols = stdout.columns ?? 80;
-  const rows = stdout.rows ?? 24;
+  // Terminal-resize handling: useTerminalSize subscribes to stdout
+  // 'resize' events so the entire tree re-renders when the pane
+  // shrinks or grows. Cards self-shrink within the dashboard's flex
+  // layout; the explicit guard catches the pathological 10x5 case.
+  const { cols, rows } = useTerminalSize();
   const terminalTooSmall = cols < 40 || rows < DASHBOARD_MIN_ROWS;
   const hasTabStrip = workstreams.length > 1;
   const hasSnapshotError = snap.error !== null;

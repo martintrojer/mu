@@ -30,10 +30,11 @@
 //
 // Per ROADMAP pledge: ink/react import limited to src/cli/tui/*.
 
-import { Box, Text, useStdout } from "ink";
+import { Box, Text } from "ink";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { cellWidth, contentWidthFromCols, truncateCell } from "../columns.js";
 import type { PopupAction } from "../keys.js";
+import { useTerminalSize } from "../use-terminal-size.js";
 import { wrapAndPadAnsiLines } from "../wrap-ansi.js";
 import { applyScroll, clampScrollTop, isNavAction } from "./scroll.js";
 
@@ -79,8 +80,7 @@ export interface DrillKeymap {
 }
 
 function useDrillWrapWidth(): number {
-  const { stdout } = useStdout();
-  const cols = stdout?.columns ?? 80;
+  const { cols } = useTerminalSize();
   return Math.max(0, contentWidthFromCols(cols) - 2);
 }
 

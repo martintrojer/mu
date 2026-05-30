@@ -5,7 +5,7 @@
 // `s` through the same sort keys as `mu task list --sort`, Enter drills
 // into TaskDetailDrill, and `y` yanks `mu task show <id>`.
 
-import { Box, Text, useInput, useStdout } from "ink";
+import { Box, Text, useInput } from "ink";
 import { useMemo, useState } from "react";
 import type { Db } from "../../../db.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
@@ -27,6 +27,7 @@ import { useNotesDrill } from "../use-notes-drill.js";
 import { usePopupActionQueue } from "../use-popup-action-queue.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
 import { StatusFilterStrip, useStatusFilter } from "../use-status-filter.js";
+import { useTerminalSize } from "../use-terminal-size.js";
 import { useDrillKeymap } from "./drill.js";
 import { applyCursor, centredVisibleSlice, isNavAction } from "./scroll.js";
 import { TaskDetailDrill } from "./task-detail.js";
@@ -71,8 +72,7 @@ export function AllTasksPopup({
   db,
   workstream,
 }: PopupProps): JSX.Element {
-  const { stdout } = useStdout();
-  const cols = stdout?.columns ?? 80;
+  const { cols } = useTerminalSize();
   const contentWidth = contentWidthFromCols(cols);
   const viewport = usePopupViewport(ALL_TASKS_CHROME_ROWS);
   const [cursor, setCursor] = useState(0);

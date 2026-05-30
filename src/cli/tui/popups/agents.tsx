@@ -17,7 +17,7 @@
 // feat_column_aligned_lists clipping policy: glyph, agent name,
 // status are PROTECTED; the role description is CLIPPABLE.
 
-import { Box, Text, useInput, useStdout } from "ink";
+import { Box, Text, useInput } from "ink";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { type AgentRow, readAgent } from "../../../agents.js";
 import type { Db } from "../../../db.js";
@@ -30,6 +30,7 @@ import { PopupShell } from "../popup-shell.js";
 import { runTmuxAttachInteractive } from "../tmux-attach.js";
 import { usePopupActionQueue } from "../use-popup-action-queue.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
+import { useTerminalSize } from "../use-terminal-size.js";
 import { DrillScrollView, useDrillKeymap } from "./drill.js";
 import { applyCursor, centredVisibleSlice, isNavAction } from "./scroll.js";
 import { usePopupViewport } from "./viewport.js";
@@ -80,8 +81,7 @@ export function AgentsPopup({
   db,
   workstream,
 }: PopupProps): JSX.Element {
-  const { stdout } = useStdout();
-  const cols = stdout?.columns ?? 80;
+  const { cols } = useTerminalSize();
   const contentWidth = contentWidthFromCols(cols);
   // Per-render viewport from stdout.rows minus the popup chrome budget;
   // see popups/viewport.ts. Replaces the prior hardcoded VIEWPORT = 20.

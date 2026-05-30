@@ -6,7 +6,7 @@
 // The popup never mutates: `y` yanks the backend-specific show command
 // for the focused commit.
 
-import { Box, Text, useInput, useStdout } from "ink";
+import { Box, Text, useInput } from "ink";
 import { useCallback, useEffect, useState } from "react";
 import type { Db } from "../../../db.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
@@ -19,6 +19,7 @@ import { PopupShell } from "../popup-shell.js";
 import { runTuicrInteractive } from "../tuicr.js";
 import { usePopupActionQueue } from "../use-popup-action-queue.js";
 import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
+import { useTerminalSize } from "../use-terminal-size.js";
 import { DrillScrollView, useDrillKeymap } from "./drill.js";
 import { applyCursor, centredVisibleSlice, isNavAction } from "./scroll.js";
 import { loadShowPreservingBody } from "./show-loader.js";
@@ -58,8 +59,7 @@ export function CommitsPopup({
   popupActions,
   onFooter,
 }: PopupProps): JSX.Element {
-  const { stdout } = useStdout();
-  const cols = stdout?.columns ?? 80;
+  const { cols } = useTerminalSize();
   const contentWidth = contentWidthFromCols(cols);
   const viewport = usePopupViewport();
   const drillViewport = usePopupViewport(DRILL_CHROME_ROWS);

@@ -50,10 +50,11 @@
 // row is stacked below it, exactly mirroring the top-row code path.
 // Geometry is shared via the pure helper `computeBorderRowDashes`.
 
-import { Box, Text, useStdout } from "ink";
+import { Box, Text } from "ink";
 import type { ReactNode } from "react";
 import stringWidth from "string-width";
 import { superscriptDigit } from "./glyphs.js";
+import { useTerminalSize } from "./use-terminal-size.js";
 
 const ROUND = {
   topLeft: "╭",
@@ -179,8 +180,8 @@ export function TitledBox({
   width,
   children,
 }: TitledBoxProps): JSX.Element {
-  const { stdout } = useStdout();
-  const cols = width ?? stdout?.columns ?? 80;
+  const { cols: termCols } = useTerminalSize();
+  const cols = width ?? termCols;
   const dashes = computeTopRowDashes(cols, title, subtitle, cardId);
   const fill = ROUND.horizontal.repeat(dashes);
   const hasSubtitle = subtitle !== undefined && subtitle.length > 0;

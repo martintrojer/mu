@@ -5,7 +5,7 @@
 // as `mu task tree --down`, separated by blank lines. No card owns this
 // popup; it is a dashboard-level graph affordance for large workstreams.
 
-import { Box, Text, useInput, useStdout } from "ink";
+import { Box, Text, useInput } from "ink";
 import { useMemo, useRef, useState } from "react";
 import { loadFullDag, renderForest } from "../../../dag.js";
 import type { Db } from "../../../db.js";
@@ -16,6 +16,7 @@ import { contentWidthFromCols, truncateCell } from "../columns.js";
 import { dispatchPopupKeyFromInk } from "../keys.js";
 import { PopupShell } from "../popup-shell.js";
 import { StatusFilterStrip, useStatusFilter } from "../use-status-filter.js";
+import { useTerminalSize } from "../use-terminal-size.js";
 import { DrillScrollView, useDrillKeymap } from "./drill.js";
 import { usePopupViewport } from "./viewport.js";
 
@@ -45,8 +46,7 @@ export function DagPopup({
 }: PopupProps): JSX.Element {
   const viewport = usePopupViewport();
   const statusFilter = useStatusFilter();
-  const { stdout } = useStdout();
-  const cols = stdout?.columns ?? 80;
+  const { cols } = useTerminalSize();
   const contentWidth = contentWidthFromCols(cols);
   const { body, roots } = useMemo<DagBody>(() => {
     void fastTickNonce;
