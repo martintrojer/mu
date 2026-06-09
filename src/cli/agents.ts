@@ -30,9 +30,11 @@ import {
   shouldOverwriteAgentStatus,
   spawnAgent,
   updateAgentStatus,
+  waitForAgents,
 } from "../agents.js";
 import {
   UsageError,
+  applyQualifiedRef,
   assertAgentInWorkstream,
   emitJson,
   formatAgentsTable,
@@ -571,7 +573,126 @@ export async function cmdAttach(
   );
 }
 
-// ─── commander wiring ────────────────────────────────────────────────
+/**
+ * `mu agent wait <names...>` — block until agents finish working.
+ *
+ * The task-less counterpart to `mu task wait`: scratch / off-the-cuff
+ * helpers have no task in the DAG, so the only "done" signal is the
+ * agent's own runtime status. An agent fires when it goes **busy → any
+ * other state** (it must be observed busy first, so an already-idle
+ * agent doesn't fire instantly — you're waiting for THIS work to end).
+ *
+ * Mirrors `mu task wait` output/exit shape:
+ *   exit 0 = condition met; 5 = timeout; 6 = a watched agent's pane died.
+ * `--any`/`--first` fire on the first agent; default = all must fire.
+ * `--first` additionally prints the firing agent's qualified ref.
+ */
+export async function cmdAgentWait(
+  db: Db,
+  rawNames: readonly string[],
+  opts: {
+    any?: boolean;
+    first?: boolean;
+    timeout?: number;
+    lines?: number;
+    workstream?: string;
+    json?: boolean;
+  },
+): Promise<void> {
+  if (rawNames.length === 0) {
+    throw new UsageError("mu agent wait: at least one agent name is required");
+  }
+  // --first is a CLI alias for --any with a richer output shape.
+  const wantAny = opts.any === true || opts.first === true;
+  const wantFirstShape = opts.first === true;
+
+  // Resolve each ref — cross-workstream-aware via `<ws>/<name>`; bare
+  // names resolve through the standard -w / $MU_SESSION / tmux chain.
+  const refs = await Promise.all(
+    rawNames.map(async (raw) => {
+      const local: { workstream?: string } = { workstream: opts.workstream };
+      const name = applyQualifiedRef(raw, local);
+      const workstreamName = await resolveWorkstream(local.workstream);
+      return { name, workstreamName };
+    }),
+  );
+
+  // Live-status reader: capture the pane + run the detector, mirroring
+  // cmdShow. A capture failure (pane gone) reports null = dead.
+  const captureLines = opts.lines ?? 100;
+  const readStatus = async (ref: {
+    name: string;
+    workstreamName: string;
+  }): Promise<{ status: ReturnType<typeof detectPiStatus> | null }> => {
+    const agent = getAgent(db, ref.name, ref.workstreamName);
+    if (!agent) return { status: null };
+    let scrollback: string;
+    try {
+      scrollback = await capturePane(agent.paneId, { lines: captureLines });
+    } catch {
+      return { status: null };
+    }
+    return { status: detectPiStatus(scrollback) };
+  };
+
+  const timeoutMs = (opts.timeout ?? 600) * 1000;
+  const result = await waitForAgents(db, refs, {
+    any: wantAny,
+    timeoutMs,
+    readStatus,
+  });
+
+  const dead = result.agents.filter((a) => a.dead);
+  const fired = result.agents.filter((a) => a.fired);
+  const firing = wantFirstShape && fired.length > 0 ? fired[0] : null;
+  const qualified = (a: { workstreamName: string; name: string }): string =>
+    `${a.workstreamName}/${a.name}`;
+
+  if (opts.json) {
+    emitJson({
+      agents: result.agents,
+      timedOut: result.timedOut,
+      ...(firing ? { firing: { workstream: firing.workstreamName, name: firing.name } } : {}),
+      ...(dead.length > 0 ? { dead: dead.map(qualified) } : {}),
+      nextSteps: firing
+        ? [
+            {
+              intent: "Read the finished agent",
+              command: `mu agent read ${firing.name} -w ${firing.workstreamName}`,
+            },
+          ]
+        : [],
+    });
+  } else if (result.timedOut) {
+    console.log(
+      pc.yellow(
+        `Timed out after ${opts.timeout ?? 600}s; ${fired.length}/${result.agents.length} finished`,
+      ),
+    );
+  } else if (dead.length > 0 && fired.length === 0) {
+    console.log(pc.red(`Agent pane(s) died: ${dead.map(qualified).join(", ")}`));
+  } else if (firing) {
+    console.log(`${pc.bold(qualified(firing))} finished`);
+    printNextSteps([
+      {
+        intent: "Read the finished agent",
+        command: `mu agent read ${firing.name} -w ${firing.workstreamName}`,
+      },
+    ]);
+  } else {
+    console.log(`All ${result.agents.length} agent(s) finished`);
+  }
+
+  // Exit-code mapping mirrors `mu task wait`: 6 (a watched pane died)
+  // wins over 5 (timeout); a clean met-condition is 0.
+  if (dead.length > 0 && fired.length === 0) {
+    process.exitCode = 6;
+  } else if (result.timedOut) {
+    process.exitCode = 5;
+  }
+}
+
+// ─── commander wiring ──────────────────────────────────────────
 //
 // wireAgentCommands is called by buildProgram() in src/cli.ts. Wired here so
 // every per-namespace builder lives next to its cmd functions.
@@ -757,6 +878,34 @@ export function wireAgentCommands(program: Command): void {
       // fire on typed errors, exit codes classify uniformly
       // (review_code_attach_bypasses_handle).
       return handle((db) => cmdAttach(db, name, opts), this as Command)();
+    });
+
+  // `mu agent wait` — the task-less counterpart to `mu task wait`. Block
+  // until agents finish (busy → any other state). For scratch /
+  // off-the-cuff helpers that own no task to wait on.
+  agent
+    .command("wait <names...>")
+    .description("Block until agents finish working (busy → any other state)")
+    .option("--any", "succeed as soon as ONE listed agent finishes (default: all)")
+    .option("--first", "alias for --any that also prints the firing agent's ref")
+    .option("--timeout <seconds>", "max seconds to wait (0 = forever, default 600)", (v) =>
+      Number.parseInt(v, 10),
+    )
+    .option("--lines <n>", "scrollback lines to scan per poll (default 100)", (v) =>
+      Number.parseInt(v, 10),
+    )
+    .option(...WORKSTREAM_OPT)
+    .option(...JSON_OPT)
+    .action(function (names: string[]) {
+      const opts = (this as Command).optsWithGlobals() as {
+        any?: boolean;
+        first?: boolean;
+        timeout?: number;
+        lines?: number;
+        workstream?: string;
+        json?: boolean;
+      };
+      return handle((db) => cmdAgentWait(db, names, opts), this as Command)();
     });
 
   // `mu agent adopt` — register an existing tmux pane as a managed agent.

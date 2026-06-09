@@ -88,7 +88,7 @@ describeIfReady("parallel spawn race (real cross-process)", () => {
     expect(await liveAgentCount()).toBe(N);
   }, 30_000);
 
-  it(`all agents survive a fan-out into an EXISTING session (window-split race)`, async () => {
+  it("all agents survive a fan-out into an EXISTING session (window-split race)", async () => {
     // Pre-create the session so the contended resource is window-split,
     // not session-create.
     await spawnOne("seed-0");

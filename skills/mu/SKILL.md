@@ -68,12 +68,15 @@ mu agent read helper-1 -n 50           # check at a natural pause, not in a loop
 mu agent close helper-1 -w scratch     # done
 ```
 
-- **Background watcher:** send the task, then `mu agent read` when
-  convenient; re-nudge with another `send` (e.g. `'run again'`).
+- **Background watcher:** send the task, then `mu agent wait <name>
+  --first` to block until it finishes (busy → idle) instead of a
+  `sleep` loop; re-nudge with another `send` (e.g. `'run again'`).
 - **Fan-out, one per unit:** loop `mu agent spawn dep-$pkg -w scratch
-  --workspace`. Add `--workspace` whenever a helper will edit/build/
-  test a shared repo (see "Workspaces prevent trampling"); skip it for
-  read-only helpers. `mu state -w scratch` watches them all.
+  --workspace`, then `mu agent wait dep-core dep-cli dep-web` (all) or
+  `--any` to react to whichever finishes first. Add `--workspace`
+  whenever a helper will edit/build/test a shared repo (see
+  "Workspaces prevent trampling"); skip it for read-only helpers.
+  `mu state -w scratch` watches them all.
 
 If a helper wedges at `needs_input` right after spawn, it's likely
 pi's project-trust prompt. Spawn with `--command 'pi --approve'` (or
@@ -238,8 +241,12 @@ git cherry-pick "$sha" && npm test
   `--archive <label>` preserves graph), `export` (read-only
   markdown bucket for humans/git/docs).
 - **Agents:** `spawn` (`--workspace`, `--role read-only`,
-  `--command`), `send`, `read`, `show`, `list`, `close`, `free`,
-  `kick`, `adopt <pane-id|title>` for orphan panes.
+  `--command`), `send`, `read`, `show`, `list`, `wait`, `close`,
+  `free`, `kick`, `adopt <pane-id|title>` for orphan panes.
+  `mu agent wait <names...> --first` blocks until an agent finishes
+  (busy → any other state) — the task-less counterpart to `mu task
+  wait` for scratch/off-the-cuff helpers that own no task. Exit 0 met,
+  5 timeout, 6 a watched pane died. Use this instead of `sleep` loops.
 - **Tasks:** `add`, `list`, `next`, `show`, `tree`, `notes`
   (`--tail`, `--since`, `--since-claim`), `note`, `claim`
   (`--for | --self`), `release` (`--reopen` only for un-closing

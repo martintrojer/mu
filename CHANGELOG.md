@@ -34,6 +34,20 @@ called out under "Breaking" in each entry.
 
 ### Added
 
+- **`mu agent wait <names...>` — block until agents finish working.**
+  The task-less counterpart to `mu task wait`: scratch / off-the-cuff
+  helpers usually own no task in the DAG, so the only "done" signal is
+  the agent's own runtime status. An agent fires when it transitions
+  **busy → any other state** (it must be observed busy first, so an
+  already-idle agent does not fire instantly — you're waiting for *this*
+  work to finish). Replaces `sleep` polling loops in orchestrator
+  scripts. Mirrors `mu task wait`'s shape: `--any`/`--first` fire on the
+  first agent (default: all), `--first` prints the firing ref, `--json`
+  carries `nextSteps`, refs may be qualified `<workstream>/<name>`.
+  Exit codes: `0` met, `5` timeout, `6` a watched agent's pane died.
+  Status detection is pi-only, so a non-pi pane never goes busy and the
+  wait times out. New SDK: `waitForAgents` in `src/agents/wait.ts`.
+
 - **`scratch` reserved workstream for off-the-cuff agents.** A new
   reserved workstream name, `scratch`, lowers the activation energy of
   mu's "stand up an agent I can keep talking to" value: `mu agent

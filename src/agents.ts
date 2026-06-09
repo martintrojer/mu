@@ -62,6 +62,15 @@ export {
   resetKickProcessExecutor,
   setKickProcessExecutor,
 } from "./agents/kick.js";
+export {
+  type AgentWaitRef,
+  type AgentWaitOptions,
+  type AgentWaitResult,
+  type AgentWaitAgentState,
+  type AgentStatusSnapshot,
+  setAgentWaitSleepForTests,
+  waitForAgents,
+} from "./agents/wait.js";
 import { AgentNotFoundError, WorkspacePreservedError } from "./agents/errors.js";
 import {
   type CaptureOptions,

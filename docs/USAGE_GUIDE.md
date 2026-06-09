@@ -1279,6 +1279,31 @@ mu sql "SELECT name FROM sqlite_master WHERE type IN ('table','view') ORDER BY t
 | Modify scalar fields                                  | `mu task update <id> [--title ...]`     |
 | Read the activity log / subscribe to events           | `mu log [--tail] [--kind event]`        |
 | Block until tasks reach a status (orchestrator wait)  | `mu task wait <ref> [<ref>...] [--first|--any] [--timeout S]` |
+| Block until agents finish working (task-less wait)    | `mu agent wait <name> [<name>...] [--first|--any] [--timeout S]` |
+
+### `mu agent wait`: the task-less counterpart to `mu task wait`
+
+Scratch / off-the-cuff helpers usually own no task in the DAG, so
+there's nothing for `mu task wait` to watch. `mu agent wait` blocks on
+the agent's runtime status instead: an agent **fires** when it goes
+**busy → any other state** (it must be observed busy first, so an
+already-idle agent does NOT fire instantly — you're waiting for *this*
+piece of work to finish, not "is it idle right now"). This replaces
+`sleep` polling loops.
+
+```bash
+mu agent spawn helper-1 -w scratch
+mu agent send helper-1 'Investigate X. Report findings.'
+mu agent wait helper-1 -w scratch --first    # blocks until pi finishes
+mu agent read helper-1 -w scratch -n 80      # now read the result
+```
+
+Mirrors `mu task wait`'s shape: `--any`/`--first` fire on the first
+agent (default: all must finish); `--first` prints the firing agent's
+ref; `--json` carries `nextSteps`; refs may be qualified
+`<workstream>/<name>`. Exit codes: `0` met, `5` timeout, `6` a watched
+agent's pane died. Status detection is pi-only (a non-pi pane always
+reads `needs_input`, so it never goes busy and the wait times out).
 
 ### `mu task wait`: cross-workstream refs + `--first` returns WHICH
 
