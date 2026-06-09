@@ -1,58 +1,59 @@
 # mu
 
 **A small, opinionated control plane for a crew of AI coding agents
-working in parallel.** One tmux session, a typed task DAG, isolated
-VCS workspaces per agent, an audit log — and a dashboard for seeing
-what the crew is doing right now.
+working in parallel.** Tmux panes, a typed task DAG, isolated VCS
+workspaces per agent, an audit log — and a dashboard for seeing what
+the crew is doing right now.
 
 ![mu dashboard](docs/img/tui-dashboard.png)
 
 *`mu` (no args) — read-only dashboard: agents, tracks, ready /
 in-progress / blocked tasks, log tail, workspaces, doctor.*
 
+The core loop is: plan work as a DAG, spawn a small crew, and watch
+handoffs happen in tmux:
+
 ```bash
 mu workstream init auth-refactor
-mu task add --title "Design auth"  --impact 80 --effort-days 2
-mu task add --title "Build auth"   --impact 80 --effort-days 5 --blocked-by design_auth
-mu task add --title "Review auth"  --impact 60 --effort-days 1 --blocked-by build_auth
+mu task add --title "Design auth" --impact 80 --effort-days 2
+mu task add --title "Build auth"  --impact 80 --effort-days 5 --blocked-by design_auth
 
-mu agent spawn worker-1   --workspace
-mu agent spawn reviewer-1 --workspace --role read-only
-mu agent send worker-1 "Pick up the next ready task and design the auth module."
-
-tmux a -t mu-auth-refactor    # watch the whole crew live
-mu                            # human home base: TUI with every workstream loaded
-mu state -w auth-refactor --json  # agent/script API: typed static state for jq
-mu log --tail                 # subscribe to every state change
+mu agent spawn worker-1 --workspace
+mu agent send worker-1 'Pick up the next ready task and design the auth module.'
+mu                         # dashboard
 ```
 
-Crew, graph, and workspaces are all real things you can poke at:
-tmux panes (`tmux attach`), a SQLite DAG with parallel-tracks +
-diamond-merge, and jj workspace / sl share / git worktree on disk.
-**mu persists state and coordinates handoffs; the model still
-decides what to do.** Workers reach for the bundled
-[SKILL.md](skills/mu/SKILL.md) when they need in-pane ground truth.
-Bare `mu` on a TTY launches the read-only multi-workstream TUI;
-piped/scripted calls print help, so use typed verbs + `--json` (or
-`MU_NO_TUI=1`) for agent/API flows.
+Need one quick helper without the DAG? `mu agent spawn scout-1 -w
+scratch` gives you a low-ceremony agent you can still send/read/wait
+on.
+
+Nothing here is a black box. Agents are tmux panes you can `tmux
+attach` to, tasks live in a SQLite DAG, and workspaces are real jj
+workspaces / sl shares / git worktrees on disk. **mu persists state
+and coordinates handoffs; the model still decides what to do.**
+
+For the full copy-paste flow, see [Quick start](#quick-start).
 
 ---
 
 ## What mu is
 
 - **Parallelism that doesn't trip over itself.** Per-agent VCS
-  workspaces (jj/sl/git auto-detected; `cp -a` for non-VCS); a real
-  task DAG with **deterministic parallel-track detection +
-  diamond-merge** so two agents are never assigned tasks that share
-  a prerequisite.
+  workspaces plus a real task DAG with deterministic parallel-track
+  detection keep agents off each other's toes.
+- **A durable coordination layer.** One SQLite registry records
+  agents, tasks, ownership, notes, events, snapshots, and workspaces;
+  panes can die and humans can come back later.
 - **Stay out of the model's way.** Mu coordinates handoffs; it does
-  not make choices on behalf of the model. `--cli <key>` uppercases
-  to `$MU_<KEY>_COMMAND`, so your shell rc owns model/provider
-  selection and thinking-effort flags. The orchestrator and workers
-  drive; mu records, scopes, and yanks the next command.
-- **A local typed state surface.** One CLI, one SQLite registry,
-  typed verbs, `--json` everywhere useful, and a read-only dashboard
-  for humans.
+  not choose models, providers, or thinking effort. `--cli <key>`
+  uppercases to `$MU_<KEY>_COMMAND`, so your shell rc owns the agent
+  command.
+- **Scriptable without scraping text.** Every read path that matters has
+  `--json`, and every state change goes through a typed CLI verb; the
+  dashboard is for humans, not the API.
+- **A low-ceremony escape hatch.** The reserved `scratch` workstream
+  is there when you want one driveable helper without committing to a
+  full task graph.
 
 ## What mu is NOT
 
@@ -63,8 +64,8 @@ piped/scripted calls print help, so use typed verbs + `--json` (or
 - **Not a verifier.** `task close --evidence "tests pass"` records
   the claim; mu doesn't run the tests.
 - **Not a replacement for [pi-subagents](https://github.com/nicobailon/pi-subagents).**
-  Different problem (persistent crew vs one-shot focused
-  delegation). Install both.
+  Mu agents are driveable tmux panes; pi-subagents is for one-shot
+  focused delegation. See [vs `pi-subagents`](#vs-pi-subagents).
 - **Not a hosted service.** Local-first SQLite.
 - **DB-undoable, not tmux-undoable.** Every destructive verb
   auto-captures a whole-DB snapshot first; `mu undo --yes` restores
@@ -74,15 +75,17 @@ piped/scripted calls print help, so use typed verbs + `--json` (or
 
 ## When mu earns its overhead
 
-**Use mu for** — multi-phase investigations; tasks worth gating
-with review; parallel read-only/audit work alongside a heavier
-task; implementation + reviewer splits with isolated workspaces;
-anything where "what was decided and why" needs to outlive a
-single agent's scrollback.
+**Use mu for** — multi-phase investigations; tasks worth gating with
+review; parallel audit or implementation/reviewer splits with isolated
+workspaces; anything where "what was decided and why" needs to outlive
+a single agent's scrollback. Use `scratch` for the lighter adjacent
+case: one helper or background watcher you still want to drive and
+observe.
 
 **Don't use mu for** — tiny direct edits; quick local inspection;
-single-context work where no durable coordination is needed. The
-orchestrator's first decision is whether to reach for mu at all.
+one-shot focused delegation where you only need a returned answer
+(use `pi-subagents`); single-context work where durable coordination
+adds ceremony.
 
 ---
 
@@ -118,8 +121,7 @@ npx skills add ./skills/mu              # local-path source format
 ```
 
 More install patterns (alias-to-dist for fastest dev iteration) in
-[docs/USAGE_GUIDE.md § 1 Setup](docs/USAGE_GUIDE.md#1-setup). After
-installing, run bare `mu` (or `mu state --tui`) for the dashboard tour.
+[docs/USAGE_GUIDE.md § 1 Setup](docs/USAGE_GUIDE.md#1-setup).
 
 ---
 
@@ -211,21 +213,17 @@ restore <label> --as <new-ws>`.
 
 |                          | [`pi-subagents`](https://github.com/nicobailon/pi-subagents) | `mu` |
 | ------------------------ | -------------------------------------------------------- | ---- |
-| Best for                 | "Send this focused task to a specialist, return a result" | "Stand up a crew of agents I can keep talking to and watch live" |
-| Lifetime                 | one-shot per task                                        | long-lived by default |
+| Best for                 | "Send this focused task to a specialist, return a result" | "Keep a driveable agent/persistent crew in tmux" |
+| Lifetime                 | one-shot per task                                        | from off-the-cuff `scratch` helper to long-lived crew |
 | Substrate                | `pi` subprocess + result files                           | tmux panes running pi sessions |
 | Built-in task graph      | no                                                       | yes: parallel-tracks union-find with diamond-merge |
 | Drivable from outside pi | no (extension-only)                                      | yes (`mu` is a real CLI) |
 
-The two play well together. A pi session can install both.
-
-For **off-the-cuff** delegation mu now has a low-ceremony mode: the
-reserved `scratch` workstream. `mu agent spawn helper -w scratch`
-stands up a helper with zero setup (no `mu workstream init`, no task
-DAG required) that you can still `mu agent read`, re-send to, and that
-survives your own session. Reach for `pi-subagents` when you only need
-a one-shot result back; reach for `scratch` when you want to keep the
-channel open. See [docs/USAGE_GUIDE.md](docs/USAGE_GUIDE.md).
+The two play well together. Use `pi-subagents` when you want one
+focused answer back. Use mu's reserved `scratch` workstream when you
+want a low-ceremony helper you can keep talking to. For coordinated
+multi-agent work, graduate from `scratch` to a named workstream + task
+DAG. See [docs/USAGE_GUIDE.md](docs/USAGE_GUIDE.md).
 
 ---
 
