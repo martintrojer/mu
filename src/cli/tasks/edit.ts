@@ -128,6 +128,8 @@ export async function cmdTaskAdd(
     impact: number;
     effortDays: number;
     blockedBy?: string[];
+    note?: string;
+    noteAuthor?: string;
     workstream?: string;
     json?: boolean;
   },
@@ -152,24 +154,40 @@ export async function cmdTaskAdd(
   const id = derivation.id;
   const blockedBy = parseCsvFlag(opts.blockedBy);
   const hasBlockers = blockedBy.length > 0;
-  const task = addTask(db, {
-    localId: id,
-    workstream,
-    title: opts.title,
-    impact: opts.impact,
-    effortDays: opts.effortDays,
-    ...(hasBlockers ? { blockedBy } : {}),
-  });
+  const initialNoteAuthor =
+    opts.note !== undefined ? (opts.noteAuthor ?? (await resolveActorIdentity())) : undefined;
+  const { task, note } = db.transaction(() => {
+    const createdTask = addTask(db, {
+      localId: id,
+      workstream,
+      title: opts.title,
+      impact: opts.impact,
+      effortDays: opts.effortDays,
+      ...(hasBlockers ? { blockedBy } : {}),
+    });
+    const createdNote =
+      opts.note !== undefined
+        ? addNote(db, createdTask.name, unescapeNoteText(opts.note), {
+            author: initialNoteAuthor,
+            workstream,
+          })
+        : null;
+    return { task: createdTask, note: createdNote };
+  })();
   const nextSteps: NextStep[] = [
     { intent: "Show this task", command: `mu task show ${task.name} -w ${workstream}` },
-    {
-      // Single-quoted example: shell metachars (`...`, $VAR, $(...))
-      // inside a double-quoted string expand in YOUR shell before mu
-      // sees the note (mufeedback note #257). Single quotes defer
-      // expansion to the agent.
-      intent: "Drop a note (single-quote to defer shell expansion)",
-      command: `mu task note ${task.name} '...' -w ${workstream}`,
-    },
+    ...(note === null
+      ? [
+          {
+            // Single-quoted example: shell metachars (`...`, $VAR, $(...))
+            // inside a double-quoted string expand in YOUR shell before mu
+            // sees the note (mufeedback note #257). Single quotes defer
+            // expansion to the agent.
+            intent: "Add initial context (or use --note next time)",
+            command: `mu task note ${task.name} 'REPRO: ...\\nSCOPE: ...' -w ${workstream}`,
+          },
+        ]
+      : [{ intent: "Show notes", command: `mu task notes ${task.name} -w ${workstream}` }]),
     {
       intent: "Add a blocker",
       command: `mu task block ${task.name} --by <other-id> -w ${workstream}`,
@@ -200,6 +218,7 @@ export async function cmdTaskAdd(
     emitJson({
       task: withRoiAll([task])[0],
       blockers: blockedBy ?? [],
+      ...(note !== null ? { note } : {}),
       nextSteps,
       ...truncationFields,
     });
@@ -222,6 +241,11 @@ export async function cmdTaskAdd(
       `(workstream=${workstream}, impact=${task.impact}, effort=${task.effortDays})`,
     )}`,
   );
+  if (note !== null) {
+    console.log(
+      pc.dim(`  initial note: ${note.content.length} chars by ${note.author ?? "<orchestrator>"}`),
+    );
+  }
   if (hasBlockers) console.log(pc.dim(`  blocked by: ${blockedBy.join(", ")}`));
   printNextSteps(nextSteps);
 }

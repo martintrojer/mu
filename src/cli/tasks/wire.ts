@@ -41,6 +41,8 @@ export function wireTaskCommands(program: Command): void {
       "-b, --blocked-by <ids...>",
       "task ids that block this one (repeat or comma-separate; or both)",
     )
+    .option("--note <text>", "append an initial note after creating the task")
+    .option("--note-author <name>", "author label for --note (default: current actor)")
     .option(...WORKSTREAM_OPT)
     .option(...JSON_OPT)
     .action(function (id: string | undefined) {
@@ -49,6 +51,8 @@ export function wireTaskCommands(program: Command): void {
         impact: number;
         effortDays: number;
         blockedBy?: string[];
+        note?: string;
+        noteAuthor?: string;
         workstream?: string;
         json?: boolean;
       };

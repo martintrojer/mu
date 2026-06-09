@@ -162,8 +162,10 @@ Every turn:
 2. Spawn at most one agent per independent ready track.
 3. **Claim before sending — even one-shot reviewers/scouts.**
    `mu task claim <id> -w <ws> --for <agent> --evidence "..."`.
-   If no task exists, `mu task add` first. Agent status is noisy;
-   task ownership is durable and waitable.
+   If no task exists, `mu task add` first; include initial context with
+   `--note 'REPRO: ...\nSCOPE: ...'` when the title alone is not
+   enough. Agent status is noisy; task ownership is durable and
+   waitable.
 4. Send terse instructions: task id, files/notes to read, workspace
    path, validation command, scope guards, task note contract.
 5. End with a loud final-action block:
@@ -247,7 +249,8 @@ git cherry-pick "$sha" && npm test
   (busy → any other state) — the task-less counterpart to `mu task
   wait` for scratch/off-the-cuff helpers that own no task. Exit 0 met,
   5 timeout, 6 a watched pane died. Use this instead of `sleep` loops.
-- **Tasks:** `add`, `list`, `next`, `show`, `tree`, `notes`
+- **Tasks:** `add` (`--note` for initial context), `list`, `next`,
+  `show`, `tree`, `notes`
   (`--tail`, `--since`, `--since-claim`), `note`, `claim`
   (`--for | --self`), `release` (`--reopen` only for un-closing
   terminal tasks), `close` (`--if-ready` no-ops until blockers

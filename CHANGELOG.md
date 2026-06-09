@@ -11,6 +11,14 @@ called out under "Breaking" in each entry.
 
 ## [0.4.5] — 2026-06-09
 
+### Added
+
+- **`mu task add --note <text>` for initial task context.** Task
+  creation can now append the first note in one command, with
+  `--note-author <name>` for explicit attribution. The add + note path
+  is wrapped in one transaction, so either both land or neither does.
+  `--json` includes the created `note` when present.
+
 ### Fixed
 
 - **TUI no longer double-renders on every mount (`useTerminalSize`).**

@@ -167,7 +167,7 @@ release is about the *task*.
 
 | Verb                                  | Effect                                                |
 | ------------------------------------- | ----------------------------------------------------- |
-| `mu task add <id> ...`                | Creates a new OPEN task                               |
+| `mu task add <id> ...`                | Creates a new OPEN task. `--note <text>` appends an initial note in the same transaction; `--note-author <name>` overrides the note author. |
 | `mu task close/open/reject/defer <id>` | Lifecycle transition                                 |
 | `mu task claim <task> [--for <agent>]`     | Atomic: sets `owner`, flips status to `IN_PROGRESS`   |
 | `mu task release <task>`              | Clears `owner`. Auto-flips `IN_PROGRESS` → `OPEN` (so the task re-enters the ready set); other statuses preserved. `--reopen` forces `OPEN` from `CLOSED`/`REJECTED`/`DEFERRED` |

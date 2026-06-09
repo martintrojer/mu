@@ -420,6 +420,22 @@ mu task add review \
   --blocked-by build
 ```
 
+Add initial context at creation time with `--note` (shell escapes like
+`\n` are translated the same way as `mu task note`). Use
+`--note-author <name>` when the default actor label is not what you want:
+
+```bash
+mu task add bugfix \
+  --workstream auth-refactor \
+  --title "Fix token refresh race" \
+  --impact 70 --effort-days 1 \
+  --note 'REPRO: login, wait 24h, refresh\nSCOPE: auth refresh only' \
+  --note-author orchestrator
+```
+
+Task creation + the initial note are one transaction: if either part
+fails, neither lands.
+
 Each task validates its id (`/^[a-z][a-z0-9_-]{0,63}$/`) and rejects
 duplicates. If you tried `mu task add x --blocked-by y` while `y`
 already transitively depended on `x`, mu would refuse with a `CycleError`.
