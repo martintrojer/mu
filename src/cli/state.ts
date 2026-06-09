@@ -32,6 +32,7 @@
 // (bug_agent_spawn_workspace_fk_failure). The TUI launches first and
 // performs its own fast/slow polling after Ink renders.
 
+import { idleThresholdMs } from "../agents.js";
 import {
   JSON_OPT,
   UsageError,
@@ -49,9 +50,13 @@ import {
 } from "../cli.js";
 import { type Db, WorkstreamNotFoundError, tryResolveWorkstreamId } from "../db.js";
 import { pc } from "../output.js";
-import { WORKSPACE_STALE_THRESHOLD, isWorkspaceStale } from "../staleness.js";
+import {
+  WORKSPACE_STALE_THRESHOLD,
+  isLingeringScratchAgent,
+  isWorkspaceStale,
+} from "../staleness.js";
 import { type WorkstreamSnapshot, loadWorkstreamSnapshot } from "../state.js";
-import { listWorkstreams } from "../workstream.js";
+import { isScratchWorkstream, listWorkstreams } from "../workstream.js";
 import { resolveInitialTab } from "./tui-launch-focus.js";
 
 // ─── Per-workstream loaded data ─────────────────────────────────────
@@ -251,6 +256,21 @@ function renderFullCard(d: PerWsData): void {
     for (const orphan of view.orphans) {
       console.log(
         `  ${pc.yellow("orphan")} ${pc.dim(orphan.paneId)} title=${pc.bold(orphan.title)} cli=${orphan.command}`,
+      );
+    }
+  }
+  // Scratch is special-cased: its agents are task-less by design, so the
+  // regular idle flag never fires. Nudge lingering off-the-cuff helpers
+  // so easy spawning doesn't silently accumulate forgotten panes.
+  if (isScratchWorkstream(workstreamName)) {
+    const threshold = idleThresholdMs();
+    const lingering = view.agents.filter((a) => isLingeringScratchAgent(a.updatedAt, threshold));
+    if (lingering.length > 0) {
+      const names = lingering.map((a) => a.name).join(", ");
+      console.log(
+        pc.yellow(
+          `\u26a0 ${lingering.length} idle scratch agent(s): ${names}. Close when done: mu agent close ${lingering[0]?.name ?? "<name>"} -w scratch`,
+        ),
       );
     }
   }

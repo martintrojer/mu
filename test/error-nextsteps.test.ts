@@ -72,7 +72,11 @@ import {
   WorkspaceNotFoundError,
   WorkspacePathNotEmptyError,
 } from "../src/workspace.js";
-import { WorkstreamExistsError, WorkstreamNameInvalidError } from "../src/workstream.js";
+import {
+  WorkstreamExistsError,
+  WorkstreamNameInvalidError,
+  WorkstreamNameReservedError,
+} from "../src/workstream.js";
 
 interface NextStepLike {
   intent: string;
@@ -258,6 +262,11 @@ const cases: NextStepsCase[] = [
     error: new WorkstreamExistsError("existing-ws"),
     label: "WorkstreamExistsError",
     expectedTokens: ["existing-ws"],
+  },
+  {
+    error: new WorkstreamNameReservedError("scratch"),
+    label: "WorkstreamNameReservedError",
+    expectedTokens: ["scratch"],
   },
   {
     error: new SchemaTooOldError(4, 5),

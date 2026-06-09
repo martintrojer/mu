@@ -12,6 +12,7 @@
 
 import { Box, Text } from "ink";
 
+import { isScratchWorkstream } from "../../workstream.js";
 import { layoutTabStrip } from "./tab-strip-layout.js";
 
 export interface TabStripProps {
@@ -43,7 +44,14 @@ export function TabStrip({
   const layout = layoutTabStrip(workstreams, active, terminalColumns);
   if (layout === null) return null;
   const isParked = (name: string): boolean => parked?.has(name) ?? false;
-  const decorate = (name: string): string => (isParked(name) ? `~${name}` : name);
+  // Marker precedence: parked (`~`) wins over scratch (`*`) when both
+  // somehow apply, since parked is the more actionable nudge. Scratch
+  // is the reserved off-the-cuff bucket; the `*` cue signals
+  // "ephemeral, not a durable crew" so the operator doesn't mistake it
+  // for a real workstream. Mirrors the parked post-layout decorate
+  // (1-col imprecision tolerated, same as `~`).
+  const decorate = (name: string): string =>
+    isParked(name) ? `~${name}` : isScratchWorkstream(name) ? `*${name}` : name;
   const tabs: JSX.Element[] = [];
   for (let i = 0; i < layout.visible.length; i++) {
     const tab = layout.visible[i];

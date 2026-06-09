@@ -351,6 +351,43 @@ Resolution order, first match wins:
 The third option is the most ergonomic. Once you `tmux a -t
 mu-auth-refactor`, every command "just works" without flags.
 
+### Off-the-cuff agents: the `scratch` workstream
+
+When you just want one helper agent you can keep talking to — not a
+crew, not a task DAG, not per-agent workspaces — skip the `init` step
+entirely and spawn into the reserved `scratch` workstream:
+
+```bash
+mu agent spawn helper -w scratch          # auto-creates mu-scratch
+mu agent send helper 'Investigate the failing test in foo.spec.ts'
+mu agent read helper -n 50                # check on it anytime
+mu agent close helper -w scratch          # done
+```
+
+`scratch` is a shared, ephemeral bucket. It auto-creates on first
+spawn (no `mu workstream init` needed), tasks are optional (a
+task-less helper is fine), and idle scratch agents get a gentle
+staleness nudge in `mu state` and the TUI so they don't pile up
+forgotten.
+
+Because it's deliberately low-ceremony, the name is **reserved**:
+`mu workstream init scratch` is rejected (it only ever auto-creates
+on spawn). `mu workstream destroy scratch` works normally when you
+want to tear the whole bucket down.
+
+```
+$ mu workstream init scratch
+error: workstream name "scratch" is reserved: it is the off-the-cuff
+bucket and auto-creates on first spawn. Don't 'init' it.
+```
+
+**When to use which:** reach for a real `mu workstream init <name>`
+the moment coordination *is* the work — multiple agents, dependencies
+between tasks, gated review. Reach for `scratch` when you just want a
+single driveable, observable helper. And reach for
+[`pi-subagents`](https://github.com/nicobailon/pi-subagents) when you
+only need a one-shot result back rather than a channel you keep open.
+
 ---
 
 ## 4. Plan some work as a DAG
@@ -575,6 +612,10 @@ workstreams: ▸ auth-refactor · ui-rewrite · demo   (Tab / Shift-Tab)
 - When the workstream set is wider than the terminal, the strip
   windows around the active tab and shows `‹N` / `›N` counters
   for hidden workstreams.
+- A `*` prefix (e.g. `*scratch`) marks the reserved off-the-cuff
+  `scratch` workstream as ephemeral, so it's not mistaken for a
+  durable crew. A `~` prefix marks a workstream presumed parked on
+  another machine; `~` wins when both apply.
 
 ### Popup drills
 
@@ -802,6 +843,18 @@ build needs extra flags (e.g. to skip a single-instance lock), set
 `MU_PI_COMMAND="pi-alt --some-flag"` and every spawn picks them up.
 Same pattern for `MU_CLAUDE_COMMAND` / `MU_CODEX_COMMAND` once those
 land.
+
+**Project-trust prompt.** Recent pi versions ask whether to trust a
+project folder on interactive startup (before loading `AGENTS.md`,
+`.pi/` resources, project extensions). A freshly-spawned agent that
+sits at `needs_input` is usually waiting on this prompt. Spawn with
+`--command 'pi --approve'` (or set `MU_PI_COMMAND="pi --approve"`) so
+mu agents auto-trust their cwd instead of blocking. Caveat:
+`--approve` trusts whatever directory the pane lands in — including
+`--workspace` forks — so use it only for crews on your own code, not
+agents you'd point at untrusted repos. The decision is otherwise
+saved per-directory in `~/.pi/agent/trust.json` (or run `/trust`
+inside the pane once).
 
 ### Adopt an existing tmux pane
 

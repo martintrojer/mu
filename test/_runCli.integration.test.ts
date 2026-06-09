@@ -42,11 +42,13 @@ describe("runCli (test helper) error-surfacing contract", () => {
     // workstream context (the v4 cross-workstream first-match fallback
     // is gone), so we have to seed the workstream and pass -w before
     // AgentNotFoundError can fire.
-    const setup = await runCli(["workstream", "init", "scratch"], dbPath);
+    // NB: not 'scratch' — that name is reserved (auto-creates on spawn,
+    // rejects `workstream init`); use a neutral durable workstream name.
+    const setup = await runCli(["workstream", "init", "probe-ws"], dbPath);
     // Successful command paths don't call process.exit; runCli captures null.
     expect(setup.exitCode === 0 || setup.exitCode === null).toBe(true);
     expect(setup.error).toBeUndefined();
-    const result = await runCli(["agent", "show", "nope-no-such", "-w", "scratch"], dbPath);
+    const result = await runCli(["agent", "show", "nope-no-such", "-w", "probe-ws"], dbPath);
     expect(result.error).toBeUndefined();
     // AgentNotFoundError -> exit code 3.
     expect(result.exitCode).toBe(3);

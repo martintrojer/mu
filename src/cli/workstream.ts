@@ -29,6 +29,7 @@ import {
   sessionExists,
 } from "../tmux.js";
 import {
+  assertWorkstreamInitable,
   destroyWorkstream,
   ensureWorkstream,
   exportWorkstream,
@@ -38,6 +39,7 @@ import {
 } from "../workstream.js";
 
 export async function cmdInit(db: Db, name: string, opts: { json?: boolean } = {}): Promise<void> {
+  assertWorkstreamInitable(name);
   const sessionName = `mu-${name}`;
   const dbCreated = ensureWorkstream(db, name);
   const tmuxAlready = await sessionExists(sessionName);

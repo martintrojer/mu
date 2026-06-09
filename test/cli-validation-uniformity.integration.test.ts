@@ -41,7 +41,7 @@ describe("audit_cli_validation_uniformity", () => {
     tempDir = mkdtempSync(join(tmpdir(), "mu-validation-"));
     dbPath = join(tempDir, "mu.db");
     // Seed a workstream so the verbs that need one can resolve.
-    await runCli(["workstream", "init", "scratch"], dbPath);
+    await runCli(["workstream", "init", "probe-ws"], dbPath);
   });
 
   afterEach(() => {
@@ -56,14 +56,14 @@ describe("audit_cli_validation_uniformity", () => {
 
   describe("class A — CommanderError (parse-time)", () => {
     it("missing required option (--title): exit 2 + help block + JSON usage", async () => {
-      const human = await runCli(["task", "add", "-w", "scratch"], dbPath);
+      const human = await runCli(["task", "add", "-w", "probe-ws"], dbPath);
       expect(human.exitCode).toBe(2);
       expect(human.stderr).toMatch(/error:.*--title.*not specified/);
       // Help block follows the error in the same stderr stream.
       expect(human.stderr).toMatch(/Usage: mu task add/);
       expect(human.stderr).toMatch(/Options:/);
 
-      const json = await runCli(["task", "add", "-w", "scratch", "--json"], dbPath);
+      const json = await runCli(["task", "add", "-w", "probe-ws", "--json"], dbPath);
       expect(json.exitCode).toBe(2);
       const env = JSON.parse(json.stderr.trim()) as ErrorEnvelope;
       expect(env.error).toBe("CommanderError");
@@ -81,12 +81,12 @@ describe("audit_cli_validation_uniformity", () => {
     });
 
     it("unknown option: exit 2 + help block + JSON usage", async () => {
-      const human = await runCli(["task", "list", "-w", "scratch", "--bogus"], dbPath);
+      const human = await runCli(["task", "list", "-w", "probe-ws", "--bogus"], dbPath);
       expect(human.exitCode).toBe(2);
       expect(human.stderr).toMatch(/error:.*unknown option.*--bogus/);
       expect(human.stderr).toMatch(/Usage: mu task list/);
 
-      const json = await runCli(["task", "list", "-w", "scratch", "--bogus", "--json"], dbPath);
+      const json = await runCli(["task", "list", "-w", "probe-ws", "--bogus", "--json"], dbPath);
       expect(json.exitCode).toBe(2);
       const env = JSON.parse(json.stderr.trim()) as ErrorEnvelope;
       expect(env.usage?.command).toBe("mu task list");
@@ -109,7 +109,7 @@ describe("audit_cli_validation_uniformity", () => {
 
     it("type-coercion failure (parseImpact): exit 2 + JSON usage", async () => {
       const json = await runCli(
-        ["task", "add", "-w", "scratch", "-t", "x", "-i", "abc", "-e", "1", "--json"],
+        ["task", "add", "-w", "probe-ws", "-t", "x", "-i", "abc", "-e", "1", "--json"],
         dbPath,
       );
       expect(json.exitCode).toBe(2);
@@ -125,7 +125,7 @@ describe("audit_cli_validation_uniformity", () => {
   describe("class B — UsageError (handler-thrown)", () => {
     it("--self / --for mutex: exit 2 + help block + JSON usage", async () => {
       const human = await runCli(
-        ["task", "claim", "anything", "--self", "--for", "worker", "-w", "scratch"],
+        ["task", "claim", "anything", "--self", "--for", "worker", "-w", "probe-ws"],
         dbPath,
       );
       expect(human.exitCode).toBe(2);
@@ -137,7 +137,7 @@ describe("audit_cli_validation_uniformity", () => {
       expect(human.stderr).toMatch(/-f, --for/);
 
       const json = await runCli(
-        ["task", "claim", "anything", "--self", "--for", "worker", "-w", "scratch", "--json"],
+        ["task", "claim", "anything", "--self", "--for", "worker", "-w", "probe-ws", "--json"],
         dbPath,
       );
       expect(json.exitCode).toBe(2);
@@ -152,7 +152,7 @@ describe("audit_cli_validation_uniformity", () => {
     });
 
     it("--all / -w mutex on `mu state`: exit 2 + help block", async () => {
-      const human = await runCli(["state", "--all", "-w", "scratch"], dbPath);
+      const human = await runCli(["state", "--all", "-w", "probe-ws"], dbPath);
       expect(human.exitCode).toBe(2);
       expect(human.stderr).toMatch(/error:.*--all and -w\/--workstream are mutually exclusive/);
       expect(human.stderr).toMatch(/Usage: mu state/);

@@ -14,6 +14,7 @@ defined here, fix the doc. If you need a new term, add it here first.
 | Use this              | For…                                                                     | Don't use                                          |
 | --------------------- | ------------------------------------------------------------------------ | -------------------------------------------------- |
 | **workstream**        | The unit of organization. One workstream = one tmux session = one DB partition | "project", "session" (ambiguous), "context"      |
+| **scratch workstream**| The reserved workstream named `scratch` for off-the-cuff agent use — spin up a helper you'll keep talking to without crew/DAG ceremony. Explicit `-w scratch` (no implicit fallback); auto-created on first spawn; `mu workstream init scratch` is rejected (loud). Agents in it are still **agents**, NOT pi-subagents. Task-less is fine; the DAG stays opt-in. A strict expansion of mu's driveable/observable/durable value into low-ceremony territory, **not** a pi-subagents replacement. | "throwaway ws", "temp workstream", "subagent" |
 | **tmux session**      | The literal tmux session a workstream lives in                           | "session" alone (ambiguous)                        |
 | **window**            | A tmux window (tmux's tabs); identified by `window_name`                 | "tab" (except as the frontmatter field name)       |
 | **pane**              | A tmux pane (one shell view inside a window); identified by **stable pane id** like `%15` | "terminal", "shell"                          |
@@ -262,6 +263,10 @@ exports remain read-only artifacts.
   tmux window name verbatim. Unique within a workstream.
 - **Task local_id**: same shape and rules. Unique within the DB.
 - **Workstream name**: same shape; tmux session is `mu-<name>`.
+  The name `scratch` is **reserved**: it can only be auto-created on
+  first spawn (`mu agent spawn <name> -w scratch`); `mu workstream
+  init scratch` is rejected loud. The `mu-` prefix is likewise
+  reserved (no double-prefix).
 - **Tab name (frontmatter `tab:`)**: human-friendly,
   `[A-Za-z][A-Za-z0-9 _-]*`, ≤32 chars. Used as tmux window name when
   multiple agents share the window.

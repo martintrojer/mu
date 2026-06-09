@@ -6,7 +6,6 @@ import { createElement } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   AllTasksPopup,
-  type BlockedFilterMode,
   allTasksFromSnapshotOrDb,
   allTasksListTitle,
   allTasksScrollPercent,

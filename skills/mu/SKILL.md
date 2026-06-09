@@ -1,6 +1,6 @@
 ---
 name: mu
-description: Manage a persistent crew of pi agents in tmux panes coordinated through a built-in task graph. Use when the user asks to spawn, send work to, observe, or coordinate multiple sub-agents — especially long-lived ones, or work that benefits from a dependency graph and parallel-track detection.
+description: Manage AI agents in tmux panes — from a single off-the-cuff helper to a persistent crew coordinated through a built-in task graph. Use when the user asks to "create/spin up a subagent to X", "run X in the background", "do this in parallel", "use one subagent per X to do Y", "kick off a helper to watch/investigate/draft X", or to spawn, send work to, observe, or coordinate one or many agents — especially work you'll keep talking to, long-lived agents, background tasks, or anything that benefits from a dependency graph and parallel-track detection. For zero-ceremony single helpers use the reserved `scratch` workstream; for one-shot "fire and get a result back" prefer pi-subagents.
 ---
 
 # mu — Multi-agent orchestration
@@ -53,6 +53,37 @@ and anything that must survive context compaction via task notes.
 
 Do **not** use mu for tiny one-file edits, one-off local inspection,
 or single-context work where durable coordination adds ceremony.
+
+### Off-the-cuff helpers (the `scratch` workstream)
+
+Want a sub-agent you'll **keep talking to** — "create a subagent to
+X", "run X in the background", "one subagent per X to do Y" — without
+a crew or task DAG? Spawn into the reserved `scratch` workstream. No
+`mu workstream init`; it auto-creates and is task-less by design.
+
+```bash
+mu agent spawn helper-1 -w scratch     # auto-creates mu-scratch
+mu agent send helper-1 'Investigate X. Report findings.'
+mu agent read helper-1 -n 50           # check at a natural pause, not in a loop
+mu agent close helper-1 -w scratch     # done
+```
+
+- **Background watcher:** send the task, then `mu agent read` when
+  convenient; re-nudge with another `send` (e.g. `'run again'`).
+- **Fan-out, one per unit:** loop `mu agent spawn dep-$pkg -w scratch
+  --workspace`. Add `--workspace` whenever a helper will edit/build/
+  test a shared repo (see "Workspaces prevent trampling"); skip it for
+  read-only helpers. `mu state -w scratch` watches them all.
+
+If a helper wedges at `needs_input` right after spawn, it's likely
+pi's project-trust prompt. Spawn with `--command 'pi --approve'` (or
+set `MU_PI_COMMAND="pi --approve"`) so agents don't block on it.
+
+**Escalate off `scratch`** the moment helpers have dependencies
+(B needs A) or you want gated review → real `mu workstream init` +
+task DAG. Need just one focused answer, no follow-up → `pi-subagents`
+(one-shot, returns a result). `scratch` is the middle: "fire, but
+keep the channel open."
 
 ## Mental model
 
@@ -337,7 +368,8 @@ DON'T:
 - Trust status emoji alone.
 - Double-quote `$VAR`-laden prompts.
 - Bypass mu with `sqlite3`; use `mu sql`.
-- Spawn without a workstream.
+- Spawn into a named crew workstream without `mu workstream init`
+  first (the exception is `-w scratch`, which auto-creates).
 - Anthropomorphize agent names.
 - Poll `mu agent read` in tight loops.
 - Add cross-workstream edges; model as one workstream.

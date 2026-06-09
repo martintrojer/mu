@@ -92,7 +92,11 @@ import {
   WorkspaceNotFoundError,
   WorkspacePathNotEmptyError,
 } from "../workspace.js";
-import { WorkstreamExistsError, WorkstreamNameInvalidError } from "../workstream.js";
+import {
+  WorkstreamExistsError,
+  WorkstreamNameInvalidError,
+  WorkstreamNameReservedError,
+} from "../workstream.js";
 
 export class UsageError extends Error {
   override readonly name = "UsageError";
@@ -174,6 +178,7 @@ function isUsageClassError(err: unknown): boolean {
   if (err instanceof UsageError) return true;
   if (
     err instanceof WorkstreamNameInvalidError ||
+    err instanceof WorkstreamNameReservedError ||
     err instanceof ArchiveLabelInvalidError ||
     err instanceof PruneOptionsInvalidError ||
     err instanceof TaskIdInvalidError
@@ -223,6 +228,7 @@ export function classifyError(err: unknown): { label: string; exitCode: number }
   if (
     err instanceof UsageError ||
     err instanceof WorkstreamNameInvalidError ||
+    err instanceof WorkstreamNameReservedError ||
     err instanceof ArchiveLabelInvalidError ||
     err instanceof PruneOptionsInvalidError
   ) {

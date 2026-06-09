@@ -9,6 +9,39 @@ called out under "Breaking" in each entry.
 ---
 
 
+## [Unreleased]
+
+### Added
+
+- **`scratch` reserved workstream for off-the-cuff agents.** A new
+  reserved workstream name, `scratch`, lowers the activation energy of
+  mu's "stand up an agent I can keep talking to" value: `mu agent
+  spawn helper -w scratch` Just Works with zero setup (the workstream
+  and its `mu-scratch` tmux session auto-create on first spawn, via
+  the existing `ensureWorkstream`/`createOrReusePane` paths). Tasks are
+  optional in `scratch` — a task-less helper is fine; the task DAG
+  stays opt-in. This is a strict expansion of mu's driveable/
+  observable/durable agents into low-ceremony territory, **not** a
+  replacement for `pi-subagents` (which remains the right tool for
+  one-shot "fire a focused task, get a result back" delegation).
+  `scratch` agents are still **agents**, not "subagents".
+
+  - `mu workstream init scratch` is rejected loud
+    (`WorkstreamNameReservedError`, exit 2) with next-steps pointing at
+    `mu agent spawn ... -w scratch` — the name only ever auto-creates
+    on spawn, so it can't be mistaken for a durable crew workstream.
+  - `mu workstream destroy scratch` keeps the standard confirmation.
+  - `scratch` is special-cased for staleness: idle scratch agents are
+    nudged in `mu state` and surfaced in the TUI (ephemeral tab marker
+    + scratch-agent counter) so easy spawning doesn't become pane
+    sprawl you forget about.
+  - New SDK surface in `src/workstream.ts`: `RESERVED_WORKSTREAM_NAMES`,
+    `SCRATCH_WORKSTREAM`, `isScratchWorkstream()`,
+    `assertWorkstreamInitable()`, `WorkstreamNameReservedError`.
+
+---
+
+
 ## [0.4.4] — 2026-05-30
 
 ### Added

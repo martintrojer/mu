@@ -148,4 +148,30 @@ describe("TabStrip", () => {
     ).not.toThrow();
     expect(() => TabStrip({ workstreams: ["only"], active: 0, terminalColumns: 20 })).not.toThrow();
   });
+
+  it("marks the reserved scratch workstream with a `*` ephemeral cue", () => {
+    // scratch is the off-the-cuff bucket; the `*` prefix signals
+    // "ephemeral, not a durable crew" (mirrors the parked `~` cue).
+    const node = TabStrip({
+      workstreams: ["alpha", "scratch"],
+      active: 0,
+      terminalColumns: 200,
+    });
+    const text = renderToString(node);
+    expect(text).toContain("*scratch");
+    // Non-scratch tabs stay bare.
+    expect(text).not.toContain("*alpha");
+  });
+
+  it("parked marker wins over scratch marker when both apply", () => {
+    const node = TabStrip({
+      workstreams: ["alpha", "scratch"],
+      active: 0,
+      terminalColumns: 200,
+      parked: new Set(["scratch"]),
+    });
+    const text = renderToString(node);
+    expect(text).toContain("~scratch");
+    expect(text).not.toContain("*scratch");
+  });
 });

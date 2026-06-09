@@ -52,6 +52,24 @@ const WORKSTREAM_NAME_RE = /^[a-z][a-z0-9_-]{0,31}$/;
  *  than silently double-prefix. */
 export const RESERVED_WORKSTREAM_PREFIX = "mu-";
 
+/** Reserved workstream names that may only be auto-created on spawn,
+ *  never via `mu workstream init`. `scratch` is the off-the-cuff bucket
+ *  for ad-hoc agents you'll keep talking to without crew/DAG ceremony;
+ *  it auto-creates on first `mu agent spawn <name> -w scratch` (via
+ *  `ensureWorkstream`, which stays permissive) but `init` is rejected
+ *  loud so the operator doesn't treat it as a durable crew workstream.
+ *  See docs/VOCABULARY.md "scratch workstream". */
+export const RESERVED_WORKSTREAM_NAMES = new Set(["scratch"]);
+
+/** The canonical off-the-cuff workstream name. */
+export const SCRATCH_WORKSTREAM = "scratch";
+
+/** True iff `name` is a scratch/ephemeral workstream (special-cased by
+ *  the staleness nudge and the TUI ephemeral marker). */
+export function isScratchWorkstream(name: string): boolean {
+  return RESERVED_WORKSTREAM_NAMES.has(name);
+}
+
 export async function resolveTmuxSessionWorkstreamName(): Promise<string | null> {
   if (!process.env.TMUX) return null;
   try {
@@ -129,6 +147,34 @@ export class WorkstreamNameInvalidError extends Error implements HasNextSteps {
 
 function assertValidWorkstreamName(name: string): void {
   if (!isValidWorkstreamName(name)) throw new WorkstreamNameInvalidError(name);
+}
+
+/** Thrown by `mu workstream init` when the operator tries to create a
+ *  reserved workstream (e.g. `scratch`) explicitly. The name is not
+ *  invalid — it auto-creates on spawn — it just can't be `init`ed. */
+export class WorkstreamNameReservedError extends Error implements HasNextSteps {
+  override readonly name = "WorkstreamNameReservedError";
+  constructor(public readonly attempted: string) {
+    super(
+      `workstream name ${JSON.stringify(attempted)} is reserved: it is the off-the-cuff bucket and auto-creates on first spawn. Don't 'init' it.`,
+    );
+  }
+  errorNextSteps(): NextStep[] {
+    return [
+      {
+        intent: "Just spawn into it (auto-creates)",
+        command: `mu agent spawn <name> -w ${this.attempted}`,
+      },
+      { intent: "Use a durable workstream instead", command: "mu workstream init <name>" },
+    ];
+  }
+}
+
+/** Reject reserved names for the explicit `mu workstream init` path.
+ *  `ensureWorkstream` (the auto-create-on-spawn path) deliberately does
+ *  NOT call this — spawning into `scratch` must Just Work. */
+export function assertWorkstreamInitable(name: string): void {
+  if (RESERVED_WORKSTREAM_NAMES.has(name)) throw new WorkstreamNameReservedError(name);
 }
 
 /**

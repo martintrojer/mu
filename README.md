@@ -219,6 +219,14 @@ restore <label> --as <new-ws>`.
 
 The two play well together. A pi session can install both.
 
+For **off-the-cuff** delegation mu now has a low-ceremony mode: the
+reserved `scratch` workstream. `mu agent spawn helper -w scratch`
+stands up a helper with zero setup (no `mu workstream init`, no task
+DAG required) that you can still `mu agent read`, re-send to, and that
+survives your own session. Reach for `pi-subagents` when you only need
+a one-shot result back; reach for `scratch` when you want to keep the
+channel open. See [docs/USAGE_GUIDE.md](docs/USAGE_GUIDE.md).
+
 ---
 
 ## Documentation
