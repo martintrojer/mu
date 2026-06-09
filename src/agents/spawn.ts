@@ -44,6 +44,7 @@ import {
   AgentSpawnCliNotFoundError,
   AgentSpawnStartupError,
 } from "./errors.js";
+import { withSpawnLock } from "./spawn-lock.js";
 
 /**
  * Smallest-unused-suffix naming convention for agent names: a role
@@ -342,20 +343,38 @@ export async function spawnAgent(db: Db, opts: SpawnAgentOptions): Promise<Agent
   let paneId: string | undefined;
   let agent: AgentRow;
   try {
-    paneId = await createOrReusePane({
-      session,
-      windowName,
-      command,
-      cwd: workspacePathStr ?? opts.cwd,
-      env: paneEnv,
+    // Cross-process critical section: the tmux topology check-then-act
+    // (`sessionExists` → `new-session` / `new-window` / `split-window`)
+    // plus the agent-row finalize. Serialised per tmux SESSION so a
+    // parallel fan-out (`for n in …; do mu agent spawn … & done`) can't
+    // race six `new-session -d -s mu-scratch` calls into
+    // five-rolled-back-losers. Keyed on the session name: spawns into
+    // different sessions never contend. See spawn-lock.ts.
+    //
+    // The liveness wait is deliberately OUTSIDE the lock: it is the slow
+    // part (1.5s+), and holding the lock across it would serialise the
+    // very parallelism the operator asked for. Once the row is inserted
+    // and the lock released, the next spawn can build its own window
+    // while this one waits.
+    const created = await withSpawnLock(session, async () => {
+      const pid = await createOrReusePane({
+        session,
+        windowName,
+        command,
+        cwd: workspacePathStr ?? opts.cwd,
+        env: paneEnv,
+      });
+      await setPaneTitle(pid, opts.name);
+      // Apply the mu pane border to the new window. Window-scoped option;
+      // see enableMuPaneBorders docstring for why this is required per
+      // window (and not just per session). Self-checks MU_BANNER_QUIET
+      // and is best-effort — the border is decorative.
+      await enableMuPaneBordersForPane(pid);
+      const row = finalizeAgentRow(db, { opts, cli, paneId: pid, hasWorkspace });
+      return { pid, row };
     });
-    await setPaneTitle(paneId, opts.name);
-    // Apply the mu pane border to the new window. Window-scoped option;
-    // see enableMuPaneBorders docstring for why this is required per
-    // window (and not just per session). Self-checks MU_BANNER_QUIET
-    // and is best-effort — the border is decorative.
-    await enableMuPaneBordersForPane(paneId);
-    agent = finalizeAgentRow(db, { opts, cli, paneId, hasWorkspace });
+    paneId = created.pid;
+    agent = created.row;
     // Liveness check: wait briefly, then verify the pane is still alive.
     // Catches the silent-spawn-failure class of bugs where the CLI dies
     // immediately (lock conflict, bad credentials, etc.). On failure,

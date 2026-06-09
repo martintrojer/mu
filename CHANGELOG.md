@@ -11,6 +11,27 @@ called out under "Breaking" in each entry.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Parallel `mu agent spawn` no longer races and drops agents.**
+  Firing several spawns at once (`for n in 1 2 3; do mu agent spawn
+  scout-$n -w scratch & done; wait`) silently dropped — and sometimes
+  duplicated — agents. Two cross-process races, since every `mu`
+  invocation is a separate process:
+  - **tmux topology:** N processes all saw the session absent and all
+    ran `new-session`; losers threw and rolled back their agent row.
+    Fixed with a per-session filesystem advisory lock
+    (`src/agents/spawn-lock.ts`, via atomic `fs.mkdir` — no new
+    dependency) around the topology check-then-act + row finalize. The
+    slow liveness wait stays OUTSIDE the lock so genuine parallelism is
+    preserved. Keyed on the tmux session name; spawns into different
+    sessions never contend. Tunable via `MU_SPAWN_LOCK_TIMEOUT_MS`.
+  - **schema init:** N processes opening the same fresh DB interleaved
+    the non-transactional `DROP VIEW goals; CREATE VIEW goals` DDL and
+    hit 'view goals already exists'. Fixed with `busy_timeout = 5000`
+    plus an atomic `BEGIN IMMEDIATE` transaction around the schema DDL
+    in `openDb`.
+
 ### Added
 
 - **`scratch` reserved workstream for off-the-cuff agents.** A new

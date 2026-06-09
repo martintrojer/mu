@@ -84,6 +84,14 @@ export function openDb(options: OpenDbOptions = {}): Db {
   if (!options.readonly) {
     db.pragma("journal_mode = WAL");
     db.pragma("foreign_keys = ON");
+    // Wait up to 5s for a competing writer's lock instead of throwing
+    // SQLITE_BUSY immediately. Every `mu` invocation is a separate
+    // short-lived process and a parallel fan-out (`for n in …; do mu
+    // agent spawn … & done`) opens the same DB from N processes at
+    // once — without this, the losers of a write-lock race die with
+    // 'database is locked' and roll back their agent. WAL handles
+    // concurrent readers; busy_timeout handles concurrent writers.
+    db.pragma("busy_timeout = 5000");
     // Detect schema version BEFORE applySchema so a real v<5 DB is not
     // silently stamped as v5 by the CREATE-IF-NOT-EXISTS in applySchema.
     const detectedVersion = detectExistingSchemaVersion(db);
@@ -345,7 +353,28 @@ function applySchema(db: Db): void {
   // to decide whether the v6 → v7 destructive migration runs (only on
   // a DB that's at v6 or older but ≥ v5, the openDb floor).
   const preBumpVersion = detectExistingSchemaVersion(db);
-  db.exec(CURRENT_SCHEMA);
+  // Apply the schema DDL atomically. CURRENT_SCHEMA includes
+  // `DROP VIEW IF EXISTS goals; CREATE VIEW goals …` (views can't be
+  // CREATE-IF-NOT-EXISTS + redefined in one step), so without a
+  // transaction two processes opening the same fresh DB concurrently
+  // can interleave one's DROP between the other's DROP and CREATE and
+  // hit 'view goals already exists'. An IMMEDIATE transaction takes the
+  // write lock up front (paired with busy_timeout in openDb) so the
+  // whole DDL block is all-or-nothing per process.
+  // bug_parallel_spawn_races_drop_agents (schema leg).
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    db.exec(CURRENT_SCHEMA);
+    db.exec("COMMIT");
+  } catch (err) {
+    db.exec("ROLLBACK");
+    // A concurrent process already applied the (idempotent) schema —
+    // the views/tables now exist. Re-throwing would fail the spawn for
+    // a benign race, so swallow the 'already exists' class and proceed;
+    // any other error is a real problem and rethrows.
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!/already exists/i.test(msg)) throw err;
+  }
   // v6 → v7 destructive migration: drop the approvals table on any
   // pre-v7 DB. IF EXISTS so a fresh v7 DB (no approvals table ever
   // created) is a no-op too. The DROP must precede the version
