@@ -14,7 +14,7 @@ write code. Follow the conventions below.
 1. **[docs/USAGE_GUIDE.md](docs/USAGE_GUIDE.md)** — what mu does
    from a user's perspective. ~10 minutes.
 2. **[CHANGELOG.md](CHANGELOG.md)** — the upcoming version's
-   entry (currently `[0.4.1] — 2026-05-14`). Single source of truth
+   entry (currently `[0.4.5] — 2026-06-09`). Single source of truth
    for the verb list, schema, env vars.
 3. **[docs/VISION.md](docs/VISION.md)** — the load-bearing pillars.
    The design principles you must not violate.

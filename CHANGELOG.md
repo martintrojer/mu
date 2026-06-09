@@ -9,7 +9,7 @@ called out under "Breaking" in each entry.
 ---
 
 
-## [Unreleased]
+## [0.4.5] — 2026-06-09
 
 ### Fixed
 
