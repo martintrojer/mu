@@ -40,14 +40,24 @@ export function useTerminalSize(): TerminalSize {
   useEffect(() => {
     if (!stdout) return;
     const onResize = () => {
-      setSize({
-        cols: stdout.columns ?? 80,
-        rows: stdout.rows ?? 24,
+      setSize((prev) => {
+        const cols = stdout.columns ?? 80;
+        const rows = stdout.rows ?? 24;
+        // Bail when nothing changed so we don't queue a no-op re-render.
+        // This matters on mount: the defensive sync below would
+        // otherwise force a second render every time the hook mounts
+        // (the initial useState already read the same dimensions),
+        // doubling work in production and doubling captured frames in
+        // ink render tests. Returning the SAME object reference makes
+        // React skip the update. bug_use_terminal_size_double_render.
+        if (prev.cols === cols && prev.rows === rows) return prev;
+        return { cols, rows };
       });
     };
     stdout.on("resize", onResize);
-    // Sync in case the size changed between initial render and
-    // effect registration (unlikely but defensive).
+    // Sync in case the size changed between initial render and effect
+    // registration (unlikely but defensive). Now a no-op when the size
+    // is unchanged — see the reference-equality bail above.
     onResize();
     return () => {
       stdout.off("resize", onResize);

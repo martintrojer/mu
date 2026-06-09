@@ -13,6 +13,16 @@ called out under "Breaking" in each entry.
 
 ### Fixed
 
+- **TUI no longer double-renders on every mount (`useTerminalSize`).**
+  The resize-reactivity hook's mount-time "defensive sync" called
+  `setSize()` unconditionally, forcing a second render on every mount
+  even when the dimensions were unchanged — wasteful in production and,
+  in ink render tests, doubling the captured frame log (it had been
+  silently breaking `tui-row-budget-overflow.integration.test.ts`,
+  which measured `2 × rows − 1` lines). The hook now bails with the same
+  state reference when nothing changed, so React skips the no-op
+  re-render; a genuine resize still re-renders. Full suite green again.
+
 - **Parallel `mu agent spawn` no longer races and drops agents.**
   Firing several spawns at once (`for n in 1 2 3; do mu agent spawn
   scout-$n -w scratch & done; wait`) silently dropped — and sometimes
