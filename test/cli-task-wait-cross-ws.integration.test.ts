@@ -54,16 +54,16 @@ describe("mu task wait — cross-workstream qualified refs + --first", () => {
     rmSync(tempDir, { recursive: true, force: true });
   });
 
-  // ─── --first / --any cross-ws WHICH return ─────────────────────────
+  // ─── --first cross-ws WHICH return ───────────────────────────────
 
-  it("--any across two workstreams returns the firing ref's qualified id", async () => {
+  it("--first across two workstreams returns the firing ref's qualified id", async () => {
     addTask(db, { localId: "foo", workstream: "wsa", title: "Foo", impact: 50, effortDays: 1 });
     addTask(db, { localId: "bar", workstream: "wsb", title: "Bar", impact: 50, effortDays: 1 });
     // wsa/foo is already CLOSED → wait should return immediately.
     setTaskStatus(db, "foo", "CLOSED", { workstream: "wsa" });
 
     const { exitCode, stdout, stderr, error } = await runCli(
-      ["task", "wait", "wsa/foo", "wsb/bar", "--any", "--timeout", "5", "--json"],
+      ["task", "wait", "wsa/foo", "wsb/bar", "--first", "--timeout", "5", "--json"],
       dbPath,
     );
     expect(error).toBeUndefined();
