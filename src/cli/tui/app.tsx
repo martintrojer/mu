@@ -155,6 +155,19 @@ const POPUP_REGISTRY: Record<PopupRegistryId, ComponentType<CommonPopupProps>> =
   allTasks: AllTasksPopup,
 };
 
+// Popups whose drill bodies shell out to subprocesses (git show /
+// agent scrollback / workspace commits). Their bodies must keep
+// refreshing on the slow tick even when the DB snapshot is byte-equal,
+// so the snapshot hook is told to advance slowTickNonce on no-op ticks
+// (see state.ts publishNoopSlowTicks). This is the single symbolic
+// source of truth, co-located with POPUP_REGISTRY, instead of magic
+// numeric literals scattered in the App body.
+const SUBPROCESS_BACKED_POPUPS: ReadonlySet<PopupRegistryId> = new Set<PopupRegistryId>([
+  0, // Commits — git show
+  1, // Agents — pane scrollback
+  5, // Workspaces — workspace commits
+]);
+
 export const DASHBOARD_MIN_ROWS = 5;
 // Mouse SGR coordinates are 1-based. The first popup data row sits
 // below the top border at y=2. Link the named top offset to the
@@ -272,7 +285,7 @@ export function App({ db, workstreams, initialActive = 0 }: AppProps): JSX.Eleme
   const workstream = workstreams[safeActive] ?? "";
 
   const snap = useDashboardSnapshot(db, workstream, tickMs, true, refreshNonce, undefined, {
-    publishNoopSlowTicks: popup === 0 || popup === 1 || popup === 5,
+    publishNoopSlowTicks: popup !== null && SUBPROCESS_BACKED_POPUPS.has(popup),
   });
 
   // Parked-workstream set for the tab strip. Recomputed on each slow
