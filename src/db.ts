@@ -11,13 +11,15 @@
 //   - 2 singleton-ish meta tables: schema_version, machine_identity
 //   - 3 views:  ready, blocked, goals
 //
-// v5 (this version) is the surrogate-INTEGER-PK shape per
-// docs/ARCHITECTURE.md § Surrogate-PK + SDK-boundary discipline.
-// Every entity table has an INTEGER PK; FKs reference INTEGER ids;
+// v8 (current) — the surrogate-INTEGER-PK substrate introduced in
+// v5 and forward-bumped in place to v6 (archive tables), v7
+// (approvals dropped), and v8 (sync substrate). Per
+// docs/ARCHITECTURE.md § Surrogate-PK + SDK-boundary discipline,
+// every entity table has an INTEGER PK; FKs reference INTEGER ids;
 // the operator-facing TEXT name is per-scope unique via
 // UNIQUE (<scope_id>, <name>).
 //
-// IMPORTANT: src/db.ts knows ONLY the v5 shape. Pre-v5 DBs are
+// IMPORTANT: MIN_ACCEPTED_SCHEMA_VERSION is v5. Pre-v5 DBs are
 // rejected at openDb time with SchemaTooOldError; the operator
 // recovers the one-shot v4→v5 migration script from git history
 // (`git log --all --diff-filter=D -- scripts/migrate-v4-to-v5.ts`).
@@ -153,14 +155,6 @@ function refuseUserDbDuringTests(path: string): void {
   }
 }
 
-/**
- * Thrown by openDb when the on-disk DB is at a schema version older
- * than v5. v5 dropped the in-process forward migrator; the one-shot
- * v4→v5 migration script lives in git history (recover via
- * `git log --all --diff-filter=D -- scripts/migrate-v4-to-v5.ts`).
- *
- * Maps to exit code 4 (conflict) in cli.ts handle().
- */
 // ─── Resolve helpers (operator-facing name -> surrogate id) ───────────
 //
 // docs/ARCHITECTURE.md § Surrogate-PK + SDK-boundary discipline:
@@ -249,6 +243,14 @@ export function tryResolveAgentId(db: Db, workstreamId: number, name: string): n
   return row ? row.id : null;
 }
 
+/**
+ * Thrown by openDb when the on-disk DB is at a schema version older
+ * than v5. v5 dropped the in-process forward migrator; the one-shot
+ * v4→v5 migration script lives in git history (recover via
+ * `git log --all --diff-filter=D -- scripts/migrate-v4-to-v5.ts`).
+ *
+ * Maps to exit code 4 (conflict) in cli.ts handle().
+ */
 export class SchemaTooOldError extends Error implements HasNextSteps {
   override readonly name = "SchemaTooOldError";
   constructor(
@@ -311,6 +313,20 @@ function detectExistingSchemaVersion(db: Db): number | null {
   return null;
 }
 
+/** Seed the singleton machine_identity row (id=1) on first open.
+ *  No-op once a row exists. Called by openDb after applySchema so
+ *  v7 DBs upgraded in place to v8 get an identity too. */
+function seedMachineIdentity(db: Db): void {
+  const row = db.prepare("SELECT COUNT(*) AS count FROM machine_identity").get() as {
+    count: number;
+  };
+  if (row.count !== 0) return;
+  db.prepare(
+    `INSERT OR IGNORE INTO machine_identity (id, machine_id, hostname, created_at)
+     VALUES (1, ?, ?, ?)`,
+  ).run(randomUUID(), hostname(), new Date().toISOString());
+}
+
 /**
  * Apply the schema. Idempotent: tables use CREATE TABLE IF NOT EXISTS;
  * views are dropped and recreated so the latest definition always wins.
@@ -337,17 +353,6 @@ function detectExistingSchemaVersion(db: Db): number | null {
  * workstream_sync tables). openDb seeds machine_identity after this
  * schema block so v7 DBs upgraded in place get an identity too.
  */
-function seedMachineIdentity(db: Db): void {
-  const row = db.prepare("SELECT COUNT(*) AS count FROM machine_identity").get() as {
-    count: number;
-  };
-  if (row.count !== 0) return;
-  db.prepare(
-    `INSERT OR IGNORE INTO machine_identity (id, machine_id, hostname, created_at)
-     VALUES (1, ?, ?, ?)`,
-  ).run(randomUUID(), hostname(), new Date().toISOString());
-}
-
 function applySchema(db: Db): void {
   // Sniff the recorded version BEFORE the schema CREATEs land — needed
   // to decide whether the v6 → v7 destructive migration runs (only on
