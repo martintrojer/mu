@@ -560,6 +560,39 @@ export function parseCsvFlag(values: readonly string[] | undefined): string[] {
   );
 }
 
+/**
+ * Normalize an `optsWithGlobals()` workstream value into a single name.
+ *
+ * Subcommands that call `optsWithGlobals()` inherit the ROOT
+ * `-w, --workstream <names...>` flag, which is VARIADIC — so a
+ * root-position invocation like `mu -w foo task owned-by worker-1`
+ * yields `["foo"]` (an array), not `"foo"`. The subcommand's own
+ * `WORKSTREAM_OPT` is single-value (`<name>`) and yields a string.
+ * `optsWithGlobals()` can hand either shape to a single-workstream
+ * verb, so callers MUST funnel the merged value through this helper:
+ * it accepts string | string[] | undefined, reuses parseCsvFlag's
+ * canonicalisation (repeat / comma / mixed forms), returns the single
+ * name (or undefined when none was passed), and throws UsageError when
+ * more than one workstream is supplied to a verb that scopes to one.
+ *
+ * Guards finding_optswithglobals_can_pass_root: without this, an array
+ * leaks unchanged through resolveWorkstream into DB calls, producing
+ * confusing substrate errors instead of the documented scoping.
+ */
+export function normalizeInheritedWorkstream(
+  value: string | readonly string[] | undefined,
+): string | undefined {
+  if (value === undefined) return undefined;
+  const names = parseCsvFlag(typeof value === "string" ? [value] : value);
+  if (names.length === 0) return undefined;
+  if (names.length > 1) {
+    throw new UsageError(
+      `-w/--workstream takes a single workstream here (got ${names.length}: ${names.join(", ")})`,
+    );
+  }
+  return names[0];
+}
+
 /** Stable JSON output: one line, no trailing newline beyond console.log's.
  *  Exported so cli/*.ts modules can use the same single-source-of-truth
  *  formatter. */

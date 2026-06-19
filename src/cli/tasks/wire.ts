@@ -14,6 +14,7 @@ import {
   TASK_SORT_KEYS,
   WORKSTREAM_OPT,
   handle,
+  normalizeInheritedWorkstream,
   parseImpact,
   parseLines,
   parsePositiveNumber,
@@ -135,9 +136,16 @@ export function wireTaskCommands(program: Command): void {
         json?: boolean;
         includeClosed?: boolean;
         all?: boolean;
-        workstream?: string;
+        workstream?: string | string[];
       };
-      return handle((db) => cmdTaskOwnedBy(db, agent, opts), this as Command)();
+      return handle(
+        (db) =>
+          cmdTaskOwnedBy(db, agent, {
+            ...opts,
+            workstream: normalizeInheritedWorkstream(opts.workstream),
+          }),
+        this as Command,
+      )();
     });
 
   task

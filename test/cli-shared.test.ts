@@ -16,7 +16,7 @@
 // the array has no embedded commas.
 
 import { describe, expect, it } from "vitest";
-import { parseCsvFlag, parseStatusesOption } from "../src/cli.js";
+import { normalizeInheritedWorkstream, parseCsvFlag, parseStatusesOption } from "../src/cli.js";
 
 describe("parseCsvFlag", () => {
   it("undefined → []", () => {
@@ -111,5 +111,44 @@ describe("parseStatusesOption", () => {
   it("throws UsageError naming the offending element", () => {
     expect(() => parseStatusesOption(["OPEN,RESOLVED"])).toThrow(/--status must be one of/);
     expect(() => parseStatusesOption(["OPEN,RESOLVED"])).toThrow(/RESOLVED/);
+  });
+});
+
+// normalizeInheritedWorkstream: subcommands that call optsWithGlobals()
+// inherit the ROOT variadic `-w, --workstream <names...>`, so a
+// root-position `mu -w ws task owned-by agent` hands them a string[]
+// where a single workstream name is expected. This helper funnels
+// either shape into a single name (or undefined) and rejects multiple.
+// Guards finding_optswithglobals_can_pass_root.
+describe("normalizeInheritedWorkstream", () => {
+  it("undefined → undefined", () => {
+    expect(normalizeInheritedWorkstream(undefined)).toBeUndefined();
+  });
+
+  it("plain string → unchanged (subcommand-position single-value form)", () => {
+    expect(normalizeInheritedWorkstream("foo")).toBe("foo");
+  });
+
+  it("single-element array → single name (root-position variadic form)", () => {
+    expect(normalizeInheritedWorkstream(["foo"])).toBe("foo");
+  });
+
+  it("empty array → undefined", () => {
+    expect(normalizeInheritedWorkstream([])).toBeUndefined();
+  });
+
+  it("whitespace-only fragment → undefined", () => {
+    expect(normalizeInheritedWorkstream(["  "])).toBeUndefined();
+  });
+
+  it("CSV string → single name when only one survives", () => {
+    expect(normalizeInheritedWorkstream("foo,")).toBe("foo");
+  });
+
+  it("throws UsageError naming the count when multiple workstreams given", () => {
+    expect(() => normalizeInheritedWorkstream(["foo", "bar"])).toThrow(
+      /single workstream here \(got 2: foo, bar\)/,
+    );
+    expect(() => normalizeInheritedWorkstream(["foo,bar"])).toThrow(/got 2/);
   });
 });

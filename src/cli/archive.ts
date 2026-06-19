@@ -584,7 +584,7 @@ export async function cmdArchiveExport(
 // here so every per-namespace builder lives next to its cmd functions.
 
 import type { Command } from "commander";
-import { JSON_OPT, WORKSTREAM_OPT, handle } from "../cli.js";
+import { JSON_OPT, WORKSTREAM_OPT, handle, normalizeInheritedWorkstream } from "../cli.js";
 
 // The classifyError() switch in src/cli.ts is the single source of
 // truth for typed-error → exit-code mapping; the new Archive*Error
@@ -657,11 +657,18 @@ export function wireArchiveCommands(program: Command): void {
       // `-w` when it appears AFTER the subcommand. Mirrors
       // wireSelfCommands' adopt verb in src/cli/agents.ts.
       const opts = (this as Command).optsWithGlobals() as {
-        workstream?: string;
+        workstream?: string | string[];
         destroy?: boolean;
         json?: boolean;
       };
-      return handle((db) => cmdArchiveAdd(db, label, opts), this as Command)();
+      return handle(
+        (db) =>
+          cmdArchiveAdd(db, label, {
+            ...opts,
+            workstream: normalizeInheritedWorkstream(opts.workstream),
+          }),
+        this as Command,
+      )();
     });
 
   archive
@@ -690,10 +697,17 @@ export function wireArchiveCommands(program: Command): void {
     .action(function (label: string) {
       // optsWithGlobals: see archive add for the rationale.
       const opts = (this as Command).optsWithGlobals() as {
-        workstream?: string;
+        workstream?: string | string[];
         json?: boolean;
       };
-      return handle((db) => cmdArchiveRemove(db, label, opts), this as Command)();
+      return handle(
+        (db) =>
+          cmdArchiveRemove(db, label, {
+            ...opts,
+            workstream: normalizeInheritedWorkstream(opts.workstream),
+          }),
+        this as Command,
+      )();
     });
 
   archive

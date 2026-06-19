@@ -864,7 +864,14 @@ export async function cmdAgentWait(
 // every per-namespace builder lives next to its cmd functions.
 
 import type { Command } from "commander";
-import { JSON_OPT, WORKSTREAM_OPT, handle, parseLines, parseNonNegativeInt } from "../cli.js";
+import {
+  JSON_OPT,
+  WORKSTREAM_OPT,
+  handle,
+  normalizeInheritedWorkstream,
+  parseLines,
+  parseNonNegativeInt,
+} from "../cli.js";
 // wireSelfCommands needs cmdMyTasks / cmdMyNext which live in cli/tasks.ts
 // (they're task queries scoped to the resolved-self agent). Lateral
 // cluster→cluster import documented as the single intentional edge.
@@ -1149,10 +1156,17 @@ export function wireAgentCommands(program: Command): void {
         first?: boolean;
         timeout?: number;
         lines?: number;
-        workstream?: string;
+        workstream?: string | string[];
         json?: boolean;
       };
-      return handle((db) => cmdAgentWait(db, names, opts), this as Command)();
+      return handle(
+        (db) =>
+          cmdAgentWait(db, names, {
+            ...opts,
+            workstream: normalizeInheritedWorkstream(opts.workstream),
+          }),
+        this as Command,
+      )();
     });
 
   // `mu agent adopt` — register an existing tmux pane as a managed agent.
@@ -1169,8 +1183,17 @@ export function wireAgentCommands(program: Command): void {
     .option(...WORKSTREAM_OPT)
     .option(...JSON_OPT)
     .action(function (paneOrTitle: string) {
-      const opts = (this as Command).optsWithGlobals() as AdoptCliOpts;
-      return handle((db) => cmdAdopt(db, paneOrTitle, opts), this as Command)();
+      const opts = (this as Command).optsWithGlobals() as Omit<AdoptCliOpts, "workstream"> & {
+        workstream?: string | string[];
+      };
+      return handle(
+        (db) =>
+          cmdAdopt(db, paneOrTitle, {
+            ...opts,
+            workstream: normalizeInheritedWorkstream(opts.workstream),
+          }),
+        this as Command,
+      )();
     });
 
   // ─── task ───────────────────────────────────────────────────────────
