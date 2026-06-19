@@ -151,14 +151,28 @@ export function addToArchive(db: Db, label: string, workstream: string): AddToAr
         }
       }
 
+      // Only copy events newer than what we've already archived for this
+      // (archive, source_workstream) pair. archived_events has no UNIQUE
+      // constraint, so a plain re-add would otherwise duplicate the entire
+      // event history every time a new task is added (idempotency invariant).
+      const maxArchivedSeq =
+        (
+          db
+            .prepare(
+              `SELECT MAX(seq) AS max_seq
+                 FROM archived_events
+                WHERE archive_id = ? AND source_workstream = ?`,
+            )
+            .get(archiveId, workstream) as { max_seq: number | null }
+        ).max_seq ?? -1;
       const events = db
         .prepare(
           `SELECT seq, source, payload, created_at
              FROM agent_logs
-            WHERE workstream_id = ? AND kind = 'event'
+            WHERE workstream_id = ? AND kind = 'event' AND seq > ?
             ORDER BY seq`,
         )
-        .all(wsId) as {
+        .all(wsId, maxArchivedSeq) as {
         seq: number;
         source: string;
         payload: string;

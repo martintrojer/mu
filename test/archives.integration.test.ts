@@ -176,10 +176,44 @@ describe("archives SDK", () => {
     // Case 5: add a new task to alpha; re-run picks it up.
     addTask(db, { localId: "a4", workstream: "alpha", title: "A4", impact: 30, effortDays: 1 });
     addNote(db, "a4", "fresh note", { workstream: "alpha", author: "worker-1" });
+    // Capture how many alpha events were already archived from the first add
+    // so we can assert the incremental re-add only copies the NEW ones.
+    const alphaArchivedEventsBefore = (
+      db
+        .prepare(
+          "SELECT COUNT(*) AS n FROM archived_events WHERE archive_id = (SELECT id FROM archives WHERE label = 'w') AND source_workstream = 'alpha'",
+        )
+        .get() as { n: number }
+    ).n;
+    const sourceAlphaEventsBefore = (
+      db
+        .prepare(
+          "SELECT COUNT(*) AS n FROM agent_logs WHERE workstream_id = (SELECT id FROM workstreams WHERE name = 'alpha') AND kind = 'event'",
+        )
+        .get() as { n: number }
+    ).n;
     const incremental = addToArchive(db, "w", "alpha");
     expect(incremental.addedTasks).toBe(1);
     expect(incremental.skippedTasks).toBe(3);
     expect(incremental.addedNotes).toBe(1);
+    // Events are seq-incremental: only events emitted since the first add are
+    // copied (never the entire history again).
+    const sourceAlphaEventsAfterIncremental = sourceAlphaEventsBefore - alphaArchivedEventsBefore;
+    expect(incremental.addedEvents).toBe(Math.max(0, sourceAlphaEventsAfterIncremental));
+    // No duplicate (archive_id, source_workstream, seq) rows accumulated.
+    const dupEvents = (
+      db
+        .prepare(
+          `SELECT COUNT(*) AS n FROM (
+             SELECT archive_id, source_workstream, seq
+               FROM archived_events
+              GROUP BY archive_id, source_workstream, seq
+             HAVING COUNT(*) > 1
+           )`,
+        )
+        .get() as { n: number }
+    ).n;
+    expect(dupEvents).toBe(0);
     expect(listArchivedTasks(db, "w")).toHaveLength(6);
 
     // Case 6: removeFromArchive('w', 'alpha') strips alpha; beta intact.
