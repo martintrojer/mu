@@ -995,7 +995,14 @@ export interface ReapIdleAgentsOptions {
  * full audit of what the sweep saw, not just what it touched.
  */
 export async function reapIdleAgents(db: Db, opts: ReapIdleAgentsOptions): Promise<ReapView> {
-  const idleForMs = opts.idleForMs ?? idleThresholdMs();
+  // Defensive: a NaN/Infinity/negative idleForMs (e.g. a non-numeric CLI
+  // arg that slipped past validation) would make the `idleMs < idleForMs`
+  // guard below silently false, closing EVERY reapable agent regardless of
+  // how recently it went idle. Fall back to the default threshold instead.
+  const idleForMs =
+    opts.idleForMs !== undefined && Number.isFinite(opts.idleForMs) && opts.idleForMs >= 0
+      ? opts.idleForMs
+      : idleThresholdMs();
   const agents = listAgents(db, { workstream: opts.workstream });
   const now = Date.now();
   const items: ReapAgentResult[] = [];

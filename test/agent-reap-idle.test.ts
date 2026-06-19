@@ -123,6 +123,27 @@ describe("reapIdleAgents", () => {
     expect(view.items.find((i) => i.name === "fixer-1")?.action).toBe("closed");
   });
 
+  it("does NOT close a recently-idle agent when idleForMs is NaN (falls back to default threshold)", async () => {
+    // A non-numeric --idle-for would yield NaN; `idleMs < NaN` is always
+    // false, which previously bypassed the guard and closed everything.
+    updateAgentStatus(db, "fixer-1", "needs_input", ws);
+    ageAgent(db, "fixer-1", 1_000); // 1 second idle — well under the 5m default
+
+    const view = await reapIdleAgents(db, { workstream: ws, idleForMs: Number.NaN });
+    expect(view.count).toBe(0);
+    expect(view.items.find((i) => i.name === "fixer-1")?.action).toBe("skipped");
+    expect(getAgent(db, "fixer-1", ws)).toBeDefined();
+  });
+
+  it("treats a negative idleForMs as the default threshold (does not close recently-idle agents)", async () => {
+    updateAgentStatus(db, "fixer-1", "needs_input", ws);
+    ageAgent(db, "fixer-1", 1_000);
+
+    const view = await reapIdleAgents(db, { workstream: ws, idleForMs: -1 });
+    expect(view.count).toBe(0);
+    expect(getAgent(db, "fixer-1", ws)).toBeDefined();
+  });
+
   it("returns an empty view for a workstream with no agents", async () => {
     const view = await reapIdleAgents(db, { workstream: "nonexistent" });
     expect(view).toEqual({ items: [], count: 0 });

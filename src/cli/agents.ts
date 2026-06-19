@@ -875,7 +875,7 @@ export async function cmdAgentWait(
 // every per-namespace builder lives next to its cmd functions.
 
 import type { Command } from "commander";
-import { JSON_OPT, WORKSTREAM_OPT, handle, parseLines } from "../cli.js";
+import { JSON_OPT, WORKSTREAM_OPT, handle, parseLines, parseNonNegativeInt } from "../cli.js";
 // wireSelfCommands needs cmdMyTasks / cmdMyNext which live in cli/tasks.ts
 // (they're task queries scoped to the resolved-self agent). Lateral
 // cluster→cluster import documented as the single intentional edge.
@@ -1044,7 +1044,7 @@ export function wireAgentCommands(program: Command): void {
     .option(
       "--idle-for <seconds>",
       "minimum idle seconds before an agent is eligible (default: MU_IDLE_THRESHOLD_MS, 300)",
-      (v) => Number.parseInt(v, 10),
+      parseNonNegativeInt,
     )
     .option("--dry-run", "report what would be closed without killing any pane")
     .option(
@@ -1146,12 +1146,12 @@ export function wireAgentCommands(program: Command): void {
     .description("Block until agents finish working (busy → any other state)")
     .option("--any", "succeed as soon as ONE listed agent finishes (default: all)")
     .option("--first", "alias for --any that also prints the firing agent's ref")
-    .option("--timeout <seconds>", "max seconds to wait (0 = forever, default 600)", (v) =>
-      Number.parseInt(v, 10),
+    .option(
+      "--timeout <seconds>",
+      "max seconds to wait (0 = forever, default 600)",
+      parseNonNegativeInt,
     )
-    .option("--lines <n>", "scrollback lines to scan per poll (default 100)", (v) =>
-      Number.parseInt(v, 10),
-    )
+    .option("--lines <n>", "scrollback lines to scan per poll (default 100)", parseLines)
     .option(...WORKSTREAM_OPT)
     .option(...JSON_OPT)
     .action(function (names: string[]) {
