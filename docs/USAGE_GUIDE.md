@@ -1337,7 +1337,44 @@ mu sql "SELECT name FROM sqlite_master WHERE type IN ('table','view') ORDER BY t
 | Read the activity log / subscribe to events           | `mu log [--tail] [--kind event]`        |
 | Block until tasks reach a status (orchestrator wait)  | `mu task wait <ref> [<ref>...] [--first|--any] [--timeout S]` |
 | Block until agents finish working (task-less wait)    | `mu agent wait <name> [<name>...] [--first|--any] [--timeout S]` |
+| Ensure an agent exists, reusing it if already present  | `mu agent ensure <name> [-w <ws>] [--idle-only] [--json]` |
 | Snapshot the whole agent pool once (non-blocking)     | `mu agent poll [-w <ws>] [--json]`      |
+
+### `mu agent ensure`: idempotent spawn-or-reuse
+
+`mu agent ensure <name>` is the watcher-friendly form of `spawn`: if the
+agent is missing, it spawns it with the same practical flags as
+`mu agent spawn` (`--workspace`, `--role`, `--cli`, `--cwd`, `--tab`,
+`--workspace-backend`, `--workspace-from`, `--workspace-project-root`). If
+an agent by that name already exists in the workstream, `ensure` reuses
+it and exits 0 instead of treating the name collision as an error.
+
+```bash
+mu agent ensure fixer-1 -w scratch --workspace --json
+# => {"agent":{...},"changed":true,"created":true,"reused":false,"busy":false,...}
+
+mu agent ensure fixer-1 -w scratch --json
+# => {"agent":{...},"changed":false,"created":false,"reused":true,"busy":false,...}
+```
+
+Default busy behavior is deliberately conservative: an existing busy /
+spawning / permission-blocked agent is **reused without mutation** and
+reported with `busy: true`. This makes watcher loops safe by default —
+they do not create duplicate fixers and they do not interrupt the one
+already running. If the caller wants a concurrency lock, pass
+`--idle-only`: when the existing agent is actively busy, `ensure` fails
+with a typed conflict (exit 4), so scripts can skip the tick and try
+again later.
+
+```bash
+mu agent ensure fixer-1 -w scratch --idle-only --json || echo "lock held"
+```
+
+JSON always returns a typed singleton result on success:
+`{agent, changed, created, reused, busy, existed, previousStatus,
+workspace, nextSteps}`. `created=true` means a spawn happened;
+`reused=true` means no state changed. `previousStatus` is `null` when
+created and the existing status when reused.
 
 ### `mu agent wait`: the task-less counterpart to `mu task wait`
 

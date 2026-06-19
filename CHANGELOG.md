@@ -52,6 +52,21 @@ called out under "Breaking" in each entry.
 
 ### Added
 
+- **`mu agent ensure <name>` — idempotent spawn-or-reuse.**
+  Watcher/scratch flows can now collapse "spawn this helper iff one is
+  not already alive" into one verb. Missing agent → `spawnAgent` using
+  the practical spawn flags (`--workspace`, `--role`, `--cli`, `--cwd`,
+  `--tab`, workspace backend/from/project-root); existing idle/free agent
+  → reuse, `changed=false`, `reused=true`, exit 0. Existing busy / still
+  spawning / permission-blocked agent is reused by default with
+  `busy=true` and no mutation (the safest small default: do not spawn a
+  duplicate and do not interrupt the worker). `--idle-only` turns that
+  busy-existing case into typed `AgentBusyError` (conflict exit 4) so
+  scripts can use it as a concurrency lock. JSON success shape:
+  `{agent, changed, created, reused, busy, existed, previousStatus,
+  workspace, nextSteps}`. New SDK: `ensureAgent` / `EnsureAgentResult`
+  in `src/agents.ts`; CLI verb `cmdEnsure` in `src/cli/agents.ts`.
+
 - **`mu agent poll` — non-blocking, read-only snapshot of all agents.**
   The dual of `mu agent wait`: where `wait` blocks until a status
   transition, `poll` captures the current pool state exactly once and

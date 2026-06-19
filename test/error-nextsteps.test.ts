@@ -12,6 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  AgentBusyError,
   AgentDiedOnSpawnError,
   AgentExistsError,
   AgentNotFoundError,
@@ -164,6 +165,11 @@ const cases: NextStepsCase[] = [
     expectedTokens: ["MU_PI_META_COMMAND", "pi-meta"],
   },
   { error: new AgentExistsError("alice"), label: "AgentExistsError", expectedTokens: ["alice"] },
+  {
+    error: new AgentBusyError("alice", "busy", "watchkit"),
+    label: "AgentBusyError",
+    expectedTokens: ["alice", "watchkit"],
+  },
   {
     error: new AgentNotFoundError("alice"),
     label: "AgentNotFoundError",

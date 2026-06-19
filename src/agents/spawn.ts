@@ -39,6 +39,7 @@ import {
 import type { VcsBackendName } from "../vcs.js";
 import { createWorkspace, freeWorkspace } from "../workspace.js";
 import {
+  AgentBusyError,
   AgentDiedOnSpawnError,
   AgentExistsError,
   AgentSpawnCliNotFoundError,
@@ -249,6 +250,71 @@ export interface SpawnAgentOptions {
   /** Project root the workspace branches from (only meaningful with
    *  `workspace: true`). Defaults to `process.cwd()`. */
   workspaceProjectRoot?: string;
+}
+
+export interface EnsureAgentOptions extends SpawnAgentOptions {
+  /** When true, an existing actively-working agent is an error instead
+   *  of a successful reuse. Scripts use this as a small concurrency lock. */
+  idleOnly?: boolean;
+}
+
+export interface EnsureAgentResult {
+  agent: AgentRow;
+  /** True iff this call changed mu state by spawning the agent. */
+  changed: boolean;
+  /** True iff this call spawned the agent. */
+  created: boolean;
+  /** True iff a pre-existing agent row was reused. */
+  reused: boolean;
+  /** The existing agent's status made it unsafe for --idle-only. */
+  busy: boolean;
+  /** True iff the agent existed before this call. */
+  existed: boolean;
+  /** Status observed on an existing agent before any action; null when created. */
+  previousStatus: AgentRow["status"] | null;
+}
+
+/** Statuses that mean the agent is actively occupied or still starting.
+ *  `needs_permission` is treated as busy: the pane is mid-action and
+ *  waiting for an operator decision, not an available prompt. */
+export function isAgentBusyForEnsure(status: AgentRow["status"]): boolean {
+  return status === "spawning" || status === "busy" || status === "needs_permission";
+}
+
+/**
+ * Idempotent spawn-or-reuse. Missing agent → spawnAgent with the same
+ * options; existing idle agent → return it unchanged; existing busy agent
+ * → return it unchanged unless idleOnly=true, in which case throw a typed
+ * conflict that scripts can use as a concurrency lock.
+ */
+export async function ensureAgent(db: Db, opts: EnsureAgentOptions): Promise<EnsureAgentResult> {
+  const existing = getAgent(db, opts.name, opts.workstream);
+  if (existing === undefined) {
+    const agent = await spawnAgent(db, opts);
+    return {
+      agent,
+      changed: true,
+      created: true,
+      reused: false,
+      busy: false,
+      existed: false,
+      previousStatus: null,
+    };
+  }
+
+  const busy = isAgentBusyForEnsure(existing.status);
+  if (busy && opts.idleOnly === true) {
+    throw new AgentBusyError(opts.name, existing.status, opts.workstream);
+  }
+  return {
+    agent: existing,
+    changed: false,
+    created: false,
+    reused: true,
+    busy,
+    existed: true,
+    previousStatus: existing.status,
+  };
 }
 
 /**

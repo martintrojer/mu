@@ -17,6 +17,7 @@ import {
   type KickSignal,
   adoptAgent,
   closeAgent,
+  ensureAgent,
   freeAgent,
   getAgent,
   isKickSignal,
@@ -173,6 +174,101 @@ export async function cmdSpawn(db: Db, name: string, opts: SpawnOpts): Promise<v
     `Spawned ${pc.bold(agent.name)} (${cliDisplay}) in window ${pc.bold(agent.tab ?? agent.name)} of ${pc.bold(`mu-${workstream}`)}, pane ${pc.dim(agent.paneId)}${wsBit}`,
   );
   if (workspace) console.log(pc.dim(`  workspace: ${workspace.path} (${workspace.backend})`));
+  printNextSteps(nextSteps);
+}
+
+interface EnsureOpts extends SpawnOpts {
+  idleOnly?: boolean;
+}
+
+export async function cmdEnsure(db: Db, name: string, opts: EnsureOpts): Promise<void> {
+  const workstream = await resolveWorkstream(opts.workstream);
+
+  if (opts.workspace && !opts.json) {
+    const projectRoot = opts.workspaceProjectRoot ?? process.cwd();
+    const backend: VcsBackendName =
+      opts.workspaceBackend ?? (await detectBackend(projectRoot)).name;
+    const warn =
+      backend === "none"
+        ? pc.yellow(
+            " — WARNING: 'none' backend will cp -a the entire projectRoot. Verify --workspace-project-root.",
+          )
+        : "";
+    console.log(
+      pc.dim(
+        `[mu] workspace preflight: backend=${pc.bold(backend)} projectRoot=${pc.bold(projectRoot)}${warn}`,
+      ),
+    );
+  }
+
+  const result = await ensureAgent(db, {
+    name,
+    workstream,
+    ...(opts.cli !== undefined ? { cli: opts.cli } : {}),
+    ...(opts.command !== undefined ? { command: opts.command } : {}),
+    ...(opts.tab !== undefined ? { tab: opts.tab } : {}),
+    ...(opts.role !== undefined ? { role: opts.role } : {}),
+    ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}),
+    ...(opts.workspace !== undefined ? { workspace: opts.workspace } : {}),
+    ...(opts.workspaceBackend !== undefined ? { workspaceBackend: opts.workspaceBackend } : {}),
+    ...(opts.workspaceFrom !== undefined ? { workspaceFrom: opts.workspaceFrom } : {}),
+    ...(opts.workspaceProjectRoot !== undefined
+      ? { workspaceProjectRoot: opts.workspaceProjectRoot }
+      : {}),
+    ...(opts.idleOnly === true ? { idleOnly: true } : {}),
+  });
+  const workspace = getWorkspaceForAgent(db, name, workstream);
+  const nextSteps: NextStep[] = result.created
+    ? [
+        { intent: "Send work", command: `mu agent send ${name} "..." -w ${workstream}` },
+        { intent: "Read pane", command: `mu agent read ${name} -w ${workstream}` },
+        {
+          intent: "Close (drops registry row, kills pane)",
+          command: `mu agent close ${name} -w ${workstream}`,
+        },
+      ]
+    : result.busy
+      ? [
+          {
+            intent: "Inspect existing busy agent",
+            command: `mu agent show ${name} -w ${workstream}`,
+          },
+          {
+            intent: "Wait for it to finish",
+            command: `mu agent wait ${name} -w ${workstream} --first`,
+          },
+        ]
+      : [
+          {
+            intent: "Send work to the reused agent",
+            command: `mu agent send ${name} "..." -w ${workstream}`,
+          },
+          { intent: "Read pane", command: `mu agent read ${name} -w ${workstream}` },
+        ];
+
+  if (opts.json) {
+    emitJson({ ...result, workspace: workspace ?? null, nextSteps });
+    return;
+  }
+
+  if (result.created) {
+    const resolvedCommand = opts.command ?? resolveCliCommand(result.agent.cli);
+    const commandOverridden = resolvedCommand !== result.agent.cli;
+    const wsBit = workspace ? pc.dim(" with auto-workspace") : "";
+    const cmdBit = commandOverridden ? pc.dim(` (cmd: ${resolvedCommand})`) : "";
+    console.log(
+      `Ensured ${pc.bold(result.agent.name)} by spawning it (${result.agent.cli}${cmdBit}) in window ${pc.bold(result.agent.tab ?? result.agent.name)} of ${pc.bold(`mu-${workstream}`)}, pane ${pc.dim(result.agent.paneId)}${wsBit}`,
+    );
+    if (workspace) console.log(pc.dim(`  workspace: ${workspace.path} (${workspace.backend})`));
+    printNextSteps(nextSteps);
+    return;
+  }
+
+  const status = result.previousStatus ?? result.agent.status;
+  const busyBit = result.busy ? pc.yellow("busy; reused without mutation") : "idle; reused";
+  console.log(
+    `Ensured ${pc.bold(result.agent.name)} by reusing existing agent (${status}; ${busyBit})`,
+  );
   printNextSteps(nextSteps);
 }
 
@@ -786,6 +882,50 @@ export function wireAgentCommands(program: Command): void {
         json?: boolean;
       };
       return handle((db) => cmdSpawn(db, name, opts), this as Command)();
+    });
+
+  agent
+    .command("ensure <name>")
+    .description(
+      "Idempotently spawn an agent if missing, or reuse the existing one. With --idle-only, fail when the existing agent is actively busy (concurrency lock).",
+    )
+    .option(
+      "--cli <cli>",
+      "agent CLI key (default: pi); also used as the lookup key for $MU_<UPPER_CLI>_COMMAND, e.g. --cli pi_big resolves $MU_PI_BIG_COMMAND",
+      "pi",
+    )
+    .option(
+      "--command <cmd>",
+      "executable to run in the pane when spawning (defaults to $MU_<CLI>_COMMAND or the cli value)",
+    )
+    .option("--tab <tab>", "tmux window name to group under when spawning (defaults to agent name)")
+    .option("--role <role>", "full-access | read-only", "full-access")
+    .option(
+      "--cwd <cwd>",
+      "initial working directory when spawning (ignored when --workspace is set)",
+    )
+    .option("--workspace", "auto-create a VCS workspace if the agent must be spawned")
+    .option(
+      "--workspace-backend <name>",
+      "force a specific VCS backend for --workspace (jj | sl | git | none)",
+    )
+    .option(
+      "--workspace-from <ref>",
+      "base the workspace on a specific commit / branch / changeset",
+    )
+    .option(
+      "--workspace-project-root <path>",
+      "override the project root the workspace branches from (default: cwd)",
+    )
+    .option(
+      "--idle-only",
+      "if the agent already exists but is actively busy/spawning/needs_permission, fail with a conflict exit code instead of reusing it",
+    )
+    .option(...WORKSTREAM_OPT)
+    .option(...JSON_OPT)
+    .action(function (name: string) {
+      const opts = (this as Command).opts() as EnsureOpts;
+      return handle((db) => cmdEnsure(db, name, opts), this as Command)();
     });
 
   agent

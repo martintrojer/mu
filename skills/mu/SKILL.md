@@ -254,12 +254,19 @@ git cherry-pick "$sha" && npm test
   `--archive <label>` preserves graph), `export` (read-only
   markdown bucket for humans/git/docs).
 - **Agents:** `spawn` (`--workspace`, `--role read-only`,
-  `--command`), `send`, `read`, `show`, `list`, `poll`, `wait`,
+  `--command`), `ensure` (idempotent spawn-or-reuse; `--idle-only`
+  makes an existing busy agent a conflict/lock-held signal), `send`,
+  `read`, `show`, `list`, `poll`, `wait`,
   `close`, `free`, `kick`, `adopt <pane-id|title>` for orphan panes.
   `mu agent wait <names...> --first` blocks until an agent finishes
   (busy → any other state) — the task-less counterpart to `mu task
   wait` for scratch/off-the-cuff helpers that own no task. Exit 0 met,
   5 timeout, 6 a watched pane died. Use this instead of `sleep` loops.
+  `mu agent ensure <name>` is the watcher-safe spawn: missing → spawn,
+  existing idle/free → reuse and exit 0, existing busy/spawning/
+  needs_permission → reuse by default with `busy: true`; add
+  `--idle-only` when you want a concurrency lock that fails (exit 4)
+  instead of reusing the busy agent.
   `mu agent poll` is its non-blocking dual: a single read-only snapshot
   of the whole pool (`{name,status,idleMs,lastActivitySeq,
   workspaceBehind,dead}` per agent; `--json` => `{items,count}`) for a

@@ -29,6 +29,7 @@
 
 import { type Command, CommanderError } from "commander";
 import {
+  AgentBusyError,
   AgentDiedOnSpawnError,
   AgentExistsError,
   AgentNotFoundError,
@@ -273,6 +274,7 @@ export function classifyError(err: unknown): { label: string; exitCode: number }
   }
   if (
     err instanceof NameAmbiguousError ||
+    err instanceof AgentBusyError ||
     err instanceof AgentExistsError ||
     err instanceof TaskExistsError ||
     err instanceof TaskAlreadyOwnedError ||

@@ -24,6 +24,7 @@ import { addNote, listTasksByOwner } from "./tasks.js";
 export {
   AgentDiedOnSpawnError,
   AgentExistsError,
+  AgentBusyError,
   AgentNotFoundError,
   AgentNotInWorkstreamError,
   AgentSpawnCliNotFoundError,
@@ -34,6 +35,8 @@ export {
   type CommandResolutionResult,
   type CommandResolver,
   type SpawnAgentOptions,
+  type EnsureAgentOptions,
+  type EnsureAgentResult,
   checkCommandResolvable,
   defaultSpawnLivenessMs,
   defaultSpawnReadinessMs,
@@ -42,6 +45,7 @@ export {
   resolveCliCommand,
   resolveCliCommandWithSource,
   setCommandResolverForTests,
+  ensureAgent,
   spawnAgent,
 } from "./agents/spawn.js";
 export {
