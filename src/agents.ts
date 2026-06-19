@@ -926,3 +926,136 @@ export async function pollAgents(db: Db, opts: PollAgentsOptions): Promise<Agent
   });
   return { items, count: items.length };
 }
+
+/** Statuses that count as 'finished / awaiting input' — the candidates a
+ *  sweep is allowed to consider. `busy` and `spawning` are excluded: an
+ *  actively-working agent is never idle, regardless of clock time. */
+const REAPABLE_STATUSES: ReadonlySet<AgentStatus> = new Set<AgentStatus>([
+  "needs_input",
+  "needs_permission",
+  "free",
+]);
+
+/** Per-agent outcome of a `reapIdleAgents` sweep. `action: "closed"` rows
+ *  were closed (pane killed + row removed; clean workspace auto-freed);
+ *  `action: "skipped"` rows were left untouched with a human-readable
+ *  `reason`. */
+export interface ReapAgentResult {
+  name: string;
+  action: "closed" | "skipped";
+  /** Pre-close status (so callers can log what was swept). */
+  status: AgentStatus;
+  /** Milliseconds the agent had been idle at sweep time. */
+  idleMs: number;
+  /** Why a candidate was skipped. Set only when action === "skipped". */
+  reason?: string;
+  /** True iff the close auto-freed a clean workspace. */
+  workspaceFreed?: boolean;
+}
+
+/** The whole-pool result of `reapIdleAgents`. Mirrors the `{items,count}`
+ *  collection-read JSON shape. `count` is the number of agents CLOSED
+ *  (not the number considered), so a caller can branch on "did anything
+ *  get swept". */
+export interface ReapView {
+  items: ReapAgentResult[];
+  count: number;
+}
+
+export interface ReapIdleAgentsOptions {
+  workstream: string;
+  /** Minimum idle duration (ms) before an agent is eligible. Defaults to
+   *  `idleThresholdMs()` (MU_IDLE_THRESHOLD_MS, 5m). */
+  idleForMs?: number;
+  /** When true, compute the plan but mutate nothing — every closeable
+   *  candidate is reported `action: "closed"` but no pane is killed and
+   *  no row removed. Lets the operator preview a graveyard sweep. */
+  dryRun?: boolean;
+  /** When true, also close agents whose workspace is dirty (uncommitted
+   *  changes / commits since fork), discarding the workspace (LOSSY).
+   *  Off by default: the whole point of the verb is to never lose work
+   *  unexpectedly. */
+  discardDirty?: boolean;
+}
+
+/**
+ * Sweep a workstream and close finished, idle, SAFE helpers — the
+ * one-line graveyard cleanup for the `fixer-N` scratch-watcher pattern
+ * (spawn a helper per unit, let them pile up, reap the clean ones).
+ *
+ * An agent is a candidate when its status is one of `REAPABLE_STATUSES`
+ * (needs_input / needs_permission / free — i.e. NOT busy/spawning) AND it
+ * has been idle (no row update) for >= `idleForMs`. Each candidate is
+ * then closed via `closeAgent`, which auto-frees a clean workspace and
+ * REFUSES a dirty one (WorkspacePreservedError). By default that refusal
+ * is caught and the agent is skipped with a reason — no work is lost
+ * unexpectedly. Pass `discardDirty: true` to override and discard.
+ *
+ * Non-candidates are reported as skipped with a reason so the JSON is a
+ * full audit of what the sweep saw, not just what it touched.
+ */
+export async function reapIdleAgents(db: Db, opts: ReapIdleAgentsOptions): Promise<ReapView> {
+  const idleForMs = opts.idleForMs ?? idleThresholdMs();
+  const agents = listAgents(db, { workstream: opts.workstream });
+  const now = Date.now();
+  const items: ReapAgentResult[] = [];
+
+  for (const a of agents) {
+    const updated = Date.parse(a.updatedAt);
+    const idleMs = Number.isFinite(updated) ? Math.max(0, now - updated) : 0;
+    const base = { name: a.name, status: a.status, idleMs } as const;
+
+    if (!REAPABLE_STATUSES.has(a.status)) {
+      items.push({ ...base, action: "skipped", reason: `status ${a.status} (working)` });
+      continue;
+    }
+    if (idleMs < idleForMs) {
+      items.push({
+        ...base,
+        action: "skipped",
+        reason: `idle ${Math.round(idleMs / 1000)}s < ${Math.round(idleForMs / 1000)}s`,
+      });
+      continue;
+    }
+
+    // Dirty-workspace guard: peek BEFORE close so a dry run reports the
+    // skip and a real run never throws into the loop. closeAgent would
+    // refuse a dirty workspace anyway; we surface it as a clean skip.
+    if (opts.discardDirty !== true) {
+      const ws = getWorkspaceForAgent(db, a.name, a.workstreamName);
+      if (ws !== undefined && !(await isWorkspaceClean(ws))) {
+        items.push({
+          ...base,
+          action: "skipped",
+          reason: "workspace dirty (uncommitted changes or commits since fork)",
+        });
+        continue;
+      }
+    }
+
+    if (opts.dryRun === true) {
+      items.push({ ...base, action: "closed" });
+      continue;
+    }
+
+    try {
+      const result = await closeAgent(db, a.name, {
+        workstream: a.workstreamName,
+        ...(opts.discardDirty === true ? { discardWorkspace: true } : {}),
+      });
+      items.push({ ...base, action: "closed", workspaceFreed: result.workspaceFreed });
+    } catch (err) {
+      // Defensive: a dirty workspace can appear between the peek above
+      // and the close (or discardDirty=false races a fresh edit). Treat
+      // any close failure as a skip rather than aborting the whole sweep.
+      if (err instanceof WorkspacePreservedError) {
+        items.push({ ...base, action: "skipped", reason: "workspace preserved (dirty)" });
+        continue;
+      }
+      throw err;
+    }
+  }
+
+  const count = items.filter((i) => i.action === "closed").length;
+  return { items, count };
+}

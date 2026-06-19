@@ -1339,6 +1339,7 @@ mu sql "SELECT name FROM sqlite_master WHERE type IN ('table','view') ORDER BY t
 | Block until agents finish working (task-less wait)    | `mu agent wait <name> [<name>...] [--first|--any] [--timeout S]` |
 | Ensure an agent exists, reusing it if already present  | `mu agent ensure <name> [-w <ws>] [--idle-only] [--json]` |
 | Snapshot the whole agent pool once (non-blocking)     | `mu agent poll [-w <ws>] [--json]`      |
+| Sweep finished, idle, safe helpers in one line        | `mu agent reap-idle [-w <ws>] [--idle-for S] [--dry-run] [--json]` |
 
 ### `mu agent ensure`: idempotent spawn-or-reuse
 
@@ -1423,6 +1424,39 @@ diff tick-over-tick), `workspaceBehind` (commits behind main, or `null`
 when no workspace / uncomputable), and `dead` (true when the pane no
 longer exists in the tmux session). Plain output prints one line per
 agent; `--json` returns the `{items,count}` collection shape.
+
+### `mu agent reap-idle`: one-line graveyard cleanup
+
+The scratch watcher pattern (spawn a helper per unit, let them pile up)
+leaves a graveyard of finished `fixer-N` panes. Instead of
+`mu agent list | grep | xargs mu agent close`, `mu agent reap-idle`
+sweeps the workstream and closes the finished, idle, SAFE ones in one
+shot:
+
+```bash
+mu agent reap-idle -w scratch --idle-for 600 --json
+# => {"items":[{"name":"fixer-1","action":"closed","status":"needs_input",
+#       "idleMs":700000,"workspaceFreed":false},
+#      {"name":"fixer-2","action":"skipped","status":"busy",
+#       "idleMs":900000,"reason":"status busy (working)"}],
+#     "count":1}
+```
+
+An agent is a candidate when its status is `needs_input`,
+`needs_permission`, or `free` (i.e. **not** `busy`/`spawning`) AND it has
+been idle (no row update) for `>= --idle-for` seconds (default
+`MU_IDLE_THRESHOLD_MS`, 300). Each candidate is closed via the same
+`mu agent close` path, which **auto-frees a clean workspace and refuses
+a dirty one** — so by default a helper with uncommitted changes or
+commits since fork is *skipped* (with `reason: "workspace dirty ..."`),
+never silently discarded. Pass `--discard-dirty` to override (lossy),
+or `--dry-run` to preview the plan without killing any pane.
+
+`count` is the number actually CLOSED (in `--dry-run`, the number that
+*would* be); every agent the sweep saw appears in `items` with
+`action: "closed"|"skipped"` and a skip `reason`, so the JSON is a full
+audit of the sweep. The verb works in any workstream, not just
+`scratch`.
 
 ### `mu task wait`: cross-workstream refs + `--first` returns WHICH
 

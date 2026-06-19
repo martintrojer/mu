@@ -256,7 +256,7 @@ git cherry-pick "$sha" && npm test
 - **Agents:** `spawn` (`--workspace`, `--role read-only`,
   `--command`), `ensure` (idempotent spawn-or-reuse; `--idle-only`
   makes an existing busy agent a conflict/lock-held signal), `send`,
-  `read`, `show`, `list`, `poll`, `wait`,
+  `read`, `show`, `list`, `poll`, `reap-idle`, `wait`,
   `close`, `free`, `kick`, `adopt <pane-id|title>` for orphan panes.
   `mu agent wait <names...> --first` blocks until an agent finishes
   (busy → any other state) — the task-less counterpart to `mu task
@@ -271,6 +271,12 @@ git cherry-pick "$sha" && npm test
   of the whole pool (`{name,status,idleMs,lastActivitySeq,
   workspaceBehind,dead}` per agent; `--json` => `{items,count}`) for a
   `/watch` loop or orchestrator tick to diff against the previous tick.
+  `mu agent reap-idle` is the one-line graveyard cleanup for the scratch
+  `fixer-N` pile-up: it sweeps and closes finished, idle, SAFE helpers
+  (status needs_input/needs_permission/free, idle `>= --idle-for`,
+  default 300s). It skips any dirty workspace by default (no lossy
+  surprise; `--discard-dirty` to override), supports `--dry-run`, and
+  `--json` returns `{items,count}` with per-agent `action`/skip `reason`.
 - **Tasks:** `add` (`--note` for initial context), `list`, `next`,
   `show`, `tree`, `notes`
   (`--tail`, `--since`, `--since-claim`), `note`, `claim`

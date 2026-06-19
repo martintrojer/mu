@@ -25,6 +25,7 @@ import {
   listLiveAgents,
   pollAgents,
   readAgent,
+  reapIdleAgents,
   refreshAgentTitle,
   resolveCliCommand,
   resolveCliCommandWithSource,
@@ -390,6 +391,52 @@ export async function cmdPoll(
         `idle=${idleSecs}s  seq=${a.lastActivitySeq}  behind=${behind}${flags}`,
     );
   }
+}
+
+interface ReapIdleOpts {
+  workstream?: string;
+  json?: boolean;
+  idleFor?: number;
+  dryRun?: boolean;
+  discardDirty?: boolean;
+}
+
+/**
+ * `mu agent reap-idle` — one-line graveyard cleanup of finished, idle,
+ * SAFE helpers. Sweeps the workstream and closes agents that are
+ * idle/needs_input/free for >= --idle-for, skipping any with a dirty
+ * workspace by default (no lossy surprise). The core use case is the
+ * scratch watcher `fixer-N` pile-up, but it works for any workstream.
+ */
+export async function cmdReapIdle(db: Db, opts: ReapIdleOpts): Promise<void> {
+  const workstream = await resolveWorkstream(opts.workstream);
+  const view = await reapIdleAgents(db, {
+    workstream,
+    ...(opts.idleFor !== undefined ? { idleForMs: opts.idleFor * 1000 } : {}),
+    ...(opts.dryRun === true ? { dryRun: true } : {}),
+    ...(opts.discardDirty === true ? { discardDirty: true } : {}),
+  });
+  if (opts.json) {
+    emitJson({ items: view.items, count: view.count });
+    return;
+  }
+  const verb = opts.dryRun ? "Would close" : "Closed";
+  console.log(pc.bold(`mu-${workstream}`));
+  const closed = view.items.filter((i) => i.action === "closed");
+  const skipped = view.items.filter((i) => i.action === "skipped");
+  if (closed.length === 0) {
+    console.log(pc.dim("  (no idle agents to reap)"));
+  }
+  for (const i of closed) {
+    const idleSecs = Math.round(i.idleMs / 1000);
+    console.log(
+      `  ${pc.green(verb)} ${pc.bold(i.name)}  ${pc.dim(`(${i.status}, idle=${idleSecs}s)`)}`,
+    );
+  }
+  for (const i of skipped) {
+    console.log(pc.dim(`  skipped ${i.name}: ${i.reason}`));
+  }
+  console.log(pc.dim(`  ${view.count} ${opts.dryRun ? "would be closed" : "closed"}`));
 }
 
 export async function cmdAgentShow(
@@ -987,6 +1034,28 @@ export function wireAgentCommands(program: Command): void {
         json?: boolean;
       };
       return handle((db) => cmdPoll(db, opts), this as Command)();
+    });
+
+  agent
+    .command("reap-idle")
+    .description(
+      "Sweep the workstream and close finished, idle, SAFE helpers in one line (the scratch `fixer-N` graveyard cleanup). Closes agents that are needs_input/needs_permission/free and idle for >= --idle-for; skips any with a dirty workspace by default (no lossy surprise). JSON returns {items,count} with per-agent action/skipped reason.",
+    )
+    .option(
+      "--idle-for <seconds>",
+      "minimum idle seconds before an agent is eligible (default: MU_IDLE_THRESHOLD_MS, 300)",
+      (v) => Number.parseInt(v, 10),
+    )
+    .option("--dry-run", "report what would be closed without killing any pane")
+    .option(
+      "--discard-dirty",
+      "also close agents with a dirty workspace, discarding it (LOSSY; off by default)",
+    )
+    .option(...WORKSTREAM_OPT)
+    .option(...JSON_OPT)
+    .action(function () {
+      const opts = (this as Command).opts() as ReapIdleOpts;
+      return handle((db) => cmdReapIdle(db, opts), this as Command)();
     });
 
   agent

@@ -82,6 +82,28 @@ called out under "Breaking" in each entry.
   `listLogs` / `decorateWithStaleness` / `listPanesInSession` seams; CLI
   verb `cmdPoll` in `src/cli/agents.ts`.
 
+- **`mu agent reap-idle` — one-line graveyard cleanup of idle helpers.**
+  The scratch watcher pattern (one `fixer-N` per unit) leaves a
+  graveyard of finished panes; this verb sweeps the workstream and
+  closes the finished, idle, SAFE ones in one shot instead of
+  `mu agent list | grep | xargs mu agent close`. An agent is a
+  candidate when its status is `needs_input` / `needs_permission` /
+  `free` (not `busy`/`spawning`) AND it has been idle `>= --idle-for`
+  seconds (default `MU_IDLE_THRESHOLD_MS`, 300). Each candidate is
+  closed via the existing `closeAgent` path, which auto-frees a clean
+  workspace and **refuses a dirty one** — so a helper with uncommitted
+  changes / commits since fork is *skipped* by default (no lossy
+  surprise); `--discard-dirty` overrides (lossy). `--dry-run` previews
+  without killing any pane. `--json` returns the `{items, count}`
+  collection shape where `count` is the number actually CLOSED and each
+  item carries `{name, action: "closed"|"skipped", status, idleMs,
+  reason?, workspaceFreed?}` so the output is a full audit of the sweep.
+  Works in any workstream, not just `scratch`. New SDK: `reapIdleAgents`
+  (with `ReapAgentResult` / `ReapView` / `ReapIdleAgentsOptions`) in
+  `src/agents.ts`, reusing `listAgents` + `getWorkspaceForAgent` +
+  `isWorkspaceClean` + `closeAgent`; CLI verb `cmdReapIdle` in
+  `src/cli/agents.ts`.
+
 - **`mu agent wait <names...>` — block until agents finish working.**
   The task-less counterpart to `mu task wait`: scratch / off-the-cuff
   helpers usually own no task in the DAG, so the only "done" signal is
