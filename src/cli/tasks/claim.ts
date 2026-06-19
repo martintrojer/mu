@@ -321,9 +321,12 @@ export async function cmdTaskWait(
   // only in output shape: --first emphasises WHICH ref fired so the
   // operator can pipe the qualified id into the next step).
   const wantAny = opts.any === true || opts.first === true;
-  // emphasise WHICH ref fired in stdout / --json (today's --any kept
-  // the per-task list as-is).
-  const wantFirstShape = opts.first === true || opts.any === true;
+  // emphasise WHICH ref fired in stdout / --json. ONLY --first opts
+  // into this richer shape; --any keeps the per-task summary as-is
+  // (matches the help text + the --first inline contract). Promoting
+  // --any to the --first shape would surprise scripts that pass --any
+  // and parse the ordinary summary.
+  const wantFirstShape = opts.first === true;
 
   // Resolve every ref — cross-workstream-aware. Each ref carries its
   // own workstream so the wait set can span multiple workstreams.

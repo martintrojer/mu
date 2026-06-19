@@ -60,11 +60,23 @@ describe("waitForTasks", () => {
     setTaskStatus(db, "a", "CLOSED", { workstream: "test" });
     setTaskStatus(db, "b", "CLOSED", { workstream: "test" });
     setTaskStatus(db, "c", "CLOSED", { workstream: "test" });
-    const startedAt = Date.now();
-    const r = await waitForTasks(db, ["a", "b", "c"], { pollMs: 50, workstream: "test" });
+    // Prove the immediate-exit path deterministically via the sleep
+    // seam instead of a tight wall-clock bound (which can flake under
+    // heavy parallel-suite load — GC/scheduler pauses can blow a
+    // 100ms upper bound even when the code short-circuits correctly).
+    let sleeps = 0;
+    const restoreSleep = setWaitSleepForTests(async () => {
+      sleeps += 1;
+    });
+    let r: Awaited<ReturnType<typeof waitForTasks>>;
+    try {
+      r = await waitForTasks(db, ["a", "b", "c"], { pollMs: 50, workstream: "test" });
+    } finally {
+      setWaitSleepForTests(restoreSleep);
+    }
     expect(r.timedOut).toBe(false);
     expect(r.refs.every((t) => t.reachedTarget)).toBe(true);
-    expect(Date.now() - startedAt).toBeLessThan(100); // didn't sleep through any poll cycle
+    expect(sleeps).toBe(0); // didn't sleep through any poll cycle
     expect(r.refs).toEqual([
       {
         workstreamName: "test",
