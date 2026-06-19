@@ -160,6 +160,7 @@ cache; `mu agent list` reconciles on every call.
 | `mu agent close alice`      | Terminates alice's pane and removes from registry. Destructive.             |
 | `mu agent kick alice`       | Signals (default SIGINT) the foreground process group of alice's pane TTY. For wedged tool subprocesses (`find /`, busy-wait); the wrapping CLI itself is untouched. Refuses when the foreground IS the wrapping CLI. |
 | `mu agent wait alice bob --first` | Blocks until an agent finishes (busy → any other state). The task-less counterpart to `mu task wait` for scratch/off-the-cuff helpers that own no task. `--any`/`--first` fire on the first; default all. Exit 0 met, 5 timeout, 6 a watched pane died. |
+| `mu agent poll`             | Non-blocking, read-only snapshot of every agent in the workstream (the dual of `mu agent wait`): per-agent `{name,status,idleMs,lastActivitySeq,workspaceBehind,dead}`. For a `/watch` loop or orchestrator tick to diff against the previous tick. Does NOT reconcile, capture scrollback, or fetch from a VCS remote. |
 | *(none)*              | There is no detach verb. Use tmux detach to leave a workstream attached session without killing panes. |
 
 **Don't conflate `free` and `release`.** Free is about the *agent*;

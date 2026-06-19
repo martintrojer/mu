@@ -22,6 +22,7 @@ import {
   isKickSignal,
   kickAgent,
   listLiveAgents,
+  pollAgents,
   readAgent,
   refreshAgentTitle,
   resolveCliCommand,
@@ -259,6 +260,39 @@ export async function cmdList(
         `  ${pc.dim(orphan.paneId)} title=${pc.bold(orphan.title)} cli=${orphan.command}`,
       );
     }
+  }
+}
+
+/**
+ * `mu agent poll` — a non-blocking, read-only snapshot of every agent in
+ * a workstream (the dual of `mu agent wait`). Where `wait` blocks until
+ * an agent finishes, `poll` returns the current pool state once so a
+ * `/watch` loop or orchestrator tick can diff it against the prior tick.
+ * Does NOT reconcile, capture scrollback, or fetch from any VCS remote.
+ */
+export async function cmdPoll(
+  db: Db,
+  opts: { workstream?: string; json?: boolean },
+): Promise<void> {
+  const workstream = await resolveWorkstream(opts.workstream);
+  const view = await pollAgents(db, { workstream });
+  if (opts.json) {
+    emitJson({ items: view.items, count: view.count });
+    return;
+  }
+  console.log(pc.bold(`mu-${workstream}`));
+  if (view.count === 0) {
+    console.log(pc.dim("  (no agents)"));
+    return;
+  }
+  for (const a of view.items) {
+    const idleSecs = Math.round(a.idleMs / 1000);
+    const behind = a.workspaceBehind === null ? "—" : `${a.workspaceBehind}`;
+    const flags = a.dead ? pc.red(" DEAD") : "";
+    console.log(
+      `  ${pc.bold(a.name)}  ${statusIcon(a.status)} ${a.status}  ` +
+        `idle=${idleSecs}s  seq=${a.lastActivitySeq}  behind=${behind}${flags}`,
+    );
   }
 }
 
@@ -798,6 +832,21 @@ export function wireAgentCommands(program: Command): void {
         json?: boolean;
       };
       return handle((db) => cmdList(db, opts), this as Command)();
+    });
+
+  agent
+    .command("poll")
+    .description(
+      "Non-blocking, read-only snapshot of all agents in the workstream (the dual of `mu agent wait`): per-agent status, idleMs, lastActivitySeq, workspaceBehind, and dead-pane flag. For a `/watch` loop or orchestrator tick to diff against the previous tick. Does NOT block.",
+    )
+    .option(...WORKSTREAM_OPT)
+    .option(...JSON_OPT)
+    .action(function () {
+      const opts = (this as Command).opts() as {
+        workstream?: string;
+        json?: boolean;
+      };
+      return handle((db) => cmdPoll(db, opts), this as Command)();
     });
 
   agent

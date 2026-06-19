@@ -254,12 +254,16 @@ git cherry-pick "$sha" && npm test
   `--archive <label>` preserves graph), `export` (read-only
   markdown bucket for humans/git/docs).
 - **Agents:** `spawn` (`--workspace`, `--role read-only`,
-  `--command`), `send`, `read`, `show`, `list`, `wait`, `close`,
-  `free`, `kick`, `adopt <pane-id|title>` for orphan panes.
+  `--command`), `send`, `read`, `show`, `list`, `poll`, `wait`,
+  `close`, `free`, `kick`, `adopt <pane-id|title>` for orphan panes.
   `mu agent wait <names...> --first` blocks until an agent finishes
   (busy → any other state) — the task-less counterpart to `mu task
   wait` for scratch/off-the-cuff helpers that own no task. Exit 0 met,
   5 timeout, 6 a watched pane died. Use this instead of `sleep` loops.
+  `mu agent poll` is its non-blocking dual: a single read-only snapshot
+  of the whole pool (`{name,status,idleMs,lastActivitySeq,
+  workspaceBehind,dead}` per agent; `--json` => `{items,count}`) for a
+  `/watch` loop or orchestrator tick to diff against the previous tick.
 - **Tasks:** `add` (`--note` for initial context), `list`, `next`,
   `show`, `tree`, `notes`
   (`--tail`, `--since`, `--since-claim`), `note`, `claim`

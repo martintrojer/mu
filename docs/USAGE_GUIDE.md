@@ -1337,6 +1337,7 @@ mu sql "SELECT name FROM sqlite_master WHERE type IN ('table','view') ORDER BY t
 | Read the activity log / subscribe to events           | `mu log [--tail] [--kind event]`        |
 | Block until tasks reach a status (orchestrator wait)  | `mu task wait <ref> [<ref>...] [--first|--any] [--timeout S]` |
 | Block until agents finish working (task-less wait)    | `mu agent wait <name> [<name>...] [--first|--any] [--timeout S]` |
+| Snapshot the whole agent pool once (non-blocking)     | `mu agent poll [-w <ws>] [--json]`      |
 
 ### `mu agent wait`: the task-less counterpart to `mu task wait`
 
@@ -1361,6 +1362,30 @@ ref; `--json` carries `nextSteps`; refs may be qualified
 `<workstream>/<name>`. Exit codes: `0` met, `5` timeout, `6` a watched
 agent's pane died. Status detection is pi-only (a non-pi pane always
 reads `needs_input`, so it never goes busy and the wait times out).
+
+### `mu agent poll`: the non-blocking dual of `mu agent wait`
+
+Where `mu agent wait` *blocks* until an agent transitions, `mu agent
+poll` captures the current pool state **exactly once and returns** — the
+shape a `/watch` loop or orchestrator tick wants: poll each tick, diff
+against the previous tick. It does NOT reconcile (no DB mutation), does
+NOT capture per-pane scrollback, and does NOT fetch from any VCS remote
+(`workspaceBehind` is as fresh as the workspace's local refs cache).
+
+```bash
+mu agent poll -w auth-refactor --json
+# => {"items":[{"name":"worker-1","status":"busy","idleMs":1200,
+#       "lastActivitySeq":42,"workspaceBehind":3,"dead":false}, ...],
+#     "count":2}
+```
+
+Per-agent fields: `name`, `status` (last-reconciled runtime status),
+`idleMs` (ms since the row's last update), `lastActivitySeq` (highest
+`agent_logs.seq` sourced by this agent — a monotonic progress cursor to
+diff tick-over-tick), `workspaceBehind` (commits behind main, or `null`
+when no workspace / uncomputable), and `dead` (true when the pane no
+longer exists in the tmux session). Plain output prints one line per
+agent; `--json` returns the `{items,count}` collection shape.
 
 ### `mu task wait`: cross-workstream refs + `--first` returns WHICH
 

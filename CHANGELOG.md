@@ -52,6 +52,21 @@ called out under "Breaking" in each entry.
 
 ### Added
 
+- **`mu agent poll` — non-blocking, read-only snapshot of all agents.**
+  The dual of `mu agent wait`: where `wait` blocks until a status
+  transition, `poll` captures the current pool state exactly once and
+  returns — the shape a `/watch` loop or orchestrator tick wants (poll
+  each tick, diff against the previous tick). Per-agent JSON fields:
+  `{name, status, idleMs, lastActivitySeq, workspaceBehind, dead}`;
+  `--json` returns the `{items, count}` collection shape. It does NOT
+  reconcile (no DB mutation), does NOT capture per-pane scrollback, and
+  does NOT fetch from any VCS remote (`workspaceBehind` is as fresh as
+  the workspace's local refs cache) — a single `list-panes` read detects
+  dead panes. New SDK: `pollAgents` (with `AgentPollSnapshot` /
+  `AgentPollView`) in `src/agents.ts`, reusing the `listAgents` /
+  `listLogs` / `decorateWithStaleness` / `listPanesInSession` seams; CLI
+  verb `cmdPoll` in `src/cli/agents.ts`.
+
 - **`mu agent wait <names...>` — block until agents finish working.**
   The task-less counterpart to `mu task wait`: scratch / off-the-cuff
   helpers usually own no task in the DAG, so the only "done" signal is

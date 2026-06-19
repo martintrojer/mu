@@ -15,7 +15,7 @@
 
 import { type Db, resolveWorkstreamId, tryResolveWorkstreamId } from "./db.js";
 import type { AgentStatus } from "./detect.js";
-import { emitEvent } from "./logs.js";
+import { emitEvent, listLogs } from "./logs.js";
 import { type ReconcileMode, type ReconcileReport, reconcile } from "./reconcile.js";
 import { captureSnapshot } from "./snapshots.js";
 import { addNote, listTasksByOwner } from "./tasks.js";
@@ -78,10 +78,17 @@ import {
   type TmuxPane,
   capturePane,
   killPane,
+  listPanesInSession,
   sendToPane,
   setPaneTitle,
 } from "./tmux.js";
-import { freeWorkspace, getWorkspaceForAgent, isWorkspaceClean } from "./workspace.js";
+import {
+  decorateWithStaleness,
+  freeWorkspace,
+  getWorkspaceForAgent,
+  isWorkspaceClean,
+  listWorkspaces,
+} from "./workspace.js";
 // (freeWorkspace is used by the spawn rollback paths below, not by closeAgent.
 // Closing an agent is intentionally a separate concern from freeing its workspace;
 // see the closeAgent docstring.)
@@ -806,4 +813,112 @@ export async function listLiveAgents(db: Db, opts: ListLiveAgentsOptions): Promi
     computeAgentIdle(db, a, now) ? { ...a, idle: true } : a,
   );
   return { agents, orphans: report.orphans, report };
+}
+
+/** One agent's snapshot in a `pollAgents` view. The non-blocking,
+ *  read-only dual of `waitForAgents`'s per-agent state: instead of
+ *  blocking until a status transition, it captures the current pool
+ *  state once so a `/watch` loop or orchestrator tick can diff it
+ *  against the previous tick. */
+export interface AgentPollSnapshot {
+  /** Agent name (per-workstream unique). */
+  name: string;
+  /** Persisted runtime status (as last reconciled). */
+  status: AgentStatus;
+  /** Milliseconds since the agent's row was last updated (its last
+   *  observed activity). Floored at 0. */
+  idleMs: number;
+  /** Highest `agent_logs.seq` whose source is this agent, or 0 when the
+   *  agent has emitted no activity. A monotonically-increasing cursor a
+   *  watcher can diff tick-over-tick to detect progress. */
+  lastActivitySeq: number;
+  /** How many commits the agent's workspace parent_ref is behind main,
+   *  or null when the agent has no workspace / it cannot be computed. */
+  workspaceBehind: number | null;
+  /** True when the agent's pane no longer exists in the tmux session
+   *  (a dead/ghost pane the next reconcile would prune). */
+  dead: boolean;
+}
+
+/** The whole-pool result of `pollAgents`. Mirrors the `{items,count}`
+ *  collection-read JSON shape every `--json` collection verb uses. */
+export interface AgentPollView {
+  items: AgentPollSnapshot[];
+  count: number;
+}
+
+export interface PollAgentsOptions {
+  workstream: string;
+  /** Override the tmux session name (defaults to `mu-<workstream>`). */
+  tmuxSession?: string;
+}
+
+/**
+ * Non-blocking, read-only snapshot of every agent in a workstream — the
+ * dual of `waitForAgents` (`mu agent wait`). Where `wait` blocks until a
+ * status transition fires, `poll` captures the current pool state exactly
+ * once and returns. A `/watch` loop or orchestrator tick calls this each
+ * tick and diffs against the prior result.
+ *
+ * MUST NOT block: it issues a single `list-panes` (to detect dead panes),
+ * reads the persisted agent rows, the activity log, and the workspace
+ * staleness cache. It does NOT reconcile (no DB mutation), does NOT
+ * capture per-pane scrollback, and does NOT fetch from any VCS remote —
+ * `workspaceBehind` is as fresh as the workspace's local refs cache.
+ */
+export async function pollAgents(db: Db, opts: PollAgentsOptions): Promise<AgentPollView> {
+  const agents = listAgents(db, { workstream: opts.workstream });
+  if (agents.length === 0) return { items: [], count: 0 };
+
+  // Single non-blocking tmux read to find which panes are still alive.
+  // listPanesInSession returns [] for a missing session, so a torn-down
+  // workstream simply reports every agent dead.
+  const sessionName = opts.tmuxSession ?? `mu-${opts.workstream}`;
+  let livePaneIds: Set<string>;
+  try {
+    const panes = await listPanesInSession(sessionName);
+    livePaneIds = new Set(panes.map((p) => p.paneId));
+  } catch {
+    // Treat a tmux failure as "can't confirm liveness" rather than
+    // throwing — poll is a read-only observation, never a hard error.
+    livePaneIds = new Set();
+  }
+
+  // Last-activity cursor: highest agent_logs.seq sourced by each agent.
+  // One scoped read of the workstream's log, bucketed by source.
+  const lastSeqByAgent = new Map<string, number>();
+  for (const row of listLogs(db, { workstream: opts.workstream })) {
+    const prev = lastSeqByAgent.get(row.source) ?? 0;
+    if (row.seq > prev) lastSeqByAgent.set(row.source, row.seq);
+  }
+
+  // Workspace staleness: decorate only the workspaces in this workstream,
+  // keyed by agent name. decorateWithStaleness reads local refs only — no
+  // network fetch — so this stays non-blocking.
+  const wsRows = listWorkspaces(db, opts.workstream);
+  const behindByAgent = new Map<string, number | null>();
+  if (wsRows.length > 0) {
+    for (const decorated of await decorateWithStaleness(wsRows)) {
+      behindByAgent.set(decorated.agentName, decorated.commitsBehindMain ?? null);
+    }
+  }
+
+  const now = Date.now();
+  const items: AgentPollSnapshot[] = agents.map((a) => {
+    const updated = Date.parse(a.updatedAt);
+    const idleMs = Number.isFinite(updated) ? Math.max(0, now - updated) : 0;
+    // A mid-spawn placeholder pane id is not dead — it just hasn't landed
+    // a real pane yet; treat it as alive so a freshly-spawning agent
+    // isn't surfaced as a ghost.
+    const dead = !isPendingPaneId(a.paneId) && !livePaneIds.has(a.paneId);
+    return {
+      name: a.name,
+      status: a.status,
+      idleMs,
+      lastActivitySeq: lastSeqByAgent.get(a.name) ?? 0,
+      workspaceBehind: behindByAgent.get(a.name) ?? null,
+      dead,
+    };
+  });
+  return { items, count: items.length };
 }
