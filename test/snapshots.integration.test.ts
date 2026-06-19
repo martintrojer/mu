@@ -810,6 +810,39 @@ describe("pruneSnapshots — bulk policy-driven cleanup", () => {
     expect(r.victims.length).toBe(5);
   });
 
+  it("mode='gc' and gcSnapshots() select the identical victim id set (shared predicate)", async () => {
+    // Guards finding_gc_victim_selection_duplicated: capture.ts's
+    // gcSnapshots and prune.ts's computeGcVictims both delegate to the
+    // single computeGcVictimRows helper in core.ts, so a dry-run prune
+    // must name exactly the rows gcSnapshots would reap on the same DB.
+    const m = await import("../src/snapshots.js");
+    seedAuth();
+    const fresh = new Date().toISOString();
+    const old = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const stmt = db.prepare(
+      "INSERT INTO snapshots (workstream, label, db_path, schema_version, created_at) VALUES (?, ?, ?, ?, ?)",
+    );
+    for (let i = 0; i < 105; i++) {
+      stmt.run("auth", `fresh-${i}`, `/x/f${i}.db`, CURRENT_SCHEMA_VERSION, fresh);
+    }
+    for (let i = 0; i < 3; i++) {
+      stmt.run("auth", `old-${i}`, `/x/o${i}.db`, CURRENT_SCHEMA_VERSION, old);
+    }
+    // Dry-run prune names the victims without mutating; gcSnapshots
+    // then reaps the same DB. The id sets must match exactly.
+    const dry = m.pruneSnapshots(db, { mode: "gc", dryRun: true });
+    const pruneIds = dry.victims.map((v) => v.id).sort((a, b) => a - b);
+    const survivorsBefore = listSnapshots(db).length;
+    const gc = gcSnapshots(db);
+    const survivorIds = listSnapshots(db).map((r) => r.id);
+    const gcVictimIds = pruneIds; // gcSnapshots deletes; compare via survivors
+    expect(gc.deletedRows).toBe(pruneIds.length);
+    expect(survivorsBefore - listSnapshots(db).length).toBe(pruneIds.length);
+    for (const id of gcVictimIds) {
+      expect(survivorIds).not.toContain(id);
+    }
+  });
+
   it("mode='keep-last' keeps only the N newest", async () => {
     const m = await import("../src/snapshots.js");
     seedAuth();

@@ -9,8 +9,7 @@ import {
   type RawSnapshotRow,
   SnapshotNotFoundError,
   type SnapshotRow,
-  gcMaxAgeDays,
-  gcMaxCount,
+  computeGcVictimRows,
   isStaleVersion,
   rowFromDb,
   snapshotFileSize,
@@ -137,20 +136,7 @@ export function pruneSnapshots(db: Db, opts: PruneOptions): PruneResult {
 }
 
 function computeGcVictims(db: Db): SnapshotRow[] {
-  const keepLast = gcMaxCount();
-  const cutoffDate = new Date(Date.now() - gcMaxAgeDays() * 24 * 60 * 60 * 1000).toISOString();
-  const protectedIds = (
-    db.prepare(`SELECT id FROM snapshots ORDER BY id DESC LIMIT ${keepLast}`).all() as Array<{
-      id: number;
-    }>
-  ).map((r) => r.id);
-  const placeholders = protectedIds.length > 0 ? protectedIds.map(() => "?").join(",") : "NULL";
-  const rows = db
-    .prepare(
-      `SELECT * FROM snapshots WHERE id NOT IN (${placeholders}) OR created_at < ? ORDER BY id DESC`,
-    )
-    .all(...protectedIds, cutoffDate) as RawSnapshotRow[];
-  return rows.map(rowFromDb);
+  return computeGcVictimRows(db).map(rowFromDb);
 }
 
 function computeKeepLastVictims(db: Db, n: number): SnapshotRow[] {

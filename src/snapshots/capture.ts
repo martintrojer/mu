@@ -8,8 +8,7 @@ import {
   type ListSnapshotsOptions,
   type RawSnapshotRow,
   type SnapshotRow,
-  gcMaxAgeDays,
-  gcMaxCount,
+  computeGcVictimRows,
   rowFromDb,
   snapshotsDir,
 } from "./core.js";
@@ -73,19 +72,7 @@ export function listSnapshots(db: Db, opts: ListSnapshotsOptions = {}): Snapshot
 }
 
 export function gcSnapshots(db: Db): { deletedRows: number; deletedFiles: number } {
-  const keepLast = gcMaxCount();
-  const cutoffDate = new Date(Date.now() - gcMaxAgeDays() * 24 * 60 * 60 * 1000).toISOString();
-  const protectedIds = (
-    db.prepare(`SELECT id FROM snapshots ORDER BY id DESC LIMIT ${keepLast}`).all() as Array<{
-      id: number;
-    }>
-  ).map((r) => r.id);
-  const placeholders = protectedIds.length > 0 ? protectedIds.map(() => "?").join(",") : "NULL";
-  const victims = db
-    .prepare(
-      `SELECT id, db_path FROM snapshots WHERE id NOT IN (${placeholders}) OR created_at < ?`,
-    )
-    .all(...protectedIds, cutoffDate) as Array<{ id: number; db_path: string }>;
+  const victims = computeGcVictimRows(db);
 
   if (victims.length === 0) return { deletedRows: 0, deletedFiles: 0 };
 

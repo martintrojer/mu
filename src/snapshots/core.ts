@@ -166,6 +166,27 @@ export function snapshotsDir(db?: Db): string {
   return join(defaultStateDir(), "snapshots");
 }
 
+/** Shared GC victim selection: snapshots that are neither in the keep-last
+ *  protected window (newest N by id) nor younger than the age cap. Both the
+ *  opportunistic auto-GC in captureSnapshot (gcSnapshots) and the manual
+ *  `mu snapshot prune --mode gc` verb (computeGcVictims) call this so the
+ *  predicate lives in exactly one place and can't silently diverge. */
+export function computeGcVictimRows(db: Db): RawSnapshotRow[] {
+  const keepLast = gcMaxCount();
+  const cutoffDate = new Date(Date.now() - gcMaxAgeDays() * 24 * 60 * 60 * 1000).toISOString();
+  const protectedIds = (
+    db.prepare(`SELECT id FROM snapshots ORDER BY id DESC LIMIT ${keepLast}`).all() as Array<{
+      id: number;
+    }>
+  ).map((r) => r.id);
+  const placeholders = protectedIds.length > 0 ? protectedIds.map(() => "?").join(",") : "NULL";
+  return db
+    .prepare(
+      `SELECT * FROM snapshots WHERE id NOT IN (${placeholders}) OR created_at < ? ORDER BY id DESC`,
+    )
+    .all(...protectedIds, cutoffDate) as RawSnapshotRow[];
+}
+
 export function isStaleVersion(row: { schemaVersion: number }): boolean {
   return row.schemaVersion !== CURRENT_SCHEMA_VERSION;
 }
