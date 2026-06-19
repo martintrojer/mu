@@ -15,6 +15,7 @@ import {
   deleteAgent,
   getAgent,
   insertAgent,
+  isPendingPaneId,
   isValidAgentName,
   pendingPaneIdFor,
   refreshAgentTitle,
@@ -286,10 +287,23 @@ export function isAgentBusyForEnsure(status: AgentRow["status"]): boolean {
  * options; existing idle agent → return it unchanged; existing busy agent
  * → return it unchanged unless idleOnly=true, in which case throw a typed
  * conflict that scripts can use as a concurrency lock.
+ *
+ * A registered agent whose tmux pane has died (a ghost row left behind by
+ * a crashed pane that no reconcile has pruned yet) is treated as missing:
+ * `ensure` prunes the stale row and respawns. Without this, a watcher loop
+ * relying on `ensure` then `mu agent send`s into a dead pane forever (the
+ * agent is functionally missing but `ensure` reports `reused:true`).
+ * A mid-spawn placeholder pane id is NOT dead — it just hasn't landed a
+ * real pane yet — so it is left to the reuse path (mirrors pollAgents).
  */
 export async function ensureAgent(db: Db, opts: EnsureAgentOptions): Promise<EnsureAgentResult> {
   const existing = getAgent(db, opts.name, opts.workstream);
-  if (existing === undefined) {
+  const ghost =
+    existing !== undefined &&
+    !isPendingPaneId(existing.paneId) &&
+    !(await paneExists(existing.paneId));
+  if (existing === undefined || ghost) {
+    if (ghost) deleteAgent(db, opts.name, opts.workstream);
     const agent = await spawnAgent(db, opts);
     return {
       agent,

@@ -74,33 +74,37 @@ interface SpawnOpts {
   workspaceProjectRoot?: string;
   json?: boolean;
 }
+// Preflight: when --workspace is set, resolve+announce the backend
+// and projectRoot BEFORE the long-running git-worktree-add /
+// jj-workspace-add / cp -a, so the operator can ctrl-c if the
+// detected backend is wrong (e.g. cp -a falling through to a
+// 60GB project tree because --workspace-project-root pointed at a
+// non-VCS dir; surfaced by bug_agent_spawn_workspace_aborts_without_status).
+// Skipped on --json so machine consumers get a single structured
+// output, not preflight chatter. Shared by cmdSpawn + cmdEnsure (sibling
+// entry points for the same workspace-creation path) so the warning,
+// backend detection, and JSON suppression never drift between them.
+async function maybePrintWorkspacePreflight(opts: SpawnOpts): Promise<void> {
+  if (!opts.workspace || opts.json) return;
+  const projectRoot = opts.workspaceProjectRoot ?? process.cwd();
+  const backend: VcsBackendName = opts.workspaceBackend ?? (await detectBackend(projectRoot)).name;
+  const warn =
+    backend === "none"
+      ? pc.yellow(
+          " — WARNING: 'none' backend will cp -a the entire projectRoot. Verify --workspace-project-root.",
+        )
+      : "";
+  console.log(
+    pc.dim(
+      `[mu] workspace preflight: backend=${pc.bold(backend)} projectRoot=${pc.bold(projectRoot)}${warn}`,
+    ),
+  );
+}
+
 export async function cmdSpawn(db: Db, name: string, opts: SpawnOpts): Promise<void> {
   const workstream = await resolveWorkstream(opts.workstream);
 
-  // Preflight: when --workspace is set, resolve+announce the backend
-  // and projectRoot BEFORE the long-running git-worktree-add /
-  // jj-workspace-add / cp -a, so the operator can ctrl-c if the
-  // detected backend is wrong (e.g. cp -a falling through to a
-  // 60GB project tree because --workspace-project-root pointed at a
-  // non-VCS dir; surfaced by bug_agent_spawn_workspace_aborts_without_status).
-  // Skipped on --json so machine consumers get a single structured
-  // output, not preflight chatter.
-  if (opts.workspace && !opts.json) {
-    const projectRoot = opts.workspaceProjectRoot ?? process.cwd();
-    const backend: VcsBackendName =
-      opts.workspaceBackend ?? (await detectBackend(projectRoot)).name;
-    const warn =
-      backend === "none"
-        ? pc.yellow(
-            " — WARNING: 'none' backend will cp -a the entire projectRoot. Verify --workspace-project-root.",
-          )
-        : "";
-    console.log(
-      pc.dim(
-        `[mu] workspace preflight: backend=${pc.bold(backend)} projectRoot=${pc.bold(projectRoot)}${warn}`,
-      ),
-    );
-  }
+  await maybePrintWorkspacePreflight(opts);
 
   const agent = await spawnAgent(db, {
     name,
@@ -185,22 +189,7 @@ interface EnsureOpts extends SpawnOpts {
 export async function cmdEnsure(db: Db, name: string, opts: EnsureOpts): Promise<void> {
   const workstream = await resolveWorkstream(opts.workstream);
 
-  if (opts.workspace && !opts.json) {
-    const projectRoot = opts.workspaceProjectRoot ?? process.cwd();
-    const backend: VcsBackendName =
-      opts.workspaceBackend ?? (await detectBackend(projectRoot)).name;
-    const warn =
-      backend === "none"
-        ? pc.yellow(
-            " — WARNING: 'none' backend will cp -a the entire projectRoot. Verify --workspace-project-root.",
-          )
-        : "";
-    console.log(
-      pc.dim(
-        `[mu] workspace preflight: backend=${pc.bold(backend)} projectRoot=${pc.bold(projectRoot)}${warn}`,
-      ),
-    );
-  }
+  await maybePrintWorkspacePreflight(opts);
 
   const result = await ensureAgent(db, {
     name,

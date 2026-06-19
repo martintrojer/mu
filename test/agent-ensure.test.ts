@@ -90,6 +90,24 @@ describe("ensureAgent", () => {
     expect(mock.panes.size).toBe(paneCount);
   });
 
+  it("respawns when the existing agent's pane has died (ghost row)", async () => {
+    const spawned = await spawnAgent(db, { name: "watcher-1", workstream: ws, cli: "sh" });
+    updateAgentStatus(db, "watcher-1", "needs_input", ws);
+    // Simulate a crashed pane: drop it from the mock tmux session while the
+    // DB row lingers (no reconcile has pruned the ghost yet).
+    mock.panes.delete(spawned.paneId);
+
+    const result = await ensureAgent(db, { name: "watcher-1", workstream: ws, cli: "sh" });
+
+    expect(result.created).toBe(true);
+    expect(result.reused).toBe(false);
+    expect(result.changed).toBe(true);
+    expect(result.existed).toBe(false);
+    // A fresh pane replaced the dead one.
+    expect(result.agent.paneId).not.toBe(spawned.paneId);
+    expect(getAgent(db, "watcher-1", ws)?.paneId).toBe(result.agent.paneId);
+  });
+
   it("throws AgentBusyError for an existing busy agent with idleOnly", async () => {
     await spawnAgent(db, { name: "fixer-1", workstream: ws, cli: "sh" });
     updateAgentStatus(db, "fixer-1", "busy", ws);
