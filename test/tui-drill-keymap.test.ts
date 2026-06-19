@@ -17,13 +17,13 @@ function loadPopup(name: string): string {
 const DRILL_POPUP_CASES: ReadonlyArray<{ name: string; src: string }> = [
   { name: "agents.tsx", src: loadPopup("agents.tsx") },
   { name: "all-tasks.tsx", src: loadPopup("all-tasks.tsx") },
-  { name: "blocked.tsx", src: loadPopup("blocked.tsx") },
   { name: "commits.tsx", src: loadPopup("commits.tsx") },
   { name: "doctor.tsx", src: loadPopup("doctor.tsx") },
-  { name: "inprogress.tsx", src: loadPopup("inprogress.tsx") },
   { name: "log.tsx", src: loadPopup("log.tsx") },
-  { name: "ready.tsx", src: loadPopup("ready.tsx") },
-  { name: "recent.tsx", src: loadPopup("recent.tsx") },
+  // ready/inprogress/recent/blocked delegate to the shared
+  // TaskListPopup scaffold (finding_4_task_list_popups_duplicate);
+  // the drill-keymap wiring lives there now.
+  { name: "task-list-popup.tsx", src: loadPopup("task-list-popup.tsx") },
 ];
 
 const SPECIAL_DRILL_POPUP_CASES: ReadonlyArray<{ name: string; src: string }> = [

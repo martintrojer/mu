@@ -285,6 +285,7 @@ src/cli/tui/
     ├── {agents,tracks,ready,log,workspaces,inprogress,blocked,recent,commits,doctor}.tsx
     ├── dag.tsx                 # keybind-only on `g`: full task DAG forest
     ├── all-tasks.tsx           # keybind-only on `t`: sortable / filterable list of every task
+    ├── task-list-popup.tsx     # shared TaskListPopup scaffold (ready/inprogress/recent/blocked config-only)
     ├── drill.tsx               # DrillScrollView + useDrillKeymap (shared scrollable-text leaf)
     ├── task-detail.tsx         # TaskDetailDrill (notes timeline; the recursion sink)
     ├── cursor-row.tsx          # selected-row primitive (delegated to from list-row)

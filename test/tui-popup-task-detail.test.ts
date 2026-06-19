@@ -107,9 +107,11 @@ describe("TaskDetailDrill source contract (no anticipatory abstraction)", () => 
     expect(src).toContain("listNotes");
   });
 
-  it("ready.tsx imports TaskDetailDrill (Tasks popup is consumer #1)", async () => {
+  it("task-list-popup.tsx imports TaskDetailDrill (the shared task-list scaffold is consumer #1)", async () => {
     const { readFileSync } = await import("node:fs");
-    const src = readFileSync("./src/cli/tui/popups/ready.tsx", "utf-8");
+    // ready/inprogress/recent/blocked all route their notes drill
+    // through the shared scaffold (finding_4_task_list_popups_duplicate).
+    const src = readFileSync("./src/cli/tui/popups/task-list-popup.tsx", "utf-8");
     expect(src).toContain("TaskDetailDrill");
   });
 

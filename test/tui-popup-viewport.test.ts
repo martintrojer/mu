@@ -25,13 +25,12 @@ const POPUPS_DIR = join(import.meta.dirname, "..", "src", "cli", "tui", "popups"
 
 const POPUP_FILES = [
   "agents.tsx",
-  "blocked.tsx",
   "commits.tsx",
   "doctor.tsx",
-  "inprogress.tsx",
   "log.tsx",
-  "ready.tsx",
-  "recent.tsx",
+  // ready/inprogress/recent/blocked delegate to the shared scaffold
+  // (finding_4_task_list_popups_duplicate); usePopupViewport lives there.
+  "task-list-popup.tsx",
   "tracks.tsx",
   "workspaces.tsx",
 ] as const;

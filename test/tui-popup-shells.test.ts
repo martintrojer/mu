@@ -38,27 +38,24 @@ function loadTui(name: string): string {
 
 const AGENTS = loadPopup("agents.tsx");
 const LOG = loadPopup("log.tsx");
-const READY = loadPopup("ready.tsx");
 const TRACKS = loadPopup("tracks.tsx");
 const WORKSPACES = loadPopup("workspaces.tsx");
-const INPROGRESS = loadPopup("inprogress.tsx");
-const BLOCKED = loadPopup("blocked.tsx");
 const COMMITS = loadPopup("commits.tsx");
-const RECENT = loadPopup("recent.tsx");
 const DOCTOR = loadPopup("doctor.tsx");
+// ready/inprogress/recent/blocked delegate to the shared TaskListPopup
+// scaffold (finding_4_task_list_popups_duplicate); the PopupShell +
+// flexGrow body live there now.
+const TASK_LIST_POPUP = loadPopup("task-list-popup.tsx");
 const POPUP_SHELL = loadTui("popup-shell.tsx");
 
 const POPUP_CASES: ReadonlyArray<{ name: string; src: string }> = [
   { name: "agents.tsx", src: AGENTS },
   { name: "log.tsx", src: LOG },
-  { name: "ready.tsx", src: READY },
   { name: "tracks.tsx", src: TRACKS },
   { name: "workspaces.tsx", src: WORKSPACES },
-  { name: "inprogress.tsx", src: INPROGRESS },
-  { name: "blocked.tsx", src: BLOCKED },
   { name: "commits.tsx", src: COMMITS },
-  { name: "recent.tsx", src: RECENT },
   { name: "doctor.tsx", src: DOCTOR },
+  { name: "task-list-popup.tsx", src: TASK_LIST_POPUP },
 ];
 
 describe("shared PopupShell fills the pane (anti-narrow-strip)", () => {

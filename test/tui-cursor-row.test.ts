@@ -25,17 +25,17 @@ import { CursorRow } from "../src/cli/tui/popups/cursor-row.js";
 
 const POPUPS_DIR = join(import.meta.dirname, "..", "src", "cli", "tui", "popups");
 
-// The 8 list popups that have a focused/cursor row. recent.tsx and
-// task-detail.tsx don't have one; drill.tsx, viewport.ts,
-// cursor-row.tsx are infrastructure.
+// The list popups that have a focused/cursor row. ready/inprogress/
+// recent/blocked delegate to the shared TaskListPopup scaffold
+// (finding_4_task_list_popups_duplicate) so the row-render path lives
+// in task-list-popup.tsx now. task-detail.tsx has no cursor row;
+// drill.tsx, viewport.ts, cursor-row.tsx are infrastructure.
 const LIST_POPUPS = [
   "agents.tsx",
-  "blocked.tsx",
   "commits.tsx",
   "doctor.tsx",
-  "inprogress.tsx",
   "log.tsx",
-  "ready.tsx",
+  "task-list-popup.tsx",
   "tracks.tsx",
   "workspaces.tsx",
 ];

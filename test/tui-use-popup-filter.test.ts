@@ -385,17 +385,10 @@ describe("usePopupFilter onEditingChange wiring (structural)", () => {
     // filter instances each pass `enabled` so the hook itself does
     // the right thing. (Each call site uses the multi-line form
     // because the option object includes `enabled: ...`.)
-    const popups = [
-      "agents",
-      "blocked",
-      "commits",
-      "doctor",
-      "inprogress",
-      "log",
-      "ready",
-      "recent",
-      "tracks",
-    ];
+    // ready/inprogress/recent/blocked delegate to the shared
+    // TaskListPopup scaffold (finding_4_task_list_popups_duplicate);
+    // the onEditingChange wiring lives in task-list-popup.tsx now.
+    const popups = ["agents", "commits", "doctor", "log", "task-list-popup", "tracks"];
     for (const name of popups) {
       const src = readFileSync(`./src/cli/tui/popups/${name}.tsx`, "utf-8");
       // Must use the option form (one of usePopupFilter's two valid
