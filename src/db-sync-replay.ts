@@ -3,6 +3,7 @@
 import { createHash } from "node:crypto";
 import { type Db, openDb } from "./db.js";
 import type { HasNextSteps, NextStep } from "./output.js";
+import { shellQuote } from "./shell-quote.js";
 import { captureSnapshot } from "./snapshots.js";
 
 export class DbReplayWorkstreamMissingError extends Error implements HasNextSteps {
@@ -370,8 +371,4 @@ function hasTask(db: Db, wsId: number, localId: string): boolean {
       .prepare("SELECT 1 FROM tasks WHERE workstream_id = ? AND local_id = ?")
       .get(wsId, localId) as { "1": number } | undefined) !== undefined
   );
-}
-
-function shellQuote(s: string): string {
-  return `'${s.replace(/'/g, `'"'"'`)}'`;
 }

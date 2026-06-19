@@ -8,10 +8,11 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { CURRENT_SCHEMA_VERSION, type Db, defaultStateDir, openDb } from "./db.js";
+import { readMuVersion } from "./exporting.js";
 import { emitEvent, latestSeq } from "./logs.js";
 import type { HasNextSteps, NextStep } from "./output.js";
+import { shellQuote } from "./shell-quote.js";
 import { captureSnapshot } from "./snapshots.js";
 
 export interface DbExportManifestWorkstream {
@@ -751,7 +752,7 @@ function buildExportManifest(db: Db): DbExportManifest {
   const workstreams = listLocalWorkstreams(db);
 
   return {
-    muVersion: readPackageVersion(),
+    muVersion: readMuVersion(),
     schemaVersion: schemaRow?.version ?? CURRENT_SCHEMA_VERSION,
     machineId: identity?.machine_id ?? "",
     hostname: identity?.hostname ?? hostname(),
@@ -837,21 +838,6 @@ function count(db: Db, sql: string, ...params: unknown[]): number {
 
 function quoteSqlString(s: string): string {
   return `'${s.replace(/'/g, "''")}'`;
-}
-
-function readPackageVersion(): string {
-  try {
-    const here = dirname(fileURLToPath(import.meta.url));
-    const raw = readFileSync(join(here, "..", "package.json"), "utf8");
-    const parsed = JSON.parse(raw) as { version?: unknown };
-    return typeof parsed.version === "string" ? parsed.version : "unknown";
-  } catch {
-    return "unknown";
-  }
-}
-
-function shellQuote(s: string): string {
-  return `'${s.replace(/'/g, `'"'"'`)}'`;
 }
 
 export {
