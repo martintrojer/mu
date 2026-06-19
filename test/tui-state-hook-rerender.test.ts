@@ -378,6 +378,24 @@ async function waitFor(predicate: () => boolean, timeoutMs = 1000): Promise<void
   throw new Error(`waitFor: predicate did not become true within ${timeoutMs}ms`);
 }
 
+// Inverse of waitFor: poll a stability invariant for the whole
+// window, failing the instant it is ever violated. Used for
+// fail-fast negative assertions ("X must NEVER happen for the next
+// N ms") without burning a fixed sleep — and capped at the
+// fast-tier 50ms sleep budget by callers.
+async function assertStable(invariant: () => boolean, windowMs: number): Promise<void> {
+  const deadline = Date.now() + windowMs;
+  while (Date.now() < deadline) {
+    if (!invariant()) {
+      throw new Error("assertStable: invariant was violated within the window");
+    }
+    await new Promise((r) => setTimeout(r, 5));
+  }
+  if (!invariant()) {
+    throw new Error("assertStable: invariant was violated at the end of the window");
+  }
+}
+
 describe("useDashboardSnapshot — Layer B preserves data reference across no-op ticks", () => {
   // Behavioural form of the old static "Layer B — lastTickMs
   // decoupled from data state" describe. The cure for the flicker
@@ -622,9 +640,21 @@ describe("useDashboardSnapshot — successive refreshNonce bumps each fire a tic
     // wires that fire on every render would send loader storms.)
     const beforeRepeat = fastCalls.count;
     instance.rerender(createElement(HookHarness, { ...props, refreshNonce: 2 }));
-    // Give any synchronous effect a chance to land.
-    await new Promise((r) => setTimeout(r, 100));
-    expect(fastCalls.count).toBe(beforeRepeat);
+    // Bounded fail-fast guard: poll for up to 50ms (the fast-tier
+    // sleep cap) asserting the repeat render NEVER schedules an
+    // extra load. A stray fetch trips the assertion the instant it
+    // lands rather than after a fixed wall-clock sleep.
+    await assertStable(() => fastCalls.count === beforeRepeat, 50);
+
+    // Positive ordering half: a genuine nonce bump AFTER the no-op
+    // repeat must still fire. This turns the negative ("no load on
+    // repeat") into a fail-fast ordering assertion — if the dep
+    // guard were broken the repeat would have already incremented
+    // the count above, and if the wiring were dead this bump would
+    // hang. The repeat contributed exactly zero loads in between.
+    instance.rerender(createElement(HookHarness, { ...props, refreshNonce: 3 }));
+    await waitFor(() => fastCalls.count > beforeRepeat, 250);
+    expect(fastCalls.count).toBe(beforeRepeat + 1);
 
     instance.unmount();
   });
