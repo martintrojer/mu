@@ -71,6 +71,16 @@ mu agent close helper-1 -w scratch     # done
 - **Background watcher:** send the task, then `mu agent wait <name>
   --first` to block until it finishes (busy → idle) instead of a
   `sleep` loop; re-nudge with another `send` (e.g. `'run again'`).
+- **Watcher dedupe/memory (log ledger):** a watcher that reacts to
+  changing external state must remember what it last saw so it
+  doesn't act twice. Don't keep it in chat context (dies on
+  compaction / `/loop` death). Use a custom `--kind` tag as a durable
+  ledger in SQLite: each tick records last-seen state with `mu log
+  -w scratch --kind pr-state 'pr=1234 sha=abc ci=red -> spawned
+  fixer-1'`, and the next tick reconstructs it with `mu log -w
+  scratch --kind pr-state -n 1 --json` (latest wins; `--since <seq>`
+  replays missed history). Pick a stable `--kind` per ledger; act
+  only when the new observation differs from the last entry.
 - **Fan-out, one per unit:** loop `mu agent spawn dep-$pkg -w scratch
   --workspace`, then `mu agent wait dep-core dep-cli dep-web` (all) or
   `--any` to react to whichever finishes first. Add `--workspace`

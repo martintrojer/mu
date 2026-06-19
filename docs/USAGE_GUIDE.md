@@ -388,6 +388,47 @@ single driveable, observable helper. And reach for
 [`pi-subagents`](https://github.com/nicobailon/pi-subagents) when you
 only need a one-shot result back rather than a channel you keep open.
 
+### The log ledger: durable watcher dedupe + memory
+
+A watcher loop (`/loop`, `/watch`, or a plain re-prompted helper)
+that reacts to changing external state — a PR's CI status, a queue
+depth, a file's mtime — needs to remember *what it last saw* so it
+doesn't act twice on the same event. Don't keep that in the agent's
+chat context: it evaporates on compaction and dies with the loop.
+
+Use a custom `--kind` tag on the activity log as an append-only
+**ledger**. Each tick records last-seen state; the next tick
+reconstructs it from SQLite:
+
+```bash
+# Watcher tick: record what you saw and what you did about it.
+mu log -w scratch --kind pr-state 'pr=1234 sha=abc ci=red -> spawned fixer-1'
+
+# Next tick: reconstruct the last-seen state (latest entry of that kind).
+mu log -w scratch --kind pr-state -n 1 --json
+# {"items":[{"seq":8695,...,"kind":"pr-state",
+#            "payload":"pr=1234 sha=abc ci=red -> spawned fixer-1"}],"count":1}
+```
+
+The dedupe rule is then trivial: read the latest `pr-state`, compare
+its `sha`/`ci` to what you just observed, and only act when they
+differ. Because the ledger lives in `agent_logs` (SQLite), it
+survives `/loop` or `/watch` death and context compaction — a
+fresh watcher invocation reads the same history.
+
+- **Pick a stable `--kind`** per ledger (`pr-state`, `queue-depth`,
+  `deploy-watch`). `mu log --kind <tag>` filters reads to that tag,
+  so multiple ledgers coexist in one workstream without colliding.
+- **One line per tick, latest wins.** `-n 1` gives the most recent;
+  pass `--since <seq>` to replay the full history a watcher missed
+  while it was dead.
+- **Free-form payload.** The text is yours; `key=value -> action`
+  reads well and greps cleanly, but mu doesn't parse it.
+
+This is a *convention*, not a feature — `mu log` already has
+`--kind`, `--since`, and `--json`. See the **log ledger** entry in
+[VOCABULARY.md](VOCABULARY.md).
+
 ---
 
 ## 4. Plan some work as a DAG
