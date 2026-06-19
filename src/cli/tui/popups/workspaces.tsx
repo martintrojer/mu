@@ -66,7 +66,7 @@ import { useTerminalSize } from "../use-terminal-size.js";
 import { DrillScrollView, useDrillKeymap } from "./drill.js";
 import { applyCursor, centredVisibleSlice, isNavAction } from "./scroll.js";
 import { loadShowPreservingBody } from "./show-loader.js";
-import { usePopupViewport } from "./viewport.js";
+import { POPUP_CHROME_ROWS, usePopupViewport } from "./viewport.js";
 
 export interface PopupProps {
   yank: (command: string) => Promise<void>;
@@ -161,9 +161,9 @@ function localModeReducer(state: LocalModeState, action: LocalModeAction): Local
 }
 
 // Drill view renders an EXTRA in-body title + dim "(L-T/T)" indicator
-// pair on top of the default popup chrome — subtract 7 (default 6 + 1)
-// for that branch. List view uses the default 6.
-const WORKSPACES_DRILL_CHROME = 7;
+// pair on top of the default popup chrome — subtract one more row
+// (default 3 + 1) for that branch. List view uses the default 3.
+const WORKSPACES_DRILL_CHROME = POPUP_CHROME_ROWS + 1;
 
 export function WorkspacesPopup({
   yank,

@@ -50,6 +50,17 @@ describe("popupViewport", () => {
     expect(popupViewport(40, 7)).toBe(33);
   });
 
+  it("honours the Workspaces drill budget (default chrome + 1 in-body row)", () => {
+    // The drill branch renders an EXTRA in-body title + indicator
+    // pair on top of the default chrome, so it subtracts
+    // POPUP_CHROME_ROWS + 1 — NOT a stale literal tied to the old
+    // budget of 6 (which made this 7). Regression guard for
+    // finding_stale_workspaces_drill_chrome.
+    const drillChrome = POPUP_CHROME_ROWS + 1;
+    expect(popupViewport(60, drillChrome)).toBe(60 - drillChrome);
+    expect(popupViewport(24, drillChrome)).toBe(24 - drillChrome);
+  });
+
   it("floors at POPUP_VIEWPORT_FLOOR for very small terminals", () => {
     // 10 rows - 3 chrome = 7 → would be too cramped; floor lifts to 8.
     expect(popupViewport(10)).toBe(POPUP_VIEWPORT_FLOOR);
