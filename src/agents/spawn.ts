@@ -430,6 +430,13 @@ export async function spawnAgent(db: Db, opts: SpawnAgentOptions): Promise<Agent
         cwd: workspacePathStr ?? opts.cwd,
         env: paneEnv,
       });
+      // Capture the pane id on the OUTER scope as soon as it exists so a
+      // throw later in the lock (setPaneTitle / finalizeAgentRow INSERT
+      // failure) still routes through rollbackSpawn -> killPane. Assigning
+      // only via the returned object meant a finalize failure left paneId
+      // undefined and rollbackSpawn skipped killPane, leaking the pane
+      // (finding_verbs_spawn_rolls_back_pane).
+      paneId = pid;
       await setPaneTitle(pid, opts.name);
       // Apply the mu pane border to the new window. Window-scoped option;
       // see enableMuPaneBorders docstring for why this is required per

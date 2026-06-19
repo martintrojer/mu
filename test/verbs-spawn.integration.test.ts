@@ -280,25 +280,51 @@ describe("spawnAgent", () => {
   });
 
   it("rolls back the pane when DB insert fails", async () => {
-    // Pre-load an agent row that will collide with the second spawn.
     const { executor, calls } = mockTmux(state);
     setTmuxExecutor(executor);
-    await spawnAgent(db, { name: "alice", workstream: "auth" });
-    const panesBeforeRollback = state.panes.size;
+    const panesBaseline = state.panes.size;
 
-    // Now race: a parallel insert beats us. We simulate by inserting under
-    // alice's name with a different pane id between getAgent (which sees no
-    // alice) and insertAgent. We can't actually race within a single test;
-    // instead we simulate the rollback path by directly observing that the
-    // duplicate-name path throws before any pane is created (already
-    // covered above) AND that the kill-pane invocation in the catch is
-    // reachable. To exercise the catch we use an INVALID role argument
-    // that satisfies TypeScript but breaks something downstream… actually,
-    // we skip this and rely on the explicit `catch { killPane }` path
-    // being reviewed by hand.
+    // Inject a failure into the no-workspace finalize step: patch
+    // db.prepare so the `INSERT INTO agents` statement's .run() throws.
+    // The pane has already been created by createOrReusePane at this
+    // point, so the catch in spawnAgent must call rollbackSpawn ->
+    // killPane to undo it. (Same db.prepare-Proxy technique as
+    // test/agent-reaper-transactional.test.ts.)
+    const originalPrepare = db.prepare.bind(db);
+    let throwingHooked = false;
+    (db as unknown as { prepare: typeof db.prepare }).prepare = ((sql: string) => {
+      const stmt = originalPrepare(sql);
+      if (sql.includes("INSERT INTO agents")) {
+        throwingHooked = true;
+        return new Proxy(stmt, {
+          get(target, prop, recv) {
+            if (prop === "run") {
+              return () => {
+                throw new Error("simulated INSERT INTO agents failure");
+              };
+            }
+            return Reflect.get(target, prop, recv);
+          },
+        });
+      }
+      return stmt;
+    }) as typeof db.prepare;
 
-    expect(panesBeforeRollback).toBeGreaterThan(0);
-    expect(calls.length).toBeGreaterThan(0);
+    await expect(spawnAgent(db, { name: "alice", workstream: "auth" })).rejects.toThrow(
+      /simulated INSERT INTO agents failure/,
+    );
+    expect(throwingHooked).toBe(true);
+
+    // Restore real prepare for the assertions below.
+    (db as unknown as { prepare: typeof db.prepare }).prepare = originalPrepare;
+
+    // The pane that createOrReusePane created was killed by the rollback
+    // catch path, so the pane count is back to baseline …
+    expect(state.panes.size).toBe(panesBaseline);
+    // … a kill-pane was actually issued …
+    expect(calls.some((c) => c[0] === "kill-pane")).toBe(true);
+    // … and no ghost agent row survives.
+    expect(getAgent(db, "alice", "auth")).toBeUndefined();
   });
 
   it("honors tmuxSession override (skips mu- prefix)", async () => {
