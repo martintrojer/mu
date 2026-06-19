@@ -46,7 +46,8 @@ export interface ParkedStatus {
  *  - the workstream has no `db export` event in agent_logs, OR
  *  - any agent_logs row newer than the most recent `db export` exists
  *    (i.e. local activity since export), OR
- *  - the workstream has any alive agents (status != 'closed'), OR
+ *  - the workstream has any alive agents (status not in
+ *    terminated/unreachable), OR
  *  - the workstream has any IN_PROGRESS tasks, OR
  *  - the most recent `db export` is younger than the threshold.
  *
@@ -78,9 +79,15 @@ export function parkedStatus(
   if (latest.kind !== "event") return { parked: false };
   if (!latest.payload.startsWith("db export ")) return { parked: false };
 
-  // Alive agents disqualify (someone is presumably working).
+  // Alive agents disqualify (someone is presumably working). Dead
+  // agents — `terminated` or `unreachable` — do not count as alive;
+  // there is no `closed` agent status (closeAgent/deleteAgent DELETE
+  // the row), so listing the dead statuses explicitly is the only
+  // meaningful filter.
   const aliveAgent = db
-    .prepare("SELECT 1 AS x FROM agents WHERE workstream_id = ? AND status != 'closed' LIMIT 1")
+    .prepare(
+      "SELECT 1 AS x FROM agents WHERE workstream_id = ? AND status NOT IN ('terminated', 'unreachable') LIMIT 1",
+    )
     .get(wsRow.id) as { x: number } | undefined;
   if (aliveAgent !== undefined) return { parked: false };
 

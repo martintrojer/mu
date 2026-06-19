@@ -102,6 +102,38 @@ describe("parkedStatus", () => {
     expect(parkedStatus(db, "alpha", { now: daysAfterExport(db, 2) })).toEqual({ parked: false });
   });
 
+  it("a dead agent row (terminated) does not disqualify parked", () => {
+    ensureWorkstream(db, "alpha");
+    const wsId = (
+      db.prepare("SELECT id FROM workstreams WHERE name = ?").get("alpha") as { id: number }
+    ).id;
+    // A `terminated` agent row is dead, not alive: closeAgent/deleteAgent
+    // normally DELETE the row, but a stale dead row must not keep the
+    // workstream out of parked state.
+    const ts = new Date().toISOString();
+    db.prepare(
+      "INSERT INTO agents (workstream_id, name, cli, pane_id, status, created_at, updated_at) VALUES (?, ?, 'pi', '%0', 'terminated', ?, ?)",
+    ).run(wsId, "dead", ts, ts);
+    exportDb(db, join(dir, "out.db"), { force: true });
+    expect(parkedStatus(db, "alpha", { now: daysAfterExport(db, 2) })).toEqual({
+      parked: true,
+      sinceDays: 2,
+    });
+  });
+
+  it("an alive agent row (free) disqualifies parked", () => {
+    ensureWorkstream(db, "alpha");
+    const wsId = (
+      db.prepare("SELECT id FROM workstreams WHERE name = ?").get("alpha") as { id: number }
+    ).id;
+    const ts = new Date().toISOString();
+    db.prepare(
+      "INSERT INTO agents (workstream_id, name, cli, pane_id, status, created_at, updated_at) VALUES (?, ?, 'pi', '%0', 'free', ?, ?)",
+    ).run(wsId, "live", ts, ts);
+    exportDb(db, join(dir, "out.db"), { force: true });
+    expect(parkedStatus(db, "alpha", { now: daysAfterExport(db, 2) })).toEqual({ parked: false });
+  });
+
   it("respects a custom thresholdDays override", () => {
     ensureWorkstream(db, "alpha");
     exportDb(db, join(dir, "out.db"), { force: true });
