@@ -89,8 +89,9 @@ mu agent close helper-1 -w scratch     # done
   `mu state -w scratch` watches them all.
 
 If a helper wedges at `needs_input` right after spawn, it's likely
-pi's project-trust prompt. Spawn with `--command 'pi --approve'` (or
-set `MU_PI_COMMAND="pi --approve"`) so agents don't block on it.
+pi's project-trust prompt; add `--approve` to the existing
+`MU_<CLI>_COMMAND`, or pass `--command 'pi --approve'` only when you
+intend to override the env-configured command.
 
 **Escalate off `scratch`** the moment helpers have dependencies
 (B needs A) or you want gated review → real `mu workstream init` +
