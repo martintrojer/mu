@@ -83,7 +83,7 @@ function mockTmux(state: MockState): TmuxExecutor {
 beforeEach(() => {
   tempDir = mkdtempSync(join(tmpdir(), "mu-destroy-empty-"));
   // Snapshots / exports / workspaces all default under MU_STATE_DIR;
-  // pin to tempDir so the snapshot the sweep takes doesn't pollute
+  // pin to tempDir so the sweep's artifacts don't pollute
   // the host's state.
   process.env.MU_STATE_DIR = tempDir;
   dbPath = join(tempDir, "mu.db");
@@ -216,15 +216,6 @@ describe("mu workstream destroy --empty", () => {
       db.prepare("SELECT name FROM workstreams ORDER BY name").all() as { name: string }[]
     ).map((r) => r.name);
     expect(remaining).toEqual(["with-agent", "with-tasks"]);
-
-    // One sweep-level snapshot covers both victims. The nested
-    // destroyWorkstream calls must NOT add per-workstream snapshots.
-    const snapshots = db.prepare("SELECT label FROM snapshots ORDER BY id").all() as Array<{
-      label: string;
-    }>;
-    expect(snapshots.map((s) => s.label)).toEqual([
-      "workstream destroy --empty sweep (2 workstreams)",
-    ]);
   });
 
   it("--yes kills the live tmux session on an empty workstream", async () => {
@@ -478,52 +469,5 @@ describe("mu workstream destroy --empty", () => {
     expect(state.killed).toEqual([]);
     expect(state.sessions.has("plain-foo")).toBe(true);
     expect(state.sessions.has("random-session")).toBe(true);
-  });
-
-  it("direct destroy still captures one pre-mutation snapshot", async () => {
-    const state: MockState = {
-      sessions: new Set(["mu-empty-a"]),
-      killed: [],
-      killShouldFail: new Set(),
-    };
-    setTmuxExecutor(mockTmux(state));
-    ensureWorkstream(db, "empty-a");
-    db.close();
-
-    const r = await runCli(["workstream", "destroy", "-w", "empty-a", "--yes", "--json"], dbPath);
-    expect(r.error).toBeUndefined();
-    expect(r.exitCode).toBeNull();
-
-    db = openDb({ path: dbPath });
-    const snapshots = db.prepare("SELECT label FROM snapshots ORDER BY id").all() as Array<{
-      label: string;
-    }>;
-    expect(snapshots.map((s) => s.label)).toEqual(["workstream destroy empty-a"]);
-    expect(state.killed).toEqual(["mu-empty-a"]);
-  });
-
-  it("--yes with no empties is a clean no-op (does NOT take a snapshot)", async () => {
-    setTmuxExecutor(mockTmux({ sessions: new Set(), killed: [], killShouldFail: new Set() }));
-    addTask(db, {
-      localId: "design",
-      workstream: "busy",
-      title: "Design",
-      impact: 50,
-      effortDays: 1,
-    });
-    db.close();
-
-    const r = await runCli(["workstream", "destroy", "--empty", "--yes", "--json"], dbPath);
-    expect(r.error).toBeUndefined();
-    const env = JSON.parse(r.stdout.trim()) as {
-      destroyed: number;
-      results: unknown[];
-      failed: unknown[];
-    };
-    expect(env).toEqual({ destroyed: 0, results: [], failed: [] });
-
-    db = openDb({ path: dbPath });
-    const snaps = (db.prepare("SELECT COUNT(*) AS n FROM snapshots").get() as { n: number }).n;
-    expect(snaps).toBe(0);
   });
 });

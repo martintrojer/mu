@@ -39,10 +39,10 @@ function latestActiveWorkstream(db: Db, candidates: readonly string[]): string |
   const placeholders = candidates.map(() => "?").join(", ");
   const row = db
     .prepare(
-      `SELECT ws.name AS workstreamName
-         FROM agent_logs l
-         JOIN workstreams ws ON ws.id = l.workstream_id
-        WHERE ws.name IN (${placeholders})
+      // ops.key holds the workstream name verbatim (natural key).
+      `SELECT l.key AS workstreamName
+         FROM ops l
+        WHERE l.key IN (${placeholders})
         ORDER BY l.created_at DESC, l.seq DESC
         LIMIT 1`,
     )

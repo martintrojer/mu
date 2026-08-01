@@ -188,7 +188,7 @@ describe("resolveInitialTab", () => {
     });
 
     it("rung 4: cwd equal to multi-workstream project root with no logs falls through to tab 0", async () => {
-      db.prepare("DELETE FROM agent_logs").run();
+      db.prepare("DELETE FROM ops").run();
       const repo = initGitRepo(tempDir);
       const worktreeB = join(tempDir, "worker-b");
       const worktreeC = join(tempDir, "worker-c");
@@ -196,7 +196,7 @@ describe("resolveInitialTab", () => {
       addGitWorktree(repo, worktreeC, "worker-c");
       registerWorkspace(db, "b", "worker-1", worktreeB, "git");
       registerWorkspace(db, "c", "worker-1", worktreeC, "git");
-      db.prepare("DELETE FROM agent_logs").run();
+      db.prepare("DELETE FROM ops").run();
       chdir(repo);
 
       await withEnv("MU_SESSION", undefined, async () => {

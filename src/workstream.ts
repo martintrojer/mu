@@ -26,7 +26,6 @@ import {
 import { emitEvent } from "./logs.js";
 import type { HasNextSteps, NextStep } from "./output.js";
 import { parkedStatus } from "./parked.js";
-import { captureSnapshot } from "./snapshots.js";
 import { killSession, listSessions, sessionExists, tmux } from "./tmux.js";
 import { type VcsBackend, type VcsBackendName, backendByName } from "./vcs.js";
 import { listWorkspaces } from "./workspace.js";
@@ -286,11 +285,9 @@ export interface WorkstreamOptions {
 }
 
 export interface DestroyWorkstreamOptions extends WorkstreamOptions {
-  /** Skip the per-workstream pre-mutation snapshot because the caller
-   *  already captured a broader snapshot for the whole destructive
-   *  operation. Used by `mu workstream destroy --empty` after its
-   *  sweep-level safety snapshot; direct destroy callers leave this
-   *  false so the default safety net is unchanged. */
+  /** Retained for call-site compatibility; a no-op since v9 dropped
+   *  the `snapshots` table. v2-undo replaces the safety net with
+   *  inverse ops over the ops log. */
   suppressSnapshot?: boolean;
 }
 
@@ -446,15 +443,9 @@ export async function destroyWorkstream(
 ): Promise<DestroyResult> {
   const tmuxSession = opts.tmuxSession ?? `mu-${opts.workstream}`;
 
-  // Pre-mutation snapshot (snap_design §EDGE CASES > WORKSTREAM
-  // DESTROY). workstream=null because workstream-destroy snapshots
-  // logically span every workstream in the DB (whole-DB backup;
-  // anchoring to one name would lie about scope). If the snapshot
-  // throws (disk full, perms), abort the destroy — better to refuse
-  // than to delete irrecoverably.
-  if (opts.suppressSnapshot !== true) {
-    captureSnapshot(db, `workstream destroy ${opts.workstream}`, null);
-  }
+  // 2.0: destroy no longer snapshots. v9 dropped the `snapshots`
+  // table; the destroy writes tombstone ops instead and v2-undo
+  // replays inverses (VISION.md § 2b).
 
   // Pre-count the cascade victims so we can report them — SQLite's
   // changes() only reports rows directly affected by the last statement,

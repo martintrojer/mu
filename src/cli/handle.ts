@@ -38,22 +38,6 @@ import {
   AgentSpawnStartupError,
   WorkspacePreservedError,
 } from "../agents.js";
-import {
-  ArchiveAlreadyExistsError,
-  ArchiveLabelInvalidError,
-  ArchiveNotFoundError,
-  ArchiveSourceAmbiguousError,
-} from "../archives.js";
-import {
-  DbExportTargetExistsError,
-  DbImportConflictError,
-  DbImportManifestMissingError,
-  DbImportSchemaTooNewError,
-  DbImportSchemaTooOldError,
-  DbImportSourceStaleError,
-  DbReplayLocalIdConflictError,
-  DbReplayWorkstreamMissingError,
-} from "../db-sync.js";
 import { type Db, SchemaTooOldError, WorkstreamNotFoundError, openDb } from "../db.js";
 import {
   type NextStep,
@@ -65,12 +49,6 @@ import {
   printUsageHuman,
   renderUsageJson,
 } from "../output.js";
-import {
-  PruneOptionsInvalidError,
-  SnapshotFileMissingError,
-  SnapshotNotFoundError,
-  SnapshotVersionMismatchError,
-} from "../snapshots.js";
 import {
   ClaimerNotRegisteredError,
   CrossWorkstreamEdgeError,
@@ -180,8 +158,6 @@ function isUsageClassError(err: unknown): boolean {
   if (
     err instanceof WorkstreamNameInvalidError ||
     err instanceof WorkstreamNameReservedError ||
-    err instanceof ArchiveLabelInvalidError ||
-    err instanceof PruneOptionsInvalidError ||
     err instanceof TaskIdInvalidError
   ) {
     return true;
@@ -229,9 +205,7 @@ export function classifyError(err: unknown): { label: string; exitCode: number }
   if (
     err instanceof UsageError ||
     err instanceof WorkstreamNameInvalidError ||
-    err instanceof WorkstreamNameReservedError ||
-    err instanceof ArchiveLabelInvalidError ||
-    err instanceof PruneOptionsInvalidError
+    err instanceof WorkstreamNameReservedError
   ) {
     return { label: "error", exitCode: 2 };
   }
@@ -239,9 +213,7 @@ export function classifyError(err: unknown): { label: string; exitCode: number }
     err instanceof AgentNotFoundError ||
     err instanceof TaskNotFoundError ||
     err instanceof WorkstreamNotFoundError ||
-    err instanceof WorkspaceNotFoundError ||
-    err instanceof SnapshotNotFoundError ||
-    err instanceof ArchiveNotFoundError
+    err instanceof WorkspaceNotFoundError
   ) {
     // WorkstreamNotFoundError originates inside resolveWorkstreamId
     // (src/db.ts) — it's the canonical resolve-time miss for the
@@ -250,27 +222,6 @@ export function classifyError(err: unknown): { label: string; exitCode: number }
     // operators of the same -> exit-3 mapping that AgentNotFoundError /
     // TaskNotFoundError get. (schema_v5_cli_boundary)
     return { label: "not found", exitCode: 3 };
-  }
-  if (err instanceof DbImportManifestMissingError) {
-    return { label: "db import manifest missing", exitCode: 8 };
-  }
-  if (err instanceof DbImportSchemaTooOldError) {
-    return { label: "db import schema too old", exitCode: 9 };
-  }
-  if (err instanceof DbImportSchemaTooNewError) {
-    return { label: "db import schema too new", exitCode: 10 };
-  }
-  if (err instanceof DbImportSourceStaleError) {
-    return { label: "db import source stale", exitCode: 11 };
-  }
-  if (err instanceof DbImportConflictError) {
-    return { label: "db import conflict", exitCode: 12 };
-  }
-  if (err instanceof DbReplayWorkstreamMissingError) {
-    return { label: "db replay workstream missing", exitCode: 13 };
-  }
-  if (err instanceof DbReplayLocalIdConflictError) {
-    return { label: "db replay local-id conflict", exitCode: 14 };
   }
   if (
     err instanceof NameAmbiguousError ||
@@ -291,12 +242,8 @@ export function classifyError(err: unknown): { label: string; exitCode: number }
     err instanceof WorkspaceVcsRequiredError ||
     err instanceof WorkspaceDirtyError ||
     err instanceof ClaimerNotRegisteredError ||
-    err instanceof SnapshotVersionMismatchError ||
     err instanceof SchemaTooOldError ||
     err instanceof TaskIdInvalidError ||
-    err instanceof ArchiveAlreadyExistsError ||
-    err instanceof ArchiveSourceAmbiguousError ||
-    err instanceof DbExportTargetExistsError ||
     err instanceof WorkstreamExistsError
   ) {
     return { label: "conflict", exitCode: 4 };
@@ -347,11 +294,6 @@ export function classifyError(err: unknown): { label: string; exitCode: number }
     // the wait call site: if both fire in one poll, the
     // ReaperDetectedDuringWaitError throw runs first, so exit 6 wins.
     return { label: "stall", exitCode: 7 };
-  }
-  if (err instanceof SnapshotFileMissingError) {
-    // Substrate-level: the .db file is gone but the row still says it
-    // should be there. Same flavour as `tmux` errors above.
-    return { label: "snapshot file missing", exitCode: 5 };
   }
   return { label: "error", exitCode: 1 };
 }

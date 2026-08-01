@@ -14,7 +14,6 @@
 
 import type { Db } from "../db.js";
 import { emitEvent } from "../logs.js";
-import { captureSnapshot } from "../snapshots.js";
 import { getTaskEdgesWithStatus } from "./edges.js";
 import { addNote } from "./edit.js";
 import { TaskHasOpenDependentsError, TaskNotFoundError } from "./errors.js";
@@ -134,7 +133,7 @@ export interface CloseTaskOptions extends EvidenceOption {
 }
 
 /** Convenience: setTaskStatus(db, id, "CLOSED"). Accepts evidence.
- *  Pre-snapshots the DB (snap_design §CAPTURE STRATEGY > WHEN). Skipped
+ *  Skipped
  *  for the idempotent no-op (already CLOSED) so we don't accumulate
  *  empty-delta snapshots on retry loops.
  *
@@ -171,9 +170,8 @@ export function closeTask(
       };
     }
   }
-  if (before && before.status !== "CLOSED") {
-    captureSnapshot(db, `task close ${localId}`, before.workstreamName);
-  }
+  // 2.0: no pre-mutation snapshot. v9 dropped the `snapshots` table;
+  // v2-undo restores rollback via inverse ops over the ops log.
   const r = setTaskStatus(db, localId, "CLOSED", opts);
   // mufeedback task_close_evidence_does_not_append_the: when the
   // operator passes `--evidence "..."`, the string lands in the
@@ -254,24 +252,15 @@ export interface RejectDeferResult {
 
 /** Reject a task: terminal 'won't do' (out of scope, duplicate, wontfix).
  *  Refuses if dependents are open unless `--cascade`.
- *  Pre-snapshots once at the verb level so a cascade onto N children
- *  produces a single snapshot, not N. Skipped for the idempotent no-op. */
+ *  (2.0: no snapshot; v2-undo restores rollback via inverse ops.) */
 export function rejectTask(db: Db, localId: string, opts: RejectDeferOptions): RejectDeferResult {
-  const before = getTask(db, localId, opts.workstream);
-  if (before && before.status !== "REJECTED") {
-    captureSnapshot(db, `task reject ${localId}`, before.workstreamName);
-  }
   return setTerminalOrParked(db, localId, "REJECTED", opts);
 }
 
 /** Defer a task: parked, may revisit. Same dependent-stranding semantics
  *  as reject (DEFERRED also doesn't satisfy a `--blocked-by` edge).
- *  Pre-snapshots once at the verb level. Skipped for the idempotent no-op. */
+ *  (2.0: no snapshot; v2-undo restores rollback via inverse ops.) */
 export function deferTask(db: Db, localId: string, opts: RejectDeferOptions): RejectDeferResult {
-  const before = getTask(db, localId, opts.workstream);
-  if (before && before.status !== "DEFERRED") {
-    captureSnapshot(db, `task defer ${localId}`, before.workstreamName);
-  }
   return setTerminalOrParked(db, localId, "DEFERRED", opts);
 }
 

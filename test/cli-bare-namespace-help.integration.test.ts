@@ -35,7 +35,7 @@ describe("bare verb-namespace prints --help instead of exiting silently", () => 
 
   // Every subcommand group that exists today. Adding/removing
   // namespaces requires updating this list.
-  const namespaces = ["workspace", "task", "agent", "archive", "snapshot", "workstream"];
+  const namespaces = ["workspace", "task", "agent", "workstream"];
 
   for (const ns of namespaces) {
     it(`\`mu ${ns}\` prints the namespace help block`, async () => {

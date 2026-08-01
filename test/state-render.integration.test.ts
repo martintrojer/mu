@@ -201,7 +201,7 @@ describe("mu state — mutual-exclusion + cross-workstream", () => {
 // extraction only; renderers apply their own colour). These tests pin the
 // parser contract and then drive representative SDK verbs that emit every
 // known event prefix, asserting the payloads users actually see in
-// agent_logs classify successfully.
+// the ops log classify successfully.
 describe("classifyEventVerb", () => {
   it("recognises every verb in EVENT_VERB_PREFIXES", async () => {
     const { EVENT_VERB_PREFIXES, classifyEventVerb } = await import("../src/logs.js");
@@ -245,11 +245,7 @@ describe("classifyEventVerb", () => {
     const { kickAgent, resetKickProcessExecutor, setKickProcessExecutor } = await import(
       "../src/agents/kick.js"
     );
-    const { createArchive, addToArchive, removeFromArchive, deleteArchive } = await import(
-      "../src/archives.js"
-    );
     const { openDb } = await import("../src/db.js");
-    const { exportArchive } = await import("../src/exporting.js");
     const { classifyEventVerb, displayEventPayload, listLogs } = await import("../src/logs.js");
     const {
       addBlockEdge,
@@ -468,14 +464,6 @@ describe("classifyEventVerb", () => {
       await captureNewEvents(() =>
         exportWorkstream(db, { workstream: "events", outDir: join(tempDir, "bucket") }),
       );
-      await captureNewEvents(() => createArchive(db, "arc"));
-      await captureNewEvents(() => addToArchive(db, "arc", "events"));
-      await captureNewEvents(() =>
-        exportArchive(db, { label: "arc", outDir: join(tempDir, "arc-bucket") }),
-      );
-      await captureNewEvents(() => removeFromArchive(db, "arc", "events"));
-      await captureNewEvents(() => deleteArchive(db, "arc"));
-
       ensureWorkstream(db, "doomed");
       await captureNewEvents(async () => {
         setTmuxExecutor(async (args) => {
@@ -493,11 +481,6 @@ describe("classifyEventVerb", () => {
         "agent kick",
         "agent spawn",
         "agent stalled",
-        "archive add",
-        "archive create",
-        "archive delete",
-        "archive export",
-        "archive remove",
         "task add",
         "task block",
         "task claim",

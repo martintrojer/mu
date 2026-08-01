@@ -10,7 +10,6 @@
 // Extracted from src/cli.ts as part of refactor_split_large_src_files.
 
 import { join } from "node:path";
-import { type AddToArchiveResult, addToArchive, getArchive } from "../archives.js";
 import {
   UsageError,
   emitJson,
@@ -20,7 +19,6 @@ import {
 } from "../cli.js";
 import { type Db, defaultStateDir } from "../db.js";
 import { type NextStep, muTable, pc, printNextSteps } from "../output.js";
-import { captureSnapshot } from "../snapshots.js";
 import {
   enableMuPaneBordersForSession,
   listWindows,
@@ -171,12 +169,8 @@ function autoExportDir(workstream: string): string {
   return join(defaultStateDir(), "exports", `${workstream}-${ts}`);
 }
 
-function destroyConfirmCommand(
-  workstream: string,
-  opts: { archive?: string; export?: boolean },
-): string {
+function destroyConfirmCommand(workstream: string, opts: { export?: boolean }): string {
   const parts = [`mu workstream destroy -w ${workstream} --yes`];
-  if (opts.archive !== undefined) parts.push(`--archive ${opts.archive}`);
   if (opts.export === false) parts.push("--no-export");
   return parts.join(" ");
 }
@@ -188,7 +182,6 @@ export async function cmdDestroy(
     yes?: boolean;
     json?: boolean;
     export?: boolean;
-    archive?: string;
     empty?: boolean;
   },
 ): Promise<void> {
@@ -197,13 +190,6 @@ export async function cmdDestroy(
     return;
   }
   const workstream = await resolveWorkstream(opts.workstream);
-  // Validate --archive label FIRST so an unknown label refuses the
-  // destroy entirely (anti-feature: no auto-create — operators run
-  // `mu archive create <label>` themselves). getArchive throws
-  // ArchiveNotFoundError on miss; classifyError maps that to exit 3.
-  if (opts.archive !== undefined) {
-    getArchive(db, opts.archive);
-  }
   const summary = await summarizeWorkstream(db, { workstream });
   // Empty-but-registered workstreams (a row in `workstreams` with no
   // agents/tasks/etc.) ARE worth destroying — otherwise the bare
@@ -240,10 +226,6 @@ export async function cmdDestroy(
         intent: "Confirm and actually destroy",
         command: confirmCommand,
       },
-      {
-        intent: "After destroying, undo if you regret it (DB only; tmux NOT rolled back)",
-        command: "mu undo --yes",
-      },
     ];
     if (opts.json) {
       emitJson({
@@ -251,10 +233,6 @@ export async function cmdDestroy(
         destroyed: false,
         dryRun: true,
         summary,
-        archive:
-          opts.archive !== undefined
-            ? { label: opts.archive, wouldArchiveTasks: summary.taskCount }
-            : undefined,
         nextSteps: dryRunNextSteps,
       });
       return;
@@ -270,18 +248,8 @@ export async function cmdDestroy(
     console.log(
       `  workspaces   : ${summary.workspaceCount}${summary.workspaceCount > 0 ? pc.dim(" (will be cleaned via per-backend remove)") : ""}`,
     );
-    if (opts.archive !== undefined) {
-      console.log(
-        `  archive      : ${pc.yellow(`would archive ${summary.taskCount} tasks to ${opts.archive}`)}`,
-      );
-    }
     console.log("");
     console.log(pc.dim("(dry-run; rerun with --yes to actually destroy)"));
-    console.log(
-      pc.dim(
-        "A snapshot will be taken before the destroy; `mu undo --yes` reverts it (DB only — tmux panes / on-disk workspace dirs are NOT rolled back).",
-      ),
-    );
     printNextSteps(dryRunNextSteps);
     return;
   }
@@ -311,42 +279,15 @@ export async function cmdDestroy(
     }
   }
 
-  // Archive BEFORE destroy: if the archive add fails, abort. We
-  // already validated the label up top so the only reasons for a
-  // throw here are transient (DB lock / disk error) — surface them
-  // and leave the workstream untouched. No rollback needed (we
-  // haven't destroyed yet).
-  let archiveResult: AddToArchiveResult | undefined;
-  if (opts.archive !== undefined) {
-    archiveResult = addToArchive(db, opts.archive, workstream);
-  }
-
   const result = await destroyWorkstream(db, { workstream });
   if (opts.json) {
     emitJson({
       workstreamName: workstream,
       destroyed: true,
       ...result,
-      archive:
-        opts.archive !== undefined && archiveResult !== undefined
-          ? { label: opts.archive, ...archiveResult }
-          : undefined,
       autoExport: autoExport
         ? { outDir: autoExportOutDir, error: autoExportError }
         : { skipped: true },
-      // snap_destroy_safety: machine-readable hint that the destroy is
-      // reversible (DB-only) via mu undo. Suppressed when there are
-      // workspace failures so the cleanup steps stay the headline.
-      nextSteps:
-        result.failedWorkspaces.length === 0
-          ? [
-              {
-                intent:
-                  "Undo (a snapshot was taken before the destroy; DB only, tmux not rolled back)",
-                command: "mu undo --yes",
-              },
-            ]
-          : undefined,
     });
     return;
   }
@@ -360,29 +301,11 @@ export async function cmdDestroy(
   );
   console.log(`  workspaces   : ${summary.workspaceCount}`);
   console.log("");
-  if (archiveResult !== undefined && opts.archive !== undefined) {
-    console.log(
-      `Archived ${pc.bold(workstream)} to ${pc.bold(opts.archive)} ${pc.dim(
-        `(tasks=${archiveResult.addedTasks}, edges=${archiveResult.addedEdges}, notes=${archiveResult.addedNotes}, events=${archiveResult.addedEvents}, skipped_existing=${archiveResult.skippedTasks})`,
-      )}`,
-    );
-  }
   console.log(
     `Destroyed ${pc.bold(workstream)}: killed tmux=${result.killedTmux}, agents=${result.deletedAgents}, tasks=${result.deletedTasks}, edges=${result.deletedEdges}, notes=${result.deletedNotes}, workspaces=${result.freedWorkspaces}/${summary.workspaceCount}${result.alreadyGoneWorkspaces > 0 ? ` (${result.alreadyGoneWorkspaces} already gone on disk)` : ""}`,
   );
   if (autoExportOutDir !== undefined) {
     console.log(pc.dim(`Pre-destroy export: ${autoExportOutDir}`));
-  }
-  // snap_destroy_safety: advertise the undo path that destroyWorkstream
-  // gave us via captureSnapshot. Suppressed when there are workspace
-  // failures so the WARNING + cleanup steps below stay the headline.
-  if (result.failedWorkspaces.length === 0) {
-    printNextSteps([
-      {
-        intent: "Undo (a snapshot was taken before the destroy; DB only, tmux not rolled back)",
-        command: "mu undo --yes",
-      },
-    ]);
   }
   if (result.failedWorkspaces.length > 0) {
     console.log("");
@@ -447,24 +370,17 @@ async function cmdDestroyEmpty(
     workstream?: string;
     yes?: boolean;
     json?: boolean;
-    archive?: string;
   },
 ): Promise<void> {
-  // --empty is a sweep verb; -w (target a single workstream) and
-  // --archive (snapshot one workstream INTO an archive) both contradict
-  // it. Fail loud with exit 2 (UsageError) so a typo (`--empty -w foo`)
-  // doesn't silently sweep instead of targeting `foo`.
+  // --empty is a sweep verb; -w (target a single workstream)
+  // contradicts it. Fail loud with exit 2 (UsageError) so a typo
+  // (`--empty -w foo`) doesn't silently sweep instead of targeting
+  // `foo`.
   if (opts.workstream !== undefined) {
     throw new UsageError(
       "--empty is mutually exclusive with a named target (positional <name> or -w/--workstream): the sweep targets every empty workstream, so naming one contradicts it",
     );
   }
-  if (opts.archive !== undefined) {
-    throw new UsageError(
-      "--empty is mutually exclusive with --archive (an empty workstream has nothing to archive; if you wanted to archive a single workstream's contents, drop --empty and use -w <name> --archive <label>)",
-    );
-  }
-
   const empties = await listEmptyWorkstreams(db);
 
   if (!opts.yes) {
@@ -495,11 +411,6 @@ async function cmdDestroyEmpty(
         `${empties.length} empty workstream${empties.length === 1 ? "" : "s"} would be destroyed (dry-run; rerun with --yes to actually destroy).`,
       ),
     );
-    console.log(
-      pc.dim(
-        "A single whole-DB snapshot covers the whole sweep; `mu undo --yes` reverts it (DB only \u2014 tmux NOT rolled back).",
-      ),
-    );
     printNextSteps([
       {
         intent: "Confirm and actually destroy every empty workstream",
@@ -509,9 +420,7 @@ async function cmdDestroyEmpty(
     return;
   }
 
-  // --yes path. No-op early if there's nothing to do; do NOT take a
-  // snapshot for a zero-row sweep (would clutter the snapshot log
-  // with empty entries on every CI cleanup).
+  // --yes path. No-op early if there's nothing to do.
   if (empties.length === 0) {
     if (opts.json) {
       emitJson({ destroyed: 0, results: [], failed: [] });
@@ -521,21 +430,11 @@ async function cmdDestroyEmpty(
     return;
   }
 
-  // ONE snapshot covers the whole sweep. Per-call destroyWorkstream
-  // would otherwise capture N snapshots (one per workstream), which is
-  // both noisier and N× more disk for an operation the operator
-  // logically thinks of as a single batch.
-  captureSnapshot(
-    db,
-    `workstream destroy --empty sweep (${empties.length} workstream${empties.length === 1 ? "" : "s"})`,
-    null,
-  );
-
   const results: EmptyDestroyResult[] = [];
   const failed: EmptyDestroyFailure[] = [];
   for (const ws of empties) {
     try {
-      const result = await destroyWorkstream(db, { workstream: ws.name, suppressSnapshot: true });
+      const result = await destroyWorkstream(db, { workstream: ws.name });
       results.push({
         workstreamName: ws.name,
         killedTmux: result.killedTmux,
@@ -654,12 +553,8 @@ export function wireWorkstreamCommands(program: Command): void {
     .option("-y, --yes", "actually destroy (without this flag, prints a dry-run summary)")
     .option("--no-export", "skip the pre-destroy markdown export to <state-dir>/exports/<ws>-<ts>/")
     .option(
-      "--archive <label>",
-      "in-DB archive label to add this workstream's contents to BEFORE destroy (atomic; if archive add fails, destroy aborts)",
-    )
-    .option(
       "--empty",
-      "sweep every empty workstream (zero tasks, agents, vcs_workspaces); mutually exclusive with -w and --archive",
+      "sweep every empty workstream (zero tasks, agents, vcs_workspaces); mutually exclusive with -w",
     )
     .option(...JSON_OPT)
     .action(function (name: string | undefined) {
@@ -668,7 +563,6 @@ export function wireWorkstreamCommands(program: Command): void {
         yes?: boolean;
         json?: boolean;
         export?: boolean;
-        archive?: string;
         empty?: boolean;
       };
       return handle(

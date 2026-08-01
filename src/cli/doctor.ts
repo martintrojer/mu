@@ -126,7 +126,7 @@ export async function cmdDoctor(db: Db, opts: { json?: boolean } = {}): Promise<
     console.log(
       `  tasks            : ${counts.tasks} (ready ${counts.ready}, blocked ${counts.blocked}, in-progress ${counts.inProgress})`,
     );
-    console.log(`  agent_logs rows  : ${counts.logs}`);
+    console.log(`  ops rows         : ${counts.logs}`);
 
     // Reconciliation: ghost detection (DB rows with dead panes) + orphans.
     // mu doctor is diagnostic — mode: "report-only" so it never
@@ -285,9 +285,8 @@ function countLogsByWorkstream(db: Db, workstream: string): number {
   return (
     db
       .prepare(
-        `SELECT COUNT(*) AS n FROM agent_logs l
-           LEFT JOIN workstreams ws ON ws.id = l.workstream_id
-          WHERE ws.name = ?`,
+        // ops.key is the natural key ('' = machine-wide), so no join.
+        "SELECT COUNT(*) AS n FROM ops WHERE key = ?",
       )
       .get(workstream) as { n: number }
   ).n;

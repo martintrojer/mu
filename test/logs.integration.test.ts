@@ -32,8 +32,8 @@ describe("logs SDK", () => {
     // ensureWorkstream auto-emits a system 'workstream init' event;
     // wipe the log so each test starts from a clean cursor and can
     // assert on payload contents directly.
-    db.prepare("DELETE FROM agent_logs").run();
-    db.prepare("DELETE FROM sqlite_sequence WHERE name = 'agent_logs'").run();
+    db.prepare("DELETE FROM ops").run();
+    db.prepare("DELETE FROM sqlite_sequence WHERE name = 'ops'").run();
   });
 
   afterEach(() => {
@@ -158,11 +158,17 @@ describe("logs SDK", () => {
 
   // ─── FK CASCADE on workstream destroy ───────────────────────────────
 
-  it("destroying a workstream cascade-deletes its log rows", () => {
+  it("ops OUTLIVE their workstream (no FK cascade — v9 behaviour change)", () => {
+    // v1's agent_logs had an FK ON DELETE CASCADE, so destroying a
+    // workstream erased its history. The ops log is deliberately
+    // FK-free: an op must stay readable after the row it records is
+    // gone, which is what makes tombstones and archive markers work
+    // (VISION.md § 2b, VOCABULARY.md § op).
     appendLog(db, { workstream: "auth", source: "u", payload: "a" });
     appendLog(db, { workstream: "billing", source: "u", payload: "b" });
     db.prepare("DELETE FROM workstreams WHERE name = ?").run("auth");
-    expect(listLogs(db).map((r) => r.payload)).toEqual(["b"]);
+    expect(listLogs(db).map((r) => r.payload)).toEqual(["a", "b"]);
+    expect(listLogs(db, { workstream: "auth" }).map((r) => r.payload)).toEqual(["a"]);
   });
 
   // ─── seq is durable across deletes (AUTOINCREMENT semantics) ────────
@@ -170,8 +176,8 @@ describe("logs SDK", () => {
   it("seq does NOT recycle after deletes (cursor durability)", () => {
     const a = appendLog(db, { workstream: "auth", source: "u", payload: "a" });
     const b = appendLog(db, { workstream: "auth", source: "u", payload: "b" });
-    db.prepare("DELETE FROM agent_logs WHERE seq = ?").run(a.seq);
-    db.prepare("DELETE FROM agent_logs WHERE seq = ?").run(b.seq);
+    db.prepare("DELETE FROM ops WHERE seq = ?").run(a.seq);
+    db.prepare("DELETE FROM ops WHERE seq = ?").run(b.seq);
     const c = appendLog(db, { workstream: "auth", source: "u", payload: "c" });
     expect(c.seq).toBeGreaterThan(b.seq);
   });
@@ -197,8 +203,8 @@ describe("claim event structured prefix", () => {
     tempDir = mkdtempSync(join(tmpdir(), "mu-claim-"));
     db = openDb({ path: join(tempDir, "mu.db") });
     ensureWorkstream(db, "auth");
-    db.prepare("DELETE FROM agent_logs").run();
-    db.prepare("DELETE FROM sqlite_sequence WHERE name = 'agent_logs'").run();
+    db.prepare("DELETE FROM ops").run();
+    db.prepare("DELETE FROM sqlite_sequence WHERE name = 'ops'").run();
   });
 
   afterEach(() => {

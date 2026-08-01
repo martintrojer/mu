@@ -2,9 +2,7 @@
 // alphabetically. Sort order is configured via Commander's
 // configureHelp({ sortSubcommands: true }) at the root and walked
 // recursively in src/cli.ts (applyAlphabeticalHelpSort) so future
-// .addCommand() attachments inherit it too. `mu archive --help` is
-// intentionally lifecycle-ordered (add → restore → remove → delete),
-// so it has its own semantic-order assertion below.
+// .addCommand() attachments inherit it too.
 //
 // What is NOT sorted (and is asserted UN-sorted on a spot-check):
 //   - The Options list under any verb. Options have a curated
@@ -97,7 +95,7 @@ describe("--help Commands list is sorted alphabetically", () => {
   // Every subcommand group shipped today. Adding/removing groups is
   // expected; the test asserts the group's listing is sorted, not
   // any specific membership.
-  const groups = ["workstream", "agent", "workspace", "task", "snapshot", "me", "db"];
+  const groups = ["workstream", "agent", "workspace", "task", "me"];
 
   for (const group of groups) {
     it(`\`mu ${group} --help\` lists commands alphabetically`, async () => {
@@ -108,22 +106,6 @@ describe("--help Commands list is sorted alphabetically", () => {
       assertAlphabetical(names);
     });
   }
-
-  it("`mu archive --help` keeps lifecycle order with restore next to add", async () => {
-    const result = await runCli(["archive", "--help"], dbPath);
-    expect(result.error).toBeUndefined();
-    const names = parseCommandList(result.stdout);
-    expect(names.slice(0, 7)).toEqual([
-      "create",
-      "list",
-      "show",
-      "add",
-      "restore",
-      "remove",
-      "search",
-    ]);
-    expect(names.indexOf("delete")).toBeGreaterThan(names.indexOf("remove"));
-  });
 
   it("`mu task add --help` Options list preserves REGISTRATION order (not alphabetical)", async () => {
     // Spot-check: the Options list is curated. Re-ordering it would

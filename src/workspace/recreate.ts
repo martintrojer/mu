@@ -2,7 +2,6 @@
 
 import type { Db } from "../db.js";
 import { emitEvent } from "../logs.js";
-import { captureSnapshot } from "../snapshots.js";
 import {
   type VcsBackend,
   type VcsBackendName,
@@ -69,11 +68,9 @@ export async function recreateWorkspace(
     }
   }
 
-  // One snapshot for the whole free+create cycle; one event line at
-  // the end. The internal `_suppressEvent` flag on free/create is
-  // private to this module — not part of the SDK contract.
-  captureSnapshot(db, `workspace recreate ${agent}`, row.workstreamName);
-
+  // One event line at the end. The internal `_suppressEvent` flag on
+  // free/create is private to this module — not part of the SDK
+  // contract. (2.0: no snapshot; v2-undo owns rollback.)
   await freeWorkspace(db, agent, {
     workstream: opts.workstream,
     commit: false,

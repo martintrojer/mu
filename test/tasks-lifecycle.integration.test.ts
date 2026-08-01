@@ -513,7 +513,7 @@ describe("evidence on lifecycle verbs", () => {
       impact: 50,
       effortDays: 1,
     });
-    db.prepare("DELETE FROM agent_logs").run();
+    db.prepare("DELETE FROM ops").run();
   });
 
   // Returns the latest `kind='event'` payload, optionally filtered to
@@ -525,8 +525,8 @@ describe("evidence on lifecycle verbs", () => {
   // status payload must scope to it explicitly.
   function lastEventPayload(match?: string): string {
     const sql = match
-      ? "SELECT payload FROM agent_logs WHERE kind = 'event' AND payload LIKE ? ORDER BY seq DESC LIMIT 1"
-      : "SELECT payload FROM agent_logs WHERE kind = 'event' ORDER BY seq DESC LIMIT 1";
+      ? "SELECT payload FROM ops WHERE entity = 'event' AND payload LIKE ? ORDER BY seq DESC LIMIT 1"
+      : "SELECT payload FROM ops WHERE entity = 'event' ORDER BY seq DESC LIMIT 1";
     const stmt = db.prepare(sql);
     const row = (match ? stmt.get(`%${match}%`) : stmt.get()) as { payload: string } | undefined;
     return row?.payload ?? "";
@@ -548,7 +548,7 @@ describe("evidence on lifecycle verbs", () => {
 
   it("openTask --evidence threads through too", () => {
     closeTask(db, "design", { workstream: "auth" });
-    db.prepare("DELETE FROM agent_logs").run();
+    db.prepare("DELETE FROM ops").run();
     openTask(db, "design", { evidence: "reopened: deploy rollback", workstream: "auth" });
     expect(lastEventPayload()).toContain('evidence="reopened: deploy rollback"');
   });
@@ -559,7 +559,7 @@ describe("evidence on lifecycle verbs", () => {
       `UPDATE tasks SET owner_id = (SELECT id FROM agents WHERE name = 'worker-1'),
               status='IN_PROGRESS' WHERE local_id='design'`,
     ).run();
-    db.prepare("DELETE FROM agent_logs").run();
+    db.prepare("DELETE FROM ops").run();
     releaseTask(db, "design", {
       reopen: true,
       evidence: "agent crashed mid-task",
@@ -573,7 +573,7 @@ describe("evidence on lifecycle verbs", () => {
 
   it("claimTask --evidence threads through", async () => {
     insertAgent(db, { name: "worker-1", workstream: "auth", paneId: "%1", status: "busy" });
-    db.prepare("DELETE FROM agent_logs").run();
+    db.prepare("DELETE FROM ops").run();
     await claimTask(db, "design", {
       agentName: "worker-1",
       evidence: "reviewed task; have implementation plan",

@@ -6,7 +6,6 @@ import { resolve } from "node:path";
 import { AgentNotFoundError } from "../agents/errors.js";
 import { type Db, tryResolveWorkstreamId } from "../db.js";
 import { emitEvent } from "../logs.js";
-import { captureSnapshot } from "../snapshots.js";
 import {
   type CommitSummary,
   type RebaseResult,
@@ -224,14 +223,8 @@ export async function freeWorkspace(
   const row = getWorkspaceForAgent(db, agent, opts.workstream);
   if (!row) return { removed: false, rowDeleted: false };
 
-  // Pre-mutation snapshot — the row deletion + on-disk teardown is
-  // not recoverable from history. Snapshot is DB-only (the worktree
-  // is not rolled back; that's the design's tmux/disk honesty point).
-  // recreateWorkspace owns its own snapshot label so the undo trail
-  // shows one `workspace recreate` step, not free + create.
-  if (opts._suppressEvent !== true) {
-    captureSnapshot(db, `workspace free ${agent}`, row.workstreamName);
-  }
+  // 2.0: no pre-mutation snapshot. v9 dropped the `snapshots` table;
+  // v2-undo restores rollback via inverse ops over the ops log.
 
   const backend = backendByName(row.backend);
   const result = await backend.freeWorkspace({

@@ -17,7 +17,6 @@ import { type Db, resolveWorkstreamId, tryResolveWorkstreamId } from "./db.js";
 import type { AgentStatus } from "./detect.js";
 import { emitEvent, listLogs } from "./logs.js";
 import { type ReconcileMode, type ReconcileReport, reconcile } from "./reconcile.js";
-import { captureSnapshot } from "./snapshots.js";
 import { addNote, listTasksByOwner } from "./tasks.js";
 // Re-export the cluster modules so external callers continue to
 // `import { AgentNotFoundError, spawnAgent, ... } from "./agents.js"`.
@@ -723,12 +722,8 @@ export async function closeAgent(
       throw new WorkspacePreservedError(name, ws.path);
     }
   }
-  // Pre-mutation snapshot (snap_design §CAPTURE STRATEGY > WHEN).
-  // Captures the agent row + the FK SET NULL ripple onto tasks.owner +
-  // (when --discard-workspace or auto-free) the vcs_workspaces row.
-  // Workstream is recorded so this snapshot is filterable in `mu
-  // snapshot list`.
-  captureSnapshot(db, `agent close ${name}`, agent.workstreamName);
+  // 2.0: no pre-mutation snapshot. v9 dropped the `snapshots` table;
+  // v2-undo restores rollback via inverse ops over the ops log.
   // Free the workspace BEFORE the agent (so the on-disk dir is
   // removed cleanly, not orphaned by FK cascade). freeWorkspace is
   // idempotent on missing rows.

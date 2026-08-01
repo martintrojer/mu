@@ -21,30 +21,8 @@ import {
   AgentSpawnStartupError,
   WorkspacePreservedError,
 } from "../src/agents.js";
-import {
-  ArchiveAlreadyExistsError,
-  ArchiveLabelInvalidError,
-  ArchiveNotFoundError,
-  ArchiveSourceAmbiguousError,
-} from "../src/archives.js";
 import { NameAmbiguousError, UsageError, classifyError } from "../src/cli.js";
-import {
-  DbExportTargetExistsError,
-  DbImportConflictError,
-  DbImportManifestMissingError,
-  DbImportSchemaTooNewError,
-  DbImportSchemaTooOldError,
-  DbImportSourceStaleError,
-  DbReplayLocalIdConflictError,
-  DbReplayWorkstreamMissingError,
-} from "../src/db-sync.js";
 import { SchemaTooOldError, WorkstreamNotFoundError } from "../src/db.js";
-import {
-  PruneOptionsInvalidError,
-  SnapshotFileMissingError,
-  SnapshotNotFoundError,
-  SnapshotVersionMismatchError,
-} from "../src/snapshots.js";
 import {
   ClaimerNotRegisteredError,
   CrossWorkstreamEdgeError,
@@ -79,8 +57,6 @@ describe("classifyError exit-code map", () => {
     // switch branch 1: usage / invalid operator input
     [new UsageError("bad flag"), 2, "error"],
     [new WorkstreamNameInvalidError("Bad-Name"), 2, "error"],
-    [new ArchiveLabelInvalidError("Bad Label!"), 2, "error"],
-    [new PruneOptionsInvalidError("--keep-last requires a number"), 2, "error"],
 
     // switch branch 2: resolve-time misses
     [new AgentNotFoundError("alice"), 3, "not found"],
@@ -89,8 +65,6 @@ describe("classifyError exit-code map", () => {
     // boundary's first leg (operator-name → workstreams.id).
     [new WorkstreamNotFoundError("ghost"), 3, "not found"],
     [new WorkspaceNotFoundError("alice"), 3, "not found"],
-    [new SnapshotNotFoundError(9999), 3, "not found"],
-    [new ArchiveNotFoundError("missing-archive"), 3, "not found"],
 
     // switch branch 3: conflicts / state mismatches
     [new NameAmbiguousError("dupe", ["ws-a", "ws-b"], "task"), 4, "conflict"],
@@ -119,34 +93,9 @@ describe("classifyError exit-code map", () => {
     [new WorkspaceVcsRequiredError("refresh", "/tmp/ws/alice"), 4, "conflict"],
     [new WorkspaceDirtyError("/tmp/ws/alice", ["src/file.ts"]), 4, "conflict"],
     [new ClaimerNotRegisteredError("pi-mu", "%6441"), 4, "conflict"],
-    [new SnapshotVersionMismatchError(42, 6, 7), 4, "conflict"],
     [new SchemaTooOldError(4, 5), 4, "conflict"],
     [new TaskIdInvalidError("Bad ID"), 4, "conflict"],
-    [new ArchiveAlreadyExistsError("release-v1"), 4, "conflict"],
-    [new ArchiveSourceAmbiguousError("wave", ["alpha", "beta"]), 4, "conflict"],
     [new WorkstreamExistsError("existing-ws"), 4, "conflict"],
-
-    // switch branches 4-10: db sync typed failures
-    [new DbImportManifestMissingError("/tmp/mu.db.manifest.json"), 8, "db import manifest missing"],
-    [new DbImportSchemaTooOldError(7), 9, "db import schema too old"],
-    [new DbImportSchemaTooNewError(9), 10, "db import schema too new"],
-    [new DbImportSourceStaleError(["alpha"]), 11, "db import source stale"],
-    [new DbImportConflictError(["alpha"]), 12, "db import conflict"],
-    [new DbReplayWorkstreamMissingError("alpha"), 13, "db replay workstream missing"],
-    [
-      new DbReplayLocalIdConflictError("alpha", [
-        {
-          localId: "t1",
-          local: { title: "Local", status: "OPEN" },
-          sidecar: { title: "Sidecar", status: "CLOSED" },
-        },
-      ]),
-      14,
-      "db replay local-id conflict",
-    ],
-
-    // switch branch 11: export target conflict
-    [new DbExportTargetExistsError("/tmp/export.db"), 4, "conflict"],
 
     // switch branches 12-14: spawn failures
     [
@@ -180,9 +129,6 @@ describe("classifyError exit-code map", () => {
     // switch branches 9-10: wait-specific process states
     [new ReaperDetectedDuringWaitError("wait_task", "worker-1", "ws"), 6, "reaper"],
     [new StallDetectedDuringWaitError("wait_task", "worker-1", "ws", 300), 7, "stall"],
-
-    // switch branch 11: snapshot row exists but the substrate file is gone
-    [new SnapshotFileMissingError(42, "/tmp/missing.db"), 5, "snapshot file missing"],
 
     // final fallthrough: generic catch-all (non-typed errors)
     [new Error("some other thing"), 1, "error"],

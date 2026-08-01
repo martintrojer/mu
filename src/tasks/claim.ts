@@ -15,7 +15,6 @@
 
 import type { Db } from "../db.js";
 import { emitEvent, formatClaimEvent } from "../logs.js";
-import { captureSnapshot } from "../snapshots.js";
 import { currentAgentName } from "../tmux.js";
 import { ClaimerNotRegisteredError, TaskAlreadyOwnedError, TaskNotFoundError } from "./errors.js";
 import { type EvidenceOption, evidenceSuffix } from "./lifecycle.js";
@@ -85,9 +84,8 @@ export function releaseTask(db: Db, localId: string, opts: ReleaseTaskOptions): 
     };
   }
 
-  // Pre-mutation snapshot — release wipes ownership which is
-  // irrecoverable from history (we'd lose 'who was working on this').
-  captureSnapshot(db, `task release ${localId}`, before.workstreamName);
+  // 2.0: no pre-mutation snapshot. v9 dropped the `snapshots` table;
+  // v2-undo restores rollback via inverse ops over the ops log.
 
   db.prepare(
     `UPDATE tasks SET owner_id = NULL, status = ?, updated_at = ?

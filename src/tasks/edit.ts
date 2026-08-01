@@ -2,7 +2,6 @@
 
 import { type Db, resolveWorkstreamId } from "../db.js";
 import { emitEvent } from "../logs.js";
-import { captureSnapshot } from "../snapshots.js";
 import { ensureWorkstream } from "../workstream.js";
 import { taskIdFor, touchTask } from "./core.js";
 import { dedupeBlockersById, wouldCreateCycle } from "./edges.js";
@@ -262,10 +261,8 @@ export function deleteTask(
       present: true,
     };
   }
-  // Pre-mutation snapshot. delete cascades into task_edges and
-  // task_notes; no per-row history can reconstruct it. Taken AFTER
-  // the dry-run early-return so a preview never touches snapshots.
-  captureSnapshot(db, `task delete ${localId}`, before.workstreamName);
+  // 2.0: no pre-mutation snapshot. v9 dropped the `snapshots` table;
+  // v2-undo restores rollback via inverse ops over the ops log.
   const result = db.prepare("DELETE FROM tasks WHERE id = ?").run(taskId);
   const deleted = result.changes > 0;
   if (deleted) {

@@ -14,9 +14,12 @@
 // signal is consumed by `mu workstream list` (a `parked` column) and
 // the TUI tab strip (dim+prefix). No schema change; no new state.
 //
-// The detection key is the `db export` agent_logs row emitted by
-// `exportDb` in src/db-sync.ts: if the LATEST event in the workstream
-// is a `db export`, nothing local has happened since the export ran.
+// The detection key is a `db export` op: if the LATEST op in the
+// workstream is a `db export`, nothing local has happened since the
+// export ran. NOTE: 2.0 removed `mu db export` (sync is ambient over
+// segments now), so nothing in-tree emits that marker any more and
+// this heuristic reports `parked: false` until v2-sync re-grounds it
+// on peer watermarks.
 // Any subsequent `task add` / `task note` / `agent spawn` / etc.
 // supersedes the marker and the workstream stops being parked.
 //
@@ -43,8 +46,8 @@ export interface ParkedStatus {
  * Compute the parked status for one workstream. Pure read; no writes.
  *
  * Returns `{ parked: false }` when:
- *  - the workstream has no `db export` event in agent_logs, OR
- *  - any agent_logs row newer than the most recent `db export` exists
+ *  - the workstream has no `db export` event in the ops log, OR
+ *  - any op newer than the most recent `db export` exists
  *    (i.e. local activity since export), OR
  *  - the workstream has any alive agents (status not in
  *    terminated/unreachable), OR
@@ -66,12 +69,12 @@ export function parkedStatus(
     | undefined;
   if (wsRow === undefined) return { parked: false };
 
-  // Most recent agent_logs row for this workstream.
+  // Most recent op for this workstream (ops.key is the natural key).
   const latest = db
     .prepare(
-      "SELECT kind, payload, created_at FROM agent_logs WHERE workstream_id = ? ORDER BY seq DESC LIMIT 1",
+      "SELECT entity AS kind, payload, created_at FROM ops WHERE key = ? ORDER BY seq DESC LIMIT 1",
     )
-    .get(wsRow.id) as { kind: string; payload: string; created_at: string } | undefined;
+    .get(workstream) as { kind: string; payload: string; created_at: string } | undefined;
   if (latest === undefined) return { parked: false };
 
   // The marker we look for: the most recent row IS a `db export`

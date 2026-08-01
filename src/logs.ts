@@ -1,18 +1,28 @@
-// mu — agent_logs: append-only timeline of activity in a workstream.
+// mu — the log surface, as a thin shim over the **ops log**.
 //
-// Three roles in one table:
-//   1. Manual broadcasts (`mu log "..."` from a shell or agent pane)
-//   2. System events (auto-emitted by every state-changing verb;
-//      wired in a follow-up commit so this surface is reviewable
-//      first)
-//   3. External script entries via `mu log --as ...`
+// @deprecated — v2-log-verb replaces this module. v9 dropped the
+// `agent_logs` table; `ops` is now the single append-only record of
+// every change (VISION.md § 2b). Rather than rewrite ~25 consumers in
+// the schema commit, this module keeps its v1 signatures
+// (appendLog / listLogs / latestSeq / emitEvent) and reads and writes
+// `ops` rows underneath. v2-capture makes triggers the real writers
+// and v2-log-verb re-renders `mu log` from intents; both delete
+// chunks of this file.
 //
-// The seq column (AUTOINCREMENT INTEGER PK) is the cursor. A tail
-// subscriber stores the last seq it saw and re-queries with
-// `seq > <last>`; AUTOINCREMENT guarantees seq never recycles even
-// after deletes, so the cursor is durable.
+// Shim mapping (v1 log row -> op):
+//   kind       -> ops.entity     ('message' | 'event' | ...)
+//   source     -> ops.actor
+//   workstream -> ops.key        (natural key; '' = machine-wide)
+//   payload    -> ops.payload    (raw text, not JSON, until v2-capture)
+//   seq        -> ops.seq        (same AUTOINCREMENT cursor semantics)
+//
+// `ops.hlc` and `ops.group_id` get placeholder values here: real HLCs
+// are v2-hlc's job and real grouping is v2-capture's. The placeholder
+// hlc is `<iso>|<uuid>` — roughly sortable and collision-free, so it
+// satisfies UNIQUE (machine_id, hlc) without pretending to be a clock.
 
-import { type Db, tryResolveWorkstreamId } from "./db.js";
+import { randomUUID } from "node:crypto";
+import type { Db } from "./db.js";
 
 export type LogKind = "message" | "event" | "broadcast" | string;
 
@@ -42,24 +52,38 @@ interface RawLogRow {
   created_at: string;
 }
 
-/** SELECT clause for joining workstream_id back to the operator-facing
- *  workstream name. Used by every read path so the JS-side row shape
- *  is operator-facing TEXT names (not surrogate ids). */
+/** SELECT clause mapping op columns back onto the v1 log row shape.
+ *  `ops.key` already holds the operator-facing workstream name (the
+ *  natural key), so there is no join to do; '' means machine-wide and
+ *  is normalised back to NULL in `rowFromDb`. */
 const SELECT_LOG_COLS = `
   l.seq AS seq,
-  ws.name AS workstream,
-  l.source AS source,
-  l.kind AS kind,
+  l.key AS workstream,
+  l.actor AS source,
+  l.entity AS kind,
   l.payload AS payload,
   l.created_at AS created_at
 `;
 
-const LOG_FROM_JOIN = "FROM agent_logs l LEFT JOIN workstreams ws ON ws.id = l.workstream_id";
+const LOG_FROM_JOIN = "FROM ops l";
+
+/** Sentinel stored in `ops.key` for machine-wide entries (ops.key is
+ *  NOT NULL). Exported so the few call sites that query `ops` directly
+ *  agree with the shim. */
+export const MACHINE_WIDE_KEY = "";
+
+/** This machine's identity — the peer id every op is stamped with. */
+function machineId(db: Db): string {
+  const row = db.prepare("SELECT machine_id FROM machine_identity WHERE id = 1").get() as
+    | { machine_id: string }
+    | undefined;
+  return row?.machine_id ?? "unknown";
+}
 
 function rowFromDb(row: RawLogRow): LogRow {
   return {
     seq: row.seq,
-    workstreamName: row.workstream,
+    workstreamName: row.workstream === MACHINE_WIDE_KEY ? null : row.workstream,
     source: row.source,
     kind: row.kind,
     payload: row.payload,
@@ -86,19 +110,26 @@ export interface AppendLogOptions {
 export function appendLog(db: Db, opts: AppendLogOptions): LogRow {
   const kind = opts.kind ?? "message";
   const createdAt = new Date().toISOString();
-  // Resolve workstream name -> surrogate id. Null stays null. We do NOT
-  // throw on a missing workstream here — an event payload may legitimately
-  // reference a workstream the row for which is being concurrently dropped
-  // (e.g. workstream destroy emits its own log row with workstream=null
-  // for exactly this reason). Best-effort resolution.
-  const workstreamId =
-    opts.workstream === null ? null : tryResolveWorkstreamId(db, opts.workstream);
+  // `ops.key` is the NATURAL key, so the workstream NAME goes in
+  // verbatim — no resolution, and the op stays readable after the
+  // workstream is destroyed (which is the point of an ops log).
+  const key = opts.workstream ?? MACHINE_WIDE_KEY;
   const result = db
     .prepare(
-      `INSERT INTO agent_logs (workstream_id, source, kind, payload, created_at)
-       VALUES (?, ?, ?, ?, ?)`,
+      `INSERT INTO ops (hlc, machine_id, group_id, actor, intent, entity, key, op, payload, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'put', ?, ?)`,
     )
-    .run(workstreamId, opts.source, kind, opts.payload, createdAt);
+    .run(
+      `${createdAt}|${randomUUID()}`,
+      machineId(db),
+      randomUUID(),
+      opts.source,
+      null,
+      kind,
+      key,
+      opts.payload,
+      createdAt,
+    );
   return {
     seq: Number(result.lastInsertRowid),
     workstreamName: opts.workstream,
@@ -133,24 +164,22 @@ export function listLogs(db: Db, opts: ListLogsOptions = {}): LogRow[] {
   const params: unknown[] = [];
 
   if (opts.workstream === null) {
-    conditions.push("l.workstream_id IS NULL");
+    conditions.push("l.key = ?");
+    params.push(MACHINE_WIDE_KEY);
   } else if (opts.workstream !== undefined) {
-    // Resolve once; if the workstream doesn't exist the result set is empty.
-    const wsId = tryResolveWorkstreamId(db, opts.workstream);
-    if (wsId === null) return [];
-    conditions.push("l.workstream_id = ?");
-    params.push(wsId);
+    conditions.push("l.key = ?");
+    params.push(opts.workstream);
   }
   if (opts.since !== undefined) {
     conditions.push("l.seq > ?");
     params.push(opts.since);
   }
   if (opts.source !== undefined) {
-    conditions.push("l.source = ?");
+    conditions.push("l.actor = ?");
     params.push(opts.source);
   }
   if (opts.kind !== undefined) {
-    conditions.push("l.kind = ?");
+    conditions.push("l.entity = ?");
     params.push(opts.kind);
   }
 
@@ -181,13 +210,13 @@ export function listLogs(db: Db, opts: ListLogsOptions = {}): LogRow[] {
  * by `mu log --tail` to start the cursor at "now" so the subscriber
  * only sees NEW entries unless they explicitly pass `--since 0`.
  */
-export function latestSeq(db: Db, workstreamId?: number): number {
+export function latestSeq(db: Db, workstream?: string): number {
   const row =
-    workstreamId === undefined
-      ? (db.prepare("SELECT MAX(seq) AS s FROM agent_logs").get() as { s: number | null })
-      : (db
-          .prepare("SELECT MAX(seq) AS s FROM agent_logs WHERE workstream_id = ?")
-          .get(workstreamId) as { s: number | null });
+    workstream === undefined
+      ? (db.prepare("SELECT MAX(seq) AS s FROM ops").get() as { s: number | null })
+      : (db.prepare("SELECT MAX(seq) AS s FROM ops WHERE key = ?").get(workstream) as {
+          s: number | null;
+        });
   return row.s ?? 0;
 }
 
@@ -292,15 +321,13 @@ function lastClaimEvent(
   // completeness, even though they can't appear in a valid id).
   const escaped = localId.replace(/[\\%_]/g, (c) => `\\${c}`);
   const pattern = `${CLAIM_EVENT_PREFIX}\t${escaped}\t%`;
-  const wsId = tryResolveWorkstreamId(db, workstream);
-  if (wsId === null) return null;
   const row = db
     .prepare(
-      `SELECT payload, created_at FROM agent_logs
-        WHERE workstream_id = ? AND kind = 'event' AND payload LIKE ? ESCAPE '\\'
+      `SELECT payload, created_at FROM ops
+        WHERE key = ? AND entity = 'event' AND payload LIKE ? ESCAPE '\\'
         ORDER BY seq DESC LIMIT 1`,
     )
-    .get(wsId, pattern) as { payload: string; created_at: string } | undefined;
+    .get(workstream, pattern) as { payload: string; created_at: string } | undefined;
   return row ?? null;
 }
 
@@ -380,22 +407,6 @@ export const EVENT_VERB_PREFIXES: readonly string[] = [
   "workstream init",
   "workstream destroy",
   "workstream export",
-  // src/archives.ts — v6 archive verbs. Machine-wide events
-  // (workstream=null) because archives outlive workstreams.
-  "archive create",
-  "archive delete",
-  "archive add",
-  "archive remove",
-  "archive restore",
-  // src/exporting.ts — archive export emits the bucket-render summary
-  // as a machine-wide event (workstream=null; the export spans every
-  // source-ws in the archive).
-  "archive export",
-  // src/db-sync.ts — emitted per-workstream after a successful
-  // `mu db export`. Used as the marker for src/parked.ts (the
-  // "presumed parked on another machine" heuristic for `mu workstream
-  // list` / TUI tab strip).
-  "db export",
 ];
 
 // ─── Verb classification (for renderers that colour by verb) ──────

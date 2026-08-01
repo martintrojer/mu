@@ -11,6 +11,52 @@ called out under "Breaking" in each entry.
 
 ## [2.0.0] — unreleased
 
+2.0 replaces v1's FOUR separate change-recording mechanisms with ONE
+append-only **ops log** in SQLite. Sync, undo, archive, and history
+all become queries or replays over that one table
+(see [docs/VISION.md](docs/VISION.md) § 2b). This entry covers the
+schema foundation; capture triggers, HLCs, sync, undo, and archive
+markers land in follow-up work.
+
+### Breaking
+
+- **Schema v9 — no migration from v8.** `openDb` refuses any pre-v9 DB
+  with `SchemaTooOldError` (exit 4) and leaves the file untouched.
+  `MIN_ACCEPTED_SCHEMA_VERSION === CURRENT_SCHEMA_VERSION === 9`, so
+  the in-place forward-bump ladder (including the v6→v7 `approvals`
+  DROP) is gone. Keep your v1 DB with `mu db backup` and re-import it
+  through the (forthcoming) `scripts/v1-to-v2.ts`.
+- **Tables dropped:** `agent_logs`, `snapshots`, `workstream_sync`,
+  `archives`, `archived_tasks`, `archived_edges`, `archived_notes`,
+  `archived_events`. A healthy DB now has exactly 10 tables.
+- **Tables added:** `ops` (the ops log — `seq`, `hlc`, `machine_id`,
+  `group_id`, `actor`, `intent`, `entity`, `key`, `op`, `payload`,
+  `created_at`, with `UNIQUE (machine_id, hlc)` making ingest
+  idempotent) and `sync_peers` (per-peer watermarks). `ops` is
+  deliberately FK-free and keys rows by their NATURAL key
+  (`<workstream>/<local_id>`), so an op outlives the row — and the
+  workstream — it records.
+- **Verbs removed:** `mu db export` / `import` / `replay`,
+  `mu snapshot list` / `show` / `prune`, `mu undo`, and the whole
+  `mu archive` namespace (`create` / `list` / `show` / `add` /
+  `restore` / `remove` / `delete` / `search` / `export`).
+  `mu workstream destroy --archive <label>` loses its flag.
+- **Destructive verbs no longer snapshot.** `workstream destroy`,
+  `task delete` / `close` / `reject` / `defer` / `release`,
+  `agent close`, and `workspace free` / `recreate` used to capture a
+  whole-DB snapshot first. They no longer do; rollback returns as
+  inverse ops over the ops log.
+
+### Changed
+
+- `src/logs.ts` is a deprecated shim: `appendLog` / `listLogs` /
+  `latestSeq` / `emitEvent` keep their signatures but read and write
+  `ops` rows (`kind`→`entity`, `source`→`actor`, `workstream`→`key`).
+  Consumers move to the ops log directly in follow-up work.
+- Log rows survive `workstream destroy` (the ops log has no FK
+  cascade); `mu doctor` reports `ops rows` instead of
+  `agent_logs rows`.
+
 ### Fixed
 
 - **Flag-vs-positional parity sweep (dogfood-\* findings).** Four

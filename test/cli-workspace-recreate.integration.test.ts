@@ -123,9 +123,9 @@ describe("recreateWorkspace SDK", () => {
       projectRoot,
       backend: "none",
     });
-    const before = db
-      .prepare("SELECT COUNT(*) AS c FROM agent_logs WHERE kind = 'event'")
-      .get() as { c: number };
+    const before = db.prepare("SELECT COUNT(*) AS c FROM ops WHERE entity = 'event'").get() as {
+      c: number;
+    };
 
     await recreateWorkspace(db, "worker-1", {
       workstream: "auth",
@@ -136,13 +136,13 @@ describe("recreateWorkspace SDK", () => {
     // Read the events emitted by the recreate. Only ONE new event row
     // should land, with payload starting `workspace recreate`.
     const after = (
-      db.prepare("SELECT COUNT(*) AS c FROM agent_logs WHERE kind = 'event'").get() as {
+      db.prepare("SELECT COUNT(*) AS c FROM ops WHERE entity = 'event'").get() as {
         c: number;
       }
     ).c;
     const delta = after - before.c;
     const newEvents = db
-      .prepare("SELECT payload FROM agent_logs WHERE kind = 'event' ORDER BY seq DESC LIMIT ?")
+      .prepare("SELECT payload FROM ops WHERE entity = 'event' ORDER BY seq DESC LIMIT ?")
       .all(delta) as Array<{ payload: string }>;
 
     expect(delta).toBe(1);

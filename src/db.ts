@@ -3,30 +3,37 @@
 // Opens ~/.mu/mu.db (or MU_DB_PATH override), enables WAL + foreign keys,
 // applies the schema idempotently, and exposes the live Database handle.
 //
-// Schema (see CHANGELOG.md §"Schema"):
-//   - core tables: workstreams, agents, tasks, task_edges, task_notes,
-//                  agent_logs, vcs_workspaces, snapshots
-//     (+5 v6 archive_* tables; -1 approvals dropped in v7;
-//      +2 v8 sync-substrate tables)
-//   - 2 singleton-ish meta tables: schema_version, machine_identity
-//   - 3 views:  ready, blocked, goals
+// Schema (v9 — the 2.0 ops-log substrate; see CHANGELOG.md §[2.0.0]):
+//   - 6 entity tables: workstreams, agents, tasks, task_edges,
+//                      task_notes, vcs_workspaces
+//   - 1 ops log:       ops        (the single append-only record of
+//                                  every change — VISION.md § 2b)
+//   - 1 sync table:    sync_peers (per-peer watermarks)
+//   - 2 meta tables:   schema_version, machine_identity
+//   - 3 views:         ready, blocked, goals
+//   => EXPECTED_TABLES is exactly 10 entries.
 //
-// v8 (current) — the surrogate-INTEGER-PK substrate introduced in
-// v5 and forward-bumped in place to v6 (archive tables), v7
-// (approvals dropped), and v8 (sync substrate). Per
-// docs/ARCHITECTURE.md § Surrogate-PK + SDK-boundary discipline,
+// v9 is a BREAKING, migration-free redesign. It DROPS v1's four
+// separate change-recording mechanisms — `agent_logs`, `snapshots`,
+// `workstream_sync`, and the five `archived_*` tables — and replaces
+// all of them with one **ops log**. Sync, undo, archive, and history
+// are queries or replays over that log (docs/VOCABULARY.md § op,
+// ops log, marker, watermark).
+//
+// The surrogate-INTEGER-PK discipline introduced in v5 is unchanged:
+// per docs/ARCHITECTURE.md § Surrogate-PK + SDK-boundary discipline,
 // every entity table has an INTEGER PK; FKs reference INTEGER ids;
 // the operator-facing TEXT name is per-scope unique via
-// UNIQUE (<scope_id>, <name>).
+// UNIQUE (<scope_id>, <name>). `ops` is the deliberate exception: it
+// holds the NATURAL key (`ws/local_id`) in `ops.key`, never a
+// surrogate id, which is exactly why keys don't collide across
+// machines.
 //
-// IMPORTANT: MIN_ACCEPTED_SCHEMA_VERSION is v5. Pre-v5 DBs are
-// rejected at openDb time with SchemaTooOldError; the operator
-// recovers the one-shot v4→v5 migration script from git history
-// (`git log --all --diff-filter=D -- scripts/migrate-v4-to-v5.ts`).
-// The old in-process forward-only migration ladder (v1→v2, v2→v3,
-// v3→v4) was removed in schema_v5_drop_migrations_ts: with the
-// loud-fail hook below catching every pre-v5 DB before openDb
-// returns, none of those migration paths could ever run.
+// IMPORTANT: MIN_ACCEPTED_SCHEMA_VERSION === CURRENT_SCHEMA_VERSION
+// === 9. There is NO migration from v8 and no in-place forward bump
+// ladder any more: every pre-v9 DB is rejected at openDb time with
+// SchemaTooOldError (exit 4). The operator keeps their v1 DB with
+// `mu db backup` and re-imports through scripts/v1-to-v2.ts.
 
 import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
@@ -94,17 +101,14 @@ export function openDb(options: OpenDbOptions = {}): Db {
     // 'database is locked' and roll back their agent. WAL handles
     // concurrent readers; busy_timeout handles concurrent writers.
     db.pragma("busy_timeout = 5000");
-    // Detect schema version BEFORE applySchema so a real v<5 DB is not
-    // silently stamped as v5 by the CREATE-IF-NOT-EXISTS in applySchema.
+    // Detect schema version BEFORE applySchema so a real v<9 DB is not
+    // silently stamped as v9 by the CREATE-IF-NOT-EXISTS in applySchema.
     const detectedVersion = detectExistingSchemaVersion(db);
     if (detectedVersion !== null && detectedVersion < MIN_ACCEPTED_SCHEMA_VERSION) {
-      // Loud-fail: refuse to touch a pre-v5 DB. The operator
-      // restores the one-shot migrator from git history and retries.
-      // (See docs/ARCHITECTURE.md § Surrogate-PK + SDK-boundary
-      // discipline for the v5 substrate; the migrator was deleted
-      // in the post-landing cleanup per the temp-impl-artifact rule.)
-      // v5 DBs are forward-bumped to v6 in `applySchema` (purely
-      // additive change).
+      // Loud-fail: refuse to touch a pre-v9 DB. 2.0 is a clean break —
+      // there is no in-place migration to run, so the only safe move is
+      // to leave the old file untouched and tell the operator how to
+      // keep it (see SchemaTooOldError.errorNextSteps).
       try {
         db.close();
       } catch {
@@ -244,10 +248,13 @@ export function tryResolveAgentId(db: Db, workstreamId: number, name: string): n
 }
 
 /**
- * Thrown by openDb when the on-disk DB is at a schema version older
- * than v5. v5 dropped the in-process forward migrator; the one-shot
- * v4→v5 migration script lives in git history (recover via
- * `git log --all --diff-filter=D -- scripts/migrate-v4-to-v5.ts`).
+ * Thrown by openDb when the on-disk DB is older than v9.
+ *
+ * 2.0 is a deliberate clean break: v9 replaced v1's four separate
+ * change-recording mechanisms with the single **ops log** and there
+ * is NO in-place migration. A v8-or-older DB is left untouched; the
+ * operator keeps a copy (`mu db backup`) and re-imports through
+ * scripts/v1-to-v2.ts.
  *
  * Maps to exit code 4 (conflict) in cli.ts handle().
  */
@@ -258,23 +265,22 @@ export class SchemaTooOldError extends Error implements HasNextSteps {
     public readonly requiredVersion: number,
   ) {
     super(
-      `Detected v${detectedVersion} schema; v${requiredVersion} is required. The one-shot v4→v5 migration script (scripts/migrate-v4-to-v5.ts) was deleted post-landing; recover it from git history and run it once, then retry your command.`,
+      `Detected v${detectedVersion} schema; v${requiredVersion} is required. mu 2.0 replaced the v1 change-recording tables with the ops log and ships NO in-place migration — your v${detectedVersion} DB is untouched. Back it up, then re-import it with scripts/v1-to-v2.ts against a fresh v${requiredVersion} DB.`,
     );
   }
   errorNextSteps(): NextStep[] {
     return [
       {
-        intent: "Recover the one-shot v4→v5 migration script from git history",
-        command: "git log --all --diff-filter=D -- scripts/migrate-v4-to-v5.ts | head",
+        intent: "Keep a copy of the v1 DB before anything else",
+        command: `mu db backup "$HOME/mu-v1-backup.db"`,
       },
       {
-        intent: "Then run it once against the DB",
-        command:
-          "git show <commit>:scripts/migrate-v4-to-v5.ts > /tmp/migrate.ts && npx tsx /tmp/migrate.ts",
+        intent: "Move the v1 DB aside so mu starts a fresh v9 DB",
+        command: `mv "\${MU_DB_PATH:-$HOME/.local/state/mu/mu.db}" "\${MU_DB_PATH:-$HOME/.local/state/mu/mu.db}.v1"`,
       },
       {
-        intent: "Then retry the original command",
-        command: "# (your original mu invocation)",
+        intent: "Re-import the v1 tasks/notes into the new DB (2.0 importer)",
+        command: `npx tsx scripts/v1-to-v2.ts "\${MU_DB_PATH:-$HOME/.local/state/mu/mu.db}.v1"`,
       },
       {
         intent: "Inspect the on-disk DB version",
@@ -314,8 +320,9 @@ function detectExistingSchemaVersion(db: Db): number | null {
 }
 
 /** Seed the singleton machine_identity row (id=1) on first open.
- *  No-op once a row exists. Called by openDb after applySchema so
- *  v7 DBs upgraded in place to v8 get an identity too. */
+ *  No-op once a row exists. The machine_id it writes is the identity
+ *  every op is stamped with (`ops.machine_id`) and the name of this
+ *  machine's segment. */
 function seedMachineIdentity(db: Db): void {
   const row = db.prepare("SELECT COUNT(*) AS count FROM machine_identity").get() as {
     count: number;
@@ -332,32 +339,17 @@ function seedMachineIdentity(db: Db): void {
  * views are dropped and recreated so the latest definition always wins.
  *
  * For fresh DBs this writes the current schema shape and stamps
- * schema_version = CURRENT_SCHEMA_VERSION. For existing DBs this is a
- * no-op for the table CREATEs (IF NOT EXISTS) but DOES recreate the
- * views. Pre-v5 DBs never reach this function — openDb's loud-fail
+ * schema_version = CURRENT_SCHEMA_VERSION. For existing v9 DBs this is
+ * a no-op for the table CREATEs (IF NOT EXISTS) but DOES recreate the
+ * views. Pre-v9 DBs never reach this function — openDb's loud-fail
  * hook rejects them with SchemaTooOldError first.
  *
- * v5 → v6 in-place bump: v6 was purely additive (5 new archive_*
- * tables; no existing column / FK / view touched). The CREATE TABLE
- * IF NOT EXISTS blocks above create the new tables on a v5 DB.
- *
- * v6 → v7 in-place bump: v7 is destructive — drops the `approvals`
- * table (zero usage in 200+ task dogfood; anti-anticipatory pruning
- * per VISION.md "no traits with zero implementors"). The DROP runs
- * BEFORE the version stamp so a partial migration doesn't leave a
- * v7-stamped DB with the v6 table still present. Gated on the
- * detected pre-bump version so it's a one-shot for v6 DBs and a
- * harmless `IF EXISTS` no-op for fresh v7 DBs.
- *
- * v7 → v8 in-place bump: v8 is additive (machine_identity and
- * workstream_sync tables). openDb seeds machine_identity after this
- * schema block so v7 DBs upgraded in place get an identity too.
+ * There is no in-place bump ladder any more. MIN_ACCEPTED ===
+ * CURRENT, so the only two shapes that reach here are "brand new"
+ * and "already v9"; any older-DB fix-up code would be dead by
+ * construction.
  */
 function applySchema(db: Db): void {
-  // Sniff the recorded version BEFORE the schema CREATEs land — needed
-  // to decide whether the v6 → v7 destructive migration runs (only on
-  // a DB that's at v6 or older but ≥ v5, the openDb floor).
-  const preBumpVersion = detectExistingSchemaVersion(db);
   // Apply the schema DDL atomically. CURRENT_SCHEMA includes
   // `DROP VIEW IF EXISTS goals; CREATE VIEW goals …` (views can't be
   // CREATE-IF-NOT-EXISTS + redefined in one step), so without a
@@ -380,68 +372,38 @@ function applySchema(db: Db): void {
     const msg = err instanceof Error ? err.message : String(err);
     if (!/already exists/i.test(msg)) throw err;
   }
-  // v6 → v7 destructive migration: drop the approvals table on any
-  // pre-v7 DB. IF EXISTS so a fresh v7 DB (no approvals table ever
-  // created) is a no-op too. The DROP must precede the version
-  // stamp below: a partial migration that crashed mid-DROP would
-  // re-run on next open instead of silently leaving the table.
-  if (preBumpVersion !== null && preBumpVersion < 7) {
-    db.exec("DROP INDEX IF EXISTS idx_approvals_status");
-    db.exec("DROP INDEX IF EXISTS idx_approvals_workstream");
-    db.exec("DROP TABLE IF EXISTS approvals");
-  }
   // Stamp the version on a fresh DB. INSERT OR IGNORE so we don't
-  // overwrite the version on an existing v5+ DB.
+  // overwrite the version on an existing v9 DB.
   db.prepare("INSERT OR IGNORE INTO schema_version (id, version) VALUES (1, ?)").run(
-    CURRENT_SCHEMA_VERSION,
-  );
-  // Forward-additive bump for in-place transitions (v5 → v6 archive
-  // tables, v6 → v7 approvals removal). Guarded by `version < ?` so a
-  // future open against a same-or-newer DB doesn't accidentally
-  // downgrade.
-  db.prepare("UPDATE schema_version SET version = ? WHERE id = 1 AND version < ?").run(
-    CURRENT_SCHEMA_VERSION,
     CURRENT_SCHEMA_VERSION,
   );
 }
 
-/** The schema version a fresh DB starts at. v8 adds the
- *  machine_identity and workstream_sync sync substrate on top of v7
- *  (which dropped the approvals table), v6 (which added 5 archive_*
- *  tables), and v5's surrogate-PK substrate. The refusal floor is
- *  v5 — pre-v5 DBs throw `SchemaTooOldError`; v5+ DBs are
- *  forward-bumped in place by `applySchema`. */
-export const CURRENT_SCHEMA_VERSION = 8;
+/** The schema version a fresh DB starts at. v9 is the 2.0 ops-log
+ *  substrate: it drops `agent_logs`, `snapshots`, `workstream_sync`
+ *  and the five `archived_*` tables and adds `ops` + `sync_peers`.
+ *  See VISION.md § 2b. */
+export const CURRENT_SCHEMA_VERSION = 9;
 
-/** The lowest schema version `openDb` will accept. v5+ DBs are
- *  forward-bumped to the current version in place (v5 → v6 added
- *  archive tables; v6 → v7 dropped the approvals table; v7 → v8
- *  adds the sync substrate). Pre-v5 DBs throw `SchemaTooOldError`. */
-const MIN_ACCEPTED_SCHEMA_VERSION = 5;
+/** The lowest schema version `openDb` will accept. Equal to
+ *  CURRENT_SCHEMA_VERSION: 2.0 ships no migration, so every pre-v9 DB
+ *  throws `SchemaTooOldError` (exit 4) and is left untouched on disk. */
+const MIN_ACCEPTED_SCHEMA_VERSION = 9;
 
 /** Tables a healthy DB must contain. Single source of truth so
  *  `mu doctor` and any other consumer don't drift. Adding a new table
- *  = one new entry here AND a CREATE TABLE in CURRENT_SCHEMA. (Schema
- *  changes that aren't compatible with prior schemas bump
- *  CURRENT_SCHEMA_VERSION and ship with a one-shot script under
- *  scripts/ (the v4→v5 transition was the canonical example
- *  before the script was deleted post-landing). */
+ *  = one new entry here AND a CREATE TABLE in CURRENT_SCHEMA, plus a
+ *  CURRENT_SCHEMA_VERSION bump. Sorted; exactly 10 entries in v9. */
 export const EXPECTED_TABLES: readonly string[] = [
-  "agent_logs",
   "agents",
-  "archived_edges",
-  "archived_events",
-  "archived_notes",
-  "archived_tasks",
-  "archives",
   "machine_identity",
+  "ops",
   "schema_version",
-  "snapshots",
+  "sync_peers",
   "task_edges",
   "task_notes",
   "tasks",
   "vcs_workspaces",
-  "workstream_sync",
   "workstreams",
 ];
 
@@ -504,7 +466,7 @@ CREATE VIEW goals AS
      );
 `;
 
-// ─── v5 SCHEMA ────────────────────────────────────────────────────────
+// ─── v9 SCHEMA ────────────────────────────────────────────────────────
 //
 // Per docs/ARCHITECTURE.md § Surrogate-PK + SDK-boundary discipline.
 // Every entity table has:
@@ -514,9 +476,10 @@ CREATE VIEW goals AS
 //   - UNIQUE (<scope>_id, <name>)
 //
 // Foreign keys are INTEGER. Renames become single-row UPDATEs (no
-// cascade chain). The TEXT name is just an attribute. snapshots is
-// the documented exception (intentionally NO FK on workstream so a
-// destroy snapshot outlives its workstream).
+// cascade chain). The TEXT name is just an attribute. `ops` is the
+// documented exception: it has NO foreign keys at all and addresses
+// rows by their NATURAL key, because ops outlive the rows (and the
+// workstreams) they record.
 
 const CURRENT_SCHEMA = `
 -- ─── Schema versioning ────────────────────────────────────────────────
@@ -549,12 +512,6 @@ CREATE TABLE IF NOT EXISTS workstreams (
   created_at  TEXT NOT NULL                  -- ISO 8601
 );
 
--- workstream_sync: per-workstream cross-machine drift state. Rows are
--- created on demand by db import/export code, not pre-seeded.
-CREATE TABLE IF NOT EXISTS workstream_sync (
-  workstream_id        INTEGER PRIMARY KEY REFERENCES workstreams (id) ON DELETE CASCADE,
-  last_known_peer_seqs TEXT NOT NULL DEFAULT '{}'
-);
 
 -- agents: one row per managed pane. Per-workstream unique on name.
 CREATE TABLE IF NOT EXISTS agents (
@@ -627,22 +584,64 @@ CREATE TABLE IF NOT EXISTS task_notes (
 
 CREATE INDEX IF NOT EXISTS idx_task_notes_task ON task_notes (task_id);
 
--- agent_logs: append-only timeline. source stays free-text ("system",
--- "user", "orchestrator", or any agent name) — not an FK relation.
--- workstream_id is nullable (a future machine-wide event might exist)
--- but every current emitter sets it; CASCADE on workstream destroy.
-CREATE TABLE IF NOT EXISTS agent_logs (
-  seq           INTEGER PRIMARY KEY AUTOINCREMENT,
-  workstream_id INTEGER REFERENCES workstreams (id) ON DELETE CASCADE,
-  source        TEXT NOT NULL,
-  kind          TEXT NOT NULL DEFAULT 'message',
-  payload       TEXT NOT NULL,
-  created_at    TEXT NOT NULL
+-- ─── The ops log (VISION.md § 2b, VOCABULARY.md § op / ops log) ──────
+--
+-- The single append-only record of every change. Sync, undo, archive
+-- and history are all queries or replays over this one table.
+--
+-- Deliberately FK-free. An op must stay readable after the row (and
+-- the workstream) it records is gone — a tombstone op for a destroyed
+-- workstream is the whole point — so 'key' holds the NATURAL key
+-- ('<workstream>/<local_id>'), never a surrogate id. That is also why
+-- keys don't collide across machines.
+--
+--   seq        local-only append cursor (AUTOINCREMENT never recycles)
+--   hlc        the ORDERING key across machines (VOCABULARY § HLC)
+--   machine_id which peer wrote this op
+--   group_id   the undo unit: all ops of one operator action
+--   actor      who caused it (may not be a registered worker)
+--   intent     semantic label ('task.close', 'agent.spawn')
+--   entity/key what it addresses ('task', 'mu/v2-schema')
+--   op         'put' (semantic partial update) | 'del' (tombstone)
+--   payload    JSON of ONLY the columns that changed
+--
+-- UNIQUE (machine_id, hlc) is load-bearing: it makes ingest idempotent
+-- for free, which is what lets 'mu sync --repair' be nothing more than
+-- "re-read that peer's segment from zero".
+CREATE TABLE IF NOT EXISTS ops (
+  seq        INTEGER PRIMARY KEY AUTOINCREMENT,
+  hlc        TEXT NOT NULL,
+  machine_id TEXT NOT NULL,
+  group_id   TEXT NOT NULL,
+  actor      TEXT,
+  intent     TEXT,
+  entity     TEXT NOT NULL,
+  key        TEXT NOT NULL,
+  op         TEXT NOT NULL CHECK (op IN ('put','del')),
+  payload    TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  UNIQUE (machine_id, hlc)
 );
 
-CREATE INDEX IF NOT EXISTS idx_agent_logs_seq ON agent_logs (seq);
-CREATE INDEX IF NOT EXISTS idx_agent_logs_ws_seq ON agent_logs (workstream_id, seq);
-CREATE INDEX IF NOT EXISTS idx_agent_logs_source ON agent_logs (source);
+-- Three indexes, one per read shape that actually exists in 2.0:
+--   hlc         — replay/rebuild walks the log in HLC order.
+--   entity,key  — "what happened to this task" (history + per-field merge).
+--   group_id    — 'mu undo <group>' gathers one action's ops.
+-- (machine_id lookups ride the UNIQUE (machine_id, hlc) index; seq is
+-- the PK. No speculative index beyond these.)
+CREATE INDEX IF NOT EXISTS idx_ops_hlc ON ops (hlc);
+CREATE INDEX IF NOT EXISTS idx_ops_entity_key ON ops (entity, key);
+CREATE INDEX IF NOT EXISTS idx_ops_group ON ops (group_id);
+
+-- sync_peers: one row per known peer, holding its watermark — how far
+-- into that peer's segment we have applied. One integer suffices
+-- because segments are append-only and ordered. Rows are created on
+-- demand at first ingest; there is no membership list to configure.
+CREATE TABLE IF NOT EXISTS sync_peers (
+  machine_id       TEXT PRIMARY KEY,
+  last_applied_seq INTEGER NOT NULL DEFAULT 0,
+  last_seen_at     TEXT
+);
 
 -- vcs_workspaces: one isolated working copy per agent.
 -- UNIQUE (agent_id) enforces the 1:1 invariant; workstream_id is
@@ -660,109 +659,6 @@ CREATE TABLE IF NOT EXISTS vcs_workspaces (
 );
 
 CREATE INDEX IF NOT EXISTS idx_vcs_workspaces_workstream ON vcs_workspaces (workstream_id);
-
--- snapshots: documented exception. NO FK on workstream — a destroy
--- snapshot must outlive its workstream. workstream column stays TEXT
--- so the snapshot remains readable even after every reference is gone.
-CREATE TABLE IF NOT EXISTS snapshots (
-  id              INTEGER PRIMARY KEY AUTOINCREMENT,
-  workstream      TEXT,
-  label           TEXT NOT NULL,
-  db_path         TEXT NOT NULL,
-  schema_version  INTEGER NOT NULL,
-  created_at      TEXT NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_snapshots_created_at ON snapshots (created_at);
-CREATE INDEX IF NOT EXISTS idx_snapshots_workstream ON snapshots (workstream);
-
--- ─── v6 archive tables (additive on top of v5) ────────────────────
---
--- 5 new tables landed in v6 to back the mu archive verb (cross-workstream
--- preservation of CLOSED/REJECTED/DEFERRED tasks before destroy).
--- Additive only: no existing column / FK / view touched. The v5 → v6
--- transition is in-place via applySchema (no separate migration
--- script). See docs/VOCABULARY.md § archive for terminology.
---
--- Design constraint: archives outlive workstreams. archives.label is
--- globally unique (NOT per-workstream), and archived_tasks columns
--- that refer to the source workstream are TEXT (not FKs) so the
--- destroyed workstream's name stays readable post-destroy.
-
--- archives: one row per operator-named archive bucket. label is
--- globally unique because archives outlive workstreams (an archive
--- whose label was scoped to a workstream would lose its name when
--- the workstream is destroyed).
-CREATE TABLE IF NOT EXISTS archives (
-  id            INTEGER PRIMARY KEY AUTOINCREMENT,
-  label         TEXT UNIQUE NOT NULL,
-  description   TEXT,
-  created_at    TEXT NOT NULL,
-  last_added_at TEXT NOT NULL                  -- bumped on every successful add (additive accumulation invariant)
-);
-
--- archived_tasks: snapshot of a task at archive time. source_workstream
--- is intentionally TEXT (the source workstream may be destroyed after
--- archive); owner_name is snapshotted for the same reason. The
--- (archive_id, source_workstream, original_local_id) UNIQUE is the
--- idempotency lever for mu archive add re-runs.
-CREATE TABLE IF NOT EXISTS archived_tasks (
-  id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-  archive_id          INTEGER NOT NULL REFERENCES archives (id) ON DELETE CASCADE,
-  source_workstream   TEXT NOT NULL,
-  original_local_id   TEXT NOT NULL,
-  title               TEXT NOT NULL,
-  status              TEXT NOT NULL,
-  impact              INTEGER NOT NULL,
-  effort_days         REAL NOT NULL,
-  owner_name          TEXT,
-  archived_at_status  TEXT NOT NULL,
-  archived_at         TEXT NOT NULL,
-  original_created_at TEXT NOT NULL,
-  original_updated_at TEXT NOT NULL,
-  UNIQUE (archive_id, source_workstream, original_local_id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_archived_tasks_archive ON archived_tasks (archive_id);
-CREATE INDEX IF NOT EXISTS idx_archived_tasks_source ON archived_tasks (archive_id, source_workstream);
-
--- archived_edges: composite PK by pair of archived_tasks ids.
--- archive_id is denormalised so a CASCADE on the archive cleans every
--- edge in one shot.
-CREATE TABLE IF NOT EXISTS archived_edges (
-  archive_id        INTEGER NOT NULL REFERENCES archives (id) ON DELETE CASCADE,
-  from_archived_id  INTEGER NOT NULL REFERENCES archived_tasks (id) ON DELETE CASCADE,
-  to_archived_id    INTEGER NOT NULL REFERENCES archived_tasks (id) ON DELETE CASCADE,
-  PRIMARY KEY (archive_id, from_archived_id, to_archived_id)
-);
-
--- archived_notes: snapshot of task_notes for archived tasks. author
--- stays free-text, mirroring task_notes.
-CREATE TABLE IF NOT EXISTS archived_notes (
-  id               INTEGER PRIMARY KEY AUTOINCREMENT,
-  archive_id       INTEGER NOT NULL REFERENCES archives (id) ON DELETE CASCADE,
-  archived_task_id INTEGER NOT NULL REFERENCES archived_tasks (id) ON DELETE CASCADE,
-  author           TEXT,
-  content          TEXT NOT NULL,
-  created_at       TEXT NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_archived_notes_task ON archived_notes (archived_task_id);
-
--- archived_events: snapshot of kind='event' rows from agent_logs for
--- the source workstream at archive time. Only events (not the full
--- message log; that's recoverable via snapshot+undo if ever needed).
-CREATE TABLE IF NOT EXISTS archived_events (
-  id                INTEGER PRIMARY KEY AUTOINCREMENT,
-  archive_id        INTEGER NOT NULL REFERENCES archives (id) ON DELETE CASCADE,
-  source_workstream TEXT NOT NULL,
-  seq               INTEGER NOT NULL,
-  source            TEXT NOT NULL,
-  payload           TEXT NOT NULL,
-  created_at        TEXT NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_archived_events_archive ON archived_events (archive_id, source_workstream);
 
 -- ─── Views (always replaced so the latest definition wins) ────────────
 -- See READY_VIEW_SQL / BLOCKED_VIEW_SQL / GOALS_VIEW_SQL above for the

@@ -22,31 +22,9 @@ import {
   NoForegroundProcessError,
   WorkspacePreservedError,
 } from "../src/agents.js";
-import {
-  ArchiveAlreadyExistsError,
-  ArchiveLabelInvalidError,
-  ArchiveNotFoundError,
-  ArchiveSourceAmbiguousError,
-} from "../src/archives.js";
 import { NameAmbiguousError } from "../src/cli.js";
-import {
-  DbExportTargetExistsError,
-  DbImportConflictError,
-  DbImportManifestMissingError,
-  DbImportSchemaTooNewError,
-  DbImportSchemaTooOldError,
-  DbImportSourceStaleError,
-  DbReplayLocalIdConflictError,
-  DbReplayWorkstreamMissingError,
-} from "../src/db-sync.js";
 import { SchemaTooOldError, WorkstreamNotFoundError, openDb } from "../src/db.js";
 import { hasNextSteps } from "../src/output.js";
-import {
-  PruneOptionsInvalidError,
-  SnapshotFileMissingError,
-  SnapshotNotFoundError,
-  SnapshotVersionMismatchError,
-} from "../src/snapshots.js";
 import {
   ClaimerNotRegisteredError,
   CrossWorkstreamEdgeError,
@@ -275,106 +253,9 @@ const cases: NextStepsCase[] = [
     expectedTokens: ["scratch"],
   },
   {
-    error: new SchemaTooOldError(4, 5),
+    error: new SchemaTooOldError(8, 9),
     label: "SchemaTooOldError",
-    expectedTokens: ["migrate-v4-to-v5", "sqlite3"],
-  },
-
-  // src/snapshots/*
-  {
-    error: new SnapshotNotFoundError(9999),
-    label: "SnapshotNotFoundError",
-    expectedTokens: ["snapshot"],
-  },
-  {
-    error: new SnapshotVersionMismatchError(42, 6, 7),
-    label: "SnapshotVersionMismatchError (older)",
-    expectedTokens: ["schema_version = 7"],
-  },
-  {
-    error: new SnapshotVersionMismatchError(43, 8, 7),
-    label: "SnapshotVersionMismatchError (newer)",
-    expectedTokens: ["@latest"],
-  },
-  {
-    error: new SnapshotFileMissingError(42, "/path/to/snap.db"),
-    label: "SnapshotFileMissingError",
-    expectedTokens: ["42"],
-  },
-  {
-    error: new PruneOptionsInvalidError("bad prune flags"),
-    label: "PruneOptionsInvalidError",
-    expectedTokens: ["prune --help"],
-  },
-
-  // src/archives/core.ts
-  {
-    error: new ArchiveNotFoundError("release-v1"),
-    label: "ArchiveNotFoundError",
-    expectedTokens: ["release-v1"],
-  },
-  {
-    error: new ArchiveAlreadyExistsError("release-v1"),
-    label: "ArchiveAlreadyExistsError",
-    expectedTokens: ["release-v1"],
-  },
-  {
-    error: new ArchiveLabelInvalidError("Bad Label!"),
-    label: "ArchiveLabelInvalidError",
-    expectedTokens: ["bad_label_"],
-  },
-  {
-    error: new ArchiveSourceAmbiguousError("wave", ["alpha", "beta"]),
-    label: "ArchiveSourceAmbiguousError",
-    expectedTokens: ["--source alpha", "--source beta"],
-  },
-
-  // src/db-sync.ts + src/db-sync-replay.ts
-  {
-    error: new DbExportTargetExistsError("/tmp/export.db"),
-    label: "DbExportTargetExistsError",
-    expectedTokens: ["/tmp/export.db", "--force"],
-  },
-  {
-    error: new DbImportManifestMissingError("/tmp/mu.db.manifest.json"),
-    label: "DbImportManifestMissingError",
-    expectedTokens: ["mu db export", "/tmp/mu.db.manifest.json"],
-  },
-  {
-    error: new DbImportSchemaTooOldError(7),
-    label: "DbImportSchemaTooOldError",
-    expectedTokens: ["npm run build", "mu db import"],
-  },
-  {
-    error: new DbImportSchemaTooNewError(9),
-    label: "DbImportSchemaTooNewError",
-    expectedTokens: ["git pull", "mu db import"],
-  },
-  {
-    error: new DbImportSourceStaleError(["alpha"]),
-    label: "DbImportSourceStaleError",
-    expectedTokens: ["mu db export", "mu db import <file>"],
-  },
-  {
-    error: new DbImportConflictError(["alpha"]),
-    label: "DbImportConflictError",
-    expectedTokens: ["--json", "--force-source"],
-  },
-  {
-    error: new DbReplayWorkstreamMissingError("alpha"),
-    label: "DbReplayWorkstreamMissingError",
-    expectedTokens: ["mu db import <file> --apply", "mu archive restore", "alpha"],
-  },
-  {
-    error: new DbReplayLocalIdConflictError("alpha", [
-      {
-        localId: "t1",
-        local: { title: "Local task", status: "OPEN" },
-        sidecar: { title: "Sidecar task", status: "CLOSED" },
-      },
-    ]),
-    label: "DbReplayLocalIdConflictError",
-    expectedTokens: ["t1-replay", "alpha", "Sidecar task", "mu db replay"],
+    expectedTokens: ["mu db backup", "v1-to-v2.ts", "sqlite3"],
   },
 
   // src/cli/handle.ts
@@ -421,13 +302,9 @@ describe("typed errors all carry actionable errorNextSteps()", () => {
     const modules = await Promise.all([
       import("../src/agents.js"),
       import("../src/tasks.js"),
-      import("../src/archives.js"),
-      import("../src/snapshots.js"),
       import("../src/vcs.js"),
       import("../src/workspace.js"),
       import("../src/db.js"),
-      import("../src/db-sync.js"),
-      import("../src/db-sync-replay.js"),
       import("../src/workstream.js"),
       import("../src/tmux.js"),
       import("../src/cli.js"),

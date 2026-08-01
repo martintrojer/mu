@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { classifyError } from "../src/cli/handle.js";
 import { type Db, SchemaTooOldError, defaultDbPath, openDb } from "../src/db.js";
 import { addBlockEdge, addTask } from "../src/tasks.js";
 import { TaskNotFoundError } from "../src/tasks/errors.js";
@@ -30,7 +31,7 @@ describe("openDb", () => {
     // No throw = parent dirs created.
   });
 
-  it("applies the expected tables (v8: sync substrate added, approvals still dropped)", () => {
+  it("applies exactly the 10 v9 tables (ops log substrate; v1 change-recording tables gone)", () => {
     const db = openDb({ path: dbPath });
     const tables = (
       db
@@ -40,68 +41,115 @@ describe("openDb", () => {
         .all() as { name: string }[]
     ).map((r) => r.name);
     expect(tables).toEqual([
-      "agent_logs",
       "agents",
-      "archived_edges",
-      "archived_events",
-      "archived_notes",
-      "archived_tasks",
-      "archives",
       "machine_identity",
+      "ops",
       "schema_version",
-      "snapshots",
+      "sync_peers",
       "task_edges",
       "task_notes",
       "tasks",
       "vcs_workspaces",
-      "workstream_sync",
       "workstreams",
     ]);
-    // schema_version stamped to current (v8).
+    expect(tables).toHaveLength(10);
+    expect([...tables].sort()).toEqual(tables);
+    // schema_version stamped to current (v9).
     const v = (
       db.prepare("SELECT version FROM schema_version WHERE id = 1").get() as { version: number }
     ).version;
-    expect(v).toBe(8);
+    expect(v).toBe(9);
     db.close();
   });
 
-  it("v6 → v7 in-place migration drops the approvals table", () => {
-    // Simulate a v6 DB by opening, then manually re-creating an
-    // approvals table + setting schema_version=6, then re-opening.
-    const db1 = openDb({ path: dbPath });
-    db1.exec(
-      `CREATE TABLE approvals (
-        id            INTEGER PRIMARY KEY AUTOINCREMENT,
-        workstream_id INTEGER NOT NULL,
-        slug          TEXT NOT NULL,
-        reason        TEXT NOT NULL,
-        requested_by  TEXT NOT NULL,
-        status        TEXT NOT NULL DEFAULT 'pending',
-        decided_by    TEXT,
-        decided_at    TEXT,
-        created_at    TEXT NOT NULL,
-        UNIQUE (workstream_id, slug)
-      )`,
-    );
-    db1.prepare("UPDATE schema_version SET version = 6 WHERE id = 1").run();
-    // Sanity: the table exists at v6.
-    const beforeRow = db1
-      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='approvals'")
-      .get() as { name: string } | undefined;
-    expect(beforeRow?.name).toBe("approvals");
-    db1.close();
-
-    // Re-open: v6 → v7 migration runs, dropping approvals + bumping version.
-    const db2 = openDb({ path: dbPath });
-    const afterRow = db2
-      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='approvals'")
-      .get() as { name: string } | undefined;
-    expect(afterRow).toBeUndefined();
+  it("a fresh DB stamps version 9 and seeds machine_identity", () => {
+    const db = openDb({ path: dbPath });
     const v = (
-      db2.prepare("SELECT version FROM schema_version WHERE id = 1").get() as { version: number }
+      db.prepare("SELECT version FROM schema_version WHERE id = 1").get() as { version: number }
     ).version;
-    expect(v).toBe(8);
-    db2.close();
+    expect(v).toBe(9);
+    const ids = db.prepare("SELECT machine_id FROM machine_identity").all() as {
+      machine_id: string;
+    }[];
+    expect(ids).toHaveLength(1);
+    db.close();
+  });
+
+  it("ops has the v9 column set, the op CHECK, and UNIQUE (machine_id, hlc)", () => {
+    const db = openDb({ path: dbPath });
+    const cols = (
+      db.prepare("PRAGMA table_info(ops)").all() as { name: string; notnull: number }[]
+    ).map((c) => c.name);
+    expect(cols).toEqual([
+      "seq",
+      "hlc",
+      "machine_id",
+      "group_id",
+      "actor",
+      "intent",
+      "entity",
+      "key",
+      "op",
+      "payload",
+      "created_at",
+    ]);
+
+    const insert = (op: string, hlc: string): void => {
+      db.prepare(
+        `INSERT INTO ops (hlc, machine_id, group_id, actor, intent, entity, key, op, payload, created_at)
+         VALUES (?, 'm1', 'g1', 'tester', 'task.add', 'task', 'ws/t1', ?, '{}', '2026-01-01T00:00:00.000Z')`,
+      ).run(hlc, op);
+    };
+
+    insert("put", "h1");
+    insert("del", "h2");
+    // CHECK (op IN ('put','del'))
+    expect(() => insert("patch", "h3")).toThrow(/CHECK constraint/i);
+    // UNIQUE (machine_id, hlc) — the idempotent-ingest lever.
+    expect(() => insert("put", "h1")).toThrow(/UNIQUE constraint/i);
+    // A different machine may reuse the same hlc string.
+    db.prepare(
+      `INSERT INTO ops (hlc, machine_id, group_id, entity, key, op, payload, created_at)
+       VALUES ('h1', 'm2', 'g2', 'task', 'ws/t1', 'put', '{}', '2026-01-01T00:00:00.000Z')`,
+    ).run();
+
+    // seq is the AUTOINCREMENT append cursor.
+    const seqs = (db.prepare("SELECT seq FROM ops ORDER BY seq").all() as { seq: number }[]).map(
+      (r) => r.seq,
+    );
+    expect(seqs).toEqual([1, 2, 3]);
+    db.close();
+  });
+
+  it("sync_peers keys on machine_id and defaults the watermark to 0", () => {
+    const db = openDb({ path: dbPath });
+    const cols = (db.prepare("PRAGMA table_info(sync_peers)").all() as { name: string }[]).map(
+      (c) => c.name,
+    );
+    expect(cols).toEqual(["machine_id", "last_applied_seq", "last_seen_at"]);
+    db.prepare("INSERT INTO sync_peers (machine_id) VALUES ('peer-a')").run();
+    const row = db.prepare("SELECT last_applied_seq, last_seen_at FROM sync_peers").get() as {
+      last_applied_seq: number;
+      last_seen_at: string | null;
+    };
+    expect(row).toEqual({ last_applied_seq: 0, last_seen_at: null });
+    expect(() => db.prepare("INSERT INTO sync_peers (machine_id) VALUES ('peer-a')").run()).toThrow(
+      /UNIQUE constraint/i,
+    );
+    db.close();
+  });
+
+  it("indexes ops on hlc, (entity,key) and group_id", () => {
+    const db = openDb({ path: dbPath });
+    const idx = (
+      db
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='ops' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+        )
+        .all() as { name: string }[]
+    ).map((r) => r.name);
+    expect(idx).toEqual(["idx_ops_entity_key", "idx_ops_group", "idx_ops_hlc"]);
+    db.close();
   });
 
   it("seeds exactly one machine_identity row on a fresh DB", () => {
@@ -136,10 +184,13 @@ describe("openDb", () => {
     db2.close();
   });
 
-  it("leaves workstream_sync empty after openDb", () => {
+  it("leaves ops and sync_peers empty after openDb", () => {
     const db = openDb({ path: dbPath });
+    expect((db.prepare("SELECT COUNT(*) AS count FROM ops").get() as { count: number }).count).toBe(
+      0,
+    );
     const count = (
-      db.prepare("SELECT COUNT(*) AS count FROM workstream_sync").get() as {
+      db.prepare("SELECT COUNT(*) AS count FROM sync_peers").get() as {
         count: number;
       }
     ).count;
@@ -147,7 +198,9 @@ describe("openDb", () => {
     db.close();
   });
 
-  it("seeds machine_identity when upgrading a v7 DB in place", () => {
+  it("refuses a v8-shaped DB with SchemaTooOldError (2.0 ships no migration)", () => {
+    // Hand-built v8 fixture: the v1 change-recording tables plus a
+    // schema_version stamp. No binary fixture — the shape is the point.
     {
       const raw = new Database(dbPath);
       raw.exec(
@@ -157,27 +210,60 @@ describe("openDb", () => {
            name        TEXT UNIQUE NOT NULL,
            created_at  TEXT NOT NULL
          );
-         INSERT INTO schema_version (id, version) VALUES (1, 7);`,
+         CREATE TABLE agent_logs (
+           seq           INTEGER PRIMARY KEY AUTOINCREMENT,
+           workstream_id INTEGER REFERENCES workstreams (id) ON DELETE CASCADE,
+           source        TEXT NOT NULL,
+           kind          TEXT NOT NULL DEFAULT 'message',
+           payload       TEXT NOT NULL,
+           created_at    TEXT NOT NULL
+         );
+         CREATE TABLE snapshots (
+           id             INTEGER PRIMARY KEY AUTOINCREMENT,
+           workstream     TEXT,
+           label          TEXT NOT NULL,
+           db_path        TEXT NOT NULL,
+           schema_version INTEGER NOT NULL,
+           created_at     TEXT NOT NULL
+         );
+         CREATE TABLE workstream_sync (
+           workstream_id        INTEGER PRIMARY KEY REFERENCES workstreams (id) ON DELETE CASCADE,
+           last_known_peer_seqs TEXT NOT NULL DEFAULT '{}'
+         );
+         CREATE TABLE machine_identity (
+           id         INTEGER PRIMARY KEY CHECK (id = 1),
+           machine_id TEXT NOT NULL,
+           hostname   TEXT,
+           created_at TEXT NOT NULL
+         );
+         INSERT INTO schema_version (id, version) VALUES (1, 8);`,
       );
       raw.close();
     }
 
-    const db = openDb({ path: dbPath });
-    const row = db.prepare("SELECT version FROM schema_version WHERE id = 1").get() as {
-      version: number;
-    };
-    expect(row.version).toBe(8);
-    const identities = db.prepare("SELECT machine_id FROM machine_identity").all() as {
-      machine_id: string;
-    }[];
-    expect(identities).toHaveLength(1);
-    expect(identities[0]?.machine_id).toMatch(
-      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
-    );
-    db.close();
+    let thrown: unknown;
+    try {
+      openDb({ path: dbPath });
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeInstanceOf(SchemaTooOldError);
+    if (!(thrown instanceof SchemaTooOldError)) throw new Error("expected SchemaTooOldError");
+    expect(thrown.detectedVersion).toBe(8);
+    expect(thrown.requiredVersion).toBe(9);
+    // Typed-error → exit-code map: 4 (conflict).
+    expect(classifyError(thrown)).toEqual({ label: "conflict", exitCode: 4 });
+    // The v8 DB is left untouched — no v9 tables were created under it.
+    const raw2 = new Database(dbPath);
+    const names = (
+      raw2.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as { name: string }[]
+    ).map((r) => r.name);
+    raw2.close();
+    expect(names).not.toContain("ops");
+    expect(names).toContain("agent_logs");
   });
 
-  it("still rejects pre-v5 DBs with SchemaTooOldError", () => {
+  it("still rejects ancient (pre-v5) DBs with SchemaTooOldError", () => {
     {
       const raw = new Database(dbPath);
       raw.exec(
@@ -226,21 +312,15 @@ describe("openDb", () => {
         .all() as { name: string }[]
     ).map((r) => r.name);
     expect(tables).toEqual([
-      "agent_logs",
       "agents",
-      "archived_edges",
-      "archived_events",
-      "archived_notes",
-      "archived_tasks",
-      "archives",
       "machine_identity",
+      "ops",
       "schema_version",
-      "snapshots",
+      "sync_peers",
       "task_edges",
       "task_notes",
       "tasks",
       "vcs_workspaces",
-      "workstream_sync",
       "workstreams",
     ]);
     db2.close();

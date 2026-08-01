@@ -23,9 +23,8 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { addToArchive, createArchive } from "../src/archives.js";
 import { type Db, openDb } from "../src/db.js";
-import { type ExportManifest, exportArchive } from "../src/exporting.js";
+import type { ExportManifest } from "../src/exporting.js";
 import { addNote, addTask, deleteTask } from "../src/tasks.js";
 import { resetTmuxExecutor, setTmuxExecutor } from "../src/tmux.js";
 import { destroyWorkstream, exportWorkstream } from "../src/workstream.js";
@@ -243,59 +242,6 @@ describe("renderToBucket — additive across workstreams", () => {
     expect(bucketIndex).toContain(
       "| ui | [`mockup`](ui/tasks/mockup.md) | OPEN | 50 | 1 | 50.00 | Mockup |",
     );
-  });
-});
-
-describe("exportArchive — bucket per (archive_id, source_workstream)", () => {
-  it("renders one source-ws subdir per archive source", () => {
-    seed("auth", ["design", "build"]);
-    seed("ui", ["mockup"]);
-    addNote(db, "design", "DECISION: JWT", { workstream: "auth" });
-
-    createArchive(db, "release-v1");
-    addToArchive(db, "release-v1", "auth");
-    addToArchive(db, "release-v1", "ui");
-
-    const outDir = join(tmpDir, "archive-bucket");
-    const result = exportArchive(db, { label: "release-v1", outDir });
-
-    expect(result.sourceCount).toBe(2);
-    expect(listFiles(outDir)).toEqual([
-      "INDEX.md",
-      "README.md",
-      "auth/INDEX.md",
-      "auth/README.md",
-      "auth/tasks/build.md",
-      "auth/tasks/design.md",
-      "manifest.json",
-      "ui/INDEX.md",
-      "ui/README.md",
-      "ui/tasks/mockup.md",
-    ]);
-    const manifest = readManifest(outDir);
-    expect(manifest.bucketVersion).toBe(2);
-    expect(manifest.bucketLabel).toBe("release-v1");
-    expect(Object.keys(manifest.sources).sort()).toEqual(["auth", "ui"]);
-
-    // Notes survive the archive → bucket round trip.
-    const designMd = readFileSync(join(outDir, "auth/tasks/design.md"), "utf8");
-    expect(designMd).toMatch(/DECISION: JWT/);
-  });
-
-  it("re-export of the same archive is idempotent at the file level", async () => {
-    seed("auth", ["design"]);
-    createArchive(db, "release-v2");
-    addToArchive(db, "release-v2", "auth");
-
-    const outDir = join(tmpDir, "archive-bucket");
-    exportArchive(db, { label: "release-v2", outDir });
-    const beforeMtime = statSync(join(outDir, "auth/tasks/design.md")).mtimeMs;
-    await new Promise((r) => setTimeout(r, 25));
-
-    const second = exportArchive(db, { label: "release-v2", outDir });
-    expect(second.written).toBe(0);
-    expect(second.unchanged).toBe(1);
-    expect(statSync(join(outDir, "auth/tasks/design.md")).mtimeMs).toBe(beforeMtime);
   });
 });
 
