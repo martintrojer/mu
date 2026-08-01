@@ -298,6 +298,36 @@ other shape is accepted as an ADDITIVE alias (`mu task note <id>
 Removing an existing shape is a breaking change; adding an alias is
 not.
 
+### Empty vs blank flag fragments
+
+> **In a list flag, an EMPTY fragment is dropped; a BLANK
+> (whitespace-only) fragment is a usage error (exit 2).**
+
+The two are not the same thing, and conflating them caused
+`bug_whitespace_status_fragment`:
+
+| Input | Kind | Treatment | Why |
+| --- | --- | --- | --- |
+| `--status "OPEN,"` | **empty** (`""` before trimming) | dropped → `[OPEN]` | A trailing/double comma is a structural artifact of typing a list. |
+| `--blocked-by ""` | **empty** | dropped → `[]` | `mu task reparent --blocked-by ''` documents this as the clear-all-blockers sentinel. |
+| `--status " "` | **blank** (non-empty before trimming, empty after) | `UsageError`, exit 2 | Nobody means "filter by the space character". It is a typo or a quoting accident. |
+| `--status "OPEN, "` | **blank** | `UsageError`, exit 2 | Previously widened to *no filter at all* and exited 0 — a silent wrong answer. |
+
+The rule is enforced once, in `parseCsvFlag` (`src/cli.ts`), so every
+list flag agrees — `--status`, `--by`, `--blocked-by`, `-w`. Each
+call site passes its own flag name so the error names the flag the
+operator actually typed. Deciding per-call-site is what let
+flag-vs-positional drift in the first place.
+
+A blank single-value `-w ' '` is rejected in `resolveWorkstream` for
+the same reason: it never reaches `parseCsvFlag`, and before the fix
+it resolved to a workstream literally named `" "`.
+
+Whether zero surviving fragments is legal is then a per-verb
+question, decided *after* this rule: `--by ''` needs at least one
+blocker (exit 2), while `reparent --blocked-by ''` means "clear
+them all".
+
 Corollary for multi-value flags: the same CONCEPT gets the same
 parsing in every verb that names it. `--blocked-by` and `--by` are
 both blocker lists, so both accept repeat / comma / mixed form via

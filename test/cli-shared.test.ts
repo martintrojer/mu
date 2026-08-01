@@ -52,6 +52,31 @@ describe("parseCsvFlag", () => {
     expect(parseCsvFlag(["a,", "", ",b"])).toEqual(["a", "b"]);
   });
 
+  // bug_whitespace_status_fragment. EMPTY ("" pre-trim) is a comma
+  // artifact or the documented clear-all sentinel, so it is dropped.
+  // BLANK (non-empty pre-trim, empty post-trim) is a typo or quoting
+  // accident that no operator means, so it is a usage error rather
+  // than a silently narrower/wider result.
+  it("rejects blank (whitespace-only) fragments as a usage error", () => {
+    for (const blank of [" ", "  ", "\t", "\n", " \t "]) {
+      expect(() => parseCsvFlag([blank])).toThrow(/blank \(whitespace-only\)/);
+      expect(() => parseCsvFlag([`a,${blank}`])).toThrow(/blank \(whitespace-only\)/);
+      expect(() => parseCsvFlag(["a", blank])).toThrow(/blank \(whitespace-only\)/);
+    }
+  });
+
+  it("names the offending flag and the blank value in the message", () => {
+    expect(() => parseCsvFlag([" "], "--status")).toThrow(/^--status got a blank/);
+    expect(() => parseCsvFlag([" "], "-b/--by")).toThrow(/^-b\/--by got a blank/);
+    // The value is quoted so a tab/space is visible in the message.
+    expect(() => parseCsvFlag(["\t"], "--status")).toThrow(/"\\t"/);
+  });
+
+  it("still accepts a fragment with INTERNAL whitespace after trimming", () => {
+    // Only entirely-blank fragments are rejected; padding is fine.
+    expect(parseCsvFlag(["  a  ,  b  "])).toEqual(["a", "b"]);
+  });
+
   it("is idempotent (applying twice = applying once)", () => {
     const once = parseCsvFlag(["a,b", "c"]);
     expect(parseCsvFlag(once)).toEqual(once);
@@ -72,8 +97,18 @@ describe("parseStatusesOption", () => {
     expect(parseStatusesOption([])).toBeUndefined();
   });
 
-  it("['  '] → undefined (whitespace-only fragments dropped)", () => {
-    expect(parseStatusesOption(["  "])).toBeUndefined();
+  // bug_whitespace_status_fragment: a BLANK (whitespace-only) fragment
+  // used to be dropped, so `--status "OPEN, "` silently widened to
+  // no-filter and `--status " "` returned every task as though no
+  // filter were given. It is now a usage error (exit 2). Structurally
+  // EMPTY fragments are still dropped — see the test below.
+  it("['  '] → UsageError (blank fragment is not a silent no-filter)", () => {
+    expect(() => parseStatusesOption(["  "])).toThrow(/blank \(whitespace-only\)/);
+  });
+
+  it("['OPEN,'] → ['OPEN'] (structurally empty fragments still dropped)", () => {
+    expect(parseStatusesOption(["OPEN,"])).toEqual(["OPEN"]);
+    expect(parseStatusesOption([""])).toBeUndefined();
   });
 
   it("single value → 1-element array (back-compat shape)", () => {
@@ -137,8 +172,8 @@ describe("normalizeInheritedWorkstream", () => {
     expect(normalizeInheritedWorkstream([])).toBeUndefined();
   });
 
-  it("whitespace-only fragment → undefined", () => {
-    expect(normalizeInheritedWorkstream(["  "])).toBeUndefined();
+  it("whitespace-only fragment → UsageError (was: silent undefined)", () => {
+    expect(() => normalizeInheritedWorkstream(["  "])).toThrow(/blank \(whitespace-only\)/);
   });
 
   it("CSV string → single name when only one survives", () => {

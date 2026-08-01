@@ -32,7 +32,7 @@ import { addBlockEdge, deleteTask, removeBlockEdge, reparentTask } from "../../t
  *  `string[]` for the variadic one; accept both so a programmatic
  *  caller passing the old single-string shape keeps working. */
 export function parseByFlag(by: string | readonly string[]): string[] {
-  const blockers = parseCsvFlag(typeof by === "string" ? [by] : by);
+  const blockers = parseCsvFlag(typeof by === "string" ? [by] : by, "-b/--by");
   if (blockers.length === 0) {
     throw new UsageError("-b/--by requires at least one blocker task id");
   }
@@ -141,7 +141,10 @@ export async function cmdTaskReparent(
   const { name: localId } = await resolveEntityRef(db, rawId, opts, "task");
   assertTaskInWorkstream(db, localId, opts.workstream);
   const ws = await resolveWorkstream(opts.workstream);
-  const blockers = parseCsvFlag(opts.blockedBy);
+  // An all-EMPTY --blocked-by '' is the documented clear-all-blockers
+  // sentinel here (unlike --by, where zero blockers is meaningless),
+  // so [] stays legal. A BLANK ' ' still throws from parseCsvFlag.
+  const blockers = parseCsvFlag(opts.blockedBy, "-b/--blocked-by");
   const r = reparentTask(db, localId, blockers, { workstream: ws });
   const nextSteps: NextStep[] = [
     { intent: "Show the new dependency tree", command: `mu task tree ${localId} -w ${ws}` },

@@ -117,6 +117,43 @@ markers land in follow-up work.
 
 ### Fixed
 
+- **Blank (whitespace-only) list-flag fragments no longer silently
+  vanish (`bug_whitespace_status_fragment`).** `parseCsvFlag` trimmed
+  fragments and dropped every empty result, which conflated two
+  different things. `mu task list --status "OPEN, "` quietly widened to
+  *no status filter at all* and exited 0, and `--status " "` returned
+  every task as though the flag had been omitted — the same
+  silent-wrong-answer class as the flag-vs-positional sweep, and the
+  opposite of a narrower filter, so it was under-reporting nothing and
+  over-reporting everything.
+
+  The rule, now written down in `docs/VOCABULARY.md` § Empty vs blank
+  flag fragments: **an EMPTY fragment (`""` before trimming) is
+  dropped; a BLANK fragment (non-empty before trimming, empty after) is
+  a `UsageError` (exit 2).** Empty is a structural comma artifact
+  (`"a,b,"`, `"a,,b"`) or the documented `reparent --blocked-by ''`
+  clear-all sentinel — both things an operator means. Blank is a typo
+  or a quoting accident that nobody means.
+
+  Enforced once in `parseCsvFlag`, so all four list flags agree
+  (`--status`, `--by`, `--blocked-by`, `-w`); all 7 call sites now pass
+  their flag name so the error names the flag actually typed. A blank
+  single-value `-w ' '` is rejected in `resolveWorkstream` too — an
+  adjacent hole found while testing, since that shape never reaches
+  `parseCsvFlag` and previously resolved to a workstream named `" "`.
+  Whether zero surviving fragments is legal stays a per-verb call made
+  after the rule: `--by ''` still requires a blocker, `reparent
+  --blocked-by ''` still clears all.
+
+  The property test that caught this was itself wrong in three ways and
+  is rewritten as a TOTAL property that derives the expected outcome
+  from the input rather than filtering the generator: besides the
+  reported `" "`, it also mis-asserted that `","` (two empty fragments)
+  and `"OPEN,"` (a valid `[OPEN]`) must throw. It failed ~1 in 3 runs
+  in isolation, which both the orchestrator and this worker twice
+  misfiled as the known load-flake; it was fast-check randomness, not
+  concurrency. Now 15/15 green in isolation.
+
 - **Three pre-existing test failures across two files (not v2
   regressions).** All three reproduce on the v1 commit v2 branched
   from, and all three are FIXTURE bugs, not production bugs.

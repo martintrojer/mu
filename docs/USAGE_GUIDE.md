@@ -296,6 +296,17 @@ Missing `--status` keeps today's no-filter shape (no auto-default).
 `mu task wait --status` stays single — the verb means "wait until
 reaches THIS status".
 
+**Empty vs blank fragments.** An *empty* fragment is dropped: a
+trailing or doubled comma is a typing artifact, so `--status "OPEN,"`
+means `[OPEN]`, and `mu task reparent --blocked-by ''` is the
+documented "clear every blocker" sentinel. A *blank* fragment — one
+that is entirely whitespace, like `--status " "` or the tail of
+`--status "OPEN, "` — is a usage error (exit 2) naming the flag. Nobody
+means "filter by the space character", and silently dropping it used to
+return a different answer than the one typed. Same rule for `-w`,
+`--by`, and `--blocked-by`; see docs/VOCABULARY.md § Empty vs blank
+flag fragments.
+
 ### CLI conventions: flag vs positional
 
 The rule the CLI follows:

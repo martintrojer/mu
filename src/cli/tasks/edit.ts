@@ -152,7 +152,7 @@ export async function cmdTaskAdd(
     derivation = idFromTitleVerbose(db, workstream, opts.title);
   }
   const id = derivation.id;
-  const blockedBy = parseCsvFlag(opts.blockedBy);
+  const blockedBy = parseCsvFlag(opts.blockedBy, "-b/--blocked-by");
   const hasBlockers = blockedBy.length > 0;
   const initialNoteAuthor =
     opts.note !== undefined ? (opts.noteAuthor ?? (await resolveActorIdentity())) : undefined;

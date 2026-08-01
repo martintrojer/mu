@@ -102,8 +102,9 @@ async function resolveWorkstreamSet(db: Db, opts: StateOpts): Promise<string[]> 
   }
   if (explicitW) {
     // parseCsvFlag canonicalises repeat / comma / mixed forms into a
-    // flat string[] (stripping whitespace + empty fragments).
-    const names = parseCsvFlag(opts.workstream);
+    // flat string[] (trimming fragments, dropping empty ones, and
+    // rejecting blank whitespace-only ones as a usage error).
+    const names = parseCsvFlag(opts.workstream, "-w/--workstream");
     const deduped = Array.from(new Set(names));
     if (deduped.length > 0) {
       // Strict validation: every entry must exist. A typo'd name

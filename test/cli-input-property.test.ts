@@ -13,9 +13,21 @@ import {
 } from "../src/cli.js";
 import { TASK_STATUSES } from "../src/tasks.js";
 
+// Generators deliberately admit blank (whitespace-only) fragments so
+// the throw-on-blank rule stays under test rather than being generated
+// away. `hasBlankFragment` is the shared oracle for "should this input
+// throw?" (docs/VOCABULARY.md § Empty vs blank flag fragments).
 const safeFragment = fc
   .string({ minLength: 0, maxLength: 16 })
   .filter((s) => !s.includes("\u0000"));
+
+/** True when any comma-fragment is non-empty but trims to empty — the
+ *  exact condition parseCsvFlag rejects. Empty fragments (`"a,,b"`,
+ *  `""`) are NOT blank; they are dropped. */
+function hasBlankFragment(values: readonly string[] | undefined): boolean {
+  if (!values) return false;
+  return values.some((v) => v.split(",").some((f) => f.length > 0 && f.trim().length === 0));
+}
 
 function referenceCsv(values: readonly string[] | undefined): string[] {
   if (!values) return [];
@@ -29,10 +41,23 @@ function referenceCsv(values: readonly string[] | undefined): string[] {
 
 describe("CLI parser properties", () => {
   describe("parseCsvFlag", () => {
-    it("matches the reference flatten/trim/drop-empty implementation", () => {
+    it("matches the reference flatten/trim/drop-empty implementation on blank-free input", () => {
       fc.assert(
         fc.property(fc.array(safeFragment, { maxLength: 20 }), (values) => {
+          fc.pre(!hasBlankFragment(values));
           expect(parseCsvFlag(values)).toEqual(referenceCsv(values));
+        }),
+      );
+    });
+
+    it("throws UsageError exactly when a fragment is blank (whitespace-only)", () => {
+      fc.assert(
+        fc.property(fc.array(safeFragment, { maxLength: 20 }), (values) => {
+          if (hasBlankFragment(values)) {
+            expect(() => parseCsvFlag(values)).toThrow(/blank \(whitespace-only\) value/);
+          } else {
+            expect(() => parseCsvFlag(values)).not.toThrow();
+          }
         }),
       );
     });
@@ -40,7 +65,10 @@ describe("CLI parser properties", () => {
     it("is idempotent once fragments contain no embedded commas", () => {
       fc.assert(
         fc.property(fc.array(safeFragment, { maxLength: 20 }), (values) => {
+          fc.pre(!hasBlankFragment(values));
           const once = parseCsvFlag(values);
+          // Output is blank-free by construction, so a second pass can
+          // never throw — that is what keeps the helper idempotent.
           expect(parseCsvFlag(once)).toEqual(once);
         }),
       );
@@ -49,6 +77,7 @@ describe("CLI parser properties", () => {
     it("never emits empty fragments or untrimmed fragments", () => {
       fc.assert(
         fc.property(fc.array(safeFragment, { maxLength: 20 }), (values) => {
+          fc.pre(!hasBlankFragment(values));
           for (const part of parseCsvFlag(values)) {
             expect(part).not.toBe("");
             expect(part).toBe(part.trim());
@@ -97,19 +126,68 @@ describe("CLI parser properties", () => {
       );
     });
 
-    it("parseStatusesOption rejects invalid fragments", () => {
+    // This property replaces a filter-based one that was the original
+    // bug report. That version asserted "any string that isn't a status
+    // makes parseStatusesOption throw" and was WRONG in three ways,
+    // each surfacing only when fast-check happened to draw it:
+    //
+    //   " "      blank      — the reported bug: silently dropped.
+    //   ","      separators — splits to two EMPTY fragments, correctly
+    //                         dropped, so nothing throws. The filter
+    //                         let it through because "," is not a
+    //                         status name.
+    //   "OPEN,"  artifact   — parses to a perfectly valid [OPEN].
+    //
+    // Filtering those out one at a time would keep the property
+    // under-specified. Instead this is TOTAL: it derives the expected
+    // outcome from the input for every draw, so there is nothing left
+    // to be lucky about. `fc.pre` and generator filters are gone.
+    it("parseStatusesOption throws exactly when a fragment is blank or not a status", () => {
       fc.assert(
-        fc.property(
-          fc
-            .string({ minLength: 1, maxLength: 12 })
-            .filter(
-              (s) => !TASK_STATUSES.includes(s.toUpperCase() as (typeof TASK_STATUSES)[number]),
-            ),
-          (invalid) => {
-            expect(() => parseStatusesOption(["OPEN", invalid])).toThrow(/--status must be one of/);
-          },
-        ),
+        fc.property(fc.array(safeFragment, { maxLength: 6 }), (values) => {
+          // Structurally-empty fragments are dropped and cannot cause
+          // either failure mode, so the oracle ignores them too.
+          const present = values.flatMap((v) => v.split(",")).filter((f) => f.length > 0);
+          const anyBlank = present.some((f) => f.trim().length === 0);
+          const anyNotAStatus = present.some(
+            (f) =>
+              f.trim().length > 0 &&
+              !TASK_STATUSES.includes(f.trim().toUpperCase() as (typeof TASK_STATUSES)[number]),
+          );
+
+          if (anyBlank || anyNotAStatus) {
+            expect(() => parseStatusesOption(values)).toThrow(
+              /--status must be one of|blank \(whitespace-only\) value/,
+            );
+          } else {
+            expect(() => parseStatusesOption(values)).not.toThrow();
+          }
+        }),
       );
+    });
+
+    it("a blank fragment is reported as blank even when a valid status precedes it", () => {
+      expect(() => parseStatusesOption(["OPEN", " "])).toThrow(/blank \(whitespace-only\)/);
+    });
+
+    it("a blank --status fragment is a usage error, not a silently dropped one", () => {
+      // bug_whitespace_status_fragment, the original counterexample.
+      for (const blank of [" ", "  ", "\t", "\n"]) {
+        expect(() => parseStatusesOption(["OPEN", blank])).toThrow(/blank \(whitespace-only\)/);
+        expect(() => parseStatusesOption([blank])).toThrow(/blank \(whitespace-only\)/);
+        expect(() => parseStatusesOption([`OPEN,${blank}`])).toThrow(/blank \(whitespace-only\)/);
+      }
+    });
+
+    it("a non-blank invalid --status fragment still names the status list", () => {
+      expect(() => parseStatusesOption(["OPEN", "nope"])).toThrow(/--status must be one of/);
+    });
+
+    it("structurally empty fragments stay dropped (trailing/double comma)", () => {
+      // Empty is not blank: these are comma artifacts, not typos.
+      expect(parseStatusesOption(["OPEN,"])).toEqual(["OPEN"]);
+      expect(parseStatusesOption(["OPEN,,CLOSED"])).toEqual(["OPEN", "CLOSED"]);
+      expect(parseStatusesOption([""])).toBeUndefined();
     });
   });
 

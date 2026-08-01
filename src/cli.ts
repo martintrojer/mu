@@ -93,9 +93,20 @@ export {
  *   2. $MU_SESSION env var
  *   3. Current tmux session name (with `mu-` prefix stripped)
  *
- * Throws UsageError if none of the above produce a name.
+ * Throws UsageError if none of the above produce a name, or if the
+ * explicit value is BLANK (whitespace-only). The blank check lives
+ * here as well as in parseCsvFlag because the single-value `-w <name>`
+ * shape never passes through the CSV helper: without it,
+ * `mu task list -w ' '` resolved to the workstream named " " and
+ * rendered an empty table instead of erroring
+ * (bug_whitespace_status_fragment, adjacent hole).
  */
 export async function resolveWorkstream(explicit?: string): Promise<string> {
+  if (explicit !== undefined && explicit.length > 0 && explicit.trim().length === 0) {
+    throw new UsageError(
+      `-w/--workstream got a blank (whitespace-only) value ${JSON.stringify(explicit)}. Pass a workstream name, or omit the flag to use $MU_SESSION / the current tmux session.`,
+    );
+  }
   if (explicit) return explicit;
   if (process.env.MU_SESSION) return process.env.MU_SESSION;
   const tmuxWorkstream = await resolveTmuxSessionWorkstreamName();
@@ -261,7 +272,7 @@ export function parseStatusesOption(
   values: readonly string[] | undefined,
   flag = "--status",
 ): TaskStatus[] | undefined {
-  const fragments = parseCsvFlag(values);
+  const fragments = parseCsvFlag(values, flag);
   if (fragments.length === 0) return undefined;
   const seen = new Set<TaskStatus>();
   const out: TaskStatus[] = [];
@@ -540,21 +551,55 @@ export const JSON_OPT = ["--json", "emit machine-readable JSON instead of a tabl
  *   --foo a,b,c               → ["a", "b", "c"]
  *   --foo a,b --foo c         → ["a", "b", "c"]
  *
- * Whitespace inside fragments is trimmed; empty fragments (consecutive
- * commas, leading/trailing comma, an entirely-empty value) are
- * dropped. Idempotent: the helper is safe to apply twice.
+ * Whitespace inside fragments is trimmed. Two kinds of "empty" get
+ * DIFFERENT treatment, and the distinction is the whole point (see
+ * docs/VOCABULARY.md § Empty vs blank flag fragments):
+ *
+ *   EMPTY  (`""` before trimming) — DROPPED. This is either a
+ *          structural comma artifact (`"a,b,"`, `"a,,b"`) or the
+ *          deliberate clear-everything sentinel that
+ *          `mu task reparent --blocked-by ''` documents. Both are
+ *          things an operator means.
+ *   BLANK  (non-empty before trimming, empty after — i.e. entirely
+ *          whitespace, `" "` / `"\t"`) — a UsageError (exit 2). An
+ *          operator never means "filter by the space character";
+ *          it is a typo or a quoting accident, and silently dropping
+ *          it produced a silent wrong answer
+ *          (bug_whitespace_status_fragment): `--status "OPEN, "`
+ *          quietly widened to no-filter-at-all, and `--status " "`
+ *          returned every task as though no filter were given.
+ *
+ * Trim-then-drop-empty conflated the two. Deciding it HERE rather
+ * than per-call-site is deliberate: a per-call-site answer is exactly
+ * how the flag-vs-positional inconsistency arose.
+ *
+ * Idempotent: the helper is safe to apply twice (its output never
+ * contains a blank fragment, so a second pass cannot throw).
  *
  * Convention codified by cli_audit_plurality_uniformity (v0.3). See
  * docs/USAGE_GUIDE.md "CLI conventions".
  */
-export function parseCsvFlag(values: readonly string[] | undefined): string[] {
+export function parseCsvFlag(
+  values: readonly string[] | undefined,
+  flag = "a list flag",
+): string[] {
   if (!values) return [];
-  return values.flatMap((v) =>
-    v
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean),
-  );
+  const out: string[] = [];
+  for (const value of values) {
+    for (const fragment of value.split(",")) {
+      // Empty BEFORE trimming: comma artifact or clear-all sentinel.
+      if (fragment.length === 0) continue;
+      const trimmed = fragment.trim();
+      // Non-empty before, empty after: entirely whitespace.
+      if (trimmed.length === 0) {
+        throw new UsageError(
+          `${flag} got a blank (whitespace-only) value ${JSON.stringify(fragment)}. Remove it, or pass an empty string ('') if you meant "none".`,
+        );
+      }
+      out.push(trimmed);
+    }
+  }
+  return out;
 }
 
 /**
@@ -580,7 +625,7 @@ export function normalizeInheritedWorkstream(
   value: string | readonly string[] | undefined,
 ): string | undefined {
   if (value === undefined) return undefined;
-  const names = parseCsvFlag(typeof value === "string" ? [value] : value);
+  const names = parseCsvFlag(typeof value === "string" ? [value] : value, "-w/--workstream");
   if (names.length === 0) return undefined;
   if (names.length > 1) {
     throw new UsageError(
@@ -618,7 +663,7 @@ async function cmdBareTui(
   requestedWorkstreams?: readonly string[],
 ): Promise<void> {
   const workstreams = await listWorkstreams(db);
-  const requested = parseCsvFlag(requestedWorkstreams);
+  const requested = parseCsvFlag(requestedWorkstreams, "-w/--workstream");
   if (workstreams.length === 0 && requested.length === 0) {
     program.outputHelp();
     printBareNoWorkstreamsHint();
