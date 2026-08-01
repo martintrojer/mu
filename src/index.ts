@@ -90,6 +90,14 @@ export {
   OP_CTX_DDL,
 } from "./capture.js";
 export {
+  applyOp,
+  applyOps,
+  type ApplyResult,
+  type Op,
+  OpEntityNotSyncedError,
+  OpKeyMalformedError,
+} from "./apply.js";
+export {
   currentOpContext,
   type OpContext,
   withCaptureSuppressed,

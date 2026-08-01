@@ -49,6 +49,91 @@ markers land in follow-up work.
 
 ### Added
 
+- **The apply path (`src/apply.ts`)** — the read/merge counterpart to
+  capture. `applyOp(db, op)` takes one op, local or from a peer, and
+  makes the portable tables reflect it; `applyOps` sorts a batch into
+  HLC order and applies it in one transaction. v2-sync calls these; they
+  know nothing about segments or files.
+
+  Merge rules, one per entity, chosen so convergence needs no
+  coordination between machines:
+
+  - **notes / messages — grow-only set.** Insert-if-absent, never
+    updated, so two machines cannot disagree about content and there is
+    nothing to resolve. Identity is `(task, author, content)`, because a
+    note's surrogate id is assigned by whichever machine inserted it and
+    so cannot identify it across machines.
+  - **tasks / workstreams — per-field LWW by HLC**, not row-level. For
+    each field in a payload, the write lands only if this op's HLC beats
+    the newest HLC that previously wrote THAT field. So one op can win on
+    `status` and lose on `impact` in the same call.
+  - **edges — LWW-element-set.** Add and remove each carry an HLC, so a
+    remove and a later re-add converge in either arrival order.
+  - **machine-local entities are rejected loudly** with
+    `OpEntityNotSyncedError` rather than ignored: one arriving means a
+    peer disagrees about what syncs, which is a bug to report, not
+    absorb.
+
+  Per-field is the load-bearing choice. The earlier design note argued
+  row-level LWW sufficed because "there are no concurrent edits to one
+  workstream on two machines" — but mu runs autonomous agent crews, so a
+  crew on the devserver closing a task while the operator re-prices it on
+  a laptop is concurrent multi-machine writing BY CONSTRUCTION. Row-level
+  would let one edit silently clobber the other. It costs nothing extra
+  because capture already emits semantic partial updates, so "apply each
+  op's fields in HLC order" IS per-field LWW — no column version vectors,
+  none of the cr-sqlite machinery we rejected.
+
+- **Provenance is DERIVED from the ops log, not stored.** Per-field LWW
+  needs "which HLC last wrote field F of key K". There is deliberately NO
+  `(entity, key, field) -> hlc` side table: `ops` already records which
+  fields each HLC touched and is indexed on `(entity, key)`, so the
+  answer is a query over that key's handful of ops. A side table would be
+  a denormalisation that can disagree with the log, and when it did,
+  every projection (undo, archive, sync) would inherit the disagreement
+  with no procedure to decide which side was right. Deriving costs zero
+  extra storage (a side table would cost ~1KB per task, duplicating data
+  already on disk) and ~10us per key against a 16k-op log. It also makes
+  idempotence and resurrection fall out for free.
+
+- **Tombstones are ordinary ops (no tombstone table).** `op='del'` rows
+  carry an HLC, so out-of-order arrival is just "compare HLCs" — the same
+  comparison the update path makes, one code path with no special casing.
+  A late `put` older than a seen `del` loses; a `del` older than a seen
+  `put` loses. **Resurrection** — a `put` NEWER than a seen `del`
+  recreating the row — is distinguishable from a stale put for free,
+  because ops outlive the rows they describe, so provenance survives the
+  deletion. All four orderings are tested in both arrival orders.
+
+- Applying is **idempotent** and runs **capture-suppressed**. The echo
+  guard matters: without it, writing a peer's op would fire the capture
+  trigger, mint a fresh local op, flush it back, and loop forever.
+  Idempotence is what lets `mu sync --repair` be nothing more than
+  "re-read that peer's segment from zero", and it is asserted by counting
+  ops before and after and by replaying a whole segment three times.
+
+- **The `json_patch` trap is avoided by construction.** RFC 7396 treats a
+  null member as DELETE-THIS-KEY, so
+  `json_patch('{"owner_id":7}','{"owner_id":null}')` returns `{}`. Since
+  capture emits exactly `{"owner_id":null}` when a claim is released,
+  using `json_patch` anywhere on the apply path would silently drop every
+  set-to-NULL in the system. Payload fields are applied one at a time
+  with explicit binding instead, and a test pins json_patch's destructive
+  behaviour so it cannot be reintroduced as a "simplification". The same
+  hazard appears in the provenance presence test, which uses
+  `json_type(...) IS NOT NULL` rather than `json_extract(...) IS NOT
+  NULL` — json_extract returns SQL NULL for both an absent key and a
+  present-but-null one, which would leave a set-to-NULL with no
+  provenance and thus overwritable by any older op.
+
+- Ownership still does not sync: `owner_id` is stripped from incoming
+  payloads. It is an FK into the machine-local `agents` table, so a
+  peer's value would at best name an unrelated local agent and at worst
+  violate the constraint outright (verified: 'FOREIGN KEY constraint
+  failed'). Likewise `local_id` / `name` are ignored, since they are
+  encoded in the natural key and a payload must not be able to rename a
+  row out from under its own key.
+
 - **Op capture via SQLite triggers (`src/capture.ts`)** — the linchpin
   of the 2.0 design. Every INSERT / UPDATE / DELETE on a portable table
   (`workstreams`, `tasks`, `task_edges`, `task_notes`) writes an op
