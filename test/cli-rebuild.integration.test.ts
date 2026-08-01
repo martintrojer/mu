@@ -87,7 +87,13 @@ describe("mu rebuild", () => {
     };
     expect(parsed.targetPath).toBe(out);
     expect(parsed.machineId).toMatch(/^[0-9a-f-]{36}$/);
-    expect(parsed.opsCopied).toBeGreaterThan(parsed.opsProjected);
+    // Every op is copied; only the ones naming a portable table are
+    // PROJECTED into rows. After v2 R7 retired the duplicate prose
+    // emits, a task-only session has no log-only ops at all, so the
+    // two counts are legitimately equal — the invariant is that
+    // projection never exceeds what was copied.
+    expect(parsed.opsCopied).toBeGreaterThanOrEqual(parsed.opsProjected);
+    expect(parsed.opsCopied).toBeGreaterThan(0);
     expect(parsed.rebuiltRows).toMatchObject({ workstreams: 1, tasks: 2, task_edges: 1 });
     expect(parsed.machineLocalLost).toEqual([]);
     expect(parsed.swapCommand).toContain(`mv ${out}`);

@@ -15,6 +15,7 @@ import {
   RebuildTargetIsSourceError,
   rebuildInto,
 } from "../src/rebuild.js";
+import { emitEvent } from "../src/logs.js";
 import { addBlockEdge, removeBlockEdge } from "../src/tasks/edges.js";
 import { addNote, addTask, deleteTask, updateTask } from "../src/tasks/edit.js";
 import { closeTask } from "../src/tasks/lifecycle.js";
@@ -56,6 +57,13 @@ describe("rebuildInto", () => {
     addNote(db, "b", "second note", { workstream: "demo" });
     updateTask(db, "c", { impact: 95, title: "C renamed" }, { workstream: "demo" });
     closeTask(db, "a", { workstream: "demo" });
+    // Log-only ops: agent lifecycle mutates NO portable table, so no
+    // trigger can capture it and applyOp refuses the entity. They are
+    // still this machine's own history, so a rebuild must keep them.
+    // (v2 R7 retired the old entity='event' rows these tests used to
+    // seed; agent.* is the surviving log-only shape.)
+    emitEvent(db, "demo", "agent.spawn", "agent spawn worker-1", "system");
+    emitEvent(db, "demo", "agent.close", "agent close worker-1", "system");
   };
 
   /** Portable-table snapshots, joined to natural keys so the comparison
@@ -287,13 +295,13 @@ describe("rebuildInto", () => {
 
   describe("rebuild replays machine-local ops too (rebuild != ingest)", () => {
     it("copies log-only entities that ingest would refuse", () => {
-      // 'event' is not in SYNCED_ENTITIES, so applyOp REJECTS it and a
+      // 'agent' is not in SYNCED_ENTITIES, so applyOp REJECTS it and a
       // peer must never send one. But it is this machine's own log
       // history, so a local recovery has to keep it — otherwise `mu log`
       // comes back empty after a rebuild.
       seedRealisticSource();
       const sourceEvents = (
-        db.prepare("SELECT COUNT(*) AS n FROM ops WHERE entity = 'event'").get() as { n: number }
+        db.prepare("SELECT COUNT(*) AS n FROM ops WHERE entity = 'agent'").get() as { n: number }
       ).n;
       expect(sourceEvents).toBeGreaterThan(0);
 
@@ -304,13 +312,13 @@ describe("rebuildInto", () => {
         path,
         (conn) =>
           (
-            conn.prepare("SELECT COUNT(*) AS n FROM ops WHERE entity = 'event'").get() as {
+            conn.prepare("SELECT COUNT(*) AS n FROM ops WHERE entity = 'agent'").get() as {
               n: number;
             }
           ).n,
       );
       expect(targetEvents).toBe(sourceEvents);
-      expect(report.logOnlyByEntity.event).toBe(sourceEvents);
+      expect(report.logOnlyByEntity.agent).toBe(sourceEvents);
       // …and they were copied WITHOUT being passed to applyOp, which
       // would have thrown OpEntityNotSyncedError.
       expect(report.opsProjected).toBeLessThan(report.opsCopied);
@@ -322,13 +330,13 @@ describe("rebuildInto", () => {
       rebuildInto(db, { targetPath: path });
       const payloads = withTarget(path, (conn) =>
         (
-          conn.prepare("SELECT payload FROM ops WHERE entity = 'event' ORDER BY hlc").all() as {
+          conn.prepare("SELECT payload FROM ops WHERE entity = 'agent' ORDER BY hlc").all() as {
             payload: string;
           }[]
         ).map((r) => r.payload),
       );
       expect(payloads.length).toBeGreaterThan(0);
-      expect(payloads.some((p) => p.includes("workstream init"))).toBe(true);
+      expect(payloads.some((p) => p.includes("agent spawn worker-1"))).toBe(true);
     });
 
     it("preserves sync_peers watermarks", () => {
