@@ -22,6 +22,7 @@ import { Command, InvalidArgumentError } from "commander";
 
 import { AgentNotInWorkstreamError, type AgentRow, getAgentByPane } from "./agents.js";
 import { wireAgentCommands, wireSelfCommands } from "./cli/agents.js";
+import { wireArchiveCommands } from "./cli/archive.js";
 import { wireDoctorCommand } from "./cli/doctor.js";
 import {
   NameAmbiguousError,
@@ -771,6 +772,7 @@ export function buildProgram(): Command {
   wireStateCommands(program);
   wireSqlCommand(program);
   wireRebuildCommand(program);
+  wireArchiveCommands(program);
   wireUndoCommand(program);
   wireDoctorCommand(program);
   applyAlphabeticalHelpSort(program);

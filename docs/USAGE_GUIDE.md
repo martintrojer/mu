@@ -46,7 +46,7 @@ current verb list is in `## CLI — complete verb list` of
 13. [The SQL escape hatch (`mu sql`)](#13-the-sql-escape-hatch-is-your-friend)
 14. [Recovery scenarios](#14-recovery-scenarios)
 15. [Cleanup](#15-cleanup)
-15.5. [Archives — cross-workstream preservation](#155-archives--cross-workstream-preservation-of-task-graphs)
+15.5. [Archives — named markers pinning the ops log](#155-archives--named-markers-pinning-the-ops-log)
 15.6. [Multi-machine sync](#156-multi-machine-sync)
 16. [One-shot demo script](#16-one-shot-demo-script)
 17. [Mental model in three sentences](#mental-model-in-three-sentences)
@@ -2181,106 +2181,77 @@ Use the typed surfaces for recovery and movement:
 
 ---
 
-## 15.5 Archives — cross-workstream preservation of task graphs
+## 15.5 Archives — named markers pinning the ops log
 
-A `mu workstream destroy` blows away the live task graph (a
-snapshot is taken, but it's a binary `.db` only readable through
-`mu undo`). The markdown export above keeps the conversation
-human-readable on disk, but it's not queryable in-DB. The
-**archive** verb is the third option: a structured, queryable
-snapshot of a workstream's task graph (tasks + edges + notes +
-events) that lives in the same `mu.db` indefinitely and can
-accumulate snapshots from MANY workstreams under the same
-operator-named label.
+An **archive** is a named MARKER pinning a point in the ops log. Not a
+copy: one op per archive, and everything else is a query or a replay.
+
+v1 stored archives as a snapshot spread over five `archived_*` tables.
+2.0 dropped all five. Since the log retains every change, "the state of
+this workstream at this moment" is already recorded — an archive just
+has to name the moment.
 
 ```bash
-mu archive create v0-3-wave --description "v0.3 release wave"
-mu archive add v0-3-wave -w mufeedback-v03
-mu archive add v0-3-wave -w roadmap-v0-3 --destroy   # cascade: archive THEN destroy
-mu archive list                                       # label | tasks | sources | created | last_added
-mu archive show v0-3-wave                             # detail card + per-source-workstream summary
-mu archive search 'oauth' [--label v0-3-wave]         # LIKE-search archived titles + note content (--limit N, --json)
-mu archive restore v0-3-wave --as restored-auth --source auth-refactor
-mu archive export v0-3-wave --out exports/v0-3-wave   # read-only markdown bucket for humans/git/docs
+mu archive add v0-3 -w mufeedback          # pin it; creates the label on first use
+mu archive add v0-3 -w roadmap-v0-3        # same label, another workstream
+mu archive list                            # label | workstreams | markers | last added
+mu archive list v0-3                       # the label's markers
+mu archive restore v0-3 --as recovered     # dry run
+mu archive restore v0-3 --as recovered --yes
+mu archive export v0-3 --out exports/v0-3  # markdown bucket for humans/git
+mu workstream destroy old-ws --yes --archive v0-3   # pin, THEN destroy
 ```
 
 Key properties:
 
-- **Globally-unique labels.** Archive labels live in their own
-  namespace (separate from workstream names). Pick once, reuse
-  across years.
-- **Snapshot-only accumulation.** `mu archive add <label> -w <ws>` is
-  idempotent at the (archive, source workstream) granularity and is
-  designed for end-of-milestone snapshot-and-destroy flows. Re-running
-  on the same workstream is task-incremental: newly-created tasks are
-  added, but notes and events for already-archived tasks stay pinned
-  to the original snapshot and are NOT refreshed. If you need a full
-  event-stream refresh for a source workstream, remove that source (or
-  delete/re-create the archive label) and add it again. Two different
-  workstreams under the same label coexist as separate
-  `(source_workstream, original_local_id)` rows.
-- **Outlives the source.** `archived_tasks.source_workstream` is
-  TEXT (not an FK), so the source workstream can be destroyed and
-  the archive's snapshot of it stays queryable forever.
-- **Lossless un-archive.** `mu archive restore <label> --as <new-ws>
-  [--source <orig-ws>]` copies tasks, edges, and notes directly from
-  `archived_*` tables into a fresh workstream. It refuses if `--as`
-  collides and snapshots before writing. Archives do not snapshot live
-  panes or the live event log, so agents, workspace paths, and
-  `agent_logs` are not restored.
-- **Reversible.** `mu archive delete <label> --yes` captures a
-  snapshot first; `mu undo --yes` brings the whole archive back.
-  `mu archive remove <label> -w <ws>` is the surgical version
-  (one source workstream's contribution, without touching
-  siblings).
+- **Outlives the source.** `mu workstream destroy` writes TOMBSTONE ops;
+  it does not erase history. The puts below the marker are still in the
+  log, so an archive restores fine after its workstream is gone. The
+  restore report says `sourceDestroyed: true` when that is what happened.
+- **Cross-workstream and additive.** One label accumulates markers from
+  many workstreams. Markers are append-only by construction (they are
+  ops), so `last added` is just `MAX(hlc)` — no stored column, nothing to
+  keep in sync. Adding the same workstream twice pins two moments, which
+  is usually what you want (`v0-3` before and after a fix).
+- **Lossless restore.** Replaying ops reproduces every column the capture
+  triggers recorded, which is strictly MORE faithful than v1's
+  column-subset copy. Restore stops AT the marker, so work added after
+  the pin is not resurrected, and a task deleted *before* the pin stays
+  deleted.
+- **Restore never overwrites.** `--as <new-name>` is required and must
+  not exist. An archive is for inspecting beside the original, not
+  replacing it. Dry-run by default; `--yes` applies.
+- **Export reuses the renderer.** `mu archive export` produces the same
+  bucket layout as `mu workstream export`, through the same code. It
+  replays to the marker in a scratch workstream inside a transaction and
+  rolls back, so it mutates nothing — no rows, no ops, no drift.
+- **Markers pin the log.** Load-bearing invariant: **compaction must
+  NEVER discard ops at or below a pinned marker's HLC.** Nothing
+  compacts today; when something does, dropping ops under a marker
+  silently empties the archive it promised to preserve, and the failure
+  only surfaces when someone tries to restore.
 
-### Three lifecycle patterns
+### Verbs that no longer exist
 
-The verb shape supports all three; pick per-call.
+These are consequences of the marker model, not scope cuts:
 
-**Pattern A — single bucket per project family** (single growing
-archive, easy cross-time queries):
-
-```bash
-mu archive create mu --description "every mu-self-development workstream"
-mu archive add mu -w mufeedback --destroy           # initial v0.2 wave
-mu archive add mu -w roadmap-v0-2 --destroy
-# weeks later, after v0.3 ships:
-mu archive add mu -w mufeedback-v03 --destroy
-mu archive add mu -w roadmap-v0-3 --destroy
-# months later: same single 'mu' bucket grows.
-```
-
-**Pattern B — per-release buckets** (easier to compare "what
-shipped in v0.2 vs v0.3"):
-
-```bash
-mu archive create mu-v0-2 ; mu archive add mu-v0-2 -w mufeedback --destroy
-mu archive create mu-v0-3 ; mu archive add mu-v0-3 -w mufeedback-v03 --destroy
-```
-
-**Pattern C — hybrid** (a workstream lives in BOTH archives;
-independent rows under each label):
-
-```bash
-mu archive add mu      -w mufeedback-v03
-mu archive add mu-v0-3 -w mufeedback-v03 --destroy
-```
+| Gone | Why |
+| --- | --- |
+| `archive create` | A label with no markers pins nothing. `mu archive add` IS the create. |
+| `archive remove` / `delete` | Markers are ops: append-only. Removing one means rewriting history, which is what an append-only log exists to prevent. To stop caring about an archive, ignore the label — it costs one row. |
+| `archive show` | Folded into `mu archive list <label>`. |
+| `archive search` | `mu log --intent archive.add`, or `mu sql`. Searching archived task text is a query over ops, not a bespoke verb. |
+| `--destroy` on `add` | Inverted: `mu workstream destroy --archive <label>` pins first, then destroys. The destructive verb owns the confirmation. |
 
 ### Anti-features (intentional)
 
-- **No "default" / auto-archive.** `mu workstream destroy` does
-  NOT auto-add to a fallback bucket. Either you picked a label
-  deliberately or you didn't want one.
-- **No bucket re-import.** The archive IS the workstream's afterlife.
-  If you need an archived source workstream back as live work, use
-  `mu archive restore <label> --as <new-ws> [--source <orig-ws>]`.
-- **No archive→archive merge / rename.** Operator-managed via
-  `mu sql` if it ever matters.
-- **Snapshots vs archives are separate concerns.** Snapshots are
-  whole-DB binary backups for one-shot recovery (`mu undo`).
-  Archives are first-class queryable structured data with their
-  own lifecycle. Don't confuse them.
+- **No auto-archive.** `mu workstream destroy` does not pin to a fallback
+  label. Either you named one or you did not want one.
+- **No archive→archive merge / rename.** Operator-managed via `mu sql` if
+  it ever matters.
+- **`--empty` and `--archive` are mutually exclusive** (exit 2). The
+  sweep covers every empty workstream, so one label cannot describe the
+  result — and an empty workstream has nothing to pin.
 
 ---
 

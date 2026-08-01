@@ -418,6 +418,32 @@ export {
   type LogRow,
 } from "./logs.js";
 export {
+  type ArchiveMarker,
+  type ArchiveSummary,
+  ArchiveLabelInvalidError,
+  ArchiveNotFoundError,
+  ArchiveRestoreTargetExistsError,
+  addArchiveMarker,
+  getArchive,
+  isValidArchiveLabel,
+  listArchives,
+  markerFor,
+  MARKER_ENTITY,
+  MARKER_INTENT,
+  pinnedHlcs,
+} from "./archives.js";
+export {
+  type RestoreArchiveOptions,
+  type RestoreArchiveReport,
+  rekey,
+  restoreArchive,
+} from "./archives/restore.js";
+export {
+  type ExportArchiveOptions,
+  type ExportArchiveResult,
+  exportArchive,
+} from "./archives/export.js";
+export {
   type CaptureIntent,
   KNOWN_INTENTS,
   type KnownIntent,

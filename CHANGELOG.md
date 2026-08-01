@@ -132,6 +132,69 @@ markers land in follow-up work.
   `mu` processes cannot interleave partial lines in the same segment. Two
   copies of a lock implementation is how they drift, so the mechanism
   lives in one place and each caller names its own resource.
+- **Archives are back, as MARKERS pinning the ops log (`v2-archive-markers`).**
+  R1 dropped the five `archived_*` tables. They are not coming back: an
+  archive is now ONE op (`entity='marker'`, `intent='archive.add'`, key
+  `<label>/<workstream>`) naming a point in the log, and everything else
+  is a query or a replay. Five tables → zero.
+
+  ```
+  mu archive add v0-3 -w proj              # pin; creates the label on first use
+  mu archive list [label]
+  mu archive restore v0-3 --as recovered   # dry run; --yes applies
+  mu archive export v0-3 --out ./out       # markdown, same renderer as workstream export
+  mu workstream destroy proj --yes --archive v0-3   # pin, THEN destroy
+  ```
+
+  Every v1 property survives, and each was verified against a real DB
+  rather than assumed:
+
+  - **Outlives destroy.** `workstream destroy` writes TOMBSTONES, so the
+    puts below the marker remain. Demonstrated end to end: seed → archive
+    → destroy → restore returns all tasks, edges, and notes, with
+    `sourceDestroyed: true` in the report.
+  - **Cross-workstream accumulation.** One label, many markers.
+  - **Additive.** Markers are append-only *because they are ops*, so
+    `lastAddedAt` is `MAX(hlc)` — no stored column to keep in sync.
+  - **Lossless restore.** Replaying ops reproduces every captured column,
+    strictly more faithful than v1's column-subset copy. Restore stops AT
+    the marker (later work is not resurrected) and honours tombstones
+    below it (a task deleted before the pin stays deleted).
+
+  **LOAD-BEARING INVARIANT, recorded now rather than discovered later:
+  compaction must NEVER discard ops at or below a pinned marker's HLC.**
+  Nothing compacts today; when something does, dropping ops under a
+  marker silently empties the archive it promised to preserve, and the
+  failure surfaces only when someone tries to restore. Written into
+  `docs/VOCABULARY.md` § marker and into code as `pinnedHlcs()`.
+
+  Verbs retired as consequences of the model, not as scope cuts:
+  `create` (a label with no markers pins nothing — `add` IS the create),
+  `remove` / `delete` (markers are append-only; un-pinning means
+  rewriting history), `show` (folded into `list <label>`), and `search`
+  (`mu log --intent archive.add` or `mu sql`). `add --destroy` inverted
+  into `workstream destroy --archive <label>`, so the destructive verb
+  owns the confirmation. `--empty` and `--archive` are mutually exclusive
+  (exit 2): a sweep over every empty workstream cannot be described by
+  one label.
+
+  `mu archive export` writes NO second renderer. It replays to the marker
+  in a scratch workstream inside a transaction, builds the `ExportSource`,
+  then forces a ROLLBACK — so it mutates nothing (no rows, no ops, no
+  drift) and `src/exporting.ts` produces the identical bucket layout
+  `mu workstream export` does.
+
+  The subtle part, worth recording because the wrong version passes a
+  casual test: restore must RECORD an op and APPLY it **under the same
+  HLC**. `applyOp` deliberately does not write to `ops` (it is built for
+  ingesting ops that already exist), so applying alone leaves live rows
+  the log cannot explain — 6 drift divergences. But recording under a
+  *fresher* HLC is worse: `applyOp`'s provenance queries exclude the op's
+  own HLC, so the row just written outranks the op being applied and
+  every field collapses to an insert default — 12 divergences, with
+  `title='design'` where the log says `'Design the API'`.
+  `mu doctor --deep` now reports no drift after archive, destroy, and
+  restore.
 
 - **`mu undo [group]` — granular undo via inverse ops (`src/undo.ts`,
   `src/cli/undo.ts`).** The verb disappeared in v9 along with

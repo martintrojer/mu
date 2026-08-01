@@ -304,10 +304,18 @@ git cherry-pick "$sha" && npm test
   and it syncs to peers. Refuses with exit 4 if a later action changed
   the same fields (`--force` to override, discarding that newer work).
   No snapshots and no `--to`: those are gone in 2.0.
-- **Archives:** `create`, `list`, `show`, `add <label> -w <ws>
-  [--destroy]`, `restore <label> --as <new-ws> [--source <orig-ws>]`,
-  `remove`, `delete`, `search`, `export` (read-only bucket). Labels
-  are global.
+- **Archives:** an archive is a named MARKER pinning a point in the ops
+  log, not a copy. Four verbs: `add <label> -w <ws>` (creates the label
+  on first use), `list [label]`, `restore <label> --as <new-ws>`
+  (dry-run by default, `--yes` applies; `-w` picks the source when a
+  label covers several), `export <label> --out <dir>` (markdown, same
+  renderer as `workstream export`). `mu workstream destroy --archive
+  <label>` pins before destroying. Labels are global.
+  Because destroy writes TOMBSTONES rather than erasing history, an
+  archive still restores after its workstream is gone. `create` /
+  `remove` / `delete` / `search` / `show` do NOT exist in 2.0: a label
+  with no markers pins nothing, markers are append-only ops, and `show`
+  folded into `list <label>`.
 - **Recovery:** `mu rebuild <file>` replays the ops log in HLC order
   into a NEW DB file and prints the `mv` command to swap it in; it
   never rebuilds in place. Agents and workspaces are NOT rebuilt (no
