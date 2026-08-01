@@ -289,8 +289,13 @@ git cherry-pick "$sha" && npm test
 - **Self:** `mu me`, `mu me tasks`, `mu me next`.
 - **Workspace:** `create`, `list` (`behind`), `refresh`, `recreate`,
   `commits`, `free`, `path`, `orphans`.
-- **Log:** `mu log "text"`, `mu log -n N`, `mu log --tail`. Use
-  `task wait`, not `log --tail`, for waits.
+- **Log:** `mu log "text"`, `mu log -n N`, `mu log --tail`. Reads render
+  every op as prose ("task close a → CLOSED"), from the op's structured
+  intent. Filters: `--intent task.close` (what mu recorded),
+  `--kind <tag>` (your own channel tag — the log-ledger pattern),
+  `--group <id>` (every op of one action, for undo). `--json` adds a
+  `rendered` field so scripts never parse payloads. Use `task wait`, not
+  `log --tail`, for waits.
 - **Undo:** `mu undo` (no args) lists recent undoable actions with
   their group ids; `mu undo <group>` previews; `mu undo <group> --yes`
   applies. It emits INVERSE OPS for that one group, so it touches only
@@ -354,7 +359,7 @@ Status detection is heuristic and can lag, especially behind custom
 
 ```bash
 mu agent read worker-1 -n 100
-mu log -w <ws> --kind event --tail
+mu log -w <ws> --tail
 mu task notes <id>
 ```
 

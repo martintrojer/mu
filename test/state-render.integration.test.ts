@@ -73,7 +73,9 @@ describe("mu state — default (full) mode", () => {
     expect(stdout).toContain("Blocked (");
     expect(stdout).toContain("Recent closed (");
     expect(stdout).toContain("Workspaces (");
-    expect(stdout).toContain("Recent events");
+    // v2-log-verb renamed the heading: it is no longer "of kind=event"
+    // (that entity is retired), it is the last N ops.
+    expect(stdout).toContain("Recent activity");
   });
 
   it("--json emits the unified flat shape (single workstream)", async () => {
@@ -200,34 +202,45 @@ describe("mu state — mutual-exclusion + cross-workstream", () => {
 
 // ── classifyEventVerb regression: emitted SDK events are recognised ──
 //
-// Per the TUI refactor (Wave 2 Task 10): the parsing half of the previous
-// event colourer lives at src/logs.ts as `classifyEventVerb` (verb
-// extraction only; renderers apply their own colour). These tests pin the
-// parser contract and then drive representative SDK verbs that emit every
-// known event prefix, asserting the payloads users actually see in
-// the ops log classify successfully.
-describe("classifyEventVerb", () => {
-  it("recognises every verb in EVENT_VERB_PREFIXES", async () => {
-    const { EVENT_VERB_PREFIXES, classifyEventVerb } = await import("../src/logs.js");
-    expect(EVENT_VERB_PREFIXES.length).toBeGreaterThan(0);
-    for (const verb of EVENT_VERB_PREFIXES) {
-      const payload = `${verb} alpha (extra info)`;
-      const r = classifyEventVerb(payload);
-      expect(r, `verb '${verb}' should classify`).not.toBeNull();
-      expect(r?.verb).toBe(verb);
-      expect(r?.rest).toBe(" alpha (extra info)");
+// v2-log-verb retired the prose parser (classifyEventVerb). Rendering now
+// keys on `intent` via src/log-render.ts. These tests pin the FORMATTER
+// contract and then drive representative SDK verbs, asserting that every
+// op a real session emits renders as prose a human can read.
+describe("the op formatter", () => {
+  it("renders every known intent with a verb and no raw JSON", async () => {
+    const { KNOWN_INTENTS, renderOp } = await import("../src/log-render.js");
+    expect(KNOWN_INTENTS.length).toBeGreaterThan(0);
+    for (const intent of KNOWN_INTENTS) {
+      const r = renderOp({
+        intent,
+        kind: intent.slice(0, intent.indexOf(".")),
+        workstreamName: "alpha/t1",
+        payload: '{"status":"OPEN"}',
+        source: "system",
+        op: "put",
+      });
+      expect(r, `intent '${intent}' should render`).not.toBeNull();
+      expect(r?.verb.length).toBeGreaterThan(0);
     }
   });
 
-  it("returns null for unknown payloads (no false-positive matches)", async () => {
-    const { classifyEventVerb } = await import("../src/logs.js");
+  it("returns null for intentless prose so callers show it verbatim", async () => {
+    const { renderOp } = await import("../src/log-render.js");
     for (const payload of [
       "random freeform message",
       "approve granted slug",
       "snapshot capture foo",
-      "taskaddendum sneaky",
     ]) {
-      expect(classifyEventVerb(payload)).toBeNull();
+      expect(
+        renderOp({
+          intent: null,
+          kind: "message",
+          workstreamName: "alpha",
+          payload,
+          source: "user",
+          op: "put",
+        }),
+      ).toBeNull();
     }
   });
 
@@ -250,7 +263,8 @@ describe("classifyEventVerb", () => {
       "../src/agents/kick.js"
     );
     const { openDb } = await import("../src/db.js");
-    const { EVENT_VERB_PREFIXES, classifyEventVerb, listLogs } = await import("../src/logs.js");
+    const { KNOWN_INTENTS, KNOWN_VERBS, renderOp } = await import("../src/log-render.js");
+    const { listLogs } = await import("../src/logs.js");
     const {
       addBlockEdge,
       addNote,
@@ -305,9 +319,12 @@ describe("classifyEventVerb", () => {
         return Promise.resolve(fn()).then(() => {
           for (const event of listLogs(db, { since: highWater })) {
             if (!isLocalEmit(event)) continue;
-            const classified = classifyEventVerb(event.payload);
-            expect(classified, `payload should classify: ${event.payload}`).not.toBeNull();
-            if (classified) captured.set(classified.verb, event.payload);
+            const rendered = renderOp(event);
+            expect(rendered, `op should render: ${event.intent} ${event.payload}`).not.toBeNull();
+            // Every emitted intent must be one the formatter knows, or
+            // mu log would fall back to the unknown-intent shape.
+            expect(KNOWN_INTENTS, `${event.intent} must be known`).toContain(event.intent);
+            if (rendered) captured.set(rendered.verb, event.payload);
           }
         });
       });
@@ -509,9 +526,14 @@ describe("classifyEventVerb", () => {
         "workstream export",
       ];
       expect([...captured.keys()].sort()).toEqual(expected.sort());
-      // And the surviving set must equal the declared prefix list, so a
-      // new emitter cannot be added without declaring it (or vice versa).
-      expect(expected.sort()).toEqual([...EVENT_VERB_PREFIXES].sort());
+      // Every verb the session produced must be one the formatter
+      // declares, so a new emitter cannot be added without teaching the
+      // formatter about it (v2-log-verb replaced the prefix list with
+      // the intent-keyed verb table).
+      const knownVerbs = new Set(KNOWN_VERBS);
+      for (const verb of captured.keys()) {
+        expect(knownVerbs, `${verb} must be a declared verb`).toContain(verb);
+      }
     } finally {
       setWaitSleepForTests(previousWaitSleep);
       setWaitStuckWarnForTests(previousStuckWarn);

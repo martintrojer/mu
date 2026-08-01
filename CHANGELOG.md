@@ -460,6 +460,73 @@ markers land in follow-up work.
 
 ### Changed
 
+- **`mu log` renders prose from structured intents, through ONE
+  formatter (`v2-log-verb`).** R7 left the read side printing op payloads
+  verbatim, so a four-command session looked like this:
+
+  ```
+  #2 ... task  [demo/a]  {"local_id":"a","title":"Build auth","status":"OPEN","impact":80,...}
+  #3 ... task  [demo/a]  {"impact":90,"updated_at":"2026-08-01T17:22:51.340Z"}
+  #5 ... task  [demo/a]  {"updated_at":"2026-08-01T17:22:51.638Z"}
+  ```
+
+  It now looks like this:
+
+  ```
+  #2 ... system    task add a "Build auth" impact=80 effort=3   [demo]
+  #3 ... system    task update a impact=90                      [demo]
+  #4 ... worker-2  task note a #1 some context by worker-2       [demo]
+  #6 ... worker-2  task close a → CLOSED                         [demo]
+  ```
+
+  New `src/log-render.ts` is the single formatter: `mu log`, `mu state`'s
+  Recent card, the ink Activity-log card, and the log popup all render
+  through it, so no surface can invent its own phrasing. It reads
+  `intent` + `key` + named payload fields and **never string-matches a
+  payload to decide what an op is** — that was v1's failure mode.
+
+  This finishes the job R7 started: `classifyEventVerb`,
+  `EVENT_VERB_PREFIXES`, `ClassifiedEvent`, and `logRowSubject` are
+  DELETED. All four existed only to recover a verb by prefix-matching
+  prose, which is why `CLAIM_EVENT_PREFIX` had to be bolted on when that
+  matching broke. Exhaustiveness is enforced at COMPILE time — the
+  formatter's switch is its function's only exit path, so a missing
+  `KnownIntent` is a type error (it caught a missing `task.delete` case
+  during development) rather than a runtime fallback.
+
+  - **`--kind` is RETAINED, not renamed.** It is the operator's channel
+    tag (`mu log --kind pr-state '...'`), a different axis from what mu
+    records, and the documented **log ledger** watcher pattern depends on
+    its shape. Filtering on mu's own labels is the NEW `--intent
+    task.close`. Renaming `--kind` would have broken a documented
+    convention to save a flag.
+  - **New `--group <id>`** filters to one undo group — every op of a
+    single operator action. Undo discoverability, for `v2-undo`.
+  - **`--json` gains a `rendered` field** alongside the structured
+    columns (now including `intent`, `group`, and `op`), so a script can
+    switch on `intent` and never has to re-derive prose from `payload`.
+    `--tail` stays NDJSON, one object per line, per SKILL.md.
+  - **Parent-row touch ops are hidden from the log.** Adding a note or an
+    edge bumps its task's `updated_at`, and that UPDATE fires the capture
+    trigger, producing a second op in the same group whose payload is
+    only `updated_at`. A `task note` therefore appeared TWICE. Those rows
+    stay in `ops` (they are real changes, and per-field merge needs them)
+    but they are not log lines. The filter is applied to `listLogs` and
+    `latestSeq` by one shared predicate, because those two must return
+    the same row set — when they disagree, `--tail` starts past rows the
+    non-tail view already showed (hit in R4, again in R7).
+  - `mu state`'s heading is now "Recent activity (last N ops)"; it
+    previously claimed "of kind=event", an entity that no longer exists.
+  - `src/parked.ts` keys its marker on `intent = 'workstream.export'`
+    instead of a `db export ` payload PREFIX. Same rule: nothing decides
+    what an op is by string-matching its text. (The heuristic remains
+    dormant pending `v2-sync`, as flagged in R7.)
+  - The log popup's drill view shows the rendered prose first, then
+    `intent` / `key` / `group` / raw payload — readable but still
+    lossless. Its `y`-yank resolves the target from `intent` + `key`,
+    which also fixes a latent bug in the old `logRowSubject`: it split
+    ids on `-`, so `mu task show` yanked `my` for a task named `my-task`.
+
 - **`mu log` reads the ops log itself; the duplicate prose events are
   gone (`v2-retire-log-shim`).** v2-capture left every operator action
   recorded TWICE — once as a typed op from the capture trigger

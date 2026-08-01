@@ -563,11 +563,18 @@ fresh watcher invocation reads the same history.
   pass `--since <seq>` to replay the full history a watcher missed
   while it was dead.
 - **Free-form payload.** The text is yours; `key=value -> action`
-  reads well and greps cleanly, but mu doesn't parse it.
+  reads well and greps cleanly, but mu doesn't parse it. Ledger lines
+  have no **intent**, so `mu log` prints them verbatim rather than
+  rendering them as a verb — exactly what a ledger wants.
 
 This is a *convention*, not a feature — `mu log` already has
 `--kind`, `--since`, and `--json`. See the **log ledger** entry in
 [VOCABULARY.md](VOCABULARY.md).
+
+`--kind` is deliberately UNCHANGED in 2.0. It is the operator's channel
+tag; the new `--intent` flag filters on what *mu* recorded
+(`--intent task.close`). Two different axes, two flags — so this ledger
+shape keeps working.
 
 ---
 
@@ -1494,7 +1501,7 @@ mu sql "SELECT name FROM sqlite_master WHERE type IN ('table','view') ORDER BY t
 | Add / remove a single edge                            | `mu task block` / `mu task unblock`     |
 | Replace all blockers atomically                       | `mu task reparent <id> --blocked-by ...`    |
 | Modify scalar fields                                  | `mu task update <id> [--title ...]`     |
-| Read the activity log / subscribe to events           | `mu log [--tail] [--kind event]`        |
+| Read the activity log / subscribe to events           | `mu log [--tail] [--intent task.close]` |
 | Block until tasks reach a status (orchestrator wait)  | `mu task wait <ref> [<ref>...] [--first|--any] [--timeout S]` |
 | Block until agents finish working (task-less wait)    | `mu agent wait <name> [<name>...] [--first|--any] [--timeout S]` |
 | Ensure an agent exists, reusing it if already present  | `mu agent ensure <name> [-w <ws>] [--idle-only] [--json]` |

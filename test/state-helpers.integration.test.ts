@@ -10,7 +10,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { insertAgent } from "../src/agents.js";
 import type { AgentRow } from "../src/agents.js";
 import { type Db, openDb } from "../src/db.js";
-import { classifyEventVerb } from "../src/logs.js";
+import { renderOp } from "../src/log-render.js";
 import {
   type WorkstreamSnapshot,
   agentStatusHistogram,
@@ -148,41 +148,36 @@ describe("agentStatusHistogram", () => {
   });
 });
 
-// v2-retire-log-shim: every `task *` prefix left EVENT_VERB_PREFIXES
-// along with the duplicate emitters, so these mechanics tests use a
-// surviving verb (`agent spawn`). The list now holds only changes no
-// capture trigger can see; task payloads are captured ops classified by
-// `intent`, never by prose prefix.
-describe("classifyEventVerb", () => {
-  it("matches a known verb followed by space", () => {
-    expect(classifyEventVerb("agent spawn foo")).toEqual({
-      verb: "agent spawn",
-      rest: " foo",
+// v2-log-verb RETIRED classifyEventVerb entirely: prose prefix matching
+// is gone, and rendering keys on `intent`. What replaced these mechanics
+// tests lives in test/log-render.test.ts (exhaustive intent coverage,
+// "payload text cannot override the intent", unknown-intent fallback).
+// The one property worth restating at this layer is that a payload that
+// LOOKS like a verb no longer decides anything.
+describe("rendering keys on intent, not prose", () => {
+  it("a payload that looks like another verb does not change the rendered verb", () => {
+    const rendered = renderOp({
+      intent: "task.close",
+      kind: "task",
+      workstreamName: "demo/t1",
+      payload: '{"status":"CLOSED","title":"agent spawn worker-9"}',
+      source: "system",
+      op: "put",
     });
+    expect(rendered?.verb).toBe("task close");
   });
 
-  it("matches a verb at end-of-string", () => {
-    expect(classifyEventVerb("agent spawn")).toEqual({
-      verb: "agent spawn",
-      rest: "",
-    });
-  });
-
-  it("rejects substring match without word boundary", () => {
-    // 'agent spawn' is a verb; 'agent spawning' must NOT match it (the
-    // next char 'i' is not space/tab/eos).
-    expect(classifyEventVerb("agent spawning x")).toBeNull();
-  });
-
-  it("returns null for payloads whose verb was retired with the prose emits", () => {
-    // These used to classify. They are captured ops now.
-    expect(classifyEventVerb("task add foo")).toBeNull();
-    expect(classifyEventVerb("task status foo (OPEN -> CLOSED)")).toBeNull();
-  });
-
-  it("returns null for unknown payloads", () => {
-    expect(classifyEventVerb("hello world")).toBeNull();
-    expect(classifyEventVerb("")).toBeNull();
+  it("an intentless row is not classified at all (shown verbatim)", () => {
+    expect(
+      renderOp({
+        intent: null,
+        kind: "message",
+        workstreamName: "demo",
+        payload: "agent spawn worker-9",
+        source: "user",
+        op: "put",
+      }),
+    ).toBeNull();
   });
 });
 

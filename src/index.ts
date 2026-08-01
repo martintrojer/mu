@@ -380,16 +380,26 @@ export {
 export {
   appendLog,
   type AppendLogOptions,
-  type ClassifiedEvent,
-  classifyEventVerb,
   emitEvent,
-  EVENT_VERB_PREFIXES,
   latestSeq,
   listLogs,
   type ListLogsOptions,
+  type LocalIntent,
   type LogKind,
   type LogRow,
 } from "./logs.js";
+export {
+  type CaptureIntent,
+  KNOWN_INTENTS,
+  type KnownIntent,
+  KNOWN_VERBS,
+  opSubject,
+  parseOpKey,
+  type RenderableOp,
+  type RenderedOp,
+  renderOp,
+  renderOpLine,
+} from "./log-render.js";
 export {
   agentStatusHistogram,
   loadWorkstreamSnapshot,

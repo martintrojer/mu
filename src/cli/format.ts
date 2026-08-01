@@ -13,6 +13,7 @@
 // existing import surface (tests + cli/* importers).
 
 import { type AgentRow, type AgentStatus, agentStatusGlyph } from "../agents.js";
+import { parseOpKey, renderOp } from "../log-render.js";
 import type { LogRow } from "../logs.js";
 import { muTable, pc } from "../output.js";
 import type { TaskRow } from "../tasks.js";
@@ -304,22 +305,30 @@ function formatBehind(n: number | null | undefined): string {
   return pc.red(String(n));
 }
 
-/** One agent_logs row, human-formatted. Used by `mu log` (read + tail)
- *  and by the `recent events` section of `mu state`. Exported so the
- *  cli/log.ts module can reuse it. */
+/** One op, human-formatted. Used by `mu log` (read + tail) and by the
+ *  `recent events` section of `mu state`.
+ *
+ *  All prose comes from `renderOp` (src/log-render.ts) — the ONE
+ *  formatter. This function only adds colour and column layout, so the
+ *  terminal and the TUI can never drift into two phrasings of the same
+ *  op. No raw JSON reaches the operator here. */
 export function printLogRow(row: LogRow): void {
-  const ws = row.workstreamName ?? pc.dim("—");
   const time = row.createdAt.replace("T", " ").replace(/\.\d+Z$/, "Z");
-  const kindColor =
-    row.kind === "event" ? pc.cyan : row.kind === "broadcast" ? pc.yellow : (s: string) => s;
-  // Payloads are printed verbatim. v1 had to strip a tab-delimited
-  // `task.claim<TAB>...` prefix here because claim attribution was
-  // smuggled through the prose; attribution is now `ops.actor`, so
-  // there is nothing to strip (v2-retire-log-shim). Captured-op
-  // payloads are raw JSON until v2-log-verb renders them from intent.
-  const payload = row.payload;
+  const rendered = renderOp(row);
+  const scope = parseOpKey(row.workstreamName).workstream;
+  const where = scope === undefined ? pc.dim("—") : scope;
+  if (rendered === null) {
+    // No intent: operator prose from `mu log write` or a `--kind`
+    // ledger. Show it verbatim — inventing a verb for it would be
+    // wrong, it is already exactly what the operator typed.
+    console.log(
+      `${pc.dim(`#${row.seq}`)} ${pc.dim(time)}  ${pc.bold(row.source)}  ${pc.yellow(row.kind)}  [${where}]  ${row.payload}`,
+    );
+    return;
+  }
+  const detail = rendered.detail === "" ? "" : ` ${pc.dim(rendered.detail)}`;
   console.log(
-    `${pc.dim(`#${row.seq}`)} ${pc.dim(time)}  ${pc.bold(row.source)}  ${kindColor(row.kind)}  [${ws}]  ${payload}`,
+    `${pc.dim(`#${row.seq}`)} ${pc.dim(time)}  ${pc.bold(row.source)}  ${pc.cyan(rendered.verb)} ${rendered.subject}${detail}  ${pc.dim(`[${where}]`)}`,
   );
 }
 

@@ -44,9 +44,17 @@ export interface LogRow {
    *  render as "system" rather than the string "null". */
   source: string;
   /** Structured intent ('task.close', 'agent.spawn', ...). Null only for
-   *  operator-authored prose lines (`mu log write`, `mu agent send`),
-   *  which name no state change. v2-log-verb renders from this. */
+   *  operator-authored prose lines (`mu log write` / a `--kind` ledger),
+   *  which name no state change. The formatter in src/log-render.ts
+   *  renders from this — never from the payload text. */
   intent: string | null;
+  /** Undo group: every op of one operator action shares it. Surfaced so
+   *  `mu log` can print it and `mu log --group <id>` can filter to it
+   *  (undo discoverability). */
+  group: string;
+  /** 'put' (semantic partial update) or 'del' (tombstone). The formatter
+   *  needs it to tell "edge removed" from "row touched". */
+  op: string;
   /** Free TEXT: "message" (default), "event" (auto state changes),
    *  "broadcast" (explicit cross-agent), or any caller-defined value. */
   kind: LogKind;
@@ -64,6 +72,8 @@ interface RawLogRow {
    *  context has none. Normalised in `rowFromDb`. */
   source: string | null;
   intent: string | null;
+  group_id: string;
+  op: string;
   kind: string;
   payload: string;
   created_at: string;
@@ -78,6 +88,8 @@ const SELECT_LOG_COLS = `
   l.key AS workstream,
   l.actor AS source,
   l.intent AS intent,
+  l.group_id AS group_id,
+  l.op AS op,
   l.entity AS kind,
   l.payload AS payload,
   l.created_at AS created_at
@@ -127,6 +139,33 @@ function workstreamScopeParams(workstream: string): [string, string] {
   return [workstream, `${escaped}/%`];
 }
 
+/**
+ * Hide parent-row TOUCH ops from the log surface.
+ *
+ * Adding a note or an edge bumps its task's `updated_at` so
+ * `--sort recency` works. That UPDATE fires the tasks capture trigger,
+ * producing a second op in the same group whose payload is ONLY
+ * `updated_at` — no new information, and it renders as a duplicate of
+ * the note/edge line the operator actually cares about. A `task note`
+ * therefore appeared twice in `mu log`.
+ *
+ * These rows stay in `ops` (they are real state changes, and per-field
+ * merge needs them); they are just not LOG LINES. The predicate is
+ * shared by `listLogs` and `latestSeq` — those two MUST return the same
+ * row set, or `--tail` starts its cursor past rows the non-tail view
+ * already showed (hit in R4 and again in R7).
+ *
+ * `json_extract` is not used: SQLite's JSON1 is compiled in by default
+ * for better-sqlite3, but a plain LENGTH test needs no extension and is
+ * cheaper. A payload with only `updated_at` is always short.
+ */
+const TOUCH_OP_FILTER = `NOT (
+  l.intent IS NOT NULL
+  AND l.op = 'put'
+  AND l.payload LIKE '{"updated_at":%'
+  AND LENGTH(l.payload) < 45
+)`;
+
 /** Sentinel stored in `ops.key` for machine-wide entries (ops.key is
  *  NOT NULL). Exported so the few call sites that query `ops` directly
  *  agree with the shim. */
@@ -146,6 +185,8 @@ function rowFromDb(row: RawLogRow): LogRow {
     workstreamName: row.workstream === MACHINE_WIDE_KEY ? null : row.workstream,
     source: row.source ?? "system",
     intent: row.intent,
+    group: row.group_id,
+    op: row.op,
     kind: row.kind,
     payload: row.payload,
     createdAt: row.created_at,
@@ -180,6 +221,7 @@ export function appendLog(db: Db, opts: AppendLogOptions): LogRow {
   // verbatim — no resolution, and the op stays readable after the
   // workstream is destroyed (which is the point of an ops log).
   const key = opts.workstream ?? MACHINE_WIDE_KEY;
+  const group = randomUUID();
   const result = db
     .prepare(
       `INSERT INTO ops (hlc, machine_id, group_id, actor, intent, entity, key, op, payload, created_at)
@@ -188,7 +230,7 @@ export function appendLog(db: Db, opts: AppendLogOptions): LogRow {
     .run(
       nextHlc(db),
       machineId(db),
-      randomUUID(),
+      group,
       opts.source,
       opts.intent ?? null,
       kind,
@@ -201,6 +243,8 @@ export function appendLog(db: Db, opts: AppendLogOptions): LogRow {
     workstreamName: opts.workstream,
     source: opts.source,
     intent: opts.intent ?? null,
+    group,
+    op: "put",
     kind,
     payload: opts.payload,
     createdAt,
@@ -218,7 +262,12 @@ export interface ListLogsOptions {
    *  re-sorted oldest-first. */
   limit?: number;
   source?: string;
+  /** Filter by `ops.entity` (the v1 `kind` column). */
   kind?: string;
+  /** Filter by structured `ops.intent`, e.g. 'task.close'. */
+  intent?: string;
+  /** Filter to one undo group (`ops.group_id`). */
+  group?: string;
 }
 
 /**
@@ -249,6 +298,16 @@ export function listLogs(db: Db, opts: ListLogsOptions = {}): LogRow[] {
     conditions.push("l.entity = ?");
     params.push(opts.kind);
   }
+  if (opts.intent !== undefined) {
+    conditions.push("l.intent = ?");
+    params.push(opts.intent);
+  }
+  if (opts.group !== undefined) {
+    conditions.push("l.group_id = ?");
+    params.push(opts.group);
+  }
+  // Same predicate as latestSeq — see TOUCH_OP_FILTER.
+  conditions.push(TOUCH_OP_FILTER);
 
   const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
@@ -284,9 +343,13 @@ export function latestSeq(db: Db, workstream?: string): number {
   // view had already shown and silently skipped them.
   const row =
     workstream === undefined
-      ? (db.prepare("SELECT MAX(seq) AS s FROM ops l").get() as { s: number | null })
+      ? (db.prepare(`SELECT MAX(seq) AS s FROM ops l WHERE ${TOUCH_OP_FILTER}`).get() as {
+          s: number | null;
+        })
       : (db
-          .prepare(`SELECT MAX(seq) AS s FROM ops l WHERE ${workstreamScopeSql()}`)
+          .prepare(
+            `SELECT MAX(seq) AS s FROM ops l WHERE ${workstreamScopeSql()} AND ${TOUCH_OP_FILTER}`,
+          )
           .get(...workstreamScopeParams(workstream)) as { s: number | null });
   return row.s ?? 0;
 }
@@ -420,105 +483,14 @@ export function lastClaimEventAt(db: Db, workstream: string, localId: string): s
   return lastClaimOp(db, workstream, localId)?.created_at ?? null;
 }
 
-/**
- * Verb prefixes still produced by `emitEvent`.
- *
- * v1 needed 22 entries here — one per state-changing verb — because
- * every verb wrote a prose breadcrumb that renderers had to classify by
- * prefix-matching. v2-retire-log-shim deleted 13 of those emitters as
- * duplicates of the capture triggers, so only the changes NO trigger can
- * see remain, and each now carries a typed `intent` as well.
- *
- * This list is therefore on its way out: v2-log-verb renders from
- * `intent`, at which point prefix classification (and `classifyEventVerb`)
- * disappears entirely. Until then it keeps the TUI's verb colouring
- * working.
- *
- * Maintenance contract: it must stay in sync with `LocalIntent`. A
- * regression test walks every `emitEvent` survivor and asserts both.
- */
-export const EVENT_VERB_PREFIXES: readonly string[] = [
-  // src/agents.ts + src/agents/*.ts — `agents` is machine-local, so no
-  // capture trigger will ever cover these.
-  "agent spawn",
-  "agent close",
-  "agent free",
-  "agent adopt",
-  "agent kick",
-  // src/tasks/wait.ts — a pure observation (nothing is mutated), so
-  // there is no row for a trigger to fire on.
-  "agent stalled",
-  // src/workspace/*.ts — `vcs_workspaces` is machine-local (absolute
-  // paths differ per machine).
-  "workspace create",
-  "workspace free",
-  "workspace refresh",
-  "workspace recreate",
-  // src/workstream.ts — writes FILES to a bucket; mutates no table.
-  "workstream export",
-];
-
-// ─── Verb classification (for renderers that colour by verb) ──────
-
-export interface ClassifiedEvent {
-  /** One of EVENT_VERB_PREFIXES. */
-  verb: string;
-  /** Payload past the verb token; preserves leading separator (" " or "\t"). */
-  rest: string;
-}
-
-/**
- * The entity a log row refers to, for building a "show me this" command.
- *
- * Prefers the STRUCTURED columns and falls back to prose only for rows
- * that have no intent (operator-authored `mu log write` lines). v1 could
- * only prefix-match prose, which is why removing the `task *` prefixes
- * broke the TUI's yank shortcut — the information was there all along,
- * in `intent` + `key`.
- *
- *   intent 'task.close', key 'demo/t1'    -> { kind: 'task',  id: 't1' }
- *   intent 'agent.spawn', payload 'agent spawn worker-1 (...)'
- *                                         -> { kind: 'agent', id: 'worker-1' }
- */
-export function logRowSubject(row: {
-  intent: string | null;
-  kind: string;
-  workstreamName: string | null;
-  payload: string;
-}): { kind: "task" | "agent"; id: string } | null {
-  // Captured ops: the natural key already names the entity. Strip the
-  // '<ws>/' scope and any '#note' / '->edge' suffix.
-  if (row.intent !== null && (row.kind === "task" || row.kind === "note")) {
-    const key = row.workstreamName ?? "";
-    const slash = key.indexOf("/");
-    if (slash !== -1) {
-      const id = key.slice(slash + 1).split(/[#>-]/)[0];
-      if (id !== undefined && id !== "") return { kind: "task", id };
-    }
-  }
-  // emitEvent survivors: prose, but with a known two-token verb.
-  const cls = classifyEventVerb(row.payload);
-  if (cls === null) return null;
-  const id = cls.rest.trim().split(/[\s(]/)[0];
-  if (id === undefined || id === "") return null;
-  if (cls.verb.startsWith("agent ")) return { kind: "agent", id };
-  return null;
-}
-
-/**
- * Match `payload` against EVENT_VERB_PREFIXES. Returns {verb, rest} on
- * match; null otherwise. The verb-boundary check is `next is space, tab,
- * or end-of-string` so we don't false-match e.g. `task addnote`.
- *
- * Pure parser. Consumers (the static state card, the ink Activity-log
- * card) apply their own colour to `verb` after matching.
- */
-export function classifyEventVerb(payload: string): ClassifiedEvent | null {
-  for (const verb of EVENT_VERB_PREFIXES) {
-    if (!payload.startsWith(verb)) continue;
-    const next = payload.charCodeAt(verb.length);
-    if (!Number.isNaN(next) && next !== 0x20 && next !== 0x09) continue;
-    return { verb, rest: payload.slice(verb.length) };
-  }
-  return null;
-}
+// ─── retired: prose verb classification ───────────────────────────────
+//
+// v1 needed EVENT_VERB_PREFIXES + classifyEventVerb + ClassifiedEvent +
+// logRowSubject to render a log line: every consumer prefix-matched a
+// payload's leading two words to find its verb, and CLAIM_EVENT_PREFIX
+// was bolted on because that matching kept breaking.
+//
+// v2-log-verb deletes all four. Rendering now reads `intent` (+ `key` +
+// named payload fields) in src/log-render.ts, which cannot be broken by
+// rewording a payload. If you find yourself wanting to string-match a
+// payload to decide what an op IS, that is the bug this removed.

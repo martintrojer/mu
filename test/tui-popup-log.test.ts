@@ -43,13 +43,33 @@ function fixtureDb(): Db {
   return db;
 }
 
+/** A prose log row: no intent, as written by `mu log write` / a
+ *  `--kind` ledger. Rendered verbatim. */
 function logRow(seq: number, payload: string, source = "system"): LogRow {
   return {
     seq,
     workstreamName: "demo",
     source,
-    kind: "event",
+    kind: "message",
     intent: null,
+    group: `grp-${seq}`,
+    op: "put",
+    payload,
+    createdAt: "2026-01-01T12:34:56.000Z",
+  };
+}
+
+/** An `emitEvent` survivor: machine-local change, typed intent, prose
+ *  payload. This is the shape agent.* / workspace.* ops really have. */
+function localOpRow(seq: number, intent: string, payload: string, source = "system"): LogRow {
+  return {
+    seq,
+    workstreamName: "demo",
+    source,
+    kind: intent.slice(0, intent.indexOf(".")),
+    intent,
+    group: `grp-${seq}`,
+    op: "put",
     payload,
     createdAt: "2026-01-01T12:34:56.000Z",
   };
@@ -161,6 +181,8 @@ describe("LogPopup behaviour (mount + simulateInput)", () => {
       source: "system",
       kind: "task",
       intent: "task.add",
+      group: "grp-101",
+      op: "put",
       payload: '{"local_id":"my_task","title":"hi"}',
       createdAt: "2026-05-11T00:00:01Z",
     };
@@ -183,7 +205,9 @@ describe("LogPopup behaviour (mount + simulateInput)", () => {
 
   it("y on an `agent ...` event yanks `mu agent show <name>`", async () => {
     const db = fixtureDb();
-    const snap = snapshotWithEvents([logRow(202, "agent spawn worker_42")]);
+    const snap = snapshotWithEvents([
+      localOpRow(202, "agent.spawn", "agent spawn worker_42 (cli=pi, pane=%3)"),
+    ]);
     const yank = vi.fn(async (_cmd: string) => {});
 
     const { stdin, stdout, unmount } = mountLogPopup({

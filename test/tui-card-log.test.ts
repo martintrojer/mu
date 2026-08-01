@@ -32,6 +32,8 @@ function logRow(seq: number, payload: string): LogRow {
     source: `worker-${seq}`,
     kind: "event",
     intent: null,
+    group: `grp-${seq}`,
+    op: "put",
     payload,
     createdAt: `2026-05-11T00:00:0${seq % 10}Z`,
   };

@@ -5,13 +5,13 @@
 // Per design_card_log (workstream `tui`).
 //
 // Aesthetic: rounded border, dim border, section header inset; verb
-// prefix coloured cyan via classifyEventVerb.
+// verb coloured cyan; prose from the shared renderOp formatter.
 //
 // Rows are column-aligned via src/cli/tui/columns.ts. Per
 // feat_column_aligned_lists clipping policy: timestamp, source, verb
 // are PROTECTED (short, identity-bearing); the rest is CLIPPABLE.
 
-import { classifyEventVerb } from "../../../logs.js";
+import { renderOp } from "../../../log-render.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
 import {
   type ColumnSpec,
@@ -71,12 +71,13 @@ export function LogCard({ snapshot, rowBudget, cols }: LogCardProps): JSX.Elemen
   // the head and reverse for "newest at bottom" reading.
   const tail = recent.slice(0, rowBudget ?? cardConfig.maxRows).reverse();
 
+  // Prose comes from renderOp — the same formatter `mu log` uses. This
+  // card owns column layout and colour, never phrasing (v2-log-verb).
   const cellRows = tail.map((row) => {
-    const payload = row.payload;
-    const cls = classifyEventVerb(payload);
+    const r = renderOp(row);
     const ts = row.createdAt.slice(11, 19);
-    const verb = cls?.verb ?? "·";
-    const rest = cls?.rest ?? payload;
+    const verb = r?.verb ?? "·";
+    const rest = r === null ? row.payload : [r.subject, r.detail].filter((x) => x !== "").join(" ");
     return [ts, row.source, verb, rest];
   });
   const widths = layoutColumns(cellRows, COLUMN_SPECS, contentWidth);
@@ -92,12 +93,11 @@ export function LogCard({ snapshot, rowBudget, cols }: LogCardProps): JSX.Elemen
       {tail.map((row, i) => {
         const cells = cellRows[i];
         if (cells === undefined) return null;
-        const cls = classifyEventVerb(row.payload);
         const padded = renderRow(cells, widths, COLUMN_SPECS);
         const colors = [
           { dimColor: true }, // ts
           { dimColor: true }, // source
-          cls ? { color: "cyan" } : { dimColor: true }, // verb
+          row.intent === null ? { dimColor: true } : { color: "cyan" }, // verb
           undefined, // rest
         ];
         return <ListRow key={row.seq} cells={padded} contentWidth={contentWidth} colors={colors} />;

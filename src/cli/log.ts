@@ -11,7 +11,8 @@
 import { getAgentByPane } from "../agents.js";
 import { emitJson, emitJsonCollection, printLogRow, resolveOptionalWorkstream } from "../cli.js";
 import type { Db } from "../db.js";
-import { type ListLogsOptions, appendLog, latestSeq, listLogs } from "../logs.js";
+import { renderOpLine } from "../log-render.js";
+import { type ListLogsOptions, type LogRow, appendLog, latestSeq, listLogs } from "../logs.js";
 import { pc } from "../output.js";
 
 export interface LogReadOpts {
@@ -20,7 +21,12 @@ export interface LogReadOpts {
   since?: number;
   lines?: number;
   source?: string;
+  /** Operator channel tag (`ops.entity`). See the log-ledger pattern. */
   kind?: string;
+  /** Structured intent filter (`ops.intent`), e.g. 'task.close'. */
+  intent?: string;
+  /** Undo-group filter (`ops.group_id`). */
+  group?: string;
   json?: boolean;
   tail?: boolean;
 }
@@ -95,12 +101,25 @@ async function cmdLogWrite(db: Db, text: string, opts: LogWriteOpts): Promise<vo
   );
 }
 
+/** Attach the formatter's prose to a JSON row.
+ *
+ *  Consumers should never have to re-derive prose from `payload` — that
+ *  would recreate exactly the payload-parsing coupling v2-log-verb
+ *  deleted. The structured fields stay alongside it, so a script can
+ *  switch on `intent` and a human reading `--json` still sees what
+ *  happened. */
+function withRendered(row: LogRow): LogRow & { rendered: string } {
+  return { ...row, rendered: renderOpLine(row) };
+}
+
 async function cmdLogRead(db: Db, opts: LogReadOpts): Promise<void> {
   const workstream = await logReadWorkstream(opts);
   const listOpts: ListLogsOptions = {};
   if (workstream !== undefined) listOpts.workstream = workstream;
   if (opts.source !== undefined) listOpts.source = opts.source;
   if (opts.kind !== undefined) listOpts.kind = opts.kind;
+  if (opts.intent !== undefined) listOpts.intent = opts.intent;
+  if (opts.group !== undefined) listOpts.group = opts.group;
 
   if (opts.tail) {
     await cmdLogTail(db, listOpts, opts);
@@ -114,7 +133,7 @@ async function cmdLogRead(db: Db, opts: LogReadOpts): Promise<void> {
 
   const rows = listLogs(db, listOpts);
   if (opts.json) {
-    emitJsonCollection(rows);
+    emitJsonCollection(rows.map(withRendered));
     return;
   }
   if (rows.length === 0) {
@@ -153,7 +172,9 @@ async function cmdLogTail(db: Db, baseOpts: ListLogsOptions, cliOpts: LogReadOpt
   for (;;) {
     const rows = listLogs(db, { ...baseOpts, since: cursor });
     for (const row of rows) {
-      if (cliOpts.json) emitJson(row);
+      // NDJSON for --tail (one object per line), per SKILL.md: it is a
+      // stream, not a collection, so no {items,count} envelope.
+      if (cliOpts.json) emitJson(withRendered(row));
       else printLogRow(row);
       cursor = row.seq;
     }
@@ -199,7 +220,15 @@ export function wireLogCommand(program: Command): void {
       "Write a log entry (with text) or read the log (without). --tail blocks and prints new entries as they land.",
     )
     .option("--as <name>", "override the source name (default: agent via $TMUX_PANE, else 'user')")
-    .option("--kind <kind>", "kind tag (default: 'message' on write)")
+    .option(
+      "--kind <kind>",
+      "operator-chosen channel tag: sets it on write, filters to it on read (log-ledger pattern)",
+    )
+    .option(
+      "--intent <intent>",
+      "filter reads to one structured intent, e.g. task.close (see `mu log` output)",
+    )
+    .option("--group <id>", "filter reads to one undo group (every op of a single action)")
     .option("--tail", "block and print entries as they're appended")
     .option(
       "--since <seq>",
@@ -219,6 +248,8 @@ export function wireLogCommand(program: Command): void {
       const raw = (this as Command).opts() as {
         as?: string;
         kind?: string;
+        intent?: string;
+        group?: string;
         tail?: boolean;
         since?: number;
         lines?: number;
@@ -230,6 +261,8 @@ export function wireLogCommand(program: Command): void {
       const opts: LogReadOpts & LogWriteOpts = {};
       if (raw.as !== undefined) opts.as = raw.as;
       if (raw.kind !== undefined) opts.kind = raw.kind;
+      if (raw.intent !== undefined) opts.intent = raw.intent;
+      if (raw.group !== undefined) opts.group = raw.group;
       if (raw.tail !== undefined) opts.tail = raw.tail;
       if (raw.since !== undefined) opts.since = raw.since;
       if (raw.lines !== undefined) opts.lines = raw.lines;

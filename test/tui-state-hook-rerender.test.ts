@@ -186,6 +186,8 @@ describe("snapshotKey — visible-affecting field projection", () => {
       source: "system",
       kind: "event" as const,
       intent: null,
+      group: "grp-1",
+      op: "put",
       payload: "{}",
       createdAt: "2026-01-01T00:00:00Z",
     };

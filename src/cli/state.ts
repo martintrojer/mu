@@ -324,7 +324,7 @@ function renderFullCard(d: PerWsData): void {
     console.log(pc.dim(`  Run \`mu workspace orphans -w ${workstreamName}\` for cleanup hints.`));
   }
   console.log("");
-  console.log(pc.bold(`Recent events (last ${recent.length} of kind=event)`));
+  console.log(pc.bold(`Recent activity (last ${recent.length} ops)`));
   if (recent.length === 0) {
     console.log(pc.dim("  (none)"));
   } else {
@@ -360,11 +360,7 @@ export function wireStateCommands(program: Command): void {
       "--tui",
       "interactive TUI (rounded-border dashboard with cards + popups; multi-ws via Tab/Shift-Tab tabs)",
     )
-    .option(
-      "--events <n>",
-      "how many recent kind=event log entries to include (default 20)",
-      parseLines,
-    )
+    .option("--events <n>", "how many recent log entries (ops) to include (default 20)", parseLines)
     .option(...JSON_OPT)
     .action(function () {
       const opts = (this as Command).opts() as StateOpts;

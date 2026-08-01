@@ -29,6 +29,17 @@
 
 import type { Db } from "./db.js";
 
+/** The op intent that marks a workstream as shipped-elsewhere.
+ *
+ *  `workstream.export` is the closest surviving relative of v1's
+ *  `db export` marker. NOTE this heuristic is effectively dormant: 2.0
+ *  removed `mu db export`, and `mu workstream export` writes a bucket
+ *  rather than handing the workstream to another machine, so in practice
+ *  it will rarely be the LATEST op. v2-sync re-grounds "parked" on peer
+ *  watermarks, which is the honest signal. Kept keyed on an intent (not
+ *  a payload prefix) so it cannot silently mis-fire in the meantime. */
+const PARKED_MARKER_INTENT = "workstream.export";
+
 /** Days that must have elapsed since the most recent `db export`
  *  event before a workstream is considered parked. Default 1: prevents
  *  a same-session "I exported to verify" from instantly flipping the
@@ -80,19 +91,18 @@ export function parkedStatus(
   const escaped = workstream.replace(/[\\%_]/g, (c) => `\\${c}`);
   const latest = db
     .prepare(
-      `SELECT entity AS kind, payload, created_at FROM ops
+      `SELECT intent, created_at FROM ops
         WHERE key = ? OR key LIKE ? ESCAPE '\\'
         ORDER BY seq DESC LIMIT 1`,
     )
-    .get(workstream, `${escaped}/%`) as
-    | { kind: string; payload: string; created_at: string }
-    | undefined;
+    .get(workstream, `${escaped}/%`) as { intent: string | null; created_at: string } | undefined;
   if (latest === undefined) return { parked: false };
 
-  // The marker we look for: the most recent row IS a `db export`
-  // event. Any other recent row supersedes it.
-  if (latest.kind !== "event") return { parked: false };
-  if (!latest.payload.startsWith("db export ")) return { parked: false };
+  // The marker: the most recent op IS an export. Any newer op
+  // supersedes it. Keyed on the structured `intent`, not on a payload
+  // prefix — v2-log-verb's rule is that nothing decides what an op IS by
+  // string-matching its text.
+  if (latest.intent !== PARKED_MARKER_INTENT) return { parked: false };
 
   // Alive agents disqualify (someone is presumably working). Dead
   // agents — `terminated` or `unreachable` — do not count as alive;

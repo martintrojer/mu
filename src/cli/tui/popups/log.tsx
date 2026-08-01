@@ -22,7 +22,7 @@
 import { Box, Text, useInput } from "ink";
 import { useState } from "react";
 import type { Db } from "../../../db.js";
-import { classifyEventVerb, logRowSubject } from "../../../logs.js";
+import { opSubject, renderOp, renderOpLine } from "../../../log-render.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
 import { type ColumnSpec, contentWidthFromCols, layoutColumns, renderRow } from "../columns.js";
 import { type PopupAction, type PopupActionEnvelope, dispatchPopupKeyFromInk } from "../keys.js";
@@ -74,20 +74,21 @@ export function LogPopup({
   const [cursor, setCursor] = useState(0);
   const flt = usePopupFilter({ onEditingChange: onFilterEditingChange });
   const sourceEvents = snapshot?.recent ?? [];
-  // Per spec: blob = `${verb} ${rest} ${source}` — we classify the
-  // event payload to extract the same verb/rest the row renders, so
-  // searching for e.g. "task close" matches what the user sees.
-  const events = applyFilter(sourceEvents, flt.query, (e) => {
-    const payload = e.payload;
-    const cls = classifyEventVerb(payload);
-    const verb = cls?.verb ?? "";
-    const rest = cls?.rest ?? payload;
-    return `${verb} ${rest} ${e.source}`;
-  });
+  // Per spec: blob = `${verb} ${rest} ${source}`. Built from the SAME
+  // formatter the rows render with, so '/' searches match what the user
+  // actually sees (searching "task close" finds a task.close op).
+  const events = applyFilter(sourceEvents, flt.query, (e) => `${renderOpLine(e)} ${e.source}`);
   const safeCursor = events.length === 0 ? 0 : Math.min(cursor, events.length - 1);
   const focused = events[safeCursor];
 
-  const drillBody = focused ? focused.payload : "";
+  // Drill shows the prose FIRST (what the row says) then the raw op
+  // payload, so the detail view is readable but still lossless.
+  const drillBody =
+    focused === undefined
+      ? ""
+      : focused.intent === null
+        ? focused.payload
+        : `${renderOpLine(focused)}\n\nintent: ${focused.intent}\nkey: ${focused.workstreamName ?? "—"}\ngroup: ${focused.group}\npayload: ${focused.payload}`;
   const drill = useDrillKeymap({
     body: drillBody,
     viewport,
@@ -130,7 +131,7 @@ export function LogPopup({
         const payload = e.payload;
         // Resolve from intent + natural key where available, prose
         // otherwise (v2-retire-log-shim).
-        const subject = logRowSubject(e);
+        const subject = opSubject(e);
         if (subject === null) {
           void yank(`# event: ${payload}`);
           return;
@@ -192,11 +193,10 @@ export function LogPopup({
   const { visible } = centredVisibleSlice(events, safeCursor, viewport);
 
   const rows = visible.map((e) => {
-    const payload = e.payload;
-    const cls = classifyEventVerb(payload);
+    const r = renderOp(e);
     const ts = e.createdAt.slice(11, 19);
-    const verb = cls?.verb ?? "·";
-    const rest = cls?.rest ?? payload;
+    const verb = r?.verb ?? "·";
+    const rest = r === null ? e.payload : [r.subject, r.detail].filter((x) => x !== "").join(" ");
     return [`#${e.seq}`, ts, e.source, verb, rest];
   });
   const widths = layoutColumns(rows, COLUMN_SPECS, contentWidth);
@@ -209,7 +209,6 @@ export function LogPopup({
       <Box flexDirection="column" flexGrow={1}>
         {visible.map((e, i) => {
           const sel = events.indexOf(e) === safeCursor;
-          const cls = classifyEventVerb(e.payload);
           const row = rows[i];
           if (row === undefined) return null;
           const padded = renderRow(row, widths, COLUMN_SPECS);
@@ -217,7 +216,7 @@ export function LogPopup({
             { dimColor: true }, // seq
             { dimColor: true }, // ts
             { dimColor: true }, // source
-            cls ? { color: "cyan" } : { dimColor: true }, // verb
+            e.intent === null ? { dimColor: true } : { color: "cyan" }, // verb
             undefined, // rest
           ];
           return (

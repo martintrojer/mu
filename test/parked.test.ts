@@ -27,14 +27,19 @@ let dir: string;
 let dbPath: string;
 let db: Db;
 
-/** Insert the legacy `db export` marker op parkedStatus keys off.
- *  Raw SQL because no production code writes this shape any more (see
- *  the header note): entity='event' with prose payload and no intent. */
+/** Insert the marker op parkedStatus keys off.
+ *
+ *  v2-log-verb re-keyed the heuristic on `intent = 'workstream.export'`
+ *  instead of a `db export ` payload PREFIX — nothing may decide what an
+ *  op is by string-matching its text. Still raw SQL: `mu workstream
+ *  export` does emit this intent, but arranging for it to be the LATEST
+ *  op (with no agents and an aged timestamp) is more setup than the
+ *  heuristic is worth. See the header note on why this is dormant. */
 function insertExportMarker(database: Db, workstream: string, payload: string): void {
   database
     .prepare(
       `INSERT INTO ops (hlc, machine_id, group_id, actor, intent, entity, key, op, payload, created_at)
-       VALUES (?, 'test-machine', ?, 'system', NULL, 'event', ?, 'put', ?, ?)`,
+       VALUES (?, 'test-machine', ?, 'system', 'workstream.export', 'workstream', ?, 'put', ?, ?)`,
     )
     .run(
       `marker-${Date.now()}-${Math.random().toString(36).slice(2)}`,

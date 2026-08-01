@@ -16,7 +16,8 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { insertAgent } from "../src/agents.js";
 import { type Db, SYNCED_ENTITIES, openDb } from "../src/db.js";
-import { EVENT_VERB_PREFIXES, latestSeq, listLogs } from "../src/logs.js";
+import { KNOWN_INTENTS } from "../src/log-render.js";
+import { type LocalIntent, latestSeq, listLogs } from "../src/logs.js";
 import {
   addBlockEdge,
   addNote,
@@ -202,15 +203,33 @@ describe("machine-local lifecycle ops", () => {
     expect(([...SYNCED_ENTITIES] as string[]).includes("workspace")).toBe(false);
   });
 
-  it("every declared prose verb prefix belongs to a machine-local entity", () => {
-    // If a `task ...` prefix ever reappears here, a duplicate emitter
-    // came back: task mutations are captured by triggers.
-    for (const verb of EVENT_VERB_PREFIXES) {
-      const entity = verb.split(" ")[0];
-      expect(["agent", "workspace", "workstream"], `${verb} should not be prose-emitted`).toContain(
+  // v2-log-verb replaced EVENT_VERB_PREFIXES (prose prefix matching) with
+  // the intent-keyed formatter. The equivalent guard is now: every LOCAL
+  // intent — the ones emitEvent still writes — must belong to a
+  // machine-local entity. A `task.*` appearing here would mean a duplicate
+  // emitter came back, since task mutations are captured by triggers.
+  it("every LocalIntent belongs to a machine-local entity", () => {
+    const locals: LocalIntent[] = [
+      "agent.spawn",
+      "agent.close",
+      "agent.free",
+      "agent.adopt",
+      "agent.kick",
+      "agent.stall",
+      "workspace.create",
+      "workspace.free",
+      "workspace.refresh",
+      "workspace.recreate",
+      "workstream.export",
+    ];
+    for (const intent of locals) {
+      const entity = intent.slice(0, intent.indexOf("."));
+      expect(["agent", "workspace", "workstream"], `${intent} should be machine-local`).toContain(
         entity,
       );
+      // And the formatter must know it, or mu log would show it raw.
+      expect(KNOWN_INTENTS, `${intent} must be renderable`).toContain(intent);
     }
-    expect(EVENT_VERB_PREFIXES.some((v) => v.startsWith("task "))).toBe(false);
+    expect(locals.some((v) => v.startsWith("task."))).toBe(false);
   });
 });
