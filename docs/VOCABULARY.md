@@ -22,7 +22,7 @@ defined here, fix the doc. If you need a new term, add it here first.
 | **window name**       | The tmux window's name. **Equals the agent's `tab:` value** (groups one or more agents). | "tab name" (in code; `tab:` only in frontmatter) |
 | **agent**             | A named worker running in a pane; identity = pane title; row in `agents` table | "subagent" (reserved for pi-subagents), "worker" (only the specific role) |
 | **worker**            | An **agent** in its role-as-task-claimer. Synonym for the registered side of identity — a row in `agents`, owns tasks via the FK. | (when ambiguous, prefer **agent**)                 |
-| **actor**             | The party that *caused* a state change. May or may not be a registered worker. Recorded in `agent_logs.source` for every event. The orchestrator running mu from a top-level shell is an actor but not a worker. | "caller", "author" (only on notes)            |
+| **actor**             | The party that *caused* a state change. May or may not be a registered worker. Recorded in `ops.actor` for every op. The orchestrator running mu from a top-level shell is an actor but not a worker. | "caller", "author" (only on notes)            |
 | **crew**              | *Informal* collective noun for the agents in a workstream                | (no API surface; prose only)                       |
 | **task**              | A node in the DAG. Has mandatory `impact` and `effort_days`. Status one of `OPEN`, `IN_PROGRESS`, `CLOSED`, `REJECTED`, `DEFERRED` (see **task status** below). | "issue", "ticket", "item"                          |
 | **task status**       | One of 5 states. **OPEN** = ready to be claimed; **IN_PROGRESS** = claimed and active; **CLOSED** = work completed (the only state that satisfies a `--blocked-by` edge); **REJECTED** = terminal 'won't do' (out of scope, duplicate, wontfix); **DEFERRED** = parked, may revisit. REJECTED and DEFERRED both still BLOCK downstream by design — only CLOSED unblocks. | "state"                                            |
@@ -36,13 +36,13 @@ defined here, fix the doc. If you need a new term, add it here first.
 | **goals**             | Tasks with no outgoing blocks-edges (graph endpoints). Exposed as the `goals` SQL view. | "leaves", "targets"                               |
 | **sort key**          | Argument to `mu task list / next / ready --sort <key>`. One of `roi` (impact / effort_days, default for `next` / `ready`), `recency` (`updated_at` DESC — "what did I touch most recently"), `age` (`created_at` ASC — "what's gone stale"), `id` (`local_id` ASC, default for `task list`). The two time-based keys also render an `updated`/`created` relative-time column in the table view. | "order by", "sort by"                              |
 | **subtree** / **scope** | The set of tasks reachable from a root via blocks-edges                | "subgraph" (only for technical descriptions)       |
-| **note**              | An append-only piece of context attached to a task                       | "comment" (reserved for VCS), "log" (reserved for `agent_logs`) |
-| **log entry**         | A row in `agent_logs` (broadcast channel)                                | "message" (overloaded), "event" (overloaded)       |
+| **note**              | An append-only piece of context attached to a task                       | "comment" (reserved for VCS), "log" (reserved for the **ops log**) |
+| **log entry**         | A rendered **op**, as shown by `mu log`. Not a distinct table — the ops log is the only log. | "message" (overloaded), "event" (overloaded)       |
 | **kind**              | The free-form `--kind <tag>` on a **log entry** (default `message` on write). Read-side `mu log --kind <tag>` filters to that tag. Reserved well-known values: `event` (lifecycle events mu emits) and `message` (default). Operators may coin their own kinds to use the log as a typed sub-channel. | "category", "type" (overloaded) |
 | **log ledger**        | A doc-only *convention* (not a feature): use a custom `--kind` tag as a durable, append-only dedupe/memory ledger for a watcher loop. Each tick records last-seen external state (`mu log --kind pr-state 'pr=N sha=.. ci=..'`); the next tick reconstructs it with `mu log --kind pr-state -n 1 --json`. State lives in SQLite, so it survives `/loop` or `/watch` death and context compaction — no in-session bookkeeping. | "state file", "dedupe cache" |
 | **claim**             | Verb: set `tasks.owner` to an agent. Atomic CAS.                         | "assign" (use only in prose), "lock"               |
-| **owner**             | The **worker** name in `tasks.owner`. Set by claim. NULL when the task is unowned OR was claimed via `--self` (anonymous, attributed via `agent_logs.source` instead). | "claimer", "assignee"                              |
-| **anonymous claim**   | A claim made via `--self` where the **actor** isn't a registered **worker**. `tasks.owner` stays NULL; the actor is recorded in `agent_logs.source` for the auto-emitted `task claim` event. The orchestrator-doing-direct-work pattern. | "self-claim" (in code; "anonymous claim" in prose), "unowned claim" |
+| **owner**             | The **worker** name in `tasks.owner`. Set by claim. NULL when the task is unowned OR was claimed via `--self` (anonymous, attributed via `ops.actor` instead). Owners are **machine-local** — they reference `agents`, so ownership never syncs. | "claimer", "assignee"                              |
+| **anonymous claim**   | A claim made via `--self` where the **actor** isn't a registered **worker**. `tasks.owner` stays NULL; the actor is recorded in `ops.actor` for the auto-emitted `task.claim` op. The orchestrator-doing-direct-work pattern. | "self-claim" (in code; "anonymous claim" in prose), "unowned claim" |
 | **release**           | Verb: clear `tasks.owner`                                                | "unclaim", "unassign"                              |
 | **free**              | Verb: mark an agent's `status = 'free'` (idle, available)                | "park", "idle" (verb)                              |
 | **status**            | Persisted enum on `agents` (busy/needs_input/free/...)                   | "state" (use only "lifecycle state")               |
@@ -57,16 +57,23 @@ defined here, fix the doc. If you need a new term, add it here first.
 | **recreate**          | `mu workspace recreate <agent>` — free + create the agent's workspace in one shot. The between-wave "prep this worker for the next dispatch" verb. Reuses the previous backend unless `--backend` overrides; bases on current main unless `--from <ref>` overrides. Refuses on dirty WC the same way `free` does; `--force` discards the dirty edits (lossy). Sibling of **refresh**: refresh PRESERVES the worker's commits (rebases them onto fresh main); recreate THROWS THEM AWAY. | "recycle", "reset" (overloaded), "free+create" (only in commit messages) |
 | **backend**           | Implementation of `AgentBackend` or `VcsBackend`                         | "driver", "provider"                               |
 | **detector**          | Per-CLI pattern matcher for busy/permission/ready. Today mu has one (`detectPiStatus` in `src/detect.ts`); covers vanilla pi + any TUI wrapper that uses Braille spinner glyphs. Other CLIs spawned via `--cli <other>` may misclassify; trust scrollback over the emoji. | "matcher", "parser"                                |
-| **snapshot**          | A whole-DB backup (`<state-dir>/snapshots/<id>.db`) auto-captured before each destructive verb (workstream destroy, agent close, task close/reject/defer/release/delete, workspace free). Indexed by the `snapshots` table; restore via `mu undo`. | "checkpoint", "backup"                             |
-| **prune**             | Verb: bulk-drop rows from the snapshots collection per a policy (`mu snapshot prune` with `--keep-last`, `--older-than <D>d`, `--stale-version`, `--all`, or the bare GC-policy form). Sibling of the auto-GC that runs on every capture; the explicit verb is for the dogfood case where the auto-GC's count + age caps need an operator-driven supplement (e.g. "drop every snapshot whose schema_version is now stale"). Surgical single-row removal is `mu snapshot delete <id>`. | "reap", "sweep" (overloaded by workstream-destroy --empty) |
-| **machine_id**        | Per-state-directory uuid seeded on first `openDb` and stored in `machine_identity`. Identifies one mu DB across `mu db export` / `mu db import`; users do not configure it. | "device id", "host id"                              |
-| **db sync**           | The `mu db {export, import, replay}` cluster of verbs: whole-DB SQLite copy with manifest, per-workstream drift-detecting import, and manual replay from parked divergence sidecars. Explicit file handoff only; not live synchronization. | "live sync", "replication", "collab"              |
-| **divergence sidecar** | SQLite file at `<state-dir>/divergence/<ws>-<ts>.db` parked by `mu db import --force-source` before clobbering local divergent state. Later inspected or cherry-picked via `mu db replay`. | "conflict backup", "loser DB"                       |
-| **export**            | A directory of plain markdown files produced by `mu workstream export` (one `.md` per task + `INDEX.md` + `README.md` + `manifest.json`). Survives `mu workstream destroy` (auto-run pre-destroy to `<state-dir>/exports/<ws>-<ts>/` unless `--no-export`). Idempotent: re-export against the same dir rewrites only changed files; deleted tasks are preserved with a banner. Markdown-only by design — no HTML/PDF, no embedded VCS. Exports are now read-only artifacts for humans / git / docs; the lossless movement paths are **db sync** and `mu archive restore`. | "dump", "snapshot" (snapshot is the binary `.db`)  |
-| **import**            | Avoid as a generic noun unless naming `mu db import`. The removed `mu workstream import` bucket→DB round-trip was replaced by **db sync** for cross-machine handoff and `mu archive restore` for un-archive. | "rehydrate", "restore" (restore has specific meanings) |
-| **archive**           | An operator-named bucket of preserved task graphs (rows in `archives` + `archived_tasks` + `archived_edges` + `archived_notes` + `archived_events`). Cross-workstream and additive: one archive may accumulate snapshots from many workstreams under the same label. Outlives every source workstream; `archived_tasks.source_workstream` is intentionally TEXT (not an FK) so destroyed-workstream attribution survives. Distinct from a **snapshot** (binary whole-DB backup for `mu undo`) and an **export** (markdown files on disk). | "backup", "vault"                                 |
-| **archived task**     | A row in `archived_tasks`: a snapshot of a `tasks` row at archive time. Pins `status`, `impact`, `effort_days`, `owner_name`, and the original `created_at`/`updated_at` for retrospect ordering. The `(archive_id, source_workstream, original_local_id)` composite UNIQUE makes `mu archive add` idempotent at the (archive, workstream) granularity. | "closed task" (status-orthogonal)                  |
-| **archive label**     | The operator-facing TEXT name of an **archive**. Globally unique across the machine (NOT per-workstream — archives outlive workstreams). Shape: `/^[a-z][a-z0-9_-]{0,63}$/` (wider than workstream names because labels often encode workstream + date + purpose, e.g. `auth-2026-q1`). | "archive name" (in code; `label` only)             |
+| **op**                | The atomic unit of change: one row in the `ops` table, written by a trigger inside the same transaction as the mutation it records. Carries `(hlc, machine_id, group_id, actor, intent, entity, key, op, payload)`. A **semantic partial update** — the payload holds only the columns that actually changed, which is what makes per-field merge free. | "event", "delta", "change" (all overloaded)         |
+| **ops log**           | The `ops` table: the single append-only record of every change, and the substrate **sync**, **undo**, **archive**, and history are all queries or replays over. Canonical and ACID because it lives in `mu.db` alongside the tables it records. Replaces v1's four separate mechanisms (`agent_logs`, snapshots, `workstream_sync`, `archived_*`). | "event log", "journal", "WAL" (reserved by SQLite)  |
+| **intent**            | The semantic label on an **op** (`task.close`, `task.reparent`, `agent.spawn`). Set once per public SDK function via **op context**, not per mutation. Human-grade: `mu log` renders prose from it through one formatter, replacing v1's brittle prose prefix-matching. | "verb" (overloaded by CLI verbs), "action"          |
+| **group**             | A set of ops sharing a `group_id` — one user-visible action. A cascade close writes N ops in one group, so `mu undo <group>` reverts them as a unit. | "transaction" (reserved by SQLite), "batch"        |
+| **op context**        | The per-connection `_op_ctx` temp table holding `(group_id, actor, intent, applying)` for the current transaction. Triggers read it to stamp ops; `applying=1` suppresses capture while ingesting a peer's ops (echo-loop guard). | "ambient context", "thread local"                   |
+| **portable**          | Of a table or entity: syncable across machines. Portable = `workstreams`, `tasks`, `task_edges`, `task_notes`. **Machine-local** = `agents` (holds `pane_id`), `vcs_workspaces` (absolute paths differ across macOS/Linux), `machine_identity`, `schema_version`. Machine-local ops are still recorded (so `mu log` shows them) but never leave the machine. | "shared", "global"                                  |
+| **HLC**               | Hybrid logical clock: `(wall_ms, counter, machine_id)` serialized to a sortable TEXT. The ordering key for every op. Monotonic — never regresses — so a laptop waking with a skewed clock cannot resurrect stale edits. Persisted in `machine_identity` because every mu invocation is a fresh process. | "timestamp", "version" (both imply wall clock)      |
+| **machine_id**        | Per-state-directory uuid seeded on first `openDb` and stored in `machine_identity`. Identifies one mu DB as a **peer** and names its **segment**; users do not configure it. | "device id", "host id"                              |
+| **segment**           | An append-only JSONL file at `<sync-dir>/<machine_id>.jsonl` holding one machine's ops. **Single-writer-per-file**: a machine appends only to its own and read-onlys every other, so no file is ever contended and any file-mover (Syncthing, rsync, scp, git, USB) is adequate transport. Derived and regenerable from the `ops` table, so losing one costs a re-flush. | "replica", "shard", "stream"                        |
+| **peer**              | Another machine, discovered implicitly as a `<machine_id>.jsonl` **segment** in the sync dir. There is no membership list to configure or keep consistent — dropping a segment in the folder joins the cluster. | "node", "replica", "remote"                         |
+| **watermark**         | Per-peer integer in `sync_peers.last_applied_seq`: how far into that peer's **segment** we have applied. One integer suffices because segments are append-only and ordered. | "offset", "cursor" (cursor is reserved by `mu log`) |
+| **flush** / **ingest** | The two halves of sync. Flush appends local ops to my own **segment**; ingest reads each peer segment from its **watermark** and applies. Both run ambiently on every mu invocation when `MU_SYNC_DIR` is set — there is no daemon. | "push"/"pull" (imply mu moves files; it does not)   |
+| **marker**            | An op that pins a point in the **ops log** under an operator-chosen label — the whole implementation of an **archive**. Load-bearing invariant: compaction must never discard ops below a pinned marker. | "tag", "checkpoint", "bookmark"                     |
+| **export**            | A directory of plain markdown files produced by `mu workstream export` (one `.md` per task + `INDEX.md` + `README.md` + `manifest.json`). Survives `mu workstream destroy` (auto-run pre-destroy to `<state-dir>/exports/<ws>-<ts>/` unless `--no-export`). Idempotent: re-export against the same dir rewrites only changed files; deleted tasks are preserved with a banner. Markdown-only by design — no HTML/PDF, no embedded VCS. Read-only artifacts for humans / git / docs; the lossless movement paths are **sync** and `mu archive restore`. | "dump", "snapshot" (retired term)  |
+| **import**            | Avoid as a generic noun. Cross-machine movement is **sync** (ambient, via **segments**); un-archive is `mu archive restore`. | "rehydrate", "restore" (restore has specific meanings) |
+| **archive**           | An operator-named label pinning one or more **markers** in the **ops log**. Cross-workstream and additive: one label may accumulate markers from many workstreams. Outlives every source workstream, because destroying a workstream writes tombstone ops rather than erasing history. `mu archive restore` replays that workstream's ops up to the marker's HLC under a new name — strictly more faithful than v1's column-subset copy. | "backup", "vault"                                 |
+| **archive label**     | The operator-facing TEXT name of an **archive** — the label carried by its **markers**. Globally unique across the machine (NOT per-workstream — archives outlive workstreams). Shape: `/^[a-z][a-z0-9_-]{0,63}$/` (wider than workstream names because labels often encode workstream + date + purpose, e.g. `auth-2026-q1`). | "archive name" (in code; `label` only)             |
 | **qualified ref**     | An entity-arg form `<workstream>/<name>` that targets a specific workstream's task / agent / workspace without `-w`. Bare `<name>` still resolves via the standard chain (`-w` / `$MU_SESSION` / current tmux session). Mixing a qualified ref with a non-matching `-w` is rejected (`UsageError`). When a bare name appears AND no workstream resolves AND ≥2 workstreams contain that name, mu raises `NameAmbiguousError` (exit 4) listing every candidate as a qualified-form one-paste fix. | "fully-qualified id" (in prose), "prefixed name"   |
 | **doctor**            | The diagnostic command + report                                          | "health check", "diagnose"                         |
 | **CLI**               | The `mu` command-line binary                                             | "tool" (overloaded), "binary" (only when relevant) |
@@ -215,14 +222,15 @@ Don't use them in mu code or docs:
 | "context"        | Overloaded (LLM context, project context, fork context)          | Be specific: "task context", "forked context", etc.  |
 | "tab"            | Tmux has windows, not tabs. Pi-subagents and dg use "tab" as a frontmatter field; we keep that field for compatibility but use "window" everywhere else | "window" (in prose); only `tab:` in frontmatter      |
 | "thread"         | OS threads + chat threads + git threads; bad word                | Be specific                                          |
-| "message"        | Overloaded (LLM message, log message, send-keys input)           | "log entry" (for `agent_logs`), "send" (for input to a pane) |
+| "message"        | Overloaded (LLM message, log message, send-keys input)           | "log entry" (for the **ops log**), "send" (for input to a pane) |
 | "config"         | Already means the global mu config; don't reuse                  | Specific: "settings", "frontmatter", "options"       |
 | "manager"        | Vague; everything could be a manager                             | The specific noun (e.g., "the registry", "the eval engine") |
 | "service"        | Implies long-running daemon; mu has none                         | Be specific                                          |
 | "plugin"         | Pi has extensions, not plugins                                   | "extension"                                          |
 | "instance"       | Vague; could be agent / workstream / process                     | The specific thing                                   |
 | "broker"         | Implies pub-sub middleware; we don't have one                    | "log entry" or be specific                           |
-| "checkpoint"     | Implies recoverable savepoints in the work; we have snapshots, which back up the DB | "snapshot"                                       |
+| "checkpoint"     | Implies recoverable savepoints in the work                       | "marker" (pins the ops log), "group" (undo unit)  |
+| "snapshot"       | Retired in 2.0 along with the `snapshots` table and whole-DB file swaps | "marker", "backup" (for `mu db backup`)     |
 | "agent type"     | "Type" implies a class hierarchy; mu has no class system | "agent role" (scout/reviewer/etc.)                   |
 | "agent definition" / "agent template" / "agent role doc" | mu has no template/definition concept. Spawn flags + the orchestrator's prompt are the only "definition" | Just describe the spawn invocation directly |
 | "worker"         | "worker" is the name of one specific built-in agent              | "agent" (general); "the worker" only when referring to that specific agent |
@@ -250,14 +258,21 @@ reference too. Rows here exist to keep names canonical, not to replace
 
 | Operation | Canonical meaning |
 | --------- | ----------------- |
-| `mu db export <file>` | Whole-DB SQLite copy via `VACUUM INTO` plus `<file>.manifest.json` (`machineId`, `schemaVersion`, per-workstream `latestSeq`). |
-| `mu db import <file>` | Drift-detecting per-workstream import from an exported DB. Dry-run by default; `--apply` commits; five case branches: `IDENTICAL` / `FAST_FORWARD` / `LOCAL_AHEAD` / `CONFLICT` / `IMPORT`. |
-| `mu db replay <sidecar>` | Manual cherry-pick of tasks, notes, and eligible edges from a divergence sidecar parked by `mu db import --force-source`. |
-| `mu archive restore <label> --as <new-ws> [--source <orig-ws>]` | Lossless un-archive from `archived_*` rows into a fresh workstream. |
+| `mu sync` | Report **peer** status (**watermark** + staleness). **Flush** and **ingest** happen on this and every other mu invocation when `MU_SYNC_DIR` is set, so the bare form is a status card whose sync is incidental — it exists mainly so `rsync ... && mu sync` reads correctly. |
+| `mu sync --from <path>` | Ingest from a peer's `mu.db` directly (a different reader: SQLite `ops` table rather than a JSONL **segment**). For an sshfs mount or a copied file. |
+| `mu sync --repair <peer>` | Reset a **watermark** to re-read that peer's **segment** from zero. The universal repair, safe because ingest is idempotent via `UNIQUE (machine_id, hlc)`. |
+| `mu undo <group>` | Emit inverse ops for one **group**. Granular (touches only that action's rows), composable, and itself an op — so it syncs and is itself undoable. |
+| `mu rebuild <file>` | Materialize a fresh DB by replaying the **ops log** in HLC order. The disaster-recovery path; prints the swap command rather than overwriting in place. |
+| `mu archive restore <label> --as <new-ws> [--source <orig-ws>]` | Replay a workstream's ops up to the label's **marker** into a fresh workstream. |
+| `mu db backup <file>` | `VACUUM INTO` copy of the whole DB. The "one file I can scp" convenience; real DR is **segments** + `mu rebuild`. |
 
-Removed operation: `mu workstream import`. Use `mu db import` for
-cross-machine sync and `mu archive restore` for un-archive. Bucket
-exports remain read-only artifacts.
+Removed in 2.0: `mu db export` / `mu db import` / `mu db replay`
+(replaced by ambient **sync**), `mu snapshot list` / `show` / `prune`
+(replaced by the **ops log**), `mu archive create` / `remove` /
+`delete` (labels are created by first use; **markers** are
+append-only), and `mu peers` (folded into bare `mu sync`).
+A one-off directory needs no flag — `MU_SYNC_DIR=/mnt/usb mu state`
+ingests from a USB stick using the existing env-var idiom.
 
 ---
 
@@ -327,16 +342,18 @@ XDG-Base-Directory-Spec compliant. The state directory resolves as:
   `mu workspace create`). Orphan dirs (no row in `vcs_workspaces`)
   surfaced by `mu workspace orphans -w <workstream>` and
   `mu state -w <workstream>`.
-- `<state-dir>/snapshots/<id>.db` — whole-DB snapshots auto-captured
-  before destructive verbs (introduced in schema v4; carried forward).
-  Indexed by the `snapshots`
-  table; restore via `mu undo` (inspect via `mu snapshot list` /
-  `mu snapshot show <id>`). Default colocation: snapshots live
-  next to the live DB, so per-test isolation works without env
-  gymnastics.
-- `<state-dir>/divergence/<workstream>-<timestamp>-<suffix>.db` —
-  divergence sidecars parked by `mu db import --force-source` before
-  clobbering local state. Replay selected rows with `mu db replay`.
+- `<sync-dir>/<machine_id>.jsonl` — one **segment** per machine,
+  where `<sync-dir>` is `MU_SYNC_DIR` (unset = sync off, zero cost).
+  **Single-writer-per-file**: this machine appends only to its own
+  and read-onlys every other, so no file is ever contended and any
+  file-mover works as transport. Derived from the `ops` table and
+  therefore regenerable — no fsync needed, and a torn transfer costs
+  one skipped line rather than the file.
+- `<sync-dir>/<machine_id>.manifest` — `{count, last_hlc, sha256}`
+  for whole-segment verification.
+- **Never** place `MU_DB_PATH` inside `MU_SYNC_DIR`. Syncing a live
+  SQLite file (and its `-wal`/`-shm` sidecars) corrupts it. `mu doctor`
+  checks for this.
 - mu does NOT consult any agent-template directory. If pi-subagents
   is installed, its `~/.pi/agent/agents/` and `.pi/agents/` paths
   are pi-subagents' concern — not mu's.

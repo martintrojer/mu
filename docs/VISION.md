@@ -76,6 +76,38 @@ it safely. The DB is the source of truth; in-memory state is a cache.
 The extension and the CLI both go through the same DB; they never
 diverge.
 
+### 2b. One log records every change
+
+Since 2.0 there is exactly **one** record of change: the `ops` table,
+written by SQLite triggers inside the same transaction as the mutation
+they record. Same file, same transaction — so capture cannot be
+forgotten and cannot drift from the data, even on power loss.
+
+**Sync, undo, archive, and history are all queries or replays over
+that one log.** v1 implemented those four separately (`agent_logs`,
+`snapshots` + 14 hook sites, `workstream_sync` + divergence sidecars,
+and five `archived_*` tables); 2.0 collapsed them.
+
+The tables stay canonical for **reads** — this is not an event-sourced
+system that replays to answer a query. Ops are the durable change
+record; the tables are the materialized view; triggers keep them in
+lockstep. `mu doctor` rebuilds into a temp DB and diffs, so the
+lockstep is verified rather than assumed.
+
+The cost of this consolidation is honest: a capture bug is no longer
+"sync is broken", it is "undo and archives are also broken". That
+drift check is load-bearing, not a nicety.
+
+### 2c. Local-first, transport-agnostic
+
+Every machine keeps its own complete DB. Machines exchange
+append-only JSONL **segments** — one per machine, single-writer, so no
+file is ever contended and any file-mover (Syncthing, rsync, scp,
+git, a USB stick) is adequate transport. mu reads and writes files;
+**the user owns transport**. mu has no network code, no daemon, and
+no membership config — peers are discovered from the segment files
+present.
+
 ### 3. Reality wins reconciliation
 
 `mu agent list` queries tmux, prunes ghosts, adopts orphans. The DB records

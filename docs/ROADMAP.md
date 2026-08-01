@@ -57,9 +57,41 @@ above:
 
 ---
 
+## Rejected sync substrates (2.0)
+
+Recorded so we don't relitigate them. 2.0 replaced v1's
+`mu db export`/`import`/`replay` with an ops log in SQLite plus
+append-only JSONL **segments**; every alternative below was
+considered and rejected for the reason given.
+
+| Substrate | Why not |
+| --------- | ------- |
+| **Litestream** | Daemon; single-writer; one-way to object storage; `restore` is a whole-file clobber. Solves disaster recovery, not laptop↔devserver. No answer for "I added 3 tasks on the devserver while the laptop was offline." |
+| **LiteFS** | FUSE. On macOS that means macFUSE — a kernel extension needing SIP gymnastics on Apple Silicon. Dead on arrival for a mixed-OS fleet. |
+| **rqlite / dqlite / Marmot** | Raft or NATS clusters. A consensus cluster to sync a task graph between two machines that are usually not both awake. Requires daemons (anti-feature pledge). |
+| **cr-sqlite** | Merges rows by primary key, and every mu entity table is `INTEGER PRIMARY KEY AUTOINCREMENT` — laptop's task `id=5` and devserver's *different* task `id=5` merge into one row, column-by-column. Silent data loss. Fixing it means UUID PKs, i.e. tearing out the load-bearing v5 surrogate-PK substrate. Also: upstream still says WIP, DDL doesn't sync, and it's a native extension needing a darwin/linux × arm/x64 × glibc/musl build matrix. |
+| **RocksDB / LMDB for the op log** | No triggers, so capture becomes a convention every future call site must remember — and a forgotten op is now silent corruption of undo *and* archives *and* sync. Single-process-exclusive, so it forces a daemon. mu's read side is ~96 prepared statements, ~70 JOINs, 3 views and recursive CTEs — all hand-rolled. Loses `mu sql`. |
+| **SQLite file per peer (instead of JSONL)** | A torn transfer makes the *whole* file unopenable, versus losing one JSONL line. `-wal`/`-shm` sidecars in a synced folder are the canonical way to corrupt a DB. Page churn defeats rsync/Syncthing delta transfer, where append-only files are the best case. |
+| **`MU_SYNC_PEERS` membership list** | A config file with extra steps, and it would have to be kept consistent across every machine — the drift problem it appears to solve. Peers are discovered from segment filenames instead. |
+| **`mu sync --push/--pull <host>`** | Would make mu shell out to ssh/scp — its first network egress — dragging in ssh config, jump hosts, ProxyCommand, ports, identity files, interactive prompts, and network-vs-auth error mapping. A remote backend wearing a small hat. mu prints a copy-pasteable rsync line instead. |
+
+The chosen design's net dependency change is **zero**: still just
+`better-sqlite3`.
+
+---
+
 ## Shipped
 
-### Multi-machine sync (db export/import + archive restore) — shipped in v0.4.1
+### Multi-machine sync (db export/import + archive restore) — shipped in v0.4.1, replaced in 2.0
+
+> **Superseded.** 2.0 removed `mu db export`/`import`/`replay`
+> entirely. The five-state drift classifier, divergence sidecars, and
+> manual replay proved too annoying to use in practice — the
+> promotion criteria were met, but the *shape* was wrong: it made the
+> operator adjudicate every handoff. See
+> [§ Rejected sync substrates](#rejected-sync-substrates-20) and the
+> `mu` workstream's `v2-*` tasks. The note below is kept as the
+> historical record of why v0.4.1 looked the way it did.
 
 Shipped in v0.4.1. The design note remains here as the historical
 promotion record and to make the local-first boundary explicit.
@@ -235,9 +267,12 @@ reasoning per item.
   integration needs one transactional surface.
 - **`TaskSurface` adapter abstraction** — the built-in graph IS
   the killer feature.
-- **Live cross-machine state sync** — local-first SQLite. Explicit
-  DB-file export/import shipped in v0.4.1, but no watcher, daemon,
-  remote backend, or live row merge.
+- **Live cross-machine state sync via a daemon or remote backend** —
+  local-first SQLite. 2.0's ops-log sync is ambient but still
+  daemon-free (flush/ingest ride on ordinary mu invocations) and
+  transport-free (mu reads and writes files; the user moves them).
+  Rejected storage/replication substrates, with reasoning, are
+  recorded in [§ Rejected sync substrates](#rejected-sync-substrates-20).
 - **HTTP API on top of SQLite** — write your own RPC if you need
   one.
 - **A "hosted" mu** — your machine is the deployment.
