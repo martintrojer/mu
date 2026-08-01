@@ -172,9 +172,22 @@ or you fail-and-retry:
 ```
 mu task note <slug> -w <ws> "$(cat /tmp/<slug>.txt)"
 mu agent send worker-N -w <ws> '/new'
-sleep 2
 mu agent send worker-N -w <ws> "$(cat /tmp/<slug>.txt)"
 ```
+
+The `sleep 2` that used to sit between those sends is gone: it was a
+race, not a fix. `mu agent send` now waits for the pane to finish
+re-initialising and re-submits a swallowed Enter
+(`dogfood-send-after-new-dropped`). Previously the second send could
+land in the input box and never submit — both sends exit 0, the pane
+sits at `needs_input` with 0.0% context, and you only find out ~300s
+later when `mu task wait --on-stall exit` returns 7.
+
+If a send cannot be confirmed, it prints `warning: ... was NOT
+submitted` to stderr and names the pane. **Exit 0 with no warning now
+means submitted** — but the old orchestrator habit is still cheap
+insurance for a big dispatch: `mu agent read worker-N -n 5` should
+show nonzero context before you enter a long wait.
 
 A good note has these sections (full list lives in
 [SKILL.md §Task note contract](../skills/mu/SKILL.md), expanded

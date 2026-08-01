@@ -1025,12 +1025,16 @@ mu agent send worker-1 "echo hello from outside"
 
 mu uses the **canonical bracketed-paste protocol** internally:
 
+0. wait for the pane to stop being mid-modal (`MU_SEND_READINESS_MS`,
+   default 15000; 0 disables)
 1. `tmux copy-mode -q` (silent if not in copy mode)
 2. `tmux set-buffer` (loads text into a uniquely-named buffer)
 3. `tmux paste-buffer -p -d -r` (`-p` = bracketed paste, `-d` = delete
    buffer after paste, `-r` = preserve LF)
 4. wait `MU_SEND_DELAY_MS` ms (default 500)
 5. `tmux send-keys Enter`
+6. confirm the Enter took; re-send it if the text is still sitting
+   unsubmitted in the input box
 
 This means special characters (`/`, `?`, `!`, `$`, `&&`, `|`, `*`,
 …) arrive at the agent's CLI **literally** — not interpreted by tmux's
@@ -1043,6 +1047,22 @@ The send delay is configurable per call:
 MU_SEND_DELAY_MS=300 mu agent send worker-1 "..."     # faster, less safe
 MU_SEND_DELAY_MS=1000 mu agent send worker-1 "..."    # slow remote
 ```
+
+**Steps 0 and 6 make `exit 0` mean "submitted".** A TUI rendering a
+modal accepts a bracketed paste but *swallows the Enter after it*,
+leaving the prompt typed-but-unsubmitted while `mu agent send` reported
+success. The visible failure was an agent idle at `needs_input` with
+0.0% context on work it never received. This bit the documented
+`send '/new'; sleep 2; send '<prompt>'` pattern, because pi's post-`/new`
+session-naming step is a model call that no fixed sleep can outrun.
+
+So the `sleep` between a clear and a prompt is no longer needed. If a
+send still cannot be confirmed, it prints `warning: ... was NOT
+submitted` to stderr (and sets `"delivered": false` under `--json`)
+rather than passing silently.
+
+Sending to an agent that is **busy working** is not delayed — that
+input queues normally, and only a modal/re-init spinner is waited out.
 
 If the target agent has a workspace that is **stale** (≥10 commits
 behind main — the same red bucket shown in `mu workspace list` and the

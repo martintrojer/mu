@@ -1,4 +1,13 @@
 // CLI-level tests for `mu agent send` warning/refusing on stale workspaces.
+//
+// MU_SEND_READINESS_MS=0 throughout: these tests are about the staleness
+// warning, not the send protocol. The readiness wait and submit
+// verification added by dogfood_send_after_new_dropped need real pane
+// captures, which the mock executor here does not provide (it returns
+// empty stdout for everything). Disabling it keeps the tmux-call
+// assertions pinned to the canonical 4-command sequence. The new
+// behaviour is covered by test/send-readiness.test.ts and
+// test/tmux-send-readiness.integration.test.ts.
 
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -20,6 +29,7 @@ let calls: readonly string[][];
 beforeEach(() => {
   tempDir = mkdtempSync(join(tmpdir(), "mu-send-stale-"));
   process.env.MU_STATE_DIR = join(tempDir, "state");
+  process.env.MU_SEND_READINESS_MS = "0";
   dbPath = join(tempDir, "mu.db");
   db = openDb({ path: dbPath });
   ensureWorkstream(db, "auth");
@@ -43,6 +53,8 @@ afterEach(() => {
   resetSleep();
   const key = "MU_STATE_DIR";
   delete process.env[key];
+  const readinessKey = "MU_SEND_READINESS_MS";
+  delete process.env[readinessKey];
 });
 
 async function fakeWorkspaceBehind(behind: number): Promise<void> {

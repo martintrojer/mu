@@ -52,6 +52,7 @@ import { detectPiStatus } from "../detect.js";
 import { type NextStep, pc, printNextSteps } from "../output.js";
 import { listTasksByOwner } from "../tasks.js";
 import {
+  type SendWarning,
   capturePane,
   enableMuPaneBordersForPane,
   listPanesInSession,
@@ -274,7 +275,16 @@ export async function cmdSend(
   const stalenessCheck = await checkWorkspaceStalenessForDispatch(db, name, ws, {
     strict: opts.strictStaleness === true,
   });
-  await sendToAgent(db, name, text, { workstream: ws });
+  // dogfood_send_after_new_dropped: capture the undelivered warning
+  // rather than letting it print raw, so it lands in the JSON payload
+  // too. `exit 0` must not be able to mean "silently dropped".
+  let undelivered: SendWarning | undefined;
+  await sendToAgent(db, name, text, {
+    workstream: ws,
+    onUndelivered: (w) => {
+      undelivered = w;
+    },
+  });
   const nextSteps: NextStep[] = [
     { intent: "Read response", command: `mu agent read ${name} -n 50 -w ${ws}` },
     { intent: "Watch live events", command: `mu log -w ${ws} --tail` },
@@ -282,16 +292,30 @@ export async function cmdSend(
   if (stalenessCheck.warned && stalenessCheck.nextStep !== null) {
     nextSteps.push(stalenessCheck.nextStep);
   }
+  if (undelivered !== undefined) {
+    nextSteps.unshift({
+      intent: "VERIFY the prompt landed before waiting on it",
+      command: `mu agent read ${name} -n 30 -w ${ws}`,
+    });
+  }
   if (opts.json) {
     emitJson({
       agentName: name,
       sentBytes: text.length,
+      delivered: undelivered === undefined,
+      ...(undelivered !== undefined
+        ? { undelivered: { reason: undelivered.reason, message: undelivered.message } }
+        : {}),
       staleness: stalenessCheck.staleness,
       nextSteps,
     });
     return;
   }
-  console.log(pc.dim(`sent ${text.length} bytes to ${name}`));
+  if (undelivered !== undefined) {
+    console.error(pc.yellow(`warning: ${undelivered.message}`));
+  } else {
+    console.log(pc.dim(`sent ${text.length} bytes to ${name}`));
+  }
   printNextSteps(nextSteps);
 }
 

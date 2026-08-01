@@ -53,7 +53,10 @@ describe("sendToAgent", () => {
     setTmuxExecutor(executor);
     const agent = await spawnAgent(db, { name: "alice", workstream: "auth" });
     calls.length = 0; // ignore spawn calls
-    await sendToAgent(db, "alice", "hello", { workstream: "auth" });
+    // readinessMs: 0 keeps this focused on the core protocol; the
+    // readiness/verify wrapper (dogfood_send_after_new_dropped) has its
+    // own coverage.
+    await sendToAgent(db, "alice", "hello", { workstream: "auth", readinessMs: 0 });
     // Should have emitted the 4-step send protocol.
     const verbs = calls.map((c) => c[0]);
     expect(verbs).toEqual(["copy-mode", "set-buffer", "paste-buffer", "send-keys"]);

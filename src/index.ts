@@ -240,11 +240,14 @@ export {
 } from "./exporting.js";
 export {
   assertValidPaneId,
+  awaitPaneQuiescence,
   capturePane,
   currentAgentName,
   currentPaneTitle,
   parseAgentNameFromTitle,
   defaultSendDelayMs,
+  defaultSendReadinessMs,
+  hasWorkMarker,
   isValidPaneId,
   killPane,
   killSession,
@@ -262,6 +265,7 @@ export {
   resetTmuxExecutor,
   selectLayout,
   sendToPane,
+  type SendWarning,
   sessionExists,
   setPaneTitle,
   setSleepForTests,

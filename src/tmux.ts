@@ -6,17 +6,25 @@
 //
 // The send protocol is the bracketed-paste sequence (canonical
 // implementation lives in `sendToPane` below):
+//   0. await pane quiescence (MU_SEND_READINESS_MS, default 15s)
 //   1. copy-mode -q   (silent if not in copy mode)
 //   2. set-buffer     (load text into a uniquely named buffer)
 //   3. paste-buffer -p -d -r   (bracketed paste, delete buffer, preserve LF)
 //   4. delay (MU_SEND_DELAY_MS, default 500)
 //   5. send-keys Enter
+//   6. confirm the Enter took; re-send it, then warn loudly if not
 //
 // Naive `tmux send-keys "<text>"` is broken: characters like /, ?, f get
 // interpreted by the agent's TUI (Claude, Codex, less, vim) or by tmux's
 // copy mode if the user has scrolled up. Use `sendToPane()`.
+//
+// Steps 0 and 6 exist because of dogfood_send_after_new_dropped: a TUI
+// rendering a modal SWALLOWS the Enter, stranding the pasted text in the
+// input box while `mu agent send` reported exit 0. See
+// `awaitPaneQuiescence` for the reproduction and the mechanism.
 
 import { execa } from "execa";
+import { detectPiStatus } from "./detect.js";
 import type { HasNextSteps, NextStep } from "./output.js";
 
 // ─── Error type ────────────────────────────────────────────────────────
@@ -769,18 +777,252 @@ export async function selectLayout(window: string, layout: string): Promise<void
 export interface SendOptions {
   /** Override the default delay between paste and Enter, in ms. */
   delayMs?: number;
+  /**
+   * Override the pre-send readiness budget, in ms. 0 disables the wait
+   * AND the post-send submit verification — i.e. the bare pre-2.0
+   * fire-and-forget protocol. Defaults to MU_SEND_READINESS_MS, else
+   * 15 000.
+   */
+  readinessMs?: number;
+  /**
+   * Called when the send could not be confirmed as submitted. Defaults
+   * to a `console.warn`. Injectable so the CLI can route it through its
+   * own formatter and tests can assert on it without capturing stderr.
+   */
+  onUndelivered?: (warning: SendWarning) => void;
+}
+
+/** Why a send could not be confirmed as submitted. */
+export interface SendWarning {
+  paneId: string;
+  /** 'paste-vanished' — pane looked calm, but the text stayed stranded
+   *  in the input box. 'busy-at-deadline' — pane never quiesced within
+   *  the budget and the text stayed stranded. */
+  reason: "busy-at-deadline" | "paste-vanished";
+  message: string;
+}
+
+/**
+ * Default pre-send readiness budget in ms. Override with
+ * MU_SEND_READINESS_MS; 0 disables the wait entirely.
+ *
+ * 15s (vs spawn's 10s) because the blocking operation here is an LLM
+ * round-trip inside the target TUI, not a process cold-start. pi's
+ * post-`/new` "Naming session before closing…" step measured ~1.5s on a
+ * warm session but is a model call, so it has no useful upper bound.
+ */
+export function defaultSendReadinessMs(): number {
+  const raw = process.env.MU_SEND_READINESS_MS;
+  if (raw === undefined) return 15_000;
+  const parsed = Number.parseInt(raw, 10);
+  if (Number.isNaN(parsed) || parsed < 0) return 15_000;
+  return parsed;
+}
+
+/** Interval between quiescence polls (ms). */
+const SEND_READINESS_POLL_MS = 250;
+
+/**
+ * How many CONSECUTIVE non-busy polls count as quiescent.
+ *
+ * One is not enough, and that is the subtle half of this bug. A TUI
+ * does not render its modal synchronously: `mu agent send W "/new"`
+ * returns as soon as tmux delivers Enter, and pi needs ~200-400ms more
+ * before the "Naming session…" spinner appears. A single poll in that
+ * window sees the PREVIOUS frame — still `needs_input` — declares the
+ * pane ready, and pastes straight into the modal that is about to
+ * appear. Measured directly: with a single poll, quiescence returned
+ * true while naming was still running on 2 of 3 attempts.
+ *
+ * Three polls at 250ms means the pane must look idle for ~500ms of
+ * wall-clock before we believe it, which covers the render gap without
+ * adding meaningful latency to the common already-idle case.
+ */
+const QUIESCENCE_CONFIRMATIONS = 3;
+
+/** How many times to re-send Enter for text stranded in the input box.
+ *  One swallowed Enter is the observed failure; a second retry costs
+ *  nothing when it is not needed. */
+const SUBMIT_RETRIES = 2;
+
+/** Pause after a retry Enter so the TUI can accept it and repaint
+ *  before we re-inspect. */
+const SUBMIT_SETTLE_MS = 600;
+
+/** Samples that must ALL agree before calling a send stranded, and the
+ *  gap between them. 4 x 700ms ≈ 2.1s, which covers the observed
+ *  repaint lag during which a delivered prompt still reads as count==1. */
+const SUBMIT_VERIFY_SAMPLES = 4;
+const SUBMIT_VERIFY_INTERVAL_MS = 700;
+
+/**
+ * Markers that mean "the agent is mid-turn", as opposed to "a modal is
+ * up". Both render a spinner, so the spinner alone cannot tell them
+ * apart. `to interrupt)` is the same literal the status detector keys
+ * on for busy; `Working` covers pi's plain progress line.
+ */
+const WORK_MARKERS: readonly string[] = ["to interrupt)", "Working"];
+
+/** True when the pane tail shows the agent working on a turn (rather
+ *  than a modal / re-init spinner). Only the last 40 lines count, so a
+ *  work marker scrolled far above cannot make a live modal look like an
+ *  in-flight turn. See awaitPaneQuiescence. */
+export function hasWorkMarker(scrollback: string): boolean {
+  const tail = scrollback.split("\n").slice(-40).join("\n");
+  return WORK_MARKERS.some((m) => tail.includes(m));
+}
+
+/**
+ * Block until the pane is ready to ACCEPT input, or the budget expires.
+ * Returns true if the pane quiesced, false on timeout.
+ *
+ * WHY THIS EXISTS (dogfood_send_after_new_dropped, reproduced 3/6 at
+ * sleep=0.3s and 1/5 at sleep=2s against a real pi pane):
+ *
+ * `mu agent send W "/new"` makes pi run an ASYNC "Naming session before
+ * closing…" step — an LLM call — before the new session exists. A
+ * bracketed paste that arrives while that modal is up is ACCEPTED, but
+ * the Enter that follows it is SWALLOWED. The text is therefore left
+ * sitting in the new session's input box, typed but never submitted —
+ * exactly the reported symptom: pane at needs_input, context 0.0%, no
+ * error anywhere, and an orchestrator waiting on a task the agent never
+ * started.
+ *
+ * (Verified rather than assumed: pasting during the modal and capturing
+ * afterwards shows the probe string exactly ONCE, in the input box, on
+ * 3 of 3 attempts. Re-sending Enter afterwards took it to 2 and moved
+ * context 0.0% -> 2.4%, which is what makes recovery possible.)
+ *
+ * Because the blocker is a model call, no fixed sleep can be correct —
+ * `sleep 2` is a coin flip, not a fix. The signal already existed: pi's
+ * spinner is a Braille glyph and `detectPiStatus` calls Braille busy,
+ * so this reuses the detector rather than adding a second readiness
+ * mechanism, matching `awaitSpawnReadiness` in src/agents/spawn.ts.
+ *
+ * `needs_permission` counts as ready: a pane sitting on a confirm
+ * dialog is waiting for a keystroke, and refusing to send would break
+ * the documented "answer the prompt with `mu agent send`" flow.
+ *
+ * IMPORTANT — what this does NOT wait for: an agent that is BUSY doing
+ * the work you gave it. Queuing a follow-up into a working agent is a
+ * legitimate, documented pattern, and pi accepts it. Waiting on that
+ * made every send into a working agent pay the full budget — measured
+ * at 14.5s of 15s, versus milliseconds before. The two cases are told
+ * apart by WHAT is busy, not by when:
+ *
+ *   agent working   — tail carries a work marker (`to interrupt)`,
+ *                     `Working`). Send immediately; pi queues it.
+ *   modal / re-init — spinner with NO work marker, which is what pi's
+ *                     "Naming session before closing…" looks like.
+ *                     Wait it out; this is the one that eats the Enter.
+ */
+export async function awaitPaneQuiescence(paneId: string, budgetMs: number): Promise<boolean> {
+  if (budgetMs <= 0) return true;
+  const deadline = Date.now() + budgetMs;
+  let calm = 0;
+  for (;;) {
+    const scrollback = await capturePane(paneId, { lines: 50 }).catch(() => undefined);
+    const busy = scrollback === undefined || detectPiStatus(scrollback) === "busy";
+    // Busy BECAUSE the agent is working a turn: not a re-init modal.
+    // Send now and let the TUI queue it behind the current turn.
+    if (busy && scrollback !== undefined && hasWorkMarker(scrollback)) return true;
+    if (!busy) {
+      calm++;
+      if (calm >= QUIESCENCE_CONFIRMATIONS) return true;
+    } else {
+      // Went busy after looking idle: a modal rendered late. Reset the
+      // streak so it cannot sneak in behind that early idle reading.
+      calm = 0;
+    }
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) return false;
+    await currentSleep(Math.min(SEND_READINESS_POLL_MS, remaining));
+  }
+}
+
+/**
+ * Longest prefix of `text` that is safe to look for in a pane capture.
+ * The TUI soft-wraps its input box, so only the first line survives
+ * intact. 24 chars is comfortably under any sane terminal width while
+ * still being specific enough not to false-positive on chrome.
+ */
+function pasteProbe(text: string): string {
+  const firstLine = (text.split("\n")[0] ?? "").trim();
+  return firstLine.slice(0, 24);
+}
+
+/**
+ * True when `probe` looks SUSTAINED-unsubmitted: visible exactly once,
+ * on a pane that is not working, across every sample in a short window.
+ *
+ * Why all three conditions, each learned from a false positive on a
+ * real pane:
+ *
+ *  - EXACTLY ONCE. Text sitting in the input box appears once. A
+ *    submitted prompt ends up appearing twice (the TUI echoes it into
+ *    the transcript above its response) or zero times (it scrolled
+ *    past). Zero therefore counts as delivered — treating "cannot see
+ *    it" as failure would warn on every long send.
+ *  - NOT BUSY. A busy pane is working on something, which is what a
+ *    delivered prompt looks like.
+ *  - SUSTAINED. This is the one that matters most. A successful submit
+ *    legitimately passes THROUGH count==1 for up to ~2s while the TUI
+ *    repaints, before the echo makes it 2. Sampling once inside that
+ *    window reports a strand that has already gone through, which was
+ *    a real false warning during development. Requiring every sample
+ *    to agree removes it.
+ *
+ * Cost when all is well: the first sample usually shows 0 or 2 and the
+ * function returns immediately.
+ */
+async function isTextStranded(paneId: string, probe: string): Promise<boolean> {
+  for (let i = 0; i < SUBMIT_VERIFY_SAMPLES; i++) {
+    if (i > 0) await currentSleep(SUBMIT_VERIFY_INTERVAL_MS);
+    const capture = await capturePane(paneId, { lines: 50 }).catch(() => undefined);
+    if (capture === undefined) return false;
+    if (detectPiStatus(capture) === "busy") return false;
+    let count = 0;
+    let idx = capture.indexOf(probe);
+    while (idx !== -1 && count < 2) {
+      count++;
+      idx = capture.indexOf(probe, idx + probe.length);
+    }
+    if (count !== 1) return false;
+  }
+  return true;
+}
+
+/** Default handler for an unconfirmed send: warn on stderr. Loud by
+ *  design — the whole bug was that this case was silent. */
+function defaultUndeliveredWarning(warning: SendWarning): void {
+  console.warn(`warning: ${warning.message}`);
 }
 
 /**
  * Send a single line of text to a pane and submit it.
  *
  * Sequence:
+ *   0. wait until the pane is not mid-modal (see awaitPaneQuiescence)
  *   1. exit copy mode (silent if not in copy mode)
  *   2. load text into a uniquely-named tmux buffer
  *   3. paste with bracketed-paste mode (-p) so apps treat as literal text;
  *      delete buffer after paste (-d); preserve LF (-r)
  *   4. wait MU_SEND_DELAY_MS (default 500) so the agent ingests the text
  *   5. send Enter as a real key event
+ *   6. confirm the Enter took; re-send it if the text is stranded
+ *
+ * DELIVERY CONTRACT (dogfood_send_after_new_dropped): exit 0 must not
+ * be able to mean "silently dropped". After Enter, the pane is checked
+ * for text left STRANDED in the input box — typed but unsubmitted,
+ * which is what a swallowed Enter looks like. If found, Enter is
+ * re-sent (up to SUBMIT_RETRIES times), which recovers the prompt.
+ * `onUndelivered` fires only if it is STILL stranded afterwards.
+ *
+ * Not a throw, deliberately: by then the text is in the agent's input
+ * box, so the operator's next `mu agent read` shows it and a bare Enter
+ * finishes the job. Failing the command would also break every existing
+ * caller for a usually-recoverable condition. The warning is loud and
+ * names the recovery step.
  *
  * Naive `send-keys "<text>"` would let characters like /, ?, f, : be
  * interpreted by the agent's TUI or by tmux's copy mode. Always use this.
@@ -791,6 +1033,11 @@ export async function sendToPane(
   opts: SendOptions = {},
 ): Promise<void> {
   assertValidPaneId(paneId);
+
+  // 0. Wait out an in-flight modal / re-init. A TUI rendering one
+  //    swallows the Enter, stranding the paste in the input box.
+  const readinessMs = opts.readinessMs ?? defaultSendReadinessMs();
+  const quiesced = await awaitPaneQuiescence(paneId, readinessMs);
 
   // 1. Exit copy mode silently. -q suppresses errors when not in copy mode.
   const copyResult = await currentExecutor(["copy-mode", "-q", "-t", paneId]);
@@ -824,6 +1071,27 @@ export async function sendToPane(
 
   // 5. Submit. Enter must be a real key event, not part of the paste.
   await tmux(["send-keys", "-t", paneId, "Enter"]);
+
+  // 6. Confirm the Enter took. readinessMs: 0 opts out of the whole
+  //    wrapper (bare 4-command protocol; unit tests mock captures away).
+  if (readinessMs <= 0) return;
+  const probe = pasteProbe(text);
+  if (probe.length === 0) return; // nothing observable to verify
+
+  for (let attempt = 0; attempt <= SUBMIT_RETRIES; attempt++) {
+    if (!(await isTextStranded(paneId, probe))) return;
+    if (attempt === SUBMIT_RETRIES) break;
+    // Sustained strand on a calm pane: the Enter was swallowed. Re-send.
+    await tmux(["send-keys", "-t", paneId, "Enter"]);
+    await currentSleep(SUBMIT_SETTLE_MS);
+  }
+
+  const warn = opts.onUndelivered ?? defaultUndeliveredWarning;
+  warn({
+    paneId,
+    reason: quiesced ? "paste-vanished" : "busy-at-deadline",
+    message: `send to ${paneId} was NOT submitted: the text is still sitting unsubmitted in the pane's input box after ${SUBMIT_RETRIES + 1} Enter attempts. The agent has NOT seen it. Press Enter in the pane, or re-send.`,
+  });
 }
 
 // ─── Capture ───────────────────────────────────────────────────────────

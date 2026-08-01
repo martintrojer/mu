@@ -377,9 +377,20 @@ work, clear first (`/new` for pi/claude-code; `/clear` for codex):
 
 ```bash
 mu agent send worker-1 '/new'
-sleep 1
 mu agent send worker-1 'Claim and work on task_x. Read notes first...'
 ```
+
+No `sleep` needed. `mu agent send` waits for the pane to finish any
+re-initialisation before pasting, and re-submits if the TUI swallowed
+the Enter. It used to be possible for the second send to land in the
+input box but never submit — pane idle at 0.0% context, exit 0, no
+error — which stalled the orchestrator until its `task wait` timed
+out. If a send still cannot be confirmed, it prints a `warning:` to
+stderr naming the pane; exit 0 with no warning means submitted.
+
+Budget is `MU_SEND_READINESS_MS` (default 15000; 0 restores the old
+fire-and-forget behaviour). Sending to an agent that is BUSY working
+is not delayed — that input queues normally.
 
 ## Recover destructive verbs
 
@@ -397,7 +408,7 @@ DO:
 - Drop task notes using the note contract.
 - Set `impact` and `effort_days` honestly.
 - Use `--workspace` whenever an agent may edit/build/test.
-- Send `/new` before unrelated follow-on work.
+- Send `/new` before unrelated follow-on work (no `sleep` needed).
 - Use `mu task wait --first --json`, never shell polling.
 - Use `mu doctor` when state looks wrong.
 

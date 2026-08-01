@@ -298,6 +298,56 @@ markers land in follow-up work.
 
 ### Fixed
 
+- **`mu agent send` no longer reports success for input it did not
+  deliver (`dogfood-send-after-new-dropped`).** The documented
+  `send '/new'; sleep 2; send '<prompt>'` pattern silently dropped the
+  second prompt. Both sends exited 0, the `/new` landed, and the pane
+  then sat at `needs_input` with 0.0% context on work it had never
+  received — the orchestrator only found out ~300s later when
+  `mu task wait --on-stall exit` returned 7. Cost ~30 minutes of
+  wall-clock across two stalled workers in one session.
+
+  Reproduced against a real pi pane before any fix: **3 of 6** attempts
+  dropped at `sleep 0.3`, **1 of 5** at `sleep 2`.
+
+  Root cause, measured rather than assumed: `/new` makes pi run an async
+  "Naming session before closing…" step — an LLM call, ~1.5s warm but
+  unbounded. A bracketed paste arriving during that modal is *accepted*,
+  but **the Enter after it is swallowed**, so the prompt is left typed
+  but unsubmitted in the new session's input box. (Confirmed by
+  occurrence-counting a probe string: exactly once, in the input box,
+  3/3 attempts; re-sending Enter took it to 2 and moved context
+  0.0% → 2.4%.) Because the blocker is a model call, no fixed sleep can
+  be correct — `sleep 2` was a coin flip, not a fix.
+
+  Fix reuses the existing readiness machinery instead of adding a second
+  mechanism, matching `awaitSpawnReadiness`: `sendToPane` now waits for
+  the pane to quiesce before pasting (`MU_SEND_READINESS_MS`, default
+  15000, `0` disables), and after Enter re-checks for text stranded in
+  the input box, re-sending Enter to recover it. Only if it is *still*
+  stranded does it warn — loudly, on stderr, with `"delivered": false`
+  under `--json`. **Exit 0 now means submitted.** Not a throw, because
+  by then the text is in the agent's input box and a bare Enter
+  finishes the job; failing the command would break every caller for a
+  recoverable condition.
+
+  Two subtleties, each found by measurement and each load-bearing:
+
+  - Quiescence requires **3 consecutive** calm polls. pi renders its
+    modal ~200-400ms *after* the `/new` send returns, so a single poll
+    reads the previous frame, declares the pane ready, and pastes
+    straight into the modal that is about to appear (observed: ready
+    returned true while naming was still running on 2 of 3 attempts).
+  - A pane that is busy **working** is not waited on. Queuing a
+    follow-up into a working agent is a documented pattern that pi
+    supports, and waiting on it made every such send pay the whole
+    budget — 14.5s of 15s, versus milliseconds before. Modal and
+    mid-turn both render a Braille spinner, so they are told apart by a
+    work marker (`to interrupt)` / `Working`), not by timing.
+
+  `skills/mu/SKILL.md`, `docs/HANDOVER.md`, and `docs/USAGE_GUIDE.md`
+  drop the `sleep` from the clear-then-send recipe.
+
 - **Blank (whitespace-only) list-flag fragments no longer silently
   vanish (`bug_whitespace_status_fragment`).** `parseCsvFlag` trimmed
   fragments and dropped every empty result, which conflated two

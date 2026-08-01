@@ -773,13 +773,21 @@ describe("selectLayout", () => {
   });
 });
 
-// ─── Send protocol (the canonical 5-step sequence) ────────────────────
+// ─── Send protocol (the canonical bracketed-paste sequence) ───────────
+//
+// dogfood_send_after_new_dropped added a pre-send readiness wait and a
+// post-send submit verification around the core 4 tmux commands. Both
+// need real captures, so the tests that pin the CORE SEQUENCE opt out
+// with readinessMs: 0 (which also skips verification, since there is
+// nothing to re-submit into a mock). The new behaviour has its own
+// describe block below plus real-tmux coverage in
+// test/tmux-send-readiness.integration.test.ts.
 
 describe("sendToPane", () => {
   it("emits the 5-step bracketed-paste sequence in order", async () => {
     const { executor, calls } = harness(() => ok());
     setTmuxExecutor(executor);
-    await sendToPane("%15", "hello world");
+    await sendToPane("%15", "hello world", { readinessMs: 0 });
 
     expect(calls).toHaveLength(4);
     // 1. copy-mode -q
@@ -843,7 +851,9 @@ describe("sendToPane", () => {
     setSleepForTests(async () => {
       sleepCalled = true;
     });
-    await sendToPane("%15", "hi", { delayMs: 0 });
+    // readinessMs: 0 too — the readiness poll has its own sleep, and
+    // this test is about the paste->Enter delay specifically.
+    await sendToPane("%15", "hi", { delayMs: 0, readinessMs: 0 });
     expect(sleepCalled).toBe(false);
   });
 
