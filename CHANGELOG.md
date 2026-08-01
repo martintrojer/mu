@@ -61,6 +61,78 @@ markers land in follow-up work.
 
 ### Added
 
+- **Segments — the sync transport layer (`src/segments.ts`).** How ops
+  leave and enter a machine: `flushSegment` appends this machine's
+  not-yet-flushed ops to `<MU_SYNC_DIR>/<machine_id>.jsonl`, and
+  `ingestSegment` reads a peer's segment from its **watermark** and feeds
+  each op through `applyOp`. SDK only — the `mu sync` verb is v2-sync.
+
+  The load-bearing property is **single-writer-per-file**: a machine
+  appends only to its OWN segment and read-onlys every other, so no file
+  is ever written by two machines and there is no file-level conflict,
+  ever. That is what makes Syncthing, rsync, scp, git and a USB stick all
+  adequate transport — it removes the one thing every file-mover is bad
+  at. mu reads and writes files; it never shells out to move them, and the
+  operator owns transport.
+
+  **Two logs, only one critical.** The `ops` table is canonical: ACID,
+  WAL, written in the same transaction as the mutation. A segment is
+  DERIVED and regenerable (`SELECT ... FROM ops`), so losing one costs a
+  re-flush. That asymmetry is what licenses plain append-only files, and
+  it has one deliberate consequence that looks like an oversight: **no
+  fsync on append.** Losing the tail to power loss is harmless because the
+  next flush re-derives it.
+
+  - **Four robustness layers**, following what RocksDB / Kafka / etcd /
+    SQLite-WAL all do — detect the bad record, stop at it, refetch the
+    tail. On damage, ingest stops at the last GOOD record and advances the
+    watermark only that far, then reports it: (1) `JSON.parse` failure =
+    torn write, free, and the dominant failure mode; (2) crc32 per line
+    over a canonical serialization, catching bit rot that JSON.parse would
+    accept; (3) monotonic `hlc` per segment, catching reordering,
+    duplication and silent mid-file truncation, structurally and at zero
+    extra bytes; (4) a `<machine_id>.manifest` sidecar
+    (`{count, lastHlc, sha256}`) for whole-file verification, which is the
+    only layer that can catch truncation exactly on a line boundary where
+    every remaining line is individually valid. Because
+    `UNIQUE (machine_id, hlc)` makes ingest idempotent, the universal
+    repair is "re-read from zero" — so a damaged segment is recoverable,
+    never fatal.
+  - **Filtering is load-bearing.** Only ops whose entity is in
+    `SYNCED_ENTITIES` are flushed, so machine-local ops (agent.*,
+    workspace.*) never reach a file: they carry pane ids and absolute
+    paths that are meaningless, and often wrong, elsewhere. "Not synced"
+    is not "not logged" — they still appear in `mu log`. Flush also
+    filters to THIS machine's ops, so ingested peer history is never
+    re-flushed under our own name (which would grow without bound as two
+    machines echoed each other). Ingest surfaces a non-synced entity from
+    a peer as a bad-peer defect rather than crashing.
+  - **Peer discovery is implicit**: every `*.jsonl` in the sync dir that
+    is not mine. No membership list — `MU_SYNC_PEERS` was rejected as "a
+    config file with extra steps that must be kept consistent across every
+    machine", so dropping a segment in the folder joins the cluster.
+    Syncthing conflict copies (`foo.sync-conflict-*.jsonl`) are INGESTED
+    rather than ignored: they are still valid op logs, dedup makes reading
+    them safe, and ignoring them would drop real ops exactly when
+    something had already gone wrong.
+  - **Watermarks** use the `sync_peers.last_applied_seq` column that has
+    been in the v9 schema unused until now. One integer per peer suffices
+    because segments are append-only and ordered; it counts LINES in that
+    peer's segment, not their `ops.seq` (a local-only cursor that means
+    nothing here).
+  - Ingest calls `receiveHlc` per op, so the local clock advances past the
+    peer's and a subsequent local edit sorts above what it just saw.
+  - No daemon, no watcher, no polling loop that outlives the command.
+    `syncPass` is one flush plus one ingest of each peer, and a no-op
+    costing nothing when `MU_SYNC_DIR` is unset.
+
+- **`src/file-lock.ts`** — the atomic-`mkdir` advisory lock extracted from
+  `src/agents/spawn-lock.ts`, which now delegates to it and keeps its
+  session-keyed wrapper and tests. Flush uses it so two concurrent local
+  `mu` processes cannot interleave partial lines in the same segment. Two
+  copies of a lock implementation is how they drift, so the mechanism
+  lives in one place and each caller names its own resource.
+
 - **`mu undo [group]` — granular undo via inverse ops (`src/undo.ts`,
   `src/cli/undo.ts`).** The verb disappeared in v9 along with
   `src/cli/snapshot.ts` (it lived there, not in its own module); this

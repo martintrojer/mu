@@ -133,6 +133,35 @@ export {
   undoGroup,
 } from "./undo.js";
 export {
+  discoverPeers,
+  type FlushResult,
+  flushSegment,
+  getWatermark,
+  type IngestResult,
+  ingestSegment,
+  localMachineId,
+  type PeerSegment,
+  readManifest,
+  resetWatermark,
+  SEGMENT_FORMAT_VERSION,
+  type SegmentDefect,
+  type SegmentDefectKind,
+  type SegmentLine,
+  type SegmentManifest,
+  segmentPath,
+  setWatermark,
+  syncDir,
+  type SyncPassResult,
+  syncPass,
+  verifyAgainstManifest,
+} from "./segments.js";
+export {
+  type FileLockOptions,
+  locksDir,
+  readFileLockMeta,
+  withFileLock,
+} from "./file-lock.js";
+export {
   type CaseCollision,
   checkCaseCollisions,
   checkDbInsideSyncDir,
