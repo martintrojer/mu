@@ -2,6 +2,7 @@
 
 import type { Db } from "../db.js";
 import { emitEvent } from "../logs.js";
+import { withOpContext } from "../op-context.js";
 import { lookupTaskAnyWorkstream, taskIdFor, touchTask } from "./core.js";
 import { CrossWorkstreamEdgeError, CycleError, TaskNotFoundError } from "./errors.js";
 import { getTask } from "./queries.js";
@@ -183,6 +184,17 @@ export function addBlockEdge(
   blocked: string,
   blocker: string,
 ): BlockEdgeResult {
+  return withOpContext(db, { intent: "task.block", group: "new" }, () =>
+    addBlockEdgeImpl(db, workstream, blocked, blocker),
+  );
+}
+
+function addBlockEdgeImpl(
+  db: Db,
+  workstream: string,
+  blocked: string,
+  blocker: string,
+): BlockEdgeResult {
   if (blocked === blocker) {
     // Surface as a typed CycleError so the CLI maps it to exit 4 (conflict)
     // rather than letting the schema CHECK fire as a generic SQL error.
@@ -246,6 +258,17 @@ export function removeBlockEdge(
   blocked: string,
   blocker: string,
 ): RemoveBlockEdgeResult {
+  return withOpContext(db, { intent: "task.unblock", group: "new" }, () =>
+    removeBlockEdgeImpl(db, workstream, blocked, blocker),
+  );
+}
+
+function removeBlockEdgeImpl(
+  db: Db,
+  workstream: string,
+  blocked: string,
+  blocker: string,
+): RemoveBlockEdgeResult {
   const blockedRow = getTask(db, blocked, workstream);
   if (!blockedRow) return { removed: false };
   const blockerRow = getTask(db, blocker, workstream);
@@ -292,6 +315,20 @@ export interface ReparentTaskResult {
  * pre-state gives the right answer for each new edge.
  */
 export function reparentTask(
+  db: Db,
+  taskLocalId: string,
+  blockers: readonly string[],
+  scope: { workstream: string },
+): ReparentTaskResult {
+  // One group for the whole reparent: it DELETEs the old blocker edges
+  // and INSERTs the new ones, which is one operator action and must
+  // undo as one.
+  return withOpContext(db, { intent: "task.reparent", group: "new" }, () =>
+    reparentTaskImpl(db, taskLocalId, blockers, scope),
+  );
+}
+
+function reparentTaskImpl(
   db: Db,
   taskLocalId: string,
   blockers: readonly string[],

@@ -40,6 +40,7 @@ import { mkdirSync } from "node:fs";
 import { homedir, hostname } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import Database, { type Database as DatabaseType } from "better-sqlite3";
+import { installCapture } from "./capture.js";
 import type { HasNextSteps, NextStep } from "./output.js";
 
 export type Db = DatabaseType;
@@ -118,6 +119,13 @@ export function openDb(options: OpenDbOptions = {}): Db {
     }
     applySchema(db);
     seedMachineIdentity(db);
+    // Install the op-capture triggers + the _op_ctx temp tables they
+    // read. Per-connection, because SQLite forbids a main-schema
+    // trigger from referencing the temp schema, so the triggers must
+    // themselves be TEMP triggers (see src/capture.ts for the full
+    // reasoning and the exact error messages). Must run AFTER
+    // seedMachineIdentity: the triggers mint HLCs from that row.
+    installCapture(db);
   } else {
     db.pragma("foreign_keys = ON");
   }

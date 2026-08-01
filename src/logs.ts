@@ -16,13 +16,21 @@
 //   payload    -> ops.payload    (raw text, not JSON, until v2-capture)
 //   seq        -> ops.seq        (same AUTOINCREMENT cursor semantics)
 //
-// `ops.hlc` and `ops.group_id` get placeholder values here: real HLCs
-// are v2-hlc's job and real grouping is v2-capture's. The placeholder
-// hlc is `<iso>|<uuid>` — roughly sortable and collision-free, so it
-// satisfies UNIQUE (machine_id, hlc) without pretending to be a clock.
+// `ops.hlc` is now a REAL HLC minted by `nextHlc` (src/hlc.ts). The old
+// placeholder `<iso>|<uuid>` is gone: `parseHlc` deliberately rejects
+// that shape as a tripwire, so leaving it would have failed loudly the
+// moment anything downstream read the log in HLC order.
+//
+// `group_id` is still a fresh uuid per entry rather than the ambient
+// **op context** group. That is correct for this module's remaining
+// callers, which are log APPENDS (`mu log write`, event breadcrumbs) —
+// each is its own user-visible action, not part of a row-mutation
+// group. Rows written through the capture triggers get the ambient
+// group; these are hand-written log lines, not captured mutations.
 
 import { randomUUID } from "node:crypto";
 import type { Db } from "./db.js";
+import { nextHlc } from "./hlc.js";
 
 export type LogKind = "message" | "event" | "broadcast" | string;
 
@@ -66,6 +74,25 @@ const SELECT_LOG_COLS = `
 `;
 
 const LOG_FROM_JOIN = "FROM ops l";
+
+/** The op entities this shim treats as LOG LINES.
+ *
+ *  Since v2-capture, `ops` holds two very different kinds of row: hand
+ *  written log lines (these entities, from `appendLog` / `emitEvent`)
+ *  and rows captured by the triggers on the portable tables
+ *  ('workstream' / 'task' / 'note' / 'edge'). `mu log` and every v1
+ *  consumer want only the former — without this filter a single
+ *  `task add` would surface twice in `mu log`, once as its event
+ *  breadcrumb and once as the raw captured op with a JSON payload.
+ *
+ *  v2-log-verb replaces this by rendering prose from `intent`, at which
+ *  point captured ops become the PRIMARY source and this constant goes
+ *  away. Until then the shim stays behaviour-compatible with v1. */
+const LOG_ENTITIES = ["message", "event", "broadcast"] as const;
+
+/** SQL predicate restricting a query to log-line entities. Any
+ *  caller-supplied `kind` filter narrows within this set. */
+const LOG_ENTITY_FILTER = `l.entity IN (${LOG_ENTITIES.map((e) => `'${e}'`).join(", ")})`;
 
 /** Sentinel stored in `ops.key` for machine-wide entries (ops.key is
  *  NOT NULL). Exported so the few call sites that query `ops` directly
@@ -120,7 +147,7 @@ export function appendLog(db: Db, opts: AppendLogOptions): LogRow {
        VALUES (?, ?, ?, ?, ?, ?, ?, 'put', ?, ?)`,
     )
     .run(
-      `${createdAt}|${randomUUID()}`,
+      nextHlc(db),
       machineId(db),
       randomUUID(),
       opts.source,
@@ -183,6 +210,10 @@ export function listLogs(db: Db, opts: ListLogsOptions = {}): LogRow[] {
     params.push(opts.kind);
   }
 
+  // Always restrict to log-line entities: captured row-mutation ops are
+  // not log lines and must not leak into the v1 log surface.
+  conditions.push(LOG_ENTITY_FILTER);
+
   const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
   // Two query shapes:
@@ -211,12 +242,17 @@ export function listLogs(db: Db, opts: ListLogsOptions = {}): LogRow[] {
  * only sees NEW entries unless they explicitly pass `--since 0`.
  */
 export function latestSeq(db: Db, workstream?: string): number {
+  // Same LOG_ENTITY_FILTER as listLogs: this is the cursor INTO that
+  // result set, so if it counted captured ops too, `--tail` would start
+  // past log lines it never showed and silently skip them.
   const row =
     workstream === undefined
-      ? (db.prepare("SELECT MAX(seq) AS s FROM ops").get() as { s: number | null })
-      : (db.prepare("SELECT MAX(seq) AS s FROM ops WHERE key = ?").get(workstream) as {
+      ? (db.prepare(`SELECT MAX(seq) AS s FROM ops l WHERE ${LOG_ENTITY_FILTER}`).get() as {
           s: number | null;
-        });
+        })
+      : (db
+          .prepare(`SELECT MAX(seq) AS s FROM ops l WHERE l.key = ? AND ${LOG_ENTITY_FILTER}`)
+          .get(workstream) as { s: number | null });
   return row.s ?? 0;
 }
 

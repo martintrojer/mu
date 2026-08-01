@@ -14,6 +14,7 @@
 
 import type { Db } from "../db.js";
 import { emitEvent } from "../logs.js";
+import { withOpContext } from "../op-context.js";
 import { getTaskEdgesWithStatus } from "./edges.js";
 import { addNote } from "./edit.js";
 import { TaskHasOpenDependentsError, TaskNotFoundError } from "./errors.js";
@@ -55,6 +56,26 @@ export function evidenceSuffix(opts: EvidenceOption | undefined): string {
  * `changed: false`) rather than throwing. Owner is unchanged.
  */
 export function setTaskStatus(
+  db: Db,
+  localId: string,
+  status: TaskStatus,
+  opts: EvidenceOption & { workstream: string },
+): SetStatusResult {
+  // NOTE: no `group` here, so a nested call INHERITS the enclosing
+  // group. That is what makes a cascade close/reject write all N ops
+  // under one group_id for `mu undo`. A direct call with no enclosing
+  // context still gets its own group (withOpContext mints one).
+  //
+  // `intentIfUnset` (not `intent`): when reached via closeTask /
+  // rejectTask / a cascade sweep, the OUTER verb is the label the
+  // operator recognises, so it must win. Only a direct setTaskStatus
+  // call labels itself.
+  return withOpContext(db, { intentIfUnset: `task.set-${status.toLowerCase()}` }, () =>
+    setTaskStatusImpl(db, localId, status, opts),
+  );
+}
+
+function setTaskStatusImpl(
   db: Db,
   localId: string,
   status: TaskStatus,
@@ -147,6 +168,16 @@ export function closeTask(
   localId: string,
   opts: CloseTaskOptions,
 ): SetStatusResult | CloseSkippedResult {
+  return withOpContext(db, { intent: "task.close", actor: opts.author, group: "new" }, () =>
+    closeTaskImpl(db, localId, opts),
+  );
+}
+
+function closeTaskImpl(
+  db: Db,
+  localId: string,
+  opts: CloseTaskOptions,
+): SetStatusResult | CloseSkippedResult {
   const before = getTask(db, localId, opts.workstream);
   if (opts.ifReady && before) {
     // Inspect direct blockers only — the umbrella convention is one
@@ -200,7 +231,9 @@ export function openTask(
   localId: string,
   opts: EvidenceOption & { workstream: string },
 ): SetStatusResult {
-  return setTaskStatus(db, localId, "OPEN", opts);
+  return withOpContext(db, { intent: "task.open", group: "new" }, () =>
+    setTaskStatus(db, localId, "OPEN", opts),
+  );
 }
 
 // ─── rejectTask / deferTask (terminal-but-blocking transitions) ────
@@ -254,14 +287,20 @@ export interface RejectDeferResult {
  *  Refuses if dependents are open unless `--cascade`.
  *  (2.0: no snapshot; v2-undo restores rollback via inverse ops.) */
 export function rejectTask(db: Db, localId: string, opts: RejectDeferOptions): RejectDeferResult {
-  return setTerminalOrParked(db, localId, "REJECTED", opts);
+  // group: "new" at the CASCADE ROOT — every dependent swept below
+  // inherits it, so one `mu undo <group>` reverts the whole sweep.
+  return withOpContext(db, { intent: "task.reject", group: "new" }, () =>
+    setTerminalOrParked(db, localId, "REJECTED", opts),
+  );
 }
 
 /** Defer a task: parked, may revisit. Same dependent-stranding semantics
  *  as reject (DEFERRED also doesn't satisfy a `--blocked-by` edge).
  *  (2.0: no snapshot; v2-undo restores rollback via inverse ops.) */
 export function deferTask(db: Db, localId: string, opts: RejectDeferOptions): RejectDeferResult {
-  return setTerminalOrParked(db, localId, "DEFERRED", opts);
+  return withOpContext(db, { intent: "task.defer", group: "new" }, () =>
+    setTerminalOrParked(db, localId, "DEFERRED", opts),
+  );
 }
 
 function setTerminalOrParked(

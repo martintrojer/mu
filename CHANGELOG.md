@@ -49,6 +49,83 @@ markers land in follow-up work.
 
 ### Added
 
+- **Op capture via SQLite triggers (`src/capture.ts`)** — the linchpin
+  of the 2.0 design. Every INSERT / UPDATE / DELETE on a portable table
+  (`workstreams`, `tasks`, `task_edges`, `task_notes`) writes an op
+  inside the SAME TRANSACTION as the mutation, in the same file, so
+  capture is atomic with the change and the two cannot drift — not even
+  on power loss mid-write.
+
+  Hand-emitted ops (an `emitOp(...)` beside each mutation) were
+  rejected because they can be FORGOTTEN, and in 2.0 undo, archives,
+  sync and history are all projections of this one log, so a single
+  missing op is silent corruption of all four at once. A future SDK
+  function that mutates `tasks` must not be ABLE to skip capture;
+  triggers make that structural rather than a convention.
+
+  - **Payloads are semantic partial updates.** The UPDATE triggers
+    compare `NEW.<col> IS NOT OLD.<col>` per column and emit only the
+    columns that actually changed, so `task.close` carries
+    `{"status":"CLOSED"}` and a re-price carries `{"impact":80}`. This
+    is what makes per-field merge fall out of "apply in HLC order" for
+    free, with no column version vectors. A whole-row payload would
+    look identical on one machine and silently regress the design to
+    row-level last-writer-wins, discarding one of two concurrent edits
+    to different fields of the same task — which, with agent crews on
+    two machines, happens by construction. `IS NOT` rather than `<>`
+    so NULL transitions (releasing a claim sets `owner_id` to NULL)
+    are captured rather than dropped.
+  - **No-op UPDATEs produce no op**, keeping the log free of churn.
+  - **Natural keys, never surrogate ids**: `demo` / `demo/fix-auth` /
+    `demo/fix-auth#12` / `demo/a->demo/b`. Two machines both minting
+    `tasks.id = 7` is inevitable and meaningless; `demo/fix-auth`
+    denotes the same task everywhere.
+  - **The triggers are TEMP triggers**, rebuilt per connection by
+    `installCapture` on every `openDb`. Not a choice: SQLite refuses to
+    let a main-schema trigger reference the temp schema at all (`no
+    such table: main._op_ctx`, and qualifying it gives `trigger cannot
+    reference objects in database temp`), and the triggers must read
+    the per-connection `_op_ctx`. Upside: no trigger DDL is persisted
+    in the file, so changing the trigger set needs no schema bump.
+  - **FK CASCADE fires triggers** (verified empirically, and
+    independently of `recursive_triggers`, which governs only
+    trigger-initiated recursion). So `workstream destroy` captures a
+    tombstone for every cascaded task, note and edge with no explicit
+    walk. The trap is ordering: cascaded children fire after the parent
+    row is gone, so a join to the parent yields nothing. Fixed with
+    BEFORE DELETE triggers plus an `_op_dying` stash in which each
+    parent records its natural key before deleting, which the child key
+    resolvers consult when the live join misses.
+  - The HLC is minted in SQL, mirroring `nextHlc` exactly (a trigger
+    cannot call into JS). A test asserts SQL-minted and JS-minted HLCs
+    interleave monotonically, so the two cannot drift unnoticed.
+
+- **The op context seam (`src/op-context.ts`)** — triggers capture
+  reliably but blindly, so intent / actor / grouping are recovered from
+  the per-connection `_op_ctx` temp table that the SDK sets and the
+  triggers read. `withOpContext(db, {intent, actor, group}, fn)` is
+  scoped rather than a bare setter: it restores the previous context in
+  a `finally`, so a throw cannot leak a stale intent onto later ops (a
+  wrong intent is worse than a null one — `mu log` renders it as
+  confident prose). Nested scopes inherit the outer group by default,
+  which is exactly what makes a cascade close or a `workstream destroy`
+  write all N ops under ONE `group_id` for `mu undo`; `group: "new"`
+  forces a fresh group and `intentIfUnset` lets a shared internal like
+  `setTaskStatus` yield its label to the outer operator verb.
+  `withCaptureSuppressed(db, fn)` sets `applying = 1` — the echo-loop
+  guard v2-sync wraps ingest in, so applying a peer's op does not mint
+  a local op that propagates back forever.
+
+  `_op_ctx` is seeded with a DEFAULT ROW, so a mutation occurring
+  outside any SDK context is still CAPTURED, just with a null intent.
+  Fail safe, never fail silent. `group_id` is never null: an ungrouped
+  op is its own group of one.
+
+- Intents are now set on the mutating task and workstream verbs
+  (`task.add` / `update` / `note` / `close` / `open` / `reject` /
+  `defer` / `delete` / `block` / `unblock` / `reparent` / `claim` /
+  `release`, `workstream.init` / `destroy`).
+
 - **Syncability constants in `src/db.ts`** — one place declaring which
   state crosses machines. `SYNCED_ENTITIES` (`workstream`, `task`,
   `edge`, `note`, `message`, `marker`) is a readonly tuple with a
@@ -114,6 +191,25 @@ markers land in follow-up work.
 - Log rows survive `workstream destroy` (the ops log has no FK
   cascade); `mu doctor` reports `ops rows` instead of
   `agent_logs rows`.
+- `src/logs.ts` now mints REAL HLCs via `nextHlc`. The placeholder
+  `<iso>|<uuid>` is gone — `parseHlc` deliberately rejects that shape
+  as a tripwire, so leaving it would have failed loudly the moment
+  anything read the log in HLC order.
+- The log shim reads only log-line entities (`message` / `event` /
+  `broadcast`). Now that the capture triggers also write to `ops`, an
+  unfiltered read would surface every `task add` twice in `mu log` —
+  once as its event breadcrumb and once as the raw captured op with a
+  JSON payload. `latestSeq` applies the same filter, since it is the
+  cursor into that result set and would otherwise start `--tail` past
+  log lines it never showed.
+- `mu sql --confirm-rows` counts only the OPERATOR's rows. Capture
+  triggers make `total_changes()` roughly 5x the real count (the op
+  INSERT plus the HLC clock UPDATEs), which would have turned the
+  safety prompt and its "re-run with --confirm-rows N" hint into
+  nonsense. The multi-statement path now measures a capture-suppressed
+  probe, then rolls it back and re-executes with capture ON before
+  committing — so the committed writes are still captured, and a
+  matching count never commits uncaptured rows.
 
 ### Fixed
 

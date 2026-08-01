@@ -2,6 +2,7 @@
 
 import { type Db, resolveWorkstreamId } from "../db.js";
 import { emitEvent } from "../logs.js";
+import { withOpContext } from "../op-context.js";
 import { ensureWorkstream } from "../workstream.js";
 import { taskIdFor, touchTask } from "./core.js";
 import { dedupeBlockersById, wouldCreateCycle } from "./edges.js";
@@ -45,6 +46,10 @@ export interface AddTaskOptions {
  * called here so the same primitive is exercised by tests.
  */
 export function addTask(db: Db, opts: AddTaskOptions) {
+  return withOpContext(db, { intent: "task.add", group: "new" }, () => addTaskImpl(db, opts));
+}
+
+function addTaskImpl(db: Db, opts: AddTaskOptions) {
   if (!isValidTaskId(opts.localId)) {
     throw new TaskIdInvalidError(opts.localId);
   }
@@ -146,6 +151,12 @@ export interface AddNoteOptions {
 }
 
 export function addNote(db: Db, taskLocalId: string, content: string, opts: AddNoteOptions) {
+  return withOpContext(db, { intent: "task.note", actor: opts.author, group: "new" }, () =>
+    addNoteImpl(db, taskLocalId, content, opts),
+  );
+}
+
+function addNoteImpl(db: Db, taskLocalId: string, content: string, opts: AddNoteOptions) {
   const task = getTask(db, taskLocalId, opts.workstream);
   if (!task) {
     throw new TaskNotFoundError(taskLocalId);
@@ -232,6 +243,17 @@ export function deleteTask(
   workstream: string,
   opts: DeleteTaskOptions = {},
 ): DeleteTaskResult {
+  return withOpContext(db, { intent: "task.delete", group: "new" }, () =>
+    deleteTaskImpl(db, localId, workstream, opts),
+  );
+}
+
+function deleteTaskImpl(
+  db: Db,
+  localId: string,
+  workstream: string,
+  opts: DeleteTaskOptions,
+): DeleteTaskResult {
   const dryRun = opts.dryRun === true;
   const before = getTask(db, localId, workstream);
   if (!before) {
@@ -311,6 +333,17 @@ export interface UpdateTaskScopeOption {
 }
 
 export function updateTask(
+  db: Db,
+  localId: string,
+  opts: UpdateTaskOptions,
+  scope: UpdateTaskScopeOption,
+): UpdateTaskResult {
+  return withOpContext(db, { intent: "task.update", group: "new" }, () =>
+    updateTaskImpl(db, localId, opts, scope),
+  );
+}
+
+function updateTaskImpl(
   db: Db,
   localId: string,
   opts: UpdateTaskOptions,

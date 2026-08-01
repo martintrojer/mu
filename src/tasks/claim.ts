@@ -15,6 +15,7 @@
 
 import type { Db } from "../db.js";
 import { emitEvent, formatClaimEvent } from "../logs.js";
+import { withOpContext } from "../op-context.js";
 import { currentAgentName } from "../tmux.js";
 import { ClaimerNotRegisteredError, TaskAlreadyOwnedError, TaskNotFoundError } from "./errors.js";
 import { type EvidenceOption, evidenceSuffix } from "./lifecycle.js";
@@ -61,6 +62,12 @@ export interface ReleaseTaskOptions extends EvidenceOption {
  * Throws TaskNotFoundError on missing.
  */
 export function releaseTask(db: Db, localId: string, opts: ReleaseTaskOptions): ReleaseResult {
+  return withOpContext(db, { intent: "task.release", group: "new" }, () =>
+    releaseTaskImpl(db, localId, opts),
+  );
+}
+
+function releaseTaskImpl(db: Db, localId: string, opts: ReleaseTaskOptions): ReleaseResult {
   const before = getTask(db, localId, opts.workstream);
   if (!before) throw new TaskNotFoundError(localId);
 
@@ -215,6 +222,18 @@ export async function claimTask(
   localId: string,
   opts: ClaimTaskOptions,
 ): Promise<ClaimResult> {
+  // claimTask is async (it shells out to tmux to resolve the caller's
+  // identity), and withOpContext is deliberately sync — see its doc
+  // comment. So set the context around the SYNCHRONOUS mutation legs
+  // inside, not around the whole async function.
+  return claimTaskImpl(db, localId, opts);
+}
+
+async function claimTaskImpl(
+  db: Db,
+  localId: string,
+  opts: ClaimTaskOptions,
+): Promise<ClaimResult> {
   if (opts.self === true && opts.agentName !== undefined) {
     throw new Error("claimTask: --self and --for are mutually exclusive");
   }
@@ -259,51 +278,54 @@ export async function claimTask(
     throw new ClaimerNotRegisteredError(agentName, paneIdFromEnv);
   }
 
-  return db.transaction(() => {
-    // Resolve the task within opts.workstream. This locks the
-    // (workstream, local_id) pair for the rest of the transaction.
-    const before = getTask(db, localId, opts.workstream);
-    if (!before) throw new TaskNotFoundError(localId);
+  return withOpContext(db, { intent: "task.claim", actor: agentName, group: "new" }, () =>
+    db.transaction(() => {
+      // Resolve the task within opts.workstream. This locks the
+      // (workstream, local_id) pair for the rest of the transaction.
+      const before = getTask(db, localId, opts.workstream);
+      if (!before) throw new TaskNotFoundError(localId);
 
-    const now = new Date().toISOString();
-    const result = db
-      .prepare(
-        `UPDATE tasks
+      const now = new Date().toISOString();
+      const result = db
+        .prepare(
+          `UPDATE tasks
             SET owner_id = ?,
                 status = CASE WHEN status = 'OPEN' THEN 'IN_PROGRESS' ELSE status END,
                 updated_at = ?
           WHERE local_id = ?
             AND workstream_id = (SELECT id FROM workstreams WHERE name = ?)
             AND (owner_id IS NULL OR owner_id = ?)`,
-      )
-      .run(claimerRow.id, now, localId, opts.workstream, claimerRow.id);
+        )
+        .run(claimerRow.id, now, localId, opts.workstream, claimerRow.id);
 
-    if (result.changes === 0) {
-      throw new TaskAlreadyOwnedError(localId, before.ownerName ?? "<unknown>");
-    }
+      if (result.changes === 0) {
+        throw new TaskAlreadyOwnedError(localId, before.ownerName ?? "<unknown>");
+      }
 
-    const after = getTask(db, localId, opts.workstream);
-    if (!after) throw new Error(`claimTask: row missing after update: ${localId}`);
-    const statusBit = after.status !== before.status ? `, ${before.status} → ${after.status}` : "";
-    emitEvent(
-      db,
-      opts.workstream,
-      formatClaimEvent({
-        localId,
-        actor: agentName,
-        anonymous: false,
-        prose: `task claim ${localId} by ${agentName} (was owner=${before.ownerName ?? "none"}${statusBit})${evidenceSuffix(opts)}`,
-      }),
-      agentName,
-    );
-    return {
-      ownerName: agentName,
-      actorName: agentName,
-      previousOwnerName: before.ownerName,
-      previousStatus: before.status,
-      status: after.status,
-    };
-  })();
+      const after = getTask(db, localId, opts.workstream);
+      if (!after) throw new Error(`claimTask: row missing after update: ${localId}`);
+      const statusBit =
+        after.status !== before.status ? `, ${before.status} → ${after.status}` : "";
+      emitEvent(
+        db,
+        opts.workstream,
+        formatClaimEvent({
+          localId,
+          actor: agentName,
+          anonymous: false,
+          prose: `task claim ${localId} by ${agentName} (was owner=${before.ownerName ?? "none"}${statusBit})${evidenceSuffix(opts)}`,
+        }),
+        agentName,
+      );
+      return {
+        ownerName: agentName,
+        actorName: agentName,
+        previousOwnerName: before.ownerName,
+        previousStatus: before.status,
+        status: after.status,
+      };
+    })(),
+  );
 }
 
 /**
@@ -338,53 +360,56 @@ export async function resolveActorIdentity(): Promise<string> {
 async function claimSelf(db: Db, localId: string, opts: ClaimTaskOptions): Promise<ClaimResult> {
   const actor =
     opts.actor !== undefined && opts.actor !== "" ? opts.actor : await resolveActorIdentity();
-  return db.transaction(() => {
-    // Scope by the operator's workstream so a same-named task
-    // elsewhere can't be self-claimed by accident.
-    const before = getTask(db, localId, opts.workstream);
-    if (!before) throw new TaskNotFoundError(localId);
+  return withOpContext(db, { intent: "task.claim", actor, group: "new" }, () =>
+    db.transaction(() => {
+      // Scope by the operator's workstream so a same-named task
+      // elsewhere can't be self-claimed by accident.
+      const before = getTask(db, localId, opts.workstream);
+      if (!before) throw new TaskNotFoundError(localId);
 
-    // Anonymous claim: owner stays NULL, status flips OPEN -> IN_PROGRESS.
-    // Gate on `owner_id IS NULL` so an in-flight worker claim can't be
-    // silently overwritten.
-    const now = new Date().toISOString();
-    const result = db
-      .prepare(
-        `UPDATE tasks
+      // Anonymous claim: owner stays NULL, status flips OPEN -> IN_PROGRESS.
+      // Gate on `owner_id IS NULL` so an in-flight worker claim can't be
+      // silently overwritten.
+      const now = new Date().toISOString();
+      const result = db
+        .prepare(
+          `UPDATE tasks
             SET status = CASE WHEN status = 'OPEN' THEN 'IN_PROGRESS' ELSE status END,
                 updated_at = ?
           WHERE local_id = ?
             AND workstream_id = (SELECT id FROM workstreams WHERE name = ?)
             AND owner_id IS NULL`,
-      )
-      .run(now, localId, before.workstreamName);
+        )
+        .run(now, localId, before.workstreamName);
 
-    if (result.changes === 0) {
-      // Task exists but is already owned (by someone). Mirror the
-      // worker-path error so callers can pattern-match consistently.
-      throw new TaskAlreadyOwnedError(localId, before.ownerName ?? "<unknown>");
-    }
+      if (result.changes === 0) {
+        // Task exists but is already owned (by someone). Mirror the
+        // worker-path error so callers can pattern-match consistently.
+        throw new TaskAlreadyOwnedError(localId, before.ownerName ?? "<unknown>");
+      }
 
-    const after = getTask(db, localId, before.workstreamName);
-    if (!after) throw new Error(`claimTask: row missing after update: ${localId}`);
-    const statusBit = after.status !== before.status ? `, ${before.status} → ${after.status}` : "";
-    emitEvent(
-      db,
-      before.workstreamName,
-      formatClaimEvent({
-        localId,
+      const after = getTask(db, localId, before.workstreamName);
+      if (!after) throw new Error(`claimTask: row missing after update: ${localId}`);
+      const statusBit =
+        after.status !== before.status ? `, ${before.status} → ${after.status}` : "";
+      emitEvent(
+        db,
+        before.workstreamName,
+        formatClaimEvent({
+          localId,
+          actor,
+          anonymous: true,
+          prose: `task claim ${localId} by ${actor} --self (anonymous, owner stays NULL${statusBit})${evidenceSuffix(opts)}`,
+        }),
         actor,
-        anonymous: true,
-        prose: `task claim ${localId} by ${actor} --self (anonymous, owner stays NULL${statusBit})${evidenceSuffix(opts)}`,
-      }),
-      actor,
-    );
-    return {
-      ownerName: null,
-      actorName: actor,
-      previousOwnerName: before.ownerName,
-      previousStatus: before.status,
-      status: after.status,
-    };
-  })();
+      );
+      return {
+        ownerName: null,
+        actorName: actor,
+        previousOwnerName: before.ownerName,
+        previousStatus: before.status,
+        status: after.status,
+      };
+    })(),
+  );
 }

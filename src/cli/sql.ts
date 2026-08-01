@@ -13,6 +13,7 @@
 
 import { UsageError, emitJson } from "../cli.js";
 import type { Db } from "../db.js";
+import { withCaptureSuppressed } from "../op-context.js";
 import { muTable, pc } from "../output.js";
 
 export async function cmdSql(
@@ -57,13 +58,34 @@ export async function cmdSql(
     // atomic confirm-or-rollback wrapper around an opaque blob.
     if (opts.confirmRows !== undefined) {
       const expected = opts.confirmRows;
-      const before = (db.prepare("SELECT total_changes() AS n").get() as { n: number }).n;
       db.exec("BEGIN");
       let actual: number;
       try {
-        db.exec(trimmed);
-        const after = (db.prepare("SELECT total_changes() AS n").get() as { n: number }).n;
-        actual = after - before;
+        // Count the OPERATOR's rows only. Since v2-capture, a write to a
+        // portable table also runs a capture trigger, and every trigger
+        // body is several statements (the op INSERT plus the HLC clock
+        // UPDATEs) — all of which total_changes() counts. --confirm-rows
+        // is a safety prompt about the rows the operator is touching
+        // ("expected 3, would hit 300 — abort"), so a count inflated ~5x
+        // by bookkeeping would make the number meaningless and the
+        // re-run hint wrong.
+        //
+        // So the probe runs with capture suppressed, and the `before`
+        // baseline is sampled INSIDE the suppressed scope — after
+        // withCaptureSuppressed's own bookkeeping UPDATE on _op_ctx,
+        // which would otherwise be counted too. Sampling inside is why
+        // this needs no magic constant to subtract.
+        //
+        // Suppressing the probe is safe because --confirm-rows always
+        // ends in either a ROLLBACK (mismatch) or a re-execution with
+        // capture ON (see the COMMIT path below), so an uncaptured write
+        // is never committed.
+        actual = withCaptureSuppressed(db, () => {
+          const before = (db.prepare("SELECT total_changes() AS n").get() as { n: number }).n;
+          db.exec(trimmed);
+          const after = (db.prepare("SELECT total_changes() AS n").get() as { n: number }).n;
+          return after - before;
+        });
       } catch (e) {
         try {
           db.exec("ROLLBACK");
@@ -75,6 +97,22 @@ export async function cmdSql(
         throw new UsageError(
           `expected ${expected} rows, would have affected ${actual} (rolled back). Re-run with --confirm-rows ${actual} if intentional.`,
         );
+      }
+      // The count matched, but the run above was capture-suppressed, so
+      // committing it as-is would land rows with NO ops — silent
+      // corruption of undo/archive/sync, precisely what capture exists
+      // to make impossible. Roll that probe back and re-execute the
+      // script with capture ON, inside its own transaction, so the
+      // committed writes are captured normally.
+      db.exec("ROLLBACK");
+      db.exec("BEGIN");
+      try {
+        db.exec(trimmed);
+      } catch (e) {
+        try {
+          db.exec("ROLLBACK");
+        } catch {}
+        throw e;
       }
       db.exec("COMMIT");
       const n = countTopLevelStatements(trimmed);

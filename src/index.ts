@@ -84,6 +84,18 @@ export {
   type SyncedEntity,
 } from "./db.js";
 export {
+  CAPTURE_TRIGGER_DDL,
+  type CaptureDb,
+  installCapture,
+  OP_CTX_DDL,
+} from "./capture.js";
+export {
+  currentOpContext,
+  type OpContext,
+  withCaptureSuppressed,
+  withOpContext,
+} from "./op-context.js";
+export {
   compareHlc,
   formatHlc,
   type Hlc,

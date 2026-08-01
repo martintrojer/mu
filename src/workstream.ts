@@ -24,6 +24,7 @@ import {
   renderToBucket,
 } from "./exporting.js";
 import { emitEvent } from "./logs.js";
+import { withOpContext } from "./op-context.js";
 import type { HasNextSteps, NextStep } from "./output.js";
 import { parkedStatus } from "./parked.js";
 import { killSession, listSessions, sessionExists, tmux } from "./tmux.js";
@@ -192,6 +193,12 @@ export function assertWorkstreamInitable(name: string): void {
  */
 export function ensureWorkstream(db: Db, name: string): boolean {
   assertValidWorkstreamName(name);
+  return withOpContext(db, { intent: "workstream.init", group: "new" }, () =>
+    ensureWorkstreamImpl(db, name),
+  );
+}
+
+function ensureWorkstreamImpl(db: Db, name: string): boolean {
   const result = db
     .prepare("INSERT OR IGNORE INTO workstreams (name, created_at) VALUES (?, ?)")
     .run(name, new Date().toISOString());
@@ -528,7 +535,14 @@ export async function destroyWorkstream(
   // (e.g. an orphan tmux session that mu never observed),
   // changes() = 0 and we still report the killed tmux session
   // honestly.
-  const result = db.prepare("DELETE FROM workstreams WHERE name = ?").run(opts.workstream);
+  // One group for the entire destroy: the DELETE cascades to tasks,
+  // edges and notes, and each cascaded row gets its own tombstone op
+  // (SQLite FK CASCADE DOES fire triggers — verified empirically, see
+  // src/capture.ts). They all share this group so the whole teardown is
+  // one unit for `mu undo`.
+  const result = withOpContext(db, { intent: "workstream.destroy", group: "new" }, () =>
+    db.prepare("DELETE FROM workstreams WHERE name = ?").run(opts.workstream),
+  );
   // The destroy event itself goes to workstream=null (machine-wide)
   // because the FK CASCADE we just triggered would otherwise wipe
   // it on the same statement. Visible via `mu log --all`.
