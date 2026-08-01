@@ -3,7 +3,7 @@
 // backend detection, and JSON suppression drifting between the two sibling
 // entry points (finding_duplicate_workspace_preflight).
 
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -15,6 +15,14 @@ import { type MockState, freshMockState, mockTmux } from "./_verbs-mock.js";
 
 describe("workspace preflight (shared by spawn + ensure)", () => {
   let dir: string;
+  // The `none` backend materialises a workspace with `cp -a
+  // <projectRoot>/. <stateDir>/workspaces/<ws>/<agent>`. If the state
+  // dir IS the project root, that copies a directory into itself and
+  // `cp` refuses. Real deployments never nest (state dir is
+  // ~/.local/state/mu, project root is the repo), so keep them as
+  // sibling subdirs of the one temp dir here too.
+  let projectRoot: string;
+  let stateDir: string;
   let db: Db;
   let mock: MockState;
   let logs: string[];
@@ -22,12 +30,16 @@ describe("workspace preflight (shared by spawn + ensure)", () => {
 
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), "mu-preflight-"));
+    projectRoot = join(dir, "project");
+    stateDir = join(dir, "state");
+    mkdirSync(projectRoot, { recursive: true });
+    mkdirSync(stateDir, { recursive: true });
     db = openDb({ path: join(dir, "mu.db") });
     mock = freshMockState();
     setTmuxExecutor(mockTmux(mock).executor);
     setSleepForTests(async () => {});
     process.env.MU_SPAWN_LIVENESS_MS = "0";
-    process.env.MU_STATE_DIR = dir;
+    process.env.MU_STATE_DIR = stateDir;
     ensureWorkstream(db, ws);
     logs = [];
     vi.spyOn(console, "log").mockImplementation((msg?: unknown) => {
@@ -59,7 +71,7 @@ describe("workspace preflight (shared by spawn + ensure)", () => {
       cli: "sh",
       workspace: true,
       workspaceBackend: "none",
-      workspaceProjectRoot: dir,
+      workspaceProjectRoot: projectRoot,
     });
     const spawnLine = preflightLine();
     expect(spawnLine).toBeDefined();
@@ -72,7 +84,7 @@ describe("workspace preflight (shared by spawn + ensure)", () => {
       cli: "sh",
       workspace: true,
       workspaceBackend: "none",
-      workspaceProjectRoot: dir,
+      workspaceProjectRoot: projectRoot,
     });
     const ensureLine = preflightLine();
     expect(ensureLine).toBeDefined();
@@ -86,7 +98,7 @@ describe("workspace preflight (shared by spawn + ensure)", () => {
       cli: "sh",
       workspace: true,
       workspaceBackend: "none",
-      workspaceProjectRoot: dir,
+      workspaceProjectRoot: projectRoot,
       json: true,
     });
     expect(preflightLine()).toBeUndefined();
@@ -97,7 +109,7 @@ describe("workspace preflight (shared by spawn + ensure)", () => {
       cli: "sh",
       workspace: true,
       workspaceBackend: "none",
-      workspaceProjectRoot: dir,
+      workspaceProjectRoot: projectRoot,
       json: true,
     });
     expect(preflightLine()).toBeUndefined();

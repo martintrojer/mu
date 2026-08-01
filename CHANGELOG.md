@@ -59,6 +59,28 @@ markers land in follow-up work.
 
 ### Fixed
 
+- **Three pre-existing test failures across two files (not v2
+  regressions).** All three reproduce on the v1 commit v2 branched
+  from, and all three are FIXTURE bugs, not production bugs.
+
+  - `test/_fixture.ts` `freshWorkstream()` documented a 17-char suffix
+    budget but did not enforce it: `Date.now().toString(36)` is 8
+    chars and the pid can be 5, so prefix `"claim"` yielded a 27-char
+    name. A caller appending its own suffix (`${ws}-other`) then blew
+    the 32-char `/^[a-z][a-z0-9_-]{0,31}$/` workstream-name regex and
+    `test/claim.integration.test.ts` failed with
+    `WorkstreamNameInvalidError` instead of the `TaskNotFoundError` it
+    asserts. The pid and timestamp are now truncated to their
+    low-order base36 chars (3 + 6), which is where the entropy lives;
+    worst case is now the documented 17.
+  - `test/cli-agent-preflight.test.ts` pointed both `MU_STATE_DIR` and
+    `--workspace-project-root` at the SAME temp dir. Workspaces
+    materialise under `<state-dir>/workspaces/<ws>/<agent>`, so the
+    `none` backend's `cp -a <projectRoot>/. <workspacePath>` copied a
+    directory into itself and `cp` refused. The two roots are now
+    sibling subdirs, matching real deployments (`~/.local/state/mu`
+    vs. the repo).
+
 - **Flag-vs-positional parity sweep (dogfood-\* findings).** Four
   dogfooding reports, one theme: mu named the SAME concept two
   different ways across sibling verbs, so muscle memory from one verb
