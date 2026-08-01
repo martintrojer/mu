@@ -407,6 +407,69 @@ export const EXPECTED_TABLES: readonly string[] = [
   "workstreams",
 ];
 
+// ─── Syncability — which state crosses machines ───────────────────────
+//
+// Whether an op syncs is a STATIC function of its entity, so it lives
+// here as a constant rather than as a `local` column on `ops`. A
+// per-row decision is a per-row opportunity to get it wrong, and it
+// would cost a column plus a branch at every write site. Downstream
+// sync code READS these; it does not re-decide.
+//
+// Vocabulary (docs/VOCABULARY.md § portable): **portable** tables are
+// syncable across machines; **machine-local** tables never leave the
+// box. Machine-local ops are still RECORDED — `mu log` and the TUI
+// Recent card still show agent spawn/close — they simply never ship.
+// "Not synced" is not "not logged".
+
+/** Op entities that cross machines. Everything else is machine-local.
+ *  Readonly tuple (not `string[]`) so `SyncedEntity` is a real union
+ *  and downstream code gets compile-time checking, not raw strings. */
+export const SYNCED_ENTITIES = ["workstream", "task", "edge", "note", "message", "marker"] as const;
+
+/** One of the six op entities that sync. Derived from the tuple, so
+ *  adding an entity is a one-line change with no type to keep in step. */
+export type SyncedEntity = (typeof SYNCED_ENTITIES)[number];
+
+/** **Portable** tables: their rows mean the same thing on any machine,
+ *  so their ops ship. Mirrors docs/VOCABULARY.md § portable exactly. */
+export const PORTABLE_TABLES = ["task_edges", "task_notes", "tasks", "workstreams"] as const;
+
+export type PortableTable = (typeof PORTABLE_TABLES)[number];
+
+/** **Machine-local** tables. Never bulk-copied to a peer, because a
+ *  row's meaning does not survive the trip:
+ *
+ *    agents           holds `pane_id` ('%17') — meaningless elsewhere.
+ *    vcs_workspaces   holds absolute paths — /home/... vs /Users/...
+ *                     on a mixed macOS/Linux fleet.
+ *    machine_identity IS the per-machine identity.
+ *    schema_version   local bookkeeping.
+ *    sync_peers       local bookkeeping (per-peer watermarks).
+ *    ops              see below — the carrier, not cargo.
+ *
+ *  `ops` is listed here deliberately rather than omitted. It is not
+ *  **portable** in the copy-the-table sense: the table is never
+ *  wholesale-copied. Individual op ROWS ship, one at a time, filtered
+ *  by SYNCED_ENTITIES and carried by per-machine **segments** — and
+ *  `seq` is a local-only append cursor that means nothing on a peer.
+ *  So for the only question this list answers — "is this table's
+ *  content copied across machines?" — the answer for `ops` is no.
+ *
+ *  Consequence that falls out with no special case: `tasks.owner_id`
+ *  is an FK into `agents`, and `agents` is machine-local. Therefore
+ *  OWNERSHIP DOES NOT SYNC. v1's deleted db-sync.ts reached the same
+ *  conclusion via an `includeOwners` flag; here it is structural. */
+export const MACHINE_LOCAL_TABLES = [
+  "agents",
+  "machine_identity",
+  "ops",
+  "schema_version",
+  "sync_peers",
+  "vcs_workspaces",
+] as const;
+
+export type MachineLocalTable = (typeof MACHINE_LOCAL_TABLES)[number];
+
 // ─── View DDL — single source of truth ────────────────────────────────
 //
 // The three views (ready, blocked, goals) get DROPped + CREATEd by

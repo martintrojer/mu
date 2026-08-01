@@ -47,6 +47,40 @@ markers land in follow-up work.
   whole-DB snapshot first. They no longer do; rollback returns as
   inverse ops over the ops log.
 
+### Added
+
+- **Syncability constants in `src/db.ts`** — one place declaring which
+  state crosses machines. `SYNCED_ENTITIES` (`workstream`, `task`,
+  `edge`, `note`, `message`, `marker`) is a readonly tuple with a
+  derived `SyncedEntity` union, so downstream sync code gets
+  compile-time checking instead of raw strings. `PORTABLE_TABLES`
+  (`workstreams`, `tasks`, `task_edges`, `task_notes`) and
+  `MACHINE_LOCAL_TABLES` (`agents`, `vcs_workspaces`,
+  `machine_identity`, `schema_version`, `sync_peers`, `ops`) sit next
+  to `EXPECTED_TABLES`, the existing precedent for "the schema's shape
+  as data", and are exported from `src/index.ts`.
+
+  Syncability is a STATIC function of the entity, so it is a constant
+  rather than a `local` column on `ops`: a per-row decision is a
+  per-row opportunity to get it wrong, and it would cost a column plus
+  a branch at every write site. `ops` is classified machine-local
+  deliberately rather than omitted — the table is never
+  wholesale-copied; individual op rows ship, filtered by
+  `SYNCED_ENTITIES` and carried by per-machine segments.
+
+  Falls out with no special case: `tasks.owner_id` is an FK into
+  `agents`, and `agents` is machine-local, therefore **ownership does
+  not sync** — the conclusion v1's deleted `db-sync.ts` reached via an
+  `includeOwners` flag is now structural. Machine-local ops are still
+  RECORDED, so `mu log` and the TUI Recent card keep showing agent
+  spawn/close; "not synced" is not "not logged".
+
+  `test/entities.test.ts` (9 fast-tier tests) guards the structure:
+  the two table lists must partition `EXPECTED_TABLES` exactly, with
+  no overlap and no omission, so adding an 11th table without
+  classifying it fails loudly at schema-change time rather than
+  silently leaking or dropping it later.
+
 ### Changed
 
 - `src/logs.ts` is a deprecated shim: `appendLog` / `listLogs` /

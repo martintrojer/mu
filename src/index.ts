@@ -70,12 +70,18 @@ export {
 export {
   CURRENT_SCHEMA_VERSION,
   EXPECTED_TABLES,
+  MACHINE_LOCAL_TABLES,
+  PORTABLE_TABLES,
+  SYNCED_ENTITIES,
   SchemaTooOldError,
   defaultDbPath,
   defaultStateDir,
   openDb,
   type Db,
+  type MachineLocalTable,
   type OpenDbOptions,
+  type PortableTable,
+  type SyncedEntity,
 } from "./db.js";
 export {
   detectPiStatus,
