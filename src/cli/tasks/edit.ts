@@ -250,6 +250,29 @@ export async function cmdTaskAdd(
   printNextSteps(nextSteps);
 }
 
+/** Reconcile `mu task note <id> [text]` positional text with the
+ *  `--text` flag alias.
+ *
+ *  dogfood-note-arg-shape: `mu task add --note <text>` is a FLAG, so
+ *  one invocation later the flag form is what operators reach for on
+ *  `mu task note`, which only accepted a positional and dumped help.
+ *  `--text` is now an additive alias; the positional is unchanged.
+ *  Exactly one must be supplied. */
+export function resolveNoteText(positional: string | undefined, flag: string | undefined): string {
+  if (positional !== undefined && flag !== undefined) {
+    throw new UsageError(
+      'note text given twice: pass it positionally (mu task note <id> "...") OR via --text, not both',
+    );
+  }
+  const text = positional ?? flag;
+  if (text === undefined) {
+    throw new UsageError(
+      'note text required: mu task note <id> "..." (or the --text "..." flag alias)',
+    );
+  }
+  return text;
+}
+
 export async function cmdTaskNote(
   db: Db,
   rawId: string,

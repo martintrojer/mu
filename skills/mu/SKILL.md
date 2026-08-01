@@ -108,7 +108,8 @@ agent is a pane in that session. DB rows are partitioned by
 `workstream`.
 
 One edge type: `blocks`. `mu task block A --by B` means **B blocks
-A**. Built-in views: `ready`, `blocked`, `goals`. Bare `mu` shows
+A**. `--by` takes multiple blockers (`--by B,C` or `--by B --by C`),
+same shape as `mu task add --blocked-by`. Built-in views: `ready`, `blocked`, `goals`. Bare `mu` shows
 parallel tracks with automatic diamond-merge: goals sharing a
 prerequisite collapse into one track.
 

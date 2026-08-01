@@ -22,7 +22,14 @@ import {
 import { TASK_STATUS_LIST } from "../../tasks.js";
 import { cmdClaim, cmdTaskRelease, cmdTaskWait } from "./claim.js";
 import { cmdTaskBlock, cmdTaskDelete, cmdTaskReparent, cmdTaskUnblock } from "./edges.js";
-import { cmdTaskAdd, cmdTaskNote, cmdTaskNotes, cmdTaskShow, cmdTaskUpdate } from "./edit.js";
+import {
+  cmdTaskAdd,
+  cmdTaskNote,
+  cmdTaskNotes,
+  cmdTaskShow,
+  cmdTaskUpdate,
+  resolveNoteText,
+} from "./edit.js";
 import { cmdTaskClose, cmdTaskDefer, cmdTaskOpen, cmdTaskReject } from "./lifecycle.js";
 import { cmdTaskList, cmdTaskNext, cmdTaskOwnedBy } from "./queries.js";
 import { cmdTaskTree } from "./tree.js";
@@ -149,20 +156,30 @@ export function wireTaskCommands(program: Command): void {
     });
 
   task
-    .command("note <id> <text>")
+    .command("note <id> [text]")
     .description(
-      "Append a note to a task. Author defaults to $MU_AGENT_NAME (env injected at spawn) > pane title > $USER > 'orchestrator'; pass --author to override. Single-quote the text (or use a quoted heredoc) to defer shell expansion of $VAR / $(...) / `cmd`; double quotes expand them in your shell before mu sees the note.",
+      "Append a note to a task. The note text may be given positionally or via --text (dogfood-note-arg-shape: `mu task add --note` is a flag, so the flag form is what you reach for on the follow-up). Author defaults to $MU_AGENT_NAME (env injected at spawn) > pane title > $USER > 'orchestrator'; pass --author to override. Single-quote the text (or use a quoted heredoc) to defer shell expansion of $VAR / $(...) / `cmd`; double quotes expand them in your shell before mu sees the note.",
     )
     .option("--author <name>", "override the auto-detected author label")
+    .option("--text <text>", "the note text (alias for the positional <text> argument)")
     .option(...WORKSTREAM_OPT)
     .option(...JSON_OPT)
-    .action(function (id: string, text: string) {
+    .action(function (id: string, text: string | undefined) {
       const opts = (this as Command).opts() as {
         workstream?: string;
         json?: boolean;
         author?: string;
+        text?: string;
       };
-      return handle((db) => cmdTaskNote(db, id, text, opts), this as Command)();
+      // resolveNoteText throws UsageError; call it INSIDE the handle()
+      // callback so the typed-error → exit-code map wraps it. A throw
+      // from the .action() body itself escapes to commander's
+      // parse-time catch, which is a different (and DB-close-skipping)
+      // lane. Same rule every other verb's validation follows.
+      return handle(
+        (db) => cmdTaskNote(db, id, resolveNoteText(text, opts.text), opts),
+        this as Command,
+      )();
     });
 
   task
@@ -391,24 +408,40 @@ export function wireTaskCommands(program: Command): void {
   task
     .command("block <blocked>")
     .description(
-      "Add a blocking edge: <blocker> --by <id> blocks <blocked>. Validates same-workstream + cycle.",
+      "Add blocking edges: --by <ids...> blocks <blocked>. Accepts repeat or comma-separated ids (same shape as `mu task add --blocked-by`). Validates same-workstream + cycle.",
     )
-    .requiredOption("-b, --by <blocker>", "the task that should block <blocked>")
+    .requiredOption(
+      "-b, --by <blockers...>",
+      "the task(s) that should block <blocked> (repeat or comma-separate)",
+    )
     .option(...WORKSTREAM_OPT)
     .option(...JSON_OPT)
     .action(function (blocked: string) {
-      const opts = (this as Command).opts() as { by: string; workstream?: string; json?: boolean };
+      const opts = (this as Command).opts() as {
+        by: string | string[];
+        workstream?: string;
+        json?: boolean;
+      };
       return handle((db) => cmdTaskBlock(db, blocked, opts), this as Command)();
     });
 
   task
     .command("unblock <blocked>")
-    .description("Remove a single blocking edge (idempotent)")
-    .requiredOption("-b, --by <blocker>", "the task whose blocker edge to remove")
+    .description(
+      "Remove blocking edges (idempotent). --by accepts repeat or comma-separated ids, symmetric with `mu task block`.",
+    )
+    .requiredOption(
+      "-b, --by <blockers...>",
+      "the task(s) whose blocker edge to remove (repeat or comma-separate)",
+    )
     .option(...WORKSTREAM_OPT)
     .option(...JSON_OPT)
     .action(function (blocked: string) {
-      const opts = (this as Command).opts() as { by: string; workstream?: string; json?: boolean };
+      const opts = (this as Command).opts() as {
+        by: string | string[];
+        workstream?: string;
+        json?: boolean;
+      };
       return handle((db) => cmdTaskUnblock(db, blocked, opts), this as Command)();
     });
 

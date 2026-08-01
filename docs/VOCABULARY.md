@@ -278,6 +278,31 @@ ingests from a USB stick using the existing env-var idiom.
 
 ## Naming conventions
 
+### Flag vs positional
+
+> **The primary entity a verb acts on is POSITIONAL. Everything
+> else — scoping, modifiers, payload — is a flag.**
+
+`mu task close <id>`, `mu agent send <name> <text>`,
+`mu archive show <label>`, `mu workstream init <name>`. The
+workstream is a *scope* for most verbs, hence `-w`; but under the
+`mu workstream` namespace the workstream IS the primary entity, so
+`destroy` and `export` accept it positionally as an alias for `-w`
+(`init` always did). Passing both and having them disagree is a
+usage error (exit 2), never a silent pick-one.
+
+When a payload is supplied positionally by one verb and as a flag by
+a sibling (`mu task add --note` vs `mu task note <id> <text>`), the
+other shape is accepted as an ADDITIVE alias (`mu task note <id>
+--text "..."`) so muscle memory from one verb carries to the next.
+Removing an existing shape is a breaking change; adding an alias is
+not.
+
+Corollary for multi-value flags: the same CONCEPT gets the same
+parsing in every verb that names it. `--blocked-by` and `--by` are
+both blocker lists, so both accept repeat / comma / mixed form via
+the one canonical `parseCsvFlag` helper.
+
 ### IDs
 
 - **Agent name**: lowercase, `[a-z][a-z0-9_-]*`, ≤32 chars. Used as

@@ -285,13 +285,51 @@ syntactic signal is `<value...>` in the help-text metavar (the
 triple-dot); the parenthetical "repeat or comma-separate; or both"
 reinforces it. Variadic positionals (e.g. `mu task wait a b c`) keep
 their Unix-style space-separated shape — operands are not commas.
-Single-valued flags (`-w`, `--by`, `--title`, ...) stay single. The
+Single-valued flags (`-w`, `--title`, ...) stay single. `--by` on
+`mu task block` / `mu task unblock` IS multi-value, matching
+`mu task add --blocked-by`: `mu task block c --by a,b` adds both
+edges in one call. The
 `--status` filter on `mu task list` and `mu task next` accepts the
 same multi-value shape (`--status OPEN,IN_PROGRESS`,
 `--status OPEN --status CLOSED`, or any mix) and returns the union.
 Missing `--status` keeps today's no-filter shape (no auto-default).
 `mu task wait --status` stays single — the verb means "wait until
 reaches THIS status".
+
+### CLI conventions: flag vs positional
+
+The rule the CLI follows:
+
+> **The primary entity a verb acts on is POSITIONAL. Everything
+> else — scoping, modifiers, payload — is a flag.**
+
+So `mu task close <id>`, `mu agent send <name> <text>`,
+`mu archive show <label>`, `mu workstream init <name>`. The
+workstream is a *scope* for most verbs (`-w`), which is why it's a
+flag there — but for `mu workstream <verb>` the workstream IS the
+primary entity, so it may be given positionally:
+
+```bash
+mu workstream init  v2                 # positional
+mu workstream destroy v2 --yes         # positional (aliases -w)
+mu workstream destroy -w v2 --yes      # -w still works
+mu workstream export v2 --out ./bucket # positional (aliases -w)
+```
+
+Passing both a positional and a disagreeing `-w` is a usage error
+(exit 2) rather than a silent pick-one.
+
+Where a payload is unavoidably supplied two ways by sibling verbs,
+the flag form is accepted as an ADDITIVE alias so the muscle memory
+from one verb carries to the next:
+
+```bash
+mu task add t -t T -i 5 -e 1 --note "context"   # note as a flag
+mu task note t "more context"                   # positional
+mu task note t --text "more context"            # --text alias
+```
+
+Supplying both shapes at once is a usage error (exit 2).
 
 ---
 

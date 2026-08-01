@@ -456,7 +456,7 @@ async function cmdDestroyEmpty(
   // doesn't silently sweep instead of targeting `foo`.
   if (opts.workstream !== undefined) {
     throw new UsageError(
-      "--empty is mutually exclusive with -w/--workstream (the sweep targets every empty workstream; -w would contradict that)",
+      "--empty is mutually exclusive with a named target (positional <name> or -w/--workstream): the sweep targets every empty workstream, so naming one contradicts it",
     );
   }
   if (opts.archive !== undefined) {
@@ -599,6 +599,31 @@ async function cmdDestroyEmpty(
 import type { Command } from "commander";
 import { JSON_OPT, WORKSTREAM_OPT, handle } from "../cli.js";
 
+/** Fold an optional positional workstream name into the opts bag.
+ *
+ *  dogfood-destroy-w-flag: `workstream init` takes its target
+ *  POSITIONALLY while `destroy` / `export` only took `-w`, so
+ *  `mu workstream destroy v2 --yes` printed help ("too many
+ *  arguments") instead of destroying. The positional is now an
+ *  additive ALIAS for -w on both verbs; -w keeps working unchanged.
+ *  Supplying both is a usage error rather than a silent pick-one.
+ *
+ *  Codifies the CLI's flag-vs-positional rule: the primary entity a
+ *  verb acts on is positional; everything else is a flag. See
+ *  docs/VOCABULARY.md § Naming conventions. */
+export function withPositionalWorkstream<T extends { workstream?: string }>(
+  opts: T,
+  name: string | undefined,
+): T {
+  if (name === undefined) return opts;
+  if (opts.workstream !== undefined && opts.workstream !== name) {
+    throw new UsageError(
+      `workstream given twice and they disagree: positional ${JSON.stringify(name)} vs -w ${JSON.stringify(opts.workstream)}; pass it once`,
+    );
+  }
+  return { ...opts, workstream: name };
+}
+
 export function wireWorkstreamCommands(program: Command): void {
   const workstream = program.command("workstream").description("Workstream-level commands");
 
@@ -621,9 +646,9 @@ export function wireWorkstreamCommands(program: Command): void {
     });
 
   workstream
-    .command("destroy")
+    .command("destroy [name]")
     .description(
-      "Tear down a workstream: kill its tmux session and cascade-delete every DB row tagged with its name. Pass --yes to actually destroy; otherwise prints a dry-run summary. With --empty, sweeps every empty workstream (zero tasks/agents/workspaces) in one call.",
+      "Tear down a workstream: kill its tmux session and cascade-delete every DB row tagged with its name. The target may be given positionally (matching `workstream init <name>`) or via -w. Pass --yes to actually destroy; otherwise prints a dry-run summary. With --empty, sweeps every empty workstream (zero tasks/agents/workspaces) in one call.",
     )
     .option(...WORKSTREAM_OPT)
     .option("-y, --yes", "actually destroy (without this flag, prints a dry-run summary)")
@@ -637,7 +662,7 @@ export function wireWorkstreamCommands(program: Command): void {
       "sweep every empty workstream (zero tasks, agents, vcs_workspaces); mutually exclusive with -w and --archive",
     )
     .option(...JSON_OPT)
-    .action(function () {
+    .action(function (name: string | undefined) {
       const opts = (this as Command).opts() as {
         workstream?: string;
         yes?: boolean;
@@ -646,23 +671,29 @@ export function wireWorkstreamCommands(program: Command): void {
         archive?: string;
         empty?: boolean;
       };
-      return handle((db) => cmdDestroy(db, opts), this as Command)();
+      return handle(
+        (db) => cmdDestroy(db, withPositionalWorkstream(opts, name)),
+        this as Command,
+      )();
     });
 
   workstream
-    .command("export")
+    .command("export [name]")
     .description(
-      "Render a workstream's task graph + notes to a bucket directory of markdown. Bucket layout: <out>/README.md + INDEX.md + manifest.json (bucketVersion 2) + <ws>/{README.md,INDEX.md,tasks/<id>.md}. Idempotent + additive: re-export refreshes only changed task files; passing -w with a different workstream into the same --out appends a sibling source-ws subdir; deleted tasks are preserved with a banner. Pre-0.3 export dirs are not migrated in place.",
+      "Render a workstream's task graph + notes to a bucket directory of markdown. The source workstream may be given positionally (matching `workstream init <name>`) or via -w. Bucket layout: <out>/README.md + INDEX.md + manifest.json (bucketVersion 2) + <ws>/{README.md,INDEX.md,tasks/<id>.md}. Idempotent + additive: re-export refreshes only changed task files; passing -w with a different workstream into the same --out appends a sibling source-ws subdir; deleted tasks are preserved with a banner. Pre-0.3 export dirs are not migrated in place.",
     )
     .option(...WORKSTREAM_OPT)
     .option("--out <dir>", "output directory (the bucket; defaults to ./<workstream>/)")
     .option(...JSON_OPT)
-    .action(function () {
+    .action(function (name: string | undefined) {
       const opts = (this as Command).opts() as {
         workstream?: string;
         out?: string;
         json?: boolean;
       };
-      return handle((db) => cmdWorkstreamExport(db, opts), this as Command)();
+      return handle(
+        (db) => cmdWorkstreamExport(db, withPositionalWorkstream(opts, name)),
+        this as Command,
+      )();
     });
 }

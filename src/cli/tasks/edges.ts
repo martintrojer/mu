@@ -8,6 +8,7 @@
 // to refactor_split_large_src_files.
 
 import {
+  UsageError,
   assertTaskInWorkstream,
   emitJson,
   parseCsvFlag,
@@ -18,55 +19,117 @@ import type { Db } from "../../db.js";
 import { type NextStep, pc, printNextSteps } from "../../output.js";
 import { addBlockEdge, deleteTask, removeBlockEdge, reparentTask } from "../../tasks.js";
 
+/** Canonicalise the `-b/--by` value into a non-empty blocker list.
+ *
+ *  dogfood-block-multi: `--by` used to be single-valued while
+ *  `mu task add --blocked-by` was variadic + comma-aware, so the
+ *  natural `mu task block X --by a,b,c` failed with
+ *  "no such task: a,b,c". Both flags now funnel through the SAME
+ *  canonical helper (parseCsvFlag), so repeat / comma / mixed forms
+ *  all work and the two verbs can no longer drift apart.
+ *
+ *  Commander hands us `string` for the legacy `<blocker>` shape and
+ *  `string[]` for the variadic one; accept both so a programmatic
+ *  caller passing the old single-string shape keeps working. */
+export function parseByFlag(by: string | readonly string[]): string[] {
+  const blockers = parseCsvFlag(typeof by === "string" ? [by] : by);
+  if (blockers.length === 0) {
+    throw new UsageError("-b/--by requires at least one blocker task id");
+  }
+  // De-dupe so `--by a,a` is a single edge attempt rather than an
+  // added-then-no-op pair that would read as a confusing partial.
+  return [...new Set(blockers)];
+}
+
 export async function cmdTaskBlock(
   db: Db,
   rawBlocked: string,
-  opts: { by: string; workstream?: string; json?: boolean },
+  opts: { by: string | readonly string[]; workstream?: string; json?: boolean },
 ): Promise<void> {
   const { name: blocked } = await resolveEntityRef(db, rawBlocked, opts, "task");
   assertTaskInWorkstream(db, blocked, opts.workstream);
   const ws = await resolveWorkstream(opts.workstream);
-  const r = addBlockEdge(db, ws, blocked, opts.by);
+  const blockers = parseByFlag(opts.by);
+  const byList = blockers.join(",");
+  // Sequential, fail-fast: the first bad blocker throws its typed
+  // error (not-found / cycle / cross-workstream) and earlier edges
+  // stay added. Same semantics as running the single-blocker form N
+  // times, which is what this replaces.
+  const results = blockers.map((blocker) => ({
+    blockerName: blocker,
+    ...addBlockEdge(db, ws, blocked, blocker),
+  }));
+  const added = results.filter((r) => r.added).length;
   const nextSteps: NextStep[] = [
     { intent: "Show the dependency tree", command: `mu task tree ${blocked} -w ${ws}` },
-    { intent: "Remove this edge", command: `mu task unblock ${blocked} --by ${opts.by} -w ${ws}` },
+    { intent: "Remove these edges", command: `mu task unblock ${blocked} --by ${byList} -w ${ws}` },
   ];
   if (opts.json) {
-    emitJson({ blockedName: blocked, blockerName: opts.by, ...r, nextSteps });
+    const first = results[0];
+    emitJson({
+      blockedName: blocked,
+      // Single-blocker callers keep the pre-existing scalar shape.
+      blockerName: first !== undefined && results.length === 1 ? first.blockerName : undefined,
+      blockerNames: blockers,
+      results,
+      added: added > 0,
+      addedEdges: added,
+      nextSteps,
+    });
     return;
   }
-  if (!r.added) {
-    console.log(pc.dim(`${opts.by} → ${blocked}: edge already exists (no-op)`));
-    printNextSteps(nextSteps);
-    return;
+  for (const r of results) {
+    if (!r.added) {
+      console.log(pc.dim(`${r.blockerName} → ${blocked}: edge already exists (no-op)`));
+      continue;
+    }
+    console.log(`Added edge ${pc.bold(r.blockerName)} → ${pc.bold(blocked)}`);
   }
-  console.log(`Added edge ${pc.bold(opts.by)} → ${pc.bold(blocked)}`);
   printNextSteps(nextSteps);
 }
 
 export async function cmdTaskUnblock(
   db: Db,
   rawBlocked: string,
-  opts: { by: string; workstream?: string; json?: boolean },
+  opts: { by: string | readonly string[]; workstream?: string; json?: boolean },
 ): Promise<void> {
   const { name: blocked } = await resolveEntityRef(db, rawBlocked, opts, "task");
   assertTaskInWorkstream(db, blocked, opts.workstream);
   const ws = await resolveWorkstream(opts.workstream);
-  const r = removeBlockEdge(db, ws, blocked, opts.by);
+  // Symmetric with `block`: same --by parsing on both halves of the
+  // same edge operation, so undoing a multi-blocker block is a single
+  // invocation too.
+  const blockers = parseByFlag(opts.by);
+  const byList = blockers.join(",");
+  const results = blockers.map((blocker) => ({
+    blockerName: blocker,
+    ...removeBlockEdge(db, ws, blocked, blocker),
+  }));
+  const removed = results.filter((r) => r.removed).length;
   const nextSteps: NextStep[] = [
     { intent: "Show what now blocks this task", command: `mu task tree ${blocked} -w ${ws}` },
-    { intent: "Re-add the edge", command: `mu task block ${blocked} --by ${opts.by} -w ${ws}` },
+    { intent: "Re-add the edges", command: `mu task block ${blocked} --by ${byList} -w ${ws}` },
   ];
   if (opts.json) {
-    emitJson({ blockedName: blocked, blockerName: opts.by, ...r, nextSteps });
+    const first = results[0];
+    emitJson({
+      blockedName: blocked,
+      blockerName: first !== undefined && results.length === 1 ? first.blockerName : undefined,
+      blockerNames: blockers,
+      results,
+      removed: removed > 0,
+      removedEdges: removed,
+      nextSteps,
+    });
     return;
   }
-  if (!r.removed) {
-    console.log(pc.dim(`${opts.by} → ${blocked}: no such edge (no-op)`));
-    printNextSteps(nextSteps);
-    return;
+  for (const r of results) {
+    if (!r.removed) {
+      console.log(pc.dim(`${r.blockerName} → ${blocked}: no such edge (no-op)`));
+      continue;
+    }
+    console.log(`Removed edge ${pc.bold(r.blockerName)} → ${pc.bold(blocked)}`);
   }
-  console.log(`Removed edge ${pc.bold(opts.by)} → ${pc.bold(blocked)}`);
   printNextSteps(nextSteps);
 }
 

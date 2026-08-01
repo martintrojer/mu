@@ -9,6 +9,54 @@ called out under "Breaking" in each entry.
 ---
 
 
+## [2.0.0] — unreleased
+
+### Fixed
+
+- **Flag-vs-positional parity sweep (dogfood-\* findings).** Four
+  dogfooding reports, one theme: mu named the SAME concept two
+  different ways across sibling verbs, so muscle memory from one verb
+  produced a help dump on the next. The rule the CLI already mostly
+  followed is now written down in `docs/VOCABULARY.md` § Naming
+  conventions and `docs/USAGE_GUIDE.md`: **the primary entity a verb
+  acts on is positional; everything else is a flag.** Every fix below
+  is ADDITIVE — no existing invocation changed.
+
+  - `mu task block <id> --by` and `mu task unblock <id> --by` now
+    accept multiple blockers in repeat / comma-separated / mixed form
+    (`--by a,b`, `--by a --by b`, `--by a,b --by c`), routed through
+    the same canonical `parseCsvFlag` helper `mu task add
+    --blocked-by` already used. Previously `--by a,b,c` failed with
+    the confusing `no such task: a,b,c`. A bad id inside the list
+    still exits 3 naming only the offending id. An all-empty
+    `--by ''` is now a usage error (exit 2) instead of a silent
+    no-op.
+  - `mu workstream destroy [name]` and `mu workstream export [name]`
+    accept the workstream positionally, matching `mu workstream init
+    <name>`. Previously the bare positional was rejected as "too many
+    arguments" and printed help. `-w` keeps working; supplying both
+    with disagreeing values is a usage error (exit 2) rather than a
+    silent pick-one.
+  - `mu task note <id> --text "..."` is accepted as an alias for the
+    positional note body, matching `mu task add --note <text>`.
+    Supplying both, or neither, is a targeted usage error (exit 2)
+    that names both shapes instead of dumping help.
+  - Validation for the new `--text` alias runs INSIDE the `handle()`
+    callback rather than the `.action()` body, so it goes through the
+    typed-error → exit-code map (and the DB-close `finally`) like
+    every other verb's checks.
+
+  Not reproduced: `dogfood-init-exit-code` reported `mu workstream
+  init mu-foo` exiting 0. On this tree it exits **2** (the documented
+  usage lane) across human, `--json`, piped, and PTY invocations, as
+  does the installed 0.4.5 build; `WorkstreamNameInvalidError` is
+  already mapped to exit 2 in `src/cli/handle.ts`. A regression test
+  asserting the exit CODE (not just the message) is added so it can't
+  silently regress.
+
+---
+
+
 ## [0.4.5] — 2026-06-09
 
 ### Added
