@@ -293,6 +293,46 @@ describe("rebuildInto", () => {
 
   // ─── rebuild is NOT ingest ───────────────────────────────────────────
 
+  describe("log-only ops are never projected, whatever their entity", () => {
+    // Regression: emitEvent derives an op's entity from its intent prefix
+    // (v2 R7), so 'workstream.export' lands on entity='workstream' — a
+    // PROJECTABLE entity — while carrying a prose payload. Rebuild fed it
+    // to applyOp, whose JSON.parse died with "Unexpected token 'w'",
+    // crashing `mu doctor --deep` on any DB whose workstream had ever
+    // been exported. Since `workstream destroy` auto-exports first, every
+    // destroy produced one. Found by hand-running doctor after an archive
+    // restore; no test covered it because each task's own tests passed.
+    it("a prose-payload workstream.export op does not break a rebuild", () => {
+      seedRealisticSource();
+      emitEvent(db, "demo", "workstream.export", "workstream export demo (out=/tmp/x)", "system");
+
+      const path = targetPath();
+      // The bug threw here rather than returning a report.
+      const report = rebuildInto(db, { targetPath: path });
+
+      // Copied verbatim, never projected.
+      expect(report.logOnlyByEntity.workstream).toBe(1);
+      const copied = withTarget(
+        path,
+        (conn) =>
+          (
+            conn
+              .prepare("SELECT COUNT(*) AS n FROM ops WHERE intent = 'workstream.export'")
+              .get() as { n: number }
+          ).n,
+      );
+      expect(copied).toBe(1);
+      // …and the workstream row itself still projected correctly, i.e.
+      // the fix excluded the log line WITHOUT excluding real workstream
+      // ops that share the entity.
+      const names = withTarget(
+        path,
+        (conn) => conn.prepare("SELECT name FROM workstreams").all() as { name: string }[],
+      );
+      expect(names.map((r) => r.name)).toEqual(["demo"]);
+    });
+  });
+
   describe("rebuild replays machine-local ops too (rebuild != ingest)", () => {
     it("copies log-only entities that ingest would refuse", () => {
       // 'agent' is not in SYNCED_ENTITIES, so applyOp REJECTS it and a
