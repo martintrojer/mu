@@ -65,9 +65,24 @@ describe("loadDoctorSummary", () => {
 
   it("on a fresh DB without a snapshot, every check passes", () => {
     const s = loadDoctorSummary(db, null);
-    // schema, schema_version, journal_mode, foreign_keys (no
-    // snapshot-derived rows since snapshot is null).
-    expect(s.checks.length).toBe(4);
+    // schema, schema_version, journal_mode, foreign_keys, plus the
+    // fleet-hazard and shallow-drift rows (v2-doctor-drift). No
+    // snapshot-derived rows since snapshot is null.
+    //
+    // Asserted BY NAME rather than by count: a hard-coded length breaks
+    // every time a check is added, which says nothing about correctness.
+    const names = s.checks.map((c) => c.name);
+    expect(names).toEqual(
+      expect.arrayContaining([
+        "schema",
+        "schema_version",
+        "journal_mode",
+        "foreign_keys",
+        "db-filesystem",
+        "name-case",
+        "drift",
+      ]),
+    );
     expect(s.checks.every((c) => c.status === "ok")).toBe(true);
     expect(s.problemCount).toBe(0);
   });
@@ -95,8 +110,11 @@ describe("loadDoctorSummary", () => {
     expect(names.has("agents")).toBe(true);
     expect(names.has("panes")).toBe(true);
     expect(names.has("workspaces")).toBe(true);
-    // 4 base + 3 snapshot-derived = 7 total
-    expect(s.checks.length).toBe(7);
+    // Base + fleet/drift rows + 3 snapshot-derived. Asserted as "the
+    // snapshot rows were ADDED to whatever the base set is" rather than
+    // a magic total.
+    const base = loadDoctorSummary(db, null).checks.length;
+    expect(s.checks.length).toBe(base + 3);
   });
 
   it("ghosts > 0 → agents row is warn with ghost count in detail", () => {

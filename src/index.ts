@@ -106,6 +106,31 @@ export {
   rebuildInto,
 } from "./rebuild.js";
 export {
+  type CheapDriftReport,
+  checkCheapDriftInvariant,
+  checkDrift,
+  DRIFT_REPORT_CAP,
+  DriftDetectedError,
+  type DriftRecord,
+  type DriftReport,
+  driftRemediation,
+  formatDriftRecord,
+} from "./drift.js";
+export {
+  type CaseCollision,
+  checkCaseCollisions,
+  checkDbInsideSyncDir,
+  checkFleetHazards,
+  checkNetworkMount,
+  classifyFsType,
+  findCaseCollisions,
+  type FleetHazard,
+  type FsProbe,
+  type HazardSeverity,
+  isPathInside,
+  probeFilesystem,
+} from "./fleet-hazards.js";
+export {
   currentOpContext,
   type OpContext,
   withCaptureSuppressed,

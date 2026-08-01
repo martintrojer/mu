@@ -14,7 +14,7 @@ import { createElement, useState } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import { DoctorPopup, renderDrillBody } from "../src/cli/tui/popups/doctor.js";
 import { type Db, openDb } from "../src/db.js";
-import { type DoctorCheck, remediationParagraph } from "../src/doctor-summary.js";
+import { type DoctorCheck, loadDoctorChecks, remediationParagraph } from "../src/doctor-summary.js";
 import type { WorkstreamSnapshot } from "../src/state.js";
 import {
   CaptureStream,
@@ -199,7 +199,11 @@ describe("DoctorPopup: behaviour", () => {
     const r = await renderDoctorPopup(db, snap);
     try {
       let text = frameText(r.stdout);
-      expect(text).toContain("Doctor · popup (1/7)");
+      // Total derived from the SDK, not hard-coded: the popup renders
+      // however many checks loadDoctorChecks returns, and this test is
+      // about cursor/filter/yank behaviour rather than the check count.
+      const total = loadDoctorChecks(db, snap).length;
+      expect(text).toContain(`Doctor · popup (1/${total})`);
       expect(text).toContain("schema");
       expect(text).toContain("agents");
       expect(text).toContain("2 ghost panes");
@@ -254,7 +258,10 @@ describe("DoctorPopup: behaviour", () => {
       expect(r.yanked).toEqual(["mu state"]);
 
       await simulateInput(r.stdin, "escape");
-      text = await waitForFrame(r.stdout, "Doctor · popup (5/7)");
+      text = await waitForFrame(
+        r.stdout,
+        `Doctor · popup (5/${loadDoctorChecks(db, snap).length})`,
+      );
       expect(text).toContain("agents");
       expect(text).toContain("2 ghost panes");
       expect(text).not.toContain("Doctor · agents (detail)");

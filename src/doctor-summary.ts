@@ -34,7 +34,9 @@
 // "all healthy" line so the operator's eye learns to read the
 // presence of rows as "something needs attention."
 
-import { CURRENT_SCHEMA_VERSION, type Db, EXPECTED_TABLES } from "./db.js";
+import { CURRENT_SCHEMA_VERSION, type Db, EXPECTED_TABLES, defaultDbPath } from "./db.js";
+import { checkCheapDriftInvariant } from "./drift.js";
+import { checkFleetHazards } from "./fleet-hazards.js";
 import type { WorkstreamSnapshot } from "./state.js";
 
 export type DoctorStatus = "ok" | "warn" | "fail";
@@ -211,6 +213,38 @@ export function loadDoctorSummary(db: Db, snapshot: WorkstreamSnapshot | null): 
     }
   }
 
+  // ─ Mixed-fleet hazards + the SHALLOW drift invariant.
+  //
+  // Both obey this file's cheapness rules: the fleet checks are two path
+  // comparisons, one statfs and one indexed scan; the drift invariant is
+  // four indexed NOT EXISTS queries (~1ms on a 200-task DB). NO rebuild
+  // here — `checkDrift` is ~0.6ms per op and would make the TUI's poll
+  // tick take seconds. The deep check belongs to `mu doctor --deep`, and
+  // the row below says so when it is clean, so the operator knows the
+  // dashboard is showing a smoke alarm rather than a proof.
+  for (const hazard of checkFleetHazards(db, { dbPath: defaultDbPath() })) {
+    // Skip the inert "no sync configured" row: on a single-machine setup
+    // it would be permanent noise in a dashboard whose whole design is
+    // "rows appearing means something needs attention".
+    if (hazard.severity === "ok" && hazard.name === "db-vs-sync") continue;
+    checks.push({ name: hazard.name, status: hazard.severity, detail: hazard.detail });
+  }
+
+  const cheapDrift = checkCheapDriftInvariant(db);
+  checks.push(
+    cheapDrift.clean
+      ? {
+          name: "drift",
+          status: "ok",
+          detail: "every row has ops; `mu doctor --deep` for full diff",
+        }
+      : {
+          name: "drift",
+          status: "fail",
+          detail: `${cheapDrift.totalUnexplained} row(s) with no ops; run \`mu doctor --deep\``,
+        },
+  );
+
   return { checks, problemCount: countProblems(checks) };
 }
 
@@ -286,6 +320,17 @@ export function yankCommandForCheck(check: Pick<DoctorCheck, "name" | "status">)
       // Diagnostic: list orphan workspace dirs. Operator decides
       // whether to `mu workspace free` from the list output.
       return "mu workspace orphans";
+    case "drift":
+      // The full rebuild-and-diff. Read-only: it writes only to a temp
+      // DB and never touches live state.
+      return "mu doctor --deep";
+    case "db-vs-sync":
+    case "db-filesystem":
+      // Environment hazards: the fix is an env-var change the operator
+      // must make deliberately, so yank the inspection, not a mutation.
+      return "# check MU_DB_PATH / MU_SYNC_DIR; see `mu doctor` for the full explanation";
+    case "name-case":
+      return 'mu sql "SELECT name FROM workstreams ORDER BY LOWER(name)"';
     case "schema":
     case "schema_version":
     case "journal_mode":
@@ -333,6 +378,43 @@ export function remediationParagraph(check: DoctorCheck): readonly string[] {
         "the workstream that has no matching mu agent row. Run",
         "`mu workspace orphans -w <ws>` to list them, then",
         "`mu workspace free <agent>` to release each one.",
+      ];
+    case "drift":
+      return [
+        "Drift means the ops log and the live tables disagree, and since",
+        "undo/archive/sync/history are ALL projections of that one log, a",
+        "capture bug breaks all of them at once. This row is the shallow",
+        "check (every live row must have at least one op naming its key);",
+        "it cannot see an uncaptured UPDATE. Run `mu doctor --deep` for the",
+        "full rebuild-and-diff, which names the exact table/key/field.",
+        "Back up before acting: if capture missed a mutation the LIVE rows",
+        "hold real work and rebuilding would discard it.",
+      ];
+    case "db-vs-sync":
+      return [
+        "MU_DB_PATH is inside MU_SYNC_DIR. A live WAL-mode SQLite DB is",
+        "three files whose mutual consistency IS its durability; a file",
+        "syncer copying them out of order, or resurrecting a peer's stale",
+        "-wal, silently corrupts the DB. Move the DB out of the synced",
+        "folder — mu syncs append-only per-machine segments precisely so",
+        "the database file itself never has to travel.",
+      ];
+    case "db-filesystem":
+      return [
+        "The DB appears to be on a network mount (NFS/SMB/FUSE). SQLite's",
+        "WAL mode needs working POSIX advisory locks and a shared-memory",
+        "file, and network filesystems provide neither dependably: expect",
+        "'database is locked' without contention, or corruption with it.",
+        "Keep the DB on local disk and sync segments instead.",
+      ];
+    case "name-case":
+      return [
+        "Two workstream names differ only by letter case. They coexist on",
+        "Linux but collide on macOS (APFS) and Windows (NTFS), and a",
+        "workstream name IS a tmux session name and seeds workspace paths.",
+        "A Mac in the fleet would see one session where Linux sees two.",
+        "Rename one side before adding a Mac: export, re-init under a new",
+        "name, destroy the old one.",
       ];
     case "schema":
       return [

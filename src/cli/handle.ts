@@ -39,6 +39,7 @@ import {
   WorkspacePreservedError,
 } from "../agents.js";
 import { type Db, SchemaTooOldError, WorkstreamNotFoundError, openDb } from "../db.js";
+import { DriftDetectedError } from "../drift.js";
 import {
   type NextStep,
   type UsageJson,
@@ -252,6 +253,13 @@ export function classifyError(err: unknown): { label: string; exitCode: number }
     err instanceof RebuildTargetIsSourceError
   ) {
     return { label: "conflict", exitCode: 4 };
+  }
+  if (err instanceof DriftDetectedError) {
+    // 5 = substrate unavailable/inconsistent. Drift means the SQLite
+    // substrate is internally inconsistent (the log and the tables
+    // disagree), which is exactly that category — not a usage mistake (2)
+    // and not a name collision (4).
+    return { label: "drift", exitCode: 5 };
   }
   if (err instanceof AgentSpawnCliNotFoundError) {
     // Pre-flight failure: --cli's resolved binary isn't on PATH. We

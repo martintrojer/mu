@@ -185,6 +185,63 @@ mu doctor
 
 The "workstream: none" line is expected — we haven't joined one yet.
 
+`mu doctor` also runs two families of 2.0 checks.
+
+**Mixed-fleet hazards** (the `fleet` section) — cheap, and every one is
+something you can fix before it costs you data:
+
+| Row | Means |
+| --- | --- |
+| `db-vs-sync` | **FAIL** if `MU_DB_PATH` is inside `MU_SYNC_DIR`. Never do this: a live WAL-mode SQLite DB is three files (`mu.db`, `-wal`, `-shm`) whose mutual consistency IS its durability, and a file-syncer copying them out of order — or resurrecting a peer's stale `-wal` — silently corrupts the database. mu syncs append-only per-machine **segments** precisely so the DB file never has to travel. |
+| `db-filesystem` | **WARN** if the DB is on NFS/SMB/sshfs. WAL needs working advisory locks and a shared-memory file; network mounts provide neither reliably. Symptom is `database is locked` with no contention, or corruption with it. |
+| `name-case` | **WARN** if two workstream names differ only by case. They coexist on Linux but collide on macOS (APFS) and Windows, and a workstream name IS a tmux session name and seeds workspace paths — so a Mac joining the fleet sees one session where Linux sees two. |
+
+**Ops-log drift** (the `ops log` section) — is the projection still
+faithful to the log? This matters more than it looks: in 2.0 undo,
+archives, sync and history are all projections of the ops log, so a
+capture bug breaks all four at once, silently. Two tiers:
+
+```bash
+mu doctor           # shallow: every live row must have >=1 op. ~3ms.
+mu doctor --deep    # full rebuild + field-level diff. ~0.6ms per op.
+```
+
+The default is shallow because the deep check rebuilds the whole log
+(measured: ~2.3s on a 1000-task DB) and `mu doctor` is meant to be
+reflexive. Shallow catches an uncaptured INSERT or DELETE; it is
+structurally blind to an uncaptured UPDATE, because the row's key still
+has ops. Run `--deep` when you actually suspect something, in CI, or
+before a release. Either tier exits **5** on drift.
+
+### What to do when drift is reported
+
+Drift names the exact table, key and field, e.g.:
+
+```
+  drift            : FAIL 2 divergence(s) (12ms)
+      tasks demo/a.title: live=TAMPERED log=A
+      tasks demo/a.impact: live=7 log=60
+```
+
+**Do not rebuild reflexively.** Drift means the log and the tables
+disagree, and which side is right depends on the cause:
+
+- If **capture** missed a mutation, the LIVE tables hold real work the
+  log never recorded — rebuilding would discard it.
+- If **apply** is lossy, the log is authoritative and a rebuild fixes it.
+
+So, in order:
+
+```bash
+mu db backup /tmp/mu-drift-evidence.db   # 1. preserve the evidence FIRST
+mu rebuild /tmp/mu-rebuilt.db            # 2. materialize what the log believes
+# 3. compare the named keys in both files and decide which side is correct:
+MU_DB_PATH=/tmp/mu-rebuilt.db mu sql "SELECT local_id, title, impact FROM tasks"
+```
+
+Then report it. Drift is a capture/apply **bug**, not operator error, and
+the named table/key/field is the reproduction.
+
 Get the full command list:
 
 ```bash

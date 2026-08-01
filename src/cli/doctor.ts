@@ -14,13 +14,24 @@
 import { listLiveAgents } from "../agents.js";
 import { emitJson, resolveWorkstream } from "../cli.js";
 import { CURRENT_SCHEMA_VERSION, type Db, EXPECTED_TABLES, defaultDbPath } from "../db.js";
+import {
+  DriftDetectedError,
+  checkCheapDriftInvariant,
+  checkDrift,
+  driftRemediation,
+  formatDriftRecord,
+} from "../drift.js";
+import { checkFleetHazards } from "../fleet-hazards.js";
 import { pc } from "../output.js";
 import { tmux } from "../tmux.js";
 import { summarizeWorkstream } from "../workstream.js";
 
-export async function cmdDoctor(db: Db, opts: { json?: boolean } = {}): Promise<void> {
+export async function cmdDoctor(
+  db: Db,
+  opts: { json?: boolean; deep?: boolean } = {},
+): Promise<void> {
   if (opts.json) {
-    return cmdDoctorJson(db);
+    return cmdDoctorJson(db, opts);
   }
   console.log(pc.bold("mu doctor"));
 
@@ -153,6 +164,80 @@ export async function cmdDoctor(db: Db, opts: { json?: boolean } = {}): Promise<
       );
     }
   }
+
+  // ─ Mixed-fleet hazards (cheap: two path compares, one statfs, one scan)
+  //
+  // These run in the DEFAULT doctor because they are cheap AND
+  // PREVENTABLE — each one is a condition the operator can fix before it
+  // costs them data, unlike drift which is a bug report.
+  console.log(pc.bold("\nfleet"));
+  const hazards = checkFleetHazards(db, { dbPath: defaultDbPath() });
+  let sawHazard = false;
+  for (const hazard of hazards) {
+    const colour =
+      hazard.severity === "fail" ? pc.red : hazard.severity === "warn" ? pc.yellow : pc.green;
+    const label = hazard.severity === "ok" ? "ok" : hazard.severity.toUpperCase();
+    console.log(`  ${hazard.name.padEnd(16)} : ${colour(label)} ${pc.dim(hazard.detail)}`);
+    if (hazard.severity !== "ok") sawHazard = true;
+  }
+  for (const hazard of hazards) {
+    if (hazard.severity === "ok" || hazard.remediation === undefined) continue;
+    console.log("");
+    for (const line of hazard.remediation) console.log(`  ${line}`);
+  }
+
+  // ─ Ops-log drift
+  //
+  // TIERED ON PURPOSE. The full rebuild-and-diff is ~0.6ms per op
+  // (measured: 2.2s on a 1000-task / 3461-op DB), which is too slow to
+  // put in a reflexively-run command. So the default runs a ~1ms
+  // invariant and points at --deep; --deep runs the real thing.
+  console.log(pc.bold("\nops log"));
+  if (opts.deep === true) {
+    const report = checkDrift(db);
+    const compared = Object.entries(report.rowsCompared)
+      .map(([t, n]) => `${n} ${t}`)
+      .join(", ");
+    if (report.clean) {
+      console.log(
+        `  drift            : ${pc.green("ok")} ${pc.dim(`rebuild matches live tables (${compared}, ${report.elapsedMs}ms)`)}`,
+      );
+    } else {
+      console.log(
+        `  drift            : ${pc.red("FAIL")} ${report.totalDrift} divergence(s) ${pc.dim(`(${report.elapsedMs}ms)`)}`,
+      );
+      for (const record of report.records) console.log(`      ${formatDriftRecord(record)}`);
+      if (report.totalDrift > report.records.length) {
+        console.log(pc.dim(`      … and ${report.totalDrift - report.records.length} more`));
+      }
+      console.log("");
+      for (const line of driftRemediation()) console.log(`  ${line}`);
+      // Non-zero exit so CI and wrapper scripts notice. Thrown last so
+      // the whole report is printed first.
+      throw new DriftDetectedError(report.totalDrift, report.records);
+    }
+  } else {
+    const cheap = checkCheapDriftInvariant(db);
+    if (cheap.clean) {
+      console.log(
+        `  drift (shallow)  : ${pc.green("ok")} ${pc.dim(`every live row has ops (${cheap.elapsedMs}ms) — run \`mu doctor --deep\` for the full rebuild diff`)}`,
+      );
+    } else {
+      console.log(
+        `  drift (shallow)  : ${pc.red("FAIL")} ${cheap.totalUnexplained} row(s) with NO ops explaining their existence`,
+      );
+      for (const row of cheap.unexplainedRows) {
+        console.log(`      ${row.table} ${row.key}: no op names this key`);
+      }
+      console.log(pc.dim("      capture missed these rows entirely. Run `mu doctor --deep`."));
+      console.log("");
+      for (const line of driftRemediation()) console.log(`  ${line}`);
+      throw new DriftDetectedError(cheap.totalUnexplained, []);
+    }
+  }
+  if (sawHazard) {
+    console.log(pc.dim("\nSee the fleet section above: at least one hazard needs attention."));
+  }
 }
 
 /**
@@ -160,7 +245,7 @@ export async function cmdDoctor(db: Db, opts: { json?: boolean } = {}): Promise<
  * into a single structured record for piping. Surfaces 'ok' / 'warn' /
  * 'fail' for each subsystem so callers can match on a single field.
  */
-export async function cmdDoctorJson(db: Db): Promise<void> {
+export async function cmdDoctorJson(db: Db, opts: { deep?: boolean } = {}): Promise<void> {
   // environment
   let tmuxVersion: string | null = null;
   let tmuxOk = false;
@@ -257,12 +342,53 @@ export async function cmdDoctorJson(db: Db): Promise<void> {
     workstreamStats = { workstreamName: ws, ...counts, reconcile };
   }
 
+  // Mixed-fleet hazards: same three checks the human path runs.
+  const hazards = checkFleetHazards(db, { dbPath: defaultDbPath() }).map((h) => ({
+    name: h.name,
+    severity: h.severity,
+    detail: h.detail,
+  }));
+
+  // Drift: shallow by default, full rebuild diff under --deep. Same
+  // tiering as the human path, for the same measured reason.
+  let drift: Record<string, unknown>;
+  let driftFailure: DriftDetectedError | null = null;
+  if (opts.deep === true) {
+    const report = checkDrift(db);
+    drift = {
+      mode: "deep",
+      ok: report.clean,
+      totalDrift: report.totalDrift,
+      records: report.records,
+      rowsCompared: report.rowsCompared,
+      elapsedMs: report.elapsedMs,
+    };
+    if (!report.clean) driftFailure = new DriftDetectedError(report.totalDrift, report.records);
+  } else {
+    const cheap = checkCheapDriftInvariant(db);
+    drift = {
+      mode: "shallow",
+      ok: cheap.clean,
+      totalUnexplained: cheap.totalUnexplained,
+      unexplainedRows: cheap.unexplainedRows,
+      elapsedMs: cheap.elapsedMs,
+      hint: "run `mu doctor --deep --json` for the full rebuild diff",
+    };
+    if (!cheap.clean) driftFailure = new DriftDetectedError(cheap.totalUnexplained, []);
+  }
+
   emitJson({
     environment: env,
     db: dbReport,
     workstream: { currentName: currentWorkstream },
     state: workstreamStats,
+    fleet: hazards,
+    drift,
+    remediation: drift.ok === true ? [] : driftRemediation(),
   });
+  // Emit the payload FIRST, then fail: a --json consumer needs the
+  // machine-readable report even when the exit code is non-zero.
+  if (driftFailure !== null) throw driftFailure;
 }
 
 // agents/tasks counts come from summarizeWorkstream() (src/workstream.ts) —
@@ -327,8 +453,12 @@ export function wireDoctorCommand(program: Command): void {
     .command("doctor")
     .description("Environment + state health check")
     .option(...JSON_OPT)
+    .option(
+      "--deep",
+      "also rebuild the ops log into a temp DB and diff it against the live tables (slower: ~0.6ms per op)",
+    )
     .action(function () {
-      const opts = (this as Command).opts() as { json?: boolean };
+      const opts = (this as Command).opts() as { json?: boolean; deep?: boolean };
       return handle((db) => cmdDoctor(db, opts), this as Command)();
     });
 }

@@ -49,6 +49,86 @@ markers land in follow-up work.
 
 ### Added
 
+- **Ops-log drift detection (`src/drift.ts`), wired into `mu doctor`.**
+  The check that makes capture, apply and rebuild TRUSTWORTHY, and the
+  reason collapsing four change-recording mechanisms into one log was
+  defensible at all. Per docs/VISION.md § 2b, the cost of that
+  consolidation is that a capture bug is no longer "sync is broken" — it
+  is undo AND archives AND sync AND history broken, simultaneously and
+  silently, because all four are projections of the same table. This
+  converts that hazard into a detectable condition, so it is production
+  code rather than diagnostics garnish.
+
+  Reports WHICH table, WHICH key and WHICH field, with both values —
+  "drift detected" alone is useless at 3am:
+
+  ```
+    drift            : FAIL 2 divergence(s) (12ms)
+        tasks demo/a.title: live=TAMPERED log=A
+        tasks demo/a.impact: live=7 log=60
+  ```
+
+  - **Two tiers, chosen by measurement.** The deep check rebuilds the log
+    into a temp DB and diffs field-by-field, costing ~0.6ms per op —
+    measured at 2.3s on a 1000-task / 3452-op DB, which is too slow for a
+    command people run reflexively. So `mu doctor` runs a ~3ms invariant
+    (every live row must have at least one op naming its key) and
+    `mu doctor --deep` runs the full rebuild diff. Both exit **5** on
+    drift, so CI and wrapper scripts notice.
+  - **The cheap tier's blindness is deliberate, proven and documented.**
+    It catches an uncaptured INSERT or DELETE but CANNOT see an
+    uncaptured UPDATE, because the row's key still has ops from its
+    insert. A test asserts exactly that, so the tiering cannot silently
+    change, and the default output points at `--deep` rather than
+    implying it has proved anything.
+  - **Remediation warns AGAINST rebuilding reflexively**, which matters
+    more than the detection. Drift means one side is wrong and we cannot
+    know which from here: if capture missed a mutation, the LIVE tables
+    hold work the log never recorded and rebuilding would discard it. The
+    guidance is back up first, materialize what the log believes, compare
+    the named keys, then choose deliberately — and report it, because
+    drift is a bug rather than operator error.
+  - Diff identity is the NATURAL key throughout. `owner_id` is excluded
+    from comparison because it never syncs (apply strips it, so a rebuild
+    always has NULL owners); comparing it would report drift on every
+    claimed task forever. Notes diff on `(task, author, content)`, the
+    same identity `applyNotePut` uses, since their surrogate id is not
+    portable.
+
+- **Mixed-fleet hazard checks (`src/fleet-hazards.ts`)**, in the default
+  `mu doctor`. Cheap, and unlike drift every one is PREVENTABLE:
+
+  - **`MU_DB_PATH` inside `MU_SYNC_DIR` → FAIL.** THE footgun of the
+    whole design. A live WAL-mode SQLite DB is three files (`mu.db`,
+    `-wal`, `-shm`) whose mutual consistency IS its durability; a file
+    syncer copying them out of order, or resurrecting a peer's stale
+    `-wal`, yields a DB that opens fine and is silently corrupt. Two
+    machines writing the same synced file is worse — last writer wins on
+    the whole FILE, so one machine's entire history disappears. mu ships
+    append-only per-machine **segments** precisely so the database file
+    never has to travel.
+  - **DB on a network mount → WARN.** WAL needs working POSIX advisory
+    locks and a shared-memory file; NFS, SMB/CIFS and FUSE mounts provide
+    neither dependably. Warn rather than fail because a single machine on
+    an NFS home usually works and refusing would lock that operator out
+    of their own tool. Detected via `statfsSync` magic numbers
+    transcribed from linux/magic.h; off Linux `f_type` is an unstable
+    driver index, so the probe returns `unknown` and the check says "not
+    classifiable" rather than claiming a clean bill of health.
+  - **Case-colliding workstream names → WARN.** `Foo` and `foo` coexist
+    on ext4 but collide on macOS (APFS) and Windows (NTFS). Because a
+    workstream name IS a tmux session name and seeds every workspace
+    path, a Mac joining the fleet sees one session and one directory
+    where Linux sees two, so the fleet reaches different states depending
+    on which machine applies an op first.
+
+  `MU_SYNC_DIR` does not exist until v2-sync; these read it if set and
+  no-op otherwise, so they are live the moment sync lands.
+
+- The TUI's Doctor card/popup gains the fleet + shallow-drift rows,
+  obeying `src/doctor-summary.ts`'s per-tick cheapness rules — no rebuild
+  there, since it would make the poll tick take seconds.
+
 - **`mu rebuild <file>` — replay the ops log into a fresh DB
   (`src/rebuild.ts`).** The disaster-recovery story that replaces the
   snapshot files 2.0 deleted: given an intact `ops` table, every portable
