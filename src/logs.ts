@@ -31,6 +31,7 @@
 import { randomUUID } from "node:crypto";
 import type { Db } from "./db.js";
 import { nextHlc } from "./hlc.js";
+import type { HasNextSteps, NextStep } from "./output.js";
 
 export type LogKind = "message" | "event" | "broadcast" | string;
 
@@ -170,6 +171,83 @@ const TOUCH_OP_FILTER = `NOT (
  *  NOT NULL). Exported so the few call sites that query `ops` directly
  *  agree with the shim. */
 export const MACHINE_WIDE_KEY = "";
+
+// ─── group-id prefix resolution (shared) ──────────────────────────
+//
+// Group ids are uuids, which nobody types. `mu undo` prints 8-char
+// prefixes and accepts them, so `mu log --group` must too — otherwise the
+// documented workflow (`mu undo` to see the id → `mu log --group <id>` to
+// inspect it → `mu undo <id> --yes`) breaks in the middle, and it breaks
+// SILENTLY: an unmatched prefix returns zero rows, which reads as "this
+// group did nothing" rather than "you gave me a prefix I ignored".
+// (bug_group_id_prefix_asymmetry — found by following the workflow across
+// R9 and R10; each verb was self-consistent on its own.)
+//
+// This lives HERE, next to the ops reader, so both verbs share ONE
+// resolution rule. `src/undo.ts` delegates to it rather than keeping a
+// second copy. Same affordance git gives for abbreviated shas, and the
+// same shape as `src/tasks/id.ts`'s resolve-or-raise helpers.
+
+/** Raised when a group-id prefix matches more than one group.
+ *  Astronomically unlikely with uuids, but silently picking one of two
+ *  candidate groups to UNDO is not an acceptable failure mode. */
+export class GroupIdAmbiguousError extends Error implements HasNextSteps {
+  constructor(
+    readonly prefix: string,
+    readonly candidates: readonly string[],
+  ) {
+    super(
+      `group id ${JSON.stringify(prefix)} is ambiguous: matches ${candidates.length} groups (${candidates
+        .slice(0, 4)
+        .map((c) => c.slice(0, 12))
+        .join(", ")}${candidates.length > 4 ? ", …" : ""})`,
+    );
+    this.name = "GroupIdAmbiguousError";
+  }
+
+  errorNextSteps(): NextStep[] {
+    return [
+      { intent: "List recent groups with their ids", command: "mu undo" },
+      {
+        intent: "Retry with more characters",
+        command: `mu log --group ${this.candidates[0] ?? "<full-id>"}`,
+      },
+    ];
+  }
+}
+
+/**
+ * Resolve a possibly-abbreviated group id to the full one.
+ *
+ * Returns null when nothing matches, so callers choose their own
+ * not-found error (undo raises `UndoGroupNotFoundError`; `mu log`
+ * filters to nothing but says so). Throws `GroupIdAmbiguousError` when a
+ * prefix matches several groups — that is a genuine conflict the
+ * operator must resolve, not something to guess at.
+ *
+ * An EXACT match always wins over prefix matching, so a full uuid can
+ * never be shadowed by a longer id that happens to start with it.
+ */
+export function groupIdFromPrefix(db: Db, prefix: string): string | null {
+  if (prefix === "") return null;
+  const rows = db
+    .prepare(
+      `SELECT DISTINCT group_id AS groupId FROM ops
+        WHERE group_id = @exact OR group_id LIKE @prefix || '%' ESCAPE '\\'`,
+    )
+    .all({ exact: prefix, prefix: prefix.replace(/[\\%_]/g, (c) => `\\${c}`) }) as {
+    groupId: string;
+  }[];
+  const exact = rows.find((r) => r.groupId === prefix);
+  if (exact !== undefined) return exact.groupId;
+  const first = rows[0];
+  if (rows.length === 1 && first !== undefined) return first.groupId;
+  if (rows.length === 0) return null;
+  throw new GroupIdAmbiguousError(
+    prefix,
+    rows.map((r) => r.groupId),
+  );
+}
 
 /** This machine's identity — the peer id every op is stamped with. */
 function machineId(db: Db): string {

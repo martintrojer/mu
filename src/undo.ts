@@ -80,6 +80,7 @@
 // reverse emission order. See ENTITY_RESTORE_ORDER.
 
 import { type Db, resolveWorkstreamId } from "./db.js";
+import { groupIdFromPrefix } from "./logs.js";
 import { withOpContext } from "./op-context.js";
 import type { HasNextSteps, NextStep } from "./output.js";
 
@@ -392,31 +393,21 @@ export function mostRecentGroup(db: Db): GroupSummary | null {
 }
 
 /**
- * Resolve a possibly-abbreviated group id to a full one.
+ * Resolve a possibly-abbreviated group id to a full one, or raise.
  *
- * Group ids are uuids, which nobody is going to type. `mu undo` prints
- * 8-char prefixes, so accept any unique prefix — the same affordance git
- * gives for commit shas.
+ * Delegates to `groupIdFromPrefix` (src/logs.ts) so `mu undo` and
+ * `mu log --group` accept EXACTLY the same identifiers. They used to
+ * disagree: undo resolved prefixes, `mu log --group` compared the column
+ * literally and silently returned nothing
+ * (bug_group_id_prefix_asymmetry). One rule, two verbs.
+ *
+ * Ambiguity surfaces as `GroupIdAmbiguousError` (exit 4, a conflict the
+ * operator resolves) rather than being folded into not-found.
  */
 export function resolveGroupId(db: Db, prefix: string): string {
-  const rows = db
-    .prepare(
-      `SELECT DISTINCT group_id AS groupId FROM ops
-        WHERE group_id = @exact OR group_id LIKE @prefix || '%'`,
-    )
-    .all({ exact: prefix, prefix }) as { groupId: string }[];
-  const exact = rows.find((r) => r.groupId === prefix);
-  if (exact !== undefined) return exact.groupId;
-  const first = rows[0];
-  if (rows.length === 1 && first !== undefined) return first.groupId;
-  if (rows.length === 0) throw new UndoGroupNotFoundError(prefix);
-  // Ambiguous prefix. Naming the candidates is more useful than refusing.
-  throw new UndoGroupNotFoundError(
-    `${prefix} (ambiguous: matches ${rows.length} groups — ${rows
-      .slice(0, 4)
-      .map((r) => r.groupId.slice(0, 12))
-      .join(", ")})`,
-  );
+  const resolved = groupIdFromPrefix(db, prefix);
+  if (resolved === null) throw new UndoGroupNotFoundError(prefix);
+  return resolved;
 }
 
 // ─── planning ─────────────────────────────────────────────────────────

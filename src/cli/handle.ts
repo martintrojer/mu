@@ -40,6 +40,7 @@ import {
 } from "../agents.js";
 import { type Db, SchemaTooOldError, WorkstreamNotFoundError, openDb } from "../db.js";
 import { DriftDetectedError } from "../drift.js";
+import { GroupIdAmbiguousError } from "../logs.js";
 import {
   type NextStep,
   type UsageJson,
@@ -251,7 +252,10 @@ export function classifyError(err: unknown): { label: string; exitCode: number }
     // Rebuild refuses to overwrite an existing target or to write onto
     // the source DB: both are name/state collisions, not usage errors.
     err instanceof RebuildTargetExistsError ||
-    err instanceof RebuildTargetIsSourceError
+    err instanceof RebuildTargetIsSourceError ||
+    // An abbreviated group id matching several groups: the operator must
+    // disambiguate. Guessing would be catastrophic for `mu undo`.
+    err instanceof GroupIdAmbiguousError
   ) {
     return { label: "conflict", exitCode: 4 };
   }

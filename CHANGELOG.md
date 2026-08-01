@@ -632,6 +632,39 @@ markers land in follow-up work.
 
 ### Fixed
 
+- **`mu log --group` accepts abbreviated group ids, like `mu undo` always
+  did (`bug-group-id-prefix-asymmetry`).** `mu undo` prints the most
+  recent group as an 8-char prefix and accepts one, but
+  `mu log --group <prefix>` compared `ops.group_id` literally and
+  returned zero rows. Each verb was self-consistent, so the break only
+  showed when following the documented workflow ACROSS them: `mu undo`
+  (see the id) → `mu log --group <id>` (inspect it) → `mu undo <id>
+  --yes` (commit).
+
+  The failure was silent and misleading rather than an error: an empty log
+  reads as "this group did nothing", which could lead an operator to skip
+  inspection or undo the wrong group. `mu undo`'s own `Next:` hint printed
+  the short form, so mu was suggesting a command that did not work.
+
+  Fixed by extracting ONE `groupIdFromPrefix(db, prefix)` into
+  `src/logs.ts` (next to the ops reader) that both verbs call —
+  `src/undo.ts`'s `resolveGroupId` now delegates to it rather than keeping
+  a second copy of the rule. An exact match always wins over prefix
+  matching, so a full uuid can never be shadowed.
+
+  Two error paths that did not previously exist:
+
+  - An unmatched prefix is `UndoGroupNotFoundError` (exit 3) instead of an
+    empty listing.
+  - An ambiguous prefix is the new `GroupIdAmbiguousError` (exit 4),
+    naming the candidates, in BOTH verbs. Astronomically unlikely with
+    uuids, but silently picking one of two candidate groups to *undo* is
+    not an acceptable failure mode. It was previously folded into
+    not-found.
+
+  `--json` keeps emitting full uuids (machine-readable); human-facing
+  `Next:` hints keep the short form, which now works.
+
 - **`mu agent send` no longer reports success for input it did not
   deliver (`dogfood-send-after-new-dropped`).** The documented
   `send '/new'; sleep 2; send '<prompt>'` pattern silently dropped the

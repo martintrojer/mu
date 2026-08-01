@@ -12,8 +12,10 @@ import { getAgentByPane } from "../agents.js";
 import { emitJson, emitJsonCollection, printLogRow, resolveOptionalWorkstream } from "../cli.js";
 import type { Db } from "../db.js";
 import { renderOpLine } from "../log-render.js";
+import { groupIdFromPrefix } from "../logs.js";
 import { type ListLogsOptions, type LogRow, appendLog, latestSeq, listLogs } from "../logs.js";
 import { pc } from "../output.js";
+import { UndoGroupNotFoundError } from "../undo.js";
 
 export interface LogReadOpts {
   workstream?: string;
@@ -119,7 +121,17 @@ async function cmdLogRead(db: Db, opts: LogReadOpts): Promise<void> {
   if (opts.source !== undefined) listOpts.source = opts.source;
   if (opts.kind !== undefined) listOpts.kind = opts.kind;
   if (opts.intent !== undefined) listOpts.intent = opts.intent;
-  if (opts.group !== undefined) listOpts.group = opts.group;
+  if (opts.group !== undefined) {
+    // Accept an abbreviated group id, exactly as `mu undo` does. Without
+    // this, the documented workflow (`mu undo` prints an 8-char prefix →
+    // `mu log --group <prefix>` to inspect it) silently returned nothing
+    // (bug_group_id_prefix_asymmetry). A prefix that matches no group is
+    // reported below rather than degrading to an empty listing, since
+    // "no entries" reads as "this group did nothing".
+    const resolved = groupIdFromPrefix(db, opts.group);
+    if (resolved === null) throw new UndoGroupNotFoundError(opts.group);
+    listOpts.group = resolved;
+  }
 
   if (opts.tail) {
     await cmdLogTail(db, listOpts, opts);
