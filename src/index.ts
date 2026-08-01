@@ -117,6 +117,22 @@ export {
   formatDriftRecord,
 } from "./drift.js";
 export {
+  type GroupSummary,
+  type InverseOp,
+  listRecentGroups,
+  mostRecentGroup,
+  NothingToUndoError,
+  planUndo,
+  priorFieldValue,
+  resolveGroupId,
+  UndoGroupNotFoundError,
+  type UndoOptions,
+  type UndoPlan,
+  type UndoResult,
+  UndoSupersededError,
+  undoGroup,
+} from "./undo.js";
+export {
   type CaseCollision,
   checkCaseCollisions,
   checkDbInsideSyncDir,

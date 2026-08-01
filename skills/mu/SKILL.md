@@ -291,9 +291,14 @@ git cherry-pick "$sha" && npm test
   `commits`, `free`, `path`, `orphans`.
 - **Log:** `mu log "text"`, `mu log -n N`, `mu log --tail`. Use
   `task wait`, not `log --tail`, for waits.
-- **Snapshots:** destructive verbs auto-snapshot. `mu undo --yes`
-  restores DB only, not tmux/workspace dirs. No redo; each restore
-  takes a pre-restore snapshot.
+- **Undo:** `mu undo` (no args) lists recent undoable actions with
+  their group ids; `mu undo <group>` previews; `mu undo <group> --yes`
+  applies. It emits INVERSE OPS for that one group, so it touches only
+  that action's rows — not your other workstreams. The undo is itself
+  an op in its own group, so REDO is just `mu undo <that group> --yes`
+  and it syncs to peers. Refuses with exit 4 if a later action changed
+  the same fields (`--force` to override, discarding that newer work).
+  No snapshots and no `--to`: those are gone in 2.0.
 - **Archives:** `create`, `list`, `show`, `add <label> -w <ws>
   [--destroy]`, `restore <label> --as <new-ws> [--source <orig-ws>]`,
   `remove`, `delete`, `search`, `export` (read-only bucket). Labels
@@ -397,9 +402,12 @@ is not delayed — that input queues normally.
 
 ## Recover destructive verbs
 
-`mu snapshot list`, then `mu undo --yes` (dry-run by default; add
-`--to <id>` to choose one). DB only: killed panes and freed
-workspace dirs do not return.
+`mu undo` to see recent actions and their group ids, then
+`mu undo <group>` to preview and `mu undo <group> --yes` to apply. It
+reverts ONE action (granular, not a whole-DB rollback) by emitting
+inverse ops, and is itself undoable. Rows only: killed panes and freed
+workspace dirs do not return. For whole-DB recovery from the ops log
+use `mu rebuild <file>`.
 
 ## DO / DON'T
 

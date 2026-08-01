@@ -66,6 +66,7 @@ import {
   TaskNotInWorkstreamError,
 } from "../tasks.js";
 import { PaneNotFoundError, TmuxError } from "../tmux.js";
+import { NothingToUndoError, UndoGroupNotFoundError, UndoSupersededError } from "../undo.js";
 import { WorkspaceConflictError, WorkspaceDirtyError, WorkspaceVcsRequiredError } from "../vcs.js";
 import {
   HomeDirAsProjectRootError,
@@ -252,6 +253,15 @@ export function classifyError(err: unknown): { label: string; exitCode: number }
     err instanceof RebuildTargetExistsError ||
     err instanceof RebuildTargetIsSourceError
   ) {
+    return { label: "conflict", exitCode: 4 };
+  }
+  if (err instanceof UndoGroupNotFoundError || err instanceof NothingToUndoError) {
+    return { label: "not found", exitCode: 3 };
+  }
+  if (err instanceof UndoSupersededError) {
+    // A conflict in the precise sense the exit-code map means: the
+    // requested change collides with existing state (later work), and the
+    // operator must choose (--force) rather than retry.
     return { label: "conflict", exitCode: 4 };
   }
   if (err instanceof DriftDetectedError) {

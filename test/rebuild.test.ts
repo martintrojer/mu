@@ -10,12 +10,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type Db, openDb } from "../src/db.js";
+import { emitEvent } from "../src/logs.js";
 import {
   RebuildTargetExistsError,
   RebuildTargetIsSourceError,
   rebuildInto,
 } from "../src/rebuild.js";
-import { emitEvent } from "../src/logs.js";
 import { addBlockEdge, removeBlockEdge } from "../src/tasks/edges.js";
 import { addNote, addTask, deleteTask, updateTask } from "../src/tasks/edit.js";
 import { closeTask } from "../src/tasks/lifecycle.js";

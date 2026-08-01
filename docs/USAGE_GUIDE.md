@@ -13,9 +13,9 @@ current verb list is in `## CLI — complete verb list` of
 > (one allow-listed exception, `mu agent attach`), per-agent VCS
 > workspaces (jj/sl/git/none), activity log with `--tail`
 > subscription, bare `mu` TTY dashboard, canonical static state card
-> (`mu state` default / `--tui` render modes), whole-DB snapshots
-> auto-captured before destructive verbs + `mu undo` /
-> `mu snapshot {list,show}`, evidence on lifecycle verbs, schema v8
+> (`mu state` default / `--tui` render modes), granular `mu undo
+> <group>` over the ops log (no snapshot files), evidence on
+> lifecycle verbs, schema v9
 > (v5 surrogate INTEGER PKs + per-workstream UNIQUE on
 > operator-facing names; v6 added the `archive_*` family additively;
 > v7 dropped the dead `approvals` table; v8 adds `machine_identity`
@@ -242,6 +242,40 @@ MU_DB_PATH=/tmp/mu-rebuilt.db mu sql "SELECT local_id, title, impact FROM tasks"
 Then report it. Drift is a capture/apply **bug**, not operator error, and
 the named table/key/field is the reproduction.
 
+### Undoing one action (`mu undo`)
+
+v1's undo swapped the whole DB file back to a snapshot, which reverted
+your *other* workstreams too — a blunt instrument. 2.0 undo is granular:
+it emits **inverse ops** for one **group** (one user-visible action).
+
+```bash
+mu undo                      # what would I undo? lists recent groups + ids
+mu undo 1a2a94eb             # preview the inverse (dry run)
+mu undo 1a2a94eb --yes       # apply it
+```
+
+Three properties worth knowing:
+
+- **Granular.** Only the rows that action touched. A cascade close wrote
+  N task ops under one group, so undoing it reopens exactly those N.
+- **Itself an op.** The undo lands in its own group, so it syncs to peers
+  and is **itself undoable** — that is the whole of "redo":
+  `mu undo <the-undo-group> --yes`. No separate mechanism, no asymmetry.
+- **Refuses to clobber newer work.** If a later action changed the same
+  fields, undo exits 4 and names the conflict rather than silently
+  discarding that work or silently skipping it:
+
+  ```
+    WARNING: this group has been SUPERSEDED by later work.
+      demo/a: impact was changed since by e04df0d5 (task.update)
+    Undoing would DISCARD that newer work. Pass --force with --yes to do it anyway.
+  ```
+
+  `--force` is the deliberate override, and it says what it destroys.
+
+Rows only: undo does not resurrect killed tmux panes or freed workspace
+directories. For whole-DB recovery from the log, use `mu rebuild <file>`.
+
 Get the full command list:
 
 ```bash
@@ -316,7 +350,7 @@ that verb already computes the workspace's fork metadata.
 Applies to: `mu task list / next / owned-by / notes`,
 `mu workstream list`, `mu workstream destroy --empty` (dry-run),
 `mu archive list / search`, `mu workspace list / orphans / commits`,
-`mu snapshot list`, `mu log -n N` (read).
+`mu undo` (group list), `mu log -n N` (read).
 
 Two deliberate carve-outs:
 - **`mu sql --json`** keeps bare-array rows. The verb is the typed-

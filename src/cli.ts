@@ -36,6 +36,7 @@ import { wireSqlCommand } from "./cli/sql.js";
 import { printBareNoWorkstreamsHint, wireStateCommands } from "./cli/state.js";
 import { wireTaskCommands } from "./cli/tasks.js";
 import { resolveInitialTab } from "./cli/tui-launch-focus.js";
+import { wireUndoCommand } from "./cli/undo.js";
 import { wireWorkspaceCommands } from "./cli/workspace.js";
 import { wireWorkstreamCommands } from "./cli/workstream.js";
 import { type Db, WorkstreamNotFoundError } from "./db.js";
@@ -770,6 +771,7 @@ export function buildProgram(): Command {
   wireStateCommands(program);
   wireSqlCommand(program);
   wireRebuildCommand(program);
+  wireUndoCommand(program);
   wireDoctorCommand(program);
   applyAlphabeticalHelpSort(program);
   // audit_cli_validation_uniformity: every node in the command tree

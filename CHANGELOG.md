@@ -20,6 +20,18 @@ markers land in follow-up work.
 
 ### Breaking
 
+- **`mu undo` semantics changed completely.** v1 restored a whole-DB
+  snapshot: `mu undo --yes` (optionally `--to <id>`) swapped the database
+  file, reverting every workstream, and each restore took a fresh
+  pre-restore snapshot. 2.0 `mu undo <group>` emits inverse ops for ONE
+  group — granular, composable, and itself an op (so it syncs and is
+  itself undoable). There are no snapshot files, so `--to` is gone along
+  with `mu snapshot list / show / prune`. Consequences: undo no longer
+  touches unrelated workstreams (the point), no longer needs a
+  pre-restore snapshot (redo is just undoing the undo), and now REFUSES
+  by default when a later action changed the same fields instead of
+  silently winning.
+
 - **Schema v9 — no migration from v8.** `openDb` refuses any pre-v9 DB
   with `SchemaTooOldError` (exit 4) and leaves the file untouched.
   `MIN_ACCEPTED_SCHEMA_VERSION === CURRENT_SCHEMA_VERSION === 9`, so
@@ -48,6 +60,54 @@ markers land in follow-up work.
   inverse ops over the ops log.
 
 ### Added
+
+- **`mu undo [group]` — granular undo via inverse ops (`src/undo.ts`,
+  `src/cli/undo.ts`).** The verb disappeared in v9 along with
+  `src/cli/snapshot.ts` (it lived there, not in its own module); this
+  re-wires it on the ops-log substrate with entirely different semantics.
+
+  Per op in the group: a `put` that CREATED a row inverts to a `del`; a
+  `put` that CHANGED fields inverts to a `put` restoring the PRIOR value
+  of exactly those fields; a `del` inverts to a `put` restoring the row.
+  "Did this put create the row" is answered from provenance rather than a
+  flag, and "what was this field before" reuses the same backwards
+  provenance query `src/apply.ts` uses for per-field LWW — a second
+  implementation is how the two would drift, and drift there would mean
+  undo restoring wrong values.
+
+  - **Inverses go through the NORMAL write path.** The module mutates the
+    tables inside a `withOpContext` scope and lets the capture triggers
+    record the result; it never hand-writes rows into `ops` and never uses
+    `applyOp` (which is capture-suppressed, being the ingest path). So an
+    undo gets a fresh HLC from the same clock as any other edit, appears
+    in `mu log`, flushes to this machine's segment, and is visible to the
+    drift check. `mu doctor --deep` stays clean after an undo.
+  - **The undo is itself an op, in its own group**, so it syncs to peers
+    and is itself undoable. That is the entire implementation of redo:
+    `mu undo <the-undo-group>`. No separate mechanism and no asymmetry.
+  - **One UPDATE per inverse, not one per field.** Each statement fires
+    the capture trigger once, so a per-field loop would emit N ops for one
+    logical inverse and misreport a single action as several.
+  - **FK-safe ordering.** A group can span entities (a destroy writes
+    tombstones for the whole tree), and restoring a task before its
+    workstream violates the constraint. Inverses are sorted by entity
+    DEPTH (workstream → task → note/edge), not by reversed emission order:
+    a destroy emits the workstream tombstone FIRST, so reversing would try
+    to restore notes before their task.
+  - **Dry run by default**, `--yes` to apply, matching `workstream
+    destroy` / `db import`. `mu undo` with no argument reports what it
+    WOULD undo and lists recent groups, so group ids are discoverable
+    without needing `mu log`. Abbreviated ids work like git shas.
+
+- **Undo refuses to clobber newer work.** Undoing a group whose fields
+  were changed again since is the hard case: because the inverse gets a
+  fresh (newest) HLC it would WIN per-field LWW and silently discard that
+  newer work. Silently skipping instead is equally bad — the operator
+  believes the action was undone. So `mu undo` detects supersession
+  PER FIELD, exits 4 naming the conflicting field and the later group, and
+  changes nothing; `--force` is the explicit override and says what it
+  destroys. A later DELETE of the row counts as supersession too, since
+  restoring fields on a deleted row would resurrect it.
 
 - **Ops-log drift detection (`src/drift.ts`), wired into `mu doctor`.**
   The check that makes capture, apply and rebuild TRUSTWORTHY, and the
