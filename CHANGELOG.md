@@ -49,6 +49,57 @@ markers land in follow-up work.
 
 ### Added
 
+- **`mu rebuild <file>` — replay the ops log into a fresh DB
+  (`src/rebuild.ts`).** The disaster-recovery story that replaces the
+  snapshot files 2.0 deleted: given an intact `ops` table, every portable
+  row is reconstructable, because the log is canonical and the tables are
+  a projection of it. Also the foundation the forthcoming doctor drift
+  check stands on.
+
+  Always writes a NEW FILE and prints the `mv` swap command; never
+  rebuilds in place. A rebuild that overwrote the live DB would be a
+  destructive operation whose failure mode is "no database at all", so
+  the operator inspects and swaps when ready. Exits 4 rather than
+  overwriting an existing target (`--force` overrides) or writing onto
+  the source DB, which would truncate the log being replayed.
+
+  Projects through `applyOp`, not a second implementation of the merge
+  rules — tombstone ordering, per-field LWW and grow-only sets all come
+  from `src/apply.ts`, so a rebuild and a sync ingest cannot disagree.
+  Replay is wrapped in `withCaptureSuppressed`: without it, applying each
+  op would fire the capture triggers and mint a second op per row,
+  roughly doubling the log and filling it with fresh HLCs for changes
+  that never happened.
+
+  - **Rebuild is not ingest.** Ingest filters to `SYNCED_ENTITIES`
+    because only those may cross a machine boundary. A rebuild is LOCAL
+    recovery, so it replays everything the log knows, including
+    machine-local log entities (`event` / `broadcast`) that `applyOp`
+    deliberately rejects. Those are copied verbatim rather than
+    projected — there is no table to project a log line into — because
+    dropping them would leave `mu log` empty after a recovery.
+  - **Machine identity is carried across**, including the HLC clock. A
+    fresh `openDb` seeds a new uuid, which would make the rebuilt DB a
+    DIFFERENT peer: its own historical ops would look foreign and peers
+    tracking watermarks against the old id would treat it as unknown. And
+    a clock reset to zero would mint HLCs BELOW every replayed op, so the
+    next local edit would sort as older than history and lose every LWW
+    comparison against it. Monotonicity is a property of the machine, not
+    of the file.
+  - **What a rebuild legitimately loses is REPORTED, never silent.**
+    `agents` and `vcs_workspaces` have no capture triggers, so they leave
+    no ops and cannot be reconstructed. That is correct rather than a gap:
+    `pane_id` names a tmux pane that no longer exists and
+    `vcs_workspaces.path` is an absolute path whose working copy may be
+    gone, so resurrecting either would produce rows that lie about
+    reality. But an operator who does not realise their agent registry is
+    empty will wonder why `mu agent list` is blank, so the summary prints
+    the per-table row counts in yellow and the `Next:` block gains a
+    re-spawn step.
+  - `rebuildInto` takes the target path as a parameter and prints
+    nothing, returning a `RebuildReport`. v2-doctor-drift rebuilds into a
+    temp DB and diffs, so the SDK must stay free of human-shaped output.
+
 - **The apply path (`src/apply.ts`)** — the read/merge counterpart to
   capture. `applyOp(db, op)` takes one op, local or from a peer, and
   makes the portable tables reflect it; `applyOps` sorts a batch into

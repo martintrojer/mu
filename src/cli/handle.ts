@@ -49,6 +49,7 @@ import {
   printUsageHuman,
   renderUsageJson,
 } from "../output.js";
+import { RebuildTargetExistsError, RebuildTargetIsSourceError } from "../rebuild.js";
 import {
   ClaimerNotRegisteredError,
   CrossWorkstreamEdgeError,
@@ -244,7 +245,11 @@ export function classifyError(err: unknown): { label: string; exitCode: number }
     err instanceof ClaimerNotRegisteredError ||
     err instanceof SchemaTooOldError ||
     err instanceof TaskIdInvalidError ||
-    err instanceof WorkstreamExistsError
+    err instanceof WorkstreamExistsError ||
+    // Rebuild refuses to overwrite an existing target or to write onto
+    // the source DB: both are name/state collisions, not usage errors.
+    err instanceof RebuildTargetExistsError ||
+    err instanceof RebuildTargetIsSourceError
   ) {
     return { label: "conflict", exitCode: 4 };
   }

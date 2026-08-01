@@ -31,6 +31,7 @@ import {
   handle,
 } from "./cli/handle.js";
 import { wireLogCommand } from "./cli/log.js";
+import { wireRebuildCommand } from "./cli/rebuild.js";
 import { wireSqlCommand } from "./cli/sql.js";
 import { printBareNoWorkstreamsHint, wireStateCommands } from "./cli/state.js";
 import { wireTaskCommands } from "./cli/tasks.js";
@@ -768,6 +769,7 @@ export function buildProgram(): Command {
   wireLogCommand(program);
   wireStateCommands(program);
   wireSqlCommand(program);
+  wireRebuildCommand(program);
   wireDoctorCommand(program);
   applyAlphabeticalHelpSort(program);
   // audit_cli_validation_uniformity: every node in the command tree

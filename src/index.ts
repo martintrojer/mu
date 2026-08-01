@@ -98,6 +98,14 @@ export {
   OpKeyMalformedError,
 } from "./apply.js";
 export {
+  type MachineLocalLoss,
+  type RebuildOptions,
+  type RebuildReport,
+  RebuildTargetExistsError,
+  RebuildTargetIsSourceError,
+  rebuildInto,
+} from "./rebuild.js";
+export {
   currentOpContext,
   type OpContext,
   withCaptureSuppressed,

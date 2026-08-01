@@ -298,9 +298,12 @@ git cherry-pick "$sha" && npm test
   [--destroy]`, `restore <label> --as <new-ws> [--source <orig-ws>]`,
   `remove`, `delete`, `search`, `export` (read-only bucket). Labels
   are global.
-- **DB sync:** `mu db export <file>`, `mu db import <file>` (dry-run;
-  `--apply` commits; `--force-source` parks conflicts),
-  `mu db replay <sidecar>` (dry-run; `--task <id>` / `--all --apply`).
+- **Recovery:** `mu rebuild <file>` replays the ops log in HLC order
+  into a NEW DB file and prints the `mv` command to swap it in; it
+  never rebuilds in place. Agents and workspaces are NOT rebuilt (no
+  capture triggers, so no ops) and the summary says so — re-spawn
+  agents after swapping. (The v1 `mu db export/import/replay` verbs
+  are gone in 2.0; the ops log replaces them.)
 - **State/TUI:** bare `mu` opens the all-workstream TUI on a TTY;
   agents/scripts use `mu state --json`. `mu state --tui` is
   read-only, yanks commands, `?` shows keys, `/` filters popups,
