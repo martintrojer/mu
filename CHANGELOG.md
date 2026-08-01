@@ -80,6 +80,30 @@ markers land in follow-up work.
   no overlap and no omission, so adding an 11th table without
   classifying it fails loudly at schema-change time rather than
   silently leaking or dropping it later.
+- **`src/hlc.ts` — the hybrid logical clock that orders every op.**
+  `(wall_ms, counter, machine_id)` serialized to a lexicographically
+  sortable TEXT: `<wall_ms:15 digits>.<counter:6 digits>.<machine_id>`
+  (e.g. `001780000000123.000007.9f1c8a2e-…`). Both numeric fields are
+  zero-padded to a fixed width so bytewise `ORDER BY hlc` in SQLite is
+  exactly causal order, and `.` is the separator because it cannot
+  appear in a uuid. API: `nextHlc` / `receiveHlc` / `compareHlc` /
+  `parseHlc` / `formatHlc`, all re-exported from `src/index.ts`.
+  A plain wall-clock timestamp was rejected: a laptop that sleeps and
+  wakes with a clock skewed behind a peer would stamp fresh edits as
+  older than stale ones and silently lose them under last-writer-wins.
+  The HLC treats wall time as a hint and the counter as truth, so the
+  minted value is monotonic even when the clock stalls or jumps
+  backwards. Not yet wired into capture or sync (`src/logs.ts` keeps
+  its placeholder hlc until v2-capture).
+- **`machine_identity.last_wall` / `.last_counter`** persist that clock.
+  Every mu invocation is a separate short-lived process, so an
+  in-memory counter would reset and mint duplicates that
+  `UNIQUE (machine_id, hlc)` would reject. `nextHlc` advances the pair
+  in a single atomic `UPDATE … RETURNING`; `receiveHlc` uses
+  `BEGIN IMMEDIATE` because its three-way max is a genuine
+  read-then-write. Additive columns on an existing v9 table — the table
+  count stays at 10 and `CURRENT_SCHEMA_VERSION` stays at 9
+  (2.0 is unreleased).
 
 ### Changed
 

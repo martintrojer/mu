@@ -557,11 +557,19 @@ CREATE TABLE IF NOT EXISTS schema_version (
 
 -- machine_identity: one durable identity per DB/machine, seeded by
 -- openDb after schema creation. hostname is advisory only.
+--
+-- last_wall / last_counter are the persisted hybrid logical clock
+-- (src/hlc.ts, VOCABULARY § HLC). They live here because every mu
+-- invocation is a fresh process — an in-memory counter would reset
+-- constantly and mint duplicate HLCs, which UNIQUE (machine_id, hlc)
+-- on the ops table would then reject.
 CREATE TABLE IF NOT EXISTS machine_identity (
-  id         INTEGER PRIMARY KEY CHECK (id = 1),
-  machine_id TEXT NOT NULL,
-  hostname   TEXT,
-  created_at TEXT NOT NULL
+  id           INTEGER PRIMARY KEY CHECK (id = 1),
+  machine_id   TEXT NOT NULL,
+  hostname     TEXT,
+  created_at   TEXT NOT NULL,
+  last_wall    INTEGER NOT NULL DEFAULT 0,
+  last_counter INTEGER NOT NULL DEFAULT 0
 );
 
 -- ─── Tables ───────────────────────────────────────────────────────────

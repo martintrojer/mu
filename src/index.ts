@@ -84,6 +84,17 @@ export {
   type SyncedEntity,
 } from "./db.js";
 export {
+  compareHlc,
+  formatHlc,
+  type Hlc,
+  HlcOverflowError,
+  HlcParseError,
+  MachineIdentityMissingError,
+  nextHlc,
+  parseHlc,
+  receiveHlc,
+} from "./hlc.js";
+export {
   detectPiStatus,
   extractTail,
   type AgentStatus,
