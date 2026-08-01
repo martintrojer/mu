@@ -1,7 +1,6 @@
 // mu — task edge reads and mutations.
 
 import type { Db } from "../db.js";
-import { emitEvent } from "../logs.js";
 import { withOpContext } from "../op-context.js";
 import { lookupTaskAnyWorkstream, taskIdFor, touchTask } from "./core.js";
 import { CrossWorkstreamEdgeError, CycleError, TaskNotFoundError } from "./errors.js";
@@ -237,7 +236,8 @@ function addBlockEdgeImpl(
     }
     return false;
   })();
-  if (added) emitEvent(db, blockedRow.workstreamName, `task block ${blocked} by ${blocker}`);
+  // No emitEvent: the task_edges INSERT fired the capture trigger
+  // (intent='task.block', key='<ws>/<blocker>-><ws>/<blocked>').
   return { added };
 }
 
@@ -288,7 +288,8 @@ function removeBlockEdgeImpl(
     return false;
   })();
   if (removed) {
-    emitEvent(db, blockedRow.workstreamName, `task unblock ${blocked} by ${blocker}`);
+    // No emitEvent: the DELETE fired the capture trigger, writing an
+    // edge tombstone with intent='task.unblock'.
   }
   return { removed };
 }
@@ -391,13 +392,8 @@ function reparentTaskImpl(
     }
     // Bump the reparented task itself — its blocker set just changed.
     touchTask(db, taskSurrogateId, now);
-    const blockerNames = canonicalBlockers.map((blocker) => blocker.localId);
-    const blockersBit = blockerNames.length > 0 ? `, new=${blockerNames.join(",")}` : "";
-    emitEvent(
-      db,
-      task.workstreamName,
-      `task reparent ${taskLocalId} (removed ${removed.changes} edges, added ${blockerIds.length}${blockersBit})`,
-    );
+    // No emitEvent: every edge DELETE and INSERT in this transaction
+    // fired the capture trigger under intent='task.reparent'.
     return { removedEdges: removed.changes, addedEdges: blockerIds.length };
   })();
 }

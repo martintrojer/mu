@@ -376,12 +376,14 @@ describe("--json output on read verbs", () => {
       ]),
     );
     expect(parsed.workspaces).toEqual([]);
+    // v2-retire-log-shim: `recent` reads captured ops now, not prose
+    // events. The close of `done` is a typed op keyed by natural key.
     expect(parsed.recent).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          kind: "event",
-          payload: expect.stringContaining("task status done"),
-          workstreamName: "auth",
+          kind: "task",
+          intent: "task.close",
+          workstreamName: "auth/done",
         }),
       ]),
     );

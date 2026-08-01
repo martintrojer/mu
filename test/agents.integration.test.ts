@@ -281,11 +281,17 @@ describe("agents CRUD", () => {
     await claimTask(db, "design", { agentName: "worker-1", workstream: "auth" });
     deleteAgent(db, "worker-1", "auth");
 
-    const reapEvents = listLogs(db, { kind: "event" }).filter((r) =>
-      r.payload.startsWith("task reap design"),
-    );
-    expect(reapEvents).toHaveLength(1);
-    expect(reapEvents[0]?.payload).toContain("previous owner worker-1");
+    // v2-retire-log-shim: the prose `task reap ...` event is gone. Reap
+    // mutates `tasks`, so the capture trigger records it; deleteAgent now
+    // supplies intent='task.reap' + actor='reaper' so those ops are
+    // attributable. The `[reaper]` note is the human-readable trail.
+    const reapOps = listLogs(db, {}).filter((r) => r.intent === "task.reap");
+    expect(reapOps.length).toBeGreaterThan(0);
+    expect(reapOps.every((r) => r.source === "reaper")).toBe(true);
+    expect(reapOps.some((r) => r.workstreamName === "auth/design")).toBe(true);
+    expect(
+      listNotes(db, "design", "auth").some((n) => n.content.includes("previous owner worker-1")),
+    ).toBe(true);
   });
 
   it("deleteAgent does NOT reap tasks the agent didn't own", async () => {

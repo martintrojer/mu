@@ -253,7 +253,7 @@ describe("kickAgent (unit)", () => {
     const killCall = calls.find((c) => c.cmd === "kill");
     expect(killCall?.args).toEqual(["-SIGINT", "-12345"]);
     // Activity-log event recorded.
-    const events = listLogs(db, { workstream: ws, kind: "event" });
+    const events = listLogs(db, { workstream: ws, kind: "agent" });
     expect(events.some((e) => e.payload.startsWith("agent kick worker-1"))).toBe(true);
     expect(events.some((e) => e.payload.includes("signal=SIGINT"))).toBe(true);
     expect(events.some((e) => e.payload.includes("pgid=12345"))).toBe(true);
@@ -294,7 +294,7 @@ describe("kickAgent (unit)", () => {
       NoForegroundProcessError,
     );
     // No event emitted on refusal.
-    const events = listLogs(db, { workstream: ws, kind: "event" });
+    const events = listLogs(db, { workstream: ws, kind: "agent" });
     expect(events.some((e) => e.payload.startsWith("agent kick"))).toBe(false);
   });
 

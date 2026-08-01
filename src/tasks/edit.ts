@@ -1,7 +1,6 @@
 // mu — task edit/write verbs: add task, add note, update, delete.
 
 import { type Db, resolveWorkstreamId } from "../db.js";
-import { emitEvent } from "../logs.js";
 import { withOpContext } from "../op-context.js";
 import { ensureWorkstream } from "../workstream.js";
 import { taskIdFor, touchTask } from "./core.js";
@@ -79,8 +78,6 @@ function addTaskImpl(db: Db, opts: AddTaskOptions) {
       .run(wsId, opts.localId, opts.title, opts.impact, opts.effortDays, now, now);
     const newTaskId = Number(insertResult.lastInsertRowid);
 
-    let canonicalBlockedBy: string[] = [];
-
     if (opts.blockedBy && opts.blockedBy.length > 0) {
       // Prefer the same-workstream blocker first (v5 per-workstream
       // local_id), then fall back to a global lookup so a cross-ws
@@ -120,7 +117,6 @@ function addTaskImpl(db: Db, opts: AddTaskOptions) {
         return { localId: blocker, id: row.id };
       });
       const canonicalBlockers = dedupeBlockersById(requestedBlockers);
-      canonicalBlockedBy = canonicalBlockers.map((blocker) => blocker.localId);
       const insertEdge = db.prepare(
         "INSERT INTO task_edges (from_task_id, to_task_id, created_at) VALUES (?, ?, ?)",
       );
@@ -131,13 +127,9 @@ function addTaskImpl(db: Db, opts: AddTaskOptions) {
 
     const row = getTask(db, opts.localId, opts.workstream);
     if (!row) throw new Error(`addTask: row missing after insert: ${opts.localId}`);
-    const blockedBy =
-      canonicalBlockedBy.length > 0 ? `, blocked-by=${canonicalBlockedBy.join(",")}` : "";
-    emitEvent(
-      db,
-      opts.workstream,
-      `task add ${opts.localId} (impact=${opts.impact}, effort=${opts.effortDays}${blockedBy})`,
-    );
+    // No emitEvent: the INSERT above fired the tasks capture trigger,
+    // which already wrote intent='task.add' key='<ws>/<id>' with the
+    // full row as payload (v2-retire-log-shim).
     return row;
   })();
 }
@@ -164,7 +156,7 @@ function addNoteImpl(db: Db, taskLocalId: string, content: string, opts: AddNote
   const taskId = taskIdFor(db, task.name, task.workstreamName);
   if (taskId === null) throw new TaskNotFoundError(taskLocalId);
   const now = new Date().toISOString();
-  const result = db.transaction(() => {
+  db.transaction(() => {
     const r = db
       .prepare("INSERT INTO task_notes (task_id, author, content, created_at) VALUES (?, ?, ?, ?)")
       .run(taskId, opts.author ?? null, content, now);
@@ -173,13 +165,8 @@ function addNoteImpl(db: Db, taskLocalId: string, content: string, opts: AddNote
     touchTask(db, taskId, now);
     return r;
   })();
-  const noteId = Number(result.lastInsertRowid);
-  emitEvent(
-    db,
-    task.workstreamName,
-    `task note ${taskLocalId} (note #${noteId} by ${opts.author ?? "orchestrator"})`,
-    opts.author ?? "system",
-  );
+  // No emitEvent: the task_notes INSERT fired the capture trigger
+  // (intent='task.note', key='<ws>/<id>#<n>').
   return {
     author: opts.author ?? null,
     content,
@@ -286,14 +273,9 @@ function deleteTaskImpl(
   // 2.0: no pre-mutation snapshot. v9 dropped the `snapshots` table;
   // v2-undo restores rollback via inverse ops over the ops log.
   const result = db.prepare("DELETE FROM tasks WHERE id = ?").run(taskId);
+  // No emitEvent: the DELETE fired the capture trigger, which wrote a
+  // tombstone op (op='del', intent='task.delete').
   const deleted = result.changes > 0;
-  if (deleted) {
-    emitEvent(
-      db,
-      before.workstreamName,
-      `task delete ${localId} (cascade: ${edgesBefore} edges, ${notesBefore} notes)`,
-    );
-  }
   return {
     deleted,
     deletedEdges: edgesBefore,
@@ -382,11 +364,9 @@ function updateTaskImpl(
   params.push(new Date().toISOString());
   params.push(taskId);
 
+  // No emitEvent: the UPDATE fired the capture trigger, whose payload is
+  // a semantic partial update naming exactly the changed columns —
+  // strictly more useful than the prose "(changed: a, b)" it replaces.
   db.prepare(`UPDATE tasks SET ${setters.join(", ")} WHERE id = ?`).run(...params);
-  emitEvent(
-    db,
-    before.workstreamName,
-    `task update ${localId} (changed: ${changedFields.join(", ")})`,
-  );
   return { updated: true, changedFields };
 }

@@ -148,32 +148,36 @@ describe("agentStatusHistogram", () => {
   });
 });
 
+// v2-retire-log-shim: every `task *` prefix left EVENT_VERB_PREFIXES
+// along with the duplicate emitters, so these mechanics tests use a
+// surviving verb (`agent spawn`). The list now holds only changes no
+// capture trigger can see; task payloads are captured ops classified by
+// `intent`, never by prose prefix.
 describe("classifyEventVerb", () => {
   it("matches a known verb followed by space", () => {
-    expect(classifyEventVerb("task add foo")).toEqual({
-      verb: "task add",
+    expect(classifyEventVerb("agent spawn foo")).toEqual({
+      verb: "agent spawn",
       rest: " foo",
     });
   });
 
   it("matches a verb at end-of-string", () => {
-    expect(classifyEventVerb("task add")).toEqual({
-      verb: "task add",
+    expect(classifyEventVerb("agent spawn")).toEqual({
+      verb: "agent spawn",
       rest: "",
     });
   });
 
-  it("matches the longest prefix when verbs share start (e.g. task vs task add)", () => {
-    // EVENT_VERB_PREFIXES is iterated in declaration order so 'task add'
-    // (the entry, not 'task') wins for inputs starting with 'task add '.
-    const r = classifyEventVerb("task add ws-foo");
-    expect(r?.verb).toBe("task add");
+  it("rejects substring match without word boundary", () => {
+    // 'agent spawn' is a verb; 'agent spawning' must NOT match it (the
+    // next char 'i' is not space/tab/eos).
+    expect(classifyEventVerb("agent spawning x")).toBeNull();
   });
 
-  it("rejects substring match without word boundary", () => {
-    // 'task add' is a verb; 'task addnote' must NOT match it (the next
-    // char 'n' is not space/tab/eos).
-    expect(classifyEventVerb("task addnote x")).toBeNull();
+  it("returns null for payloads whose verb was retired with the prose emits", () => {
+    // These used to classify. They are captured ops now.
+    expect(classifyEventVerb("task add foo")).toBeNull();
+    expect(classifyEventVerb("task status foo (OPEN -> CLOSED)")).toBeNull();
   });
 
   it("returns null for unknown payloads", () => {

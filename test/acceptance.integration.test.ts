@@ -208,10 +208,13 @@ describeIfTmux("MVP acceptance — full demo end-to-end", () => {
     const specsNotes = listNotes(db, "specs", workstream).map((n) => n.content);
     expect(specsNotes).toContain("DECISION: API will be REST + JSON, no GraphQL");
     expect(specsNotes).toContain("CLOSE: acceptance: specs complete");
-    const specsStatusEvent = listLogs(db, { workstream, kind: "event" })
+    // v2-retire-log-shim: evidence lives in the CLOSE note (asserted just
+    // above), and the close itself is a typed captured op keyed by the
+    // natural key. The prose `task status ... evidence="..."` event is gone.
+    const specsCloseOp = listLogs(db, { workstream })
       .reverse()
-      .find((row) => row.payload.includes("task status specs"));
-    expect(specsStatusEvent?.payload).toContain('evidence="acceptance: specs complete"');
+      .find((row) => row.intent === "task.close" && row.workstreamName === `${workstream}/specs`);
+    expect(specsCloseOp).toBeDefined();
 
     // ── After closing specs: api and ui both become ready ────────────
     const readyAfterSpecs = listReady(db, workstream)

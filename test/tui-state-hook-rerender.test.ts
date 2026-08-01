@@ -185,6 +185,7 @@ describe("snapshotKey — visible-affecting field projection", () => {
       workstreamName: "ws",
       source: "system",
       kind: "event" as const,
+      intent: null,
       payload: "{}",
       createdAt: "2026-01-01T00:00:00Z",
     };

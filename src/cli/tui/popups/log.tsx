@@ -22,7 +22,7 @@
 import { Box, Text, useInput } from "ink";
 import { useState } from "react";
 import type { Db } from "../../../db.js";
-import { classifyEventVerb, displayEventPayload } from "../../../logs.js";
+import { classifyEventVerb, logRowSubject } from "../../../logs.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
 import { type ColumnSpec, contentWidthFromCols, layoutColumns, renderRow } from "../columns.js";
 import { type PopupAction, type PopupActionEnvelope, dispatchPopupKeyFromInk } from "../keys.js";
@@ -78,7 +78,7 @@ export function LogPopup({
   // event payload to extract the same verb/rest the row renders, so
   // searching for e.g. "task close" matches what the user sees.
   const events = applyFilter(sourceEvents, flt.query, (e) => {
-    const payload = displayEventPayload(e.payload);
+    const payload = e.payload;
     const cls = classifyEventVerb(payload);
     const verb = cls?.verb ?? "";
     const rest = cls?.rest ?? payload;
@@ -87,7 +87,7 @@ export function LogPopup({
   const safeCursor = events.length === 0 ? 0 : Math.min(cursor, events.length - 1);
   const focused = events[safeCursor];
 
-  const drillBody = focused ? displayEventPayload(focused.payload) : "";
+  const drillBody = focused ? focused.payload : "";
   const drill = useDrillKeymap({
     body: drillBody,
     viewport,
@@ -127,23 +127,15 @@ export function LogPopup({
         // Yank the show-related-task / show-related-agent if we
         // can classify; else just yank the raw payload as a
         // reference.
-        const payload = displayEventPayload(e.payload);
-        const cls = classifyEventVerb(payload);
-        if (cls === null) {
+        const payload = e.payload;
+        // Resolve from intent + natural key where available, prose
+        // otherwise (v2-retire-log-shim).
+        const subject = logRowSubject(e);
+        if (subject === null) {
           void yank(`# event: ${payload}`);
           return;
         }
-        // Pull the first whitespace-separated token from `rest` —
-        // usually the entity id.
-        const rest = cls.rest.trim();
-        const id = rest.split(/[\s(]/)[0];
-        if (cls.verb.startsWith("task ")) {
-          void yank(`mu task show ${id} -w ${snapshot.workstreamName}`);
-        } else if (cls.verb.startsWith("agent ")) {
-          void yank(`mu agent show ${id} -w ${snapshot.workstreamName}`);
-        } else {
-          void yank(`# event: ${payload}`);
-        }
+        void yank(`mu ${subject.kind} show ${subject.id} -w ${snapshot.workstreamName}`);
         return;
       }
     }
@@ -200,7 +192,7 @@ export function LogPopup({
   const { visible } = centredVisibleSlice(events, safeCursor, viewport);
 
   const rows = visible.map((e) => {
-    const payload = displayEventPayload(e.payload);
+    const payload = e.payload;
     const cls = classifyEventVerb(payload);
     const ts = e.createdAt.slice(11, 19);
     const verb = cls?.verb ?? "·";
@@ -217,7 +209,7 @@ export function LogPopup({
       <Box flexDirection="column" flexGrow={1}>
         {visible.map((e, i) => {
           const sel = events.indexOf(e) === safeCursor;
-          const cls = classifyEventVerb(displayEventPayload(e.payload));
+          const cls = classifyEventVerb(e.payload);
           const row = rows[i];
           if (row === undefined) return null;
           const padded = renderRow(row, widths, COLUMN_SPECS);

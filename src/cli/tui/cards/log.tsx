@@ -11,7 +11,7 @@
 // feat_column_aligned_lists clipping policy: timestamp, source, verb
 // are PROTECTED (short, identity-bearing); the rest is CLIPPABLE.
 
-import { classifyEventVerb, displayEventPayload } from "../../../logs.js";
+import { classifyEventVerb } from "../../../logs.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
 import {
   type ColumnSpec,
@@ -72,7 +72,7 @@ export function LogCard({ snapshot, rowBudget, cols }: LogCardProps): JSX.Elemen
   const tail = recent.slice(0, rowBudget ?? cardConfig.maxRows).reverse();
 
   const cellRows = tail.map((row) => {
-    const payload = displayEventPayload(row.payload);
+    const payload = row.payload;
     const cls = classifyEventVerb(payload);
     const ts = row.createdAt.slice(11, 19);
     const verb = cls?.verb ?? "·";
@@ -92,7 +92,7 @@ export function LogCard({ snapshot, rowBudget, cols }: LogCardProps): JSX.Elemen
       {tail.map((row, i) => {
         const cells = cellRows[i];
         if (cells === undefined) return null;
-        const cls = classifyEventVerb(displayEventPayload(row.payload));
+        const cls = classifyEventVerb(row.payload);
         const padded = renderRow(cells, widths, COLUMN_SPECS);
         const colors = [
           { dimColor: true }, // ts

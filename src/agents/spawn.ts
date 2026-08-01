@@ -472,9 +472,13 @@ export async function spawnAgent(db: Db, opts: SpawnAgentOptions): Promise<Agent
     if (hasWorkspace) attachOrphanCleanupHint(err, opts.name, opts.workstream);
     throw err;
   }
+  // `agents` is machine-local (it holds pane_id), so no capture trigger
+  // covers it and this emit is the ONLY record. Typed intent so it
+  // renders through the same formatter as captured ops.
   emitEvent(
     db,
     opts.workstream,
+    "agent.spawn",
     `agent spawn ${opts.name} (cli=${cli}, role=${opts.role ?? "full-access"}, pane=${paneId})`,
   );
   // Initial title push: the agent row is in 'spawning' state at this

@@ -140,9 +140,12 @@ export async function createWorkspace(db: Db, opts: CreateWorkspaceOptions): Pro
   }
 
   if (opts._suppressEvent !== true) {
+    // `vcs_workspaces` is machine-local (absolute paths), so no trigger
+    // covers it and this emit is the only record.
     emitEvent(
       db,
       opts.workstream,
+      "workspace.create",
       `workspace create ${opts.agent} (backend=${backend.name}, path=${path}${created.parentRef ? `, parent=${created.parentRef.slice(0, 12)}` : ""})`,
     );
   }
@@ -245,9 +248,11 @@ export async function freeWorkspace(
           )
           .run(agent, wsIdForDel, wsIdForDel);
   if (opts._suppressEvent !== true) {
+    // Machine-local table: no trigger, only record.
     emitEvent(
       db,
       row.workstreamName,
+      "workspace.free",
       `workspace free ${agent} (backend=${row.backend}, path=${row.path}${result.committedRef ? `, committed=${result.committedRef.slice(0, 12)}` : ""})`,
     );
   }
@@ -292,9 +297,11 @@ export async function refreshWorkspace(
   if (!row) throw new WorkspaceNotFoundError(opts.agent);
   const backend = backendByName(row.backend);
   const result = await backend.rebaseTo(row.path, opts.fromRef);
+  // Rebases a VCS workspace on disk; mutates no portable table.
   emitEvent(
     db,
     row.workstreamName,
+    "workspace.refresh",
     `workspace refresh ${opts.agent} (backend=${row.backend}, fromRef=${result.fromRef}, replayed=${result.replayed.length})`,
   );
   return { ...result, vcs: row.backend, workspacePath: row.path };

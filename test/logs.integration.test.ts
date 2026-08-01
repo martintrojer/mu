@@ -5,17 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type Db, openDb } from "../src/db.js";
-import {
-  CLAIM_EVENT_PREFIX,
-  appendLog,
-  displayEventPayload,
-  emitEvent,
-  formatClaimEvent,
-  lastClaimActor,
-  latestSeq,
-  listLogs,
-  parseClaimEventActor,
-} from "../src/logs.js";
+import { appendLog, lastClaimActor, latestSeq, listLogs } from "../src/logs.js";
 import { addTask } from "../src/tasks.js";
 import { claimTask } from "../src/tasks/claim.js";
 import { ensureWorkstream } from "../src/workstream.js";
@@ -167,8 +157,20 @@ describe("logs SDK", () => {
     appendLog(db, { workstream: "auth", source: "u", payload: "a" });
     appendLog(db, { workstream: "billing", source: "u", payload: "b" });
     db.prepare("DELETE FROM workstreams WHERE name = ?").run("auth");
-    expect(listLogs(db).map((r) => r.payload)).toEqual(["a", "b"]);
-    expect(listLogs(db, { workstream: "auth" }).map((r) => r.payload)).toEqual(["a"]);
+    // Both hand-written lines survive the delete. The raw DELETE also
+    // fires the capture trigger, appending a workstream TOMBSTONE op —
+    // and since v2-retire-log-shim `mu log` no longer filters captured
+    // ops out, it is visible here too. (No intent: this DELETE bypasses
+    // the SDK's withOpContext. Via `mu workstream destroy` it would
+    // carry intent='workstream.destroy'.)
+    expect(listLogs(db).map((r) => r.payload)).toContain("a");
+    expect(listLogs(db).map((r) => r.payload)).toContain("b");
+    const authRows = listLogs(db, { workstream: "auth" });
+    expect(authRows.map((r) => r.payload)).toContain("a");
+    const tombstones = db
+      .prepare("SELECT COUNT(*) AS n FROM ops WHERE op = 'del' AND entity = 'workstream'")
+      .get() as { n: number };
+    expect(tombstones.n).toBe(1);
   });
 
   // ─── seq is durable across deletes (AUTOINCREMENT semantics) ────────
@@ -183,19 +185,27 @@ describe("logs SDK", () => {
   });
 });
 
-// ─── claim-event structured-prefix protocol ─────────────────────────────────
+// ─── claim attribution (ops.actor) ──────────────────────────────────────────
 //
-// review_code_last_claim_actor_brittle: the consumer (lastClaimActor)
-// previously prefix-matched a free-prose payload AND was capped at
-// the most recent 100 events. Both failure modes are covered here:
+// review_code_last_claim_actor_brittle: v1's consumer (lastClaimActor)
+// prefix-matched a free-prose payload AND was capped at the most recent
+// 100 events. v1 patched the brittleness by bolting a tab-delimited
+// `task.claim<TAB><id><TAB>actor=...` prefix onto the payload.
 //
-//   1. format/parse roundtrip on the structured prefix
-//   2. displayEventPayload strips the prefix for human render
-//   3. lastClaimActor finds the actor across an arbitrarily-long
-//      event tail (the >100-events regression that the cap silently
-//      hid)
+// v2-retire-log-shim deletes that whole apparatus. `withOpContext` seeds
+// the actor, the capture trigger writes it to `ops.actor`, and the
+// intent is 'task.claim' — so attribution is two indexed columns, and
+// the format/parse/strip helpers (formatClaimEvent /
+// parseClaimEventActor / displayEventPayload) are gone with nothing to
+// replace them. What still matters, and is still covered below:
+//
+//   1. attribution survives on the `--self` path, where owner_id stays
+//      NULL so the payload CANNOT name the actor
+//   2. lastClaimActor finds it across an arbitrarily long op tail (the
+//      >100-events regression the old cap silently hid)
+//   3. re-claim returns the most recent actor
 
-describe("claim event structured prefix", () => {
+describe("claim attribution via ops.actor", () => {
   let tempDir: string;
   let db: Db;
 
@@ -212,42 +222,7 @@ describe("claim event structured prefix", () => {
     rmSync(tempDir, { recursive: true, force: true });
   });
 
-  it("formatClaimEvent produces a tab-delimited prefix with prose tail", () => {
-    const p = formatClaimEvent({
-      localId: "design",
-      actor: "alice",
-      anonymous: false,
-      prose: "task claim design by alice (was owner=none)",
-    });
-    expect(p).toBe(
-      `${CLAIM_EVENT_PREFIX}\tdesign\tactor=alice\tself=0\ttask claim design by alice (was owner=none)`,
-    );
-  });
-
-  it("parseClaimEventActor reads the actor= field; null on non-claim payloads", () => {
-    const p = formatClaimEvent({
-      localId: "foo",
-      actor: "bob",
-      anonymous: true,
-      prose: "task claim foo by bob --self (anonymous, owner stays NULL)",
-    });
-    expect(parseClaimEventActor(p)).toBe("bob");
-    expect(parseClaimEventActor("task release foo (was owner=alice)")).toBeNull();
-    expect(parseClaimEventActor("")).toBeNull();
-  });
-
-  it("displayEventPayload strips the structured prefix; passes other payloads through", () => {
-    const p = formatClaimEvent({
-      localId: "x",
-      actor: "u",
-      anonymous: false,
-      prose: "task claim x by u (was owner=none)",
-    });
-    expect(displayEventPayload(p)).toBe("task claim x by u (was owner=none)");
-    expect(displayEventPayload("task release y")).toBe("task release y");
-  });
-
-  it("emitted claim payloads carry the structured prefix; mu log render shows the prose", async () => {
+  it("records the actor on ops.actor, not in the payload prose", async () => {
     addTask(db, {
       localId: "design",
       workstream: "auth",
@@ -256,18 +231,15 @@ describe("claim event structured prefix", () => {
       effortDays: 1,
     });
     await claimTask(db, "design", { self: true, actor: "orchestrator", workstream: "auth" });
-    const events = listLogs(db, { workstream: "auth", kind: "event" });
-    const claim = events.find((e) => e.payload.startsWith(CLAIM_EVENT_PREFIX));
+    const claim = listLogs(db, { workstream: "auth" })
+      .reverse()
+      .find((e) => e.intent === "task.claim");
     expect(claim).toBeDefined();
-    if (!claim) return;
-    // Producer emits the structured prefix; the prose tail still
-    // contains the human-readable summary (so existing payload-prose
-    // assertions in test/tasks.test.ts keep working).
-    expect(claim.payload).toContain("actor=orchestrator");
-    expect(claim.payload).toContain("self=1");
-    expect(claim.payload).toContain("task claim design by orchestrator --self");
-    // The display layer strips the prefix.
-    expect(displayEventPayload(claim.payload)).toMatch(/^task claim design by orchestrator --self/);
+    expect(claim?.source).toBe("orchestrator");
+    // No tab-delimited smuggling left anywhere in the payload.
+    expect(claim?.payload).not.toContain("\t");
+    expect(claim?.payload).not.toContain("actor=");
+    expect(lastClaimActor(db, "auth", "design")).toBe("orchestrator");
   });
 
   it("lastClaimActor recovers the actor across 100+ unrelated intervening events", async () => {
@@ -279,7 +251,7 @@ describe("claim event structured prefix", () => {
     await claimTask(db, "foo", { self: true, actor: "deploy-bot", workstream: "auth" });
     // Bury the claim event under a flood of unrelated events.
     for (let i = 0; i < 250; i++) {
-      emitEvent(db, "auth", `task note foo by user (note #${i})`);
+      appendLog(db, { workstream: "auth", source: "user", payload: `note #${i}` });
     }
     // Throw in some claim events for OTHER tasks so the LIKE filter
     // has to actually filter, not just return MAX(seq) of all claims.
@@ -299,22 +271,13 @@ describe("claim event structured prefix", () => {
     expect(lastClaimActor(db, "auth", "foo")).toBe("second");
   });
 
-  it("lastClaimActor escapes LIKE wildcards in localId (defensive; valid ids can't contain them)", () => {
-    // Even though isValidTaskId rejects `_` as a wildcard, we escape it
-    // because it IS a legal char in a task id and the LIKE pattern
-    // would otherwise treat it as 'any single char'. Synthesize a
-    // claim event for `foo_a` and verify it isn't returned for `foo1a`.
-    appendLog(db, {
-      workstream: "auth",
-      source: "alice",
-      kind: "event",
-      payload: formatClaimEvent({
-        localId: "foo_a",
-        actor: "alice",
-        anonymous: false,
-        prose: "task claim foo_a by alice (was owner=none)",
-      }),
-    });
+  it("attribution keys on the EXACT natural key, so similar ids cannot cross-match", async () => {
+    // v1 matched a LIKE pattern against prose and had to escape `_`
+    // (a LIKE wildcard, and a legal task-id char) to stop `foo_a` from
+    // answering for `foo1a`. ops.key is the exact natural key
+    // '<ws>/<localId>', so there is no pattern and nothing to escape.
+    addTask(db, { localId: "foo_a", workstream: "auth", title: "A", impact: 5, effortDays: 1 });
+    await claimTask(db, "foo_a", { self: true, actor: "alice", workstream: "auth" });
     expect(lastClaimActor(db, "auth", "foo_a")).toBe("alice");
     expect(lastClaimActor(db, "auth", "foo1a")).toBeNull();
     expect(lastClaimActor(db, "auth", "fooXa")).toBeNull();

@@ -92,12 +92,15 @@ describe("mu state --json crash recovery", () => {
     expect(implNote?.content).toContain("[reaper]");
     expect(implNote?.content).toContain("previous owner worker-2");
 
-    const reapEvents = listLogs(db, { workstream: "auth", kind: "event" }).filter((row) =>
-      row.payload.startsWith("task reap "),
-    );
-    expect(reapEvents.map((row) => row.payload).sort()).toEqual([
-      "task reap design (previous owner worker-1 gone, IN_PROGRESS → OPEN)",
-      "task reap impl (previous owner worker-2 gone, IN_PROGRESS → OPEN)",
+    // v2-retire-log-shim: the prose `task reap ...` event is gone. Reap
+    // mutates `tasks`, so the capture trigger records it; deleteAgent now
+    // supplies intent='task.reap' + actor='reaper' so those ops are
+    // attributable. The `[reaper]` note is the human-readable trail.
+    const reapOps = listLogs(db, {}).filter((r) => r.intent === "task.reap");
+    expect(reapOps.every((r) => r.source === "reaper")).toBe(true);
+    expect([...new Set(reapOps.map((r) => r.workstreamName))].sort()).toEqual([
+      "auth/design",
+      "auth/impl",
     ]);
   });
 });

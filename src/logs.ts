@@ -39,8 +39,14 @@ export interface LogRow {
   seq: number;
   /** Workstream this entry belongs to, or `null` for machine-wide. */
   workstreamName: string | null;
-  /** Free TEXT: agent name, "system", "user", or anything a caller picks. */
+  /** Free TEXT: agent name, "system", "user", or anything a caller picks.
+   *  Captured ops that ran outside any actor context have no actor, and
+   *  render as "system" rather than the string "null". */
   source: string;
+  /** Structured intent ('task.close', 'agent.spawn', ...). Null only for
+   *  operator-authored prose lines (`mu log write`, `mu agent send`),
+   *  which name no state change. v2-log-verb renders from this. */
+  intent: string | null;
   /** Free TEXT: "message" (default), "event" (auto state changes),
    *  "broadcast" (explicit cross-agent), or any caller-defined value. */
   kind: LogKind;
@@ -52,9 +58,12 @@ export interface LogRow {
 
 interface RawLogRow {
   seq: number;
-  /** Joined from workstreams.name. Null when workstream_id is NULL. */
+  /** `ops.key` verbatim (the natural key). '' means machine-wide. */
   workstream: string | null;
-  source: string;
+  /** `ops.actor`, which IS nullable: a captured op outside any actor
+   *  context has none. Normalised in `rowFromDb`. */
+  source: string | null;
+  intent: string | null;
   kind: string;
   payload: string;
   created_at: string;
@@ -68,6 +77,7 @@ const SELECT_LOG_COLS = `
   l.seq AS seq,
   l.key AS workstream,
   l.actor AS source,
+  l.intent AS intent,
   l.entity AS kind,
   l.payload AS payload,
   l.created_at AS created_at
@@ -75,24 +85,47 @@ const SELECT_LOG_COLS = `
 
 const LOG_FROM_JOIN = "FROM ops l";
 
-/** The op entities this shim treats as LOG LINES.
- *
- *  Since v2-capture, `ops` holds two very different kinds of row: hand
- *  written log lines (these entities, from `appendLog` / `emitEvent`)
- *  and rows captured by the triggers on the portable tables
- *  ('workstream' / 'task' / 'note' / 'edge'). `mu log` and every v1
- *  consumer want only the former — without this filter a single
- *  `task add` would surface twice in `mu log`, once as its event
- *  breadcrumb and once as the raw captured op with a JSON payload.
- *
- *  v2-log-verb replaces this by rendering prose from `intent`, at which
- *  point captured ops become the PRIMARY source and this constant goes
- *  away. Until then the shim stays behaviour-compatible with v1. */
-const LOG_ENTITIES = ["message", "event", "broadcast"] as const;
+// WHY THERE IS NO LONGER AN ENTITY FILTER (v2-retire-log-shim)
+//
+// v2-capture briefly left `ops` holding the SAME change twice: once as
+// a typed op from the trigger (intent='task.update', key='demo/t1',
+// JSON payload) and once as a prose breadcrumb from `emitEvent`
+// (intent=NULL, key='demo', free text). A filter pinning `mu log` to
+// the prose entities was needed so a single `task add` did not surface
+// twice.
+//
+// The duplicate prose emits are gone, so the filter's reason to exist
+// went with them. `mu log` now reads EVERY op, which is what
+// docs/VOCABULARY.md § log entry has always claimed ("a rendered op...
+// not a distinct table"). Payloads for captured ops are still raw JSON;
+// v2-log-verb renders prose from `intent`. Uglier for now, honest, and
+// no longer lossy: a peer's synced ops appear in `mu log` too, which
+// prose events could never do (they were machine-local by accident of
+// entity='event' not being in SYNCED_ENTITIES).
+//
+// `latestSeq` deliberately shares this same "no filter" shape. When the
+// two disagreed, `mu log --tail` started its cursor past rows the
+// non-tail view had shown and silently skipped them.
 
-/** SQL predicate restricting a query to log-line entities. Any
- *  caller-supplied `kind` filter narrows within this set. */
-const LOG_ENTITY_FILTER = `l.entity IN (${LOG_ENTITIES.map((e) => `'${e}'`).join(", ")})`;
+/** Scope a log query to one workstream.
+ *
+ *  `ops.key` is the NATURAL key, so it is the bare workstream name for
+ *  workstream-scoped rows ('demo') and a qualified ref for everything
+ *  inside it ('demo/t1', 'demo/t1#1', 'demo/t2->demo/t1'). Matching
+ *  only `key = 'demo'` would therefore hide every task, note, and edge
+ *  op in the workstream — which is most of them. Exact-or-prefix is the
+ *  smallest predicate that reads "belongs to this workstream". */
+function workstreamScopeSql(column = "l.key"): string {
+  return `(${column} = ? OR ${column} LIKE ? ESCAPE '\\')`;
+}
+
+/** Bind params for `workstreamScopeSql`. The LIKE pattern escapes the
+ *  operator-supplied name so a workstream containing '%' or '_' cannot
+ *  widen the match. */
+function workstreamScopeParams(workstream: string): [string, string] {
+  const escaped = workstream.replace(/[\\%_]/g, (c) => `\\${c}`);
+  return [workstream, `${escaped}/%`];
+}
 
 /** Sentinel stored in `ops.key` for machine-wide entries (ops.key is
  *  NOT NULL). Exported so the few call sites that query `ops` directly
@@ -111,7 +144,8 @@ function rowFromDb(row: RawLogRow): LogRow {
   return {
     seq: row.seq,
     workstreamName: row.workstream === MACHINE_WIDE_KEY ? null : row.workstream,
-    source: row.source,
+    source: row.source ?? "system",
+    intent: row.intent,
     kind: row.kind,
     payload: row.payload,
     createdAt: row.created_at,
@@ -127,6 +161,11 @@ export interface AppendLogOptions {
   kind?: LogKind;
   /** Free utf-8. Multi-line allowed. */
   payload: string;
+  /** Structured intent. Set by `emitEvent` for the local-only changes
+   *  no trigger can see. Stays null for operator-authored `mu log
+   *  write` / `mu agent send` lines, which are prose by nature and have
+   *  no state change to name. */
+  intent?: string;
 }
 
 /**
@@ -151,7 +190,7 @@ export function appendLog(db: Db, opts: AppendLogOptions): LogRow {
       machineId(db),
       randomUUID(),
       opts.source,
-      null,
+      opts.intent ?? null,
       kind,
       key,
       opts.payload,
@@ -161,6 +200,7 @@ export function appendLog(db: Db, opts: AppendLogOptions): LogRow {
     seq: Number(result.lastInsertRowid),
     workstreamName: opts.workstream,
     source: opts.source,
+    intent: opts.intent ?? null,
     kind,
     payload: opts.payload,
     createdAt,
@@ -194,8 +234,8 @@ export function listLogs(db: Db, opts: ListLogsOptions = {}): LogRow[] {
     conditions.push("l.key = ?");
     params.push(MACHINE_WIDE_KEY);
   } else if (opts.workstream !== undefined) {
-    conditions.push("l.key = ?");
-    params.push(opts.workstream);
+    conditions.push(workstreamScopeSql());
+    params.push(...workstreamScopeParams(opts.workstream));
   }
   if (opts.since !== undefined) {
     conditions.push("l.seq > ?");
@@ -209,10 +249,6 @@ export function listLogs(db: Db, opts: ListLogsOptions = {}): LogRow[] {
     conditions.push("l.entity = ?");
     params.push(opts.kind);
   }
-
-  // Always restrict to log-line entities: captured row-mutation ops are
-  // not log lines and must not leak into the v1 log surface.
-  conditions.push(LOG_ENTITY_FILTER);
 
   const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
@@ -242,206 +278,183 @@ export function listLogs(db: Db, opts: ListLogsOptions = {}): LogRow[] {
  * only sees NEW entries unless they explicitly pass `--since 0`.
  */
 export function latestSeq(db: Db, workstream?: string): number {
-  // Same LOG_ENTITY_FILTER as listLogs: this is the cursor INTO that
-  // result set, so if it counted captured ops too, `--tail` would start
-  // past log lines it never showed and silently skip them.
+  // MUST stay consistent with listLogs' row set — this is the cursor
+  // INTO it. When the two disagreed (a filter here that listLogs did
+  // not apply, or vice versa) `--tail` started past rows the non-tail
+  // view had already shown and silently skipped them.
   const row =
     workstream === undefined
-      ? (db.prepare(`SELECT MAX(seq) AS s FROM ops l WHERE ${LOG_ENTITY_FILTER}`).get() as {
-          s: number | null;
-        })
+      ? (db.prepare("SELECT MAX(seq) AS s FROM ops l").get() as { s: number | null })
       : (db
-          .prepare(`SELECT MAX(seq) AS s FROM ops l WHERE l.key = ? AND ${LOG_ENTITY_FILTER}`)
-          .get(workstream) as { s: number | null });
+          .prepare(`SELECT MAX(seq) AS s FROM ops l WHERE ${workstreamScopeSql()}`)
+          .get(...workstreamScopeParams(workstream)) as { s: number | null });
   return row.s ?? 0;
 }
 
 /**
- * One-line helper for state-changing SDK functions to auto-emit a
- * `kind='event'` log entry. Called AFTER the mutation succeeds, only
- * when the mutation actually produced a change (no-ops stay quiet).
+ * Record a change that NO capture trigger can see.
  *
- * `source` defaults to 'system' since this is the auto-emission path;
- * a different source means "a specific agent caused this" and is set
- * by callers like `claimTask` (source = the claiming agent).
+ * The triggers in src/capture.ts cover the four **portable** tables
+ * (workstreams, tasks, task_edges, task_notes), so every task and
+ * workstream mutation is already an op with a real `intent` and a real
+ * natural key. Anything that mutates one of those tables must NOT call
+ * this — that was the duplication v2-retire-log-shim deleted: 13 call
+ * sites each writing a second, prose, intent-less copy of a change the
+ * trigger had already captured properly.
+ *
+ * What legitimately remains is state that lives OUTSIDE those tables:
+ *
+ *   agent.*      spawn / close / free / adopt / kick — `agents` is
+ *                machine-local (it holds `pane_id`), so there is no
+ *                trigger and never will be.
+ *   workspace.*  create / free / refresh / recreate — `vcs_workspaces`
+ *                is machine-local (absolute paths).
+ *   workstream.export  writes FILES, mutating no table at all.
+ *   agent.stall  a pure observation; nothing is mutated.
+ *
+ * `intent` is REQUIRED (and typed), not optional, because the whole
+ * point is that these rows render through the same formatter as
+ * captured ops. An intent-less op cannot be rendered without
+ * prefix-matching prose, which is the v1 brittleness
+ * (`classifyEventVerb`, `CLAIM_EVENT_PREFIX`) that 2.0 deletes.
+ *
+ * These entities are deliberately NOT in SYNCED_ENTITIES: every one of
+ * them describes something about THIS machine (a pane id, a filesystem
+ * path) that is meaningless on a peer. They are still recorded, so
+ * `mu log` and the TUI show them locally.
  */
 export function emitEvent(
   db: Db,
   workstream: string | null,
+  intent: LocalIntent,
   payload: string,
   source = "system",
 ): void {
-  appendLog(db, { workstream, source, kind: "event", payload });
-}
-
-// ─── claim-event structured prefix ─────────────────────────────────
-//
-// `task claim` events are the one place where a state-changing verb
-// emits TWO actors per row: the agent recorded as `source`, and the
-// `actor=` field that may differ on the --self anonymous-claim path
-// (where source == actor but tasks.owner stays NULL). The original
-// payload was free prose (`task claim foo by bar (was owner=...)`)
-// and the consumer (lastClaimActor below) prefix-matched the prose
-// — brittle: any rename silently nulled out the attribution.
-//
-// The fix keeps the prose suffix for human readability but prepends
-// a tab-delimited structured prefix that lastClaimActor parses
-// robustly. Format:
-//
-//   task.claim<TAB><localId><TAB>actor=<actor><TAB>self=<0|1><TAB><prose>
-//
-// The trailing prose still starts with `task claim <localId> ...` so
-// event renderers (which strip the structured prefix via
-// displayEventPayload before colouring) keep working unchanged.
-//
-// See: review_code_last_claim_actor_brittle.
-
-/** Structured-prefix sentinel used by claim event payloads. The dot
- *  distinguishes it from the prose `task claim ...` tail. */
-export const CLAIM_EVENT_PREFIX = "task.claim";
-
-/** Build the structured payload for a `task claim` event. */
-export function formatClaimEvent(opts: {
-  localId: string;
-  actor: string;
-  anonymous: boolean;
-  prose: string;
-}): string {
-  const self = opts.anonymous ? "1" : "0";
-  return `${CLAIM_EVENT_PREFIX}\t${opts.localId}\tactor=${opts.actor}\tself=${self}\t${opts.prose}`;
-}
-
-/** Strip the structured `task.claim` prefix and return the human-prose
- *  tail. For non-claim payloads, returns the input unchanged. Used by
- *  `mu log`, static state, and the TUI so the user sees the prose, not
- *  the delimiter-noise. */
-export function displayEventPayload(payload: string): string {
-  if (!payload.startsWith(`${CLAIM_EVENT_PREFIX}\t`)) return payload;
-  // task.claim<TAB><id><TAB>actor=...<TAB>self=...<TAB><prose>
-  // Split into 5 fields; the prose may itself contain tabs (it doesn't
-  // today, but be defensive: rejoin with TAB so we never lose data).
-  const parts = payload.split("\t");
-  if (parts.length < 5) return payload;
-  return parts.slice(4).join("\t");
-}
-
-/** Parse the actor= field out of a structured claim payload. Returns
- *  null when the payload isn't a claim event or is malformed. */
-export function parseClaimEventActor(payload: string): string | null {
-  if (!payload.startsWith(`${CLAIM_EVENT_PREFIX}\t`)) return null;
-  for (const field of payload.split("\t")) {
-    if (field.startsWith("actor=")) return field.slice("actor=".length);
-  }
-  return null;
+  appendLog(db, { workstream, source, kind: entityForIntent(intent), payload, intent });
 }
 
 /**
- * Find the actor of the most recent `task claim <id>` event for a
- * given task. Used to surface 'who's working on this' when
- * `tasks.owner IS NULL` (the --self anonymous-claim path). Returns
- * null when no claim event exists for this task.
- *
- * Implementation: indexed lookup on (workstream, seq) with a LIKE
- * against the structured prefix. Unbounded — the previous limit=100
- * ceiling silently dropped attribution on long-lived workstreams.
- * The structured prefix (CLAIM_EVENT_PREFIX) makes the match
- * robust against payload-prose churn.
+ * Intents for changes no trigger can capture. Closed union rather than
+ * `string` so a typo is a compile error and the set stays auditable —
+ * `mu log`'s formatter (v2-log-verb) switches on exactly these.
  */
-function lastClaimEvent(
+export type LocalIntent =
+  | "agent.spawn"
+  | "agent.close"
+  | "agent.free"
+  | "agent.adopt"
+  | "agent.kick"
+  | "agent.stall"
+  | "workspace.create"
+  | "workspace.free"
+  | "workspace.refresh"
+  | "workspace.recreate"
+  | "workstream.export";
+
+/** Entity for a local intent: the token before the dot. Keeps
+ *  `entity`/`intent` consistent by construction instead of asking each
+ *  call site to pass both and agree. */
+function entityForIntent(intent: LocalIntent): string {
+  const dot = intent.indexOf(".");
+  return dot === -1 ? intent : intent.slice(0, dot);
+}
+
+// ─── claim attribution ─────────────────────────────────────────────
+//
+// v1 stored claim attribution as PROSE and re-parsed it: a
+// tab-delimited `task.claim<TAB><id><TAB>actor=<a><TAB>...` prefix was
+// bolted onto the payload precisely because prefix-matching the prose
+// was brittle (review_code_last_claim_actor_brittle). Two helpers then
+// existed only to put that prefix on and take it back off.
+//
+// The ops log makes all of it unnecessary. `withOpContext` seeds
+// _op_ctx.actor, the capture trigger copies it into `ops.actor`, and
+// the intent is `task.claim`. So attribution is two indexed columns,
+// not a string to parse — including on the `--self` path, where
+// tasks.owner_id stays NULL by design and the payload therefore
+// CANNOT name the actor. Reading ops.actor is the whole fix.
+
+/** The most recent `task.claim` op for a task: its actor and when.
+ *
+ *  `ops.key` is the natural key, so the task's own ops are keyed
+ *  '<ws>/<localId>' exactly — no LIKE, no wildcard escaping, and no
+ *  way for `foo` to cross-match `foo_2`. Unbounded by design: the v1
+ *  limit=100 ceiling silently dropped attribution on long-lived
+ *  workstreams. */
+function lastClaimOp(
   db: Db,
   workstream: string,
   localId: string,
-): { payload: string; created_at: string } | null {
-  // localId is validated by isValidTaskId — alnum + `_` + `-`. The
-  // `_` is a LIKE wildcard, so escape it (and `%` and `\` for
-  // completeness, even though they can't appear in a valid id).
-  const escaped = localId.replace(/[\\%_]/g, (c) => `\\${c}`);
-  const pattern = `${CLAIM_EVENT_PREFIX}\t${escaped}\t%`;
+): { actor: string | null; created_at: string } | null {
   const row = db
     .prepare(
-      `SELECT payload, created_at FROM ops
-        WHERE key = ? AND entity = 'event' AND payload LIKE ? ESCAPE '\\'
+      `SELECT actor, created_at FROM ops
+        WHERE key = ? AND intent = 'task.claim'
         ORDER BY seq DESC LIMIT 1`,
     )
-    .get(workstream, pattern) as { payload: string; created_at: string } | undefined;
+    .get(`${workstream}/${localId}`) as { actor: string | null; created_at: string } | undefined;
   return row ?? null;
 }
 
+/**
+ * Actor of the most recent claim of this task. Surfaces "who is working
+ * on this" when `tasks.owner_id IS NULL` — the `--self` anonymous-claim
+ * path. Null when the task was never claimed.
+ */
 export function lastClaimActor(db: Db, workstream: string, localId: string): string | null {
-  const row = lastClaimEvent(db, workstream, localId);
-  return row ? parseClaimEventActor(row.payload) : null;
+  return lastClaimOp(db, workstream, localId)?.actor ?? null;
 }
 
 /**
- * Find the `created_at` timestamp of the most recent `task claim`
- * event for a given task (the structured `task.claim<TAB>...` payload
- * emitted by claim.ts, both worker-claim and `--self` paths).
+ * Find the `created_at` timestamp of the most recent claim of a task.
  *
  * Used by `mu task notes --since-claim` to slice the note timeline at
- * the most recent claim, so an operator dispatching a worker can see
- * only the post-claim notes (the spec was added before the claim;
- * the worker's progress lives after).
+ * the most recent claim, so an operator dispatching a worker sees only
+ * the post-claim notes (the spec was written before the claim; the
+ * worker's progress lands after).
  *
- * Returns null when no claim event exists for this task — the CLI's
- * `--since-claim` then degrades gracefully to no filter (equivalent
- * to `--since-beginning`). Mirrors `lastClaimActor`'s LIKE-with-
- * escape pattern so a same-prefix id (`foo` vs `foo_2`) can't
- * cross-match.
+ * Returns null when the task was never claimed — `--since-claim` then
+ * degrades gracefully to no filter.
  */
 export function lastClaimEventAt(db: Db, workstream: string, localId: string): string | null {
-  return lastClaimEvent(db, workstream, localId)?.created_at ?? null;
+  return lastClaimOp(db, workstream, localId)?.created_at ?? null;
 }
 
 /**
- * Canonical list of two-token verb prefixes that `emitEvent` callers
- * use as the leading words of a payload. Single source of truth for
- * event renderers so they can never drift away from the actual emitter
- * sites.
+ * Verb prefixes still produced by `emitEvent`.
  *
- * Maintenance contract: when you add an `emitEvent(...)` call whose
- * payload starts with a new two-word verb, add the verb here. A
- * regression test walks every entry and asserts the classifier
- * recognises it; the test fails if you add an emitter without adding
- * its verb here.
+ * v1 needed 22 entries here — one per state-changing verb — because
+ * every verb wrote a prose breadcrumb that renderers had to classify by
+ * prefix-matching. v2-retire-log-shim deleted 13 of those emitters as
+ * duplicates of the capture triggers, so only the changes NO trigger can
+ * see remain, and each now carries a typed `intent` as well.
  *
- * Audit (2026-05): every `emitEvent` callsite under src/ produces a
- * payload that starts with one of these. Verified by
- * `grep -rn emitEvent src/ | grep -v import`.
+ * This list is therefore on its way out: v2-log-verb renders from
+ * `intent`, at which point prefix classification (and `classifyEventVerb`)
+ * disappears entirely. Until then it keeps the TUI's verb colouring
+ * working.
+ *
+ * Maintenance contract: it must stay in sync with `LocalIntent`. A
+ * regression test walks every `emitEvent` survivor and asserts both.
  */
 export const EVENT_VERB_PREFIXES: readonly string[] = [
-  // src/tasks.ts + src/tasks/*.ts
-  "task add",
-  "task note",
-  "task status",
-  // `task claim` is the prose-tail of a `task.claim\t...` structured
-  // payload (see CLAIM_EVENT_PREFIX above); displayEventPayload
-  // strips the structured prefix before renderers classify it, so the
-  // prose tail starting with `task claim` still matches.
-  "task claim",
-  "task release",
-  "task update",
-  "task delete",
-  "task reap",
-  "task block",
-  "task unblock",
-  "task reparent",
-  // src/agents.ts + src/agents/*.ts
+  // src/agents.ts + src/agents/*.ts — `agents` is machine-local, so no
+  // capture trigger will ever cover these.
   "agent spawn",
   "agent close",
   "agent free",
   "agent adopt",
   "agent kick",
-  // src/tasks/wait.ts — emitted when --stuck-after fires (alive +
-  // assigned + no recent progress; idle_assigned_agent_detection).
+  // src/tasks/wait.ts — a pure observation (nothing is mutated), so
+  // there is no row for a trigger to fire on.
   "agent stalled",
-  // src/workspace.ts
+  // src/workspace/*.ts — `vcs_workspaces` is machine-local (absolute
+  // paths differ per machine).
   "workspace create",
   "workspace free",
   "workspace refresh",
   "workspace recreate",
-  // src/workstream.ts
-  "workstream init",
-  "workstream destroy",
+  // src/workstream.ts — writes FILES to a bucket; mutates no table.
   "workstream export",
 ];
 
@@ -452,6 +465,44 @@ export interface ClassifiedEvent {
   verb: string;
   /** Payload past the verb token; preserves leading separator (" " or "\t"). */
   rest: string;
+}
+
+/**
+ * The entity a log row refers to, for building a "show me this" command.
+ *
+ * Prefers the STRUCTURED columns and falls back to prose only for rows
+ * that have no intent (operator-authored `mu log write` lines). v1 could
+ * only prefix-match prose, which is why removing the `task *` prefixes
+ * broke the TUI's yank shortcut — the information was there all along,
+ * in `intent` + `key`.
+ *
+ *   intent 'task.close', key 'demo/t1'    -> { kind: 'task',  id: 't1' }
+ *   intent 'agent.spawn', payload 'agent spawn worker-1 (...)'
+ *                                         -> { kind: 'agent', id: 'worker-1' }
+ */
+export function logRowSubject(row: {
+  intent: string | null;
+  kind: string;
+  workstreamName: string | null;
+  payload: string;
+}): { kind: "task" | "agent"; id: string } | null {
+  // Captured ops: the natural key already names the entity. Strip the
+  // '<ws>/' scope and any '#note' / '->edge' suffix.
+  if (row.intent !== null && (row.kind === "task" || row.kind === "note")) {
+    const key = row.workstreamName ?? "";
+    const slash = key.indexOf("/");
+    if (slash !== -1) {
+      const id = key.slice(slash + 1).split(/[#>-]/)[0];
+      if (id !== undefined && id !== "") return { kind: "task", id };
+    }
+  }
+  // emitEvent survivors: prose, but with a known two-token verb.
+  const cls = classifyEventVerb(row.payload);
+  if (cls === null) return null;
+  const id = cls.rest.trim().split(/[\s(]/)[0];
+  if (id === undefined || id === "") return null;
+  if (cls.verb.startsWith("agent ")) return { kind: "agent", id };
+  return null;
 }
 
 /**

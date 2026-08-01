@@ -69,12 +69,24 @@ export function parkedStatus(
     | undefined;
   if (wsRow === undefined) return { parked: false };
 
-  // Most recent op for this workstream (ops.key is the natural key).
+  // Most recent op for this workstream. `ops.key` is the NATURAL key,
+  // so workstream-level rows are keyed 'alpha' but everything inside it
+  // is qualified ('alpha/t1', 'alpha/t1#1', 'alpha/a->alpha/b').
+  // Matching `key = 'alpha'` alone therefore missed every task, note,
+  // and edge op — i.e. exactly the "local activity" that is supposed to
+  // supersede the export marker. Before v2-retire-log-shim this was
+  // masked: each of those verbs ALSO wrote a prose event keyed on the
+  // bare workstream name, so the bare-key query happened to see them.
+  const escaped = workstream.replace(/[\\%_]/g, (c) => `\\${c}`);
   const latest = db
     .prepare(
-      "SELECT entity AS kind, payload, created_at FROM ops WHERE key = ? ORDER BY seq DESC LIMIT 1",
+      `SELECT entity AS kind, payload, created_at FROM ops
+        WHERE key = ? OR key LIKE ? ESCAPE '\\'
+        ORDER BY seq DESC LIMIT 1`,
     )
-    .get(workstream) as { kind: string; payload: string; created_at: string } | undefined;
+    .get(workstream, `${escaped}/%`) as
+    | { kind: string; payload: string; created_at: string }
+    | undefined;
   if (latest === undefined) return { parked: false };
 
   // The marker we look for: the most recent row IS a `db export`

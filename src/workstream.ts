@@ -203,7 +203,8 @@ function ensureWorkstreamImpl(db: Db, name: string): boolean {
     .prepare("INSERT OR IGNORE INTO workstreams (name, created_at) VALUES (?, ?)")
     .run(name, new Date().toISOString());
   const created = result.changes > 0;
-  if (created) emitEvent(db, name, `workstream init ${name}`);
+  // No emitEvent: the workstreams INSERT fired the capture trigger
+  // (intent='workstream.init', key=<name>).
   return created;
 }
 
@@ -540,19 +541,14 @@ export async function destroyWorkstream(
   // (SQLite FK CASCADE DOES fire triggers — verified empirically, see
   // src/capture.ts). They all share this group so the whole teardown is
   // one unit for `mu undo`.
-  const result = withOpContext(db, { intent: "workstream.destroy", group: "new" }, () =>
+  withOpContext(db, { intent: "workstream.destroy", group: "new" }, () =>
     db.prepare("DELETE FROM workstreams WHERE name = ?").run(opts.workstream),
   );
-  // The destroy event itself goes to workstream=null (machine-wide)
-  // because the FK CASCADE we just triggered would otherwise wipe
-  // it on the same statement. Visible via `mu log --all`.
-  if (result.changes > 0 || tmuxAliveBefore) {
-    emitEvent(
-      db,
-      null,
-      `workstream destroy ${opts.workstream} (agents=${agentsBefore}, tasks=${tasksBefore}, edges=${edgesBefore}, notes=${notesBefore}, workspaces=${freedWorkspaces}/${workspacesBefore.length}, already_gone=${alreadyGoneWorkspaces}, tmux=${tmuxAliveBefore})`,
-    );
-  }
+  // No emitEvent: the DELETE cascade fired the capture triggers, which
+  // wrote tombstone ops (op='del', intent='workstream.destroy') for the
+  // workstream AND for every task/edge/note that cascaded with it —
+  // strictly more information than the prose counts, and it survives the
+  // cascade because ops is FK-free.
 
   return {
     killedTmux: tmuxAliveBefore,
@@ -691,9 +687,11 @@ export function exportWorkstream(db: Db, opts: ExportWorkstreamOptions): ExportR
       `exportWorkstream: renderer did not write a manifest entry for ${opts.workstream}`,
     );
   }
+  // Writes FILES to a bucket; mutates no table, so no trigger sees it.
   emitEvent(
     db,
     opts.workstream,
+    "workstream.export",
     `workstream export ${opts.workstream} (out=${result.outDir}, tasks=${source.tasks.length}, written=${result.written}, unchanged=${result.unchanged}, preserved=${result.preserved})`,
   );
   return {

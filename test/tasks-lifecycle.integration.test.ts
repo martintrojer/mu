@@ -14,7 +14,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { insertAgent } from "../src/agents.js";
 import { type Db, openDb } from "../src/db.js";
-import { listLogs } from "../src/logs.js";
+import { lastClaimActor, listLogs } from "../src/logs.js";
 import {
   ClaimerNotRegisteredError,
   TaskAlreadyOwnedError,
@@ -198,14 +198,22 @@ describe("claimTask", () => {
     expect(getTask(db, "auth", "test")?.status).toBe("IN_PROGRESS");
   });
 
-  it("--self emits an agent_logs event with the actor as source", async () => {
+  // The load-bearing attribution case. On the `--self` path
+  // tasks.owner_id stays NULL by design, so the op PAYLOAD cannot name
+  // who claimed it \u2014 `ops.actor` must. v1 smuggled the actor through a
+  // tab-delimited prose prefix and re-parsed it
+  // (review_code_last_claim_actor_brittle); v2-retire-log-shim reads the
+  // column, which is why lastClaimActor still works with no prose at all.
+  it("--self stamps the actor on ops.actor, not in prose", async () => {
     await claimTask(db, "auth", { self: true, actor: "deploy-bot", workstream: "test" });
-    const events = listLogs(db, { workstream: "test", kind: "event" });
-    const claim = events.find((e) => e.payload.includes("task claim auth"));
+    const claim = listLogs(db, { workstream: "test" })
+      .reverse()
+      .find((e) => e.intent === "task.claim");
     expect(claim).toBeDefined();
     expect(claim?.source).toBe("deploy-bot");
-    expect(claim?.payload).toContain("--self");
-    expect(claim?.payload).toContain("anonymous");
+    // Owner really did stay NULL \u2014 so the column is the only record.
+    expect(getTask(db, "auth", "test")?.ownerName).toBeNull();
+    expect(lastClaimActor(db, "test", "auth")).toBe("deploy-bot");
   });
 
   it("--self does NOT require the actor to exist in the agents table", async () => {
@@ -523,55 +531,69 @@ describe("evidence on lifecycle verbs", () => {
   // for the auto-inserted CLOSE: synthetic note (mufeedback
   // task_close_evidence_does_not_append_the). Tests that want the
   // status payload must scope to it explicitly.
-  function lastEventPayload(match?: string): string {
-    const sql = match
-      ? "SELECT payload FROM ops WHERE entity = 'event' AND payload LIKE ? ORDER BY seq DESC LIMIT 1"
-      : "SELECT payload FROM ops WHERE entity = 'event' ORDER BY seq DESC LIMIT 1";
-    const stmt = db.prepare(sql);
-    const row = (match ? stmt.get(`%${match}%`) : stmt.get()) as { payload: string } | undefined;
-    return row?.payload ?? "";
+  /** Evidence is retrievable from the NOTE timeline.
+   *
+   *  v1 put `evidence="..."` in a prose event payload (and, for close
+   *  only, also in a synthetic note). v2-retire-log-shim deleted those
+   *  prose events, which would have silently DROPPED evidence on
+   *  reject / defer / open / release / claim \u2014 measured: only close
+   *  survived. `recordEvidenceNote` now handles every evidence-bearing
+   *  verb, so the note timeline is the single home for it.
+   *
+   *  Asserting on notes rather than on log payloads is also the more
+   *  durable contract: notes are a PORTABLE table, so evidence syncs to
+   *  a peer, which the machine-local prose event never could. */
+  function noteContents(): string[] {
+    return listNotes(db, "design", "auth").map((n) => n.content);
   }
 
-  it('closeTask --evidence appends evidence="…" to the event payload', () => {
+  it("closeTask --evidence records the evidence as a CLOSE note", () => {
     closeTask(db, "design", { evidence: "tests pass: npm test exit 0", workstream: "auth" });
-    const p = lastEventPayload("task status");
-    expect(p).toContain("task status design");
-    expect(p).toContain('evidence="tests pass: npm test exit 0"');
+    expect(noteContents()).toContain("CLOSE: tests pass: npm test exit 0");
   });
 
-  it("closeTask without --evidence omits the suffix", () => {
+  it("closeTask without --evidence writes no evidence note", () => {
     closeTask(db, "design", { workstream: "auth" });
-    const p = lastEventPayload();
-    expect(p).toContain("task status design");
-    expect(p).not.toContain("evidence=");
+    expect(noteContents().some((c) => c.startsWith("CLOSE:"))).toBe(false);
   });
 
-  it("openTask --evidence threads through too", () => {
+  it("closeTask records a typed task.close op (no prose duplicate)", () => {
     closeTask(db, "design", { workstream: "auth" });
-    db.prepare("DELETE FROM ops").run();
+    const ops = db
+      .prepare("SELECT intent, entity, key FROM ops WHERE intent = 'task.close'")
+      .all() as Array<{ intent: string; entity: string; key: string }>;
+    expect(ops.length).toBeGreaterThan(0);
+    expect(ops.some((o) => o.entity === "task" && o.key === "auth/design")).toBe(true);
+    // The v1 prose breadcrumb must NOT come back.
+    const prose = db.prepare("SELECT COUNT(*) AS n FROM ops WHERE entity = 'event'").get() as {
+      n: number;
+    };
+    expect(prose.n).toBe(0);
+  });
+
+  it("openTask --evidence records an OPEN note", () => {
+    closeTask(db, "design", { workstream: "auth" });
     openTask(db, "design", { evidence: "reopened: deploy rollback", workstream: "auth" });
-    expect(lastEventPayload()).toContain('evidence="reopened: deploy rollback"');
+    expect(noteContents()).toContain("OPEN: reopened: deploy rollback");
   });
 
-  it("releaseTask --evidence threads through (and survives --reopen)", () => {
+  it("releaseTask --evidence records a RELEASE note (and survives --reopen)", () => {
     insertAgent(db, { name: "worker-1", workstream: "auth", paneId: "%1", status: "busy" });
     db.prepare(
       `UPDATE tasks SET owner_id = (SELECT id FROM agents WHERE name = 'worker-1'),
               status='IN_PROGRESS' WHERE local_id='design'`,
     ).run();
-    db.prepare("DELETE FROM ops").run();
     releaseTask(db, "design", {
       reopen: true,
       evidence: "agent crashed mid-task",
       workstream: "auth",
     });
-    const p = lastEventPayload();
-    expect(p).toContain("task release design");
-    expect(p).toContain("IN_PROGRESS → OPEN");
-    expect(p).toContain('evidence="agent crashed mid-task"');
+    expect(noteContents()).toContain("RELEASE: agent crashed mid-task");
+    // The status flip itself is a typed op.
+    expect(getTask(db, "design", "auth")?.status).toBe("OPEN");
   });
 
-  it("claimTask --evidence threads through", async () => {
+  it("claimTask --evidence records a CLAIM note and stamps ops.actor", async () => {
     insertAgent(db, { name: "worker-1", workstream: "auth", paneId: "%1", status: "busy" });
     db.prepare("DELETE FROM ops").run();
     await claimTask(db, "design", {
@@ -579,16 +601,19 @@ describe("evidence on lifecycle verbs", () => {
       evidence: "reviewed task; have implementation plan",
       workstream: "auth",
     });
-    const p = lastEventPayload();
-    expect(p).toContain("task claim design by worker-1");
-    expect(p).toContain('evidence="reviewed task; have implementation plan"');
+    expect(noteContents()).toContain("CLAIM: reviewed task; have implementation plan");
+    // Attribution is a COLUMN now, not a prose prefix to re-parse.
+    const claim = db
+      .prepare("SELECT actor FROM ops WHERE intent = 'task.claim' ORDER BY seq DESC LIMIT 1")
+      .get() as { actor: string | null } | undefined;
+    expect(claim?.actor).toBe("worker-1");
   });
 
-  it("evidence is JSON-quoted so multi-word + special chars stay legible", () => {
+  it("evidence with quotes and backslashes survives verbatim in the note", () => {
+    // v1 needed JSON.stringify to keep these legible inside a prose
+    // payload. A note holds the raw string, so no escaping is involved.
     closeTask(db, "design", { evidence: 'has "quotes" and a \\backslash', workstream: "auth" });
-    const p = lastEventPayload("task status");
-    // JSON.stringify preserves the inner quotes and backslash via escaping
-    expect(p).toContain('evidence="has \\"quotes\\" and a \\\\backslash"');
+    expect(noteContents()).toContain('CLOSE: has "quotes" and a \\backslash');
   });
 
   // mufeedback task_close_evidence_does_not_append_the: when

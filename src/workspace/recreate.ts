@@ -94,9 +94,11 @@ export async function recreateWorkspace(
 
   const fresh = await createWorkspace(db, createOpts);
 
+  // Machine-local table: no trigger, only record.
   emitEvent(
     db,
     opts.workstream,
+    "workspace.recreate",
     `workspace recreate ${agent} (backend=${fresh.backend}, path=${fresh.path}, old_parent=${row.parentRef ? row.parentRef.slice(0, 12) : "—"}, new_parent=${fresh.parentRef ? fresh.parentRef.slice(0, 12) : "—"})`,
   );
 

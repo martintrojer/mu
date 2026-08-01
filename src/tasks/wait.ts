@@ -301,9 +301,12 @@ export async function waitForTasks(
         // agents table. The stderr warning stays — observation-only,
         // operator decides recovery. See idle_assigned_agent_detection.
         const ageSecs = Math.round(stuckAfterMs / 1000);
+        // Pure OBSERVATION: nothing is mutated, so no trigger could
+        // ever see this. The emit is the only record.
         emitEvent(
           db,
           ref.workstreamName,
+          "agent.stall",
           `agent stalled ${owner ?? "<none>"} owns ${ref.name} for ${ageSecs}s`,
           owner ?? "system",
         );

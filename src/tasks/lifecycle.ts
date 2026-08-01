@@ -13,7 +13,6 @@
 // Extracted from src/tasks.ts as part of refactor_split_large_src_files.
 
 import type { Db } from "../db.js";
-import { emitEvent } from "../logs.js";
 import { withOpContext } from "../op-context.js";
 import { getTaskEdgesWithStatus } from "./edges.js";
 import { addNote } from "./edit.js";
@@ -40,6 +39,33 @@ export interface SetStatusResult {
  */
 export interface EvidenceOption {
   evidence?: string;
+}
+
+/**
+ * Persist `--evidence` as a task note, so it survives as a captured op.
+ *
+ * v1 put evidence in the prose event payload AND (for close only) in a
+ * synthetic note. v2-retire-log-shim deleted the prose events, which
+ * would have silently DROPPED evidence on reject/defer/open/release —
+ * measured: `task close --evidence` kept it via the note, the other
+ * three lost it entirely. The note is now the single home for it, which
+ * is also the better one: notes are portable and sync, whereas the
+ * prose event was machine-local and unparseable.
+ *
+ * Only fires when the verb actually changed something (an idempotent
+ * re-close attests nothing new) and the evidence is a non-empty string.
+ */
+export function recordEvidenceNote(
+  db: Db,
+  localId: string,
+  workstream: string,
+  label: string,
+  opts: (EvidenceOption & { author?: string }) | undefined,
+): void {
+  if (!opts || opts.evidence === undefined || opts.evidence === "") return;
+  const noteOpts: { author?: string; workstream: string } = { workstream };
+  if (opts.author !== undefined && opts.author !== "") noteOpts.author = opts.author;
+  addNote(db, localId, `${label}: ${opts.evidence}`, noteOpts);
 }
 
 /** Render the optional `--evidence "<text>"` payload as the trailing
@@ -94,11 +120,11 @@ function setTaskStatusImpl(
       WHERE local_id = ?
         AND workstream_id = (SELECT id FROM workstreams WHERE name = ?)`,
   ).run(status, new Date().toISOString(), localId, before.workstreamName);
-  emitEvent(
-    db,
-    before.workstreamName,
-    `task status ${localId} (${before.status} → ${status})${evidenceSuffix(opts)}`,
-  );
+  // No emitEvent: the UPDATE fired the capture trigger, whose intent is
+  // the specific verb (task.close / task.open / task.reject / task.defer,
+  // or task.set-<status> for a bare status set) and whose payload names
+  // the new status. Evidence, when passed, lands as a task note — itself
+  // a captured op.
   return { previousStatus: before.status, status, changed: true };
 }
 
@@ -204,23 +230,10 @@ function closeTaskImpl(
   // 2.0: no pre-mutation snapshot. v9 dropped the `snapshots` table;
   // v2-undo restores rollback via inverse ops over the ops log.
   const r = setTaskStatus(db, localId, "CLOSED", opts);
-  // mufeedback task_close_evidence_does_not_append_the: when the
-  // operator passes `--evidence "..."`, the string lands in the
-  // agent_logs event payload but was invisible to `mu task notes <id>`
-  // / `mu task show <id>`. Workers were skipping the "drop a final
-  // note before close" contract on the (reasonable) assumption that
-  // --evidence was sufficient. Auto-insert a synthetic note so the
-  // evidence joins the note timeline. Only fires when evidence is a
-  // non-empty string AND the close actually mutated something
-  // (idempotent re-close on an already-CLOSED task: skip; nothing
-  // newly attested). Empty-string evidence is treated as none.
-  if (r.changed && before && opts.evidence !== undefined && opts.evidence !== "") {
-    const noteOpts: { author?: string; workstream: string } = {
-      workstream: before.workstreamName,
-    };
-    if (opts.author !== undefined && opts.author !== "") noteOpts.author = opts.author;
-    addNote(db, localId, `CLOSE: ${opts.evidence}`, noteOpts);
-  }
+  // mufeedback task_close_evidence_does_not_append_the: evidence must
+  // reach `mu task notes <id>` / `mu task show <id>`, not just the log.
+  // Since v2-retire-log-shim the note is the ONLY home for it.
+  if (r.changed && before) recordEvidenceNote(db, localId, before.workstreamName, "CLOSE", opts);
   return r;
 }
 
@@ -231,9 +244,12 @@ export function openTask(
   localId: string,
   opts: EvidenceOption & { workstream: string },
 ): SetStatusResult {
-  return withOpContext(db, { intent: "task.open", group: "new" }, () =>
-    setTaskStatus(db, localId, "OPEN", opts),
-  );
+  return withOpContext(db, { intent: "task.open", group: "new" }, () => {
+    const before = getTask(db, localId, opts.workstream);
+    const r = setTaskStatus(db, localId, "OPEN", opts);
+    if (r.changed && before) recordEvidenceNote(db, localId, before.workstreamName, "OPEN", opts);
+    return r;
+  });
 }
 
 // ─── rejectTask / deferTask (terminal-but-blocking transitions) ────
@@ -350,9 +366,15 @@ function setTerminalOrParked(
     ...(opts.evidence !== undefined ? { evidence: opts.evidence } : {}),
   };
   const changedIds: string[] = [];
+  const label = status === "REJECTED" ? "REJECT" : "DEFER";
   for (const id of affectedIds) {
     const r = setTaskStatus(db, id, status, childOpts);
-    if (r.changed) changedIds.push(id);
+    if (r.changed) {
+      changedIds.push(id);
+      // Evidence as a note, per verb, for the same reason close does it:
+      // the prose event that used to carry it is gone.
+      recordEvidenceNote(db, id, before.workstreamName, label, opts);
+    }
   }
 
   return {

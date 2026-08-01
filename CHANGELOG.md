@@ -400,10 +400,87 @@ markers land in follow-up work.
 
 ### Changed
 
-- `src/logs.ts` is a deprecated shim: `appendLog` / `listLogs` /
-  `latestSeq` / `emitEvent` keep their signatures but read and write
-  `ops` rows (`kind`→`entity`, `source`→`actor`, `workstream`→`key`).
-  Consumers move to the ops log directly in follow-up work.
+- **`mu log` reads the ops log itself; the duplicate prose events are
+  gone (`v2-retire-log-shim`).** v2-capture left every operator action
+  recorded TWICE — once as a typed op from the capture trigger
+  (`intent='task.update'`, `key='demo/t1'`, JSON payload) and once as a
+  prose breadcrumb from the `src/logs.ts` shim (`intent=NULL`,
+  `key='demo'`, free text). A 4-command session wrote 8 ops. It now
+  writes **4**, every one with a non-null intent.
+
+  The duplication was the smaller problem. The prose copies used
+  `entity='event'`, which is not in `SYNCED_ENTITIES`, so the
+  human-readable narrative could never reach a peer while the typed ops
+  did — and with `intent=NULL` they could not be rendered by the single
+  intent-driven formatter v2-log-verb builds, only by prefix-matching
+  their text, which is the v1 brittleness 2.0 exists to delete.
+
+  Census of all 20 `emitEvent` call sites, classified by whether a
+  capture trigger can see the change:
+
+  - **13 deleted** — they mutate a portable table (`tasks`,
+    `task_edges`, `task_notes`, `workstreams`), so the trigger already
+    recorded them with a real intent and natural key: `workstream.init`,
+    `workstream.destroy`, `task.add`, `task.note`, `task.delete`,
+    `task.update`, `task.set-*`/`close`/`open`/`reject`/`defer`,
+    `task.block`, `task.unblock`, `task.reparent`, `task.release`, and
+    both `task.claim` paths.
+  - **11 kept, now with typed intents** — they mutate no portable table,
+    so no trigger will ever see them: `agent.spawn` / `close` / `free` /
+    `adopt` / `kick` (`agents` is machine-local; it holds `pane_id`),
+    `workspace.create` / `free` / `refresh` / `recreate`
+    (`vcs_workspaces` holds absolute paths), `agent.stall` (a pure
+    observation), and `workstream.export` (writes files). `emitEvent`
+    now REQUIRES a `LocalIntent` — a closed union, so a typo is a
+    compile error — and derives `entity` from it.
+  - **1 reclassified**, which the split did not predict: `task reap`
+    DOES mutate `tasks`, so a trigger sees it, but it ran outside any
+    `withOpContext` and so produced `intent=NULL` typed ops. Fixed with
+    an intent (`task.reap`, actor `reaper`), not a prose row.
+
+  Consequences, each verified rather than assumed:
+
+  - **Claim attribution is `ops.actor`.** The tab-delimited
+    `task.claim<TAB><id><TAB>actor=...` payload prefix — which existed
+    only because prose had to be re-parsed — is deleted, along with
+    `formatClaimEvent` / `parseClaimEventActor` / `displayEventPayload`.
+    `lastClaimActor` reads two indexed columns. This still works on the
+    `--self` path, where `owner_id` stays NULL by design and the payload
+    therefore *cannot* name the actor.
+  - **`--evidence` moved to notes for every verb.** It previously lived
+    in the prose payload, and only `close` also wrote a note — so
+    deleting the prose would have silently dropped evidence on
+    `reject` / `defer` / `open` / `release` / `claim`. `recordEvidenceNote`
+    now covers all of them; notes are portable, so evidence syncs, which
+    the machine-local prose event never could.
+  - **`mu log` output is uglier for now, and honest.** Captured payloads
+    render as raw JSON until v2-log-verb renders prose from `intent`. The
+    entity filter that hid captured ops is gone, and `latestSeq` dropped
+    it in lockstep — when the two disagree, `--tail` starts past rows the
+    non-tail view already showed.
+  - **Workstream scoping follows the natural key.** `ops.key` is `demo`
+    for workstream rows but `demo/t1` for everything inside, so
+    `key = 'demo'` alone hid nearly every op. Fixed in `listLogs`,
+    `latestSeq`, and `src/parked.ts` — where the same bug meant local
+    activity no longer superseded an export marker.
+  - The TUI Recent card and the `y`-yank shortcut read ops directly;
+    yank resolves its target from `intent` + `key` instead of prose.
+
+  `EVENT_VERB_PREFIXES` shrank from 22 entries to 11 and is now only the
+  TUI's verb colouring, disappearing with v2-log-verb.
+
+  New `test/ops-no-duplicates.test.ts` (11 fast-tier tests) is the guard
+  that would have caught this: no two ops in one `group_id` may describe
+  the same `(entity, key, op)`; no op may use `entity='event'`; every op
+  must carry a non-null intent with no exception list; a 4-command
+  session must write exactly 4 ops; and `latestSeq` must equal the max
+  seq `listLogs` returns.
+
+- `src/logs.ts` reads and writes `ops` rows (`kind`→`entity`,
+  `source`→`actor`, `workstream`→`key`). Superseded within 2.0 by
+  v2-retire-log-shim above, which retired the duplicate-emit half of the
+  shim and changed `emitEvent` to require a typed intent; what remains is
+  a thin typed reader plus the one write path triggers cannot cover.
 - Log rows survive `workstream destroy` (the ops log has no FK
   cascade); `mu doctor` reports `ops rows` instead of
   `agent_logs rows`.
@@ -411,13 +488,12 @@ markers land in follow-up work.
   `<iso>|<uuid>` is gone — `parseHlc` deliberately rejects that shape
   as a tripwire, so leaving it would have failed loudly the moment
   anything read the log in HLC order.
-- The log shim reads only log-line entities (`message` / `event` /
-  `broadcast`). Now that the capture triggers also write to `ops`, an
-  unfiltered read would surface every `task add` twice in `mu log` —
-  once as its event breadcrumb and once as the raw captured op with a
-  JSON payload. `latestSeq` applies the same filter, since it is the
-  cursor into that result set and would otherwise start `--tail` past
-  log lines it never showed.
+- The log shim briefly read only log-line entities (`message` / `event` /
+  `broadcast`) so a single `task add` did not surface twice in `mu log`.
+  v2-retire-log-shim removed the duplicate emitters instead, so the
+  filter had nothing left to hide and is gone: `mu log` reads every op.
+  `latestSeq` dropped it in lockstep — the two must return the same row
+  set, or `--tail` starts past rows the non-tail view already showed.
 - `mu sql --confirm-rows` counts only the OPERATOR's rows. Capture
   triggers make `total_changes()` roughly 5x the real count (the op
   INSERT plus the HLC clock UPDATEs), which would have turned the

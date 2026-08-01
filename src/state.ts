@@ -117,7 +117,12 @@ export async function loadWorkstreamSnapshotFast(
     allTasks: opts.withAllTasks === true ? listTasks(db, workstream) : [],
     workspaces: listWorkspaces(db, workstream),
     workspaceOrphans: listWorkspaceOrphans(db, workstream),
-    recent: listLogs(db, { workstream, kind: "event", limit: eventLimit }),
+    // v2-retire-log-shim: this used to filter `kind: "event"` — the
+    // prose breadcrumbs. Those are gone, so the Recent card reads every
+    // op for the workstream. Payloads are raw JSON for captured ops
+    // until v2-log-verb renders them from `intent`; the card stays
+    // populated in the meantime rather than going silently empty.
+    recent: listLogs(db, { workstream, limit: eventLimit }),
     recentCommits: [],
     commitsBackend: null,
     doctor: null,

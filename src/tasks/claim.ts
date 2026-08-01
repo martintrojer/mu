@@ -14,11 +14,10 @@
 // Extracted from src/tasks.ts as part of refactor_split_large_src_files.
 
 import type { Db } from "../db.js";
-import { emitEvent, formatClaimEvent } from "../logs.js";
 import { withOpContext } from "../op-context.js";
 import { currentAgentName } from "../tmux.js";
 import { ClaimerNotRegisteredError, TaskAlreadyOwnedError, TaskNotFoundError } from "./errors.js";
-import { type EvidenceOption, evidenceSuffix } from "./lifecycle.js";
+import { type EvidenceOption, recordEvidenceNote } from "./lifecycle.js";
 import { getTask } from "./queries.js";
 import type { TaskStatus } from "./status.js";
 
@@ -99,12 +98,11 @@ function releaseTaskImpl(db: Db, localId: string, opts: ReleaseTaskOptions): Rel
       WHERE local_id = ?
         AND workstream_id = (SELECT id FROM workstreams WHERE name = ?)`,
   ).run(newStatus, new Date().toISOString(), localId, before.workstreamName);
-  const statusBit = statusChanges ? `, ${before.status} → ${newStatus}` : "";
-  emitEvent(
-    db,
-    before.workstreamName,
-    `task release ${localId} (was owner=${before.ownerName ?? "none"}${statusBit})${evidenceSuffix(opts)}`,
-  );
+  // No emitEvent: the UPDATE fired the capture trigger
+  // (intent='task.release'), whose payload names owner_id and status —
+  // the same facts the prose spelled out. Evidence goes to a note,
+  // since the prose payload that used to carry it is gone.
+  recordEvidenceNote(db, localId, before.workstreamName, "RELEASE", opts);
   return {
     previousOwnerName: before.ownerName,
     previousStatus: before.status,
@@ -304,19 +302,14 @@ async function claimTaskImpl(
 
       const after = getTask(db, localId, opts.workstream);
       if (!after) throw new Error(`claimTask: row missing after update: ${localId}`);
-      const statusBit =
-        after.status !== before.status ? `, ${before.status} → ${after.status}` : "";
-      emitEvent(
-        db,
-        opts.workstream,
-        formatClaimEvent({
-          localId,
-          actor: agentName,
-          anonymous: false,
-          prose: `task claim ${localId} by ${agentName} (was owner=${before.ownerName ?? "none"}${statusBit})${evidenceSuffix(opts)}`,
-        }),
-        agentName,
-      );
+      recordEvidenceNote(db, localId, opts.workstream, "CLAIM", opts);
+      // No emitEvent: the UPDATE fired the capture trigger under
+      // intent='task.claim' with actor=agentName (withOpContext above
+      // put it in _op_ctx, and the trigger copies it into ops.actor).
+      // The op payload carries the new owner_id, so the prose
+      // `formatClaimEvent` breadcrumb — and the tab-delimited prefix
+      // that existed only because prose had to be re-parsed — are both
+      // redundant. `lastClaimActor` now reads ops.actor directly.
       return {
         ownerName: agentName,
         actorName: agentName,
@@ -390,19 +383,13 @@ async function claimSelf(db: Db, localId: string, opts: ClaimTaskOptions): Promi
 
       const after = getTask(db, localId, before.workstreamName);
       if (!after) throw new Error(`claimTask: row missing after update: ${localId}`);
-      const statusBit =
-        after.status !== before.status ? `, ${before.status} → ${after.status}` : "";
-      emitEvent(
-        db,
-        before.workstreamName,
-        formatClaimEvent({
-          localId,
-          actor,
-          anonymous: true,
-          prose: `task claim ${localId} by ${actor} --self (anonymous, owner stays NULL${statusBit})${evidenceSuffix(opts)}`,
-        }),
-        actor,
-      );
+      recordEvidenceNote(db, localId, before.workstreamName, "CLAIM", opts);
+      // No emitEvent. This is the interesting case: the `--self` path
+      // leaves tasks.owner_id NULL deliberately, so the op PAYLOAD
+      // cannot name the actor — but ops.actor can and does, because
+      // withOpContext seeded _op_ctx with it. That is precisely what
+      // `lastClaimActor` needs, and reading a column beats
+      // prefix-matching prose (review_code_last_claim_actor_brittle).
       return {
         ownerName: null,
         actorName: actor,

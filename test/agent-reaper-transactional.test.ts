@@ -131,9 +131,16 @@ describe("deleteAgent reaper transactional rollback", () => {
     expect(after?.status).toBe("OPEN");
     expect(after?.ownerName).toBeNull();
 
-    const reapEvents = listLogs(db, { kind: "event" }).filter((r) =>
-      r.payload.startsWith("task reap design"),
-    );
-    expect(reapEvents).toHaveLength(1);
+    // v2-retire-log-shim: reap mutates `tasks`, so the capture trigger
+    // records it. What was missing was an INTENT (the ops came out
+    // intent=NULL); deleteAgent now wraps the sweep in
+    // withOpContext({ intent: "task.reap", actor: "reaper" }). The prose
+    // `task reap ...` event is gone; the typed op and the `[reaper]`
+    // note are the record.
+    const reapOps = listLogs(db, {}).filter((r) => r.intent === "task.reap");
+    expect(reapOps.length).toBeGreaterThan(0);
+    expect(reapOps.every((r) => r.source === "reaper")).toBe(true);
+    // The status revert itself is captured, keyed by natural key.
+    expect(reapOps.some((r) => r.workstreamName === "auth/design")).toBe(true);
   });
 });

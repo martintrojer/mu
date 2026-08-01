@@ -16,6 +16,7 @@
 import { type Db, resolveWorkstreamId, tryResolveWorkstreamId } from "./db.js";
 import type { AgentStatus } from "./detect.js";
 import { emitEvent, listLogs } from "./logs.js";
+import { withOpContext } from "./op-context.js";
 import { type ReconcileMode, type ReconcileReport, reconcile } from "./reconcile.js";
 import { addNote, listTasksByOwner } from "./tasks.js";
 // Re-export the cluster modules so external callers continue to
@@ -515,47 +516,56 @@ export function deleteAgent(db: Db, name: string, workstream: string): boolean {
   // owner and no `[reaper]` note explaining how they got there.
   // Reconcile / `mu task wait --stuck-after` would then surface
   // them as ownerless zombies with no breadcrumb.
-  return db.transaction(() => {
-    // Snapshot the stuck tasks BEFORE the DELETE; the FK CASCADE
-    // (SET NULL on owner_id) makes the post-delete query indistinguishable
-    // from "never owned by this agent."
-    const agentId = agentIdByName(db, name, workstream);
-    if (agentId === null) {
-      // Already gone — idempotent return. (Could happen if reconcile
-      // pruned a ghost concurrently.) The DELETE is a no-op.
-      return false;
-    }
-    const stuck = db
-      .prepare(
-        `SELECT t.id AS taskId, t.local_id AS localId, ws.name AS workstream
-           FROM tasks t
-           JOIN workstreams ws ON ws.id = t.workstream_id
-          WHERE t.owner_id = ? AND t.status = 'IN_PROGRESS'`,
-      )
-      .all(agentId) as Array<{ taskId: number; localId: string; workstream: string }>;
+  // `task.reap` intent so the tasks-trigger ops this produces are
+  // attributable. Without it the reaper's status revert landed as
+  // intent=NULL typed ops (measured), unrenderable by the one formatter
+  // v2-log-verb builds — the same defect as the prose events, in the
+  // other direction.
+  return withOpContext(db, { intent: "task.reap", actor: "reaper", group: "new" }, () =>
+    db.transaction(() => {
+      // Snapshot the stuck tasks BEFORE the DELETE; the FK CASCADE
+      // (SET NULL on owner_id) makes the post-delete query
+      // indistinguishable from "never owned by this agent."
+      const agentId = agentIdByName(db, name, workstream);
+      if (agentId === null) {
+        // Already gone — idempotent return. (Could happen if reconcile
+        // pruned a ghost concurrently.) The DELETE is a no-op.
+        return false;
+      }
+      const stuck = db
+        .prepare(
+          `SELECT t.id AS taskId, t.local_id AS localId, ws.name AS workstream
+             FROM tasks t
+             JOIN workstreams ws ON ws.id = t.workstream_id
+            WHERE t.owner_id = ? AND t.status = 'IN_PROGRESS'`,
+        )
+        .all(agentId) as Array<{ taskId: number; localId: string; workstream: string }>;
 
-    const result = db.prepare("DELETE FROM agents WHERE id = ?").run(agentId);
-    if (result.changes === 0) return false;
+      const result = db.prepare("DELETE FROM agents WHERE id = ?").run(agentId);
+      if (result.changes === 0) return false;
 
-    for (const t of stuck) {
-      db.prepare("UPDATE tasks SET status = 'OPEN', updated_at = ? WHERE id = ?").run(
-        new Date().toISOString(),
-        t.taskId,
-      );
-      addNote(
-        db,
-        t.localId,
-        `[reaper] previous owner ${name} gone (agent removed); status reverted IN_PROGRESS → OPEN, owner cleared`,
-        { author: "reaper", workstream: t.workstream },
-      );
-      emitEvent(
-        db,
-        t.workstream,
-        `task reap ${t.localId} (previous owner ${name} gone, IN_PROGRESS → OPEN)`,
-      );
-    }
-    return true;
-  })();
+      for (const t of stuck) {
+        db.prepare("UPDATE tasks SET status = 'OPEN', updated_at = ? WHERE id = ?").run(
+          new Date().toISOString(),
+          t.taskId,
+        );
+        addNote(
+          db,
+          t.localId,
+          `[reaper] previous owner ${name} gone (agent removed); status reverted IN_PROGRESS → OPEN, owner cleared`,
+          { author: "reaper", workstream: t.workstream },
+        );
+        // No emitEvent: the UPDATE above fired the tasks capture
+        // trigger. Reap is the one site the orchestrator's split did not
+        // predict — it DOES mutate a portable table, so a trigger sees
+        // it, but it ran outside any withOpContext and so produced
+        // intent=NULL typed ops. The fix is the intent above, not a
+        // second prose row. The `[reaper]` task_note is the
+        // human-readable breadcrumb, and it is itself a captured op.
+      }
+      return true;
+    })(),
+  );
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -627,7 +637,9 @@ export function freeAgent(db: Db, name: string, workstream: string): FreeAgentRe
     return { previousStatus: before.status, status: "free", changed: false };
   }
   updateAgentStatus(db, name, "free", before.workstreamName);
-  emitEvent(db, before.workstreamName, `agent free ${name} (was ${before.status})`);
+  // Machine-local table (`agents`): no trigger, so this emit is the
+  // only record.
+  emitEvent(db, before.workstreamName, "agent.free", `agent free ${name} (was ${before.status})`);
   return { previousStatus: before.status, status: "free", changed: true };
 }
 
@@ -736,9 +748,12 @@ export async function closeAgent(
     /* idempotent — pane may already be gone */
   });
   const deletedRow = deleteAgent(db, name, agent.workstreamName);
+  // Machine-local table (`agents`): no trigger, so this emit is the
+  // only record.
   emitEvent(
     db,
     agent.workstreamName,
+    "agent.close",
     `agent close ${name} (pane=${agent.paneId}${
       workspaceFreed
         ? autoFreeClean

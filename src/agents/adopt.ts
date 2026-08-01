@@ -173,9 +173,12 @@ export async function adoptAgent(db: Db, opts: AdoptAgentOptions): Promise<Adopt
   if (resolvedName !== previousTitle) {
     await setPaneTitle(opts.paneId, resolvedName);
   }
+  // Machine-local table (`agents`): no trigger, so this emit is the
+  // only record.
   emitEvent(
     db,
     opts.workstream,
+    "agent.adopt",
     `agent adopt ${resolvedName} (pane ${opts.paneId}, was title='${previousTitle ?? ""}')`,
   );
   return {

@@ -325,7 +325,7 @@ describe("waitForTasks", () => {
       // happened (FK intact, prefix matches EVENT_VERB_PREFIXES,
       // workstream id resolved) and obeys the same one-per-wait
       // dedupe as the warning.
-      const stalledEvents = listLogs(db, { workstream: "test", kind: "event" }).filter((r) =>
+      const stalledEvents = listLogs(db, { workstream: "test", kind: "agent" }).filter((r) =>
         r.payload.startsWith("agent stalled"),
       );
       expect(stalledEvents).toHaveLength(1);
@@ -339,7 +339,7 @@ describe("waitForTasks", () => {
         workstream: "test",
       });
       expect(r2.timedOut).toBe(true);
-      const stalledEvents2 = listLogs(db, { workstream: "test", kind: "event" }).filter((r) =>
+      const stalledEvents2 = listLogs(db, { workstream: "test", kind: "agent" }).filter((r) =>
         r.payload.startsWith("agent stalled"),
       );
       expect(stalledEvents2).toHaveLength(2);
@@ -388,7 +388,7 @@ describe("waitForTasks", () => {
       ).rejects.toBeInstanceOf(StallDetectedDuringWaitError);
       // Same emit + persist path: warning was still written, event row persisted.
       expect(warnings).toHaveLength(1);
-      const stalledEvent = listLogs(db, { workstream: "test", kind: "event" }).find((r) =>
+      const stalledEvent = listLogs(db, { workstream: "test", kind: "agent" }).find((r) =>
         r.payload.includes("agent stalled worker-onstall"),
       );
       expect(stalledEvent).toBeDefined();

@@ -401,10 +401,14 @@ describe("getParallelTracks — MVP acceptance graph (10 tasks, 1 diamond)", () 
     expect(listNotes(db, "specs", "test").map((n) => n.content)).toContain(
       "CLOSE: tracks: specs complete",
     );
-    const statusEvent = listLogs(db, { workstream: "test", kind: "event" })
+    // v2-retire-log-shim: evidence used to live in a prose event payload
+    // as `evidence="..."`. That event is gone; the CLOSE note asserted
+    // just above is now the single home for evidence, and it is a
+    // captured op (intent='task.note') so it syncs.
+    const closeOp = listLogs(db, { workstream: "test" })
       .reverse()
-      .find((row) => row.payload.includes("task status specs"));
-    expect(statusEvent?.payload).toContain('evidence="tracks: specs complete"');
+      .find((row) => row.intent === "task.close");
+    expect(closeOp).toBeDefined();
     const tracks = getParallelTracks(db, "test");
     expect(tracks).toHaveLength(1);
     // 2 ready (api, ui); specs is CLOSED so doesn't count as ready.

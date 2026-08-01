@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { LogCard } from "../src/cli/tui/cards/log.js";
-import { type LogRow, formatClaimEvent } from "../src/logs.js";
+import type { LogRow } from "../src/logs.js";
 import type { WorkstreamSnapshot } from "../src/state.js";
 import { expectTextAbsent, expectTextOnce, renderCardToText } from "./_card-render.js";
 
@@ -31,6 +31,7 @@ function logRow(seq: number, payload: string): LogRow {
     workstreamName: "demo",
     source: `worker-${seq}`,
     kind: "event",
+    intent: null,
     payload,
     createdAt: `2026-05-11T00:00:0${seq % 10}Z`,
   };
@@ -53,10 +54,14 @@ describe("LogCard", () => {
     expect(text).toContain("(no events yet)");
   });
 
+  // Uses the verbs that SURVIVED v2-retire-log-shim (agent.* /
+  // workspace.*). The retired `task *` prose no longer classifies, so it
+  // would render unsplit and get truncated by the column budget \u2014 which
+  // is a rendering detail, not what this test is about.
   it("renders title subtitle plus every visible event field exactly once", () => {
     const recent = [
-      logRow(1, "task claim build_x by worker-1"),
-      logRow(2, "task status build_x (IN_PROGRESS → CLOSED)"),
+      logRow(1, "agent spawn worker-a"),
+      logRow(2, "agent free worker-b"),
       logRow(3, "workspace refresh worker-1"),
     ];
     const text = renderCardToText(LogCard({ snapshot: { ...EMPTY_SNAPSHOT, recent } }));
@@ -64,15 +69,15 @@ describe("LogCard", () => {
     expect(text).toContain("Activity log");
     expect(text).toContain("last ↑3");
     for (const [source, verb] of [
-      ["worker-1", "task claim"],
-      ["worker-2", "task status"],
+      ["worker-1", "agent spawn"],
+      ["worker-2", "agent free"],
       ["worker-3", "workspace refresh"],
     ] as const) {
       expect(text).toContain(source);
       expectTextOnce(text, verb);
     }
-    expect(text).toContain("build_x by worker-1");
-    expect(text).toContain("build_x (IN_PROGRESS → CLOSED)");
+    expect(text).toContain("worker-a");
+    expect(text).toContain("worker-b");
   });
 
   it("truncates at the default row budget by rendering only the visible events", () => {
@@ -90,23 +95,17 @@ describe("LogCard", () => {
     expectTextAbsent(text, "task_10");
   });
 
-  it("renders structured task.claim events through the human-display payload", () => {
-    const recent = [
-      logRow(
-        1,
-        formatClaimEvent({
-          localId: "build_x",
-          actor: "worker-1",
-          anonymous: false,
-          prose: "task claim build_x by worker-1 (was owner=none)",
-        }),
-      ),
-    ];
+  // v2-retire-log-shim deleted the tab-delimited `task.claim<TAB>...`
+  // payload prefix (and the strip-on-render helper that existed only to
+  // undo it). Claim attribution is `ops.actor` now, so payloads render
+  // VERBATIM — nothing to unwrap, and no delimiter noise to leak.
+  it("renders payloads verbatim, with no structured prefix to strip", () => {
+    const recent = [logRow(1, "task claim build_x by worker-1 (was owner=none)")];
     const text = renderCardToText(LogCard({ snapshot: { ...EMPTY_SNAPSHOT, recent } }));
 
     expectTextOnce(text, "task claim");
     expect(text).toContain("build_x by worker-1");
-    expectTextAbsent(text, "task.claim");
     expectTextAbsent(text, "actor=worker-1");
+    expectTextAbsent(text, "\t");
   });
 });

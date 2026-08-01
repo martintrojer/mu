@@ -327,9 +327,12 @@ export async function kickAgent(
     throw new NoForegroundProcessError(name, tty, "no-foreground");
   }
   await killPgrp(pgid, signal);
+  // Signals a process; mutates no table at all, so there is nothing for
+  // a trigger to see and this emit is the only record.
   emitEvent(
     db,
     agent.workstreamName,
+    "agent.kick",
     `agent kick ${name} (signal=${signal}, pgid=${pgid}, comm=${fgRow.comm})`,
   );
   return {

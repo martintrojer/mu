@@ -49,6 +49,7 @@ function logRow(seq: number, payload: string, source = "system"): LogRow {
     workstreamName: "demo",
     source,
     kind: "event",
+    intent: null,
     payload,
     createdAt: "2026-01-01T12:34:56.000Z",
   };
@@ -148,9 +149,22 @@ describe("LogPopup behaviour (mount + simulateInput)", () => {
     expect(text).toMatch(/Activity log · popup \(1\/2\)/);
   });
 
-  it("y on a `task ...` event yanks `mu task show <id>`", async () => {
+  // v2-retire-log-shim: task rows are CAPTURED ops now \u2014 JSON payload,
+  // intent='task.add', and the natural key naming the task. The yank
+  // target comes from those columns rather than from prose, which is
+  // both simpler and impossible to break by rewording a payload.
+  it("y on a task op yanks `mu task show <id>` (resolved from intent + key)", async () => {
     const db = fixtureDb();
-    const snap = snapshotWithEvents([logRow(101, "task add my_task title=hi")]);
+    const taskOp: LogRow = {
+      seq: 101,
+      workstreamName: "demo/my_task",
+      source: "system",
+      kind: "task",
+      intent: "task.add",
+      payload: '{"local_id":"my_task","title":"hi"}',
+      createdAt: "2026-05-11T00:00:01Z",
+    };
+    const snap = snapshotWithEvents([taskOp]);
     const yank = vi.fn(async (_cmd: string) => {});
 
     const { stdin, stdout, unmount } = mountLogPopup({

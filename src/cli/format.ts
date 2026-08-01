@@ -13,7 +13,7 @@
 // existing import surface (tests + cli/* importers).
 
 import { type AgentRow, type AgentStatus, agentStatusGlyph } from "../agents.js";
-import { type LogRow, displayEventPayload } from "../logs.js";
+import type { LogRow } from "../logs.js";
 import { muTable, pc } from "../output.js";
 import type { TaskRow } from "../tasks.js";
 import type { TaskStatus } from "../tasks/status.js";
@@ -312,11 +312,12 @@ export function printLogRow(row: LogRow): void {
   const time = row.createdAt.replace("T", " ").replace(/\.\d+Z$/, "Z");
   const kindColor =
     row.kind === "event" ? pc.cyan : row.kind === "broadcast" ? pc.yellow : (s: string) => s;
-  // For `kind='event'`, strip the `task.claim<TAB>...` structured
-  // prefix used by claim events; the human-readable prose tail is
-  // what the user wants to see. Other event kinds pass through
-  // unchanged. See review_code_last_claim_actor_brittle.
-  const payload = row.kind === "event" ? displayEventPayload(row.payload) : row.payload;
+  // Payloads are printed verbatim. v1 had to strip a tab-delimited
+  // `task.claim<TAB>...` prefix here because claim attribution was
+  // smuggled through the prose; attribution is now `ops.actor`, so
+  // there is nothing to strip (v2-retire-log-shim). Captured-op
+  // payloads are raw JSON until v2-log-verb renders them from intent.
+  const payload = row.payload;
   console.log(
     `${pc.dim(`#${row.seq}`)} ${pc.dim(time)}  ${pc.bold(row.source)}  ${kindColor(row.kind)}  [${ws}]  ${payload}`,
   );

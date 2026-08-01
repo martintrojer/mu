@@ -152,10 +152,13 @@ describe("listReady / listBlocked / listGoals", () => {
     expect(listNotes(db, "specs", "test").map((n) => n.content)).toContain(
       "CLOSE: views: specs complete",
     );
-    const statusEvent = listLogs(db, { workstream: "test", kind: "event" })
+    // v2-retire-log-shim: evidence lives in the CLOSE note (asserted
+    // above), not in a prose event payload. The close itself is a typed
+    // captured op.
+    const closeOp = listLogs(db, { workstream: "test" })
       .reverse()
-      .find((row) => row.payload.includes("task status specs"));
-    expect(statusEvent?.payload).toContain('evidence="views: specs complete"');
+      .find((row) => row.intent === "task.close");
+    expect(closeOp).toBeDefined();
     expect(
       listReady(db, "test")
         .map((t) => t.name)

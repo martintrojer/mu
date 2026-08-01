@@ -359,7 +359,7 @@ describe("adoptAgent (register an existing tmux pane as a managed agent)", () =>
     });
   });
 
-  it("emits an 'agent adopt' event into agent_logs", async () => {
+  it("emits an agent.adopt op (typed intent, entity='agent')", async () => {
     const { executor } = mockTmux(state);
     setTmuxExecutor(executor);
     const { adoptAgent } = await import("../src/agents.js");
@@ -368,8 +368,11 @@ describe("adoptAgent (register an existing tmux pane as a managed agent)", () =>
     const { paneId } = seedOrphanPane({ sessionName: "mu-auth", title: "worker-2" });
     await adoptAgent(db, { paneId, workstream: "auth" });
 
-    const logs = listLogs(db, { workstream: "auth", kind: "event" });
-    const adoptEvents = logs.filter((l) => l.payload.startsWith("agent adopt"));
+    // v2-retire-log-shim: `agents` is machine-local so no capture
+    // trigger sees it — this emit survives, but now carries a real
+    // intent and entity='agent' instead of the untyped kind='event'.
+    const logs = listLogs(db, { workstream: "auth", kind: "agent" });
+    const adoptEvents = logs.filter((l) => l.intent === "agent.adopt");
     expect(adoptEvents.length).toBe(1);
     expect(adoptEvents[0]?.payload).toContain("worker-2");
     expect(adoptEvents[0]?.payload).toContain(paneId);

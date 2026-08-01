@@ -3,8 +3,12 @@
 //
 // The detection key is the latest op in the workstream being a
 // `db export` event (no local activity since export). 2.0 removed
-// `mu db export` itself, so these tests emit the marker op directly
-// via emitEvent — v2-sync re-grounds the heuristic on watermarks. Tests
+// `mu db export` itself, and v2-retire-log-shim removed the untyped
+// prose emitEvent that could stand in for it, so these tests insert the
+// marker op with raw SQL — the only remaining way to produce the shape
+// parkedStatus looks for. NOTE: that means parkedStatus is currently
+// unreachable in production; v2-sync re-grounds the heuristic on
+// watermarks and should delete or rebuild it. Tests
 // drive both the positive path (parked) and the disqualifiers
 // (recent local activity, alive agent, IN_PROGRESS task, threshold
 // not yet elapsed).
@@ -14,7 +18,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type Db, openDb } from "../src/db.js";
-import { emitEvent } from "../src/logs.js";
 import { WORKSTREAM_PARKED_THRESHOLD_DAYS, parkedStatus } from "../src/parked.js";
 import { addTask } from "../src/tasks.js";
 import { setTaskStatus } from "../src/tasks/lifecycle.js";
@@ -23,6 +26,24 @@ import { ensureWorkstream } from "../src/workstream.js";
 let dir: string;
 let dbPath: string;
 let db: Db;
+
+/** Insert the legacy `db export` marker op parkedStatus keys off.
+ *  Raw SQL because no production code writes this shape any more (see
+ *  the header note): entity='event' with prose payload and no intent. */
+function insertExportMarker(database: Db, workstream: string, payload: string): void {
+  database
+    .prepare(
+      `INSERT INTO ops (hlc, machine_id, group_id, actor, intent, entity, key, op, payload, created_at)
+       VALUES (?, 'test-machine', ?, 'system', NULL, 'event', ?, 'put', ?, ?)`,
+    )
+    .run(
+      `marker-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      `grp-${Math.random().toString(36).slice(2)}`,
+      workstream,
+      payload,
+      new Date().toISOString(),
+    );
+}
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "mu-parked-"));
@@ -60,7 +81,7 @@ describe("parkedStatus", () => {
 
   it("returns parked: true after mu db export when 1+ days have elapsed", () => {
     ensureWorkstream(db, "alpha");
-    emitEvent(db, "alpha", `db export ${join(dir, "out.db")}`);
+    insertExportMarker(db, "alpha", `db export ${join(dir, "out.db")}`);
     expect(parkedStatus(db, "alpha", { now: daysAfterExport(db, 2) })).toEqual({
       parked: true,
       sinceDays: 2,
@@ -69,14 +90,14 @@ describe("parkedStatus", () => {
 
   it("returns parked: false within the threshold window (same-session export)", () => {
     ensureWorkstream(db, "alpha");
-    emitEvent(db, "alpha", `db export ${join(dir, "out.db")}`);
+    insertExportMarker(db, "alpha", `db export ${join(dir, "out.db")}`);
     // "Now" is right after the export — well under the 1-day threshold.
     expect(parkedStatus(db, "alpha")).toEqual({ parked: false });
   });
 
   it("local activity after export disqualifies (task add supersedes the marker)", () => {
     ensureWorkstream(db, "alpha");
-    emitEvent(db, "alpha", `db export ${join(dir, "out.db")}`);
+    insertExportMarker(db, "alpha", `db export ${join(dir, "out.db")}`);
     const now = daysAfterExport(db, 2);
     addTask(db, {
       localId: "later",
@@ -98,7 +119,7 @@ describe("parkedStatus", () => {
       effortDays: 1,
     });
     setTaskStatus(db, "wip", "IN_PROGRESS", { workstream: "alpha" });
-    emitEvent(db, "alpha", `db export ${join(dir, "out.db")}`);
+    insertExportMarker(db, "alpha", `db export ${join(dir, "out.db")}`);
     // The export event is now the latest agent_logs row, but the
     // in-progress task means the workstream is presumably mid-flight.
     expect(parkedStatus(db, "alpha", { now: daysAfterExport(db, 2) })).toEqual({ parked: false });
@@ -116,7 +137,7 @@ describe("parkedStatus", () => {
     db.prepare(
       "INSERT INTO agents (workstream_id, name, cli, pane_id, status, created_at, updated_at) VALUES (?, ?, 'pi', '%0', 'terminated', ?, ?)",
     ).run(wsId, "dead", ts, ts);
-    emitEvent(db, "alpha", `db export ${join(dir, "out.db")}`);
+    insertExportMarker(db, "alpha", `db export ${join(dir, "out.db")}`);
     expect(parkedStatus(db, "alpha", { now: daysAfterExport(db, 2) })).toEqual({
       parked: true,
       sinceDays: 2,
@@ -132,13 +153,13 @@ describe("parkedStatus", () => {
     db.prepare(
       "INSERT INTO agents (workstream_id, name, cli, pane_id, status, created_at, updated_at) VALUES (?, ?, 'pi', '%0', 'free', ?, ?)",
     ).run(wsId, "live", ts, ts);
-    emitEvent(db, "alpha", `db export ${join(dir, "out.db")}`);
+    insertExportMarker(db, "alpha", `db export ${join(dir, "out.db")}`);
     expect(parkedStatus(db, "alpha", { now: daysAfterExport(db, 2) })).toEqual({ parked: false });
   });
 
   it("respects a custom thresholdDays override", () => {
     ensureWorkstream(db, "alpha");
-    emitEvent(db, "alpha", `db export ${join(dir, "out.db")}`);
+    insertExportMarker(db, "alpha", `db export ${join(dir, "out.db")}`);
     const now = daysAfterExport(db, 0);
     // Threshold 0 with same-instant `now` trips immediately.
     expect(parkedStatus(db, "alpha", { now, thresholdDays: 0 }).parked).toBe(true);

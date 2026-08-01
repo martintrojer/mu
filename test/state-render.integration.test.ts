@@ -106,15 +106,19 @@ describe("mu state — default (full) mode", () => {
     expect(parsed.workspaces).toEqual([]);
     expect(parsed.recentCommits).toEqual([]);
     expect(parsed.commitsBackend).toBeNull();
+    // v2-retire-log-shim: `recent` shows captured ops. Both task adds
+    // appear as typed ops keyed by natural key, not as prose events.
     expect(parsed.recent).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          kind: "event",
-          payload: expect.stringContaining("task add alpha"),
+          kind: "task",
+          intent: "task.add",
+          workstreamName: "ws/alpha",
         }),
         expect.objectContaining({
-          kind: "event",
-          payload: expect.stringContaining("task add beta"),
+          kind: "task",
+          intent: "task.add",
+          workstreamName: "ws/beta",
         }),
       ]),
     );
@@ -246,7 +250,7 @@ describe("classifyEventVerb", () => {
       "../src/agents/kick.js"
     );
     const { openDb } = await import("../src/db.js");
-    const { classifyEventVerb, displayEventPayload, listLogs } = await import("../src/logs.js");
+    const { EVENT_VERB_PREFIXES, classifyEventVerb, listLogs } = await import("../src/logs.js");
     const {
       addBlockEdge,
       addNote,
@@ -285,14 +289,25 @@ describe("classifyEventVerb", () => {
     const captured = new Map<string, string>();
     const captureNewEvents = (fn: () => unknown | Promise<unknown>): Promise<void> =>
       Promise.resolve().then(() => {
-        const before = listLogs(db, { kind: "event" }).map((r) => r.seq);
-        const highWater = before.length === 0 ? 0 : Math.max(...before);
+        // Only hand-written emitEvent survivors are prose. Captured ops
+        // carry JSON payloads and a typed intent, and are classified by
+        // intent (v2-log-verb), never by prefix — so scope this audit to
+        // the entities emitEvent still writes.
+        const localEntities = ["agent", "workspace", "workstream"];
+        const isLocalEmit = (r: {
+          kind: string;
+          intent: string | null;
+          payload: string;
+        }): boolean =>
+          r.intent !== null && localEntities.includes(r.kind) && !r.payload.startsWith("{");
+        const rows = listLogs(db, {}).filter(isLocalEmit);
+        const highWater = rows.length === 0 ? 0 : Math.max(...rows.map((r) => r.seq));
         return Promise.resolve(fn()).then(() => {
-          for (const event of listLogs(db, { kind: "event", since: highWater })) {
-            const visiblePayload = displayEventPayload(event.payload);
-            const classified = classifyEventVerb(visiblePayload);
-            expect(classified, `payload should classify: ${visiblePayload}`).not.toBeNull();
-            if (classified) captured.set(classified.verb, visiblePayload);
+          for (const event of listLogs(db, { since: highWater })) {
+            if (!isLocalEmit(event)) continue;
+            const classified = classifyEventVerb(event.payload);
+            expect(classified, `payload should classify: ${event.payload}`).not.toBeNull();
+            if (classified) captured.set(classified.verb, event.payload);
           }
         });
       });
@@ -474,6 +489,12 @@ describe("classifyEventVerb", () => {
       });
       resetTmuxExecutor();
 
+      // v2-retire-log-shim: the 11 task.* / workstream.init /
+      // workstream.destroy prose emits are GONE — each duplicated a
+      // capture-trigger op that already had a real intent and key. What
+      // survives is exactly the set no trigger can see: `agents` and
+      // `vcs_workspaces` are machine-local, `agent stalled` mutates
+      // nothing, and `workstream export` writes files.
       const expected = [
         "agent adopt",
         "agent close",
@@ -481,24 +502,16 @@ describe("classifyEventVerb", () => {
         "agent kick",
         "agent spawn",
         "agent stalled",
-        "task add",
-        "task block",
-        "task claim",
-        "task delete",
-        "task note",
-        "task reparent",
-        "task release",
-        "task status",
-        "task unblock",
-        "workstream destroy",
-        "workstream export",
-        "workstream init",
         "workspace create",
         "workspace free",
         "workspace recreate",
         "workspace refresh",
+        "workstream export",
       ];
       expect([...captured.keys()].sort()).toEqual(expected.sort());
+      // And the surviving set must equal the declared prefix list, so a
+      // new emitter cannot be added without declaring it (or vice versa).
+      expect(expected.sort()).toEqual([...EVENT_VERB_PREFIXES].sort());
     } finally {
       setWaitSleepForTests(previousWaitSleep);
       setWaitStuckWarnForTests(previousStuckWarn);
