@@ -58,6 +58,14 @@ import {
 } from "../output.js";
 import { RebuildTargetExistsError, RebuildTargetIsSourceError } from "../rebuild.js";
 import {
+  SyncPeerNotFoundError,
+  SyncPeerRefAmbiguousError,
+  SyncSourceNotFoundError,
+  ambientFlush,
+  ambientIngest,
+  syncEnabled,
+} from "../sync.js";
+import {
   ClaimerNotRegisteredError,
   CrossWorkstreamEdgeError,
   CycleError,
@@ -270,11 +278,23 @@ export function classifyError(err: unknown): { label: string; exitCode: number }
   ) {
     return { label: "conflict", exitCode: 4 };
   }
-  if (err instanceof UndoGroupNotFoundError || err instanceof NothingToUndoError) {
+  if (
+    err instanceof UndoGroupNotFoundError ||
+    err instanceof NothingToUndoError ||
+    // A `--repair <peer>` ref or a `--from <path>` that names nothing:
+    // the same resolve-time-miss lane as every other not-found.
+    err instanceof SyncPeerNotFoundError ||
+    err instanceof SyncSourceNotFoundError
+  ) {
     return { label: "not found", exitCode: 3 };
   }
   if (err instanceof ArchiveNotFoundError) {
     return { label: "not found", exitCode: 3 };
+  }
+  if (err instanceof SyncPeerRefAmbiguousError) {
+    // An abbreviated peer id matching several peers. Same rule as an
+    // ambiguous group id: the operator disambiguates, mu never guesses.
+    return { label: "conflict", exitCode: 4 };
   }
   if (err instanceof UndoSupersededError) {
     // A conflict in the precise sense the exit-code map means: the
@@ -393,24 +413,70 @@ function emitError(err: unknown): number {
   return exitCode;
 }
 
+export interface HandleOptions {
+  /**
+   * Opt OUT of the ambient sync hook. Exactly one verb sets this today:
+   * `mu sql`, the escape hatch whose no-surprise-mutations property is
+   * load-bearing. An operator running `mu sql "SELECT ..."` to inspect
+   * state must see the state as it is, not as it becomes once a peer's
+   * segment lands mid-query.
+   */
+  ambientSync?: false;
+}
+
 /** Wrap an async handler so typed errors become specific exit codes.
  *
  *  The optional `command` arg is the failing subcommand's `Command`
  *  (commander's `this` in a `.action(function () { ... })` body).
  *  When supplied, usage-class errors thrown inside `fn` will render
- *  that subcommand's --help (human) or `usage` JSON (--json). */
-export function handle(fn: (db: Db) => Promise<void>, command?: Command): () => Promise<void> {
+ *  that subcommand's --help (human) or `usage` JSON (--json).
+ *
+ *  THE AMBIENT-SYNC SEAM. `handle()` is the one place every verb passes
+ *  through, and it is ALREADY async while most verb bodies are
+ *  synchronous — which is exactly why the hook belongs here and nowhere
+ *  else. `syncPass` is async (it takes a cross-process file lock); if the
+ *  hook lived inside the verbs, ~63 synchronous handlers would have had
+ *  to become async to await it. Here, one `await` before `fn(db)` and one
+ *  after covers all of them, and no verb learns that sync exists.
+ *
+ *  Order is load-bearing: INGEST before the body (so the verb reads the
+ *  freshest state transport has delivered) and FLUSH after (so the ops
+ *  the verb just wrote are in this machine's segment before the process
+ *  exits, rather than waiting for the next invocation).
+ *
+ *  Neither half can fail the command — see src/sync.ts. */
+export function handle(
+  fn: (db: Db) => Promise<void>,
+  command?: Command,
+  opts?: HandleOptions,
+): () => Promise<void> {
   return async () => {
     let db: Db | undefined;
     let exitCode: number | undefined;
     activeCommand = command;
+    // The single `if` the unconfigured single-machine case pays: one env
+    // var read, no promise allocated, no filesystem touched.
+    const ambient = opts?.ambientSync !== false && syncEnabled();
     try {
       db = openDb();
+      if (ambient) await ambientIngest(db);
       await fn(db);
     } catch (err) {
       exitCode = emitError(err);
     } finally {
       activeCommand = undefined;
+      // Flush even on the error path: the verb may have committed ops
+      // before throwing (a cascade that hit a cycle halfway), and those
+      // ops are already canonical in `ops`. Withholding them from the
+      // segment would make this machine's history depend on whether the
+      // command happened to exit 0.
+      if (ambient && db !== undefined) {
+        try {
+          await ambientFlush(db);
+        } catch {
+          // ambientFlush is already total; belt and braces.
+        }
+      }
       try {
         db?.close();
       } catch {

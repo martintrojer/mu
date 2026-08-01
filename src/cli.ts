@@ -35,6 +35,7 @@ import { wireLogCommand } from "./cli/log.js";
 import { wireRebuildCommand } from "./cli/rebuild.js";
 import { wireSqlCommand } from "./cli/sql.js";
 import { printBareNoWorkstreamsHint, wireStateCommands } from "./cli/state.js";
+import { wireSyncCommand } from "./cli/sync.js";
 import { wireTaskCommands } from "./cli/tasks.js";
 import { resolveInitialTab } from "./cli/tui-launch-focus.js";
 import { wireUndoCommand } from "./cli/undo.js";
@@ -771,6 +772,7 @@ export function buildProgram(): Command {
   wireLogCommand(program);
   wireStateCommands(program);
   wireSqlCommand(program);
+  wireSyncCommand(program);
   wireRebuildCommand(program);
   wireArchiveCommands(program);
   wireUndoCommand(program);

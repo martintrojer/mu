@@ -342,6 +342,13 @@ export function wireSqlCommand(program: Command): void {
     )
     .action(function (query: string) {
       const opts = (this as Command).opts() as { json?: boolean; confirmRows?: number };
-      return handle((db) => cmdSql(db, query, opts), this as Command)();
+      // NO ambient sync on this path. `mu sql` is the escape hatch whose
+      // no-surprise-mutations property is load-bearing: an operator
+      // reading state with it must see the state as it is, not as it
+      // becomes once a peer's segment lands between openDb and the query.
+      // It is also the one verb whose result the operator diffs against
+      // their own expectation, so an ambient ingest changing the row
+      // count would read as a mu bug.
+      return handle((db) => cmdSql(db, query, opts), this as Command, { ambientSync: false })();
     });
 }

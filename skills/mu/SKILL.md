@@ -327,7 +327,25 @@ git cherry-pick "$sha" && npm test
   read-only, yanks commands, `?` shows keys, `/` filters popups,
   `Esc`/`q` back, `q`/`Ctrl-C` quits. Non-TTY bare `mu` (or
   `MU_NO_TUI=1`) prints help.
-- **Escape hatch:** `mu sql "<query>"` for missing typed verbs.
+- **Sync (laptop <-> devserver):** ONE env var turns it on, on every
+  machine: `export MU_SYNC_DIR=$HOME/Sync/mu` pointing at a shared
+  folder (Syncthing recommended). Then EVERY mu command flushes your
+  ops and ingests every peer's — ambient, no daemon, so a bare `mu task
+  list` on the other box already shows what you just added. `mu sync`
+  bare = the PEER STATUS report (machine, last seen, ops behind) and
+  prints a copy-pasteable rsync line when a peer is stale; mu never
+  runs ssh/scp/rsync itself. Two flags: `--from <path-to-peer-mu.db>`
+  (read a peer's ops table directly — sshfs or a copied file) and
+  `--repair <peer>` (re-read that peer's segment from zero; always
+  safe, ingest is idempotent). A one-off directory needs no flag:
+  `MU_SYNC_DIR=/media/usb mu state`. Merge is per-FIELD LWW, so two
+  machines editing different fields of one task keep both — concurrent
+  editing is fine. NEVER put `MU_DB_PATH` inside `MU_SYNC_DIR` (it
+  corrupts the DB; `mu doctor` hard-fails). Agent/workspace state and
+  task OWNERSHIP are machine-local and never travel.
+- **Escape hatch:** `mu sql "<query>"` for missing typed verbs. Note
+  this is the ONE verb that does not ambient-sync (its no-surprise-
+  mutations guarantee is load-bearing).
 - **Health:** `mu doctor`.
 
 ## `mu task wait` exits

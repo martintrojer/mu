@@ -45,12 +45,50 @@ import {
   loadWorkstreamSnapshotSlow,
   mergeSnapshotFastSlow,
 } from "../../state.js";
+import { ambientSyncPass, syncEnabled } from "../../sync.js";
 import type { CardId } from "./layout.js";
 
 export const TICK_DEFAULT_MS = 1000;
 export const TICK_FLOOR_MS = 100;
 export const TICK_CEILING_MS = 10_000;
 export const SLOW_TICK_MS = 10_000;
+
+/**
+ * Guard so N workstream tabs do not each run a sync pass on the same
+ * 10s beat. The hook is instantiated per tab; the sync pass is a
+ * whole-DB, whole-sync-dir operation with nothing per-workstream about
+ * it, so one per beat is exactly right and N would be N-1 wasted
+ * ingests fighting over the same file lock.
+ */
+let syncInFlight = false;
+
+/**
+ * The TUI's share of the AMBIENT sync hook.
+ *
+ * Hung off the SLOW tick (10s) and never the fast one: sync is
+ * filesystem work — readdir, stat, read, a cross-process file lock —
+ * and the fast tick is a repaint cadence an operator can wind down to
+ * 100ms with `-`. At 100ms this would be 10 sync passes a second on a
+ * shared folder.
+ *
+ * `quiet: true` because the TUI owns the alternate screen: a stderr
+ * warning would paint garbage over the dashboard. Sync problems surface
+ * through the Doctor card instead, which is where a TUI operator looks.
+ *
+ * Total by construction (see src/sync.ts): a broken segment or an
+ * unreadable sync dir must never take the dashboard down.
+ */
+async function tuiSyncPass(db: Db): Promise<void> {
+  if (!syncEnabled() || syncInFlight) return;
+  syncInFlight = true;
+  try {
+    await ambientSyncPass(db, { quiet: true });
+  } catch {
+    // Never let sync fail a repaint.
+  } finally {
+    syncInFlight = false;
+  }
+}
 
 /**
  * Per-card on/off state for the dashboard. Keyed by numeric CardId
@@ -259,6 +297,10 @@ export function useDashboardSnapshot(
     void refreshNonce;
     let cancelled = false;
     const slowTick = async () => {
+      if (cancelled) return;
+      // BEFORE the slow load, so anything a peer just delivered is
+      // already in the tables this tick is about to read.
+      await tuiSyncPass(db);
       if (cancelled) return;
       try {
         const slow = await loaders.slow(

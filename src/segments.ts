@@ -441,6 +441,13 @@ function flushLocked(db: Db, path: string, machineId: string): FlushResult {
   return { segmentPath: path, appended: lines.length, total, skippedLocal };
 }
 
+/** Number of GOOD lines in a segment (stopping at the first defect, as
+ *  ingest does). The denominator of "how far behind am I" — exported for
+ *  `mu sync`'s peer table. */
+export function segmentLineCount(path: string): number {
+  return readSegmentTail(path).count;
+}
+
 /** Count + last hlc of an existing segment, cheaply. Uses the manifest
  *  when it agrees with the file's byte length; otherwise scans. */
 function readSegmentTail(path: string): { count: number; lastHlc: string | null } {
@@ -718,12 +725,8 @@ export function ingestSegment(db: Db, peer: PeerSegment): IngestResult {
         payload: decoded.payloadText,
       };
 
-      // Advance the local clock past the peer's op BEFORE applying, so
-      // anything we mint afterwards sorts above it.
-      receiveHlc(db, op.hlc);
-
       try {
-        const result = applyOp(db, op);
+        const result = applyIncomingOp(db, op);
         if (result.changed) changed += 1;
       } catch (err) {
         if (err instanceof OpEntityNotSyncedError) {
@@ -740,27 +743,6 @@ export function ingestSegment(db: Db, peer: PeerSegment): IngestResult {
         }
         throw err;
       }
-
-      // Record the op locally so it survives, participates in provenance,
-      // and can be re-flushed by rebuild. INSERT OR IGNORE makes this
-      // idempotent via UNIQUE (machine_id, hlc) — the property that lets
-      // "re-read from zero" be the universal repair.
-      db.prepare(
-        `INSERT OR IGNORE INTO ops
-           (hlc, machine_id, group_id, actor, intent, entity, key, op, payload, created_at)
-         VALUES (@hlc, @machineId, @groupId, @actor, @intent, @entity, @key, @op, @payload, @createdAt)`,
-      ).run({
-        hlc: op.hlc,
-        machineId: op.machineId,
-        groupId: op.groupId,
-        actor: op.actor ?? null,
-        intent: op.intent ?? null,
-        entity: op.entity,
-        key: op.key,
-        op: op.op,
-        payload: op.payload,
-        createdAt: new Date().toISOString(),
-      });
 
       applied += 1;
       previousHlc = op.hlc;
@@ -780,6 +762,46 @@ export function ingestSegment(db: Db, peer: PeerSegment): IngestResult {
     defects,
     truncatedAt,
   };
+}
+
+/**
+ * Apply ONE incoming op and record it in the local `ops` table.
+ *
+ * The shared tail of every ingest path — segment ingest above, and the
+ * `mu sync --from <peer.db>` reader in `src/sync.ts`, which is a
+ * different READER over the same apply semantics. Extracted so the two
+ * cannot drift: a second copy of "advance the clock, apply, record" is
+ * how one of them silently stops advancing the clock.
+ *
+ * Three steps, in this order:
+ *   1. `receiveHlc` BEFORE applying, so anything we mint afterwards
+ *      sorts above the peer's op.
+ *   2. `applyOp`, which is capture-suppressed (no echo op is minted).
+ *   3. Record the op locally so it survives, participates in
+ *      provenance, and can be re-flushed by rebuild. INSERT OR IGNORE
+ *      makes this idempotent via UNIQUE (machine_id, hlc) — the
+ *      property that lets "re-read from zero" be the universal repair.
+ */
+export function applyIncomingOp(db: Db, op: Op): { changed: boolean } {
+  receiveHlc(db, op.hlc);
+  const result = applyOp(db, op);
+  db.prepare(
+    `INSERT OR IGNORE INTO ops
+       (hlc, machine_id, group_id, actor, intent, entity, key, op, payload, created_at)
+     VALUES (@hlc, @machineId, @groupId, @actor, @intent, @entity, @key, @op, @payload, @createdAt)`,
+  ).run({
+    hlc: op.hlc,
+    machineId: op.machineId,
+    groupId: op.groupId,
+    actor: op.actor ?? null,
+    intent: op.intent ?? null,
+    entity: op.entity,
+    key: op.key,
+    op: op.op,
+    payload: op.payload,
+    createdAt: new Date().toISOString(),
+  });
+  return { changed: result.changed };
 }
 
 // ─── the two halves, together ─────────────────────────────────────────

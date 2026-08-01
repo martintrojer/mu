@@ -2176,8 +2176,9 @@ Use the typed surfaces for recovery and movement:
 | Need | Verb |
 | ---- | ---- |
 | Lossless un-archive | `mu archive restore <label> --as <new-ws> [--source <orig-ws>]` |
-| Laptop ↔ devserver handoff | `mu db export <file>` + `mu db import <file>` |
-| Manual recovery from a parked conflict | `mu db replay <sidecar>` |
+| Laptop ↔ devserver handoff | Ambient **sync** — set `MU_SYNC_DIR` and every command carries it (§ 15.6) |
+| Peer status / a torn segment | `mu sync`, `mu sync --repair <peer>` |
+| Disaster recovery from the ops log | `mu rebuild <file>` |
 
 ---
 
@@ -2257,66 +2258,166 @@ These are consequences of the marker model, not scope cuts:
 
 ## 15.6 Multi-machine sync
 
-Use `mu db {export,import,replay}` when one user alternates a
-workstream between two machines (for example laptop ↔ devserver) over
-multi-day stretches. You own the transport: `rsync`, `scp`, Dropbox,
-git-lfs, USB, whatever moves a SQLite file plus its manifest.
-
-**Hard rule / user contract:** do not edit the same workstream on two
-machines concurrently. Other workstreams may keep moving locally, but
-for one workstream, finish or release in-flight claims before export:
-`mu agent list -w <ws>` shows current owners. `mu db import` does not
-carry owners because `owner_id` points at the machine-local `agents`
-table.
+**One env var, on every machine.** That is the whole configuration:
 
 ```bash
-# Machine A — export the whole DB copy + ~/Dropbox/mu.db.manifest.json
-mu db export ~/Dropbox/mu.db --force
-# ship file (rsync / scp / Dropbox / git-lfs / USB)
-
-# Machine B — preview first, then commit
-mu db import ~/Dropbox/mu.db          # dry-run preview
-mu db import ~/Dropbox/mu.db --apply  # commits FAST_FORWARD / IMPORT rows
+export MU_SYNC_DIR=$HOME/Sync/mu     # a folder something else keeps in step
 ```
 
-Dry-run output is a per-workstream decision table:
+Now every `mu` invocation flushes your ops into
+`$MU_SYNC_DIR/<machine_id>.jsonl` and reads every OTHER `.jsonl` in that
+folder. Nothing else to set up: no peer list, no host names, no daemon.
+Drop a third machine in and it appears.
 
-```
-workstream   decision      delta
------------  ------------  -------------------------------
-auth         FAST_FORWARD  source 42, local 39, last_synced 39
-docs         IDENTICAL     source 12, local 12, last_synced 12
-local-only   LOCAL_AHEAD   source 0,  local 7,  re-export from this machine
-experiment   CONFLICT      source 55, local 58, needs --force-source
-```
-
-(The actual CLI also prints the numeric columns separately:
-`source_seq`, `local_seq`, `last_synced`, and `needs`.)
-
-Five case branches exist: `IDENTICAL` / `FAST_FORWARD` /
-`LOCAL_AHEAD` / `CONFLICT` / `IMPORT` (source-only or clean-machine
-import). `LOCAL_AHEAD` means the incoming file is stale for that
-workstream; re-export from this machine instead of applying it.
-`CONFLICT` means both sides advanced since the last sync and mu
-refuses by default.
-
-Recovery from an accidental concurrent edit is intentionally sharp:
+### The workflow
 
 ```bash
-mu db import ~/Dropbox/mu.db --apply --force-source
-# prints a parked loser like:
-# <state-dir>/divergence/auth-2026-05-14T10:00:00.000Z-a1b2c3d4.db
+# laptop
+mu task add auth-fix -t "Fix the auth redirect" -i 80 -e 2 -w app
 
-mu db replay <state-dir>/divergence/auth-2026-05-14T10:00:00.000Z-a1b2c3d4.db
-mu db replay <state-dir>/divergence/auth-2026-05-14T10:00:00.000Z-a1b2c3d4.db --task local_fix --apply
-mu db replay <state-dir>/divergence/auth-2026-05-14T10:00:00.000Z-a1b2c3d4.db --all --apply
+# devserver — no sync verb needed, `mu task list` already ingested
+mu task list -w app
+mu task close auth-fix -w app
+
+# laptop, later
+mu task show auth-fix -w app         # CLOSED
 ```
 
-`--force-source` replaces the whole local workstream from the source
-file, but first parks the local divergent state as a divergence
-sidecar. `mu db replay` is the manual cherry-pick tool for that
-sidecar; it is dry-run by default, idempotent, and refuses when the
-same `local_id` exists locally with diverged content.
+There is no export step, no import step, and no "which side is
+authoritative" decision. Both machines converge.
+
+### `mu sync` — the status report
+
+Sync already happened on your last command, so `mu sync`'s real job is
+telling you *who your peers are and whether transport is working*:
+
+```console
+$ mu sync
+flushed 14 ops · ingested 22 from 1 peer
+┌──────────┬───────────┬────────┬─────────┐
+│ machine  │ last seen │ behind │         │
+├──────────┼───────────┼────────┼─────────┤
+│ 7f3a91c2 │ 2m ago    │ 0      │         │
+├──────────┼───────────┼────────┼─────────┤
+│ c8ec0feb │ 3d ago    │ 47     │ ← stale │
+└──────────┴───────────┴────────┴─────────┘
+Next:
+  Pull fresh segments (1 stale peer) : rsync -av <host>:/home/me/Sync/mu/ /home/me/Sync/mu/
+  Or stop doing it by hand           : # share /home/me/Sync/mu with Syncthing
+```
+
+Machines are named by `machine_id` prefix, not hostname — a hostname is
+machine-local information that deliberately never travels. `behind` is
+how many lines of that peer's segment you *hold but have not applied*;
+a non-zero number means either a transfer caught mid-flight (it will
+resolve itself) or a defect that stopped the read (see `--repair`).
+
+Two flags, and only two:
+
+```bash
+# Read a peer's DB directly — an sshfs mount, or a file you scp'd.
+# A different READER: its SQLite ops table, not a JSONL segment.
+mu sync --from /mnt/devserver/.local/state/mu/mu.db
+
+# Re-read a peer's segment from zero, after a torn transfer.
+# Safe to run any time: ingest is idempotent.
+mu sync --repair c8ec
+```
+
+A one-off directory needs no flag at all — the env var already does it:
+
+```bash
+MU_SYNC_DIR=/media/usb-stick mu state    # ingest from a USB stick
+```
+
+### Transport is yours
+
+mu reads and writes files. It never runs `ssh`, `scp`, or `rsync` for
+you, and it never will: that would mean owning ssh config, jump hosts,
+`ProxyCommand`, non-standard ports, identity files, and interactive
+password prompts. Instead, when a peer looks stale, mu prints the
+command and you paste it.
+
+Pick any file-mover. Because segments are **append-only and
+single-writer-per-file**, they are the easiest thing in the world to
+move:
+
+| Tier | How | Notes |
+| ---- | --- | ----- |
+| **Recommended: Syncthing** | Share `$MU_SYNC_DIR` on every machine | Continuous, peer-to-peer, no server, no cloud account. Its `*.sync-conflict-*` copies are ingested rather than ignored — they are still valid op logs, and dedupe makes reading them free. |
+| `rsync` in a loop or cron | `rsync -av host:$MU_SYNC_DIR/ $MU_SYNC_DIR/` | Fine. Run it in both directions, or one way from each box. |
+| sshfs / NFS mount of the FOLDER | Point `MU_SYNC_DIR` at the mount | OK for segments. **Never** for `MU_DB_PATH`. |
+| Fully manual (`scp`, USB stick) | Copy the `.jsonl` files whenever | Still converges, just less often. |
+
+Manual copying is a first-class tier, not a fallback, because of three
+properties that make it strictly better than v1's export/import:
+
+1. **Direction-free.** There is no source-vs-target decision. Copy
+   either way, or both ways. You converge.
+2. **Idempotent.** Copying the same file ten times equals copying it
+   once, so re-copy freely when unsure.
+3. **Interruption-safe.** A killed `scp` leaves a truncated last line
+   that the parser skips; the next copy completes it. v1's
+   half-transferred SQLite file was simply unusable.
+
+### Two things not to do
+
+**Never put `MU_DB_PATH` inside `MU_SYNC_DIR`.** This is THE footgun of
+the design, and `mu doctor` hard-fails on it:
+
+```console
+$ mu doctor
+fleet
+  db-vs-sync       : FAIL DB is INSIDE MU_SYNC_DIR — this WILL corrupt it
+```
+
+A live WAL-mode SQLite database is three files (`mu.db`, `-wal`,
+`-shm`) whose mutual consistency *is* its durability. A file-syncer
+copies them whole-file and out of order, and will happily resurrect a
+peer's stale `-wal` — yielding a database that opens fine and is
+silently corrupt. Two machines writing the same synced file is worse:
+last-writer-wins on the whole FILE, so one machine's entire history
+disappears. Keep the DB on local disk; only the regenerable segments
+travel.
+
+**Avoid iCloud Drive and Dropbox for `MU_SYNC_DIR` on macOS.** Both do
+*dataless-placeholder eviction*: a file you have not touched recently
+becomes a stub, and the `stat()` that materialises it blocks on the
+network. Since mu stats the sync dir at the top of *every* command,
+that turns `mu task add` into a multi-second hang — or a failure when
+you are offline. Syncthing keeps real bytes on disk and has no such
+mode. (Google Drive's File Stream and OneDrive's Files On-Demand have
+the same problem.)
+
+### What does and does not travel
+
+Only **portable** state syncs: workstreams, tasks, edges, notes. Ops
+about **agents** and **workspaces** are recorded locally — `mu log`
+still shows them — but never leave the machine, because a `pane_id`
+like `%17` and a path like `/home/me/...` are meaningless (and often
+actively wrong) on another box.
+
+A consequence worth stating plainly: **task ownership does not sync.**
+`tasks.owner_id` points into the machine-local `agents` table, so a
+task claimed by `worker-2` on the devserver shows as unowned on your
+laptop. That is correct — `worker-2` is a tmux pane that does not exist
+there.
+
+### Concurrent editing is fine now
+
+v1 had a hard rule against editing one workstream on two machines at
+once. That rule is gone. Ops are semantic partial updates merged by
+**per-field last-writer-wins**, so a devserver crew closing a task
+while you re-prioritise it on the laptop keeps *both* edits:
+
+```bash
+# laptop                                    # devserver
+mu task update t1 --impact 95 -w app        mu task close t1 -w app
+# after both sync: impact=95 AND status=CLOSED, on both machines
+```
+
+Only the same *field* of the same row edited on two machines needs a
+winner, and the newer HLC takes it.
 
 ---
 

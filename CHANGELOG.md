@@ -61,11 +61,85 @@ markers land in follow-up work.
 
 ### Added
 
+- **`mu sync` + AMBIENT sync — the switch point (`src/sync.ts`,
+  `src/cli/sync.ts`).** Work now moves between a laptop and a devserver,
+  which is what the whole 2.0 rewrite is for. Two halves:
+
+  **ONE verb, whose bare form is a PEER STATUS REPORT.** The flush and
+  ingest are incidental, because they happen on every mu invocation
+  anyway (below):
+
+  ```
+  $ mu sync
+  flushed 14 ops · ingested 22 from 1 peer
+  machine   last seen   behind
+  devbox    2m ago      0
+  desktop   3d ago      47   ← stale
+  ```
+
+  Two flags, and only two, because nothing else can express them:
+  `--from <path>` ingests from a peer's `mu.db` DIRECTLY (a different
+  READER: its SQLite `ops` table rather than a JSONL segment — for an
+  sshfs mount or a copied file), and `--repair <peer>` resets that peer's
+  **watermark** and re-reads its **segment** from zero (safe because
+  ingest is idempotent via `UNIQUE (machine_id, hlc)`). `--repair`
+  accepts any unique machine-id prefix; an ambiguous one is a conflict
+  (exit 4), never a guess. Both flags carry `--json` and a `Next:` block.
+
+  Deliberately NOT built: `mu peers` (folded into the bare form) and
+  `--to <dir>` / `--from <dir>`. A one-off directory needs no flag —
+  `MU_SYNC_DIR=/mnt/usb mu state` already ingests from the USB stick
+  through the repo's existing env-var-override idiom, and a second way to
+  say the same thing is a surface to keep in step for nothing.
+
+  **AMBIENT flush + ingest on every mu invocation**, which is what makes
+  the workflow no-hands: with `MU_SYNC_DIR` set, `mu task list` on the
+  devserver already shows what the laptop added. AMBIENT, NOT A DAEMON —
+  there is no watcher, no background process, and no polling loop that
+  outlives the command. Sync happens because you already run `mu`
+  constantly. The hook lives in `handle()` (`src/cli/handle.ts`), the one
+  seam every verb passes through and the only one that is ALREADY async
+  while verb bodies are synchronous: one `await` before the body and one
+  after covers all ~63 verbs, and no verb learns that sync exists. Order
+  is load-bearing — ingest BEFORE (so the verb reads the freshest state)
+  and flush AFTER (so the ops this invocation just wrote are published
+  now, not on the next one).
+
+  Guarantees: `MU_SYNC_DIR` unset is a single `if` reading one env var,
+  with no promise allocated and no filesystem touched (measured
+  indistinguishable from baseline; ~3ms with one peer). Flushes take the
+  cross-process lock in `src/file-lock.ts`, so two concurrent mu
+  processes cannot interleave lines or double-ingest. `mu sql` opts OUT
+  entirely — its no-surprise-mutations property is load-bearing, and an
+  ambient ingest changing a row count mid-inspection would read as a mu
+  bug. The TUI runs the pass on its SLOW tick (10s), never the 1s fast
+  tick, and quietly (a stderr write would paint over the alternate
+  screen). And it can NEVER fail a command: a truncated segment, a
+  garbage segment, a sync dir that is a file, a vanished directory — all
+  warn on stderr and return, so `mu task add` works when sync is broken.
+
+  **Transport stays the operator's.** mu reads and writes FILES and
+  shells out to nothing. When a peer looks stale, `mu sync` PRINTS a
+  copy-pasteable `rsync` line via the ordinary `NextStep` convention. The
+  `--push` / `--pull <host>` shape proposed earlier in this project was
+  RETRACTED: it violates the ROADMAP pledge that the user owns transport,
+  and it would drag in ssh config, jump hosts, ProxyCommand, ports,
+  identity files, interactive prompts (inside a TUI tick?), and
+  network-vs-auth error mapping — a remote backend wearing a small hat.
+
+- **`mu doctor`'s two `MU_SYNC_DIR` hazard checks are live.** They
+  shipped inert in `src/fleet-hazards.ts` and now fire for real. The one
+  that matters is `db-vs-sync`: `MU_DB_PATH` inside `MU_SYNC_DIR` is a
+  hard **fail**, because a live WAL-mode SQLite DB is three files whose
+  mutual consistency IS its durability, and a file-syncer copying them
+  out of order — or resurrecting a peer's stale `-wal` — produces a DB
+  that opens fine and is silently corrupt.
+
 - **Segments — the sync transport layer (`src/segments.ts`).** How ops
   leave and enter a machine: `flushSegment` appends this machine's
   not-yet-flushed ops to `<MU_SYNC_DIR>/<machine_id>.jsonl`, and
   `ingestSegment` reads a peer's segment from its **watermark** and feeds
-  each op through `applyOp`. SDK only — the `mu sync` verb is v2-sync.
+  each op through `applyOp`. Surfaced by `mu sync`, above.
 
   The load-bearing property is **single-writer-per-file**: a machine
   appends only to its OWN segment and read-onlys every other, so no file
