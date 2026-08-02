@@ -24,7 +24,15 @@
     "isolatedModules": true,
     "verbatimModuleSyntax": true,
     "jsx": "react-jsx",
-    "jsxImportSource": "react"
+    "jsxImportSource": "react",
+
+    // tsup's bundled rollup-plugin-dts injects `baseUrl: "."` into the
+    // compiler options it builds for .d.ts generation (rollup.js ~6837).
+    // TS 6 deprecates baseUrl and errors on it (TS5101), which fails the
+    // dts step even though nothing here sets it. Silencing is safe: we do
+    // not use baseUrl or paths, so the injected value resolves nothing.
+    // Remove this once tsup ships a plugin that stops injecting it.
+    "ignoreDeprecations": "6.0"
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist", "test"]
