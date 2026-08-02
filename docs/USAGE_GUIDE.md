@@ -1,28 +1,17 @@
 # mu — Usage Guide
 
-A practical, copy-pasteable tour of mu (current main; 2.0).
-Everything below works against the built CLI. Terms are canonical
-— see [VOCABULARY.md](VOCABULARY.md) for definitions; the complete
-current verb list is in `## CLI — complete verb list` of
+A practical, copy-pasteable tour of mu 2.0. Terms are canonical — see
+[VOCABULARY.md](VOCABULARY.md); the complete verb list is in
+`## CLI — complete verb list` of
 [skills/mu/SKILL.md](../skills/mu/SKILL.md).
 
-> **Status:** 2.0 (pre-release). ~60 typed verbs across 7
-> namespaces (`workstream`, `agent`, `task`, `workspace`, `log`,
-> `archive`, `me`) plus bare top-level verbs
-> (`state`, `doctor`, `sql`, `undo`, `sync`, `rebuild`). Every verb accepts `--json`
-> (one allow-listed exception, `mu agent attach`), per-agent VCS
-> workspaces (jj/sl/git/none), activity log with `--tail`
-> subscription, bare `mu` TTY dashboard, canonical static state card
-> (`mu state` default / `--tui` render modes), granular `mu undo
-> <group>` over the ops log (no snapshot files), evidence on
-> lifecycle verbs, schema v9
-> (v5 surrogate INTEGER PKs + per-workstream UNIQUE on
-> operator-facing names; v9 adds the `ops` log and `sync_peers`, and
-> drops v8's `agent_logs`, `snapshots`, `workstream_sync` and the
-> five `archived_*` tables — all subsumed by the ops log).
-> See [CHANGELOG.md](../CHANGELOG.md) for the release entry,
-> and [§ Not in 2.0](#whats-not-in-041-and-how-to-work-around-it)
-> at the bottom for the gaps that still need workarounds.
+> **Status:** 2.0 (pre-release). ~60 typed verbs across 7 namespaces
+> (`workstream`, `agent`, `task`, `workspace`, `log`, `archive`, `me`)
+> plus bare top-level verbs (`state`, `doctor`, `sql`, `undo`, `sync`,
+> `rebuild`, `db`). Every verb accepts `--json` (one exception,
+> `mu agent attach`). Schema v9. See [CHANGELOG.md](../CHANGELOG.md).
+
+**In a hurry? Start at [§ 0. Common scenarios](#0-common-scenarios).**
 
 *If anything below disagrees with `mu --help`, trust `mu --help`.*
 
@@ -30,6 +19,7 @@ current verb list is in `## CLI — complete verb list` of
 
 ## Table of contents
 
+0. [Common scenarios (start here)](#0-common-scenarios)
 1. [Setup](#1-setup)
 2. [Get oriented (`mu doctor`)](#2-get-oriented)
 3. [Create a workstream (`mu workstream init`)](#3-create-a-workstream)
@@ -50,8 +40,263 @@ current verb list is in `## CLI — complete verb list` of
 15.6. [Multi-machine sync](#156-multi-machine-sync)
 16. [One-shot demo script](#16-one-shot-demo-script)
 17. [Mental model in three sentences](#mental-model-in-three-sentences)
-18. [What's NOT in 2.0](#whats-not-in-041-and-how-to-work-around-it)
+18. [What's NOT in 2.0](#whats-not-in-20-and-how-to-work-around-it)
 19. [Where to go from here](#where-to-go-from-here)
+
+---
+
+## 0. Common scenarios
+
+Six worked paths, every command run live. Output is verbatim (colour
+stripped). Set `MU_DB_PATH=/tmp/mu-play.db` first if you want to try
+them without touching your real registry.
+
+### 0.1 First 5 minutes
+
+Init a workstream, plan two tasks with a dependency, see what's ready.
+
+```bash
+mu workstream init auth
+mu task add design -w auth --title "Design auth module" --impact 80 --effort-days 2
+mu task add build  -w auth --title "Build auth module"  --impact 80 --effort-days 5 --blocked-by design
+mu task next -w auth
+mu task tree build -w auth
+```
+
+```
+Created workstream auth (tmux session mu-auth)
+Next:
+  Attach the tmux session : tmux a -t mu-auth
+  Plan tasks              : mu task add -w auth --title "..." --impact 50 --effort-days 1
+  Spawn an agent          : mu agent spawn <name> -w auth
+  See state               : mu state -w auth
+
+Added task design (workstream=auth, impact=80, effort=2)
+
+Added task build (workstream=auth, impact=80, effort=5)
+  blocked by: design
+
+┌────────┬────────┬────────────────────┬────────┬────────┬──────┬───────┐
+│ name   │ status │ title              │ impact │ effort │ ROI  │ owner │
+├────────┼────────┼────────────────────┼────────┼────────┼──────┼───────┤
+│ design │ OPEN   │ Design auth module │ 80     │ 2      │ 40.0 │ —     │
+└────────┴────────┴────────────────────┴────────┴────────┴──────┴───────┘
+
+Tree of build  (blockers below; --down for dependents)
+build  OPEN  Build auth module
+└── design  OPEN  Design auth module
+```
+
+`build` is absent from `mu task next` because `design` blocks it.
+Close `design` and `build` becomes ready. Details: [§ 3](#3-create-a-workstream),
+[§ 4](#4-plan-some-work-as-a-dag).
+
+### 0.2 The dispatch loop: spawn, claim, send, wait, close
+
+```bash
+mu agent spawn worker-1 -w auth --cli sh    # --cli pi for a real agent
+mu task claim design -w auth --for worker-1
+mu agent send worker-1 -w auth 'Design the auth module, then: mu task close design --evidence "..."'
+mu task wait design -w auth --timeout 60    # blocks until CLOSED
+mu agent close worker-1 -w auth
+```
+
+```
+Spawned worker-1 (sh) in window worker-1 of mu-auth, pane %88
+
+Claimed design for worker-1 (OPEN → IN_PROGRESS)
+Next:
+  Drop a note (single-quote to defer shell expansion) : mu task note design 'FILES: ...\nDECISION: ...' -w auth
+  Close with grounding                                : mu task close design --evidence "..." -w auth
+  Release if blocked                                  : mu task release design -w auth
+
+sent 23 bytes to worker-1
+
+all-of 1 reached CLOSED in 4094ms
+  ✓ design (CLOSED)
+
+Closed worker-1
+```
+
+Exit codes from `mu task wait`: `0` met, `5` timeout, `6` the owning
+pane died, `7` stalled (with `--on-stall exit`). See
+[§ Wait exit codes](#wait-exit-codes-mu-task-wait).
+
+`mu agent send` verifies delivery. If it prints `warning: ... was NOT
+submitted`, the text is sitting unsubmitted in the pane — the agent has
+not seen it. That is the failure mode `exit 0` used to hide; check
+before you wait on the task.
+
+### 0.3 Laptop ↔ devserver
+
+Same `MU_SYNC_DIR` on both machines. No export step, no import step, no
+sync verb in the loop.
+
+```bash
+# both machines, in your shell rc
+export MU_SYNC_DIR=$HOME/Sync/mu
+
+# laptop
+mu workstream init app
+mu task add auth_fix -w app -t "Fix the auth redirect" -i 80 -e 2
+
+# devserver — the ordinary command already ingested it
+mu task list -w app
+mu task close auth_fix -w app --evidence "shipped in #412"
+
+# laptop
+mu task show auth_fix -w app
+```
+
+```
+┌──────────┬────────┬───────────────────────┬────────┬────────┬──────┬───────┐
+│ name     │ status │ title                 │ impact │ effort │ ROI  │ owner │
+├──────────┼────────┼───────────────────────┼────────┼────────┼──────┼───────┤
+│ auth_fix │ OPEN   │ Fix the auth redirect │ 80     │ 2      │ 40.0 │ —     │
+└──────────┴────────┴───────────────────────┴────────┴────────┴──────┴───────┘
+
+Closed auth_fix (OPEN → CLOSED)
+  evidence: shipped in #412
+
+auth_fix  —  Fix the auth redirect
+  workstream : app
+  status     : CLOSED
+  ...
+Notes (1)
+  2026-08-02T05:49:15.361Z  worker-2
+    CLOSE: shipped in #412
+```
+
+**Both machines edit at once.** Merges are per-FIELD, so different
+fields of the same task both survive:
+
+```bash
+# laptop                                # devserver
+mu task update t1 -w app --impact 95    mu task close t1 -w app
+```
+
+```
+# both machines, after both have synced:
+t1  —  Concurrent demo
+  status     : CLOSED
+  impact     : 95
+```
+
+Same field on both machines: the newer HLC wins, silently. Peer status
+is `mu sync`; a torn transfer is `mu sync --repair <peer-prefix>`. Full
+section: [§ 15.6](#156-multi-machine-sync).
+
+### 0.4 I made a mistake
+
+Every user-visible action is one **group** of ops. Find it, preview,
+apply.
+
+```bash
+mu task update build -w auth --impact 5     # oops
+mu undo                                     # what can I undo?
+mu undo 6380dd3d                            # preview (dry run)
+mu undo 6380dd3d --yes                      # apply
+```
+
+```
+mu undo — most recent undoable action:
+  6380dd3d  task.update — 1 op
+
+recent groups (newest first):
+  * 6380dd3d  task.update — 1 op
+    1abb5038  task.add — 2 ops
+    4f93f1df  task.add — 1 op
+    70af8fb8  workstream.init — 1 op
+
+mu undo 6380dd3d — would revert task.update
+  restore task auth/build impact=80 updated_at=2026-08-02T05:49:34.545Z
+
+(dry-run; rerun with --yes to apply)
+
+Undid 6380dd3d (task.update)
+  task auth/build impact=80 updated_at=2026-08-02T05:49:34.545Z
+  1 row change(s), recorded as group 3814ed17
+  This undo is itself undoable: mu undo 3814ed17 --yes
+```
+
+The undo is itself a group — `mu undo 3814ed17 --yes` is redo. Any
+unique prefix of a group id works. Undo reverts ROWS: killed panes and
+freed workspace dirs do not come back. See
+[§ Undoing one action](#undoing-one-action-mu-undo).
+
+### 0.5 Something looks wrong
+
+```bash
+mu doctor           # exit 0 healthy, 5 on drift
+mu doctor --deep    # full rebuild + field diff; slower
+```
+
+```
+mu doctor
+
+environment
+  tmux             : ok (tmux 3.7b)
+  $TMUX            : set
+  $TMUX_PANE       : %21
+  $MU_SESSION      : auth
+
+db
+  path             : /tmp/mu-play.db
+  schema           : ok (10 tables)
+  schema_version   : 9
+  journal_mode     : wal
+  foreign_keys     : on
+
+workstream
+  current          : auth
+
+state (workstream=auth)
+  agents           : 0
+  tasks            : 2 (ready 1, blocked 1, in-progress 0)
+  ops rows         : 1
+  ghosts           : none
+  orphan panes     : 0
+
+fleet
+  db-vs-sync       : ok MU_SYNC_DIR not set (no sync configured)
+  db-filesystem    : ok DB is on local (0x1021994)
+  name-case        : ok no case-colliding workstream names
+
+ops log
+  drift (shallow)  : ok every live row has ops (1ms) — run `mu doctor --deep` for the full rebuild diff
+```
+
+**On drift**, `--deep` names the exact table, key and field:
+
+```
+ops log
+  drift            : FAIL 1 divergence(s) (16ms)
+      tasks auth/build.title: live=TAMPERED log=Build auth module
+```
+
+Do not rebuild reflexively — which side is right depends on the cause.
+In order:
+
+```bash
+mu db backup /tmp/mu-drift-evidence.db      # 1. preserve the evidence
+mu rebuild /tmp/mu-rebuilt.db               # 2. materialize what the log believes
+MU_DB_PATH=/tmp/mu-rebuilt.db mu sql "SELECT local_id, title FROM tasks"   # 3. compare
+```
+
+Then report it: drift is a capture/apply bug, and the named
+table/key/field is the reproduction. See
+[§ What to do when drift is reported](#what-to-do-when-drift-is-reported).
+
+### 0.6 Upgrading from mu 1.x
+
+`mu` refuses to open a pre-v9 DB (`SchemaTooOldError`, exit 4) and
+leaves the file alone. A sidecar, `scripts/v1-to-v2.ts`, imports a v1
+DB into a fresh v9 one; you run it once, by hand, against a copy.
+Workstreams, tasks, edges and notes come across; agents, workspaces and
+ownership do not.
+
+Full recipe and flags: [scripts/README.md](../scripts/README.md).
+Summary here: [§ 15.7](#157-coming-from-mu-1x).
 
 ---
 
@@ -79,14 +324,11 @@ rebuilds before linking the new dist/.
 
 ### Install the bundled skill
 
-Mu ships a skill at `skills/mu/SKILL.md` that teaches the LLM
-running inside an agent pane how to use mu (the in-pane working
-loop, the subscribe-vs-poll pattern, the verb-list reference).
-The canonical install path is the
-[skills CLI](https://github.com/vercel-labs/skills) — it auto-
-detects every supported agent on your system (pi, claude-code,
-codex, opencode, cursor, ...) and installs into the right per-agent
-location:
+Mu ships a skill at `skills/mu/SKILL.md` that teaches the LLM running
+inside an agent pane how to use mu. The canonical install path is the
+[skills CLI](https://github.com/vercel-labs/skills), which auto-detects
+every supported agent (pi, claude-code, codex, opencode, cursor, ...)
+and installs into the right per-agent location:
 
 ```bash
 npx skills add martintrojer/mu          # interactive: pick scope + agents
@@ -94,20 +336,18 @@ npx skills add martintrojer/mu -g -y    # global, no prompts (pi: ~/.pi/agent/sk
 npx skills update mu                    # later, to refresh
 ```
 
-If you installed mu from a local checkout (hacking on the skill
-itself), point the skills CLI at the checkout instead so edits flow
-straight through:
+Hacking on the skill itself? Point the skills CLI at your checkout so
+edits flow straight through:
 
 ```bash
 npx skills add ./skills/mu              # local-path source format (symlinks)
 ```
 
-If you'd rather not use the skills CLI, mu's skill is just a
-directory with a `SKILL.md` — symlink or copy it into the agent's
-skills dir directly. For pi, that's `~/.pi/agent/skills/mu/` (per-
-user global) or `.pi/skills/mu/` (per-project). The convention
-`~/.agents/skills/mu/` (cross-tool location) is also picked up by
-pi and several other agents:
+Without the skills CLI, the skill is just a directory with a
+`SKILL.md` — symlink or copy it into the agent's skills dir. For pi:
+`~/.pi/agent/skills/mu/` (global) or `.pi/skills/mu/` (per-project).
+The cross-tool `~/.agents/skills/mu/` is picked up by pi and several
+others:
 
 ```bash
 # From an npm-global install
@@ -120,8 +360,7 @@ ln -sf "$PWD/skills/mu" ~/.agents/skills/mu
 
 ### For mu hackers: alias to the build output
 
-If you're hacking on mu itself and want fastest iteration, alias
-directly to the build output instead:
+Fastest iteration when hacking on mu itself:
 
 ```bash
 npm install              # deps only
@@ -143,75 +382,56 @@ tmux       # if you're not already in one
 
 ## 2. Get oriented
 
-For a human at an interactive terminal, bare `mu` is the home base:
-it launches the read-only TUI with every workstream on the machine
-loaded as tabs. Initial tab focus uses this ladder: `$MU_SESSION` when
-it names a loaded workstream; then the current tmux session name when
-it is `mu-<workstream>`; then best-effort cwd detection against
-registered workspace paths; then cwd equal to the VCS-derived project
-root of any loaded workstream's workspaces (ties broken by most-recent
-workstream activity); then tab 0. If no workstream exists yet, it
-prints help plus the one-paste start command:
+For a human at a terminal, bare `mu` is the home base: it launches the
+read-only TUI with every workstream on the machine loaded as tabs.
+Initial tab focus ladder: `$MU_SESSION` naming a loaded workstream →
+current tmux session named `mu-<workstream>` → cwd inside a registered
+workspace → cwd at the VCS-derived project root of any loaded
+workstream (newest activity wins ties) → tab 0. With no workstream yet
+it prints help plus the start command:
 
 ```bash
 mu
 # Get started: mu workstream init <name>
 ```
 
-For scripts, agents, CI, and pipes, bare `mu` deliberately does NOT
-enter the TUI: when stdout is not a TTY it prints `mu --help`. Use
-explicit typed verbs and `--json` for the API surface:
+For scripts, agents, CI, and pipes, bare `mu` does NOT enter the TUI:
+when stdout is not a TTY it prints `mu --help`. Use explicit typed
+verbs and `--json` for the API surface:
 
 ```bash
 mu state -w <workstream> --json
 MU_NO_TUI=1 mu             # force the non-TTY/help path even in a terminal
 ```
 
-Run the diagnostic once to check tmux + DB health:
-
-```bash
-mu doctor
-```
-
-Expected output:
-
-```
-mu doctor
-  tmux: ok (tmux 3.6a)
-  $TMUX: set
-  db: ok (/Users/you/.mu/mu.db)
-  workstream: none (pass --workstream or run inside an mu-<name> tmux session)
-```
-
-The "workstream: none" line is expected — we haven't joined one yet.
-
-`mu doctor` also runs two families of 2.0 checks.
+Run `mu doctor` to check tmux + DB health — full annotated output in
+[§ 0.5 Something looks wrong](#05-something-looks-wrong). Two families
+of checks are worth knowing about.
 
 **Mixed-fleet hazards** (the `fleet` section) — cheap, and every one is
 something you can fix before it costs you data:
 
 | Row | Means |
 | --- | --- |
-| `db-vs-sync` | **FAIL** if `MU_DB_PATH` is inside `MU_SYNC_DIR`. Never do this: a live WAL-mode SQLite DB is three files (`mu.db`, `-wal`, `-shm`) whose mutual consistency IS its durability, and a file-syncer copying them out of order — or resurrecting a peer's stale `-wal` — silently corrupts the database. mu syncs append-only per-machine **segments** precisely so the DB file never has to travel. |
+| `db-vs-sync` | **FAIL** if `MU_DB_PATH` is inside `MU_SYNC_DIR`. Never do this: a live WAL-mode SQLite DB is three files (`mu.db`, `-wal`, `-shm`) whose mutual consistency IS its durability, and a file-syncer copying them out of order — or resurrecting a peer's stale `-wal` — silently corrupts the database. mu syncs append-only per-machine **segments** so the DB file never has to travel. |
 | `db-filesystem` | **WARN** if the DB is on NFS/SMB/sshfs. WAL needs working advisory locks and a shared-memory file; network mounts provide neither reliably. Symptom is `database is locked` with no contention, or corruption with it. |
 | `name-case` | **WARN** if two workstream names differ only by case. They coexist on Linux but collide on macOS (APFS) and Windows, and a workstream name IS a tmux session name and seeds workspace paths — so a Mac joining the fleet sees one session where Linux sees two. |
 
 **Ops-log drift** (the `ops log` section) — is the projection still
-faithful to the log? This matters more than it looks: in 2.0 undo,
-archives, sync and history are all projections of the ops log, so a
-capture bug breaks all four at once, silently. Two tiers:
+faithful to the log? Undo, archives, sync and history are all
+projections of the ops log, so a capture bug breaks all four at once,
+silently. Two tiers:
 
 ```bash
 mu doctor           # shallow: every live row must have >=1 op. ~3ms.
 mu doctor --deep    # full rebuild + field-level diff. ~0.6ms per op.
 ```
 
-The default is shallow because the deep check rebuilds the whole log
-(measured: ~2.3s on a 1000-task DB) and `mu doctor` is meant to be
-reflexive. Shallow catches an uncaptured INSERT or DELETE; it is
-structurally blind to an uncaptured UPDATE, because the row's key still
-has ops. Run `--deep` when you actually suspect something, in CI, or
-before a release. Either tier exits **5** on drift.
+The default is shallow so `mu doctor` stays reflexive; the deep check
+rebuilds the whole log (~2.3s on a 1000-task DB). Shallow catches an
+uncaptured INSERT or DELETE and is blind to an uncaptured UPDATE (the
+row's key still has ops). Run `--deep` when you suspect something, in
+CI, or before a release. Either tier exits **5** on drift.
 
 ### What to do when drift is reported
 
@@ -233,9 +453,7 @@ disagree, and which side is right depends on the cause:
 So, in order:
 
 ```bash
-# 1. preserve the evidence FIRST. (`mu db backup` is printed by the
-#    remediation but is not implemented yet — see VOCABULARY § Operations.)
-sqlite3 "$MU_DB_PATH" "VACUUM INTO '/tmp/mu-drift-evidence.db'"
+mu db backup /tmp/mu-drift-evidence.db   # 1. preserve the evidence FIRST
 mu rebuild /tmp/mu-rebuilt.db            # 2. materialize what the log believes
 # 3. compare the named keys in both files and decide which side is correct:
 MU_DB_PATH=/tmp/mu-rebuilt.db mu sql "SELECT local_id, title, impact FROM tasks"
@@ -246,9 +464,7 @@ the named table/key/field is the reproduction.
 
 ### Undoing one action (`mu undo`)
 
-v1's undo swapped the whole DB file back to a snapshot, which reverted
-your *other* workstreams too — a blunt instrument. 2.0 undo is granular:
-it emits **inverse ops** for one **group** (one user-visible action).
+Undo emits **inverse ops** for one **group** (one user-visible action).
 
 ```bash
 mu undo                      # what would I undo? lists recent groups + ids
@@ -261,11 +477,10 @@ Three properties worth knowing:
 - **Granular.** Only the rows that action touched. A cascade close wrote
   N task ops under one group, so undoing it reopens exactly those N.
 - **Itself an op.** The undo lands in its own group, so it syncs to peers
-  and is **itself undoable** — that is the whole of "redo":
-  `mu undo <the-undo-group> --yes`. No separate mechanism, no asymmetry.
+  and is **itself undoable** — that is redo:
+  `mu undo <the-undo-group> --yes`.
 - **Refuses to clobber newer work.** If a later action changed the same
-  fields, undo exits 4 and names the conflict rather than silently
-  discarding that work or silently skipping it:
+  fields, undo exits 4 and names the conflict:
 
   ```
     WARNING: this group has been SUPERSEDED by later work.
@@ -273,7 +488,7 @@ Three properties worth knowing:
     Undoing would DISCARD that newer work. Pass --force with --yes to do it anyway.
   ```
 
-  `--force` is the deliberate override, and it says what it destroys.
+  `--force` is the override, and it says what it destroys.
 
 Rows only: undo does not resurrect killed tmux panes or freed workspace
 directories. For whole-DB recovery from the log, use `mu rebuild <file>`.
@@ -343,18 +558,16 @@ $ mu task list -w foo --json
 {"items":[{"name":"a",...},{"name":"b",...}],"count":2}
 ```
 
-`count` is `items.length` pre-computed so `jq '.count'` is one less
-hop than `jq '.items | length'`. Future siblings layer on without
-breaking the existing two fields. Today `mu workspace commits --json`
-also includes `vcs`, `baseRef`, and `workspacePath` siblings because
-that verb already computes the workspace's fork metadata.
+`count` is `items.length` pre-computed so `jq '.count'` is one less hop
+than `jq '.items | length'`. `mu workspace commits --json` adds `vcs`,
+`baseRef`, and `workspacePath` siblings.
 
 Applies to: `mu task list / next / owned-by / notes`,
 `mu workstream list`, `mu workstream destroy --empty` (dry-run),
 `mu archive list / search`, `mu workspace list / orphans / commits`,
 `mu undo` (group list), `mu log -n N` (read).
 
-Two deliberate carve-outs:
+Two carve-outs:
 - **`mu sql --json`** keeps bare-array rows. The verb is the typed-
   escape hatch; row shape is per-query, not part of the typed
   contract.
@@ -362,32 +575,26 @@ Two deliberate carve-outs:
   because it's a stream, not a collection. Stream consumers want one
   envelope per row, not a single envelope that grows forever.
 
-Singleton verbs (`mu task show`, `mu agent show`, `mu workstream
-init`, `mu task close`, ...) keep their existing object envelopes
-with named top-level fields (`{task, blockers, dependents, notes}`,
-`{taskName, ..., nextSteps}`, etc.). The `items + count` envelope is
-for collection reads only.
+Singleton verbs (`mu task show`, `mu agent show`, `mu workstream init`,
+`mu task close`, ...) use object envelopes with named top-level fields
+(`{task, blockers, dependents, notes}`, `{taskName, ..., nextSteps}`).
+`items + count` is for collection reads only.
 
 ### CLI conventions: multi-value flags
 
-Multi-value flags accept either repeated invocations
-(`--blocked-by a --blocked-by b`) or a comma-separated value
-(`--blocked-by a,b`) or any mix (`--blocked-by a,b --blocked-by c`).
-All three forms collapse to the same list internally. The
-syntactic signal is `<value...>` in the help-text metavar (the
-triple-dot); the parenthetical "repeat or comma-separate; or both"
-reinforces it. Variadic positionals (e.g. `mu task wait a b c`) keep
-their Unix-style space-separated shape — operands are not commas.
-Single-valued flags (`-w`, `--title`, ...) stay single. `--by` on
-`mu task block` / `mu task unblock` IS multi-value, matching
-`mu task add --blocked-by`: `mu task block c --by a,b` adds both
-edges in one call. The
-`--status` filter on `mu task list` and `mu task next` accepts the
-same multi-value shape (`--status OPEN,IN_PROGRESS`,
-`--status OPEN --status CLOSED`, or any mix) and returns the union.
-Missing `--status` keeps today's no-filter shape (no auto-default).
-`mu task wait --status` stays single — the verb means "wait until
-reaches THIS status".
+Multi-value flags accept repeated invocations
+(`--blocked-by a --blocked-by b`), a comma-separated value
+(`--blocked-by a,b`), or any mix. The signal is `<value...>` in the
+help-text metavar. Variadic positionals (`mu task wait a b c`) stay
+space-separated — operands are not commas, and single-valued flags
+(`-w`, `--title`) stay single.
+
+- `--by` on `mu task block` / `mu task unblock` is multi-value:
+  `mu task block c --by a,b` adds both edges in one call.
+- `--status` on `mu task list` / `mu task next` is multi-value and
+  returns the union. Omitting it applies no filter.
+- `mu task wait --status` stays single — "wait until reaches THIS
+  status".
 
 **Empty vs blank fragments.** An *empty* fragment is dropped: a
 trailing or doubled comma is a typing artifact, so `--status "OPEN,"`
@@ -395,7 +602,7 @@ means `[OPEN]`, and `mu task reparent --blocked-by ''` is the
 documented "clear every blocker" sentinel. A *blank* fragment — one
 that is entirely whitespace, like `--status " "` or the tail of
 `--status "OPEN, "` — is a usage error (exit 2) naming the flag. Nobody
-means "filter by the space character", and silently dropping it used to
+means "filter by the space character", and dropping it silently would
 return a different answer than the one typed. Same rule for `-w`,
 `--by`, and `--blocked-by`; see docs/VOCABULARY.md § Empty vs blank
 flag fragments.
@@ -408,10 +615,9 @@ The rule the CLI follows:
 > else — scoping, modifiers, payload — is a flag.**
 
 So `mu task close <id>`, `mu agent send <name> <text>`,
-`mu archive list <label>`, `mu workstream init <name>`. The
-workstream is a *scope* for most verbs (`-w`), which is why it's a
-flag there — but for `mu workstream <verb>` the workstream IS the
-primary entity, so it may be given positionally:
+`mu archive list <label>`, `mu workstream init <name>`. The workstream
+is a *scope* for most verbs (`-w`) — but for `mu workstream <verb>` it
+IS the primary entity, so it may be positional:
 
 ```bash
 mu workstream init  v2                 # positional
@@ -421,11 +627,10 @@ mu workstream export v2 --out ./bucket # positional (aliases -w)
 ```
 
 Passing both a positional and a disagreeing `-w` is a usage error
-(exit 2) rather than a silent pick-one.
+(exit 2), not a silent pick-one.
 
-Where a payload is unavoidably supplied two ways by sibling verbs,
-the flag form is accepted as an ADDITIVE alias so the muscle memory
-from one verb carries to the next:
+Where sibling verbs supply a payload two ways, the flag form is an
+ADDITIVE alias so muscle memory carries across:
 
 ```bash
 mu task add t -t T -i 5 -e 1 --note "context"   # note as a flag
@@ -450,13 +655,16 @@ mu workstream init auth-refactor
 
 ```
 Created workstream auth-refactor (tmux session mu-auth-refactor)
-  Attach with: tmux a -t mu-auth-refactor
-  Spawn agents with: mu agent spawn <name> -w auth-refactor
+Next:
+  Attach the tmux session : tmux a -t mu-auth-refactor
+  Plan tasks              : mu task add -w auth-refactor --title "..." --impact 50 --effort-days 1
+  Spawn an agent          : mu agent spawn <name> -w auth-refactor
+  See state               : mu state -w auth-refactor
 ```
 
 Behind the scenes: `tmux new-session -d -s mu-auth-refactor` plus a
-placeholder window so the session is non-empty. The session sits there
-detached, waiting for agents.
+placeholder window so the session is non-empty. It sits detached,
+waiting for agents.
 
 To see what's already on the machine before picking a name:
 
@@ -465,20 +673,20 @@ mu workstream list
 ```
 
 ```
-┌──────┬───────┬────────┬───────┬───────┬───────┐
-│ name │ tmux  │ agents │ tasks │ edges │ notes │
-├──────┼───────┼────────┼───────┼───────┼───────┤
-│ r6a  │ alive │ 0      │ 2     │ 1     │ 1     │
-│ r6b  │ —     │ 0      │ 0     │ 0     │ 0     │
-└──────┴───────┴────────┴───────┴───────┴───────┘
+┌────────────────────────────────────────┬───────┬────────┬───────┬───────┬───────┬────────┐
+│ name                                   │ tmux  │ agents │ tasks │ edges │ notes │ parked │
+├────────────────────────────────────────┼───────┼────────┼───────┼───────┼───────┼────────┤
+│ auth                                   │ —     │ 0      │ 2     │ 1     │ 0     │ —      │
+├────────────────────────────────────────┼───────┼────────┼───────┼───────┼───────┼────────┤
+│ mu                                     │ alive │ 0      │ 0     │ 0     │ 0     │ —      │
+└────────────────────────────────────────┴───────┴────────┴───────┴───────┴───────┴────────┘
 ```
 
-The list is the **union** of three sources: distinct
-`agents.workstream`, distinct `tasks.workstream`, and tmux sessions
-matching `mu-*`. So a freshly-`init`'d workstream with no tasks/agents
-still shows up (via its tmux session), and a workstream whose tmux
-session was killed externally still shows up (via its surviving DB
-rows) so you can `mu workstream destroy` to clean up properly.
+The list is the **union** of three sources: distinct workstreams in
+`agents`, in `tasks`, and tmux sessions matching `mu-*`. A freshly
+`init`'d workstream with no tasks shows up via its session; one whose
+session was killed externally shows up via its surviving DB rows, so
+you can still `mu workstream destroy` it.
 
 ### How mu finds your active workstream
 
@@ -506,41 +714,33 @@ mu agent read helper -n 50                # check on it anytime
 mu agent close helper -w scratch          # done
 ```
 
-`scratch` is a shared, ephemeral bucket. It auto-creates on first
-spawn (no `mu workstream init` needed), tasks are optional (a
-task-less helper is fine), and idle scratch agents get a gentle
-staleness nudge in `mu state` and the TUI so they don't pile up
-forgotten.
-
-Because it's deliberately low-ceremony, the name is **reserved**:
-`mu workstream init scratch` is rejected (it only ever auto-creates
-on spawn). `mu workstream destroy scratch` works normally when you
-want to tear the whole bucket down.
+`scratch` is a shared, ephemeral bucket: it auto-creates on first
+spawn, tasks are optional, and idle scratch agents get a staleness
+nudge in `mu state` and the TUI so they don't pile up. The name is
+**reserved** — `mu workstream init scratch` is rejected;
+`mu workstream destroy scratch` works normally.
 
 ```
 $ mu workstream init scratch
-error: workstream name "scratch" is reserved: it is the off-the-cuff
-bucket and auto-creates on first spawn. Don't 'init' it.
+error: workstream name "scratch" is reserved: it is the off-the-cuff bucket and auto-creates on first spawn. Don't 'init' it.
+Next:
+  Just spawn into it (auto-creates) : mu agent spawn <name> -w scratch
+  Use a durable workstream instead  : mu workstream init <name>
 ```
 
-**When to use which:** reach for a real `mu workstream init <name>`
-the moment coordination *is* the work — multiple agents, dependencies
-between tasks, gated review. Reach for `scratch` when you just want a
-single driveable, observable helper. And reach for
+**When to use which:** a real `mu workstream init <name>` the moment
+coordination *is* the work — multiple agents, dependencies, gated
+review. `scratch` for a single driveable helper.
 [`pi-subagents`](https://github.com/nicobailon/pi-subagents) when you
-only need a one-shot result back rather than a channel you keep open.
+only need a one-shot result back.
 
 ### The log ledger: durable watcher dedupe + memory
 
-A watcher loop (`/loop`, `/watch`, or a plain re-prompted helper)
-that reacts to changing external state — a PR's CI status, a queue
-depth, a file's mtime — needs to remember *what it last saw* so it
-doesn't act twice on the same event. Don't keep that in the agent's
-chat context: it evaporates on compaction and dies with the loop.
-
-Use a custom `--kind` tag on the activity log as an append-only
-**ledger**. Each tick records last-seen state; the next tick
-reconstructs it from SQLite:
+A watcher loop reacting to external state — a PR's CI status, a queue
+depth, a file's mtime — must remember *what it last saw* so it doesn't
+act twice. Don't keep that in the agent's chat context: it evaporates
+on compaction and dies with the loop. Use a custom `--kind` tag on the
+activity log as an append-only **ledger**:
 
 ```bash
 # Watcher tick: record what you saw and what you did about it.
@@ -552,67 +752,47 @@ mu log -w scratch --kind pr-state -n 1 --json
 #            "payload":"pr=1234 sha=abc ci=red -> spawned fixer-1"}],"count":1}
 ```
 
-The dedupe rule is then trivial: read the latest `pr-state`, compare
-its `sha`/`ci` to what you just observed, and only act when they
-differ. Because the ledger lives in the `ops` log (SQLite), it
-survives `/loop` or `/watch` death and context compaction — a
-fresh watcher invocation reads the same history.
+The dedupe rule: read the latest `pr-state`, compare its `sha`/`ci` to
+what you observed, act only on a difference. The ledger lives in the
+`ops` log, so it survives loop death and context compaction.
 
-- **Pick a stable `--kind`** per ledger (`pr-state`, `queue-depth`,
-  `deploy-watch`). `mu log --kind <tag>` filters reads to that tag,
-  so multiple ledgers coexist in one workstream without colliding.
-- **One line per tick, latest wins.** `-n 1` gives the most recent;
-  pass `--since <seq>` to replay the full history a watcher missed
-  while it was dead.
-- **Free-form payload.** The text is yours; `key=value -> action`
-  reads well and greps cleanly, but mu doesn't parse it. Ledger lines
-  have no **intent**, so `mu log` prints them verbatim rather than
-  rendering them as a verb — exactly what a ledger wants.
+- **Pick a stable `--kind`** per ledger (`pr-state`, `queue-depth`).
+  `mu log --kind <tag>` filters to it, so ledgers coexist in one
+  workstream.
+- **One line per tick, latest wins.** `-n 1` for the most recent;
+  `--since <seq>` replays history a dead watcher missed.
+- **Free-form payload.** mu doesn't parse it. Ledger lines have no
+  **intent**, so `mu log` prints them verbatim rather than rendering
+  them as a verb.
 
-This is a *convention*, not a feature — `mu log` already has
-`--kind`, `--since`, and `--json`. See the **log ledger** entry in
+A *convention*, not a feature — `mu log` already has `--kind`,
+`--since`, and `--json`. See **log ledger** in
 [VOCABULARY.md](VOCABULARY.md).
 
-`--kind` is deliberately UNCHANGED in 2.0. It is the operator's channel
-tag; the new `--intent` flag filters on what *mu* recorded
-(`--intent task.close`). Two different axes, two flags — so this ledger
-shape keeps working.
+`--kind` is the operator's channel tag; `--intent` filters on what *mu*
+recorded (`--intent task.close`). Two axes, two flags.
 
 ---
 
 ## 4. Plan some work as a DAG
 
 Tasks have **mandatory** `impact` (1–100) and `effort-days` (>0).
-Edges are blocks-relationships, modelled as **`--blocked-by`** on `mu
-task add` (and `mu task reparent`): `--blocked-by design` means "this
-task is blocked by `design`; it can't start until `design` closes."
-Tasks are **scoped to a workstream** — the dashboard and state views only show
-tasks for the workstream you're viewing.
+Edges are blocks-relationships, expressed as **`--blocked-by`** on
+`mu task add` (and `mu task reparent`): `--blocked-by design` means
+"can't start until `design` closes". Tasks are **scoped to a
+workstream**.
 
 ```bash
-# --workstream can be omitted if you're inside the workstream's tmux
-# session or have $MU_SESSION exported.
-mu task add design \
-  --workstream auth-refactor \
-  --title "Design auth module" \
-  --impact 80 --effort-days 2
-
-mu task add build \
-  --workstream auth-refactor \
-  --title "Build auth module" \
-  --impact 80 --effort-days 5 \
-  --blocked-by design
-
-mu task add review \
-  --workstream auth-refactor \
-  --title "Review auth module" \
-  --impact 60 --effort-days 1 \
-  --blocked-by build
+# -w can be omitted inside the workstream's tmux session, or with
+# $MU_SESSION exported.
+mu task add design -w auth-refactor --title "Design auth module" --impact 80 --effort-days 2
+mu task add build  -w auth-refactor --title "Build auth module"  --impact 80 --effort-days 5 --blocked-by design
+mu task add review -w auth-refactor --title "Review auth module" --impact 60 --effort-days 1 --blocked-by build
 ```
 
-Add initial context at creation time with `--note` (shell escapes like
-`\n` are translated the same way as `mu task note`). Use
-`--note-author <name>` when the default actor label is not what you want:
+See [§ 0.1](#01-first-5-minutes) for the output. Add initial context at
+creation time with `--note` (shell escapes like `\n` are translated as
+in `mu task note`); `--note-author <name>` overrides the actor label:
 
 ```bash
 mu task add bugfix \
@@ -626,15 +806,14 @@ mu task add bugfix \
 Task creation + the initial note are one transaction: if either part
 fails, neither lands.
 
-Each task validates its id (`/^[a-z][a-z0-9_-]{0,63}$/`) and rejects
-duplicates. If you tried `mu task add x --blocked-by y` while `y`
-already transitively depended on `x`, mu would refuse with a `CycleError`.
+Ids validate against `/^[a-z][a-z0-9_-]{0,63}$/` and reject duplicates.
+`mu task add x --blocked-by y` when `y` already transitively depends on
+`x` refuses with a `CycleError`.
 
-**Task ids are per-workstream unique.** The same local id can exist in
-multiple workstreams, so cross-workstream references use the qualified
-form `<workstream>/<id>` when a global scope is needed. Blocks-edges
-are always same-workstream — if a blocker resolves outside the target
-workstream, mu refuses with a `CrossWorkstreamEdgeError`.
+**Task ids are per-workstream unique.** Cross-workstream references use
+the qualified form `<workstream>/<id>`. Blocks-edges are always
+same-workstream — a blocker outside the target workstream is a
+`CrossWorkstreamEdgeError`.
 
 ### Modeling external dependencies
 
@@ -664,15 +843,11 @@ to ready in the same render. If the upstream gets cancelled, `mu task
 reject upstream_react_19_lands --cascade --yes` propagates REJECTED
 through every dependent so you re-think the cascade explicitly.
 
-Benefits over a hypothetical `BLOCKED` status:
-
-- The placeholder's notes are the audit trail ("who I nudged, when").
-- One placeholder cleanly blocks N downstream tasks.
-- Reject cascade just works.
-- No new vocabulary; anyone who knows `--blocked-by` already knows this.
-- The placeholder's own status carries nuance (`OPEN` = someone
-  external is working it, `DEFERRED` = parked indefinitely,
-  `IN_PROGRESS` = you're actively chasing it).
+Why this beats a `BLOCKED` status: the placeholder's notes are the
+audit trail, one placeholder blocks N downstream tasks, reject cascade
+just works, and the placeholder's own status carries the nuance
+(`OPEN` = someone external is on it, `DEFERRED` = parked,
+`IN_PROGRESS` = you're chasing it).
 
 ---
 
@@ -702,33 +877,22 @@ mu state -w auth-refactor --json   # full snapshot
 mu state --all --json              # every workstream on this machine
 ```
 
-The static card includes every section the TUI cards summarize:
-agents + orphans + tracks + ready / in-progress / blocked /
-recent-closed tasks + workspaces + recent events. `--json` emits the
-same full snapshot shape regardless of `--tui`.
+The static card carries every section the TUI cards summarize: agents +
+orphans + tracks + ready / in-progress / blocked / recent-closed tasks
++ workspaces + recent events.
 
 **JSON shapes**
 
-- `mu state --json` (single-ws): flat `{ workstreamName, agents,
-  orphans, tracks, ready, blocked, inProgress, recentClosed,
-  workspaces, recent }`.
-- `mu state --json` (multi-ws): wrapped `{ workstreams: [{...}, ...] }`.
-- bare `mu --json`: prints `--help` rather than entering the TUI;
-  use `mu state --json` for the full snapshot.
-- `--tui` is render-only and incompatible with `--json` (the TUI
-  has no JSON shape).
+- single-ws: flat `{ workstreamName, agents, orphans, tracks, ready,
+  blocked, inProgress, recentClosed, workspaces, recent }`.
+- multi-ws: wrapped `{ workstreams: [{...}, ...] }`.
+- bare `mu --json` prints `--help`; use `mu state --json`.
+- `--tui` is render-only and incompatible with `--json`.
 
-**Multi-workstream**: pass `-w` multiple values, or `--all`. See
-[CLI conventions](#cli-conventions-multi-value-flags). In static
-mode N≥2 stacks one per-workstream card after another.
+**Multi-workstream**: repeat `-w`, or `--all`. In static mode N≥2
+stacks one card per workstream.
 
-<!-- doc-cli-drift:skip-start -->
-> **Migrating from old state surfaces**: `mu state --hud` and
-> `mu state --mission` were removed in v0.4; use `mu state --tui`
-> for the interactive surface and `mu state --json` for the full
-> snapshot. `tmux display-popup -E 'mu state -w X'` keeps working
-> unchanged for popup-card use.
-<!-- doc-cli-drift:skip-end -->
+`tmux display-popup -E 'mu state -w X'` works for popup-card use.
 
 ---
 
@@ -789,41 +953,32 @@ with all toggles + tick rate preserved.
 pair-aware 2 / 3 / 4-column layouts at 120 / 180 / 240 cols. Each
 visible card gets a dynamic row budget so a noisy list cannot crowd
 out its siblings; overflow shows as `+N more · Shift+N` inset into
-the bottom border. On very short panes, the dashboard culls
-low-priority cards (Doctor → Recent → Workspaces → …) and shows
-`+N cards hidden · resize taller` until the surviving cards fit.
+the bottom border. On short panes the dashboard culls low-priority
+cards (Doctor → Recent → Workspaces → …) and shows
+`+N cards hidden · resize taller`.
 
-Dashboard ordering is slot-stable: within each rendered column,
-non-stream cards are ordered by toggle digit ascending; stream cards
-(Commits, Activity log) sit as natural trailers, with slot 0 trailing
-last.
+Ordering is slot-stable: within each column, non-stream cards go by
+toggle digit ascending; stream cards (Commits, Activity log) trail,
+with slot 0 last.
 
 ### Multi-workstream tabs
 
-When the TUI is launched with N≥2 workstreams (e.g. bare `mu` on a
-machine with multiple workstreams, or `mu state --tui -w a,b,c`),
-a compact tab strip renders above the cards:
+With N≥2 workstreams (bare `mu` on a multi-workstream machine, or
+`mu state --tui -w a,b,c`), a tab strip renders above the cards:
 
 ```
 workstreams: ▸ auth-refactor · ui-rewrite · demo   (Tab / Shift-Tab)
 ```
 
-- `Tab` cycles forward, `Shift-Tab` backward (suppressed inside
-  popups so the same key still navigates inside popups that bind
-  it locally).
-- The active tab name appears in the status bar's right zone next
-  to the tick rate.
-- Cards / popups always operate on the active tab — there's no
-  per-row workstream column.
-- For N=1 the strip renders nothing (frame is byte-identical to
-  single-ws TUI).
-- When the workstream set is wider than the terminal, the strip
-  windows around the active tab and shows `‹N` / `›N` counters
-  for hidden workstreams.
-- A `*` prefix (e.g. `*scratch`) marks the reserved off-the-cuff
-  `scratch` workstream as ephemeral, so it's not mistaken for a
-  durable crew. A `~` prefix marks a workstream presumed parked on
-  another machine; `~` wins when both apply.
+- `Tab` cycles forward, `Shift-Tab` backward (suppressed inside popups
+  that bind the key locally).
+- The active tab name shows in the status bar next to the tick rate.
+- Cards / popups operate on the active tab — no per-row workstream
+  column. For N=1 the strip renders nothing.
+- Wider than the terminal: the strip windows around the active tab and
+  shows `‹N` / `›N` counters for hidden workstreams.
+- `*` prefix (e.g. `*scratch`) marks the ephemeral `scratch` bucket;
+  `~` marks a workstream presumed parked on another machine. `~` wins.
 
 ### Popup drills
 
@@ -853,64 +1008,48 @@ shared read-only task-detail leaf (notes timeline):
   full task DAG forest (one ASCII subtree per root, diamond-collapse
   marker on repeated nodes).
 
-One `Esc` / `q` backs out per recursion level. Drills auto-refresh
-in step with the dashboard tick (fast 1s for SQL-derived bodies
-like notes, slow 10s for subprocess git-show / scrollback). Scroll
-position is preserved across refreshes; subprocess loaders keep the
-prior body visible until the new one arrives so there's no
-blank-flash mid-refetch.
+One `Esc` / `q` backs out per recursion level. Drills auto-refresh in
+step with the dashboard tick (fast 1s for SQL bodies like notes, slow
+10s for subprocess git-show / scrollback). Scroll position survives
+refreshes, and subprocess loaders keep the prior body visible until the
+new one arrives.
 
 ### Search / filter
 
 `/` inside any list popup enters an incremental case-insensitive
-substring filter (lazygit / k9s convention):
+substring filter (lazygit / k9s convention). Printable characters
+append, `Backspace` pops, `Esc` cancels, `Enter` commits (keeps the
+filter, resumes `j/k` navigation), and `/` again refines. The filter
+blob is per-popup — agent name/status/cli/role; track head id + title;
+task name/title/status/owner; log verb/payload/source — and dies with
+the popup.
 
-- Every printable character appends to the query; `Backspace` pops
-  one.
-- `Esc` cancels (clears the query); `Enter` commits (keeps the
-  filter applied while letting `j/k` resume normal navigation).
-- Press `/` again on a committed filter to refine.
-- The filter blob is per-popup: agent name + status + cli + role;
-  track head id + title; task name + title + status + owner; log
-  verb + payload + source.
-- Filter state is per-popup and dies with the popup.
-
-Task-list popups also expose **per-status toggles** (`o` / `i` / `c`
-/ `r` / `d` toggle OPEN / IN_PROGRESS / CLOSED / REJECTED / DEFERRED
-visibility; default all-on).
-
-The All-tasks popup adds **sort cycle** on `s`: `roi` → `recency`
-→ `age` → `id`.
+Task-list popups add **per-status toggles** (`o` / `i` / `c` / `r` /
+`d` for OPEN / IN_PROGRESS / CLOSED / REJECTED / DEFERRED; default
+all-on). The All-tasks popup adds **sort cycle** on `s`: `roi` →
+`recency` → `age` → `id`.
 
 ### Mouse
 
-Navigation-in only:
-
-- Double-click a dashboard card → opens its popup.
-- Scroll-wheel inside a popup list / drill body → moves the focused
-  cursor / scrolls the body.
-- Double-click a popup row → drills one level deeper.
-
-There is intentionally **no mouse back binding** — use `Esc` / `q`
-to back out predictably.
+Navigation-in only: double-click a dashboard card to open its popup,
+double-click a popup row to drill one level deeper, and scroll-wheel
+inside a popup list / drill body to move the cursor or scroll. There is
+**no mouse back binding** — use `Esc` / `q`.
 
 ### Yank contract (`y`) and the `tuicr` escape (`t`)
 
-Every popup row exposes one canonical `mu` command via `y`. The
-command goes to your system clipboard (pbcopy / wl-copy / xclip /
-xsel / clip.exe with OSC-52 fallback). You run it in your shell.
-The TUI never executes a mutation.
+Every popup row exposes one canonical `mu` command via `y`, which goes
+to your system clipboard (pbcopy / wl-copy / xclip / xsel / clip.exe,
+OSC-52 fallback). You run it in your shell; the TUI never mutates.
 
-The one user-driven escape from the read-only pledge is **`t`**
-inside any `git show` drill (Workspaces popup or Commits popup):
-mu suspends its alt-screen, runs `tuicr -r <sha>` in the project
-root / workspace cwd, then restores the dashboard when tuicr exits.
-This is a deliberate handoff — the operator drives another TUI
-tool, not mu performing the mutation.
+The one escape is **`t`** inside a `git show` drill (Workspaces or
+Commits popup): mu suspends its alt-screen, runs `tuicr -r <sha>` in
+the project root / workspace cwd, and restores the dashboard when tuicr
+exits. The operator drives another TUI tool; mu still performs no
+mutation.
 
-Task-list cards and popups colour-code status cells consistently
-with the static CLI tables: OPEN cyan, IN_PROGRESS yellow, CLOSED
-green, REJECTED red, DEFERRED dim/gray.
+Status cells colour-code as in the static CLI tables: OPEN cyan,
+IN_PROGRESS yellow, CLOSED green, REJECTED red, DEFERRED dim/gray.
 
 ### Polling tiers
 
@@ -961,12 +1100,11 @@ also work inside the overlay).
 
 ### Read-only invariant
 
-The TUI never executes a mutation. This is not a feature of the
-implementation; it's a load-bearing pledge in `docs/ROADMAP.md`. If
-a future TUI gesture tempts you to call into the SDK to mutate
-state, file a roadmap entry first — the yank-and-run pattern is the
-intentional cost we pay to keep the TUI inspectable, scriptable, and
-recoverable from any shell.
+The TUI never executes a mutation — a load-bearing pledge in
+`docs/ROADMAP.md`, not an implementation detail. If a TUI gesture
+tempts you to mutate state from the SDK, file a roadmap entry first.
+Yank-and-run is the cost of keeping the TUI inspectable, scriptable,
+and recoverable from any shell.
 
 ---
 
@@ -1040,37 +1178,29 @@ The `Review` window holds whichever agents share `--tab Review`.
 | `--cwd <path>`               | Initial working directory for the pane                  |
 | `-w, --workstream <name>`    | Required if not auto-detectable                         |
 
-On systems where the local `pi` binary is installed under a different
-name, set `MU_PI_COMMAND=<name>` once in your shell rc and every
-`mu agent spawn --cli pi` will exec the right binary; reconcile
-also treats that binary's panes as agent-worthy when surfacing orphans.
+If your `pi` binary lives under a different name, set
+`MU_PI_COMMAND=<name>` once in your shell rc: every
+`mu agent spawn --cli pi` execs it, and reconcile treats that binary's
+panes as agent-worthy when surfacing orphans. `MU_PI_COMMAND` (and
+`--command`) accept a multi-word string — tmux execs it via a shell, so
+`MU_PI_COMMAND="pi-alt --some-flag"` works. Same pattern for
+`MU_CLAUDE_COMMAND` / `MU_CODEX_COMMAND`.
 
-`MU_PI_COMMAND` (and `--command`) accept a multi-word string — tmux
-exec's it via a shell, so embedded flags survive intact. If your pi
-build needs extra flags (e.g. to skip a single-instance lock), set
-`MU_PI_COMMAND="pi-alt --some-flag"` and every spawn picks them up.
-Same pattern for `MU_CLAUDE_COMMAND` / `MU_CODEX_COMMAND` once those
-land.
-
-**Project-trust prompt.** Recent pi versions ask whether to trust a
-project folder on interactive startup (before loading `AGENTS.md`,
-`.pi/` resources, project extensions). A freshly-spawned agent that
-sits at `needs_input` is usually waiting on this prompt. Spawn with
-`--command 'pi --approve'` (or set `MU_PI_COMMAND="pi --approve"`) so
-mu agents auto-trust their cwd instead of blocking. Caveat:
-`--approve` trusts whatever directory the pane lands in — including
-`--workspace` forks — so use it only for crews on your own code, not
-agents you'd point at untrusted repos. The decision is otherwise
-saved per-directory in `~/.pi/agent/trust.json` (or run `/trust`
-inside the pane once).
+**Project-trust prompt (gotcha).** pi asks whether to trust a project
+folder on interactive startup, before loading `AGENTS.md` and `.pi/`
+resources. A freshly-spawned agent stuck at `needs_input` is usually
+waiting on this. Spawn with `--command 'pi --approve'` (or
+`MU_PI_COMMAND="pi --approve"`) to auto-trust. Caveat: `--approve`
+trusts whatever directory the pane lands in — including `--workspace`
+forks — so use it for crews on your own code only. Otherwise the
+decision is saved per-directory in `~/.pi/agent/trust.json`, or run
+`/trust` in the pane once.
 
 ### Adopt an existing tmux pane
 
-Not every agent gets born via `mu agent spawn`. Sometimes you
-launched a `pi` (or `claude`, or `codex`) by hand for a one-off
-task, decided mid-flow it deserves to be in the graph, and now
-want to drive it via `mu`. Or `mu` crashed mid-spawn and left an
-orphan pane with no DB row. Either way:
+You launched a `pi` by hand and decided mid-flow it belongs in the
+graph, or `mu` crashed mid-spawn and left an orphan pane with no DB
+row. Either way:
 
 ```bash
 mu agent list -w auth-refactor   # surfaces orphans at the bottom
@@ -1082,16 +1212,13 @@ mu agent adopt worker-2 -w auth-refactor               # adopt by pane title (sa
 mu agent adopt %15 --name investigator -w auth-refactor  # adopt and rename the pane
 ```
 
-The pane title becomes the agent name (`mu`'s claim protocol
-invariant), so adopting a pane titled `worker-2` registers it as
-agent `worker-2` with no further config. Use `--name` when the
-pane's current title isn't a valid agent name (or when you want a
-different name).
+The pane title becomes the agent name (the claim-protocol invariant),
+so a pane titled `worker-2` registers as agent `worker-2` with no
+further config. Use `--name` when the title isn't a valid agent name.
 
-Adopt is **idempotent**: running it twice on the same pane is a
-no-op. It's also **scope-aware**: the pane must be in the
-`mu-<workstream>` tmux session, otherwise the adopt is rejected
-(no silent cross-session moves).
+Adopt is **idempotent** (twice on the same pane is a no-op) and
+**scope-aware**: the pane must be in the `mu-<workstream>` tmux
+session, or the adopt is rejected — no silent cross-session moves.
 
 ---
 
@@ -1138,10 +1265,9 @@ mu uses the **canonical bracketed-paste protocol** internally:
 6. confirm the Enter took; re-send it if the text is still sitting
    unsubmitted in the input box
 
-This means special characters (`/`, `?`, `!`, `$`, `&&`, `|`, `*`,
-…) arrive at the agent's CLI **literally** — not interpreted by tmux's
-copy-mode or by the agent's TUI shortcuts. Naive `tmux send-keys`
-would let the agent's TUI hijack `/` for "search forward" and similar.
+Special characters (`/`, `?`, `!`, `$`, `&&`, `|`, `*`, …) therefore
+arrive at the agent's CLI **literally**. Naive `tmux send-keys` would
+let the agent's TUI hijack `/` for "search forward" and similar.
 
 The send delay is configurable per call:
 
@@ -1152,24 +1278,20 @@ MU_SEND_DELAY_MS=1000 mu agent send worker-1 "..."    # slow remote
 
 **Steps 0 and 6 make `exit 0` mean "submitted".** A TUI rendering a
 modal accepts a bracketed paste but *swallows the Enter after it*,
-leaving the prompt typed-but-unsubmitted while `mu agent send` reported
-success. The visible failure was an agent idle at `needs_input` with
-0.0% context on work it never received. This bit the documented
-`send '/new'; sleep 2; send '<prompt>'` pattern, because pi's post-`/new`
-session-naming step is a model call that no fixed sleep can outrun.
+leaving the prompt typed-but-unsubmitted. The visible symptom is an
+agent idle at `needs_input` with 0.0% context on work it never
+received. No `sleep` between a clear and a prompt is needed.
 
-So the `sleep` between a clear and a prompt is no longer needed. If a
-send still cannot be confirmed, it prints `warning: ... was NOT
-submitted` to stderr (and sets `"delivered": false` under `--json`)
-rather than passing silently.
+If a send cannot be confirmed it prints `warning: ... was NOT
+submitted` to stderr (and `"delivered": false` under `--json`).
+**Check for that warning before you wait on the task.**
 
-Sending to an agent that is **busy working** is not delayed — that
-input queues normally, and only a modal/re-init spinner is waited out.
+Sending to a **busy** agent is not delayed — that input queues
+normally; only a modal/re-init spinner is waited out.
 
-If the target agent has a workspace that is **stale** (≥10 commits
-behind main — the same red bucket shown in `mu workspace list` and the
-TUI Workspaces card), `mu agent send` prints a yellow stderr warning
-but still sends by default:
+A **stale** target workspace (≥10 commits behind main — the red bucket
+in `mu workspace list` and the TUI Workspaces card) warns on stderr but
+still sends:
 
 ```bash
 WARN: worker-1 workspace is 14 commits behind main (≥10 = stale)
@@ -1177,16 +1299,15 @@ Next:
   Refresh first : mu workspace refresh worker-1 -w auth-refactor
 ```
 
-Use `--strict-staleness` when a wrapper should refuse instead of
-warning:
+`--strict-staleness` refuses instead:
 
 ```bash
 mu agent send worker-1 "..." -w auth-refactor --strict-staleness
 ```
 
 Agents without workspaces are skipped (common for read-only roles).
-`--json` output includes `staleness: null` or `{agentName,
-workstreamName, commitsBehindMain, isStale}`.
+`--json` carries `staleness: null` or `{agentName, workstreamName,
+commitsBehindMain, isStale}`.
 
 ---
 
@@ -1203,19 +1324,9 @@ Both go through `tmux capture-pane`. No state change.
 
 ## 10. The claim protocol — from inside an agent's pane
 
-This is where mu's design really shines. An agent (the LLM running in
-a pane) can run `mu task claim foo` **with no agent name argument** — mu
-figures out it's "worker-1" from the pane title.
-
-To try this manually, attach to the workstream and switch to worker-1's
-window:
-
-```bash
-tmux attach -t mu-auth-refactor       # if not attached
-# Ctrl+b w, pick "worker-1" interactively
-```
-
-Then in worker-1's pane (a real shell, since `--cli sh`):
+An agent (the LLM running in a pane) runs `mu task claim foo` **with no
+agent name argument** — mu derives "worker-1" from the pane title. In
+worker-1's pane:
 
 ```bash
 mu task claim design
@@ -1225,26 +1336,14 @@ mu task claim design
 Claimed design for worker-1 (OPEN → IN_PROGRESS)
 ```
 
-What happened behind the scenes:
+Behind the scenes: mu reads `$TMUX_PANE`, asks tmux for that pane's
+title (`tmux display-message -t %15 -p '#{pane_title}'`), and runs one
+atomic conditional UPDATE guarded on `owner IS NULL OR owner = <me>`.
+If 0 rows change, mu distinguishes "task doesn't exist" from "already
+owned by someone else" and throws the right typed error.
 
-1. mu reads `$TMUX_PANE` (set by tmux for every pane in the session)
-   to get the pane id (e.g. `%15`)
-2. Calls `tmux display-message -t %15 -p '#{pane_title}'` → returns
-   `worker-1`
-3. Atomic SQLite transaction:
-   ```sql
-   UPDATE tasks
-      SET owner = 'worker-1',
-          status = CASE WHEN status = 'OPEN' THEN 'IN_PROGRESS' ELSE status END,
-          updated_at = ?
-    WHERE local_id = 'design'
-      AND (owner IS NULL OR owner = 'worker-1')
-   ```
-4. If 0 rows changed, mu distinguishes "task doesn't exist" from
-   "already owned by someone else" and throws the right typed error
-
-Two agents trying to claim the same task → second one fails with
-"already owned by worker-1." Re-claim by the same agent is idempotent.
+Two agents claiming the same task → the second fails with "already
+owned by worker-1". Re-claim by the same agent is idempotent.
 
 You can also claim explicitly from outside any pane:
 
@@ -1252,29 +1351,23 @@ You can also claim explicitly from outside any pane:
 mu task claim build --for worker-2
 ```
 
-`--for` accepts EITHER a bare worker name (`worker-2`, resolved in
-the task's workstream — today's behaviour) OR a qualified ref
-`<workstream>/<name>` for **cross-workstream dispatch**
-(`task_claim_for_cross_workstream`):
+`--for` accepts either a bare worker name (`worker-2`, resolved in
+the task's workstream) or a qualified ref `<workstream>/<name>` for
+**cross-workstream dispatch**:
 
 ```bash
 # Task lives in mufeedback-v03; worker-1 lives in roadmap-v0-3.
-# Per-workstream worker pools mean the orchestrator routinely has a
-# free worker in one workstream and a queued task in another.
 mu task claim some-task -w mufeedback-v03 --for roadmap-v0-3/worker-1
 ```
 
-The agent stays in its own workstream — only `tasks.owner_id`
-points across the boundary (it's an INTEGER FK to `agents.id`,
-workstream-agnostic at the schema level). A bad qualifier surfaces
-typed errors: `WorkstreamNotFoundError` (exit 3) on a missing
-workstream prefix, `AgentNotFoundError` (exit 3, message names the
-workstream) when the named worker doesn't live there. Nothing is
-written on either failure.
+The agent stays in its own workstream — only `tasks.owner_id` points
+across the boundary (an INTEGER FK to `agents.id`). A bad qualifier
+surfaces typed errors and writes nothing:
+`WorkstreamNotFoundError` (exit 3) on a missing prefix,
+`AgentNotFoundError` (exit 3) when the worker doesn't live there.
 
-When `--for` targets an agent with a stale workspace (≥10 commits
-behind main), `mu task claim` warns on stderr and appends a refresh
-hint, but the claim still succeeds by default:
+When `--for` targets an agent with a **stale** workspace (≥10 commits
+behind main), the claim warns on stderr and succeeds:
 
 ```bash
 mu task claim build -w auth-refactor --for worker-2
@@ -1282,34 +1375,25 @@ mu task claim build -w auth-refactor --for worker-2
 # Next: Refresh first : mu workspace refresh worker-2 -w auth-refactor
 ```
 
-Pass `--strict-staleness` to refuse the claim instead with typed
-`TaskClaimStaleWorkspaceError` (exit 4). This is useful for scripts
-that should never dispatch work onto a stale parent:
-
-```bash
-mu task claim build -w auth-refactor --for worker-2 --strict-staleness
-```
-
-`--json` output includes `staleness: null` or `{agentName,
-workstreamName, commitsBehindMain, isStale}`. Bare in-pane claims and
-`--self` claims do not run this check because they do not assign work
-to a named agent via `--for`.
+`--strict-staleness` refuses instead with `TaskClaimStaleWorkspaceError`
+(exit 4) — for scripts that must never dispatch onto a stale parent.
+`--json` carries `staleness: null` or `{agentName, workstreamName,
+commitsBehindMain, isStale}`. Bare in-pane and `--self` claims skip the
+check; they don't assign work to a named agent.
 
 ### The orchestrator pattern: `--self`
 
-Not every action comes from a registered worker pane. Often the
-*orchestrator* (a top-level pi session, a human at a shell, a
-deploy script) wants to do small work directly without spinning up
-a worker pane just for a 5-minute job. Two patterns split here:
+Not every action comes from a registered worker pane. An
+*orchestrator* (a top-level pi session, a human at a shell, a deploy
+script) often does small work directly. Two roles:
 
 - **Worker** — a pane mu spawned (or you adopted). Has a row in the
   `agents` table. Identity = pane title. Claims with bare
   `mu task claim <id>`. `tasks.owner_id` points at the worker row.
 
-- **Actor** — anything that *causes* a state change. Includes
-  workers, but also includes the orchestrator. May or may not have
-  a row in `agents`. The actor is *always* recorded on the op
-  every state change captures (`ops.actor`).
+- **Actor** — anything that *causes* a state change, including the
+  orchestrator. May or may not have a row in `agents`. Always recorded
+  on the op (`ops.actor`).
 
 If the orchestrator tries `mu task claim some-task` directly:
 
@@ -1320,7 +1404,7 @@ conflict: claimer 'pi-mu' (pane %6441) is not a registered mu agent.
   Want full registration?     Run: mu agent adopt %6441
 ```
 
-Three actionable next steps. Pick one based on intent:
+Pick one based on intent:
 
 ```bash
 # Orchestrator does the work itself (most common):
@@ -1361,9 +1445,8 @@ than being conflated with the FK that points at registered workers.
 
 ## 11. Drop notes (durable context)
 
-Notes are append-only. They survive across sessions and across agent
-restarts. This is the cure for LLM context loss: when the next agent
-picks up a task, they can read the full history.
+Notes are append-only and survive sessions and agent restarts — the
+cure for LLM context loss: the next agent reads the full history.
 
 ```bash
 mu task note design "DECISION: JWT, 24h expiry, refresh via cookie"
@@ -1384,17 +1467,16 @@ mu task notes design --tail 5 --json          # collection envelope {items, coun
 
 Filters compose: `--tail` slices the last N of whatever survived
 the timestamp filter. `--since` and `--since-claim` are mutually
-exclusive (both define a cutoff) — pick one. With no filters the
-output is unchanged from prior versions (every note, oldest-first).
+exclusive (both define a cutoff) — pick one. With no filters you get
+every note, oldest-first.
 
-`--since-claim` is the orchestrator-friendly form: dispatch flows
-often drop a multi-screen SPEC note BEFORE claiming, then the
-worker appends progress notes AFTER the claim. `--since-claim`
-slices off the SPEC so you see only the worker's reports. If no
-claim event exists for the task, it degrades to no filter (so the
-verb stays useful on un-claimed tasks).
+`--since-claim` is the orchestrator form: dispatch flows drop a
+multi-screen SPEC note BEFORE claiming, then the worker appends
+progress notes AFTER. `--since-claim` slices off the SPEC so you see
+only the worker's reports. With no claim event it degrades to no
+filter.
 
-Or, for ad-hoc shape, the SQL escape hatch:
+For ad-hoc shape, the SQL escape hatch:
 
 ```bash
 mu sql "SELECT n.author, n.content, n.created_at
@@ -1422,12 +1504,10 @@ mu task close umbrella --if-ready   # close ONLY if every blocker
 mu task open design                 # CLOSED → OPEN (e.g. closed by mistake)
 ```
 
-Both are idempotent (closing an already-CLOSED task prints a no-op
-message and exits 0). Owner is intentionally left intact — use
-`mu task release <id>` to clear ownership when an agent bails on a
-task mid-flight. `IN_PROGRESS` auto-flips back to `OPEN` so the
-task re-enters the ready set (the canonical "hand it back to the
-pool" workflow). `--reopen` is the escape hatch for forcing `OPEN`
+Both are idempotent (closing an already-CLOSED task prints a no-op and
+exits 0). Owner is left intact — use `mu task release <id>` to clear
+ownership when an agent bails mid-flight. `IN_PROGRESS` flips back to
+`OPEN` so the task re-enters the ready set. `--reopen` forces `OPEN`
 from `CLOSED` / `REJECTED` / `DEFERRED`.
 
 When the closing actor has a per-agent workspace and that workspace
@@ -1442,16 +1522,13 @@ The hint is best-effort: no workspace, a clean workspace, the `none`
 backend, or a failed VCS dirty check simply omit it. The same
 `nextSteps` entry is present in `--json` output.
 
-`--if-ready` is the umbrella-on-wave-done shape: an orchestrator
-fires `mu task close <umbrella> --if-ready` after each wave-task
-finishes (or unconditionally as a final action). It's a no-op while
-any blocker is still OPEN / IN_PROGRESS, and prints the still-
-blocking ids + a `mu task wait` Next: hint so the operator can pick
-back up. Once the last blocker reaches a terminal status (CLOSED /
-REJECTED / DEFERRED), the same command closes the umbrella.
-JSON shape on the no-op path: `{ skipped: "not_ready", changed:
-false, blockingIds: ["..."], ... }`. Exit code 0 either way — the
-no-op is success.
+`--if-ready` is the umbrella-on-wave-done shape: fire
+`mu task close <umbrella> --if-ready` after each wave-task finishes.
+It's a no-op while any blocker is OPEN / IN_PROGRESS, printing the
+still-blocking ids + a `mu task wait` hint; once the last blocker is
+terminal, the same command closes the umbrella. JSON on the no-op path:
+`{ skipped: "not_ready", changed: false, blockingIds: ["..."], ... }`.
+Exit 0 either way — the no-op is success.
 
 ```bash
 mu task release design              # clear owner; IN_PROGRESS → OPEN
@@ -1460,31 +1537,29 @@ mu task release design --reopen     # clear owner AND force status to OPEN
                                     # (un-close + release in one verb)
 ```
 
-Now run `mu` again — `build` has become ready (its only blocker
-`design` is now closed):
+With `design` closed, `build` is ready:
 
 ```
-Ready (1)
-┌───────┬──────────────────┬────────┬────────┬──────┬───────┐
-│ id    │ title            │ impact │ effort │ ROI  │ owner │
-├───────┼──────────────────┼────────┼────────┼──────┼───────┤
-│ build │ Build auth module│ 80     │ 5      │ 16.0 │       │
-└───────┴──────────────────┴────────┴────────┴──────┴───────┘
+$ mu task next -w auth-refactor
+┌───────┬────────┬───────────────────┬────────┬────────┬──────┬───────┐
+│ name  │ status │ title             │ impact │ effort │ ROI  │ owner │
+├───────┼────────┼───────────────────┼────────┼────────┼──────┼───────┤
+│ build │ OPEN   │ Build auth module │ 80     │ 5      │ 16.0 │ —     │
+└───────┴────────┴───────────────────┴────────┴────────┴──────┴───────┘
 ```
 
 ---
 
 ## 13. The SQL escape hatch is your friend
 
-Most routine operations have a typed verb — prefer those (and prefer
-`--json` for scripting). `mu sql` is for the rare cases the typed
-verbs don't cover: ad-hoc joins, manual recovery, exploring schema.
-The schema is 10 tables — 4 **portable** (`workstreams`, `tasks`,
-`task_edges`, `task_notes`: the state that crosses machines) and 6
-**machine-local** (`agents`, `vcs_workspaces`, `machine_identity`,
-`sync_peers`, `schema_version`, and the `ops` log itself, which is
-the carrier rather than the cargo) — plus three views (`ready`,
-`blocked`, `goals`):
+Most routine operations have a typed verb — prefer those, with `--json`
+for scripting. `mu sql` covers ad-hoc joins, manual recovery, and
+schema exploration. The schema is 10 tables — 4 **portable**
+(`workstreams`, `tasks`, `task_edges`, `task_notes`: what crosses
+machines) and 6 **machine-local** (`agents`, `vcs_workspaces`,
+`machine_identity`, `sync_peers`, `schema_version`, and the `ops` log,
+which is carrier not cargo) — plus three views (`ready`, `blocked`,
+`goals`):
 
 ```bash
 mu sql "SELECT name FROM sqlite_master WHERE type IN ('table','view') ORDER BY type, name"
@@ -1528,14 +1603,12 @@ mu agent ensure fixer-1 -w scratch --json
 # => {"agent":{...},"changed":false,"created":false,"reused":true,"busy":false,...}
 ```
 
-Default busy behavior is deliberately conservative: an existing busy /
-spawning / permission-blocked agent is **reused without mutation** and
-reported with `busy: true`. This makes watcher loops safe by default —
-they do not create duplicate fixers and they do not interrupt the one
-already running. If the caller wants a concurrency lock, pass
-`--idle-only`: when the existing agent is actively busy, `ensure` fails
-with a typed conflict (exit 4), so scripts can skip the tick and try
-again later.
+Default busy behavior is conservative: an existing busy / spawning /
+permission-blocked agent is **reused without mutation** and reported
+with `busy: true`, so watcher loops neither duplicate fixers nor
+interrupt the running one. For a concurrency lock, pass `--idle-only`:
+when the existing agent is busy, `ensure` fails with a typed conflict
+(exit 4) so the script can skip the tick.
 
 ```bash
 mu agent ensure fixer-1 -w scratch --idle-only --json || echo "lock held"
@@ -1549,13 +1622,11 @@ created and the existing status when reused.
 
 ### `mu agent wait`: the task-less counterpart to `mu task wait`
 
-Scratch / off-the-cuff helpers usually own no task in the DAG, so
-there's nothing for `mu task wait` to watch. `mu agent wait` blocks on
-the agent's runtime status instead: an agent **fires** when it goes
-**busy → any other state** (it must be observed busy first, so an
-already-idle agent does NOT fire instantly — you're waiting for *this*
-piece of work to finish, not "is it idle right now"). This replaces
-`sleep` polling loops.
+Scratch helpers usually own no task, so `mu task wait` has nothing to
+watch. `mu agent wait` blocks on the agent's runtime status: an agent
+**fires** when it goes **busy → any other state**. It must be observed
+busy first, so an already-idle agent does NOT fire instantly — you're
+waiting for *this* work to finish. Replaces `sleep` polling loops.
 
 ```bash
 mu agent spawn helper-1 -w scratch
@@ -1587,21 +1658,18 @@ mu agent poll -w auth-refactor --json
 #     "count":2}
 ```
 
-Per-agent fields: `name`, `status` (last-reconciled runtime status),
-`idleMs` (ms since the row's last update), `lastActivitySeq` (highest
-`ops.seq` sourced by this agent — a monotonic progress cursor to
-diff tick-over-tick), `workspaceBehind` (commits behind main, or `null`
-when no workspace / uncomputable), and `dead` (true when the pane no
-longer exists in the tmux session). Plain output prints one line per
-agent; `--json` returns the `{items,count}` collection shape.
+Per-agent fields: `name`; `status` (last-reconciled runtime status);
+`idleMs` (since the row's last update); `lastActivitySeq` (highest
+`ops.seq` sourced by this agent — a monotonic cursor to diff
+tick-over-tick); `workspaceBehind` (commits behind main, `null` when
+uncomputable); `dead` (the pane is gone). Plain output is one line per
+agent; `--json` is the `{items,count}` shape.
 
 ### `mu agent reap-idle`: one-line graveyard cleanup
 
-The scratch watcher pattern (spawn a helper per unit, let them pile up)
-leaves a graveyard of finished `fixer-N` panes. Instead of
-`mu agent list | grep | xargs mu agent close`, `mu agent reap-idle`
-sweeps the workstream and closes the finished, idle, SAFE ones in one
-shot:
+The scratch watcher pattern leaves a graveyard of finished `fixer-N`
+panes. `mu agent reap-idle` sweeps the workstream and closes the
+finished, idle, SAFE ones in one shot:
 
 ```bash
 mu agent reap-idle -w scratch --idle-for 600 --json
@@ -1612,21 +1680,18 @@ mu agent reap-idle -w scratch --idle-for 600 --json
 #     "count":1}
 ```
 
-An agent is a candidate when its status is `needs_input`,
-`needs_permission`, or `free` (i.e. **not** `busy`/`spawning`) AND it has
-been idle (no row update) for `>= --idle-for` seconds (default
-`MU_IDLE_THRESHOLD_MS`, 300). Each candidate is closed via the same
+A candidate has status `needs_input`, `needs_permission`, or `free`
+(**not** `busy`/`spawning`) AND has been idle for `>= --idle-for`
+seconds (default `MU_IDLE_THRESHOLD_MS`, 300). Each is closed via the
 `mu agent close` path, which **auto-frees a clean workspace and refuses
-a dirty one** — so by default a helper with uncommitted changes or
-commits since fork is *skipped* (with `reason: "workspace dirty ..."`),
-never silently discarded. Pass `--discard-dirty` to override (lossy),
-or `--dry-run` to preview the plan without killing any pane.
+a dirty one** — a helper with uncommitted changes is *skipped*
+(`reason: "workspace dirty ..."`), never silently discarded.
+`--discard-dirty` overrides (lossy); `--dry-run` previews.
 
-`count` is the number actually CLOSED (in `--dry-run`, the number that
-*would* be); every agent the sweep saw appears in `items` with
-`action: "closed"|"skipped"` and a skip `reason`, so the JSON is a full
-audit of the sweep. The verb works in any workstream, not just
-`scratch`.
+`count` is the number CLOSED (in `--dry-run`, the number that *would*
+be). Every agent the sweep saw appears in `items` with
+`action: "closed"|"skipped"` and a skip `reason`. Works in any
+workstream, not just `scratch`.
 
 ### `mu task wait`: cross-workstream refs + `--first` returns WHICH
 
@@ -1636,7 +1701,7 @@ ref. When all refs are qualified, `-w` is not required; mixed lists
 are allowed (bare uses `-w`, qualified uses its prefix).
 
 ```bash
-# All-bare with -w  — today's classic shape, unchanged
+# All-bare with -w
 mu task wait build_a build_b -w mufeedback-v03 --timeout 1200
 
 # All-qualified  — cross-workstream wait, no -w needed
@@ -1741,8 +1806,7 @@ Two orthogonal flags govern the stall behaviour:
   * `warn` (default) — yellow `STUCK` warning to stderr (deduped per
     task per wait call), corroborating `agent stalled <name> owns
     <task> for <secs>s` event in the ops log, and `wait` keeps
-    polling. The behaviour pre-`task_wait_stall_action_flag`,
-    byte-for-byte.
+    polling.
   * `exit` — same emit + persist, then **exit 7**
     (`STALL_DETECTED`). The unattended-orchestrator escape: a
     wrapping policy can branch on 7 (idle, ambiguous — poke vs
@@ -1752,7 +1816,7 @@ Two orthogonal flags govern the stall behaviour:
     might BE the success path).
 
 ```bash
-# Default: warn at 5 min, keep polling. Today's behaviour.
+# Default: warn at 5 min, keep polling.
 mu task wait build_a build_b -w mufeedback-v03 --timeout 1800
 
 # Tune the trigger; same warn-only action.
@@ -1832,10 +1896,10 @@ Reconciliation runs on every `mu agent list` / `mu`. Three steps:
 2. **Detect status from scrollback** — for survivors, capture the
    pane and re-derive status (busy / needs_input / needs_permission /
    spawning) per the pi-status detector
-3. **Surface orphan panes** — panes in the workstream's tmux session
-   whose `pane.command` looks like an agent CLI (pi) but
-   that aren't in the registry. **Not** auto-adopted; mu shows them
-   under "Orphan panes" and tells you `mu agent adopt <pane-id>` to register
+3. **Surface orphan panes** — panes in the workstream's session whose
+   `pane.command` looks like an agent CLI but that aren't in the
+   registry. **Not** auto-adopted; mu lists them under "Orphan panes"
+   with the `mu agent adopt <pane-id>` hint
 
 ### A worker is wedged on an unbounded tool subprocess
 
@@ -1851,16 +1915,14 @@ mu agent kick worker-1 --signal SIGTERM      # polite escalation
 mu agent kick worker-1 --signal SIGKILL      # hammer
 ```
 
-`mu agent kick` looks up the pane's TTY via `tmux display-message
--p '#{pane_tty}'`, asks `ps -t <tty>` for the foreground process
-group (the row whose `stat` field contains `+`), and signals the
-whole pgrp directly. Refuses with `NoForegroundProcessError` when
-the foreground IS the wrapping CLI itself — use `mu agent close`
-to close the agent.
+`mu agent kick` looks up the pane's TTY (`tmux display-message -p
+'#{pane_tty}'`), asks `ps -t <tty>` for the foreground process group
+(the row whose `stat` contains `+`), and signals the whole pgrp.
+Refuses with `NoForegroundProcessError` when the foreground IS the
+wrapping CLI — use `mu agent close` then.
 
-Prevention: don't prompt workers to run filesystem-wide `find`,
-broad `grep -r /`, or unbounded busy-wait loops. Pass paths
-explicitly or scope to `$WORKSPACE`.
+Prevention: don't prompt workers to run filesystem-wide `find`, broad
+`grep -r /`, or unbounded busy-wait loops. Scope to `$WORKSPACE`.
 
 ### You closed your terminal session
 
@@ -1873,18 +1935,16 @@ invocation is a short-lived process that re-reads from
 ### The mu DB seems wrong
 
 ```bash
+mu doctor                                   # quick health check (exit 5 = drift)
+mu doctor --deep                            # rebuild + field-level diff
 sqlite3 ~/.local/state/mu/mu.db .schema     # inspect
-sqlite3 ~/.local/state/mu/mu.db .tables     # list
-mu doctor                       # quick health check
 rm ~/.local/state/mu/mu.db                  # nuke (last resort; loses task graph and registry)
 ```
 
 ### You ran a destructive verb and want to undo it
 
 Every change any verb makes is captured as **ops** under one
-**group**, so undo is per-action rather than per-file. Nothing is
-snapshotted and nothing needs pruning — the ops log already holds
-the history.
+**group**, so undo is per-action rather than per-file.
 
 ```bash
 mu undo                      # list recent undoable groups (newest first)
@@ -1906,16 +1966,15 @@ Two important caveats:
   removed — none of those are portable state, so none of them are
   in the log.
 - **For whole-DB recovery, use `mu rebuild <file>`**, which replays
-  the entire ops log into a NEW file. That is the 2.0 replacement
-  for v1's snapshot restore, and it never writes in place.
+  the entire ops log into a NEW file. It never writes in place.
 
 ### Workspace orphans (dirs on disk with no DB row)
 
-A `--workspace` spawn that aborted partway, an `mu agent close`
-from an earlier mu version, or a manual `rm` of `vcs_workspaces`
-rows can leave dirs in `<state-dir>/workspaces/<workstream>/<agent>/`
-that have no DB row. They're invisible to `mu workspace list` but
-they BLOCK subsequent `--workspace` spawns under the same name.
+A `--workspace` spawn that aborted partway, or a manual `rm` of
+`vcs_workspaces` rows, can leave dirs in
+`<state-dir>/workspaces/<workstream>/<agent>/` with no DB row. They're
+invisible to `mu workspace list` but they BLOCK subsequent
+`--workspace` spawns under the same name.
 
 ```bash
 mu state -w <workstream>          # 'Workspace orphans' section in yellow
@@ -1953,15 +2012,11 @@ mu sql "UPDATE workstreams SET name='auth-refactor' WHERE name='auth-refator'"
 tmux rename-session -t mu-auth-refator mu-auth-refactor
 ```
 
-Mu doesn't ship a typed `mu workstream rename` verb <!-- doc-cli-drift:skip --> because the
-schema does the work <!-- doc-cli-drift:skip --> — wrapping a single safe statement adds
-surface area without buying anything (no atomicity to preserve, no
-validation to add, no side effects beyond the optional `tmux
-rename-session`). The recipe above is the canonical answer.
-
-The same `ON UPDATE CASCADE` makes future `mu sql` renames safe
-for `tasks.local_id` and `agents.name` too, if you ever need to
-untypo those.
+There is no typed `mu workstream rename` verb <!-- doc-cli-drift:skip -->: the
+schema does the work, and wrapping one safe statement buys nothing (no
+atomicity to preserve, no validation to add). The recipe above is the
+canonical answer, and the same `ON UPDATE CASCADE` makes `mu sql`
+renames safe for `tasks.local_id` and `agents.name` too.
 
 ---
 
@@ -1971,38 +2026,30 @@ untypo those.
 
 ```bash
 mu agent close worker-1          # kills pane + drops registry row
-mu agent close worker-2
-mu agent close reviewer-1
 ```
 
-`mu agent close` is idempotent: `killPane` swallows "pane already gone"
-errors; `deleteAgent` returns false (not throws) on a missing row.
+Idempotent: a missing pane and a missing row are both fine.
 
-If the agent has a workspace, behaviour depends on its state:
+If the agent has a workspace:
 
-- **Clean** (no uncommitted changes AND no commits since fork) — the
-  workspace is silently auto-freed alongside the close, so a
-  `--workspace` spawn that did no real work doesn't make you type
-  `--discard-workspace` just to clean up.
-- **Dirty** (uncommitted changes OR commits since fork) — close refuses
-  with `WorkspacePreservedError` (exit 4). Two resolutions: (a) `mu
-  workspace free <agent>` first (optionally with `--commit` to capture
-  pending changes), then `mu agent close <agent>`; or (b) `mu agent
-  close <agent> --discard-workspace` to free both in one shot (lossy:
-  any work in the workspace is gone).
+- **Clean** (no uncommitted changes AND no commits since fork) —
+  auto-freed alongside the close.
+- **Dirty** — close refuses with `WorkspacePreservedError` (exit 4).
+  Either `mu workspace free <agent>` first (optionally `--commit` to
+  capture pending changes) then close, or
+  `mu agent close <agent> --discard-workspace` to do both (lossy).
 
 ### Tear down the whole workstream
 
-`mu workstream destroy` is the symmetric counterpart of `mu workstream init`: it kills the
-workstream's tmux session AND deletes every DB row tagged with the
-workstream name (agents, tasks, edges, notes — edges and notes go via
-FK cascade on tasks). The workstream resolves the same way as every
-other verb: `--workstream <name>` flag > `$MU_SESSION` > current tmux
-session (with the `mu-` prefix stripped).
+`mu workstream destroy` is the counterpart of `mu workstream init`: it
+kills the workstream's tmux session AND deletes every DB row tagged
+with the workstream name (edges and notes go via FK cascade on tasks).
+The workstream resolves as everywhere else: `--workstream <name>` >
+`$MU_SESSION` > current tmux session (`mu-` prefix stripped).
 
-The verb is two-phase by default: a bare `mu workstream destroy` prints a dry-run
-summary so you can verify what's about to disappear, and exits without
-touching anything. Pass `-y` / `--yes` to actually destroy.
+Two-phase by default: a bare `mu workstream destroy` prints a dry-run
+summary and exits without touching anything. Pass `-y` / `--yes` to
+destroy.
 
 ```bash
 mu workstream destroy --workstream auth-refactor          # dry-run: shows counts, exits
@@ -2016,15 +2063,12 @@ mu workstream destroy --yes                                # workstream auto-det
 mu workstream destroy -w auth-refactor --archive v0-3-wave --yes
 
 # Sweep every empty workstream (zero tasks, agents, vcs_workspaces)
-# in one call. Tmux session presence and audit-only
-# log entries do NOT disqualify. Also surfaces unregistered `mu-*`
-# tmux sessions (test litter or remnants from a partial destroy that
-# nuked the DB row but left the session behind) — the matching
-# predicate is narrow on purpose: ONLY sessions starting with `mu-`,
-# arbitrary tmux sessions the operator runs for unrelated work are
-# never touched. Mutually exclusive with -w and --archive. Dry-run
-# lists what WOULD be destroyed (created_at renders as `—` for
-# tmux-only entries); --yes best-effort destroys each.
+# in one call. Tmux session presence and audit-only log entries do NOT
+# disqualify. Also surfaces unregistered `mu-*` tmux sessions (test
+# litter, or a partial destroy that dropped the DB row but left the
+# session). ONLY `mu-`-prefixed sessions are touched. Mutually
+# exclusive with -w and --archive. Dry-run lists what WOULD go
+# (created_at renders `—` for tmux-only entries); --yes destroys.
 mu workstream destroy --empty                  # dry-run: table of empties
 mu workstream destroy --empty --yes            # destroy them all
 ```
@@ -2032,21 +2076,21 @@ mu workstream destroy --empty --yes            # destroy them all
 ```
 Workstream auth-refactor (tmux session mu-auth-refactor)
   tmux session : alive (will be killed)
-  agents       : 3
-  tasks        : 10  (edges: 12, notes: 7)
+  agents       : 1
+  tasks        : 1  (edges: 0, notes: 0)
+  workspaces   : 0
 
-Destroyed auth-refactor: killed tmux=true, agents=3, tasks=10, edges=12, notes=7
+Destroyed auth-refactor: killed tmux=true, agents=1, tasks=1, edges=0, notes=0, workspaces=0/0
+Pre-destroy export: ~/.local/state/mu/exports/auth-refactor-2026-08-02T06-00-05-869Z
 ```
 
-It's idempotent on every leg: missing tmux session is fine, zero DB
-rows is fine, repeated `mu workstream destroy` against an already-gone workstream
-prints "nothing to destroy" and exits 0.
+Idempotent on every leg: a missing tmux session is fine, zero DB rows
+is fine, and a repeat destroy prints "nothing to destroy" and exits 0.
 
-Destroy writes TOMBSTONE ops rather than erasing history, so the
-work is still in the ops log afterwards. If you regret it,
-`mu undo <group> --yes` reverses the row deletions — but the tmux
-session that was killed and any per-agent workspace dirs that were
-freed are NOT brought back. See
+Destroy writes TOMBSTONE ops rather than erasing history, so the work
+stays in the ops log. `mu undo <group> --yes` reverses the row
+deletions — but not the killed tmux session or freed workspace dirs.
+See
 [§ 14: You ran a destructive verb and want to undo it](#you-ran-a-destructive-verb-and-want-to-undo-it).
 
 The tmux session is killed BEFORE the DB rows so an unexpected tmux
@@ -2068,18 +2112,15 @@ rm ~/.local/state/mu/mu.db                           # next mu invocation re-cre
 
 ### Preserve the conversation as markdown before destroying
 
-A workstream's task graph + notes IS the project memory — the
-durable record of what was decided and why. `mu workstream destroy`
-removes the live rows (the ops log keeps them, but only
-`mu undo` / `mu archive restore` can read them back). For code
-review, project handoff,
-git-checked-in artifacts, or just `grep`, render the workstream as
-plain markdown first.
+A workstream's task graph + notes IS the project memory.
+`mu workstream destroy` removes the live rows (the ops log keeps them,
+but only `mu undo` / `mu archive restore` read them back). For code
+review, handoff, git-checked-in artifacts, or `grep`, render the
+workstream as markdown first.
 
-Exports use a **bucket** layout (`bucketVersion: 2`, mu ≥ 0.3):
-the `--out` directory is a multi-source bucket whose top-level
-contains a bucket-wide README/INDEX/manifest, and one
-subdirectory per source workstream:
+Exports use a **bucket** layout: the `--out` directory is a
+multi-source bucket whose top-level contains a bucket-wide
+README/INDEX/manifest, and one subdirectory per source workstream:
 
 ```
 <bucket>/
@@ -2093,23 +2134,15 @@ subdirectory per source workstream:
 ```
 
 Bucket exports are **additive**: `mu workstream export -w X --out
-<bucket>` creates the bucket scaffolding plus `X/` on first use,
-and a follow-up call with `-w Y --out <same-bucket>` appends a
-sibling `Y/` subdirectory without touching `X/`. The top-level
-`INDEX.md` is always the union from `manifest.sources`, so a later
-single-workstream refresh does not drop sibling workstreams from the
-bucket-wide task table. Re-running with
-the same `-w` is sha256-idempotent: only changed task files are
-rewritten (mtime preserved on identical files); tasks added since
-the previous export get fresh files; tasks deleted from the DB
-STAY on disk with a `> **Deleted from DB on <ts>**` banner so you
-never lose context that may already be git-blamed. `manifest_version:
-2` stores compact task summaries (`name`/`title`/`status`/`impact`/
-`effortDays`) beside the per-file sha256s; older v1 manifests are
-accepted on re-export; mu infers the missing summaries from existing
-per-task markdown when possible, falling back to placeholder values
-only if a task file is missing or unreadable, so the bucket remains
-appendable.
+<bucket>` creates the bucket scaffolding plus `X/` on first use, and a
+follow-up call with `-w Y --out <same-bucket>` appends a sibling `Y/`
+without touching `X/`. The top-level `INDEX.md` is the union from
+`manifest.sources`, so a single-workstream refresh does not drop
+siblings. Re-running with the same `-w` is sha256-idempotent: only
+changed task files are rewritten (mtime preserved on identical files),
+and tasks deleted from the DB STAY on disk with a
+`> **Deleted from DB on <ts>**` banner so you never lose context that
+may already be git-blamed.
 
 ```bash
 # One-shot dump (bucket happens to contain just one source-ws)
@@ -2135,11 +2168,9 @@ even if you forgot. Pass `--no-export` to opt out.
 (cd ~/notes/auth && git init && git add . && git commit -m 'auth-refactor snapshot')
 ```
 
-**Pre-0.3 export layouts are not migrated in place.** If `--out`
-points at a directory whose `manifest.json` was written by an
-older mu (no `bucketVersion`, top-level `workstream` field), the
-export refuses with a helpful error: `rm -rf <dir>` and re-run, or
-pick a different `--out`.
+If `--out` points at a directory whose `manifest.json` predates the
+bucket layout (no `bucketVersion`, top-level `workstream` field), the
+export refuses: `rm -rf <dir>` and re-run, or pick a different `--out`.
 
 Markdown only by design — no HTML/PDF, no embedded VCS, no
 cross-workstream merge. Operators can pandoc / `git init`
@@ -2148,9 +2179,8 @@ themselves.
 ### Bucket exports are read-only artifacts
 
 Bucket exports (`mu workstream export` and `mu archive export`) are
-now **read-only** artifacts for humans / git / docs. They are still
-excellent for grep, code review, project handoff, and historical
-write-ups, but they are no longer a load-bearing DB round-trip path.
+**read-only** artifacts for humans / git / docs — good for grep, code
+review, and handoff, but not a DB round-trip path.
 
 Use the typed surfaces for recovery and movement:
 
@@ -2167,11 +2197,8 @@ Use the typed surfaces for recovery and movement:
 
 An **archive** is a named MARKER pinning a point in the ops log. Not a
 copy: one op per archive, and everything else is a query or a replay.
-
-v1 stored archives as a snapshot spread over five `archived_*` tables.
-2.0 dropped all five. Since the log retains every change, "the state of
-this workstream at this moment" is already recorded — an archive just
-has to name the moment.
+The log already retains every change, so "the state of this workstream
+at this moment" is recorded; an archive only has to name the moment.
 
 ```bash
 mu archive add v0-3 -w mufeedback          # pin it; creates the label on first use
@@ -2196,8 +2223,7 @@ Key properties:
   keep in sync. Adding the same workstream twice pins two moments, which
   is usually what you want (`v0-3` before and after a fix).
 - **Lossless restore.** Replaying ops reproduces every column the capture
-  triggers recorded, which is strictly MORE faithful than v1's
-  column-subset copy. Restore stops AT the marker, so work added after
+  triggers recorded. Restore stops AT the marker, so work added after
   the pin is not resurrected, and a task deleted *before* the pin stays
   deleted.
 - **Restore never overwrites.** `--as <new-name>` is required and must
@@ -2250,22 +2276,9 @@ Now every `mu` invocation flushes your ops into
 folder. Nothing else to set up: no peer list, no host names, no daemon.
 Drop a third machine in and it appears.
 
-### The workflow
-
-```bash
-# laptop
-mu task add auth-fix -t "Fix the auth redirect" -i 80 -e 2 -w app
-
-# devserver — no sync verb needed, `mu task list` already ingested
-mu task list -w app
-mu task close auth-fix -w app
-
-# laptop, later
-mu task show auth-fix -w app         # CLOSED
-```
-
-There is no export step, no import step, and no "which side is
-authoritative" decision. Both machines converge.
+The end-to-end walkthrough with real output is
+[§ 0.3 Laptop ↔ devserver](#03-laptop--devserver). There is no export
+step, no import step, and no "which side is authoritative" decision.
 
 ### `mu sync` — the status report
 
@@ -2288,10 +2301,10 @@ Next:
 ```
 
 Machines are named by `machine_id` prefix, not hostname — a hostname is
-machine-local information that deliberately never travels. `behind` is
-how many lines of that peer's segment you *hold but have not applied*;
-a non-zero number means either a transfer caught mid-flight (it will
-resolve itself) or a defect that stopped the read (see `--repair`).
+machine-local and never travels. `behind` is how many lines of that
+peer's segment you *hold but have not applied*; non-zero means either a
+transfer caught mid-flight (it resolves itself) or a defect that
+stopped the read (see `--repair`).
 
 Two flags, and only two:
 
@@ -2314,14 +2327,12 @@ MU_SYNC_DIR=/media/usb-stick mu state    # ingest from a USB stick
 ### Transport is yours
 
 mu reads and writes files. It never runs `ssh`, `scp`, or `rsync` for
-you, and it never will: that would mean owning ssh config, jump hosts,
-`ProxyCommand`, non-standard ports, identity files, and interactive
-password prompts. Instead, when a peer looks stale, mu prints the
-command and you paste it.
+you — that would mean owning ssh config, jump hosts, `ProxyCommand`,
+non-standard ports, identity files, and password prompts. When a peer
+looks stale, mu prints the command and you paste it.
 
-Pick any file-mover. Because segments are **append-only and
-single-writer-per-file**, they are the easiest thing in the world to
-move:
+Pick any file-mover; segments are **append-only and
+single-writer-per-file**, so anything works:
 
 | Tier | How | Notes |
 | ---- | --- | ----- |
@@ -2330,45 +2341,42 @@ move:
 | sshfs / NFS mount of the FOLDER | Point `MU_SYNC_DIR` at the mount | OK for segments. **Never** for `MU_DB_PATH`. |
 | Fully manual (`scp`, USB stick) | Copy the `.jsonl` files whenever | Still converges, just less often. |
 
-Manual copying is a first-class tier, not a fallback, because of three
-properties that make it strictly better than v1's export/import:
+Manual copying is a first-class tier, not a fallback:
 
-1. **Direction-free.** There is no source-vs-target decision. Copy
-   either way, or both ways. You converge.
+1. **Direction-free.** No source-vs-target decision. Copy either way,
+   or both ways. You converge.
 2. **Idempotent.** Copying the same file ten times equals copying it
    once, so re-copy freely when unsure.
 3. **Interruption-safe.** A killed `scp` leaves a truncated last line
-   that the parser skips; the next copy completes it. v1's
-   half-transferred SQLite file was simply unusable.
+   that the parser skips; the next copy completes it.
 
 ### Two things not to do
 
-**Never put `MU_DB_PATH` inside `MU_SYNC_DIR`.** This is THE footgun of
-the design, and `mu doctor` hard-fails on it:
+**Never put `MU_DB_PATH` inside `MU_SYNC_DIR`.** THE footgun of the
+design. `mu doctor` reports it, with the full remediation paragraph:
 
 ```console
 $ mu doctor
 fleet
-  db-vs-sync       : FAIL DB is INSIDE MU_SYNC_DIR — this WILL corrupt it
+  db-vs-sync       : FAIL DB is INSIDE MU_SYNC_DIR — this WILL corrupt it (/tmp/mu-sync-demo/mu.db)
 ```
 
 A live WAL-mode SQLite database is three files (`mu.db`, `-wal`,
 `-shm`) whose mutual consistency *is* its durability. A file-syncer
-copies them whole-file and out of order, and will happily resurrect a
-peer's stale `-wal` — yielding a database that opens fine and is
-silently corrupt. Two machines writing the same synced file is worse:
+copies them whole-file and out of order, and will resurrect a peer's
+stale `-wal` — yielding a database that opens fine and is silently
+corrupt. Two machines writing the same synced file is worse:
 last-writer-wins on the whole FILE, so one machine's entire history
 disappears. Keep the DB on local disk; only the regenerable segments
 travel.
 
 **Avoid iCloud Drive and Dropbox for `MU_SYNC_DIR` on macOS.** Both do
-*dataless-placeholder eviction*: a file you have not touched recently
-becomes a stub, and the `stat()` that materialises it blocks on the
-network. Since mu stats the sync dir at the top of *every* command,
-that turns `mu task add` into a multi-second hang — or a failure when
-you are offline. Syncthing keeps real bytes on disk and has no such
-mode. (Google Drive's File Stream and OneDrive's Files On-Demand have
-the same problem.)
+*dataless-placeholder eviction*: an untouched file becomes a stub, and
+the `stat()` that materialises it blocks on the network. mu stats the
+sync dir at the top of *every* command, so `mu task add` becomes a
+multi-second hang — or a failure when offline. Syncthing keeps real
+bytes on disk. (Google Drive File Stream and OneDrive Files On-Demand
+have the same problem.)
 
 ### What does and does not travel
 
@@ -2384,12 +2392,12 @@ task claimed by `worker-2` on the devserver shows as unowned on your
 laptop. That is correct — `worker-2` is a tmux pane that does not exist
 there.
 
-### Concurrent editing is fine now
+### Concurrent editing
 
-v1 had a hard rule against editing one workstream on two machines at
-once. That rule is gone. Ops are semantic partial updates merged by
-**per-field last-writer-wins**, so a devserver crew closing a task
-while you re-prioritise it on the laptop keeps *both* edits:
+Edit one workstream on two machines at once. Ops are semantic partial
+updates merged by **per-field last-writer-wins**, so a devserver crew
+closing a task while you re-prioritise it on the laptop keeps *both*
+edits:
 
 ```bash
 # laptop                                    # devserver
@@ -2402,68 +2410,51 @@ winner, and the newer HLC takes it.
 
 ---
 
-## 15.7 Coming from mu 1.x — moving your old DB across
+## 15.7 Coming from mu 1.x
 
-mu 2.0 does **not** migrate your v1 database. `mu` refuses to open any
-pre-v9 DB (`SchemaTooOldError`, exit 4) and leaves the file untouched.
-That is deliberate: a major version is exactly the moment to stop
+`mu` refuses to open a pre-v9 DB (`SchemaTooOldError`, exit 4) and
+leaves the file untouched — a major version is the moment to stop
 carrying a migration ladder.
 
-Your data is not stranded. A sidecar, `scripts/v1-to-v2.ts`, imports a
-v1 DB into a fresh v9 one. You run it once, by hand, against a copy.
+A sidecar, `scripts/v1-to-v2.ts`, imports a v1 DB into a fresh v9 one.
+Run it once, by hand, against a copy. The shape:
 
 ```bash
-# 1. BACK UP FIRST. Keep this file indefinitely — there is no path back.
-cp ~/.local/state/mu/mu.db ~/mu-v1-backup-$(date +%Y%m%d).db
-
-# 2. Move the v1 DB aside (do NOT delete it).
-mv ~/.local/state/mu/mu.db ~/.local/state/mu/mu.db.v1
-
-# 3. Import into a NEW file.
-npx tsx scripts/v1-to-v2.ts ~/.local/state/mu/mu.db.v1 --out /tmp/mu-v2.db
-
-# 4. Verify. This is the check that matters.
-MU_DB_PATH=/tmp/mu-v2.db mu doctor --deep      # must report NO drift
-MU_DB_PATH=/tmp/mu-v2.db mu workstream list
-
-# 5. Swap it in.
+cp ~/.local/state/mu/mu.db ~/mu-v1-backup-$(date +%Y%m%d).db   # there is no path back
+npx tsx scripts/v1-to-v2.ts ~/mu-v1-backup-$(date +%Y%m%d).db --out /tmp/mu-v2.db
+MU_DB_PATH=/tmp/mu-v2.db mu doctor --deep    # the check that matters: NO drift
 mv /tmp/mu-v2.db ~/.local/state/mu/mu.db
 ```
 
-The importer is read-only on the source (it prints the sha256 before
-and after) and **synthesizes ops rather than inserting rows**, so the
-result is a first-class v9 DB: `mu rebuild` reproduces it and
-`mu doctor --deep` reports no drift.
+The importer is read-only on the source and **synthesizes ops rather
+than inserting rows**, so the result is a first-class v9 DB.
+Workstreams, tasks, edges, notes and the agent log come across; agents,
+workspaces and task ownership do not (same reasons they do not sync).
+Old archives **refuse loudly** rather than half-importing — export them
+with mu 1.x first, or pass `--drop-archives`.
 
-Workstreams, tasks, edges, notes and the agent log come across. Agents,
-workspaces, snapshots and task ownership do not — for the same reasons
-they do not sync (see § What does and does not travel). v1 archives
-**refuse loudly** rather than half-importing; export them with mu 1.x
-before upgrading, or pass `--drop-archives`. Every run prints a table of
-what came across and what did not, with counts.
-
-Full recipe, flags and rationale: [scripts/README.md](../scripts/README.md).
+**Full recipe, every flag, and the rationale:
+[scripts/README.md](../scripts/README.md).**
 
 ---
 
 ## 16. One-shot demo script
 
-Copy-pasteable, end-to-end. Wipes any prior `~/.local/state/mu/mu.db`.
+End-to-end against a throwaway DB, so your real registry is untouched.
 
 ```bash
-# Clean start
+export MU_DB_PATH=/tmp/mu-demo.db
 tmux kill-session -t mu-demo 2>/dev/null
-rm -f ~/.local/state/mu/mu.db
 
 # Plan
 mu workstream init demo
-mu task add design --title "Design"  --impact 80 --effort-days 2
-mu task add build  --title "Build"   --impact 80 --effort-days 5 --blocked-by design
-mu task add ship   --title "Ship"    --impact 90 --effort-days 1 --blocked-by build
+mu task add design --title "Design" -w demo --impact 80 --effort-days 2
+mu task add build  --title "Build"  -w demo --impact 80 --effort-days 5 --blocked-by design
+mu task add ship   --title "Ship"   -w demo --impact 90 --effort-days 1 --blocked-by build
 
 # Crew
 mu agent spawn worker-1 --workstream demo --cli sh
-mu agent spawn worker-2   --workstream demo --cli sh
+mu agent spawn worker-2 --workstream demo --cli sh
 
 # Assign + observe
 mu task claim design -w demo --for worker-1 --evidence "demo assignment"
@@ -2474,7 +2465,7 @@ tmux attach -t mu-demo
 
 # Cleanup
 mu workstream destroy --workstream demo --yes
-rm -f ~/.local/state/mu/mu.db
+rm -f /tmp/mu-demo.db
 ```
 
 ---
@@ -2485,29 +2476,24 @@ rm -f ~/.local/state/mu/mu.db
    manages the lifecycle; tmux is the substrate. Workstreams on the
    same machine are isolated by `session_id` in the SQLite registry.
 
-2. **The task DAG decides what's actionable; the LLM doesn't gamble.**
-   Mission control + the `Ready` table + parallel-tracks union-find
-   give deterministic answers to "what's next?" and "what can I
-   parallelize?" Diamond patterns (two goals sharing a prerequisite)
-   collapse into one merged track so two agents never collide on
-   shared deps.
+2. **The task DAG decides what's actionable.** The `Ready` table +
+   parallel-tracks union-find answer "what's next?" and "what can I
+   parallelize?" deterministically. Diamond patterns (two goals sharing
+   a prerequisite) collapse into one merged track so two agents never
+   collide on shared deps.
 
 3. **Agents claim tasks via their pane title — zero config.**
    `mu task claim foo` from inside `worker-1`'s pane sets the task's
-   `owner_id` to the `worker-1` agent row atomically. mu reads the pane title via
-   `tmux display-message -t $TMUX_PANE -p '#{pane_title}'`, set on
-   spawn. Two agents cannot claim the same task.
+   `owner_id` to the `worker-1` agent row atomically. mu reads the pane
+   title via `tmux display-message -t $TMUX_PANE -p '#{pane_title}'`,
+   set on spawn. Two agents cannot claim the same task.
 
 Everything else (`mu sql`, send/read, the bracketed-paste protocol,
-ghost reconciliation) is plumbing in
-service of those three.
+ghost reconciliation) is plumbing in service of those three.
 
 ---
 
 ## What's NOT in 2.0 (and how to work around it)
-
-<a id="whats-not-in-041-and-how-to-work-around-it"></a>
-<a id="whats-not-in-050-and-how-to-work-around-it"></a>
 
 <!-- doc-cli-drift:skip-start -->
 
@@ -2517,7 +2503,7 @@ in real use:
 
 | Want                                          | Workaround                                                              | Status        |
 | --------------------------------------------- | ----------------------------------------------------------------------- | ------------- |
-| Multi-CLI status detection (per-CLI prompts)  | Braille spinner fallback (`f68838f`) covers pi/pi-meta + every TUI wrapper using standard spinner glyphs. Per-CLI permission-prompt patterns still pi-only. | partially shipped |
+| Multi-CLI status detection (per-CLI prompts)  | Braille spinner fallback covers pi/pi-meta + every TUI wrapper using standard spinner glyphs. Per-CLI permission-prompt patterns are pi-only. | partially shipped |
 | Pi extension (typed tools, HUD, wakeups)      | `mu state --tui` (interactive) covers the dashboard use-case; plain `mu state` (static) is the `watch` / `tmux display-popup` / `status-right` substrate. Other extension tools deferred. | partially shipped |
 | Markdown agent-definition discovery           | Spawn accepts `--cli` and `--command` directly; no template registry    | dropped       |
 | `mu run script.ts` (JS DSL)                   | Use `--json` + bash + jq                                                | rejected      |
@@ -2531,8 +2517,7 @@ Anything in this table that bites you in real use is a candidate
 for **promotion**. Criteria: proven friction in ≥2 real workflows +
 fits in <300 LOC + no major refactor of the load-bearing pillars.
 The most useful feedback is "I tried to do X and had to fall back
-to `mu sql`, twice in one session" — that's exactly the signal we
-want. File it in [ROADMAP.md](ROADMAP.md).
+to `mu sql`, twice in one session". File it in [ROADMAP.md](ROADMAP.md).
 
 ---
 

@@ -189,8 +189,10 @@ mu log --tail
 mu workstream destroy --yes
 ```
 
-Full tour: [docs/USAGE_GUIDE.md](docs/USAGE_GUIDE.md), including the
-expanded [dashboard/state guide](docs/USAGE_GUIDE.md#5-see-the-graph-dashboard--state-api).
+Worked end-to-end scenarios (first 5 minutes, the dispatch loop,
+laptop ↔ devserver, undo, drift):
+[USAGE_GUIDE § 0. Common scenarios](docs/USAGE_GUIDE.md#0-common-scenarios).
+Full tour: [docs/USAGE_GUIDE.md](docs/USAGE_GUIDE.md).
 
 ---
 
@@ -199,17 +201,25 @@ expanded [dashboard/state guide](docs/USAGE_GUIDE.md#5-see-the-graph-dashboard--
 State lives in one SQLite DB, and every change to it is captured as an
 op in an append-only log — so it travels, and it merges.
 
-**Multi-machine sync is one env var.** Point `MU_SYNC_DIR` at a folder
-something else keeps in step (Syncthing, rsync, a USB stick — mu never
-runs the transport itself) and every `mu` invocation flushes your ops
-to `$MU_SYNC_DIR/<machine-id>.jsonl` and ingests every peer's. No
-daemon, no peer list, no host names. Concurrent edits on two machines
-are fine: merges are per-FIELD by HLC, so a devserver crew closing a
-task while you edit its impact on a laptop keeps both changes.
-`mu sync` reports peer status; `mu sync --repair <peer>` re-reads a
-peer from zero. **Never put the DB itself inside `MU_SYNC_DIR`** — a
-live WAL database is three mutually-consistent files and a file-syncer
-will corrupt it. `mu doctor` fails loudly if you do.
+### Multi-machine sync
+
+Each machine keeps its own DB. They exchange append-only JSONL
+segments through any folder something else keeps in step (Syncthing,
+rsync, a USB stick — mu never runs the transport). Setup is one env
+var on each machine; there is no peer list, no daemon, no import step,
+and concurrent edits on two machines converge.
+
+```bash
+export MU_SYNC_DIR=$HOME/Sync/mu   # same folder on every machine
+mu task add auth_fix -w app -t "Fix the auth redirect" -i 80 -e 2
+#   → the next `mu` command on the other machine already sees it
+mu sync                            # peer status, if you want to check
+```
+
+**Never put `MU_DB_PATH` inside `MU_SYNC_DIR`** — a live WAL database
+is three mutually-consistent files and a file-syncer will corrupt it.
+`mu doctor` fails on it. Full walkthrough:
+[USAGE_GUIDE § Multi-machine sync](docs/USAGE_GUIDE.md#156-multi-machine-sync).
 
 For disaster recovery, `mu rebuild <file>` replays the whole ops log
 into a fresh DB and prints the swap command; `mu undo <group>` reverts
