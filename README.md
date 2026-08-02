@@ -104,7 +104,7 @@ npx skills add martintrojer/mu          # auto-detects pi / claude-code / codex 
 ```
 
 **Requirements:**
-- Node 20–24 (see `.nvmrc`), matching `engines` in `package.json`.
+- Node 22.12–24 (see `.nvmrc`), matching `engines` in `package.json`.
 - tmux ≥ 3.0 (`mu doctor` checks)
 - pi (the agent CLI mu orchestrates)
 - For `--workspace`: jj, sl, or git on PATH (or `--backend none`)

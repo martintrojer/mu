@@ -26,7 +26,7 @@
     "pi-package"
   ],
   "engines": {
-    "node": ">=20 <=24"
+    "node": ">=22.12 <=24"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -61,10 +61,10 @@
     "test:stress": "tools/test-stress.sh"
   },
   "dependencies": {
-    "better-sqlite3": "^11.8.0",
+    "better-sqlite3": "^13.0.2",
     "cli-table3": "^0.6.5",
-    "commander": "^14.0.0",
-    "execa": "^9.5.2",
+    "commander": "^15.0.0",
+    "execa": "^10.0.1",
     "ink": "^5.0.0",
     "picocolors": "^1.1.1",
     "react": "^18.0.0",
