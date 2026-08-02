@@ -2421,6 +2421,50 @@ winner, and the newer HLC takes it.
 
 ---
 
+## 15.7 Coming from mu 1.x — moving your old DB across
+
+mu 2.0 does **not** migrate your v1 database. `mu` refuses to open any
+pre-v9 DB (`SchemaTooOldError`, exit 4) and leaves the file untouched.
+That is deliberate: a major version is exactly the moment to stop
+carrying a migration ladder.
+
+Your data is not stranded. A sidecar, `scripts/v1-to-v2.ts`, imports a
+v1 DB into a fresh v9 one. You run it once, by hand, against a copy.
+
+```bash
+# 1. BACK UP FIRST. Keep this file indefinitely — there is no path back.
+cp ~/.local/state/mu/mu.db ~/mu-v1-backup-$(date +%Y%m%d).db
+
+# 2. Move the v1 DB aside (do NOT delete it).
+mv ~/.local/state/mu/mu.db ~/.local/state/mu/mu.db.v1
+
+# 3. Import into a NEW file.
+npx tsx scripts/v1-to-v2.ts ~/.local/state/mu/mu.db.v1 --out /tmp/mu-v2.db
+
+# 4. Verify. This is the check that matters.
+MU_DB_PATH=/tmp/mu-v2.db mu doctor --deep      # must report NO drift
+MU_DB_PATH=/tmp/mu-v2.db mu workstream list
+
+# 5. Swap it in.
+mv /tmp/mu-v2.db ~/.local/state/mu/mu.db
+```
+
+The importer is read-only on the source (it prints the sha256 before
+and after) and **synthesizes ops rather than inserting rows**, so the
+result is a first-class v9 DB: `mu rebuild` reproduces it and
+`mu doctor --deep` reports no drift.
+
+Workstreams, tasks, edges, notes and the agent log come across. Agents,
+workspaces, snapshots and task ownership do not — for the same reasons
+they do not sync (see § What does and does not travel). v1 archives
+**refuse loudly** rather than half-importing; export them with mu 1.x
+before upgrading, or pass `--drop-archives`. Every run prints a table of
+what came across and what did not, with counts.
+
+Full recipe, flags and rationale: [scripts/README.md](../scripts/README.md).
+
+---
+
 ## 16. One-shot demo script
 
 Copy-pasteable, end-to-end. Wipes any prior `~/.local/state/mu/mu.db`.

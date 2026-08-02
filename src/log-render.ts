@@ -219,13 +219,26 @@ export function renderOp(row: RenderableOp): RenderedOp | null {
 
   if (!isKnownIntent(intent)) {
     // Forward-compatible: an intent written by a NEWER mu (ingested from
-    // a peer's segment) still renders legibly instead of vanishing.
-    // Deliberately not a throw — sync must never be blocked by a
-    // rendering gap.
+    // a peer's segment) — or by the one-shot scripts/v1-to-v2.ts
+    // importer, whose 'migrate.v1' / 'migrate.v1-log' ops deliberately
+    // do NOT claim to be typed 2.0 verbs — still renders legibly
+    // instead of vanishing. Deliberately not a throw: sync must never
+    // be blocked by a rendering gap.
+    //
+    // A PROSE payload is shown as the detail, because for an unknown
+    // intent the prose is the only information the line carries and
+    // dropping it renders a bare verb with no subject at all (which is
+    // what every carried v1 log line looked like). A JSON payload is
+    // still withheld — "no raw JSON in mu log" is a hard property —
+    // and reduced to its changed field names.
+    const bag = fields(row.payload);
+    const detail = row.payload.startsWith("{")
+      ? changedFields(bag).join(" ")
+      : oneLine(row.payload, 100);
     return {
       verb: intent.replace(".", " "),
       subject: parseOpKey(row.workstreamName).local ?? "",
-      detail: "",
+      detail,
     };
   }
   return renderKnown(row, intent);

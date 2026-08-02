@@ -37,7 +37,43 @@ markers land in follow-up work.
   `MIN_ACCEPTED_SCHEMA_VERSION === CURRENT_SCHEMA_VERSION === 9`, so
   the in-place forward-bump ladder (including the v6→v7 `approvals`
   DROP) is gone. Keep your v1 DB with `mu db backup` and re-import it
-  through the (forthcoming) `scripts/v1-to-v2.ts`.
+  through **`scripts/v1-to-v2.ts`** — a sidecar you run once, by hand,
+  against a copy. See [scripts/README.md](scripts/README.md) for the
+  exact upgrade recipe (BACK UP FIRST) and the honest list of what does
+  NOT come across.
+
+  ```bash
+  cp ~/.local/state/mu/mu.db ~/mu-v1-backup.db            # keep this forever
+  mv ~/.local/state/mu/mu.db ~/.local/state/mu/mu.db.v1
+  npx tsx scripts/v1-to-v2.ts ~/.local/state/mu/mu.db.v1 --out /tmp/mu-v2.db
+  MU_DB_PATH=/tmp/mu-v2.db mu doctor --deep               # must report NO drift
+  mv /tmp/mu-v2.db ~/.local/state/mu/mu.db
+  ```
+
+  The importer is READ-ONLY on the source (sha256 printed before and
+  after) and writes a fresh v9 file. It **synthesizes ops, it does not
+  insert rows**: v9's entity tables are a projection of the ops log, so
+  rows written behind the log would be invisible to sync, unrecoverable
+  by `mu rebuild`, and reported as drift by `mu doctor --deep`. One
+  `put` op per source row, HLC-ordered by the source `created_at`, all
+  under one synthetic group with intent `migrate.v1`.
+
+  Carried: `workstreams`, `tasks`, `task_edges`, `task_notes`, and
+  `agent_logs` (as log-only `event` ops with intent `migrate.v1-log`,
+  droppable with `--drop-logs`). NOT carried, printed with counts on
+  every run: `agents` (meaningless `pane_id`), `vcs_workspaces`
+  (absolute paths), `snapshots` (table gone; the `.db` files stay on
+  disk), `workstream_sync` (superseded by `sync_peers`), and task
+  owners (`owner_id` FKs into machine-local `agents`). v1 **archives
+  refuse loudly** rather than half-importing: v1 stored a column subset
+  rather than history, and after a v1 destroy the ops a v2 marker would
+  pin do not exist — export them with mu 1.x first, or pass
+  `--drop-archives`.
+
+  Unlike `scripts/migrate-v4-to-v5.ts` (deleted post-landing per the
+  temp-impl-artifact rule), this script is KEPT: it crosses a major
+  version that users cross on their own schedule, so a deleted script
+  would be useless to someone upgrading in six months.
 - **Tables dropped:** `agent_logs`, `snapshots`, `workstream_sync`,
   `archives`, `archived_tasks`, `archived_edges`, `archived_notes`,
   `archived_events`. A healthy DB now has exactly 10 tables.

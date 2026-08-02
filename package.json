@@ -47,9 +47,9 @@
     "test:fast": "vitest run --config vitest.fast.config.ts",
     "test:watch": "vitest",
     "test:watch:fast": "vitest --config vitest.fast.config.ts",
-    "lint": "biome check src test",
-    "lint:fix": "biome check --write src test",
-    "format": "biome format --write src test",
+    "lint": "biome check src test scripts",
+    "lint:fix": "biome check --write src test scripts",
+    "format": "biome format --write src test scripts",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json --noEmit",
     "prepare": "npm run build",
     "test:stress": "tools/test-stress.sh"
