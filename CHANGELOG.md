@@ -877,6 +877,14 @@ markers land in follow-up work.
 
 ### Fixed
 
+- **Docs promised `mu archive restore --source <orig-ws>`, which does not
+  exist (`doc-archive-restore-flag-drift`).** The implemented verb takes
+  the source workstream through the universal `-w/--workstream` scope
+  flag, per VOCABULARY § Naming conventions ("the primary entity a verb
+  acts on is positional; everything else is a flag"). The rename is
+  correct; the docs and one `AgentHasWorkspaceError` next-step hint were
+  stale and made a copy-pasted command fail with "unknown option".
+
 - **An edge or note whose task arrived from a DIFFERENT peer was silently
   dropped from the live tables, permanently
   (`v2-sync-workflow-integration`).** `applyEdgePut` / `applyNotePut`

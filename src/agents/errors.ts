@@ -363,7 +363,7 @@ export class WorkspacePreservedError extends Error implements HasNextSteps {
       },
       {
         intent: "If the workstream was archived, restore task memory under a fresh name",
-        command: "mu archive restore <label> --as <new-workstream> --source <workstream>",
+        command: "mu archive restore <label> --as <new-workstream> -w <workstream>",
       },
       {
         intent: "Or just inspect what's in the workspace",

@@ -278,7 +278,7 @@ reference too. Rows here exist to keep names canonical, not to replace
 | `mu sync --repair <peer>` | Reset a **watermark** to re-read that peer's **segment** from zero. The universal repair, safe because ingest is idempotent via `UNIQUE (machine_id, hlc)`. Takes a `machine_id` or any unique prefix. |
 | `mu undo <group>` | Emit inverse ops for one **group**. Granular (touches only that action's rows), composable, and itself an op — so it syncs and is itself undoable. |
 | `mu rebuild <file>` | Materialize a fresh DB by replaying the **ops log** in HLC order. The disaster-recovery path; prints the swap command rather than overwriting in place. Replays EVERYTHING the log knows, including machine-local ops — a rebuild is local recovery, not **ingest**, so it does not filter to synced entities. Carries `machine_identity` (and its HLC clock) across, so the rebuilt DB is the SAME peer. `agents` / `vcs_workspaces` are NOT rebuilt — they have no capture triggers so leave no ops, and `pane_id` / absolute paths would be lies after recovery; the summary reports the loss and says to re-spawn. |
-| `mu archive restore <label> --as <new-ws> [--source <orig-ws>]` | Replay a workstream's ops up to the label's **marker** into a fresh workstream. |
+| `mu archive restore <label> --as <new-ws> [-w <orig-ws>]` | Replay a workstream's ops up to the label's **marker** into a fresh workstream. The source workstream is a **scope**, so it rides the universal `-w/--workstream` flag (omit it when the label pins exactly one workstream). There is no `--source`. |
 | `mu db backup <file>` | `VACUUM INTO` copy of the whole DB. The "one file I can scp" convenience; real DR is **segments** + `mu rebuild`. |
 
 Removed in 2.0: `mu db export` / `mu db import` / `mu db replay`
