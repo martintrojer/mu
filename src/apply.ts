@@ -731,6 +731,178 @@ export function applyOp(db: Db, op: Op): ApplyResult {
   });
 }
 
+// ─── Deferred projection: the out-of-order arrival repair ─────────────
+
+/**
+ * Re-project note and edge ops that could not land when they arrived.
+ *
+ * THE BUG THIS EXISTS TO FIX (v2-sync-workflow-integration)
+ * ---------------------------------------------------------
+ * `applyNotePut` / `applyEdgePut` return `skipped:"absent"` when the
+ * task they hang off is not here YET. That is the right answer at that
+ * moment — there is genuinely nowhere to put the row — and their
+ * comments promised "re-reading the peer's segment replays the task op
+ * first and this lands then". It does not. `ingestSegment` counts an
+ * `absent` skip as a successful apply and ADVANCES THE WATERMARK past
+ * the line, so the segment is never re-read and the note or edge is
+ * never projected. The op IS recorded in local `ops`, so the data is
+ * not lost — but the live tables silently diverge, permanently.
+ *
+ * It is not a corner case. `flushSegment` ships only LOCAL ops, so a
+ * machine's segment routinely holds `edge`/`note` ops referring to
+ * tasks created in ANOTHER machine's segment, and `syncPass` reads
+ * peers in `discoverPeers` order — `localeCompare` over random UUID
+ * filenames. Whether the parent arrives first is a coin flip. Measured
+ * on 8 fresh fleets: 5 dropped the edge, 3 kept it, correlating exactly
+ * with segment filename sort order.
+ *
+ * WHY REPAIR FROM THE LOG RATHER THAN A RETRY QUEUE
+ * -------------------------------------------------
+ * A queue of "ops to try again" would be a second source of truth that
+ * can disagree with `ops` — the same denormalisation this module's
+ * header rejects for provenance, and it would be lost across processes
+ * (mu is one short-lived process per invocation, so an in-memory list
+ * only ever fixes ops deferred within a SINGLE pass; the parent often
+ * arrives the next day). The ops log already knows everything needed,
+ * so this asks it directly: which note/edge puts are resolvable NOW but
+ * are not projected?
+ *
+ * "Resolvable now" is doing real work in both queries. Restricting to
+ * ops whose parent task rows EXIST means an op orphaned for good (its
+ * task was deleted) is not retried on every pass forever, and excluding
+ * keys with a NEWER `del` means a legitimately removed edge or note is
+ * not resurrected. What is left is exactly the bug's footprint, which
+ * in a healthy DB is the empty set — so the normal cost is two indexed
+ * queries returning zero rows.
+ *
+ * Returns the number of ops that changed something, so callers can
+ * report it and tests can assert the repair actually fired.
+ */
+export function reprojectDeferredOps(db: Db): number {
+  installOpKeyFunctions(db);
+  const rows = [
+    ...(db
+      .prepare(
+        `SELECT o.hlc, o.machine_id, o.group_id, o.actor, o.intent, o.entity,
+                o.key, o.op, o.payload
+           FROM ops o
+           JOIN tasks ft ON ft.local_id = edge_local(o.key, 0)
+           JOIN workstreams fw ON fw.id = ft.workstream_id AND fw.name = edge_ws(o.key, 0)
+           JOIN tasks tt ON tt.local_id = edge_local(o.key, 1)
+           JOIN workstreams tw ON tw.id = tt.workstream_id AND tw.name = edge_ws(o.key, 1)
+          WHERE o.entity = 'edge' AND o.op = 'put'
+            AND NOT EXISTS (SELECT 1 FROM task_edges e
+                             WHERE e.from_task_id = ft.id AND e.to_task_id = tt.id)
+            AND NOT EXISTS (SELECT 1 FROM ops d
+                             WHERE d.entity = 'edge' AND d.key = o.key
+                               AND d.op = 'del' AND d.hlc > o.hlc)`,
+      )
+      .all() as OpRow[]),
+    ...(db
+      .prepare(
+        `SELECT o.hlc, o.machine_id, o.group_id, o.actor, o.intent, o.entity,
+                o.key, o.op, o.payload
+           FROM ops o
+           JOIN tasks t ON t.local_id = note_local(o.key)
+           JOIN workstreams w ON w.id = t.workstream_id AND w.name = note_ws(o.key)
+          WHERE o.entity = 'note' AND o.op = 'put'
+            AND NOT EXISTS (SELECT 1 FROM task_notes n
+                             WHERE n.task_id = t.id
+                               AND n.content = COALESCE(json_extract(o.payload, '$.content'), '')
+                               AND COALESCE(n.author, '')
+                                   = COALESCE(json_extract(o.payload, '$.author'), ''))
+            AND NOT EXISTS (SELECT 1 FROM ops d
+                             WHERE d.entity = 'note' AND d.key = o.key
+                               AND d.op = 'del' AND d.hlc > o.hlc)`,
+      )
+      .all() as OpRow[]),
+  ];
+  if (rows.length === 0) return 0;
+
+  let changed = 0;
+  for (const row of rows.sort((a, b) => compareHlc(a.hlc, b.hlc))) {
+    if (applyOp(db, rowToOp(row)).changed) changed += 1;
+  }
+  return changed;
+}
+
+/** Raw `ops` row shape, as the two repair queries above return it. */
+interface OpRow {
+  hlc: string;
+  machine_id: string;
+  group_id: string;
+  actor: string | null;
+  intent: string | null;
+  entity: string;
+  key: string;
+  op: string;
+  payload: string;
+}
+
+function rowToOp(row: OpRow): Op {
+  return {
+    hlc: row.hlc,
+    machineId: row.machine_id,
+    groupId: row.group_id,
+    actor: row.actor,
+    intent: row.intent,
+    entity: row.entity,
+    key: row.key,
+    op: row.op === "del" ? "del" : "put",
+    payload: row.payload,
+  };
+}
+
+/**
+ * Register the four key-splitting SQL functions the repair queries use.
+ *
+ * Natural keys are structured text (`<ws>/<local_id>`,
+ * `<blocker>-><blocked>`, `<taskKey>#<originId>`) and the parsers here
+ * already handle the awkward cases — a local_id containing `/`, an id
+ * ending in `-` so `a-->b` splits correctly. Rather than reimplement
+ * that splitting in SQL string functions (where it would be a second,
+ * subtly different parser), the SAME TypeScript parsers are exposed to
+ * SQLite. Deterministic, so SQLite may cache and index against them.
+ *
+ * Registered lazily by `reprojectDeferredOps` rather than by `openDb`,
+ * because `db.ts` imports `capture.ts` and `apply.ts` imports `db.ts` —
+ * so an `openDb`-side registration would need db.ts to import this
+ * module and close a runtime import cycle. (capture.ts's header records
+ * what that costs: `node dist/cli.js` printing nothing at all.)
+ * Re-registration is a documented no-op-ish overwrite in better-sqlite3,
+ * verified, so calling it per repair pass is safe and cheap.
+ */
+function installOpKeyFunctions(db: Db): void {
+  const safe = <T>(f: () => T): T | null => {
+    try {
+      return f();
+    } catch {
+      // A malformed key is not this query's problem: return NULL so the
+      // JOIN drops the row rather than failing the whole ingest.
+      return null;
+    }
+  };
+  const opts = { deterministic: true, varargs: false } as const;
+  db.function("edge_ws", opts, (key: unknown, side: unknown) =>
+    safe(() => {
+      const parts = parseEdgeKey(String(key));
+      return parseTaskKey(Number(side) === 0 ? parts.blocker : parts.blocked).workstream;
+    }),
+  );
+  db.function("edge_local", opts, (key: unknown, side: unknown) =>
+    safe(() => {
+      const parts = parseEdgeKey(String(key));
+      return parseTaskKey(Number(side) === 0 ? parts.blocker : parts.blocked).localId;
+    }),
+  );
+  db.function("note_ws", opts, (key: unknown) =>
+    safe(() => parseTaskKey(parseNoteKey(String(key)).taskKey).workstream),
+  );
+  db.function("note_local", opts, (key: unknown) =>
+    safe(() => parseTaskKey(parseNoteKey(String(key)).taskKey).localId),
+  );
+}
+
 /**
  * Apply many ops in HLC order, inside one transaction.
  *

@@ -65,7 +65,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { crc32 } from "node:zlib";
-import { type Op, OpEntityNotSyncedError, applyOp } from "./apply.js";
+import { type Op, OpEntityNotSyncedError, applyOp, reprojectDeferredOps } from "./apply.js";
 import { type Db, SYNCED_ENTITIES } from "./db.js";
 import { locksDir, withFileLock } from "./file-lock.js";
 import { receiveHlc } from "./hlc.js";
@@ -835,6 +835,11 @@ export async function syncPass(db: Db, dir: string | null = syncDir()): Promise<
   const flushed = await flushSegment(db, dir);
   const self = localMachineId(db);
   const ingested = discoverPeers(dir, self).map((peer) => ingestSegment(db, peer));
+  // AFTER every peer, not per peer: an edge in peer A's segment may name
+  // a task in peer B's, and `discoverPeers` order is `localeCompare` over
+  // random UUID filenames, so "parent first" is a coin flip. One pass at
+  // the end sees the union. See `reprojectDeferredOps`.
+  reprojectDeferredOps(db);
   return {
     flushed,
     ingested,

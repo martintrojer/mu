@@ -52,7 +52,7 @@
 
 import { existsSync, statSync } from "node:fs";
 import Database from "better-sqlite3";
-import type { Op } from "./apply.js";
+import { type Op, reprojectDeferredOps } from "./apply.js";
 import { type Db, SYNCED_ENTITIES } from "./db.js";
 import type { NextStep } from "./output.js";
 import {
@@ -277,6 +277,11 @@ export async function ambientIngest(db: Db, opts?: AmbientOptions): Promise<Ambi
         warn(message, opts);
       }
     }
+    // Every peer is in; now project anything that arrived before its
+    // parent task did. Deliberately outside the per-peer loop, and
+    // deliberately inside the outer try: a repair failure must not fail
+    // the verb any more than a torn segment does.
+    reprojectDeferredOps(db);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     warnings.push(message);
@@ -421,6 +426,10 @@ export function ingestFromDb(db: Db, path: string): IngestFromDbResult {
       }
     });
     run();
+    // Same out-of-order repair the segment path runs: a peer's `ops`
+    // table can hold an edge whose task op we only got from a THIRD
+    // machine, in either order.
+    changed += reprojectDeferredOps(db);
     return { path, read, changed, skippedLocal };
   } finally {
     try {

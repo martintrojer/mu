@@ -841,6 +841,39 @@ markers land in follow-up work.
 
 ### Fixed
 
+- **An edge or note whose task arrived from a DIFFERENT peer was silently
+  dropped from the live tables, permanently
+  (`v2-sync-workflow-integration`).** `applyEdgePut` / `applyNotePut`
+  correctly returned `skipped:"absent"` when the task they hang off had
+  not been ingested yet, and their comments promised the next re-read
+  would replay the task op first and land them. It did not: `ingestSegment`
+  counted an `absent` skip as a successful apply and advanced the
+  **watermark** past the line, so the segment was never re-read.
+
+  Not a corner case. `flushSegment` ships only LOCAL ops, so a machine's
+  segment routinely holds `edge`/`note` ops naming tasks created in
+  ANOTHER machine's segment, and `discoverPeers` orders peers by
+  `localeCompare` over random-UUID filenames — so whether the parent
+  arrives first was a coin flip per fleet. Measured on 8 fresh fleets:
+  5 dropped the edge, 3 kept it, correlating exactly with segment
+  filename sort order.
+
+  The op was always recorded in `ops`, so no data was lost and `mu doctor
+  --deep` DID report the divergence (a rebuild replays the log in global
+  HLC order and got the right answer while the live tables did not) —
+  but nothing healed it short of `mu sync --repair`.
+
+  Fixed with `reprojectDeferredOps` in `src/apply.ts`, run once after
+  every ingest pass (not per peer — an edge in peer A's segment may name
+  a task in peer B's, so only the union is enough). It asks the ops log
+  which note/edge puts are resolvable now but unprojected, rather than
+  keeping a retry queue: a queue would be a second source of truth that
+  can disagree with `ops`, and would not survive the process, while the
+  parent commonly arrives days later. Ops whose parent task is genuinely
+  gone, and keys with a newer `del`, are excluded — so a deleted edge is
+  not resurrected and an orphan is not retried forever. On a healthy DB
+  it is two indexed queries returning zero rows.
+
 - **`mu log --group` accepts abbreviated group ids, like `mu undo` always
   did (`bug-group-id-prefix-asymmetry`).** `mu undo` prints the most
   recent group as an 8-char prefix and accepts one, but
