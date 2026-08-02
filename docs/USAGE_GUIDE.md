@@ -1,14 +1,14 @@
 # mu — Usage Guide
 
 A practical, copy-pasteable tour of mu. Terms are canonical — see
-[VOCABULARY.md](VOCABULARY.md); the complete verb list is in
-`## CLI — complete verb list` of
+[VOCABULARY.md](VOCABULARY.md); the canonical verb list is
+`mu --help`, with the gotchas in `## CLI overview` of
 [skills/mu/SKILL.md](../skills/mu/SKILL.md).
 
-> **Status:** 1.0 (pre-release). ~60 typed verbs across 7 namespaces
-> (`workstream`, `agent`, `task`, `workspace`, `log`, `archive`, `me`)
-> plus bare top-level verbs (`state`, `doctor`, `sql`, `undo`, `sync`,
-> `rebuild`, `db`). Every verb accepts `--json` (one exception,
+> **Status:** 1.0 (pre-release). ~60 typed verbs across 8 namespaces
+> (`workstream`, `agent`, `task`, `workspace`, `log`, `archive`, `me`,
+> `db`) plus bare top-level verbs (`state`, `doctor`, `sql`, `undo`,
+> `sync`, `rebuild`). Every verb accepts `--json` (one exception,
 > `mu agent attach`). Schema v9. See [CHANGELOG.md](../CHANGELOG.md).
 
 **In a hurry? Start at [§ 0. Common scenarios](#0-common-scenarios).**
@@ -2495,8 +2495,6 @@ ghost reconciliation) is plumbing in service of those three.
 
 ## What's NOT in mu (and how to work around it)
 
-<!-- doc-cli-drift:skip-start -->
-
 The full roadmap with promotion criteria lives in
 [ROADMAP.md](ROADMAP.md). The short list of gaps you might hit
 in real use:
@@ -2506,6 +2504,7 @@ in real use:
 | Multi-CLI status detection (per-CLI prompts)  | Braille spinner fallback covers pi/pi-meta + every TUI wrapper using standard spinner glyphs. Per-CLI permission-prompt patterns are pi-only. | partially shipped |
 | Pi extension (typed tools, HUD, wakeups)      | `mu state --tui` (interactive) covers the dashboard use-case; plain `mu state` (static) is the `watch` / `tmux display-popup` / `status-right` substrate. Other extension tools deferred. | partially shipped |
 | Markdown agent-definition discovery           | Spawn accepts `--cli` and `--command` directly; no template registry    | dropped       |
+<!-- doc-cli-drift:skip-start -->
 | `mu run script.ts` (JS DSL)                   | Use `--json` + bash + jq                                                | rejected      |
 | Sync to GitHub Issues / Linear / Asana        | Not in scope; explicitly rejected                                       | —             |
 | ~~`mu task blocked`~~ (removed; the `blocked` SQL view is the abstraction) | `mu sql "SELECT b.local_id, b.status, b.title FROM blocked b JOIN workstreams w ON w.id=b.workstream_id WHERE w.name='X'"` | removed-with-recipe |

@@ -601,7 +601,7 @@ keep working; they hold no logic and are not listed separately below.
 
 Why segments and not Litestream / cr-sqlite / a peer list, and why the
 DB must never sit in `MU_SYNC_DIR`:
-[ROADMAP § Rejected sync substrates](ROADMAP.md#rejected-sync-substrates-20).
+[ROADMAP § Rejected sync substrates](ROADMAP.md#rejected-sync-substrates).
 
 ## Data flow
 
@@ -650,7 +650,7 @@ run `mu` constantly.
 verb passes through, and the only seam that is already async —
 `syncPass` is async (it takes the file lock) while most verb bodies
 are synchronous better-sqlite3 code. One `await` before `fn(db)` and
-one after covers all ~63 verbs; no verb learns that sync exists.
+one after covers all ~60 verbs; no verb learns that sync exists.
 
 **Order matters**: ingest BEFORE the body, so the verb reads the
 freshest state transport has delivered; flush AFTER, so this
