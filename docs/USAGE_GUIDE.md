@@ -406,7 +406,7 @@ MU_NO_TUI=1 mu             # force the non-TTY/help path even in a terminal
 
 Run `mu doctor` to check tmux + DB health — full annotated output in
 [§ 0.5 Something looks wrong](#05-something-looks-wrong). Two families
-of checks are worth knowing about.
+of checks are the ones to know.
 
 **Mixed-fleet hazards** (the `fleet` section) — cheap, and every one is
 something you can fix before it costs you data:
@@ -472,7 +472,7 @@ mu undo 1a2a94eb             # preview the inverse (dry run)
 mu undo 1a2a94eb --yes       # apply it
 ```
 
-Three properties worth knowing:
+Three properties:
 
 - **Granular.** Only the rows that action touched. A cascade close wrote
   N task ops under one group, so undoing it reopens exactly those N.
@@ -506,8 +506,8 @@ you never have to leave the terminal to learn what to do next.
 
 Every verb accepts `--json` for machine-readable output. Errors
 in `--json` mode emit a `{ error, message, nextSteps, exitCode }`
-record to stderr; the `nextSteps` array carries actionable
-resolutions you can `eval` directly. (One verb opts out:
+record to stderr; the `nextSteps` array carries resolutions you can
+`eval` directly. (One verb opts out:
 `mu agent attach`, which prints a `tmux attach` command for a
 human to copy.)
 
@@ -728,7 +728,7 @@ Next:
   Use a durable workstream instead  : mu workstream init <name>
 ```
 
-**When to use which:** a real `mu workstream init <name>` the moment
+**When to use which:** `mu workstream init <name>` the moment
 coordination *is* the work — multiple agents, dependencies, gated
 review. `scratch` for a single driveable helper.
 [`pi-subagents`](https://github.com/nicobailon/pi-subagents) when you
@@ -845,7 +845,7 @@ through every dependent so you re-think the cascade explicitly.
 
 Why this beats a `BLOCKED` status: the placeholder's notes are the
 audit trail, one placeholder blocks N downstream tasks, reject cascade
-just works, and the placeholder's own status carries the nuance
+just works, and the placeholder's own status carries the detail
 (`OPEN` = someone external is on it, `DEFERRED` = parked,
 `IN_PROGRESS` = you're chasing it).
 
@@ -862,10 +862,9 @@ just works, and the placeholder's own status carries the nuance
 | **`mu state`**       | Static text card. JSON-friendly; pipeable; `watch`-able.        |
 | **`mu state --json`** | The canonical full snapshot. Agents and scripts read this.     |
 
-The interactive surface is large enough to deserve its own section —
-see [§ 5b. The TUI dashboard](#5b-the-tui-dashboard-interactive)
-immediately below. The rest of this section is the static / JSON
-contract.
+The interactive surface has its own section:
+[§ 5b. The TUI dashboard](#5b-the-tui-dashboard-interactive), below.
+The rest of this section is the static / JSON contract.
 
 ### Static state card (`mu state`)
 
@@ -898,8 +897,8 @@ stacks one card per workstream.
 
 ## 5b. The TUI dashboard (interactive)
 
-The interactive TUI is mu's flagship human surface. It is **read-only
-by design** — every act-intent `y`anks the canonical `mu` command to
+The interactive TUI is mu's human surface. It is **read-only** —
+every act-intent `y`anks the canonical `mu` command to
 your clipboard so you run mutations from your shell, with one
 documented escape (`t` in git-show drills runs `tuicr` in the project
 root, see below).
@@ -1103,14 +1102,14 @@ also work inside the overlay).
 The TUI never executes a mutation — a load-bearing pledge in
 `docs/ROADMAP.md`, not an implementation detail. If a TUI gesture
 tempts you to mutate state from the SDK, file a roadmap entry first.
-Yank-and-run is the cost of keeping the TUI inspectable, scriptable,
+Yank-and-run is the cost of keeping the TUI inspectable, scriptable
 and recoverable from any shell.
 
 ---
 
 ## 6. Spawn a crew
 
-For a real demo with status detection, spawn pi agents:
+For a demo with live status detection, spawn pi agents:
 
 ```bash
 mu agent spawn worker-1 --workstream auth-refactor          # default --cli is pi
@@ -1224,8 +1223,7 @@ session, or the adopt is rejected — no silent cross-session moves.
 
 ## 7. Watch the crew live
 
-The killer property: you can attach the workstream's tmux session and
-see everything.
+Attach the workstream's tmux session and you see everything.
 
 ```bash
 tmux attach -t mu-auth-refactor
@@ -2180,7 +2178,7 @@ themselves.
 
 Bucket exports (`mu workstream export` and `mu archive export`) are
 **read-only** artifacts for humans / git / docs — good for grep, code
-review, and handoff, but not a DB round-trip path.
+review and handoff, but not a DB round-trip path.
 
 Use the typed surfaces for recovery and movement:
 
@@ -2282,8 +2280,8 @@ step, no import step, and no "which side is authoritative" decision.
 
 ### `mu sync` — the status report
 
-Sync already happened on your last command, so `mu sync`'s real job is
-telling you *who your peers are and whether transport is working*:
+Sync already happened on your last command, so `mu sync`'s job is to
+tell you *who your peers are and whether transport is working*:
 
 ```console
 $ mu sync
@@ -2386,7 +2384,7 @@ still shows them — but never leave the machine, because a `pane_id`
 like `%17` and a path like `/home/me/...` are meaningless (and often
 actively wrong) on another box.
 
-A consequence worth stating plainly: **task ownership does not sync.**
+One consequence: **task ownership does not sync.**
 `tasks.owner_id` points into the machine-local `agents` table, so a
 task claimed by `worker-2` on the devserver shows as unowned on your
 laptop. That is correct — `worker-2` is a tmux pane that does not exist
@@ -2476,7 +2474,7 @@ rm -f /tmp/mu-demo.db
    manages the lifecycle; tmux is the substrate. Workstreams on the
    same machine are isolated by `session_id` in the SQLite registry.
 
-2. **The task DAG decides what's actionable.** The `Ready` table +
+2. **The task DAG decides what can be worked on.** The `Ready` table +
    parallel-tracks union-find answer "what's next?" and "what can I
    parallelize?" deterministically. Diamond patterns (two goals sharing
    a prerequisite) collapse into one merged track so two agents never

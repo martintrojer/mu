@@ -39,12 +39,12 @@ For the full copy-paste flow, see [Quick start](#quick-start).
 ## What mu is
 
 - **Parallelism that doesn't trip over itself.** Per-agent VCS
-  workspaces plus a real task DAG with deterministic parallel-track
+  workspaces plus a task DAG with deterministic parallel-track
   detection keep agents off each other's toes.
 - **A durable coordination layer.** One SQLite registry records
-  agents, tasks, ownership, notes, workspaces, and — in a single
-  append-only **ops log** — every change ever made to them; panes can
-  die and humans can come back later.
+  agents, tasks, ownership, notes and workspaces. A single
+  append-only **ops log** records every change ever made to them, so
+  panes can die and humans can come back later.
 - **Stay out of the model's way.** Mu coordinates handoffs; it does
   not choose models, providers, or thinking effort. `--cli <key>`
   uppercases to `$MU_<KEY>_COMMAND`, so your shell rc owns the agent
@@ -128,8 +128,8 @@ More install patterns (alias-to-dist for fastest dev iteration) in
 
 ## TUI dashboard
 
-Bare `mu` in a TTY launches the flagship read-only dashboard across
-all workstreams; `mu state --tui -w <workstream>` is the explicit
+Bare `mu` in a TTY launches the read-only dashboard across all
+workstreams; `mu state --tui -w <workstream>` is the explicit
 single/multi-workstream form. Non-TTY callers and scripts keep the
 static/help path, and `mu state --json` is the API.
 

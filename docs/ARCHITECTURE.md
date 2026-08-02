@@ -149,7 +149,7 @@ from colliding on the shared dependency:
     leaf_a    leaf_b                  leaf
 ```
 
-This is deterministic: the graph algorithm decides, not the LLM.
+The graph algorithm decides, not the LLM.
 
 ### Claim protocol via tmux pane title
 
@@ -680,7 +680,7 @@ divergence, and a coin flip per fleet, since peers are discovered by
 resolvable NOW but unprojected. No retry queue — that would be a
 second source of truth, and it would not survive a short-lived mu
 process when the parent often arrives days later. It excludes ops
-whose parent task is genuinely gone and keys carrying a newer `del`,
+whose parent task is gone and keys carrying a newer `del`,
 so a deleted edge is never resurrected and an orphan is not retried
 forever. On a healthy DB it is two indexed queries returning zero
 rows. Called once per ingest pass, never per peer: an edge in one
@@ -828,7 +828,7 @@ legitimately win every field), and an ordering-sensitive test must
 RENAME segments to pin ingest order, since peers are discovered by
 `localeCompare` over random-UUID filenames.
 
-Flake lessons worth keeping: treat pass-alone/fail-under-load cases as
+Flake lessons: treat pass-alone/fail-under-load cases as
 concurrency bugs first; use retrying temp-dir cleanup for VCS fixtures
 whose subprocesses keep files alive briefly; drive wait/reaper
 integration tests from poll-loop seams, not fixed timers; wait for

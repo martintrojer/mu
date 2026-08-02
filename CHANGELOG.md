@@ -452,8 +452,8 @@ drift.
     `-wal`, yields a DB that opens fine and is silently corrupt. Two
     machines writing the same synced file is worse — last writer wins on
     the whole FILE, so one machine's entire history disappears. mu ships
-    append-only per-machine **segments** precisely so the database file
-    never has to travel.
+    append-only per-machine **segments** so the database file never has
+    to travel.
   - **DB on a network mount → WARN.** WAL needs working POSIX advisory
     locks and a shared-memory file; NFS, SMB/CIFS and FUSE mounts provide
     neither dependably. Warn rather than fail because a single machine on
@@ -746,6 +746,20 @@ drift.
   (1.0 is unreleased).
 
 ### Changed
+
+- **Voice pass over the docs corpus (`docs2-ai-writing`).** The docs
+  were written almost entirely by LLM workers over one session, and it
+  showed in ways the terseness pass could not reach: filler
+  intensifiers (`deliberately`, `genuinely`, `truly`, `precisely`),
+  promotional adjectives (`flagship`, `killer property`,
+  `best-in-class`), vague endorsement (`worth knowing`,
+  `worth stating plainly`), and closing sentences that restated the
+  paragraph above them. Prose only — no command, flag, exit code,
+  path, table name, schema version or count changed, and
+  `test/docs-cli-drift.test.ts` stayed green throughout. Parallel
+  bullet lists, repeated sentence shapes in reference tables and
+  Oxford commas in factual enumerations were left alone: a reference
+  doc legitimately repeats the structures a prose detector dislikes.
 
 - **Documentation sweep for 1.0, plus a CI guard so the next drift is
   caught by a test rather than by a human (`v2-docs`).** Every previous

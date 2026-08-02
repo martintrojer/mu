@@ -124,14 +124,14 @@ Only drop in-flight work when the user explicitly tells you to.
 
 ### Rule B: Never pause for user input while open tasks exist
 
-If the ready queue, in-flight set, or backlog has anything
-actionable, **keep churning**. Do NOT end your turn with "what
+If the ready queue, in-flight set, or backlog has anything you can
+act on, **keep churning**. Do NOT end your turn with "what
 next?" while there is open work and an idle worker (or a wait you
 can resume).
 
 Stop and ask ONLY when:
 
-- You are **truly stuck** (decision needs the user, e.g. an
+- You are **stuck** (the decision needs the user, e.g. an
   anti-feature pledge crossing, a destructive operation, a
   non-obvious design tradeoff).
 - The backlog is empty AND no workers are in flight AND nothing is
@@ -273,7 +273,7 @@ attributable.
 
 ---
 
-## Crucial gotchas
+## Gotchas
 
 Each has bitten THIS codebase ≥1×. Read them before spending an hour
 on a "weird" symptom. Repo-specific, so none of it is in the SKILL.
@@ -306,8 +306,8 @@ read. Canonical impl: `src/cli/tui/use-popup-action-queue.ts`.
 ### 3. ANSI sequences confuse ink's wrap math
 
 `<Text>` counts BYTES for wrap. ANSI escape sequences inflate byte
-count without adding visual width → wrap fires too early,
-mid-escape, breaks colour and corrupts borders. Pre-wrap by visual
+count without adding visual width, so wrap fires too early and
+mid-escape: broken colour, corrupted borders. Pre-wrap by visual
 width via `src/cli/tui/wrap-ansi.ts` (already exists) before passing
 to `<Text>`. Pad each line to exact box width so ink's
 `wrap="truncate"` ANSI miscount doesn't eat the right border.

@@ -144,7 +144,7 @@ planned. The substrate is ready if it earns promotion per the
 [ROADMAP](ROADMAP.md) criteria: spawn accepts arbitrary commands and
 the schema's `cli` column is TEXT.
 
-### 7. TypeScript on Node — deliberate, not a compromise
+### 7. TypeScript on Node
 
 Mu is TypeScript on Node, with a small set of well-established
 npm deps (`commander`, `better-sqlite3`, `cli-table3`, `picocolors`,
@@ -162,7 +162,7 @@ The choice earns its keep on four axes:
   Rust costs 2–3× the LOC.
 - **JSON-first surface fits TS.** Every read verb's `--json` output
   is `JSON.stringify(value)` straight from a typed shape.
-- **`better-sqlite3` is best-in-class.** Synchronous
+- **`better-sqlite3` fits the shape.** Synchronous
   request/response matches the CLI invocation model; WAL correct out
   of the box; `db.transaction()` is the right shape.
 - **Iteration speed.** ~60 typed verbs / 10 tables / ~2800 tests in
@@ -252,8 +252,6 @@ up whatever env var the uppercased key produces. Swap the whole
 matrix in one line; per-machine, per-workstream, per project —
 wherever you set the env. The substrate stays small; the
 orchestrator stays in charge.
-
-Every layer does its job; no layer speaks for another.
 
 ---
 
@@ -352,8 +350,8 @@ Every layer does its job; no layer speaks for another.
    interactive readers.** mu is a CLI: each verb starts, mutates
    or reads, prints, and exits. There is no daemon, no resident
    state outside SQLite, no background process. Two verbs are
-   deliberately and narrowly exempt because they are interactive
-   *readers*, not background workers:
+   exempt, narrowly, because they are interactive *readers* rather
+   than background workers:
 
    - `mu log --tail` — polls SQLite once per second; emits NDJSON
      until SIGINT or the parent closes stdin.
