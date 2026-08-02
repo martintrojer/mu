@@ -46,7 +46,16 @@ describe("docs name only real CLI surface", () => {
   // A guard that cannot fail is theatre. Plant each drift shape the
   // 2.0 arc actually produced and assert it is named.
   it.each([
-    ["a removed namespace", "`mu db export /tmp/x.db`", "unknown command 'db'"],
+    // `db` SURVIVES as a namespace (v2 R17 wired `mu db backup`), so the
+    // guard names the missing SUBCOMMAND rather than the namespace. That
+    // is the more precise message, and asserting it here pins the
+    // distinction: a removed subverb under a live namespace must still
+    // be caught.
+    [
+      "a removed subverb under a live namespace",
+      "`mu db export /tmp/x.db`",
+      "unknown command 'export' under 'db'",
+    ],
     ["a removed subverb", "`mu snapshot list`", "unknown command 'snapshot'"],
     ["a renamed flag", "`mu archive restore v1 --source old`", "unknown option '--source'"],
     ["a flag removed from a live verb", "`mu undo --to 12`", "unknown option '--to'"],

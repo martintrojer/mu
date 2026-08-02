@@ -281,6 +281,7 @@ reference too. Rows here exist to keep names canonical, not to replace
 | `mu archive restore <label> --as <new-ws> [-w <orig-ws>]` | Replay a workstream's ops up to the label's **marker** into a fresh workstream. The source workstream is a **scope**, so it rides the universal `-w/--workstream` flag (omit it when the label pins exactly one workstream). There is no `--source`. |
 | `mu db backup <file>` | `VACUUM INTO` copy of the whole DB. The "one file I can scp" convenience; real DR is **segments** + `mu rebuild`. |
 
+<!-- doc-cli-drift:skip-start -->
 Removed in 2.0: `mu db export` / `mu db import` / `mu db replay`
 (replaced by ambient **sync**), `mu snapshot list` / `show` / `prune`
 (replaced by the **ops log**), `mu archive create` / `remove` /
