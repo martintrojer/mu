@@ -1,5 +1,5 @@
 import { Box, render, Text } from "ink";
-import { createElement } from "react";
+import { createElement, type ReactElement } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   allocateRowBudgets,
@@ -62,7 +62,7 @@ describe("dashboard low-row overflow regression", () => {
   });
 });
 
-function dashboardTreeForRows(rows: number): JSX.Element {
+function dashboardTreeForRows(rows: number): ReactElement {
   const culled = cullCardsForRows(ALL, rows);
   const cardsRows = culled.hidden.length > 0 ? Math.max(1, rows - 1) : rows;
   const assignments = layoutColumns(140, culled.cards);

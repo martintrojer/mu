@@ -50,6 +50,7 @@
 //   Shift+8 (`*`) opens the matching Recent popup. Card slot 8 and
 //   popup slot 8 now point at the same task-recent view again.
 
+import type { ReactElement } from "react";
 import type { WorkstreamSnapshot } from "../../../state.js";
 import { inkColorForStatus } from "../../format.js";
 import {
@@ -89,7 +90,7 @@ const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
   { kind: "clip", min: 1 }, // title
 ];
 
-export function RecentCard({ snapshot, rowBudget, cols }: RecentCardProps): JSX.Element {
+export function RecentCard({ snapshot, rowBudget, cols }: RecentCardProps): ReactElement {
   const contentWidth = contentWidthFromCols(cols ?? termColsForLayout());
   if (snapshot === null) {
     return CardPlaceholder({

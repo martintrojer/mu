@@ -11,6 +11,7 @@
 // hook to be called on some renders and skipped on others.
 
 import { Box, Text } from "ink";
+import type { ReactElement } from "react";
 
 import { isScratchWorkstream } from "../../workstream.js";
 import { layoutTabStrip } from "./tab-strip-layout.js";
@@ -39,7 +40,7 @@ export function TabStrip({
   active,
   terminalColumns,
   parked,
-}: TabStripProps): JSX.Element | null {
+}: TabStripProps): ReactElement | null {
   if (workstreams.length <= 1) return null;
   const layout = layoutTabStrip(workstreams, active, terminalColumns);
   if (layout === null) return null;
@@ -52,7 +53,7 @@ export function TabStrip({
   // (1-col imprecision tolerated, same as `~`).
   const decorate = (name: string): string =>
     isParked(name) ? `~${name}` : isScratchWorkstream(name) ? `*${name}` : name;
-  const tabs: JSX.Element[] = [];
+  const tabs: ReactElement[] = [];
   for (let i = 0; i < layout.visible.length; i++) {
     const tab = layout.visible[i];
     if (tab === undefined) continue;

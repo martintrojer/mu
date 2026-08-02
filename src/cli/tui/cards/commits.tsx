@@ -9,6 +9,7 @@
 // process.cwd() (the project root where the TUI was launched), NOT any
 // per-agent worker workspace.
 
+import type { ReactElement } from "react";
 import type { WorkstreamSnapshot } from "../../../state.js";
 import {
   type ColumnSpec,
@@ -36,7 +37,7 @@ const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
   { kind: "clip", min: 1 }, // subject
 ];
 
-export function CommitsCard({ snapshot, rowBudget, cols }: CommitsCardProps): JSX.Element {
+export function CommitsCard({ snapshot, rowBudget, cols }: CommitsCardProps): ReactElement {
   const contentWidth = contentWidthFromCols(cols ?? termColsForLayout());
   if (snapshot === null) {
     return CardPlaceholder({

@@ -48,7 +48,7 @@
 // Per ROADMAP pledge: ink/react import limited to src/cli/tui/*.
 
 import { Box, Text, useInput } from "ink";
-import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import { type ReactElement, useCallback, useEffect, useReducer, useRef, useState } from "react";
 import type { Db } from "../../../db.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
 import { type CommitSummary, detectBackend } from "../../../vcs.js";
@@ -177,7 +177,7 @@ export function WorkspacesPopup({
   onFooter,
   db,
   workstream,
-}: PopupProps): JSX.Element {
+}: PopupProps): ReactElement {
   const { cols } = useTerminalSize();
   const contentWidth = contentWidthFromCols(cols);
   // Per-render viewport from stdout.rows minus the popup chrome budget;
@@ -565,7 +565,7 @@ function renderDrillBody(
   focused: WorkspaceRow,
   contentWidth: number,
   viewport: number,
-): JSX.Element {
+): ReactElement {
   const title = `commits for ${focused.agentName}`;
   const hint = "y yanks `git show <sha>`";
   if (loading && source.length === 0) {

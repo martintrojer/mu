@@ -32,7 +32,7 @@
 // Per ROADMAP pledge: ink/react import limited to src/cli/tui/*.
 
 import { Box, Text, useInput } from "ink";
-import { useState } from "react";
+import { type ReactElement, useState } from "react";
 import type { Db } from "../../../db.js";
 import {
   type DoctorCheck,
@@ -83,7 +83,7 @@ export function DoctorPopup({
   popupActions,
   db,
   workstream: _workstream,
-}: PopupProps): JSX.Element {
+}: PopupProps): ReactElement {
   const { cols } = useTerminalSize();
   const contentWidth = contentWidthFromCols(cols);
   // Per-render viewport from stdout.rows minus the popup chrome

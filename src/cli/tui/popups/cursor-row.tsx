@@ -23,6 +23,7 @@
 // than wrapping to a new line.
 
 import { Box, Text } from "ink";
+import type { ReactElement } from "react";
 import { COL_GUTTER } from "../columns.js";
 
 export interface CursorRowProps {
@@ -32,7 +33,7 @@ export interface CursorRowProps {
   contentWidth: number;
 }
 
-export function CursorRow({ cells, contentWidth }: CursorRowProps): JSX.Element {
+export function CursorRow({ cells, contentWidth }: CursorRowProps): ReactElement {
   const gutter = " ".repeat(COL_GUTTER);
   const line = cells.join(gutter).padEnd(Math.max(contentWidth, 0));
   return (

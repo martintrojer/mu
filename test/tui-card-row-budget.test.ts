@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 import { describe, expect, it } from "vitest";
 import type { AgentRow } from "../src/agents.js";
 import { AgentsCard } from "../src/cli/tui/cards/agents.js";
@@ -42,7 +43,7 @@ const UNUSED_DB = undefined as unknown as Db;
 interface CardCase {
   id: CardId;
   name: string;
-  render: (rowBudget: number) => JSX.Element;
+  render: (rowBudget: number) => ReactElement;
 }
 
 const CARD_CASES: CardCase[] = [

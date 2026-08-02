@@ -32,6 +32,7 @@
 // matches the placement of the other shared primitives.
 
 import { Box, Text } from "ink";
+import type { ReactElement } from "react";
 import { COL_GUTTER } from "./columns.js";
 import { CursorRow } from "./popups/cursor-row.js";
 
@@ -59,7 +60,7 @@ export interface ListRowProps {
   selected?: boolean;
 }
 
-export function ListRow({ cells, contentWidth, colors, selected }: ListRowProps): JSX.Element {
+export function ListRow({ cells, contentWidth, colors, selected }: ListRowProps): ReactElement {
   if (selected) return <CursorRow cells={cells} contentWidth={contentWidth} />;
   const gutter = " ".repeat(COL_GUTTER);
   // Build the children list inline so React only sees one array of

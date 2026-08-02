@@ -67,6 +67,12 @@ export class CaptureStream extends Writable {
   columns: number;
   rows: number;
 
+  // ink 7 checks stdout.isTTY before it writes ANYTHING. Without this the
+  // stream captures zero bytes and every assertion sees an empty frame
+  // (ink 5 wrote regardless). Verified against a 12-line plain-ink repro:
+  // isTTY absent -> 0 bytes, isTTY true -> the frame.
+  isTTY = true;
+
   constructor({ columns, rows }: { columns: number; rows: number }) {
     super();
     this.columns = columns;
@@ -231,8 +237,14 @@ export async function simulateInput(
   input: string,
   opts: { wait?: number } = {},
 ): Promise<void> {
-  const wait = opts.wait ?? 5;
   const sequence = inputKeySequence(input) ?? input;
+  // A lone ESC is ambiguous: it is also the first byte of every arrow /
+  // function-key sequence, so ink 7 holds it briefly to see whether more
+  // bytes follow before deciding it was a bare Escape. Measured against a
+  // plain-ink repro: not delivered at 20ms, delivered by 80ms. Every other
+  // key dispatches immediately, so only ESC pays the wait.
+  const isBareEscape = sequence === "\x1b";
+  const wait = opts.wait ?? (isBareEscape ? 120 : 5);
   (stdin as unknown as NodeJS.WritableStream).write(sequence);
   await new Promise((resolve) => setTimeout(resolve, wait));
 }

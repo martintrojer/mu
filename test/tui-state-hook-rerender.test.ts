@@ -34,7 +34,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { render, Text } from "ink";
-import { createElement, useEffect, useRef } from "react";
+import { createElement, type ReactElement, useEffect, useRef } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   type DashboardSnapshotLoaders,
@@ -315,7 +315,7 @@ function HookHarness({
   loaders,
   options,
   capture,
-}: HarnessProps): JSX.Element {
+}: HarnessProps): ReactElement {
   const snap = useDashboardSnapshot(db, workstream, tickMs, true, refreshNonce, loaders, options);
   const sink = useRef(capture);
   useEffect(() => {
@@ -431,14 +431,16 @@ describe("useDashboardSnapshot — Layer B preserves data reference across no-op
       { stdout, stdin: process.stdin, stderr: process.stderr, debug: true, patchConsole: false },
     );
 
-    // Wait for at least 3 fast loads to have completed so we have
-    // enough captured frames to compare references across ticks.
+    // Wait for at least 3 fast loads to have completed. The loader IS
+    // polling; the question is whether those polls reach the render tree.
     await waitFor(() => fastCalls.count >= 3, 1500);
-    // Let one more setInterval tick land + ink flush its commit.
+    // Let any pending commit flush.
     await waitForInkOutput(stdout);
 
     const dataFrames = capture.values.filter((f) => f.data !== null);
-    expect(dataFrames.length).toBeGreaterThanOrEqual(2);
+    // At least one frame must carry data, or the hook never published at all
+    // and the reference assertions below would pass vacuously.
+    expect(dataFrames.length).toBeGreaterThanOrEqual(1);
     const first = dataFrames[0]?.data ?? null;
     expect(first).not.toBeNull();
     // Every subsequent frame must hold the SAME reference. If
@@ -447,6 +449,13 @@ describe("useDashboardSnapshot — Layer B preserves data reference across no-op
     for (const frame of dataFrames.slice(1)) {
       expect(frame.data).toBe(first);
     }
+    // The sharper statement of the same contract: three completed loads
+    // must not produce three data frames. Under React 19 a no-op tick
+    // produces NO additional commit at all (one frame here), which is a
+    // stronger outcome than "re-rendered with the same reference" — so
+    // assert the render count stays well under the poll count rather than
+    // pinning it to an exact number that a batching change would break.
+    expect(dataFrames.length).toBeLessThan(fastCalls.count);
 
     instance.unmount();
   });

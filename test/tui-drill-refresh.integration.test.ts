@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Box, render, Text } from "ink";
-import { createElement, useEffect, useRef } from "react";
+import { createElement, type ReactElement, useEffect, useRef } from "react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { PopupAction } from "../src/cli/tui/keys.js";
 import { useDrillKeymap } from "../src/cli/tui/popups/drill.js";
@@ -192,7 +192,7 @@ describe("useDrillKeymap refresh semantics", () => {
   });
 });
 
-function drillElement(tickNonce: number): JSX.Element {
+function drillElement(tickNonce: number): ReactElement {
   return createElement(
     Box,
     { flexDirection: "column" },
@@ -216,7 +216,7 @@ interface KeymapElementOptions {
   actionNonce?: number;
 }
 
-function keymapElement(opts: KeymapElementOptions): JSX.Element {
+function keymapElement(opts: KeymapElementOptions): ReactElement {
   return createElement(DrillKeymapHarness, opts);
 }
 
@@ -226,7 +226,7 @@ function DrillKeymapHarness({
   resetKey,
   capture,
   action,
-}: KeymapElementOptions): JSX.Element {
+}: KeymapElementOptions): ReactElement {
   const drill = useDrillKeymap({
     body,
     viewport,

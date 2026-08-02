@@ -15,7 +15,7 @@
 // Per ROADMAP pledge: ink/react import limited to src/cli/tui/*.
 
 import { Box, Text, useInput } from "ink";
-import { useState } from "react";
+import { type ReactElement, useState } from "react";
 import type { Db } from "../../../db.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
 import type { TaskRow } from "../../../tasks.js";
@@ -106,7 +106,7 @@ export function TaskListPopup({
   popupActions,
   db,
   workstream,
-}: PopupProps & { config: TaskListPopupConfig }): JSX.Element {
+}: PopupProps & { config: TaskListPopupConfig }): ReactElement {
   const { cols } = useTerminalSize();
   const contentWidth = contentWidthFromCols(cols);
   const viewport = usePopupViewport();

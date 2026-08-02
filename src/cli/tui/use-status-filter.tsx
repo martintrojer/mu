@@ -7,7 +7,7 @@
 // Per ROADMAP pledge: ink/react imports are confined to src/cli/tui/*.
 
 import { Box, Text } from "ink";
-import { useCallback, useState } from "react";
+import { type ReactElement, useCallback, useState } from "react";
 import { TASK_STATUSES, type TaskStatus } from "../../tasks/status.js";
 import { colorStatus } from "../format.js";
 import type { KeyFlags } from "./keys.js";
@@ -73,7 +73,7 @@ export function useStatusFilter(): StatusFilter {
   return { statuses, toggle, onKey };
 }
 
-export function StatusFilterStrip({ statuses }: { statuses: Set<TaskStatus> }): JSX.Element {
+export function StatusFilterStrip({ statuses }: { statuses: Set<TaskStatus> }): ReactElement {
   return (
     <Box>
       <Text dimColor>filters: </Text>

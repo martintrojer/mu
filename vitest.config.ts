@@ -5,24 +5,23 @@ export default defineConfig({
     include: ["test/**/*.test.ts"],
     environment: "node",
     pool: "forks",
-    poolOptions: {
-      forks: {
-        // Sequential execution (single worker fork) for the
-        // integration tests. The full suite shares a single user
-        // tmux server: when forks run in parallel, tmux
-        // command-mode (`tmux -C` style new-session / kill-session
-        // / list-panes) calls from multiple test workers contend
-        // on the same socket and stall each other for tens of
-        // seconds at a time. The cross-workstream reaper test
-        // (testreview_wait_5s_default_timeout_flake) was the
-        // canonical victim: 431ms in isolation, 30s+ in parallel.
-        // We pay ~30-90s of wall-clock for the whole suite to
-        // get a deterministic green; the alternative (skipping
-        // tmux integration in CI) erodes the "4-green-before-
-        // commit" gate.
-        singleFork: true,
-      },
-    },
+    // vitest 4 removed poolOptions; the pool-specific knobs are top-level
+    // now. singleFork:true becomes a one-worker cap.
+    // Sequential execution (single worker fork) for the
+    // integration tests. The full suite shares a single user
+    // tmux server: when forks run in parallel, tmux
+    // command-mode (`tmux -C` style new-session / kill-session
+    // / list-panes) calls from multiple test workers contend
+    // on the same socket and stall each other for tens of
+    // seconds at a time. The cross-workstream reaper test
+    // (testreview_wait_5s_default_timeout_flake) was the
+    // canonical victim: 431ms in isolation, 30s+ in parallel.
+    // We pay ~30-90s of wall-clock for the whole suite to
+    // get a deterministic green; the alternative (skipping
+    // tmux integration in CI) erodes the "4-green-before-
+    // commit" gate.
+    maxWorkers: 1,
+    minWorkers: 1,
     // Layer 2 of bug_test_suite_flake_leaks_isolation: a hook that
     // runs ONCE after the full suite finishes, sweeping any leaked
     // tmux sessions whose names match the integration-fixture

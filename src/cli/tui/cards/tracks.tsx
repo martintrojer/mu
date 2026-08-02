@@ -12,6 +12,7 @@
 // is CLIPPABLE.
 
 import { Text } from "ink";
+import type { ReactElement } from "react";
 import type { WorkstreamSnapshot } from "../../../state.js";
 import {
   type ColumnSpec,
@@ -40,7 +41,7 @@ const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
   { kind: "protect" }, // counts "(N tasks · M ready)"
 ];
 
-export function TracksCard({ snapshot, rowBudget, cols }: TracksCardProps): JSX.Element {
+export function TracksCard({ snapshot, rowBudget, cols }: TracksCardProps): ReactElement {
   const contentWidth = contentWidthFromCols(cols ?? termColsForLayout());
   if (snapshot === null) {
     return CardPlaceholder({

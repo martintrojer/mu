@@ -31,7 +31,7 @@
 // Per ROADMAP pledge: ink/react import limited to src/cli/tui/*.
 
 import { Box, Text } from "ink";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactElement, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { cellWidth, contentWidthFromCols, truncateCell } from "../columns.js";
 import type { PopupAction } from "../keys.js";
 import { useTerminalSize } from "../use-terminal-size.js";
@@ -203,7 +203,7 @@ export function DrillScrollView({
   hint,
   emptyText,
   wrappedBody,
-}: DrillScrollViewProps): JSX.Element {
+}: DrillScrollViewProps): ReactElement {
   const wrapWidth = useDrillWrapWidth();
   const renderedBody = useMemo(
     () => wrappedBody ?? wrapDrillBody(body, wrapWidth),

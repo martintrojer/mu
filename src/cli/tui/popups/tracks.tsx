@@ -28,7 +28,7 @@
 // counts are PROTECTED; the goal-name list is CLIPPABLE.
 
 import { Box, Text, useInput } from "ink";
-import { useEffect, useMemo, useState } from "react";
+import { type ReactElement, useEffect, useMemo, useState } from "react";
 import type { Db } from "../../../db.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
 import { getTask, type TaskRow } from "../../../tasks.js";
@@ -101,7 +101,7 @@ export function TracksPopup({
   popupActions,
   db,
   workstream,
-}: PopupProps): JSX.Element {
+}: PopupProps): ReactElement {
   const { cols } = useTerminalSize();
   const contentWidth = contentWidthFromCols(cols);
   // Per-render viewport from stdout.rows minus the popup chrome budget;

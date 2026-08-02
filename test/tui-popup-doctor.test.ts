@@ -10,7 +10,7 @@ import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { render } from "ink";
-import { createElement, useState } from "react";
+import { createElement, type ReactElement, useState } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import { DoctorPopup, renderDrillBody } from "../src/cli/tui/popups/doctor.js";
 import { type Db, openDb } from "../src/db.js";
@@ -91,7 +91,7 @@ interface HarnessProps {
   closed: { value: boolean };
 }
 
-function DoctorHarness({ db, snapshot, yanked, closed }: HarnessProps): JSX.Element {
+function DoctorHarness({ db, snapshot, yanked, closed }: HarnessProps): ReactElement {
   const [mode, setMode] = useState<"list" | "drill">("list");
   return createElement(DoctorPopup, {
     yank: async (command: string) => {

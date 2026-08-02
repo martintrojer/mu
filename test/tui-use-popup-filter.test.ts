@@ -8,7 +8,7 @@
 // integration tests.
 
 import { Box, render } from "ink";
-import { createElement, useEffect } from "react";
+import { createElement, type ReactElement, useEffect } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import type { KeyFlags } from "../src/cli/tui/keys.js";
 import {
@@ -294,7 +294,7 @@ describe("usePopupFilter enabled prop bubbling", () => {
     enabled?: boolean;
     onEditingChange: (editing: boolean) => void;
   }) {
-    function Harness(): JSX.Element {
+    function Harness(): ReactElement {
       const flt = usePopupFilter({
         enabled: opts.enabled,
         onEditingChange: opts.onEditingChange,

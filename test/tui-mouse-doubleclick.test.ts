@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { render } from "ink";
-import { createElement } from "react";
+import { createElement, type ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { POPUP_CHROME_TOP } from "../src/cli/tui/app.js";
 import type { PopupActionEnvelope } from "../src/cli/tui/keys.js";
@@ -74,7 +74,7 @@ function readyPopupElement(opts: {
   tasks: TaskRow[];
   popupActions: PopupActionEnvelope[];
   drilled: string[];
-}): JSX.Element {
+}): ReactElement {
   return createElement(ReadyPopup, {
     yank: async () => {},
     onClose: () => {},

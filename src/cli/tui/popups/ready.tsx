@@ -18,6 +18,7 @@
 // (popups/task-list-popup.tsx). This file is the Ready config: source
 // list, column specs, row mapper/colors, and the yank matrix.
 
+import type { ReactElement } from "react";
 import { inkColorForStatus } from "../../format.js";
 import { agentByName, formatAgentRefDisplayName } from "../agent-display.js";
 import type { ColumnSpec } from "../columns.js";
@@ -57,7 +58,7 @@ const config: TaskListPopupConfig = {
   },
 };
 
-export function ReadyPopup(props: PopupProps): JSX.Element {
+export function ReadyPopup(props: PopupProps): ReactElement {
   return <TaskListPopup config={config} {...props} />;
 }
 

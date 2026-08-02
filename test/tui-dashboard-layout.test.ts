@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { Box, Text } from "ink";
-import { createElement } from "react";
+import { createElement, type ReactElement } from "react";
 import { describe, expect, it } from "vitest";
 import { type CardId, cullCardsForRows, layoutColumns } from "../src/cli/tui/layout.js";
 import { TitledBox } from "../src/cli/tui/titled-box.js";
@@ -112,7 +112,7 @@ describe("dashboard responsive-layout wiring", () => {
   });
 });
 
-function smallDashboardTree(rows: number): JSX.Element {
+function smallDashboardTree(rows: number): ReactElement {
   const culled = cullCardsForRows([0, 1, 2, 3, 4, 5, 6, 7, 8, 9], rows);
   return createElement(
     Box,

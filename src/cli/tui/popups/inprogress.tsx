@@ -20,6 +20,7 @@
 //
 // Per ROADMAP pledge: ink/react import limited to src/cli/tui/*.
 
+import type { ReactElement } from "react";
 import { inkColorForStatus } from "../../format.js";
 import { agentByName, formatAgentRefDisplayName } from "../agent-display.js";
 import { glyphFor, isStale } from "../cards/inprogress.js";
@@ -86,7 +87,7 @@ const config: TaskListPopupConfig = {
   },
 };
 
-export function InProgressPopup(props: PopupProps): JSX.Element {
+export function InProgressPopup(props: PopupProps): ReactElement {
   return <TaskListPopup config={config} {...props} />;
 }
 

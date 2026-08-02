@@ -45,6 +45,7 @@
 //   task's call. Until then, Shift+9 (`(`) stays a reserved noop.
 
 import { Text } from "ink";
+import type { ReactElement } from "react";
 import type { DoctorCheck } from "../../../doctor-summary.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
 import {
@@ -74,7 +75,7 @@ const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
   { kind: "clip", min: 1 }, // detail (free-form)
 ];
 
-export function DoctorCard({ snapshot, rowBudget, cols }: DoctorCardProps): JSX.Element {
+export function DoctorCard({ snapshot, rowBudget, cols }: DoctorCardProps): ReactElement {
   const contentWidth = contentWidthFromCols(cols ?? termColsForLayout());
   if (snapshot === null || snapshot.doctor === null) {
     return CardPlaceholder({

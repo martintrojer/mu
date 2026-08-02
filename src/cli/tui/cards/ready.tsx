@@ -12,6 +12,7 @@
 // CLIPPABLE.
 
 import { Text } from "ink";
+import type { ReactElement } from "react";
 import { roiBucket, type WorkstreamSnapshot } from "../../../state.js";
 import { inkColorForStatus } from "../../format.js";
 import { agentByName, formatAgentRefDisplayName } from "../agent-display.js";
@@ -44,7 +45,7 @@ const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
   { kind: "protect" }, // owner (or "—")
 ];
 
-export function ReadyCard({ snapshot, rowBudget, cols }: ReadyCardProps): JSX.Element {
+export function ReadyCard({ snapshot, rowBudget, cols }: ReadyCardProps): ReactElement {
   const contentWidth = contentWidthFromCols(cols ?? termColsForLayout());
   if (snapshot === null) {
     return CardPlaceholder({

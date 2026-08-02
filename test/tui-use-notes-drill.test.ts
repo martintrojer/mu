@@ -20,7 +20,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { render, Text } from "ink";
-import { createElement, useEffect, useRef } from "react";
+import { createElement, type ReactElement, useEffect, useRef } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import { renderNotes } from "../src/cli/tui/popups/task-detail.js";
 import { useNotesDrill } from "../src/cli/tui/use-notes-drill.js";
@@ -60,7 +60,7 @@ function Harness({
   workstream,
   fastTickNonce,
   capture,
-}: HarnessProps): JSX.Element {
+}: HarnessProps): ReactElement {
   const notesText = useNotesDrill({ mode, focused, db, workstream, fastTickNonce });
   const sink = useRef(capture);
   useEffect(() => {

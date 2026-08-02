@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Box, render, Text } from "ink";
-import { createElement, useEffect, useRef } from "react";
+import { createElement, type ReactElement, useEffect, useRef } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import { cellWidth } from "../src/cli/tui/columns.js";
 import type { PopupAction } from "../src/cli/tui/keys.js";
@@ -258,7 +258,7 @@ function DrillScrollChangeHarness({
   viewport,
   capture,
   action,
-}: DrillScrollChangeHarnessProps): JSX.Element {
+}: DrillScrollChangeHarnessProps): ReactElement {
   const drill = useDrillKeymap({
     body,
     viewport,
@@ -282,11 +282,22 @@ function numberedLines(count: number): string {
   return Array.from({ length: count }, (_, i) => `line ${i + 1}`).join("\n");
 }
 
-async function waitForChange(capture: { changes: number[] }, expected: number): Promise<void> {
+/** Wait until BOTH the onScrollChange callback has fired with `expected`
+ *  AND a subsequent render has recorded the same scrollTop.
+ *
+ *  These are two separate events: `changes` is pushed by the callback,
+ *  `scrolls` by the render that follows it. Polling only `changes` left the
+ *  assertion on `scrolls` racing the reconciler — it happened to pass under
+ *  ink 5's flush timing and fails under ink 7's. */
+async function waitForChange(
+  capture: { changes: number[]; scrolls: number[] },
+  expected: number,
+): Promise<void> {
   const deadline = Date.now() + 1000;
   while (Date.now() < deadline) {
-    if (capture.changes.includes(expected)) return;
+    if (capture.changes.includes(expected) && capture.scrolls.includes(expected)) return;
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
   expect(capture.changes).toContain(expected);
+  expect(capture.scrolls).toContain(expected);
 }

@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ReactElement, ReactNode } from "react";
 import { TitledBox } from "./titled-box.js";
 
 export interface PopupShellProps {
@@ -8,7 +8,7 @@ export interface PopupShellProps {
   children: ReactNode;
 }
 
-export function PopupShell({ title, hint, children }: PopupShellProps): JSX.Element {
+export function PopupShell({ title, hint, children }: PopupShellProps): ReactElement {
   return (
     <TitledBox
       title={title}

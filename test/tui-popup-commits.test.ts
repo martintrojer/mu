@@ -2,7 +2,7 @@
 
 import { readFileSync } from "node:fs";
 import { render } from "ink";
-import { createElement, useState } from "react";
+import { createElement, type ReactElement, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   CommitsPopup,
@@ -112,7 +112,7 @@ interface HarnessProps {
   closed: { value: boolean };
 }
 
-function CommitsHarness({ snapshot, yanked, footer, closed }: HarnessProps): JSX.Element {
+function CommitsHarness({ snapshot, yanked, footer, closed }: HarnessProps): ReactElement {
   const [mode, setMode] = useState<"list" | "drill">("list");
   return createElement(CommitsPopup, {
     yank: async (command: string) => {

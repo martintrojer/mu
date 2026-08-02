@@ -183,7 +183,9 @@ interface Mounted {
   stdin: ReturnType<typeof createInkInputStream>;
   stdout: CaptureStream;
   unmount: () => void;
-  waitUntilExit: () => Promise<void>;
+  // ink 7 resolves this with the exit value rather than void; the tests only
+  // ever race it against a timeout, so the resolved type is not interesting.
+  waitUntilExit: () => Promise<unknown>;
 }
 
 const COLUMNS = 160;

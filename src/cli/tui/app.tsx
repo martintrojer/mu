@@ -18,7 +18,15 @@
 
 import type { EventEmitter } from "node:events";
 import { Box, Text, useApp, useInput, useStdin } from "ink";
-import { type ComponentType, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type ComponentType,
+  type ReactElement,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type { Db } from "../../db.js";
 import { parkedStatus } from "../../parked.js";
 import { AgentsCard } from "./cards/agents.js";
@@ -243,7 +251,7 @@ export function replayPendingMouseEvent(
   return false;
 }
 
-export function App({ db, workstreams, initialActive = 0 }: AppProps): JSX.Element {
+export function App({ db, workstreams, initialActive = 0 }: AppProps): ReactElement {
   const { exit } = useApp();
   const stdin = useStdin();
 
@@ -603,7 +611,7 @@ export function App({ db, workstreams, initialActive = 0 }: AppProps): JSX.Eleme
     </Box>
   );
 
-  function renderPopup(id: PopupRegistryId): JSX.Element {
+  function renderPopup(id: PopupRegistryId): ReactElement {
     const props: CommonPopupProps = {
       yank: yankFn,
       onFooter: footerFn,
@@ -677,7 +685,7 @@ function DashboardColumns({
   snapshot,
   db,
   workstream,
-}: DashboardColumnsProps): JSX.Element {
+}: DashboardColumnsProps): ReactElement {
   return (
     <Box flexDirection="column" height={rows} overflow="hidden">
       <Box flexDirection="row" gap={1} height={model.cardsRows} overflow="hidden">

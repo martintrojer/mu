@@ -25,6 +25,7 @@
 // short and never dropped.
 
 import { Box, Text } from "ink";
+import type { ReactElement } from "react";
 import type { FooterState, PopupMode } from "./app.js";
 import { truncateCell } from "./columns.js";
 import { type StatusHintEntry, statusHintEntries } from "./keymap-spec.js";
@@ -58,7 +59,7 @@ export function StatusBar({
   popupName,
   popupMode,
   activeWorkstream,
-}: StatusBarProps): JSX.Element {
+}: StatusBarProps): ReactElement {
   const tickLabel = `${(tickMs / 1000).toFixed(2)}s ⏱`;
   const wsLabel = activeWorkstream !== undefined ? `[${activeWorkstream}]` : "";
   const rightPlain = wsLabel === "" ? tickLabel : `${wsLabel}  ${tickLabel}`;
@@ -172,7 +173,7 @@ function hintsPlain(tokens: HintToken[]): string {
   return tokens.map((t) => t.text).join(" ");
 }
 
-function renderHints(tokens: HintToken[]): JSX.Element {
+function renderHints(tokens: HintToken[]): ReactElement {
   // Interleave tokens with literal " " separators so the rendered
   // width matches `hintsPlain(tokens)` byte-for-byte. ink flattens
   // children into a single inline run, so no per-child keys are
@@ -185,7 +186,7 @@ function renderHints(tokens: HintToken[]): JSX.Element {
   return <Text>{children}</Text>;
 }
 
-function renderToken(t: HintToken, key: number): JSX.Element {
+function renderToken(t: HintToken, key: number): ReactElement {
   switch (t.kind) {
     case "key":
       return (

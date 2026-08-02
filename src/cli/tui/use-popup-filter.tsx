@@ -16,7 +16,7 @@
 // Per ROADMAP pledge: ink/react import limited to src/cli/tui/*.
 
 import { Box, Text } from "ink";
-import { useCallback, useEffect, useReducer } from "react";
+import { type ReactElement, useCallback, useEffect, useReducer } from "react";
 import type { KeyFlags } from "./keys.js";
 
 /** Filter state owned by each popup. Resets on popup unmount. */
@@ -255,7 +255,7 @@ export function applyFilter<T>(
  * text-input cursor without ink-text-input which we are NOT adding
  * (anti-feature pledge).
  */
-export function FilterPrompt({ state }: { state: PopupFilter }): JSX.Element | null {
+export function FilterPrompt({ state }: { state: PopupFilter }): ReactElement | null {
   if (state.query === "" && !state.editing) return null;
   return (
     <Box marginTop={1}>

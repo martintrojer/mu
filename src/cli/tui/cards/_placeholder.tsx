@@ -59,7 +59,7 @@
 //   via renderCardToText are unchanged.
 
 import { Text } from "ink";
-import type { ReactNode } from "react";
+import type { ReactElement, ReactNode } from "react";
 import { type CardRowConfig, cardRenderHeight } from "../layout.js";
 import { PaddedRows } from "../padded-rows.js";
 import { TitledBox } from "../titled-box.js";
@@ -99,7 +99,7 @@ export function CardPlaceholder({
   subtitle,
   text,
   children,
-}: CardPlaceholderProps): JSX.Element {
+}: CardPlaceholderProps): ReactElement {
   return (
     <TitledBox
       height={cardRenderHeight(config, rowBudget)}

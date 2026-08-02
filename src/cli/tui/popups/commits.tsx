@@ -7,7 +7,7 @@
 // for the focused commit.
 
 import { Box, Text, useInput } from "ink";
-import { useCallback, useEffect, useState } from "react";
+import { type ReactElement, useCallback, useEffect, useState } from "react";
 import type { Db } from "../../../db.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
 import { type CommitSummary, detectBackend, type VcsBackendName } from "../../../vcs.js";
@@ -58,7 +58,7 @@ export function CommitsPopup({
   onFilterEditingChange,
   popupActions,
   onFooter,
-}: PopupProps): JSX.Element {
+}: PopupProps): ReactElement {
   const { cols } = useTerminalSize();
   const contentWidth = contentWidthFromCols(cols);
   const viewport = usePopupViewport();

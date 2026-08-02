@@ -18,7 +18,7 @@
 //
 // Per ROADMAP pledge: ink/react import limited to src/cli/tui/*.
 
-import { useMemo } from "react";
+import { type ReactElement, useMemo } from "react";
 import type { Db } from "../../../db.js";
 import { listNotes, type TaskRow } from "../../../tasks.js";
 import { DrillScrollView, type WrappedDrillBody } from "./drill.js";
@@ -62,7 +62,7 @@ export function TaskDetailDrill({
   body,
   renderNotesFn = renderNotes,
   wrappedBody,
-}: TaskDetailDrillProps): JSX.Element {
+}: TaskDetailDrillProps): ReactElement {
   const renderedBody = useMemo<string>(() => {
     if (body !== undefined) return body;
     void tickNonce;

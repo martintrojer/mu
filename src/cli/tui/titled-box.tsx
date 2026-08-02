@@ -51,7 +51,7 @@
 // Geometry is shared via the pure helper `computeBorderRowDashes`.
 
 import { Box, Text } from "ink";
-import type { ReactNode } from "react";
+import type { ReactElement, ReactNode } from "react";
 import stringWidth from "string-width";
 import { superscriptDigit } from "./glyphs.js";
 import { useTerminalSize } from "./use-terminal-size.js";
@@ -179,7 +179,7 @@ export function TitledBox({
   flexGrow,
   width,
   children,
-}: TitledBoxProps): JSX.Element {
+}: TitledBoxProps): ReactElement {
   const { cols: termCols } = useTerminalSize();
   const cols = width ?? termCols;
   const dashes = computeTopRowDashes(cols, title, subtitle, cardId);

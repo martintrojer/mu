@@ -14,6 +14,7 @@
 // the full version).
 
 import { Text } from "ink";
+import type { ReactElement } from "react";
 import {
   agentStatusHistogram,
   summarizeOwnedTasks,
@@ -47,7 +48,7 @@ const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
   { kind: "protect" }, // idle marker
 ];
 
-export function AgentsCard({ snapshot, rowBudget, cols }: AgentsCardProps): JSX.Element {
+export function AgentsCard({ snapshot, rowBudget, cols }: AgentsCardProps): ReactElement {
   const contentWidth = contentWidthFromCols(cols ?? termColsForLayout());
   if (snapshot === null) {
     return CardPlaceholder({

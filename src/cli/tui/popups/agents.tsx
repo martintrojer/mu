@@ -18,7 +18,7 @@
 // status are PROTECTED; the role description is CLIPPABLE.
 
 import { Box, Text, useInput } from "ink";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { type ReactElement, useCallback, useEffect, useRef, useState } from "react";
 import { type AgentRow, readAgent } from "../../../agents.js";
 import type { Db } from "../../../db.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
@@ -80,7 +80,7 @@ export function AgentsPopup({
   onFooter,
   db,
   workstream,
-}: PopupProps): JSX.Element {
+}: PopupProps): ReactElement {
   const { cols } = useTerminalSize();
   const contentWidth = contentWidthFromCols(cols);
   // Per-render viewport from stdout.rows minus the popup chrome budget;

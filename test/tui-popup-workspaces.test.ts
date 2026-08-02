@@ -5,7 +5,7 @@ import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { render } from "ink";
-import { createElement, useState } from "react";
+import { createElement, type ReactElement, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { insertAgent } from "../src/agents.js";
 import { loadShowPreservingBody } from "../src/cli/tui/popups/show-loader.js";
@@ -193,7 +193,7 @@ interface HarnessProps {
   closed: { value: boolean };
 }
 
-function WorkspacesHarness({ db, snapshot, yanked, closed }: HarnessProps): JSX.Element {
+function WorkspacesHarness({ db, snapshot, yanked, closed }: HarnessProps): ReactElement {
   const [mode, setMode] = useState<"list" | "drill">("list");
   return createElement(WorkspacesPopup, {
     yank: async (command: string) => {

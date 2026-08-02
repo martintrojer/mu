@@ -4,7 +4,7 @@
 // mode. The help overlay is the exhaustive reference.
 
 import { Box, Text, useInput } from "ink";
-import { useMemo, useState } from "react";
+import { type ReactElement, useMemo, useState } from "react";
 import { HELP_PANES } from "./keymap-spec.js";
 import { dispatchPopupKeyFromInk, type PopupAction } from "./keys.js";
 import { applyScroll, clampScrollTop, isNavAction } from "./popups/scroll.js";
@@ -64,7 +64,7 @@ export interface HelpProps {
   rows: number;
 }
 
-export function Help({ rows }: HelpProps): JSX.Element {
+export function Help({ rows }: HelpProps): ReactElement {
   const { cols } = useTerminalSize();
   const flatRows = useMemo(() => flattenHelpRows(), []);
   const [scrollTop, setScrollTop] = useState(0);
@@ -91,7 +91,7 @@ export function HelpView({
   scrollTop = 0,
   flatRows = flattenHelpRows(),
   cols: colsOverride,
-}: HelpViewProps): JSX.Element {
+}: HelpViewProps): ReactElement {
   const cols = colsOverride ?? process.stdout.columns ?? 80;
   const contentWidth = Math.max(1, cols - 4); // border + paddingX on both sides
   const viewport = helpViewport(rows);
@@ -110,7 +110,7 @@ export function HelpView({
   );
 }
 
-function renderHelpLine(row: HelpRenderRow, contentWidth: number, index: number): JSX.Element {
+function renderHelpLine(row: HelpRenderRow, contentWidth: number, index: number): ReactElement {
   switch (row.kind) {
     case "separator":
       return <Text key={index}> </Text>;
@@ -137,7 +137,7 @@ function HelpRow({
   keys: string;
   effect: string;
   contentWidth: number;
-}): JSX.Element {
+}): ReactElement {
   return (
     <Box width={contentWidth}>
       <Box width={18}>

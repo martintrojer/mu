@@ -60,6 +60,7 @@
 //         into TaskDetailDrill (rows ARE tasks)
 //   Until then, Shift+7 (`&`) stays a reserved noop in keys.ts.
 
+import type { ReactElement } from "react";
 import type { Db } from "../../../db.js";
 import { roiBucket, type WorkstreamSnapshot } from "../../../state.js";
 import { getTaskEdgesWithStatus, type TaskEdgeWithStatus } from "../../../tasks.js";
@@ -105,7 +106,7 @@ export function BlockedCard({
   workstream,
   rowBudget,
   cols,
-}: BlockedCardProps): JSX.Element {
+}: BlockedCardProps): ReactElement {
   const contentWidth = contentWidthFromCols(cols ?? termColsForLayout());
   if (snapshot === null) {
     return CardPlaceholder({

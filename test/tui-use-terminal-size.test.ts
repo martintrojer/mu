@@ -16,7 +16,7 @@
 
 import type { EventEmitter } from "node:events";
 import { render, Text } from "ink";
-import { createElement, useRef } from "react";
+import { createElement, type ReactElement, useRef } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import { useTerminalSize } from "../src/cli/tui/use-terminal-size.js";
 import { CaptureStream, createInkCaptureStream, waitForInkOutput } from "./_ink-render.js";
@@ -51,7 +51,7 @@ function makeResizableStdout(
 
 /** Component that records how many times it rendered and prints the
  *  current size + render count so we can assert from the frame log. */
-function Probe(): JSX.Element {
+function Probe(): ReactElement {
   const { cols, rows } = useTerminalSize();
   const count = useRef(0);
   count.current += 1;

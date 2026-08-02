@@ -47,6 +47,7 @@
 //         is exactly that primitive).
 //   Until then, Shift+6 stays a reserved noop in keys.ts.
 
+import type { ReactElement } from "react";
 import type { WorkstreamSnapshot } from "../../../state.js";
 import { inkColorForStatus } from "../../format.js";
 import { agentByName, agentStatusGlyph, formatAgentRefDisplayName } from "../agent-display.js";
@@ -94,7 +95,7 @@ const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
   { kind: "clip", min: 1 }, // title
 ];
 
-export function InProgressCard({ snapshot, rowBudget, cols }: InProgressCardProps): JSX.Element {
+export function InProgressCard({ snapshot, rowBudget, cols }: InProgressCardProps): ReactElement {
   const contentWidth = contentWidthFromCols(cols ?? termColsForLayout());
   if (snapshot === null) {
     return CardPlaceholder({

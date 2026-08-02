@@ -6,7 +6,7 @@
 // into TaskDetailDrill, and `y` yanks `mu task show <id>`.
 
 import { Box, Text, useInput } from "ink";
-import { useMemo, useState } from "react";
+import { type ReactElement, useMemo, useState } from "react";
 import type { Db } from "../../../db.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
 import {
@@ -71,7 +71,7 @@ export function AllTasksPopup({
   popupActions,
   db,
   workstream,
-}: PopupProps): JSX.Element {
+}: PopupProps): ReactElement {
   const { cols } = useTerminalSize();
   const contentWidth = contentWidthFromCols(cols);
   const viewport = usePopupViewport(ALL_TASKS_CHROME_ROWS);
@@ -330,7 +330,7 @@ function SortStrip({
   sortKey: TaskSortKey;
   visible: number;
   total: number;
-}): JSX.Element {
+}): ReactElement {
   return (
     <Box>
       <Text dimColor>
@@ -376,7 +376,7 @@ const BLOCKED_FILTER_LABELS: Readonly<Record<BlockedFilterMode, string>> = {
   hide: "hide blocked",
 };
 
-function BlockedFilterStrip({ mode }: { mode: BlockedFilterMode }): JSX.Element {
+function BlockedFilterStrip({ mode }: { mode: BlockedFilterMode }): ReactElement {
   return (
     <Box>
       <Text dimColor>

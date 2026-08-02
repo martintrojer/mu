@@ -21,6 +21,7 @@
 //
 // Per ROADMAP pledge: ink/react import limited to src/cli/tui/*.
 
+import type { ReactElement } from "react";
 import { inkColorForStatus } from "../../format.js";
 import { glyphFor } from "../cards/recent.js";
 import type { ColumnSpec } from "../columns.js";
@@ -84,7 +85,7 @@ const config: TaskListPopupConfig = {
   },
 };
 
-export function RecentPopup(props: PopupProps): JSX.Element {
+export function RecentPopup(props: PopupProps): ReactElement {
   return <TaskListPopup config={config} {...props} />;
 }
 

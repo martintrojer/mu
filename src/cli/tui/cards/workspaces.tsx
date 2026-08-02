@@ -32,6 +32,7 @@
 //     feat_more_cards_umbrella; popup likely lands as a sibling task.
 
 import { Text } from "ink";
+import type { ReactElement } from "react";
 import type { WorkstreamSnapshot } from "../../../state.js";
 import {
   isWorkspaceStale,
@@ -67,7 +68,7 @@ const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
   { kind: "protect" }, // parent_ref short
 ];
 
-export function WorkspacesCard({ snapshot, rowBudget, cols }: WorkspacesCardProps): JSX.Element {
+export function WorkspacesCard({ snapshot, rowBudget, cols }: WorkspacesCardProps): ReactElement {
   const contentWidth = contentWidthFromCols(cols ?? termColsForLayout());
   if (snapshot === null) {
     return CardPlaceholder({

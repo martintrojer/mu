@@ -20,7 +20,7 @@
 // is CLIPPABLE.
 
 import { Box, Text, useInput } from "ink";
-import { useState } from "react";
+import { type ReactElement, useState } from "react";
 import type { Db } from "../../../db.js";
 import { opSubject, renderOp, renderOpLine } from "../../../log-render.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
@@ -64,7 +64,7 @@ export function LogPopup({
   onModeChange,
   onFilterEditingChange,
   popupActions,
-}: PopupProps): JSX.Element {
+}: PopupProps): ReactElement {
   const { cols } = useTerminalSize();
   const contentWidth = contentWidthFromCols(cols);
   // Per-render viewport from stdout.rows minus the popup chrome budget;

@@ -6,7 +6,7 @@
 // popup; it is a dashboard-level graph affordance for large workstreams.
 
 import { Box, Text, useInput } from "ink";
-import { useMemo, useRef, useState } from "react";
+import { type ReactElement, useMemo, useRef, useState } from "react";
 import { loadFullDag, renderForest } from "../../../dag.js";
 import type { Db } from "../../../db.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
@@ -43,7 +43,7 @@ export function DagPopup({
   db,
   workstream,
   fastTickNonce,
-}: PopupProps): JSX.Element {
+}: PopupProps): ReactElement {
   const viewport = usePopupViewport();
   const statusFilter = useStatusFilter();
   const { cols } = useTerminalSize();

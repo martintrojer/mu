@@ -11,6 +11,7 @@
 // feat_column_aligned_lists clipping policy: timestamp, source, verb
 // are PROTECTED (short, identity-bearing); the rest is CLIPPABLE.
 
+import type { ReactElement } from "react";
 import { renderOp } from "../../../log-render.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
 import {
@@ -40,7 +41,7 @@ const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
   { kind: "clip", min: 1 }, // rest / payload
 ];
 
-export function LogCard({ snapshot, rowBudget, cols }: LogCardProps): JSX.Element {
+export function LogCard({ snapshot, rowBudget, cols }: LogCardProps): ReactElement {
   const contentWidth = contentWidthFromCols(cols ?? termColsForLayout());
   if (snapshot === null) {
     return CardPlaceholder({
