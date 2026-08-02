@@ -2,21 +2,58 @@
 
 All notable changes to mu are recorded here. The format roughly
 follows [Keep a Changelog](https://keepachangelog.com/) and the
-project adheres to [Semantic Versioning](https://semver.org/) once
-v1.0 lands; pre-1.0 minor versions may include breaking changes
-called out under "Breaking" in each entry.
+project adheres to [Semantic Versioning](https://semver.org/) from
+1.0.0 onward. The 0.x entries below predate that promise; their
+breaking changes are called out under "Breaking" in each entry.
 
 ---
 
 
-## [2.0.0] — unreleased
+## [1.0.0] — 2026-08-02
 
-2.0 replaces v1's FOUR separate change-recording mechanisms with ONE
-append-only **ops log** in SQLite. Sync, undo, archive, and history
-all become queries or replays over that one table
-(see [docs/VISION.md](docs/VISION.md) § 2b). This entry covers the
-schema foundation; capture triggers, HLCs, sync, undo, and archive
-markers land in follow-up work.
+**The problem.** mu kept state in one SQLite file per machine, and had
+no good story for moving work between a laptop and a devserver. The
+explicit export/import that existed made the operator adjudicate every
+handoff — classify the drift, pick a side, park the loser in a sidecar,
+replay it by hand. It worked, and it was annoying enough that people
+avoided it.
+
+**The change.** Every mutation is now an append-only **op**, recorded
+by a SQLite trigger in the same transaction as the mutation itself. No
+call site can forget to record history, and the log cannot drift from
+the data. Sync, undo, archive and history are all queries or replays
+over that one log. Machines exchange append-only JSONL segments through
+any shared folder — Syncthing, rsync, scp, a USB stick — and converge
+without adjudication, per FIELD: a crew closing a task on one machine
+and an operator re-pricing it on another both keep their edit.
+
+**Why this is 1.0, and why it breaks the DB.** The old schema had four
+separate mechanisms for recording change: an event log, whole-DB
+snapshots, a per-workstream sync cursor with divergence sidecars, and
+five archive tables. Sync over that would have been a fifth. Collapsing
+them into one log is what makes convergence, granular undo, and
+archives-as-markers fall out of the same substrate instead of each
+needing its own merge rules — and one mechanism is what makes a
+stability promise credible. That is the point of the version number:
+mu was 0.x throughout, so nothing was ever promised and nothing is
+being broken. This is the shape we are willing to promise stability
+for.
+
+Carrying a migration path would have meant keeping the four dead
+mechanisms alive in code purely to read them once. The honest cost:
+the upgrade is one-way, so keep your old DB file. There is a verified
+path across — `scripts/v1-to-v2.ts`, read-only on the source, run
+against a real 857-task database with `mu doctor --deep` reporting no
+drift.
+
+**What you actually do differently:**
+
+- Set `MU_SYNC_DIR` to a shared folder. Sync then happens on every
+  `mu` invocation; there is no daemon and no verb to remember.
+- `mu undo <group>` reverts one action, not the whole database.
+- `mu sync` reports peer status — who, how far behind, how stale.
+- `mu doctor --deep` is the integrity check: it rebuilds the log into
+  a temp DB and diffs it field-by-field against your live tables.
 
 ### Breaking
 
@@ -104,8 +141,7 @@ markers land in follow-up work.
 ### Added
 
 - **`mu sync` + AMBIENT sync — the switch point (`src/sync.ts`,
-  `src/cli/sync.ts`).** Work now moves between a laptop and a devserver,
-  which is what the whole 2.0 rewrite is for. Two halves:
+  `src/cli/sync.ts`).** Two halves:
 
   **ONE verb, whose bare form is a PEER STATUS REPORT.** The flush and
   ingest are incidental, because they happen on every mu invocation
