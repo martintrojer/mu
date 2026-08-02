@@ -4,8 +4,8 @@ You're an AI coding agent working on the `mu` repo, which builds
 **mu** — a CLI that manages a persistent crew of AI agents in tmux
 panes coordinated through a built-in task DAG.
 
-This file is your orientation. Read the linked docs before you
-write code. Follow the conventions below.
+Read the linked docs before you write code. Follow the conventions
+below.
 
 ---
 
@@ -13,11 +13,10 @@ write code. Follow the conventions below.
 
 1. **[docs/USAGE_GUIDE.md](docs/USAGE_GUIDE.md)** — what mu does
    from a user's perspective. ~10 minutes.
-2. **[CHANGELOG.md](CHANGELOG.md)** — the upcoming version's
-   entry (currently `[2.0.0] — unreleased`). Single source of truth
-   for the verb list, schema, env vars.
-3. **[docs/VISION.md](docs/VISION.md)** — the load-bearing pillars.
-   The design principles you must not violate.
+2. **[CHANGELOG.md](CHANGELOG.md)** — the upcoming version's entry.
+   Single source of truth for the verb list, schema, env vars.
+3. **[docs/VISION.md](docs/VISION.md)** — the design principles you
+   must not violate.
 4. **[docs/ROADMAP.md](docs/ROADMAP.md)** — what's next, with
    promotion criteria. **Read the "Anti-feature pledges" section
    before adding any new dep, abstraction, or surface.**
@@ -27,19 +26,17 @@ write code. Follow the conventions below.
 6. **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** — module layout,
    reconciliation algorithm, TUI architecture, key seams.
 
-Design rationale for rejected and unbuilt features (DSL, snapshots,
-task_artifacts, ...) is now folded into
-[docs/ROADMAP.md](docs/ROADMAP.md) per item, alongside its
-promotion criteria.
+Design rationale for rejected and unbuilt features lives in
+[docs/ROADMAP.md](docs/ROADMAP.md) per item, alongside its promotion
+criteria.
 
 > **If you are an orchestrator** — a coding agent driving a crew of
 > pi worker agents on this repo via `mu` — read
 > **[docs/HANDOVER.md](docs/HANDOVER.md)** instead of the order
-> above. It is the goto reset doc for orchestrators: onboarding
-> steps, the 8-phase dispatch loop, conflict-resolution playbook,
-> known gotchas, and end-of-session checklist. AGENTS.md is for
-> workers (and humans editing the repo directly); HANDOVER.md is for
-> orchestrators.
+> above: onboarding steps, the 8-phase dispatch loop,
+> conflict-resolution playbook, known gotchas, end-of-session
+> checklist. AGENTS.md is for workers and humans editing the repo
+> directly.
 
 ---
 
@@ -54,7 +51,7 @@ mu/
 │   ├── USAGE_GUIDE.md     # user-facing tour (§ 5b is the TUI reference)
 │   ├── HANDOVER.md        # orchestrator goto reset doc (8-phase loop + gotchas)
 │   ├── ROADMAP.md         # what's next; promotion criteria; anti-feature pledges
-│   ├── VISION.md          # load-bearing pillars
+│   ├── VISION.md          # design pillars
 │   ├── VOCABULARY.md      # canonical terms (single source of truth)
 │   └── ARCHITECTURE.md    # module layout, TUI architecture, key seams
 ├── src/                   # all source (root files: SDK + shared infra; one
@@ -165,7 +162,7 @@ mu/
 │   │   │                          # plus drill.tsx (DrillScrollView), task-detail.tsx (TaskDetailDrill),
 │   │   │                          # cursor-row.tsx, scroll.ts (applyCursor/applyScroll), viewport.ts,
 │   │   │                          # show-loader.ts (shared subprocess-preserving loader)
-│   │   ├── db.ts          # db backup (VACUUM INTO; export/import/replay removed in 2.0)
+│   │   ├── db.ts          # db backup (VACUUM INTO)
 │   │   ├── sql.ts         # sql escape hatch
 │   │   ├── doctor.ts      # doctor diagnostic
 │   │   ├── format.ts      # pure rendering helpers (table renderers, status colourers, truncate/relTime)
@@ -197,12 +194,11 @@ npm run test:watch       # vitest in watch mode
 npm run test:watch:fast  # fast-tier watch mode
 ```
 
-Use `npm run test:fast` for the inner dev loop and concurrent
-worker checks; it is the concurrency-safe tier that avoids real
-tmux/VCS subprocess integration fixtures. All four green gates still
-include `npm run test` (the full suite) before any commit. Full tests
-include real-tmux integration tests that need `$TMUX` set. If you're
-not in tmux, those tests skip themselves; CI runs inside tmux.
+Use `npm run test:fast` for the inner dev loop and concurrent worker
+checks; it is the concurrency-safe tier that avoids real tmux/VCS
+subprocess fixtures. The green gates still include `npm run test`
+before any commit. Real-tmux integration tests need `$TMUX` set and
+skip themselves otherwise; CI runs inside tmux.
 
 ### Commits
 
@@ -212,8 +208,8 @@ not in tmux, those tests skip themselves; CI runs inside tmux.
 - Body explains **what changed and why**, not just what. Reference
   the [VISION.md](docs/VISION.md) pillar / [ROADMAP.md](docs/ROADMAP.md)
   item / promotion criterion that motivated the change.
-- Always verify typecheck + lint + tests + build clean before
-  committing. Commit messages should say so explicitly.
+- Verify typecheck + lint + tests + build clean before committing.
+  Say so in the commit message.
 
 ### Code style
 
@@ -228,18 +224,15 @@ not in tmux, those tests skip themselves; CI runs inside tmux.
   them to specific exit codes.
 - Imports stay sorted (Biome's `organizeImports` enforces this).
 - Run `npx biome check --write src test` to auto-fix sort + format.
-  **Do not** run `--write --unsafe`; it has rewritten `delete
-  process.env.X` to `process.env.X = undefined` for us, which
-  silently produces the literal string `"undefined"`. The codebase
-  pattern for env deletion is `const key = "FOO"; delete
-  process.env[key];` (computed-key form).
+  **Do not** run `--write --unsafe`: it rewrites `delete
+  process.env.X` to `process.env.X = undefined`, which silently
+  produces the literal string `"undefined"`. The env-deletion pattern
+  here is `const key = "FOO"; delete process.env[key];`.
 - Hard cap: 1500 LOC per file. Refactor signal at 800.
 - **Layout: flat at the root; one level of subdirs is allowed when a
   cluster of files is naturally cohesive** (e.g. `src/cli/` for the
-  thin commander wrappers, one file per verb-namespace). The original
-  flat-only rule was authored when `src/` had ~12 files; past ~20 the
-  flat layout starts hurting (Finder/IDE listing becomes noise; `ls
-  src/` no longer reads as architecture). Each subdir cluster needs:
+  thin commander wrappers, one file per verb-namespace). Each subdir
+  cluster needs:
   (1) a clear theme (every file does the same kind of thing),
   (2) imports go from cluster-files → root-files (no upward imports),
   (3) ARCHITECTURE.md's module table has a row covering it.
@@ -264,8 +257,8 @@ not in tmux, those tests skip themselves; CI runs inside tmux.
   slower in-process CLI flows. Real-tmux tests are skipped when
   `$TMUX` is unset. These tests typically opt out of the spawn
   liveness check via `process.env.MU_SPAWN_LIVENESS_MS = "0"` in
-  `beforeEach` since the long-running sh subprocesses they spawn are
-  intentionally alive.
+  `beforeEach`, since the sh subprocesses they spawn are intentionally
+  long-lived.
 - Each test gets its own temp DB and (for integration) a unique
   tmux session like `mu-test-<pid>-<ts>-<rand>` to avoid colliding
   with the user's panes or with parallel test runs.
@@ -306,24 +299,18 @@ not in tmux, those tests skip themselves; CI runs inside tmux.
   (read-only via better-sqlite3, bypassing the `openDb()` test
   guard) and (2) `mu-$MU_SESSION` if the orchestrator runs the suite
   inside a tmux pane. Anything else is, by elimination, test residue
-  and is killed. Replaces the old regex-prefix sweep that missed
-  bare-name leftovers like `mu-alpha` / `mu-demo` / `mu-ws`. Round-4
-  removed the previous "pre-existing sessions snapshot" source
-  (`bug_test_flake_round_4_self_heal`): leftover test residue at
-  module-load time was getting grandfathered in as protected forever,
-  defeating the self-healing intent. Cost: an ad-hoc
-  `tmux new-session -t mu-foo` with no DB row gets killed; workaround
-  is `mu workstream init foo` first. New tests can hardcode any
-  workstream name they want — if they accidentally bypass the
-  private socket the sweep catches them by default.
+  and is killed. No session is grandfathered by being present at
+  module load — that defeats the self-healing intent. Cost: an ad-hoc
+  `tmux new-session -t mu-foo` with no DB row gets killed; run
+  `mu workstream init foo` first. Tests can hardcode any workstream
+  name — if they accidentally bypass the private socket, the sweep
+  catches them.
 
 ### When you change behaviour, update VOCABULARY first
 
 Vocabulary is canonical. If you introduce a new concept, name, or
-verb, **add it to docs/VOCABULARY.md before the code lands**. If
-you rename something, update VOCABULARY.md in the same commit. The
-"term not defined here, fix the docs" rule is enforced by code
-review.
+verb, **add it to docs/VOCABULARY.md before the code lands**. If you
+rename something, update VOCABULARY.md in the same commit.
 
 ### Deferred features — don't smuggle them in
 
@@ -359,9 +346,8 @@ The "anti-feature pledges" in ROADMAP.md are firm:
 
 ### When in doubt: be small
 
-The README, ROADMAP, and VISION docs all hammer this. Pi-subagents
-philosophy: ship the smallest thing that works, then layer on as
-real friction proves itself.
+Ship the smallest thing that works, then layer on as real friction
+proves itself.
 
 ---
 
@@ -386,35 +372,25 @@ real friction proves itself.
 5. Update [skills/mu/SKILL.md](skills/mu/SKILL.md) verb list.
 6. Update [CHANGELOG.md](CHANGELOG.md) under the upcoming version.
 7. If this verb promotes a `mu sql` workaround, remove the
-   workaround entry from `docs/USAGE_GUIDE.md` "What's NOT in 2.0"
-   table.
+   workaround entry from the `docs/USAGE_GUIDE.md` gaps table.
 8. Smoke-test: `MU_DB_PATH=/tmp/mu-smoke.db node dist/cli.js <verb>
    ...` to verify it works against real tmux.
 
 ### "Update the schema"
 
-1. Current schema version is **v9** (see `CURRENT_SCHEMA_VERSION`
-   in `src/db.ts`): 10 tables + 3 views. The schema lives in
-   `src/db.ts` as the `applySchema(db)` block, which is idempotent
-   CREATE-IF-NOT-EXISTS plus targeted `DROP TABLE IF EXISTS` for
-   retired tables. v9 is the 2.0 clean break: it adds the `ops` log
-   and `sync_peers`, and drops v8's `agent_logs`, `snapshots`,
-   `workstream_sync` and the five `archived_*` tables — all four v1
-   change-recording mechanisms subsumed by the one ops log. `openDb`
-   REFUSES any pre-v9 DB with `SchemaTooOldError` (exit 4); there is
-   deliberately no in-process migration ladder, and operators carry
-   v8 data across by hand with `scripts/v1-to-v2.ts`.
+1. Current schema version is **v9** (`CURRENT_SCHEMA_VERSION` in
+   `src/db.ts`): 10 tables + 3 views. The schema is the
+   `applySchema(db)` block — idempotent CREATE-IF-NOT-EXISTS plus
+   targeted `DROP TABLE IF EXISTS`. `openDb` REFUSES any pre-v9 DB
+   with `SchemaTooOldError` (exit 4); there is no in-process
+   migration ladder.
 2. Bump `CURRENT_SCHEMA_VERSION` in `src/db.ts` and mirror the new
-   shape in `CURRENT_SCHEMA`. Most recent bumps were script-free:
-   v5 → v6 was purely additive (existing CREATE-TABLE-IF-NOT-EXISTS
-   picked up new tables); v6 → v7 was a destructive-but-idempotent
-   `DROP TABLE` block; v7 → v8 was additive plus a seed row. Reach
-   for a one-shot migration script only when the change can't be
-   expressed that way (the v4 → v5 surrogate-PK substrate switch),
-   or refuse to migrate at all when a major version says so (v8 → v9).
-   **If you add a table, classify it** in `PORTABLE_TABLES` or
-   `MACHINE_LOCAL_TABLES` — `test/entities.test.ts` fails loudly
-   otherwise.
+   shape in `CURRENT_SCHEMA`. Prefer script-free bumps: additive
+   CREATE-TABLE-IF-NOT-EXISTS, or an idempotent `DROP TABLE` block.
+   Reach for a one-shot migration script only when the change can't
+   be expressed that way. **If you add a table, classify it** in
+   `PORTABLE_TABLES` or `MACHINE_LOCAL_TABLES` —
+   `test/entities.test.ts` fails loudly otherwise.
 3. Update tests that exercise the schema (`test/db.test.ts`).
 4. Update [CHANGELOG.md](CHANGELOG.md) under the upcoming version's
    `### Changed` section.
@@ -456,15 +432,11 @@ processes need time to settle. Use:
 - **Don't add a daemon, watcher, or background process.** Every
   invocation is short-lived.
 - **Don't add abstractions for hypothetical future flexibility.**
-  A prior internal LLM-runtime had a `RunContext` trait with zero
-  implementors — that's the cautionary tale. Two real impls today,
-  or use a concrete type.
+  Two real impls today, or use a concrete type. (Cautionary tale: a
+  prior internal runtime's `RunContext` trait with zero implementors.)
 - **Don't grow stream wrappers around stream wrappers.**
-  Stream-of-streams wrappers (`TextStream` / `TextState` /
-  `StreamResult`) we've seen before are the cautionary tale.
-- **Don't generate JS strings as a "typed protocol."** A prior
-  internal agent-protocol layer regretted `await
-  spawnCliAgent(...)` strings.
+  (`TextStream` / `TextState` / `StreamResult`.)
+- **Don't generate JS strings as a "typed protocol."**
 - **Don't put state-snapshot/handle layering on top of SQLite.**
   SQLite is the canonical state. Read it directly; don't introduce
   a `MuStateHandle` facade.
@@ -486,9 +458,8 @@ Before opening a PR or marking a task complete:
 npm run typecheck && npm run lint && npm run test:fast && npm run test && npm run build
 ```
 
-All four green gates, plus the fast dev-loop tier. The acceptance
-test (`test/acceptance.integration.test.ts`) must pass — it's the
-"end-to-end works" gate.
+The acceptance test (`test/acceptance.integration.test.ts`) must
+pass — it's the "end-to-end works" gate.
 
 Checklist for any non-trivial change:
 

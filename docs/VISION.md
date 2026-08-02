@@ -8,13 +8,11 @@
 ## What This Is
 
 mu is a small, durable **control plane** for a persistent crew of AI
-agents in tmux panes. Agents have names, roles, and status; they
-live across sessions; they work on a built-in task graph with VCS
+agents in tmux panes. Agents have names, roles, and status; they live
+across sessions; they work on a built-in task graph with VCS
 workspace isolation; humans and other agents drive them through one
-CLI. State lives in one SQLite file; everything in mu is a typed
-verb over that state or a reconciled view of reality.
-
-A user with mu installed can:
+CLI. State lives in one SQLite file; every mu feature is a typed verb
+over that state or a reconciled view of reality.
 
 ```bash
 mu agent spawn worker-1   --tab Backend --workspace
@@ -26,9 +24,9 @@ mu state                                # canonical state card
 mu log --tail                           # subscribe to every state change
 ```
 
-That's the whole product. Everything else is in service of making
-those few lines work, recover from failure, and scale to dozens of
-agents and hundreds of tasks.
+That's the whole product. Everything else makes those few lines work,
+recover from failure, and scale to dozens of agents and hundreds of
+tasks.
 
 ---
 
@@ -43,16 +41,14 @@ Existing tools force a choice:
   coordination to chat transcripts or filesystem conventions.
 - **Task trackers** (GitHub Issues, Linear, even tg) model the work but
   don't run the agents.
-- **Bigger orchestration platforms** provide the coordination
-  state but have accumulated breadth that costs more in
-  lifecycle/maintenance/model-entropy than they pay for. See
-  [§ What looking at a prior multi-agent runtime taught us](#what-looking-at-a-prior-multi-agent-runtime-taught-us)
-  below.
+- **Bigger orchestration platforms** carry the coordination state but
+  have accumulated breadth that costs more in maintenance than it
+  pays for. See
+  [§ What looking at a prior multi-agent runtime taught us](#what-looking-at-a-prior-multi-agent-runtime-taught-us).
 
 mu unifies the first three without becoming the fourth: persistent
 pi agents, a structured work graph, per-agent VCS isolation, one
-CLI, one SQLite file. The cost of "what should this agent do next?"
-drops from "ask the LLM and hope" to:
+CLI, one SQLite file. "What should this agent do next?" becomes:
 
 ```bash
 mu task next            # top ready task by ROI
@@ -66,27 +62,25 @@ mu state                # full picture as a JSON state card
 ### 1. The CLI is the product
 
 The pi extension is a UX skin. Everything mu does must work from a
-shell with no pi anywhere. If a feature requires the extension to
-function, it doesn't ship.
+shell with no pi anywhere. A feature that requires the extension
+doesn't ship.
 
 ### 2. One DB is canonical
 
-All state lives in `~/.local/state/mu/mu.db`. SQLite WAL. Multiple processes share
-it safely. The DB is the source of truth; in-memory state is a cache.
-The extension and the CLI both go through the same DB; they never
-diverge.
+All state lives in `~/.local/state/mu/mu.db`. SQLite WAL; multiple
+processes share it safely. The DB is the source of truth; in-memory
+state is a cache. The extension and the CLI go through the same DB,
+so they never diverge.
 
 ### 2b. One log records every change
 
-Since 2.0 there is exactly **one** record of change: the `ops` table,
-written by SQLite triggers inside the same transaction as the mutation
-they record. Same file, same transaction — so capture cannot be
-forgotten and cannot drift from the data, even on power loss.
+There is exactly **one** record of change: the `ops` table, written by
+SQLite triggers inside the same transaction as the mutation they
+record. Same file, same transaction — so capture cannot be forgotten
+and cannot drift from the data, even on power loss.
 
 **Sync, undo, archive, and history are all queries or replays over
-that one log.** v1 implemented those four separately (`agent_logs`,
-`snapshots` + 14 hook sites, `workstream_sync` + divergence sidecars,
-and five `archived_*` tables); 2.0 collapsed them.
+that one log.**
 
 The tables stay canonical for **reads** — this is not an event-sourced
 system that replays to answer a query. Ops are the durable change
@@ -94,9 +88,8 @@ record; the tables are the materialized view; triggers keep them in
 lockstep. `mu doctor` rebuilds into a temp DB and diffs, so the
 lockstep is verified rather than assumed.
 
-The cost of this consolidation is honest: a capture bug is no longer
-"sync is broken", it is "undo and archives are also broken". That
-drift check is load-bearing, not a nicety.
+The cost: a capture bug is not "sync is broken", it is "undo and
+archives are also broken". The drift check is load-bearing.
 
 ### 2c. Local-first, transport-agnostic
 
@@ -110,9 +103,9 @@ present.
 
 ### 3. Reality wins reconciliation
 
-`mu agent list` queries tmux, prunes ghosts, adopts orphans. The DB records
-what we last observed, not what we wish were true. If worker-1's pane
-crashed, the next `mu agent list` notices and updates the registry.
+`mu agent list` queries tmux, prunes ghosts, surfaces orphans. The DB
+records what we last observed, not what we wish were true. If
+worker-1's pane crashed, the next `mu agent list` notices.
 
 ### 4. Agents are dumb workers; the task graph is the brain
 
@@ -122,9 +115,9 @@ feature. Tasks have mandatory `impact` and `effort_days`; edges are
 parallel-track detector runs union-find with automatic diamond-merge
 so two agents never collide on a shared dependency.
 
-This means "what should this agent do next?" and "can we parallelize?"
-are deterministic queries against the graph, not LLM judgment calls.
-The LLM decides *what to type to the agent*; the graph decides *which
+"What should this agent do next?" and "can we parallelize?" are
+deterministic queries against the graph, not LLM judgment calls. The
+LLM decides *what to type to the agent*; the graph decides *which
 agent gets which task*.
 
 ### 5. One workstream per tmux session
@@ -138,22 +131,18 @@ as you would any tmux session — the crew survives.
 ### 6. Pi-only, by current scope
 
 Mu's status detection (`busy` / `needs_input` / `idle` / `done`) is
-pi-only. The `--cli <name>` flag accepts other strings, but no other
-CLI ships with detection support today, so a non-pi pane will always
-show `needs_input`. In practice mu is a pi orchestrator.
+pi-only. `--cli <name>` accepts other strings, but no other CLI ships
+with detection support, so a non-pi pane always shows `needs_input`.
+mu is a pi orchestrator.
 
-The `--cli` and `MU_<UPPER_CLI>_COMMAND` surface stays useful for one
-thing: swapping the pi binary. If your install ships pi under a
-different binary name, set `MU_PI_COMMAND=<name>` once and every
-spawn picks it up. Multi-word commands work too:
-`MU_PI_COMMAND="pi-alt --some-flag"`.
+`--cli` and `MU_<UPPER_CLI>_COMMAND` stay useful for swapping the pi
+binary: set `MU_PI_COMMAND=<name>` once and every spawn picks it up.
+Multi-word commands work: `MU_PI_COMMAND="pi-alt --some-flag"`.
 
-Multi-CLI support (claude / codex with real status detection) is a
-future possibility but not currently planned. If it earns its way
-back per the [ROADMAP](ROADMAP.md) criteria, the substrate is ready
-(spawn already accepts arbitrary commands; the schema's `cli` column
-is TEXT). Until then, treat "mu is a pi orchestrator" as the honest
-positioning.
+Multi-CLI support (claude / codex with real detection) is not
+planned. The substrate is ready if it earns promotion per the
+[ROADMAP](ROADMAP.md) criteria: spawn accepts arbitrary commands and
+the schema's `cli` column is TEXT.
 
 ### 7. TypeScript on Node — deliberate, not a compromise
 
@@ -162,46 +151,29 @@ npm deps (`commander`, `better-sqlite3`, `cli-table3`, `picocolors`,
 `execa`). No native code we maintain, no build matrix. Anyone
 reading `package.json` should recognize every name.
 
-This was an early framing as "boring," but in practice the choice
-earns its keep on four specific axes — not just inertia:
+The choice earns its keep on four axes:
 
-- **Type system value is real.** The `AgentNotFoundError` /
+- **The type system pays.** The `AgentNotFoundError` /
   `TaskNotFoundError` / `TaskNotInWorkstreamError` / `CycleError`
-  hierarchy maps directly to exit codes via `handle()`. The
-  `assertXInWorkstream` helper family stays type-safe across
-  every resource namespace. `noUncheckedIndexedAccess` has
-  prevented several real bugs in iteration. The same code in Go would lose
-  the discriminated unions; in Python the type checker is too
-  weak; in Rust the LOC cost would be 2–3×.
-- **JSON-first surface fits TS like a glove.** `emitJson(value)`
-  is one line. Every read verb's `--json` output is
-  `JSON.stringify(value)` straight from a typed shape. Compare to
-  `serde_json` derive-macro friction in Rust or `json.dumps`
-  with no type guard in Python.
-- **`better-sqlite3` is genuinely best-in-class.** Synchronous
-  request/response API matches the CLI invocation model
-  perfectly. WAL handling correct out of the box.
-  `db.transaction()` wrapper is exactly the right shape.
-  Equivalent in Rust (rusqlite) or Go (mattn/go-sqlite3) is more
-  verbose to use.
-- **Iteration speed.** ~60 typed verbs / 14 tables (schema v7) /
-  ~880 tests in ~30k LOC src+tests, with multiple substantive
-  changes per day during active work. That cadence in a Rust
-  codebase of equivalent surface area would be 2–3× slower at
-  minimum.
+  hierarchy maps to exit codes via `handle()`; the
+  `assertXInWorkstream` family stays type-safe across every
+  namespace; `noUncheckedIndexedAccess` has caught real bugs. Go
+  loses the discriminated unions, Python's checker is too weak,
+  Rust costs 2–3× the LOC.
+- **JSON-first surface fits TS.** Every read verb's `--json` output
+  is `JSON.stringify(value)` straight from a typed shape.
+- **`better-sqlite3` is best-in-class.** Synchronous
+  request/response matches the CLI invocation model; WAL correct out
+  of the box; `db.transaction()` is the right shape.
+- **Iteration speed.** ~60 typed verbs / 10 tables / ~2800 tests in
+  ~30k LOC src+tests, with multiple substantive changes per day.
+  That cadence in an equivalent Rust codebase would be 2–3× slower.
 
 **Where it's weak: cold start.** Node's V8 init is ~30–50ms even
-after tsup bundles. Rust would be ~5ms; Go ~10–15ms. This would
-matter if mu were called in tight loops at the heart of agent
-scripts — but it's not, by design. Pillar 4 ("async coordination
-via the activity log") explicitly steers operators away from
-polling loops toward `mu log --tail` subscriptions. **The
-weakness is sidestepped by the architecture.** If that ever
-stops being true (mu becomes a polling tool, distribution goes
-broadly public with "no toolchain required" as a feature, or
-sub-5ms startup becomes load-bearing), Rust is the natural port
-target; until then, TS+Node is actively the right choice, not a
-compromise.
+after tsup bundles (Rust ~5ms, Go ~10–15ms). That would matter if
+mu were called in tight loops, but the docs steer operators away
+from polling toward `mu log --tail`. If that stops being true, Rust
+is the natural port target.
 
 **Native dep:** `better-sqlite3` requires prebuilds or a C++
 toolchain. Prebuilds cover darwin-arm64/x64, linux-x64/arm64,
@@ -230,24 +202,20 @@ commander block.
 
 When a verb mutates state, the audit trail records what the caller
 said it relied on. `mu task close design --evidence "tests pass:
-npm test exit 0"` lands in the event log as
+npm test exit 0"` lands in the ops log as
 `task status design (IN_PROGRESS → CLOSED) evidence="..."`. The verb
 still trusts the caller — mu doesn't run tests for you — but the
-grounding for every state change is searchable in `mu log --kind
-event`. First inch of a discipline that earns more enforcement when
-real-world friction asks for it.
+grounding for every state change is searchable via `mu log`.
 
 ### 10. Get out of the model's way
 
 Mu coordinates agents; it does not reason about them. Specifically,
 mu does not own:
 
-- **Model selection.** No tier abstraction (no `mini/modest/big`),
-  no provider matrix, no vendor-name mapping. Pi already speaks
-  `--model sonnet:high` and `--provider openai`. The day mu invents
-  its own tier names is the day mu owns a vendor matrix that goes
-  stale every quarter — that's the "adjacent product identities"
-  trap an internal critique flagged, and we're not falling into it.
+- **Model selection.** No tier abstraction, no provider matrix, no
+  vendor-name mapping. Pi already speaks `--model sonnet:high` and
+  `--provider openai`. Inventing tier names would mean owning a
+  vendor matrix that goes stale every quarter.
 - **Effort / thinking levels.** Pi has
   `--thinking off|minimal|low|medium|high|xhigh`. Mu doesn't wrap
   it, doesn't normalise it, doesn't second-guess it. Pass-through
@@ -285,8 +253,7 @@ matrix in one line; per-machine, per-workstream, per project —
 wherever you set the env. The substrate stays small; the
 orchestrator stays in charge.
 
-This is the zen of mu: every layer doing its job, no layer
-speaking for another.
+Every layer does its job; no layer speaks for another.
 
 ---
 
@@ -294,14 +261,10 @@ speaking for another.
 
 - **Persistent crews in one place** — Spawn worker-1/worker-2/reviewer-1
   once, send them work all day. `tmux a -t mu-<workstream>` shows
-  the whole crew in one session: each agent in its own pane, all
-  observable at a glance, all detachable.
-- **Multi-pi crews in one session** — several pi workers and a
-  read-only pi reviewer in the same workstream, each in its own
-  pane, each independently observable via `tmux attach`.
+  the whole crew: each agent in its own pane, observable, detachable.
 - **Graph-driven coordination** — The task DAG answers "what's ready?",
   "what blocks what?", "what can be parallelized?" with SQL queries
-  and union-find, not LLM guesses. Notes per task accumulate durable
+  and union-find, not LLM guesses. Task notes accumulate durable
   context that outlives any single agent or session.
 - **Deterministic parallelization** — Diamond patterns (shared
   prerequisites) get merged automatically so two agents never collide
@@ -313,11 +276,10 @@ speaking for another.
   auto-frees. Two parallel agents in the same project never trample
   each other's working tree.
 - **Async coordination via `mu log`** — Every state-changing verb
-  auto-emits a `kind='event'` row. Subscribers `mu log --tail`
-  instead of polling. Real-time wakeups without a daemon.
+  writes an op. Subscribers `mu log --tail` instead of polling.
+  Wakeups without a daemon.
 - **Audit trail with grounding** — `--evidence` on lifecycle verbs
-  records what the caller observed. Searchable via `mu log --kind
-  event`.
+  records what the caller observed, searchable via `mu log`.
 - **Crash recovery** — Reconciliation prunes ghost agents; the reaper
   reverts their IN_PROGRESS tasks to OPEN with an explanatory note;
   no manual cleanup.
@@ -348,11 +310,11 @@ speaking for another.
   tests. Verification is the caller's job. (mu may grow optional
   verifying-runners later if friction surfaces; today it's an
   audit-trail discipline, not enforcement.)
-- **DB-undoable, not substrate-undoable.** Destructive verbs
-  auto-capture whole-DB snapshots and `mu undo --yes` restores the
-  registry. That does not replay killed tmux panes or recreate freed
-  workspace directories; after a restore, reconciliation reports
-  ghosts/orphans and the caller decides what to re-spawn or adopt.
+- **DB-undoable, not substrate-undoable.** `mu undo <group> --yes`
+  emits inverse ops for one action and restores the rows. It does not
+  replay killed tmux panes or recreate freed workspace directories;
+  after an undo, reconciliation reports ghosts/orphans and the caller
+  decides what to re-spawn or adopt.
 
 ---
 
@@ -361,9 +323,9 @@ speaking for another.
 1. **Tmux required.** The substrate is tmux panes. No tmux, no agents.
    `mu doctor` checks for it on every run that touches the agent layer.
 
-2. **Local-only persistence.** SQLite file at `~/.local/state/mu/mu.db`.
-   No cross-machine state in v1; layer something like syncthing on top
-   if you want it.
+2. **Local-first persistence.** SQLite file at
+   `~/.local/state/mu/mu.db`. Cross-machine state moves as
+   append-only JSONL segments in a shared folder; you own transport.
 
 3. **Pi-only.** Status detection (and de-facto the entire product)
    targets pi. `--cli pi` is the meaningful default; `--cli` accepts
@@ -377,9 +339,8 @@ speaking for another.
    alternative requires a protocol every CLI would have to speak.
 
 5. **Recursion is opt-in.** Default `maxSubagentDepth: 0`. Children
-   get the `mu` binary on PATH but the bundled skill explicitly says
-   "you are not the orchestrator." Hierarchical orchestration is
-   intentional, not accidental.
+   get the `mu` binary on PATH but the bundled skill says "you are
+   not the orchestrator."
 
 6. **Subscriptions are polling-based.** `mu log --tail` polls
    SQLite once per second. SQLite handles the concurrency; latency
@@ -425,18 +386,15 @@ speaking for another.
      `MU_NO_TUI=1`) never enter the TUI.
 
    This is not a precedent for any other long-lived process. The
-   anti-feature pledges in [ROADMAP.md](ROADMAP.md) ("no daemon,
-   watcher, or background process beyond what tmux / SQLite give
-   us") remain in force; a third member of this exception class
-   would need its own promotion.
+   anti-feature pledges in [ROADMAP.md](ROADMAP.md) remain in force;
+   a third member of this exception class needs its own promotion.
 
 ---
 
 ## What looking at a prior multi-agent runtime taught us
 
-We ran a five-role council critique against a prior
-internal multi-agent runtime mu's author worked on — mu's design
-ancestor. The council converged on a sharp central claim:
+A five-role council critique of a prior internal multi-agent runtime
+— mu's design ancestor — converged on a sharp central claim:
 
 > [The runtime] is not justified as a better general coding harness.
 > [The runtime] is justified only when it becomes a durable
@@ -457,10 +415,8 @@ look like:
 > dashboards, workflow DSLs — should be optional layers that prove
 > they strengthen the supervision loop.
 
-This is independent validation of the shape mu had landed on. Almost
-every item in the council's minimal core ships in mu today (9 of 10);
-almost every item the council criticised the prior runtime for is
-something mu explicitly does not have.
+Nine of the ten items in that minimal core ship in mu; almost every
+item the council criticised is something mu does not have.
 
 ### The council's criticisms → mu's design choices
 
@@ -473,18 +429,15 @@ something mu explicitly does not have.
 | "CLI verbs as a primary model surface vs. typed mutations"    | mu's verbs *are* the typed mutations. CLI is a thin wrapper over a typed SDK with idempotency, validation, exit-code-mapped errors. |
 | "Raw SQL as the only inspection surface is too low-level"     | `mu state` is the canonical state card. `--json` everywhere. `mu sql` is the escape hatch beneath, not the cockpit. |
 | "Distinguish observed from claimed state"                     | `--evidence` on lifecycle verbs (first inch). The verb still trusts the caller; the audit trail records grounding. |
-| "Approval primitives belong in the core"                      | **REMOVED post-v0.3 wave.** <!-- doc-cli-drift:skip --> Shipped as `mu approve add/list/grant/deny/wait` in v0.1; zero usage across 200+ tasks of dogfood through v0.2 + v0.3. Anti-anticipatory pruning per VISION.md "no traits with zero implementors". May return when a real second implementor surfaces (e.g., an unattended pi-orchestrator running mu). |
+| "Approval primitives belong in the core"                      | Not in mu: dogfood across 200+ tasks produced zero calls for them. Anti-anticipatory pruning per "no traits with zero implementors". May earn promotion when a real implementor surfaces (e.g. an unattended pi-orchestrator running mu). |
 | "Reads must distinguish provenance (process telemetry vs agent self-report)" | event `source` field attributes events to actor (claiming agent / decider / 'system'). |
 | "State must be authoritative and recoverable, not just durable" | Reconciliation runs on read paths; reaper recovers stuck IN_PROGRESS automatically. |
 
 ### What this validates
 
-Three things the council's analysis lets us state with more
-confidence than "we just had a hunch":
-
-1. **The anti-feature pledges are load-bearing.** No DSL, no plugins,
-   no daemon, no config file, no web UI, no remote sync. Each one is
-   a failure mode the prior runtime exhibited that mu chose not to inherit.
+1. **The anti-feature pledges hold.** No DSL, no plugins,
+   no daemon, no config file, no web UI. Each is a failure mode the
+   prior runtime exhibited and mu chose not to inherit.
 
 2. **"Pi+tmux is the benchmark" is the right comparison.** mu only
    earns its complexity above the threshold where coordination
@@ -493,13 +446,12 @@ confidence than "we just had a hunch":
    manual tmux is more transparent.
 
 3. **Schema-first + typed verbs + state cards is the right model UX
-   shape.** Not because we read a paper that said so, but because
-   independent reasoning from operators, engineers, architects, and
-   model-UX specialists converges on it.
+   shape** — independent reasoning from operators, engineers,
+   architects, and model-UX specialists converges on it.
 
 ### What this still flags as gaps
 
-The council's critique cuts mu too in places. The honest list:
+The critique cuts mu too:
 
 - **Wakeups are polling-based.** `mu log --tail` polls every 1s.
   Real subscriptions (SQLite update hooks) are deferred.
@@ -512,5 +464,4 @@ The council's critique cuts mu too in places. The honest list:
 - **No capability model.** The `role` field is stored on agent rows
   but unused. No "reviewer-1 cannot delete tasks" enforcement.
 
-Each is a known gap with a clear shape. None has friction-driven
-promotion yet.
+Each is a known gap with a clear shape; none has earned promotion.

@@ -14,9 +14,7 @@ not in `--help` do not exist.
 ## Output + JSON shapes
 
 Default output: textual card on stdout plus a `Next:` block. Read
-both.
-
-`--json` exists on every verb:
+both. `--json` exists on every verb:
 - Success: one stdout object.
 - Collection reads (`task list`, `workspace commits`, `archive
   search`, ...): `{items: T[], count: number}`.
@@ -51,15 +49,14 @@ Use mu for multi-phase work, review-gated work (`implement → review
 → address → ship`), parallel audits, implementation/reviewer splits,
 and anything that must survive context compaction via task notes.
 
-Do **not** use mu for tiny one-file edits, one-off local inspection,
-or single-context work where durable coordination adds ceremony.
+Don't use mu for tiny one-file edits, one-off inspection, or
+single-context work where durable coordination adds ceremony.
 
 ### Off-the-cuff helpers (the `scratch` workstream)
 
-Want a sub-agent you'll **keep talking to** — "create a subagent to
-X", "run X in the background", "one subagent per X to do Y" — without
-a crew or task DAG? Spawn into the reserved `scratch` workstream. No
-`mu workstream init`; it auto-creates and is task-less by design.
+Want a sub-agent you'll **keep talking to** without a crew or task
+DAG? Spawn into the reserved `scratch` workstream. No `mu workstream
+init`; it auto-creates and is task-less by design.
 
 ```bash
 mu agent spawn helper-1 -w scratch     # auto-creates mu-scratch
@@ -71,16 +68,14 @@ mu agent close helper-1 -w scratch     # done
 - **Background watcher:** send the task, then `mu agent wait <name>
   --first` to block until it finishes (busy → idle) instead of a
   `sleep` loop; re-nudge with another `send` (e.g. `'run again'`).
-- **Watcher dedupe/memory (log ledger):** a watcher that reacts to
-  changing external state must remember what it last saw so it
-  doesn't act twice. Don't keep it in chat context (dies on
-  compaction / `/loop` death). Use a custom `--kind` tag as a durable
-  ledger in SQLite: each tick records last-seen state with `mu log
-  -w scratch --kind pr-state 'pr=1234 sha=abc ci=red -> spawned
-  fixer-1'`, and the next tick reconstructs it with `mu log -w
-  scratch --kind pr-state -n 1 --json` (latest wins; `--since <seq>`
-  replays missed history). Pick a stable `--kind` per ledger; act
-  only when the new observation differs from the last entry.
+- **Watcher dedupe/memory (log ledger):** a watcher reacting to
+  changing external state must remember what it last saw. Chat
+  context dies on compaction; use a custom `--kind` tag as a durable
+  SQLite ledger instead. Each tick records last-seen state with `mu
+  log -w scratch --kind pr-state 'pr=1234 sha=abc ci=red -> spawned
+  fixer-1'`; the next tick reads it back with `mu log -w scratch
+  --kind pr-state -n 1 --json` (latest wins; `--since <seq>` replays
+  missed history). Act only when the new observation differs.
 - **Fan-out, one per unit:** loop `mu agent spawn dep-$pkg -w scratch
   --workspace`, then `mu agent wait dep-core dep-cli dep-web` (all) or
   `--any` to react to whichever finishes first. Add `--workspace`
@@ -94,10 +89,9 @@ pi's project-trust prompt; add `--approve` to the existing
 intend to override the env-configured command.
 
 **Escalate off `scratch`** the moment helpers have dependencies
-(B needs A) or you want gated review → real `mu workstream init` +
-task DAG. Need just one focused answer, no follow-up → `pi-subagents`
-(one-shot, returns a result). `scratch` is the middle: "fire, but
-keep the channel open."
+(B needs A) or you want gated review → `mu workstream init` + task
+DAG. One focused answer, no follow-up → `pi-subagents`. `scratch` is
+the middle: "fire, but keep the channel open."
 
 ## Mental model
 
@@ -115,10 +109,9 @@ prerequisite collapse into one track.
 
 ### Workspaces prevent trampling
 
-If an agent may edit/build/test/generate artifacts while another
-agent is active in the same repo, spawn with `--workspace`. Keep the
-main checkout for orchestration. Two builds in one checkout corrupt
-each other's artifacts.
+If an agent may edit/build/test while another agent is active in the
+same repo, spawn with `--workspace`. Keep the main checkout for
+orchestration: two builds in one checkout corrupt each other.
 
 Workspaces auto-detect jj/sl/git; non-VCS uses `cp -a`. They are
 auto-freed on `mu agent close` **iff clean**: no uncommitted changes
@@ -305,7 +298,7 @@ git cherry-pick "$sha" && npm test
   an op in its own group, so REDO is just `mu undo <that group> --yes`
   and it syncs to peers. Refuses with exit 4 if a later action changed
   the same fields (`--force` to override, discarding that newer work).
-  No snapshots and no `--to`: those are gone in 2.0.
+  There are no snapshots and no `--to`.
 - **Archives:** an archive is a named MARKER pinning a point in the ops
   log, not a copy. Four verbs: `add <label> -w <ws>` (creates the label
   on first use), `list [label]`, `restore <label> --as <new-ws>`
@@ -314,16 +307,15 @@ git cherry-pick "$sha" && npm test
   renderer as `workstream export`). `mu workstream destroy --archive
   <label>` pins before destroying. Labels are global.
   Because destroy writes TOMBSTONES rather than erasing history, an
-  archive still restores after its workstream is gone. `create` /
-  `remove` / `delete` / `search` / `show` do NOT exist in 2.0: a label
-  with no markers pins nothing, markers are append-only ops, and `show`
-  folded into `list <label>`.
+  archive still restores after its workstream is gone. There is no
+  `create` / `remove` / `delete` / `search` / `show`: a label with no
+  markers pins nothing, markers are append-only ops, and `list
+  <label>` is the detail view.
 - **Recovery:** `mu rebuild <file>` replays the ops log in HLC order
   into a NEW DB file and prints the `mv` command to swap it in; it
   never rebuilds in place. Agents and workspaces are NOT rebuilt (no
   capture triggers, so no ops) and the summary says so — re-spawn
-  agents after swapping. The v1 `db` and `snapshot` namespaces are
-  gone in 2.0; the ops log replaces them. <!-- doc-cli-drift:skip -->
+  agents after swapping.
 - **State/TUI:** bare `mu` opens the all-workstream TUI on a TTY;
   agents/scripts use `mu state --json`. `mu state --tui` is
   read-only, yanks commands, `?` shows keys, `/` filters popups,
@@ -380,10 +372,10 @@ Discover model strings with `pi --list-models [fuzzy-search]`.
 
 If an agent pane dies, or `mu agent close` kills it mid-task, owned
 IN_PROGRESS tasks revert to OPEN with a `[reaper]` note and `task
-reap` event. No manual release after crashes.
+reap` op. No manual release after crashes.
 
-Status detection is heuristic and can lag, especially behind custom
-`--command` wrappers. For high-stakes decisions:
+Status detection is heuristic and can lag behind custom `--command`
+wrappers. For high-stakes decisions:
 
 ```bash
 mu agent read worker-1 -n 100
@@ -423,24 +415,19 @@ mu agent send worker-1 'Claim and work on task_x. Read notes first...'
 
 No `sleep` needed. `mu agent send` waits for the pane to finish any
 re-initialisation before pasting, and re-submits if the TUI swallowed
-the Enter. It used to be possible for the second send to land in the
-input box but never submit — pane idle at 0.0% context, exit 0, no
-error — which stalled the orchestrator until its `task wait` timed
-out. If a send still cannot be confirmed, it prints a `warning:` to
+the Enter. If a send cannot be confirmed it prints a `warning:` to
 stderr naming the pane; exit 0 with no warning means submitted.
 
-Budget is `MU_SEND_READINESS_MS` (default 15000; 0 restores the old
-fire-and-forget behaviour). Sending to an agent that is BUSY working
-is not delayed — that input queues normally.
+Budget is `MU_SEND_READINESS_MS` (default 15000; 0 = fire-and-forget).
+Sending to a BUSY agent is not delayed — that input queues normally.
 
 ## Recover destructive verbs
 
-`mu undo` to see recent actions and their group ids, then
-`mu undo <group>` to preview and `mu undo <group> --yes` to apply. It
-reverts ONE action (granular, not a whole-DB rollback) by emitting
-inverse ops, and is itself undoable. Rows only: killed panes and freed
-workspace dirs do not return. For whole-DB recovery from the ops log
-use `mu rebuild <file>`.
+`mu undo` lists recent actions and their group ids; `mu undo <group>`
+previews; `mu undo <group> --yes` applies. It reverts ONE action by
+emitting inverse ops, and is itself undoable. Rows only: killed panes
+and freed workspace dirs do not return. For whole-DB recovery use
+`mu rebuild <file>`.
 
 ## DO / DON'T
 

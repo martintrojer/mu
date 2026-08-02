@@ -2,9 +2,7 @@
 
 Canonical terms for mu. **Use these exact words in code, docs, error
 messages, and the LLM-facing skill.** When two words could mean the
-same thing, the one in this doc wins.
-
-This document is the source of truth. If another doc uses a term not
+same thing, the one in this doc wins. If another doc uses a term not
 defined here, fix the doc. If you need a new term, add it here first.
 
 ---
@@ -14,7 +12,7 @@ defined here, fix the doc. If you need a new term, add it here first.
 | Use this              | For…                                                                     | Don't use                                          |
 | --------------------- | ------------------------------------------------------------------------ | -------------------------------------------------- |
 | **workstream**        | The unit of organization. One workstream = one tmux session = one DB partition | "project", "session" (ambiguous), "context"      |
-| **scratch workstream**| The reserved workstream named `scratch` for off-the-cuff agent use — spin up a helper you'll keep talking to without crew/DAG ceremony. Explicit `-w scratch` (no implicit fallback); auto-created on first spawn; `mu workstream init scratch` is rejected (loud). Agents in it are still **agents**, NOT pi-subagents. Task-less is fine; the DAG stays opt-in. A strict expansion of mu's driveable/observable/durable value into low-ceremony territory, **not** a pi-subagents replacement. | "throwaway ws", "temp workstream", "subagent" |
+| **scratch workstream**| The reserved workstream named `scratch` for off-the-cuff agent use — spin up a helper you'll keep talking to without crew/DAG ceremony. Explicit `-w scratch` (no implicit fallback); auto-created on first spawn; `mu workstream init scratch` is rejected (loud). Agents in it are still **agents**, NOT pi-subagents. Task-less is fine; the DAG stays opt-in. | "throwaway ws", "temp workstream", "subagent" |
 | **tmux session**      | The literal tmux session a workstream lives in                           | "session" alone (ambiguous)                        |
 | **window**            | A tmux window (tmux's tabs); identified by `window_name`                 | "tab" (except as the frontmatter field name)       |
 | **pane**              | A tmux pane (one shell view inside a window); identified by **stable pane id** like `%15` | "terminal", "shell"                          |
@@ -28,7 +26,7 @@ defined here, fix the doc. If you need a new term, add it here first.
 | **task status**       | One of 5 states. **OPEN** = ready to be claimed; **IN_PROGRESS** = claimed and active; **CLOSED** = work completed (the only state that satisfies a `--blocked-by` edge); **REJECTED** = terminal 'won't do' (out of scope, duplicate, wontfix); **DEFERRED** = parked, may revisit. REJECTED and DEFERRED both still BLOCK downstream by design — only CLOSED unblocks. | "state"                                            |
 | **reject**            | Verb: stamp a task `REJECTED`. Refuses if open dependents would be stranded; pass `--cascade` to apply to the whole sub-tree. | "wontfix", "close as wontfix"                      |
 | **defer**             | Verb: stamp a task `DEFERRED`. Same stranded-dependent guard as reject. Reopen with `mu task open`. | "park", "snooze", "backlog"                        |
-| **task DAG** / **graph** | The directed acyclic graph of tasks. Cloned from a prior internal task-graph crate. | "task list", "todo", "tree" (it's a DAG, not a tree) |
+| **task DAG** / **graph** | The directed acyclic graph of tasks. | "task list", "todo", "tree" (it's a DAG, not a tree) |
 | **edge**              | A `blocks` relationship between two tasks. The single edge type. `A blocks B` = A must close before B can start. | "dependency" (use only in prose)                   |
 | **track**             | An independent subtree of the DAG identified by parallel-track detection | "branch", "lane"                                   |
 | **diamond merge**     | When two tracks share a prerequisite, parallel-track detection collapses them into one track to prevent two agents from colliding on the shared dependency. | "join", "converge"                                 |
@@ -37,8 +35,8 @@ defined here, fix the doc. If you need a new term, add it here first.
 | **sort key**          | Argument to `mu task list / next / ready --sort <key>`. One of `roi` (impact / effort_days, default for `next` / `ready`), `recency` (`updated_at` DESC — "what did I touch most recently"), `age` (`created_at` ASC — "what's gone stale"), `id` (`local_id` ASC, default for `task list`). The two time-based keys also render an `updated`/`created` relative-time column in the table view. | "order by", "sort by"                              |
 | **subtree** / **scope** | The set of tasks reachable from a root via blocks-edges                | "subgraph" (only for technical descriptions)       |
 | **note**              | An append-only piece of context attached to a task                       | "comment" (reserved for VCS), "log" (reserved for the **ops log**) |
-| **log entry**         | A rendered **op**, as shown by `mu log`. Not a distinct table — the ops log is the only log, and `mu log` reads every op. The prose is derived from the op's **intent** by ONE formatter (`src/log-render.ts`), shared by `mu log`, `mu state`, and the TUI cards, so no surface invents its own phrasing. Rows with no intent (operator writes / a **log ledger**) are shown verbatim. One exception is hidden: a parent-row *touch* (payload is only `updated_at`, from a note or edge bumping its task) is a real op but not a log line. | "message" (overloaded), "event" (overloaded)       |
-| **kind**              | The operator-chosen channel tag on a **log entry** — `mu log --kind <tag>` sets it on write and filters to it on read. Stored as the op's `entity`. RETAINED in 2.0 (not renamed to `--intent`) because it is a different axis: **kind** is what the *operator* labels a hand-written line, **intent** is what *mu* records about a state change. The **log ledger** convention depends on it. Captured ops get their entity from the table they mutate (`task`, `note`, `edge`, `workstream`), and machine-local ops use `agent` / `workspace`; `message` is the default for a bare `mu log "text"`. The v1 catch-all `event` is retired. | "category", "type" (overloaded) |
+| **log entry**         | A rendered **op**, as shown by `mu log`. Not a distinct table — the ops log is the only log. Prose comes from the op's **intent** via ONE formatter (`src/log-render.ts`), shared by `mu log`, `mu state`, and the TUI. Rows with no intent (operator writes / a **log ledger**) are shown verbatim. One hidden exception: a parent-row *touch* (payload is only `updated_at`) is a real op but not a log line. | "message" (overloaded), "event" (overloaded)       |
+| **kind**              | The operator-chosen channel tag on a **log entry** — `mu log --kind <tag>` sets it on write and filters to it on read. Stored as the op's `entity`. A different axis from **intent**: **kind** is what the *operator* labels a hand-written line, **intent** is what *mu* records about a state change. Captured ops get their entity from the table they mutate (`task`, `note`, `edge`, `workstream`), and machine-local ops use `agent` / `workspace`; `message` is the default for a bare `mu log "text"`. | "category", "type" (overloaded) |
 | **log ledger**        | A doc-only *convention* (not a feature): use a custom `--kind` tag as a durable, append-only dedupe/memory ledger for a watcher loop. Each tick records last-seen external state (`mu log --kind pr-state 'pr=N sha=.. ci=..'`); the next tick reconstructs it with `mu log --kind pr-state -n 1 --json`. State lives in SQLite, so it survives `/loop` or `/watch` death and context compaction — no in-session bookkeeping. | "state file", "dedupe cache" |
 | **claim**             | Verb: set `tasks.owner` to an agent. Atomic CAS.                         | "assign" (use only in prose), "lock"               |
 | **owner**             | The **worker** name in `tasks.owner`. Set by claim. NULL when the task is unowned OR was claimed via `--self` (anonymous, attributed via `ops.actor` instead). Owners are **machine-local** — they reference `agents`, so ownership never syncs. | "claimer", "assignee"                              |
@@ -58,8 +56,8 @@ defined here, fix the doc. If you need a new term, add it here first.
 | **backend**           | Implementation of `AgentBackend` or `VcsBackend`                         | "driver", "provider"                               |
 | **detector**          | Per-CLI pattern matcher for busy/permission/ready. Today mu has one (`detectPiStatus` in `src/detect.ts`); covers vanilla pi + any TUI wrapper that uses Braille spinner glyphs. Other CLIs spawned via `--cli <other>` may misclassify; trust scrollback over the emoji. | "matcher", "parser"                                |
 | **op**                | The atomic unit of change: one row in the `ops` table, written by a trigger inside the same transaction as the mutation it records. Carries `(hlc, machine_id, group_id, actor, intent, entity, key, op, payload)`. A **semantic partial update** — the payload holds only the columns that actually changed, which is what makes per-field merge free. | "event", "delta", "change" (all overloaded)         |
-| **ops log**           | The `ops` table: the single append-only record of every change, and the substrate **sync**, **undo**, **archive**, and history are all queries or replays over. Canonical and ACID because it lives in `mu.db` alongside the tables it records. Replaces v1's four separate mechanisms (`agent_logs`, snapshots, `workstream_sync`, `archived_*`). | "event log", "journal", "WAL" (reserved by SQLite)  |
-| **intent**            | The semantic label on an **op** (`task.close`, `task.reparent`, `agent.spawn`). Set once per public SDK function via **op context**, not per mutation. Human-grade: `mu log` renders prose from it through one formatter, replacing v1's brittle prose prefix-matching. | "verb" (overloaded by CLI verbs), "action"          |
+| **ops log**           | The `ops` table: the single append-only record of every change, and the substrate **sync**, **undo**, **archive**, and history are all queries or replays over. Canonical and ACID because it lives in `mu.db` alongside the tables it records. | "event log", "journal", "WAL" (reserved by SQLite)  |
+| **intent**            | The semantic label on an **op** (`task.close`, `task.reparent`, `agent.spawn`). Set once per public SDK function via **op context**, not per mutation. `mu log` renders prose from it through one formatter. | "verb" (overloaded by CLI verbs), "action"          |
 | **group**             | A set of ops sharing a `group_id` — one user-visible action. A cascade close writes N ops in one group, so `mu undo <group>` reverts them as a unit. Ids are uuids, so every verb that takes one (`mu undo <group>`, `mu log --group`) accepts any unique PREFIX via the shared `groupIdFromPrefix` — the affordance git gives for shas. An ambiguous prefix is a conflict (exit 4), never a guess. | "transaction" (reserved by SQLite), "batch"        |
 | **op context**        | The per-connection `_op_ctx` temp table holding `(group_id, actor, intent, applying)` for the current transaction. Triggers read it to stamp ops; `applying=1` suppresses capture while ingesting a peer's ops (echo-loop guard). Set through the scoped `withOpContext(db, {...}, fn)` / `withCaptureSuppressed(db, fn)` helpers in `src/op-context.ts`, never by writing the table directly — the scoping is what guarantees a throw cannot leak a stale intent onto later ops. Two sibling temp tables support it: `_op_clock` (holds "now" for one trigger firing so the HLC advance reads a single consistent value) and `_op_dying` (natural keys of rows mid-DELETE, so FK-cascaded children can still resolve a key after their parent row is gone). | "ambient context", "thread local"                   |
 | **apply** | Verb: land one **op** into the portable tables, honouring the **merge rules**. `applyOp` / `applyOps` in `src/apply.ts`. Always runs capture-suppressed (`applying=1`), so applying never mints a new op — that is the echo guard. Idempotent: applying the same op twice changes nothing, which is what makes `mu sync --repair` merely "re-read that peer's **segment** from zero". Distinct from **ingest**, which is the sync-side loop that reads a segment and calls apply per op. | "merge" (that's the rule set), "import", "replay" (replay is undo/archive) |
@@ -84,10 +82,9 @@ defined here, fix the doc. If you need a new term, add it here first.
 | **flush** / **ingest** | The two halves of sync. Flush appends local ops to my own **segment**; ingest reads each peer segment from its **watermark** and applies. Both run ambiently on every mu invocation when `MU_SYNC_DIR` is set — there is no daemon. | "push"/"pull" (imply mu moves files; it does not)   |
 | **reprojection**      | The pass that lands **ops** which could not be applied when they arrived because the row they hang off was not here yet — an `edge` or `note` whose task came from a DIFFERENT **peer**'s **segment**. Runs once after every **ingest** pass (never per peer: an edge in one segment may name a task in another, so only the union suffices) and asks the **ops log** which of them are resolvable NOW, rather than keeping a retry queue that could disagree with the log and would not survive a short-lived mu process. Excludes ops whose parent is genuinely gone and keys with a newer `del`, so it never resurrects a deleted edge. `reprojectDeferredOps` in `src/apply.ts`. | "retry queue", "pending ops", "deferred apply"      |
 | **marker**            | An op (`entity='marker'`, `intent='archive.add'`, key `<label>/<workstream>`) pinning a point in the **ops log** under an operator-chosen label — the whole implementation of an **archive**. Append-only by construction, so there is no way to un-pin one. **LOAD-BEARING INVARIANT: compaction must NEVER discard ops at or below a pinned marker's HLC.** Nothing compacts today; when something does, dropping ops under a marker silently empties the archive it promised to preserve, and the failure surfaces only when someone tries to restore — long after the data is gone. `pinnedHlcs()` in `src/archives.ts` exists so a future compactor has no excuse. | "tag", "checkpoint", "bookmark"                     |
-| **export**            | A directory of plain markdown files produced by `mu workstream export` (one `.md` per task + `INDEX.md` + `README.md` + `manifest.json`). Survives `mu workstream destroy` (auto-run pre-destroy to `<state-dir>/exports/<ws>-<ts>/` unless `--no-export`). Idempotent: re-export against the same dir rewrites only changed files; deleted tasks are preserved with a banner. Markdown-only by design — no HTML/PDF, no embedded VCS. Read-only artifacts for humans / git / docs; the lossless movement paths are **sync** and `mu archive restore`. | "dump", "snapshot" (retired term)  |
-| **import**            | Avoid as a generic noun. Cross-machine movement is **sync** (ambient, via **segments**); un-archive is `mu archive restore`. The one legitimate use is the **v1 import**, below. | "rehydrate", "restore" (restore has specific meanings) |
-| **v1 import**         | The one-time, by-hand carry of a mu 1.x (schema v8) DB into a fresh v9 one via the sidecar `scripts/v1-to-v2.ts`. NOT a **migration**: `openDb` still refuses every pre-v9 DB with `SchemaTooOldError` and there is no in-process ladder. Read-only on the source; writes a new file; **synthesizes ops rather than inserting rows** (v9's tables are a projection of the log, so a direct INSERT would be invisible to sync and reported as drift). Every op carries intent `migrate.v1`, or `migrate.v1-log` for a carried v1 `agent_logs` line, so `mu log` never presents imported prose as a live 2.0 edit. | "migration", "upgrade" (both imply mu does it for you) |
-| **archive**           | An operator-named label pinning one or more **markers** in the **ops log**. Cross-workstream and additive: one label may accumulate markers from many workstreams. Outlives every source workstream, because destroying a workstream writes tombstone ops rather than erasing history. `mu archive restore` replays that workstream's ops up to the marker's HLC under a new name — strictly more faithful than v1's column-subset copy. | "backup", "vault"                                 |
+| **export**            | A directory of plain markdown files produced by `mu workstream export` (one `.md` per task + `INDEX.md` + `README.md` + `manifest.json`). Survives `mu workstream destroy` (auto-run pre-destroy to `<state-dir>/exports/<ws>-<ts>/` unless `--no-export`). Idempotent: re-export against the same dir rewrites only changed files; deleted tasks are preserved with a banner. Markdown-only by design — no HTML/PDF, no embedded VCS. Read-only artifacts for humans / git / docs; the lossless movement paths are **sync** and `mu archive restore`. | "dump", "snapshot"  |
+| **import**            | Avoid as a generic noun. Cross-machine movement is **sync** (ambient, via **segments**); un-archive is `mu archive restore`. | "rehydrate", "restore" (restore has specific meanings) |
+| **archive**           | An operator-named label pinning one or more **markers** in the **ops log**. Cross-workstream and additive: one label may accumulate markers from many workstreams. Outlives every source workstream, because destroying a workstream writes tombstone ops rather than erasing history. `mu archive restore` replays that workstream's ops up to the marker's HLC under a new name. | "backup", "vault"                                 |
 | **archive label**     | The operator-facing TEXT name of an **archive** — the label carried by its **markers**. Globally unique across the machine (NOT per-workstream — archives outlive workstreams). Shape: `/^[a-z][a-z0-9_-]{0,63}$/` (wider than workstream names because labels often encode workstream + date + purpose, e.g. `auth-2026-q1`). | "archive name" (in code; `label` only)             |
 | **qualified ref**     | An entity-arg form `<workstream>/<name>` that targets a specific workstream's task / agent / workspace without `-w`. Bare `<name>` still resolves via the standard chain (`-w` / `$MU_SESSION` / current tmux session). Mixing a qualified ref with a non-matching `-w` is rejected (`UsageError`). When a bare name appears AND no workstream resolves AND ≥2 workstreams contain that name, mu raises `NameAmbiguousError` (exit 4) listing every candidate as a qualified-form one-paste fix. | "fully-qualified id" (in prose), "prefixed name"   |
 | **doctor**            | The diagnostic command + report                                          | "health check", "diagnose"                         |
@@ -147,10 +144,10 @@ defined here, fix the doc. If you need a new term, add it here first.
 the `tab:` frontmatter field and may group multiple agents in one
 window.
 
-This is what makes the claim protocol zero-config: an agent runs
+This makes the claim protocol zero-config: an agent runs
 `mu task claim foo` and mu reads `tmux display-message -p '#{pane_title}'`
 to know who's claiming. **Read pane title (`#{pane_title}`), not
-window name (`#W`)** — they are different when several agents share a
+window name (`#W`)** — they differ when several agents share a
 window.
 
 ---
@@ -245,7 +242,7 @@ Don't use them in mu code or docs:
 | "instance"       | Vague; could be agent / workstream / process                     | The specific thing                                   |
 | "broker"         | Implies pub-sub middleware; we don't have one                    | "log entry" or be specific                           |
 | "checkpoint"     | Implies recoverable savepoints in the work                       | "marker" (pins the ops log), "group" (undo unit)  |
-| "snapshot"       | Retired in 2.0 along with the `snapshots` table and whole-DB file swaps | "marker"; "backup" for a whole-DB copy      |
+| "snapshot"       | mu has no whole-DB savepoints                                    | "marker"; "backup" for a whole-DB copy      |
 | "agent type"     | "Type" implies a class hierarchy; mu has no class system | "agent role" (scout/reviewer/etc.)                   |
 | "agent definition" / "agent template" / "agent role doc" | mu has no template/definition concept. Spawn flags + the orchestrator's prompt are the only "definition" | Just describe the spawn invocation directly |
 | "worker"         | "worker" is the name of one specific built-in agent              | "agent" (general); "the worker" only when referring to that specific agent |
@@ -258,18 +255,13 @@ Don't use them in mu code or docs:
 The complete verb list lives in two places, both authoritative:
 
 - **`mu --help`** and **`mu <verb> --help`** — the canonical CLI
-  reference. If anything below ever disagrees with `--help`, trust
+  reference. If anything below disagrees with `--help`, trust
   `--help`.
-- **[skills/mu/SKILL.md](../skills/mu/SKILL.md) § "CLI — complete
-  verb list"** — the LLM-facing one-pager with every verb, its
-  arguments, and a one-line description.
+- **[skills/mu/SKILL.md](../skills/mu/SKILL.md)** — the LLM-facing
+  one-pager with every verb and a one-line description.
 
-For worked examples of each verb, see
-[USAGE_GUIDE.md](USAGE_GUIDE.md).
-
-This document is a *vocabulary* doc; it doesn't try to be a verb
-reference too. Rows here exist to keep names canonical, not to replace
-`--help`.
+For worked examples, see [USAGE_GUIDE.md](USAGE_GUIDE.md). Rows below
+exist to keep names canonical, not to replace `--help`.
 
 | Operation | Canonical meaning |
 | --------- | ----------------- |
@@ -281,13 +273,6 @@ reference too. Rows here exist to keep names canonical, not to replace
 | `mu archive restore <label> --as <new-ws> [-w <orig-ws>]` | Replay a workstream's ops up to the label's **marker** into a fresh workstream. The source workstream is a **scope**, so it rides the universal `-w/--workstream` flag (omit it when the label pins exactly one workstream). There is no `--source`. |
 | `mu db backup <file>` | `VACUUM INTO` copy of the whole DB. The "one file I can scp" convenience; real DR is **segments** + `mu rebuild`. |
 
-<!-- doc-cli-drift:skip-start -->
-Removed in 2.0: `mu db export` / `mu db import` / `mu db replay`
-(replaced by ambient **sync**), `mu snapshot list` / `show` / `prune`
-(replaced by the **ops log**), `mu archive create` / `remove` /
-`delete` (labels are created by first use; **markers** are
-append-only), and `mu peers` (folded into bare `mu sync`).
-<!-- doc-cli-drift:skip-end -->
 A one-off directory needs no flag — `MU_SYNC_DIR=/mnt/usb mu state`
 ingests from a USB stick using the existing env-var idiom.
 
@@ -320,25 +305,23 @@ not.
 > **In a list flag, an EMPTY fragment is dropped; a BLANK
 > (whitespace-only) fragment is a usage error (exit 2).**
 
-The two are not the same thing, and conflating them caused
-`bug_whitespace_status_fragment`:
+The two are not the same thing:
 
 | Input | Kind | Treatment | Why |
 | --- | --- | --- | --- |
 | `--status "OPEN,"` | **empty** (`""` before trimming) | dropped → `[OPEN]` | A trailing/double comma is a structural artifact of typing a list. |
 | `--blocked-by ""` | **empty** | dropped → `[]` | `mu task reparent --blocked-by ''` documents this as the clear-all-blockers sentinel. |
 | `--status " "` | **blank** (non-empty before trimming, empty after) | `UsageError`, exit 2 | Nobody means "filter by the space character". It is a typo or a quoting accident. |
-| `--status "OPEN, "` | **blank** | `UsageError`, exit 2 | Previously widened to *no filter at all* and exited 0 — a silent wrong answer. |
+| `--status "OPEN, "` | **blank** | `UsageError`, exit 2 | Widening to *no filter at all* and exiting 0 would be a silent wrong answer. |
 
 The rule is enforced once, in `parseCsvFlag` (`src/cli.ts`), so every
 list flag agrees — `--status`, `--by`, `--blocked-by`, `-w`. Each
 call site passes its own flag name so the error names the flag the
-operator actually typed. Deciding per-call-site is what let
-flag-vs-positional drift in the first place.
+operator actually typed.
 
 A blank single-value `-w ' '` is rejected in `resolveWorkstream` for
-the same reason: it never reaches `parseCsvFlag`, and before the fix
-it resolved to a workstream literally named `" "`.
+the same reason; otherwise it resolves to a workstream literally
+named `" "`.
 
 Whether zero surviving fragments is legal is then a per-verb
 question, decided *after* this rule: `--by ''` needs at least one
@@ -374,12 +357,11 @@ describe the role, with a numeric suffix when there are multiples:
 
   Avoid: `alice`, `bob`, `carol`, `revv`, `mallory`, `peon`, ...
 
-Why: anthropomorphic (or status-loaded) names confuse the model
-when reading commands ("alice claims design" sounds like a person;
+Anthropomorphic (or status-loaded) names confuse the model when
+reading commands ("alice claims design" sounds like a person;
 "worker-1 claims design" is obviously a generic worker taking a
 task). Role-based names also make `mu agent list` and tmux's window
-list legible at a glance — you can see "three workers and a
-reviewer" instead of decoding name salad.
+list legible at a glance.
 
 The roles align with pi-subagents' role taxonomy:
 
@@ -393,10 +375,9 @@ The roles align with pi-subagents' role taxonomy:
 If you have multiple agents in the same role, suffix with `-1`,
 `-2`, ... (`worker-1`, `worker-2`).
 
-This is a convention, not enforcement. mu's regex accepts any
-`[a-z][a-z0-9_-]{0,31}` string. Test fixtures often use `alice`/`bob`
-as placeholder names — that's fine for tests; just don't propagate
-it to user-facing examples or actual workstreams.
+This is a convention, not enforcement: mu's regex accepts any
+`[a-z][a-z0-9_-]{0,31}` string. Test fixtures may use `alice`/`bob`;
+don't propagate that to user-facing examples or real workstreams.
 
 ### File paths
 
@@ -473,13 +454,5 @@ and the disambiguated terms:
 | session      | **agent session** (avoid in code)     | Colloquial for "an agent's run/lifetime"; prefer "lifetime" or "the work alice has done" |
 
 When writing code, say `workstream_id` not `session_id` in any new
-column or variable name. The existing `agents.session_id` column name
-is grandfathered for SQL-schema-stability reasons but should be
-documented as "workstream id" in column comments.
-
-<!-- The alphabetical glossary that used to live here was removed:
-     it duplicated the canonical-terms table at the top of this file,
-     drifted out of sync, and carried entries for rejected features
-     (capability, agent-frontmatter `persistent: false`, the JS DSL,
-     the operation-registry idea). The table is the single source.
-     For deeper background, follow the links the table rows carry. -->
+column or variable name. The `agents.session_id` column keeps its
+name for schema stability; document it as "workstream id".
