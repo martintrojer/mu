@@ -36,7 +36,8 @@ markers land in follow-up work.
   with `SchemaTooOldError` (exit 4) and leaves the file untouched.
   `MIN_ACCEPTED_SCHEMA_VERSION === CURRENT_SCHEMA_VERSION === 9`, so
   the in-place forward-bump ladder (including the v6→v7 `approvals`
-  DROP) is gone. Keep your v1 DB with `mu db backup` and re-import it
+  DROP) is gone. Keep a copy of your v1 DB (a plain `cp` of the file, as
+  in the recipe below) and re-import it
   through **`scripts/v1-to-v2.ts`** — a sidecar you run once, by hand,
   against a copy. See [scripts/README.md](scripts/README.md) for the
   exact upgrade recipe (BACK UP FIRST) and the honest list of what does
@@ -709,6 +710,43 @@ markers land in follow-up work.
   (2.0 is unreleased).
 
 ### Changed
+
+- **Documentation sweep for 2.0, plus a CI guard so the next drift is
+  caught by a test rather than by a human (`v2-docs`).** Every previous
+  2.0 task updated the docs it touched; this pass swept for the
+  contradictions no single task could see. Fixed: `mu undo` documented
+  as a whole-DB snapshot restore with a `--to <id>` flag and a
+  `mu snapshot list / show / prune / delete` family (USAGE_GUIDE § 14);
+  `mu workstream destroy` described as auto-capturing a snapshot;
+  `mu archive create` in the destroy recipe; `mu archive show` in the
+  flag-vs-positional rule; `mu archive restore --source` in USAGE_GUIDE
+  and ROADMAP (VOCABULARY's copy was fixed separately); the `mu sql`
+  schema paragraph listing 16 tables including all five `archived_*`,
+  `agent_logs`, `snapshots` and `workstream_sync` (now the real 10,
+  split portable vs machine-local); eight live prose references to
+  `agent_logs` as the place claims/actors/events are recorded (now
+  `ops.actor` / the ops log); ARCHITECTURE's claim-protocol and data-flow
+  steps still writing `agent_logs` rows of `kind='event'`; README's
+  entire "Portability and handoff" section still describing
+  `mu db export`/`import` with divergence sidecars (now ambient sync +
+  per-field merge + `mu rebuild`); AGENTS.md's module tree listing
+  `db-sync.ts`, `db-sync-replay.ts`, `snapshots.ts` and `cli/db.ts`
+  while omitting all thirteen modules 2.0 added; AGENTS.md's
+  "Update the schema" section still documenting v8 as current.
+  ARCHITECTURE gained rows for `src/undo.ts`, `src/cli/undo.ts`,
+  `src/parked.ts` and `src/project-root.ts`, which had none.
+
+  **The guard** (`test/docs-cli-drift.test.ts` +
+  `test/_doc-commands.ts`, fast tier, no new dependency): extracts every
+  `mu ...` command from nine docs — 668 of them — and asserts each names
+  a real verb path and passes only real flags, by walking commander's
+  own command tree rather than shelling out per snippet. Historical and
+  rejected-surface sections opt out with a
+  `<!-- doc-cli-drift:skip-start -->` region. It self-tests against five
+  planted drift shapes, including a flag inside markdown
+  optional-brackets (`[--source <orig-ws>]`) — the shape that shipped
+  past two reviewers, because a naive extractor treats the brackets as
+  prose.
 
 - **`mu log` renders prose from structured intents, through ONE
   formatter (`v2-log-verb`).** R7 left the read side printing op payloads

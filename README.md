@@ -42,8 +42,9 @@ For the full copy-paste flow, see [Quick start](#quick-start).
   workspaces plus a real task DAG with deterministic parallel-track
   detection keep agents off each other's toes.
 - **A durable coordination layer.** One SQLite registry records
-  agents, tasks, ownership, notes, events, snapshots, and workspaces;
-  panes can die and humans can come back later.
+  agents, tasks, ownership, notes, workspaces, and — in a single
+  append-only **ops log** — every change ever made to them; panes can
+  die and humans can come back later.
 - **Stay out of the model's way.** Mu coordinates handoffs; it does
   not choose models, providers, or thinking effort. `--cli <key>`
   uppercases to `$MU_<KEY>_COMMAND`, so your shell rc owns the agent
@@ -67,9 +68,10 @@ For the full copy-paste flow, see [Quick start](#quick-start).
   Mu agents are driveable tmux panes; pi-subagents is for one-shot
   focused delegation. See [vs `pi-subagents`](#vs-pi-subagents).
 - **Not a hosted service.** Local-first SQLite.
-- **DB-undoable, not tmux-undoable.** Every destructive verb
-  auto-captures a whole-DB snapshot first; `mu undo --yes` restores
-  the DB. Killed panes and freed workspace dirs are NOT replayed.
+- **DB-undoable, not tmux-undoable.** Every change is captured as ops
+  under one group, so `mu undo <group> --yes` reverses exactly that
+  one action — not your other workstreams. Killed panes and freed
+  workspace dirs are NOT replayed; they aren't portable state.
 
 ---
 
@@ -182,7 +184,8 @@ mu task close design_auth_module --evidence "design doc reviewed by reviewer-1"
 # Subscribe to events instead of polling.
 mu log --tail
 
-# Cleanup (auto-snapshots + auto-exports the conversation first).
+# Cleanup. Dry-run without --yes; writes tombstone ops rather than
+# erasing history, so `mu undo <group> --yes` still reverses it.
 mu workstream destroy --yes
 ```
 
@@ -193,12 +196,24 @@ expanded [dashboard/state guide](docs/USAGE_GUIDE.md#5-see-the-graph-dashboard--
 
 ## Portability and handoff
 
-State lives in one SQLite DB, so it travels. `mu db export <file>`
-writes a consistent whole-DB copy plus a manifest sidecar; `mu db
-import <file>` ships it back, with per-workstream drift detection
-(dry-run by default; `--apply` commits) and a sharp `--force-source`
-that parks the loser to a sidecar before clobbering. Hard rule: don't
-edit the same workstream on two machines concurrently.
+State lives in one SQLite DB, and every change to it is captured as an
+op in an append-only log — so it travels, and it merges.
+
+**Multi-machine sync is one env var.** Point `MU_SYNC_DIR` at a folder
+something else keeps in step (Syncthing, rsync, a USB stick — mu never
+runs the transport itself) and every `mu` invocation flushes your ops
+to `$MU_SYNC_DIR/<machine-id>.jsonl` and ingests every peer's. No
+daemon, no peer list, no host names. Concurrent edits on two machines
+are fine: merges are per-FIELD by HLC, so a devserver crew closing a
+task while you edit its impact on a laptop keeps both changes.
+`mu sync` reports peer status; `mu sync --repair <peer>` re-reads a
+peer from zero. **Never put the DB itself inside `MU_SYNC_DIR`** — a
+live WAL database is three mutually-consistent files and a file-syncer
+will corrupt it. `mu doctor` fails loudly if you do.
+
+For disaster recovery, `mu rebuild <file>` replays the whole ops log
+into a fresh DB and prints the swap command; `mu undo <group>` reverts
+one past action by emitting inverse ops.
 
 For humans / git / docs, `mu workstream export` and `mu archive
 export` render a workstream (or an archive bucket) as Markdown:

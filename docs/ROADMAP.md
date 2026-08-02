@@ -60,7 +60,7 @@ above:
 ## Rejected sync substrates (2.0)
 
 Recorded so we don't relitigate them. 2.0 replaced v1's
-`mu db export`/`import`/`replay` with an ops log in SQLite plus
+`mu db export`/`import`/`replay` <!-- doc-cli-drift:skip --> with an ops log in SQLite plus
 append-only JSONL **segments**; every alternative below was
 considered and rejected for the reason given.
 
@@ -73,7 +73,7 @@ considered and rejected for the reason given.
 | **RocksDB / LMDB for the op log** | No triggers, so capture becomes a convention every future call site must remember — and a forgotten op is now silent corruption of undo *and* archives *and* sync. Single-process-exclusive, so it forces a daemon. mu's read side is ~96 prepared statements, ~70 JOINs, 3 views and recursive CTEs — all hand-rolled. Loses `mu sql`. |
 | **SQLite file per peer (instead of JSONL)** | A torn transfer makes the *whole* file unopenable, versus losing one JSONL line. `-wal`/`-shm` sidecars in a synced folder are the canonical way to corrupt a DB. Page churn defeats rsync/Syncthing delta transfer, where append-only files are the best case. |
 | **`MU_SYNC_PEERS` membership list** | A config file with extra steps, and it would have to be kept consistent across every machine — the drift problem it appears to solve. Peers are discovered from segment filenames instead. |
-| **`mu sync --push/--pull <host>`** | Would make mu shell out to ssh/scp — its first network egress — dragging in ssh config, jump hosts, ProxyCommand, ports, identity files, interactive prompts, and network-vs-auth error mapping. A remote backend wearing a small hat. mu prints a copy-pasteable rsync line instead. |
+| **`mu sync --push/--pull <host>` <!-- doc-cli-drift:skip -->** | Would make mu shell out to ssh/scp — its first network egress — dragging in ssh config, jump hosts, ProxyCommand, ports, identity files, interactive prompts, and network-vs-auth error mapping. A remote backend wearing a small hat. mu prints a copy-pasteable rsync line instead. |
 
 The chosen design's net dependency change is **zero**: still just
 `better-sqlite3`.
@@ -84,6 +84,7 @@ The chosen design's net dependency change is **zero**: still just
 
 ### Multi-machine sync (db export/import + archive restore) — shipped in v0.4.1, replaced in 2.0
 
+<!-- doc-cli-drift:skip-start -->
 > **Superseded.** 2.0 removed `mu db export`/`import`/`replay`
 > entirely. The five-state drift classifier, divergence sidecars, and
 > manual replay proved too annoying to use in practice — the
@@ -95,6 +96,9 @@ The chosen design's net dependency change is **zero**: still just
 
 Shipped in v0.4.1. The design note remains here as the historical
 promotion record and to make the local-first boundary explicit.
+Every `mu ...` command below names REMOVED surface — the doc/CLI
+drift guard skips this region for that reason.
+
 
 Problem: one user wants to move a workstream between two machines
 (laptop ↔ devserver) over multi-day stretches without losing the task
@@ -131,6 +135,7 @@ Directional verb map (target state):
 | file → db (whole-machine sync)           | `mu db import` (shipped v0.4.1) |
 
 `mu archive restore <label> --as <new-ws> [--source <orig-ws>]`
+<!-- doc-cli-drift:skip --> (v0.4.1 spelling; 2.0 takes `-w`)
 restores directly from the `archived_*` tables into a new workstream,
 losslessly and without a markdown bucket round-trip. It refuses if
 `--as` collides and auto-snapshots before writing. With those typed
@@ -164,6 +169,7 @@ whole-workstream: refuse, or `--force-source` after parking the loser
 sidecar. This narrows the old "cross-machine sync" rejection to mean
 live/automatic synchronization; explicit file export/import earned
 promotion without violating the local-first pillar.
+<!-- doc-cli-drift:skip-end -->
 
 ---
 
@@ -252,7 +258,7 @@ and the extension stays thin.
 Listed so we don't rediscover them. See git history for the full
 reasoning per item.
 
-- **JS / Lisp DSL** (`mu run` / `mu eval` / `mu repl`) — bash +
+- **JS / Lisp DSL** (`mu run` / `mu eval` / `mu repl`) <!-- doc-cli-drift:skip --> — bash +
   jq + `--json` covers the gap. A workflow DSL is a maintenance
   liability.
 - **`defineOperation()` registry framework** — no consumer left

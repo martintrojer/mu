@@ -14,7 +14,7 @@ write code. Follow the conventions below.
 1. **[docs/USAGE_GUIDE.md](docs/USAGE_GUIDE.md)** — what mu does
    from a user's perspective. ~10 minutes.
 2. **[CHANGELOG.md](CHANGELOG.md)** — the upcoming version's
-   entry (currently `[0.4.5] — 2026-06-09`). Single source of truth
+   entry (currently `[2.0.0] — unreleased`). Single source of truth
    for the verb list, schema, env vars.
 3. **[docs/VISION.md](docs/VISION.md)** — the load-bearing pillars.
    The design principles you must not violate.
@@ -60,7 +60,8 @@ mu/
 ├── src/                   # all source (root files: SDK + shared infra; one
 │                          # level of subdirs OK for cohesive clusters — see
 │                          # `src/cli/`, `src/agents/`, `src/tasks/` below)
-│   ├── db.ts              # SQLite schema + openDb (single CREATE-IF-NOT-EXISTS block; v8)
+│   ├── db.ts              # SQLite schema + openDb (single CREATE-IF-NOT-EXISTS block; v9)
+│   │                      # also owns SYNCED_ENTITIES / PORTABLE_TABLES / MACHINE_LOCAL_TABLES
 │   ├── tmux.ts            # tmux wrapper, send protocol, pane validation
 │   ├── detect.ts          # pi status detector + Braille-spinner fallback for other CLIs
 │   ├── reconcile.ts       # ghost prune + status detect + orphan surface
@@ -85,12 +86,25 @@ mu/
 │   │   └── errors.ts      # typed task error classes (TaskAlreadyOwnedError, CycleError, …)
 │   ├── tracks.ts          # parallel-tracks union-find with diamond merge
 │   ├── workstream.ts      # ensureWorkstream / list / summarize / destroy / export
-│   ├── archives.ts        # cross-workstream archive bucket SDK hub (re-exports src/archives/*)
+│   ├── archives.ts        # archives as append-only MARKERS pinning the ops log (re-exports src/archives/*)
 │   ├── exporting.ts       # unified bucket renderer (workstream + archive export; read-only buckets)
-│   ├── logs.ts            # agent_logs SDK (append, list, latestSeq, emitEvent)
+│   ├── hlc.ts             # hybrid logical clock: the monotonic ordering key on every op
+│   ├── capture.ts         # SQLite triggers recording every portable mutation as an op, in-transaction
+│   ├── op-context.ts      # withOpContext (intent/actor/group) + withCaptureSuppressed echo guard
+│   ├── apply.ts           # the apply path: per-field LWW merge + tombstones + deferred reprojection
+│   ├── undo.ts            # inverse ops for one group (granular undo; supersede refusal)
+│   ├── rebuild.ts         # replay the whole ops log into a NEW DB file (disaster recovery)
+│   ├── drift.ts           # ops-log-vs-live-tables drift check (cheap default tier + --deep rebuild-diff)
+│   ├── segments.ts        # JSONL segment transport: flush own ops / ingest peers from a watermark
+│   ├── sync.ts            # peer status + the ambient flush/ingest hook + --from reader + --repair
+│   ├── fleet-hazards.ts   # mixed-fleet doctor checks (DB inside MU_SYNC_DIR, network mount, case collisions)
+│   ├── file-lock.ts       # generic cross-process advisory lock via atomic fs.mkdir
+│   ├── logs.ts            # typed READER over `ops` + appendLog / emitEvent (the one write path triggers can't cover)
+│   ├── log-render.ts      # the ONE op → prose formatter (renderOp); shared by CLI + TUI
+│   ├── parked.ts          # 'presumed parked elsewhere' heuristic (dormant; awaits re-grounding on watermarks)
 │   ├── vcs.ts             # VcsBackend hub (re-exports src/vcs/*: jj/sl/git/none impls)
 │   ├── workspace.ts       # per-agent VCS workspaces hub (re-exports src/workspace/*)
-│   ├── snapshots.ts       # whole-DB snapshots hub (re-exports src/snapshots/*)
+│   ├── shell-quote.ts     # POSIX single-quote helper for copy-pasteable Next: hints
 │   ├── dag.ts             # full-DAG forest builder (loadFullDag for `mu task tree` + DAG popup)
 │   ├── state.ts           # SDK seam for `mu state` (fast SQL tier + slow subprocess tier + merge)
 │   ├── staleness.ts       # WORKSPACE_STALE_THRESHOLD + isStaleWorkspace
@@ -112,7 +126,10 @@ mu/
 │   │   │   └── wire.ts       # Commander glue
 │   │   ├── workspace.ts   # workspace create / list / free / path / orphans / refresh / commits
 │   │   ├── log.ts         # log read / write / tail
-│   │   ├── archive.ts     # archive create / list / show / add / restore / remove / delete
+│   │   ├── archive.ts     # archive add / list / restore / export
+│   │   ├── undo.ts        # mu undo [group] (list / preview / --yes apply)
+│   │   ├── sync.ts        # mu sync (peer status; --from / --repair)
+│   │   ├── rebuild.ts     # mu rebuild <file>
 │   │   ├── state.ts       # `mu state` (canonical state card); --tui dispatches to src/cli/tui/
 │   │   ├── staleness.ts   # shared workspace-staleness CLI helpers + warn formatter
 │   │   ├── tui-launch-focus.ts # initial-tab focus ladder for bare `mu` and `mu state --tui`
@@ -148,7 +165,6 @@ mu/
 │   │   │                          # plus drill.tsx (DrillScrollView), task-detail.tsx (TaskDetailDrill),
 │   │   │                          # cursor-row.tsx, scroll.ts (applyCursor/applyScroll), viewport.ts,
 │   │   │                          # show-loader.ts (shared subprocess-preserving loader)
-│   │   ├── snapshot.ts    # undo / snapshot list / snapshot show
 │   │   ├── db.ts          # db backup (VACUUM INTO; export/import/replay removed in 2.0)
 │   │   ├── sql.ts         # sql escape hatch
 │   │   ├── doctor.ts      # doctor diagnostic
@@ -370,31 +386,35 @@ real friction proves itself.
 5. Update [skills/mu/SKILL.md](skills/mu/SKILL.md) verb list.
 6. Update [CHANGELOG.md](CHANGELOG.md) under the upcoming version.
 7. If this verb promotes a `mu sql` workaround, remove the
-   workaround entry from `docs/USAGE_GUIDE.md` "What's NOT in 0.1.0"
+   workaround entry from `docs/USAGE_GUIDE.md` "What's NOT in 2.0"
    table.
 8. Smoke-test: `MU_DB_PATH=/tmp/mu-smoke.db node dist/cli.js <verb>
    ...` to verify it works against real tmux.
 
 ### "Update the schema"
 
-1. Current schema version is **v8** (see `CURRENT_SCHEMA_VERSION`
-   in `src/db.ts`). The schema lives in `src/db.ts` as the
-   `applySchema(db)` block, which is idempotent CREATE-IF-NOT-EXISTS
-   plus targeted `DROP TABLE IF EXISTS` for retired tables
-   (e.g. v7's `DROP TABLE IF EXISTS approvals`). v8 is additive:
-   `machine_identity` and `workstream_sync` are
-   `CREATE TABLE IF NOT EXISTS`, and `openDb` seeds the single
-   `machine_identity` row on first open. `openDb` rejects pre-current
-   DBs with `SchemaTooOldError` (exit 4) and a migration hint.
+1. Current schema version is **v9** (see `CURRENT_SCHEMA_VERSION`
+   in `src/db.ts`): 10 tables + 3 views. The schema lives in
+   `src/db.ts` as the `applySchema(db)` block, which is idempotent
+   CREATE-IF-NOT-EXISTS plus targeted `DROP TABLE IF EXISTS` for
+   retired tables. v9 is the 2.0 clean break: it adds the `ops` log
+   and `sync_peers`, and drops v8's `agent_logs`, `snapshots`,
+   `workstream_sync` and the five `archived_*` tables — all four v1
+   change-recording mechanisms subsumed by the one ops log. `openDb`
+   REFUSES any pre-v9 DB with `SchemaTooOldError` (exit 4); there is
+   deliberately no in-process migration ladder, and operators carry
+   v8 data across by hand with `scripts/v1-to-v2.ts`.
 2. Bump `CURRENT_SCHEMA_VERSION` in `src/db.ts` and mirror the new
-   shape in `CURRENT_SCHEMA`. Three of the last four bumps were
-   script-free: v5 → v6 was purely additive (existing
-   CREATE-TABLE-IF-NOT-EXISTS picked up new tables); v6 → v7 was a
-   destructive-but-idempotent `DROP TABLE` block; v7 → v8 is
-   additive plus the `machine_identity` seed. Reach for a one-shot
-   migration script only when the change can't be expressed that way
-   (the v4 → v5 surrogate-PK substrate switch was the canonical
-   example).
+   shape in `CURRENT_SCHEMA`. Most recent bumps were script-free:
+   v5 → v6 was purely additive (existing CREATE-TABLE-IF-NOT-EXISTS
+   picked up new tables); v6 → v7 was a destructive-but-idempotent
+   `DROP TABLE` block; v7 → v8 was additive plus a seed row. Reach
+   for a one-shot migration script only when the change can't be
+   expressed that way (the v4 → v5 surrogate-PK substrate switch),
+   or refuse to migrate at all when a major version says so (v8 → v9).
+   **If you add a table, classify it** in `PORTABLE_TABLES` or
+   `MACHINE_LOCAL_TABLES` — `test/entities.test.ts` fails loudly
+   otherwise.
 3. Update tests that exercise the schema (`test/db.test.ts`).
 4. Update [CHANGELOG.md](CHANGELOG.md) under the upcoming version's
    `### Changed` section.

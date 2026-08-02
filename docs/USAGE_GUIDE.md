@@ -1,15 +1,15 @@
 # mu — Usage Guide
 
-A practical, copy-pasteable tour of mu (current main; v0.4.1).
+A practical, copy-pasteable tour of mu (current main; 2.0).
 Everything below works against the built CLI. Terms are canonical
 — see [VOCABULARY.md](VOCABULARY.md) for definitions; the complete
 current verb list is in `## CLI — complete verb list` of
 [skills/mu/SKILL.md](../skills/mu/SKILL.md).
 
-> **Status:** v0.4.1 (pre-1.0). ~65 typed verbs across 9
+> **Status:** 2.0 (pre-release). ~60 typed verbs across 7
 > namespaces (`workstream`, `agent`, `task`, `workspace`, `log`,
-> `snapshot`, `archive`, `db`, `me`) plus bare top-level verbs
-> (`state`, `doctor`, `sql`, `undo`). Every verb accepts `--json`
+> `archive`, `me`) plus bare top-level verbs
+> (`state`, `doctor`, `sql`, `undo`, `sync`, `rebuild`). Every verb accepts `--json`
 > (one allow-listed exception, `mu agent attach`), per-agent VCS
 > workspaces (jj/sl/git/none), activity log with `--tail`
 > subscription, bare `mu` TTY dashboard, canonical static state card
@@ -17,11 +17,11 @@ current verb list is in `## CLI — complete verb list` of
 > <group>` over the ops log (no snapshot files), evidence on
 > lifecycle verbs, schema v9
 > (v5 surrogate INTEGER PKs + per-workstream UNIQUE on
-> operator-facing names; v6 added the `archive_*` family additively;
-> v7 dropped the dead `approvals` table; v8 adds `machine_identity`
-> and `workstream_sync` for db sync).
+> operator-facing names; v9 adds the `ops` log and `sync_peers`, and
+> drops v8's `agent_logs`, `snapshots`, `workstream_sync` and the
+> five `archived_*` tables — all subsumed by the ops log).
 > See [CHANGELOG.md](../CHANGELOG.md) for the release entry,
-> and [§ Not in 0.4.1](#whats-not-in-041-and-how-to-work-around-it)
+> and [§ Not in 2.0](#whats-not-in-041-and-how-to-work-around-it)
 > at the bottom for the gaps that still need workarounds.
 
 *If anything below disagrees with `mu --help`, trust `mu --help`.*
@@ -50,7 +50,7 @@ current verb list is in `## CLI — complete verb list` of
 15.6. [Multi-machine sync](#156-multi-machine-sync)
 16. [One-shot demo script](#16-one-shot-demo-script)
 17. [Mental model in three sentences](#mental-model-in-three-sentences)
-18. [What's NOT in 0.4.1](#whats-not-in-041-and-how-to-work-around-it)
+18. [What's NOT in 2.0](#whats-not-in-041-and-how-to-work-around-it)
 19. [Where to go from here](#where-to-go-from-here)
 
 ---
@@ -233,7 +233,9 @@ disagree, and which side is right depends on the cause:
 So, in order:
 
 ```bash
-mu db backup /tmp/mu-drift-evidence.db   # 1. preserve the evidence FIRST
+# 1. preserve the evidence FIRST. (`mu db backup` is printed by the
+#    remediation but is not implemented yet — see VOCABULARY § Operations.)
+sqlite3 "$MU_DB_PATH" "VACUUM INTO '/tmp/mu-drift-evidence.db'"
 mu rebuild /tmp/mu-rebuilt.db            # 2. materialize what the log believes
 # 3. compare the named keys in both files and decide which side is correct:
 MU_DB_PATH=/tmp/mu-rebuilt.db mu sql "SELECT local_id, title, impact FROM tasks"
@@ -406,7 +408,7 @@ The rule the CLI follows:
 > else — scoping, modifiers, payload — is a flag.**
 
 So `mu task close <id>`, `mu agent send <name> <text>`,
-`mu archive show <label>`, `mu workstream init <name>`. The
+`mu archive list <label>`, `mu workstream init <name>`. The
 workstream is a *scope* for most verbs (`-w`), which is why it's a
 flag there — but for `mu workstream <verb>` the workstream IS the
 primary entity, so it may be given positionally:
@@ -552,7 +554,7 @@ mu log -w scratch --kind pr-state -n 1 --json
 
 The dedupe rule is then trivial: read the latest `pr-state`, compare
 its `sha`/`ci` to what you just observed, and only act when they
-differ. Because the ledger lives in `agent_logs` (SQLite), it
+differ. Because the ledger lives in the `ops` log (SQLite), it
 survives `/loop` or `/watch` death and context compaction — a
 fresh watcher invocation reads the same history.
 
@@ -720,11 +722,13 @@ same full snapshot shape regardless of `--tui`.
 [CLI conventions](#cli-conventions-multi-value-flags). In static
 mode N≥2 stacks one per-workstream card after another.
 
+<!-- doc-cli-drift:skip-start -->
 > **Migrating from old state surfaces**: `mu state --hud` and
 > `mu state --mission` were removed in v0.4; use `mu state --tui`
 > for the interactive surface and `mu state --json` for the full
 > snapshot. `tmux display-popup -E 'mu state -w X'` keeps working
 > unchanged for popup-card use.
+<!-- doc-cli-drift:skip-end -->
 
 ---
 
@@ -767,7 +771,7 @@ convention):
 | 1    | Agents        | `1`    | `Shift+1` | Active agents + status + cli + role                  |
 | 2    | Tracks        | `2`    | `Shift+2` | Parallel tracks (union-find clusters)                |
 | 3    | Ready (Tasks) | `3`    | `Shift+3` | Ready-to-claim tasks (no open blockers)              |
-| 4    | Activity log  | `4`    | `Shift+4` | Recent `agent_logs` events                           |
+| 4    | Activity log  | `4`    | `Shift+4` | Recent ops rendered as prose                         |
 | 5    | Workspaces    | `5`    | `Shift+5` | Per-agent VCS workspaces + behind/dirty status       |
 | 6    | In-progress   | `6`    | `Shift+6` | IN_PROGRESS tasks owned by agents                    |
 | 7    | Blocked       | `7`    | `Shift+7` | Tasks with at least one open blocker                 |
@@ -1304,9 +1308,8 @@ a worker pane just for a 5-minute job. Two patterns split here:
 
 - **Actor** — anything that *causes* a state change. Includes
   workers, but also includes the orchestrator. May or may not have
-  a row in `agents`. The actor is *always* recorded in the
-  auto-emitted `agent_logs` event for every state change
-  (the `source` field).
+  a row in `agents`. The actor is *always* recorded on the op
+  every state change captures (`ops.actor`).
 
 If the orchestrator tries `mu task claim some-task` directly:
 
@@ -1323,7 +1326,7 @@ Three actionable next steps. Pick one based on intent:
 # Orchestrator does the work itself (most common):
 mu task claim some-task --self --evidence "trivial 5-line fix"
 #   -> tasks.owner_id stays NULL
-#   -> agent_logs records 'task claim some-task by pi-mu --self (anonymous)'
+#   -> the task.claim op records actor='pi-mu' (anonymous claim)
 #   -> mu task show surfaces it as 'owner: (self: pi-mu)'
 
 # Orchestrator dispatches to a worker:
@@ -1351,7 +1354,7 @@ up the most recent `task claim` event for that task and surfaces it:
 owner      : (self: pi-mu)
 ```
 
-So provenance is preserved — it just lives in `agent_logs` rather
+So provenance is preserved — it just lives in `ops.actor` rather
 than being conflated with the FK that points at registered workers.
 
 ---
@@ -1375,7 +1378,7 @@ mu task notes design --tail 3                 # only the last 3 (alias --last)
 mu task notes design --since 2026-01-01       # only notes after an ISO 8601 cutoff
 mu task notes design --since-claim            # only notes since the most recent
                                               # 'task claim' event for this task
-                                              # (auto-resolved from agent_logs)
+                                              # (auto-resolved from the ops log)
 mu task notes design --tail 5 --json          # collection envelope {items, count}
 ```
 
@@ -1476,12 +1479,12 @@ Ready (1)
 Most routine operations have a typed verb — prefer those (and prefer
 `--json` for scripting). `mu sql` is for the rare cases the typed
 verbs don't cover: ad-hoc joins, manual recovery, exploring schema.
-The schema is 8 core tables (`workstreams`, `agents`, `tasks`,
-`task_edges`, `task_notes`, `agent_logs`, `vcs_workspaces`,
-`snapshots`), 5 archive tables (`archives`, `archived_tasks`,
-`archived_edges`, `archived_notes`, `archived_events`), 2 meta tables
-(`schema_version`, `machine_identity`), 1 sync table
-(`workstream_sync`), plus three views (`ready`, `blocked`, `goals`):
+The schema is 10 tables — 4 **portable** (`workstreams`, `tasks`,
+`task_edges`, `task_notes`: the state that crosses machines) and 6
+**machine-local** (`agents`, `vcs_workspaces`, `machine_identity`,
+`sync_peers`, `schema_version`, and the `ops` log itself, which is
+the carrier rather than the cargo) — plus three views (`ready`,
+`blocked`, `goals`):
 
 ```bash
 mu sql "SELECT name FROM sqlite_master WHERE type IN ('table','view') ORDER BY type, name"
@@ -1586,7 +1589,7 @@ mu agent poll -w auth-refactor --json
 
 Per-agent fields: `name`, `status` (last-reconciled runtime status),
 `idleMs` (ms since the row's last update), `lastActivitySeq` (highest
-`agent_logs.seq` sourced by this agent — a monotonic progress cursor to
+`ops.seq` sourced by this agent — a monotonic progress cursor to
 diff tick-over-tick), `workspaceBehind` (commits behind main, or `null`
 when no workspace / uncomputable), and `dead` (true when the pane no
 longer exists in the tmux session). Plain output prints one line per
@@ -1737,7 +1740,7 @@ Two orthogonal flags govern the stall behaviour:
   Two values:
   * `warn` (default) — yellow `STUCK` warning to stderr (deduped per
     task per wait call), corroborating `agent stalled <name> owns
-    <task> for <secs>s` event in `agent_logs`, and `wait` keeps
+    <task> for <secs>s` event in the ops log, and `wait` keeps
     polling. The behaviour pre-`task_wait_stall_action_flag`,
     byte-for-byte.
   * `exit` — same emit + persist, then **exit 7**
@@ -1878,56 +1881,33 @@ rm ~/.local/state/mu/mu.db                  # nuke (last resort; loses task grap
 
 ### You ran a destructive verb and want to undo it
 
-Every destructive verb (`mu task delete`, `mu workstream destroy
---yes`, `mu task close/reject/defer/release`, `mu agent close`,
-`mu workspace free`) auto-captures a
-whole-DB snapshot before it mutates. Restore the latest with
-`mu undo`:
+Every change any verb makes is captured as **ops** under one
+**group**, so undo is per-action rather than per-file. Nothing is
+snapshotted and nothing needs pruning — the ops log already holds
+the history.
 
 ```bash
-mu undo                # dry-run: shows the snapshot summary, does NOT restore
-mu undo --yes          # commit the restore
-mu undo --to 12 --yes  # restore a specific snapshot id
-
-mu snapshot list       # newest-first: id / ver / label / workstream / size
-mu snapshot show 12    # full metadata for one snapshot
-
-# Manual cleanup (auto-GC also runs on every capture)
-mu snapshot prune                  # dry-run summary of the GC policy
-mu snapshot prune --yes            # apply the GC policy now
-mu snapshot prune --keep-last 50 --yes
-mu snapshot prune --older-than 7d --yes
-mu snapshot prune --stale-version --yes  # drop schema_version != current rows
-mu snapshot prune --all --yes      # nuke everything (auto-snapshots a safety-net first)
-mu snapshot delete 12              # surgical removal of one row + its .db file
+mu undo                      # list recent undoable groups (newest first)
+mu undo 4a1a6305             # preview the inverse of one group (dry run)
+mu undo 4a1a6305 --yes       # apply it
+mu undo -n 20                # list more groups
 ```
 
-The `ver` column in `mu snapshot list` shows each snapshot's
-`schema_version`; rows whose version doesn't match the live DB
-(post-schema-bump) render dimmed and are unrestorable
-(`mu undo` raises `SnapshotVersionMismatchError`). Drop them in
-bulk with `mu snapshot prune --stale-version --yes`.
+A group id may be given as any unique prefix. Full semantics —
+granularity, undo-as-an-op (which is also "redo"), and the
+superseded-work refusal plus its `--force` override — are in
+[§ Undoing one action](#undoing-one-action-mu-undo).
 
 Two important caveats:
 
-- **Tmux state is NOT rolled back.** A snapshot is a copy of
-  `mu.db` only. After restore, mu reconciles every workstream and
-  reports `agents pruned` (DB row → dead pane) and `orphan panes
-  surfaced` (live pane the restored DB doesn't know about) so you
-  can see exactly where DB and tmux disagree. On-disk workspace
-  dirs that `mu workspace free` removed are NOT recreated either.
-- **Each restore captures a pre-restore snapshot first.** That
-  means a second `mu undo` rolls forward to the snapshot taken
-  just before the previous restore — there is no separate
-  `mu redo`, and there doesn't need to be.
-
-Snapshots live next to the live DB at
-`<state-dir>/snapshots/<id>.db`. They GC opportunistically:
-on every capture, drop any row past the count cap OR past the
-age cap (whichever fires first). Defaults: keep the 100 newest
-+ everything from the last 14 days. Override with
-`MU_SNAPSHOT_KEEP_LAST` (default 100) / `MU_SNAPSHOT_MAX_AGE_DAYS`
-(default 14); typo'd values fall back to the default.
+- **Only rows are reverted.** Undo emits inverse ops against the
+  portable tables. It does not resurrect a killed tmux pane, an
+  agent registry row, or a workspace directory `mu workspace free`
+  removed — none of those are portable state, so none of them are
+  in the log.
+- **For whole-DB recovery, use `mu rebuild <file>`**, which replays
+  the entire ops log into a NEW file. That is the 2.0 replacement
+  for v1's snapshot restore, and it never writes in place.
 
 ### Workspace orphans (dirs on disk with no DB row)
 
@@ -1960,7 +1940,7 @@ actual paths so you can copy-paste.
 The `workstreams.name` column has `ON UPDATE CASCADE` on every
 child-table foreign key, so renaming a workstream is a single SQL
 statement that propagates atomically through `agents`, `tasks`,
-`agent_logs`, and `vcs_workspaces`:
+`task_notes`, and `vcs_workspaces`:
 
 ```bash
 # 1. Validate the new name fits the rules (or mu will reject it on
@@ -1973,8 +1953,8 @@ mu sql "UPDATE workstreams SET name='auth-refactor' WHERE name='auth-refator'"
 tmux rename-session -t mu-auth-refator mu-auth-refactor
 ```
 
-Mu doesn't ship a typed `mu workstream rename` verb because the
-schema does the work — wrapping a single safe statement adds
+Mu doesn't ship a typed `mu workstream rename` verb <!-- doc-cli-drift:skip --> because the
+schema does the work <!-- doc-cli-drift:skip --> — wrapping a single safe statement adds
 surface area without buying anything (no atomicity to preserve, no
 validation to add, no side effects beyond the optional `tmux
 rename-session`). The recipe above is the canonical answer.
@@ -2032,20 +2012,19 @@ mu workstream destroy --workstream auth-refactor --yes    # actually does it
 mu workstream destroy --yes                                # workstream auto-detected
 
 # Atomic: archive THEN destroy. Refuses if the archive label
-# doesn't already exist (run `mu archive create <label>` first).
+# doesn't already exist (run `mu archive add <label>` first).
 mu workstream destroy -w auth-refactor --archive v0-3-wave --yes
 
 # Sweep every empty workstream (zero tasks, agents, vcs_workspaces)
 # in one call. Tmux session presence and audit-only
-# agent_logs do NOT disqualify. Also surfaces unregistered `mu-*`
+# log entries do NOT disqualify. Also surfaces unregistered `mu-*`
 # tmux sessions (test litter or remnants from a partial destroy that
 # nuked the DB row but left the session behind) — the matching
 # predicate is narrow on purpose: ONLY sessions starting with `mu-`,
 # arbitrary tmux sessions the operator runs for unrelated work are
 # never touched. Mutually exclusive with -w and --archive. Dry-run
 # lists what WOULD be destroyed (created_at renders as `—` for
-# tmux-only entries); --yes captures ONE snapshot for the whole
-# batch and best-effort destroys each.
+# tmux-only entries); --yes best-effort destroys each.
 mu workstream destroy --empty                  # dry-run: table of empties
 mu workstream destroy --empty --yes            # destroy them all
 ```
@@ -2063,10 +2042,11 @@ It's idempotent on every leg: missing tmux session is fine, zero DB
 rows is fine, repeated `mu workstream destroy` against an already-gone workstream
 prints "nothing to destroy" and exits 0.
 
-A whole-DB snapshot is captured before the destroy runs. If you
-regret it, `mu undo --yes` restores the DB — but the tmux session
-that was killed and any per-agent workspace dirs that were freed
-are NOT brought back. See
+Destroy writes TOMBSTONE ops rather than erasing history, so the
+work is still in the ops log afterwards. If you regret it,
+`mu undo <group> --yes` reverses the row deletions — but the tmux
+session that was killed and any per-agent workspace dirs that were
+freed are NOT brought back. See
 [§ 14: You ran a destructive verb and want to undo it](#you-ran-a-destructive-verb-and-want-to-undo-it).
 
 The tmux session is killed BEFORE the DB rows so an unexpected tmux
@@ -2090,8 +2070,9 @@ rm ~/.local/state/mu/mu.db                           # next mu invocation re-cre
 
 A workstream's task graph + notes IS the project memory — the
 durable record of what was decided and why. `mu workstream destroy`
-blows that away (a snapshot is taken, but it's a binary `.db` only
-readable through `mu undo`). For code review, project handoff,
+removes the live rows (the ops log keeps them, but only
+`mu undo` / `mu archive restore` can read them back). For code
+review, project handoff,
 git-checked-in artifacts, or just `grep`, render the workstream as
 plain markdown first.
 
@@ -2175,7 +2156,7 @@ Use the typed surfaces for recovery and movement:
 
 | Need | Verb |
 | ---- | ---- |
-| Lossless un-archive | `mu archive restore <label> --as <new-ws> [--source <orig-ws>]` |
+| Lossless un-archive | `mu archive restore <label> --as <new-ws> [-w <orig-ws>]` (`-w` is omittable when the label pins exactly one workstream) |
 | Laptop ↔ devserver handoff | Ambient **sync** — set `MU_SYNC_DIR` and every command carries it (§ 15.6) |
 | Peer status / a torn segment | `mu sync`, `mu sync --repair <peer>` |
 | Disaster recovery from the ops log | `mu rebuild <file>` |
@@ -2523,9 +2504,12 @@ service of those three.
 
 ---
 
-## What's NOT in 0.4.1 (and how to work around it)
+## What's NOT in 2.0 (and how to work around it)
 
+<a id="whats-not-in-041-and-how-to-work-around-it"></a>
 <a id="whats-not-in-050-and-how-to-work-around-it"></a>
+
+<!-- doc-cli-drift:skip-start -->
 
 The full roadmap with promotion criteria lives in
 [ROADMAP.md](ROADMAP.md). The short list of gaps you might hit
@@ -2541,6 +2525,7 @@ in real use:
 | ~~`mu task blocked`~~ (removed; the `blocked` SQL view is the abstraction) | `mu sql "SELECT b.local_id, b.status, b.title FROM blocked b JOIN workstreams w ON w.id=b.workstream_id WHERE w.name='X'"` | removed-with-recipe |
 | ~~`mu task goals`~~ (removed; same shape as `blocked` — view is the abstraction) | `mu sql "SELECT g.local_id, g.status, g.title FROM goals g JOIN workstreams w ON w.id=g.workstream_id WHERE w.name='X'"` | removed-with-recipe |
 | ~~`mu task search <pat>`~~ (removed; case-insensitive LIKE is one SQL line) | `mu sql "SELECT t.local_id, t.status, t.title FROM tasks t JOIN workstreams w ON w.id=t.workstream_id WHERE w.name='X' AND LOWER(t.title) LIKE '%pat%'"` (add `LEFT JOIN task_notes` for the old `--in-notes`; drop the workstream join/filter for the old `--all`) | removed-with-recipe |
+<!-- doc-cli-drift:skip-end -->
 
 Anything in this table that bites you in real use is a candidate
 for **promotion**. Criteria: proven friction in ≥2 real workflows +

@@ -332,12 +332,12 @@ speaking for another.
   *policy* (when to spawn, what to assign, when to free) is yours —
   expressed as bash scripts, jq pipelines over `--json` output, or
   driven by an LLM through the bundled skill. There is no JS DSL,
-  no workflow engine, no `mu run script.ts`. (See
+  no workflow engine, no `mu run script.ts`. <!-- doc-cli-drift:skip --> (See
   [§ What looking at a prior multi-agent runtime taught us](#what-looking-at-a-prior-multi-agent-runtime-taught-us).)
 - **Not a build tool.** mu doesn't compile, test, or deploy your code.
   It runs agents that do those things.
 - **Not a chat protocol.** Agents communicate through the work graph
-  (notes, claim, status) and the `agent_logs` activity channel.
+  (notes, claim, status) and the **ops log** read through `mu log`.
 - **Not a replacement for pi-subagents.** Different problem (persistent
   crew vs one-shot focused delegation). Install both; they share the
   agent-frontmatter format.
@@ -467,13 +467,13 @@ something mu explicitly does not have.
 | Council critique of the prior runtime                         | mu's stance                                                                |
 | ------------------------------------------------------------- | -------------------------------------------------------------------------- |
 | "Sprawling product identities (TUI + web + Thrift + plugin host + workflow engine + chat + docs + memory + ...)" | One CLI, one SQLite file, no plugins, no web UI, no Thrift, no chat/docs integrations. |
-| "Workflow DSL is mostly liability"                            | Rejected outright. No `mu run`/`eval`/`repl`. `--json` + bash + jq cover the scripting story. |
+| "Workflow DSL is mostly liability"                            | Rejected outright. No `mu run`/`eval`/`repl`. <!-- doc-cli-drift:skip --> `--json` + bash + jq cover the scripting story. |
 | "defineOperation/verb-registry adds entropy without consumers" | Rejected. The commander wiring in `src/cli.ts` is the verb surface; one place. |
 | "Plugin sprawl with hidden state and lifecycle bugs"          | No plugins. Adding behaviour is a typed verb in `src/cli.ts`.              |
 | "CLI verbs as a primary model surface vs. typed mutations"    | mu's verbs *are* the typed mutations. CLI is a thin wrapper over a typed SDK with idempotency, validation, exit-code-mapped errors. |
 | "Raw SQL as the only inspection surface is too low-level"     | `mu state` is the canonical state card. `--json` everywhere. `mu sql` is the escape hatch beneath, not the cockpit. |
 | "Distinguish observed from claimed state"                     | `--evidence` on lifecycle verbs (first inch). The verb still trusts the caller; the audit trail records grounding. |
-| "Approval primitives belong in the core"                      | **REMOVED post-v0.3 wave.** Shipped as `mu approve add/list/grant/deny/wait` in v0.1; zero usage across 200+ tasks of dogfood through v0.2 + v0.3. Anti-anticipatory pruning per VISION.md "no traits with zero implementors". May return when a real second implementor surfaces (e.g., an unattended pi-orchestrator running mu). |
+| "Approval primitives belong in the core"                      | **REMOVED post-v0.3 wave.** <!-- doc-cli-drift:skip --> Shipped as `mu approve add/list/grant/deny/wait` in v0.1; zero usage across 200+ tasks of dogfood through v0.2 + v0.3. Anti-anticipatory pruning per VISION.md "no traits with zero implementors". May return when a real second implementor surfaces (e.g., an unattended pi-orchestrator running mu). |
 | "Reads must distinguish provenance (process telemetry vs agent self-report)" | event `source` field attributes events to actor (claiming agent / decider / 'system'). |
 | "State must be authoritative and recoverable, not just durable" | Reconciliation runs on read paths; reaper recovers stuck IN_PROGRESS automatically. |
 

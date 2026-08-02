@@ -245,7 +245,7 @@ Don't use them in mu code or docs:
 | "instance"       | Vague; could be agent / workstream / process                     | The specific thing                                   |
 | "broker"         | Implies pub-sub middleware; we don't have one                    | "log entry" or be specific                           |
 | "checkpoint"     | Implies recoverable savepoints in the work                       | "marker" (pins the ops log), "group" (undo unit)  |
-| "snapshot"       | Retired in 2.0 along with the `snapshots` table and whole-DB file swaps | "marker", "backup" (for `mu db backup`)     |
+| "snapshot"       | Retired in 2.0 along with the `snapshots` table and whole-DB file swaps | "marker"; "backup" for a whole-DB copy      |
 | "agent type"     | "Type" implies a class hierarchy; mu has no class system | "agent role" (scout/reviewer/etc.)                   |
 | "agent definition" / "agent template" / "agent role doc" | mu has no template/definition concept. Spawn flags + the orchestrator's prompt are the only "definition" | Just describe the spawn invocation directly |
 | "worker"         | "worker" is the name of one specific built-in agent              | "agent" (general); "the worker" only when referring to that specific agent |
@@ -286,6 +286,7 @@ Removed in 2.0: `mu db export` / `mu db import` / `mu db replay`
 (replaced by the **ops log**), `mu archive create` / `remove` /
 `delete` (labels are created by first use; **markers** are
 append-only), and `mu peers` (folded into bare `mu sync`).
+<!-- doc-cli-drift:skip-end -->
 A one-off directory needs no flag — `MU_SYNC_DIR=/mnt/usb mu state`
 ingests from a USB stick using the existing env-var idiom.
 
@@ -299,7 +300,7 @@ ingests from a USB stick using the existing env-var idiom.
 > else — scoping, modifiers, payload — is a flag.**
 
 `mu task close <id>`, `mu agent send <name> <text>`,
-`mu archive show <label>`, `mu workstream init <name>`. The
+`mu archive list <label>`, `mu workstream init <name>`. The
 workstream is a *scope* for most verbs, hence `-w`; but under the
 `mu workstream` namespace the workstream IS the primary entity, so
 `destroy` and `export` accept it positionally as an alias for `-w`

@@ -245,14 +245,16 @@ git cherry-pick "$sha" && npm test
 - Qualified refs `<workstream>/<name>` skip `-w`; mismatched `-w`
   errors. Bare ambiguous names raise `NameAmbiguousError` (exit 4)
   with one-paste fixes.
-- `--evidence "text"` on task `claim/close/open/release`; recorded
-  verbatim in emitted events.
+- `--evidence "text"` on task `claim` / `close` / `open` / `release`
+  (also `reject` / `defer`); recorded verbatim on the emitted op.
 - `--json` for composition; `nextSteps` survives.
 
 ## CLI overview (only gotchas; use `--help` for full syntax)
 
-- **Workstream:** `init`, `list`, `destroy` (auto-snapshot;
-  `--archive <label>` preserves graph), `export` (read-only
+- **Workstream:** `init`, `list`, `destroy` (dry-run by default,
+  `--yes` commits; writes TOMBSTONE ops so history survives and
+  `mu undo <group> --yes` reverses the row deletions;
+  `--archive <label>` pins the graph first), `export` (read-only
   markdown bucket for humans/git/docs).
 - **Agents:** `spawn` (`--workspace`, `--role read-only`,
   `--command`), `ensure` (idempotent spawn-or-reuse; `--idle-only`
@@ -320,8 +322,8 @@ git cherry-pick "$sha" && npm test
   into a NEW DB file and prints the `mv` command to swap it in; it
   never rebuilds in place. Agents and workspaces are NOT rebuilt (no
   capture triggers, so no ops) and the summary says so — re-spawn
-  agents after swapping. (The v1 `mu db export/import/replay` verbs
-  are gone in 2.0; the ops log replaces them.)
+  agents after swapping. The v1 `db` and `snapshot` namespaces are
+  gone in 2.0; the ops log replaces them. <!-- doc-cli-drift:skip -->
 - **State/TUI:** bare `mu` opens the all-workstream TUI on a TTY;
   agents/scripts use `mu state --json`. `mu state --tui` is
   read-only, yanks commands, `?` shows keys, `/` filters popups,
