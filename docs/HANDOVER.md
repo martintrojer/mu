@@ -163,6 +163,42 @@ SKILL.md content; see
 
 This section captures only the orchestrator-only deltas:
 
+### Always `/new` before a brief — then VERIFY DELIVERY
+
+Four steps, in this order, every single dispatch:
+
+```
+mu workspace recreate worker-N -w <ws>
+mu agent send worker-N -w <ws> '/new'
+mu agent send worker-N -w <ws> "$(cat /tmp/<slug>.txt)"
+mu agent read worker-N -w <ws> -n 3     # must show nonzero context
+```
+
+**Why `/new`:** without it every task inherits the previous task's
+prompt, notes, and tool output. Measured on a real session: by wave 6
+both workers sat at 65-68% of an 800k context and cost per task had
+climbed from ~$5 to ~$35. A worker that hits the ceiling mid-task
+either compacts (losing the brief) or stalls, which is far more
+expensive than a reset. The reason orchestrators stopped sending
+`/new` — the post-`/new` send drop — is fixed (see the note below), so
+the exemption is gone.
+
+**Why step 4:** an undelivered brief is INVISIBLE. Both sends exit 0,
+the pane sits idle, and you find out ~300s later when `mu task wait
+--on-stall exit` returns 7. That cost ~30 minutes twice in one
+session. `mu agent read -n 3` showing nonzero context is the cheap
+check; `--json` exposing `delivered: false` is the precise one.
+
+**Caveat, and it is why step 4 is not optional:** an orchestrator runs
+the INSTALLED mu, which is older than the branch build it is driving
+work on. The send-delivery fix may not be in the binary doing the
+dispatching. Until 2.0 is installed, treat `/new` as slightly racy
+from the orchestrator seat and always verify.
+
+Worker-side `/new` mechanics are
+[SKILL.md §Follow-on prompts](../skills/mu/SKILL.md); this section is
+the orchestrator's obligation, which is different.
+
 ### Design notes belong in `/tmp/<slug>.txt`
 
 Write the worker prompt to `/tmp/<task-slug>.txt` BEFORE attaching
@@ -178,16 +214,10 @@ mu agent send worker-N -w <ws> "$(cat /tmp/<slug>.txt)"
 The `sleep 2` that used to sit between those sends is gone: it was a
 race, not a fix. `mu agent send` now waits for the pane to finish
 re-initialising and re-submits a swallowed Enter
-(`dogfood-send-after-new-dropped`). Previously the second send could
-land in the input box and never submit — both sends exit 0, the pane
-sits at `needs_input` with 0.0% context, and you only find out ~300s
-later when `mu task wait --on-stall exit` returns 7.
-
-If a send cannot be confirmed, it prints `warning: ... was NOT
-submitted` to stderr and names the pane. **Exit 0 with no warning now
-means submitted** — but the old orchestrator habit is still cheap
-insurance for a big dispatch: `mu agent read worker-N -n 5` should
-show nonzero context before you enter a long wait.
+(`dogfood-send-after-new-dropped`), and prints `warning: ... was NOT
+submitted` to stderr, naming the pane, when it cannot confirm.
+**Exit 0 with no warning means submitted** — in the branch build.
+Verify anyway; see the caveat above.
 
 A good note has these sections (full list lives in
 [SKILL.md §Task note contract](../skills/mu/SKILL.md), expanded

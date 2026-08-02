@@ -1006,6 +1006,14 @@ markers land in follow-up work.
   `skills/mu/SKILL.md`, `docs/HANDOVER.md`, and `docs/USAGE_GUIDE.md`
   drop the `sleep` from the clear-then-send recipe.
 
+  `docs/HANDOVER.md` § the dispatch loop now states the four-step rule
+  the fix unblocks — `workspace recreate` → `/new` → brief → VERIFY
+  DELIVERY — with the measured cost of skipping `/new` (workers at
+  65-68% of an 800k context by wave 6; ~$5 → ~$35 per task) and the
+  caveat that an orchestrator runs the INSTALLED mu, so the send fix
+  may not be in the binary doing the dispatching. Verification is not
+  optional until 2.0 is installed.
+
 - **Blank (whitespace-only) list-flag fragments no longer silently
   vanish (`bug_whitespace_status_fragment`).** `parseCsvFlag` trimmed
   fragments and dropped every empty result, which conflated two
