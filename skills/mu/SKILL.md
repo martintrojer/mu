@@ -249,30 +249,22 @@ git cherry-pick "$sha" && npm test
   `mu undo <group> --yes` reverses the row deletions;
   `--archive <label>` pins the graph first), `export` (read-only
   markdown bucket for humans/git/docs).
-- **Agents:** `spawn` (`--workspace`, `--role read-only`,
-  `--command`), `ensure` (idempotent spawn-or-reuse; `--idle-only`
-  makes an existing busy agent a conflict/lock-held signal), `send`,
-  `read`, `show`, `list`, `poll`, `reap-idle`, `wait`,
-  `close`, `free`, `kick`, `adopt <pane-id|title>` for orphan panes.
-  `mu agent wait <names...> --first` blocks until an agent finishes
-  (busy → any other state) — the task-less counterpart to `mu task
-  wait` for scratch/off-the-cuff helpers that own no task. Exit 0 met,
-  5 timeout, 6 a watched pane died. Use this instead of `sleep` loops.
-  `mu agent ensure <name>` is the watcher-safe spawn: missing → spawn,
-  existing idle/free → reuse and exit 0, existing busy/spawning/
-  needs_permission → reuse by default with `busy: true`; add
-  `--idle-only` when you want a concurrency lock that fails (exit 4)
-  instead of reusing the busy agent.
-  `mu agent poll` is its non-blocking dual: a single read-only snapshot
-  of the whole pool (`{name,status,idleMs,lastActivitySeq,
-  workspaceBehind,dead}` per agent; `--json` => `{items,count}`) for a
-  `/watch` loop or orchestrator tick to diff against the previous tick.
-  `mu agent reap-idle` is the one-line graveyard cleanup for the scratch
-  `fixer-N` pile-up: it sweeps and closes finished, idle, SAFE helpers
-  (status needs_input/needs_permission/free, idle `>= --idle-for`,
-  default 300s). It skips any dirty workspace by default (no lossy
-  surprise; `--discard-dirty` to override), supports `--dry-run`, and
-  `--json` returns `{items,count}` with per-agent `action`/skip `reason`.
+- **Agents:** `spawn` (`--workspace`, `--role read-only`, `--command`),
+  `send`, `read`, `show`, `list`, `close`, `free`, `kick`,
+  `adopt <pane-id|title>` for orphan panes. Four worth knowing:
+  - `wait <names...> --first` — blocks until an agent finishes (busy →
+    anything else). The task-less counterpart to `mu task wait`, for
+    helpers that own no task. Exit 0 met, 5 timeout, 6 pane died. Use
+    it instead of `sleep` loops.
+  - `ensure <name>` — watcher-safe spawn: missing → spawn, idle → reuse
+    and exit 0, busy → reuse with `busy: true`. `--idle-only` turns the
+    busy case into exit 4, i.e. a concurrency lock.
+  - `poll` — the non-blocking dual of `wait`: one read-only snapshot of
+    the pool (`{name,status,idleMs,lastActivitySeq,workspaceBehind,
+    dead}`) for a tick loop to diff against the previous tick.
+  - `reap-idle` — sweeps and closes finished, idle, SAFE helpers
+    (`--idle-for`, default 300s). Skips dirty workspaces unless
+    `--discard-dirty`; `--dry-run` supported.
 - **Tasks:** `add` (`--note` for initial context), `list`, `next`,
   `show`, `tree`, `notes`
   (`--tail`, `--since`, `--since-claim`), `note`, `claim`
@@ -298,19 +290,17 @@ git cherry-pick "$sha" && npm test
   an op in its own group, so REDO is just `mu undo <that group> --yes`
   and it syncs to peers. Refuses with exit 4 if a later action changed
   the same fields (`--force` to override, discarding that newer work).
+  Rows only — killed panes and freed workspace dirs do not come back.
   There are no snapshots and no `--to`.
 - **Archives:** an archive is a named MARKER pinning a point in the ops
-  log, not a copy. Four verbs: `add <label> -w <ws>` (creates the label
-  on first use), `list [label]`, `restore <label> --as <new-ws>`
-  (dry-run by default, `--yes` applies; `-w` picks the source when a
-  label covers several), `export <label> --out <dir>` (markdown, same
-  renderer as `workstream export`). `mu workstream destroy --archive
-  <label>` pins before destroying. Labels are global.
-  Because destroy writes TOMBSTONES rather than erasing history, an
-  archive still restores after its workstream is gone. There is no
-  `create` / `remove` / `delete` / `search` / `show`: a label with no
-  markers pins nothing, markers are append-only ops, and `list
-  <label>` is the detail view.
+  log, not a copy — so it still restores after its workstream is gone
+  (destroy writes tombstones, it does not erase history). Verbs:
+  `add <label> -w <ws>` (creates the label on first use), `list
+  [label]`, `restore <label> --as <new-ws>` (dry-run; `--yes` applies,
+  `-w` picks the source when a label covers several), `export <label>
+  --out <dir>`. `mu workstream destroy --archive <label>` pins first.
+  Labels are global. No `create`/`remove`/`delete`/`search`/`show` —
+  markers are append-only and `list <label>` is the detail view.
 - **Recovery:** `mu rebuild <file>` replays the ops log in HLC order
   into a NEW DB file and prints the `mv` command to swap it in; it
   never rebuilds in place. Agents and workspaces are NOT rebuilt (no
@@ -321,26 +311,36 @@ git cherry-pick "$sha" && npm test
   read-only, yanks commands, `?` shows keys, `/` filters popups,
   `Esc`/`q` back, `q`/`Ctrl-C` quits. Non-TTY bare `mu` (or
   `MU_NO_TUI=1`) prints help.
-- **Sync (laptop <-> devserver):** ONE env var turns it on, on every
-  machine: `export MU_SYNC_DIR=$HOME/Sync/mu` pointing at a shared
-  folder (Syncthing recommended). Then EVERY mu command flushes your
-  ops and ingests every peer's — ambient, no daemon, so a bare `mu task
-  list` on the other box already shows what you just added. `mu sync`
-  bare = the PEER STATUS report (machine, last seen, ops behind) and
-  prints a copy-pasteable rsync line when a peer is stale; mu never
-  runs ssh/scp/rsync itself. Two flags: `--from <path-to-peer-mu.db>`
-  (read a peer's ops table directly — sshfs or a copied file) and
-  `--repair <peer>` (re-read that peer's segment from zero; always
-  safe, ingest is idempotent). A one-off directory needs no flag:
-  `MU_SYNC_DIR=/media/usb mu state`. Merge is per-FIELD LWW, so two
-  machines editing different fields of one task keep both — concurrent
-  editing is fine. NEVER put `MU_DB_PATH` inside `MU_SYNC_DIR` (it
-  corrupts the DB; `mu doctor` hard-fails). Agent/workspace state and
-  task OWNERSHIP are machine-local and never travel.
+- **Sync (laptop <-> devserver):** `export MU_SYNC_DIR=$HOME/Sync/mu`
+  on each machine, pointing at a shared folder (Syncthing recommended).
+  Every mu command then flushes your ops and ingests peers' — ambient,
+  no daemon, so a bare `mu task list` on the other box already shows
+  what you added here. Merge is per-FIELD, so two machines editing
+  different fields of one task both keep their edit.
+  `mu sync` bare = peer status (machine, last seen, ops behind), plus a
+  copy-pasteable rsync line when a peer is stale; mu never runs
+  ssh/scp/rsync itself. `--from <peer-mu.db>` reads a peer's ops table
+  directly (sshfs or a copy); `--repair <peer>` re-reads a segment from
+  zero and is always safe (ingest is idempotent). One-off directory
+  needs no flag: `MU_SYNC_DIR=/media/usb mu state`.
+  NEVER put `MU_DB_PATH` inside `MU_SYNC_DIR` — it corrupts the DB and
+  `mu doctor` hard-fails. Agent/workspace state and task OWNERSHIP are
+  machine-local and never travel.
 - **Escape hatch:** `mu sql "<query>"` for missing typed verbs. Note
   this is the ONE verb that does not ambient-sync (its no-surprise-
   mutations guarantee is load-bearing).
-- **Health:** `mu doctor`.
+- **Backup:** `mu db backup <file>` — `VACUUM INTO` copy of the whole
+  DB, never overwrites. The "one file I can scp" convenience; real
+  recovery is `mu rebuild`.
+- **Health:** `mu doctor` (fast checks, exit 0) and `mu doctor --deep`,
+  which rebuilds the ops log into a temp DB and diffs it field-by-field
+  against the live tables. DRIFT means the log and the tables disagree,
+  and since undo / archive / sync are all derived from the log, drift
+  breaks all three at once — exit 5, naming table, key and field. It is
+  a capture bug, not operator error: back up first and report it, do
+  NOT reflexively rebuild (if capture missed a mutation, the live rows
+  hold the real work). Run it after anything unusual; ~0.6ms per op, so
+  it stays off the default `mu doctor` path.
 
 ## `mu task wait` exits
 
@@ -420,14 +420,6 @@ stderr naming the pane; exit 0 with no warning means submitted.
 
 Budget is `MU_SEND_READINESS_MS` (default 15000; 0 = fire-and-forget).
 Sending to a BUSY agent is not delayed — that input queues normally.
-
-## Recover destructive verbs
-
-`mu undo` lists recent actions and their group ids; `mu undo <group>`
-previews; `mu undo <group> --yes` applies. It reverts ONE action by
-emitting inverse ops, and is itself undoable. Rows only: killed panes
-and freed workspace dirs do not return. For whole-DB recovery use
-`mu rebuild <file>`.
 
 ## DO / DON'T
 
