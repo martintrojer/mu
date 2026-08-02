@@ -6,7 +6,7 @@
 import { Box, Text, useInput } from "ink";
 import { useMemo, useState } from "react";
 import { HELP_PANES } from "./keymap-spec.js";
-import { type PopupAction, dispatchPopupKeyFromInk } from "./keys.js";
+import { dispatchPopupKeyFromInk, type PopupAction } from "./keys.js";
 import { applyScroll, clampScrollTop, isNavAction } from "./popups/scroll.js";
 import { TitledBox } from "./titled-box.js";
 import { useTerminalSize } from "./use-terminal-size.js";

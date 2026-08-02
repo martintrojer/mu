@@ -24,12 +24,12 @@ import {
 import type { Db } from "../db.js";
 import { emitEvent } from "../logs.js";
 import {
-  PaneNotFoundError,
-  type TmuxPane,
   listPanesInSession,
+  PaneNotFoundError,
   paneExists,
   parseAgentNameFromTitle,
   setPaneTitle,
+  type TmuxPane,
 } from "../tmux.js";
 import { AgentExistsError, AgentNotInWorkstreamError } from "./errors.js";
 

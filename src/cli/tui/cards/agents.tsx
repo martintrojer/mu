@@ -15,9 +15,9 @@
 
 import { Text } from "ink";
 import {
-  type WorkstreamSnapshot,
   agentStatusHistogram,
   summarizeOwnedTasks,
+  type WorkstreamSnapshot,
 } from "../../../state.js";
 import { agentStatusGlyph } from "../agent-display.js";
 import {

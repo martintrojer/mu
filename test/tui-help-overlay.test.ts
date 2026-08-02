@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
-  HelpView,
   applyHelpScroll,
   flattenHelpRows,
+  HelpView,
   helpPositionLabel,
   helpViewport,
 } from "../src/cli/tui/help.js";

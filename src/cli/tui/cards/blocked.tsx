@@ -61,8 +61,8 @@
 //   Until then, Shift+7 (`&`) stays a reserved noop in keys.ts.
 
 import type { Db } from "../../../db.js";
-import { type WorkstreamSnapshot, roiBucket } from "../../../state.js";
-import { type TaskEdgeWithStatus, getTaskEdgesWithStatus } from "../../../tasks.js";
+import { roiBucket, type WorkstreamSnapshot } from "../../../state.js";
+import { getTaskEdgesWithStatus, type TaskEdgeWithStatus } from "../../../tasks.js";
 import { inkColorForStatus } from "../../format.js";
 import {
   type ColumnSpec,

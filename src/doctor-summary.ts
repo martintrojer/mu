@@ -34,7 +34,7 @@
 // "all healthy" line so the operator's eye learns to read the
 // presence of rows as "something needs attention."
 
-import { CURRENT_SCHEMA_VERSION, type Db, EXPECTED_TABLES, defaultDbPath } from "./db.js";
+import { CURRENT_SCHEMA_VERSION, type Db, defaultDbPath, EXPECTED_TABLES } from "./db.js";
 import { checkCheapDriftInvariant } from "./drift.js";
 import { checkFleetHazards } from "./fleet-hazards.js";
 import type { WorkstreamSnapshot } from "./state.js";

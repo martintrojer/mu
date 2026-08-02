@@ -6,7 +6,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { SHOW_COMMIT_MAX_CHARS, gitBackend } from "../src/vcs.js";
+import { gitBackend, SHOW_COMMIT_MAX_CHARS } from "../src/vcs.js";
 
 const ANSI_RE = new RegExp(`${String.fromCharCode(0x1b)}\\[`);
 

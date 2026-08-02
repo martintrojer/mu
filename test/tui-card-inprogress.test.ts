@@ -3,13 +3,13 @@
 
 import { describe, expect, it } from "vitest";
 import {
-  InProgressCard,
-  STALE_CLAIM_THRESHOLD_MS,
   ageMs,
   formatSinceClaim,
   formatSubtitle,
   glyphFor,
+  InProgressCard,
   isStale,
+  STALE_CLAIM_THRESHOLD_MS,
 } from "../src/cli/tui/cards/inprogress.js";
 import type { WorkstreamSnapshot } from "../src/state.js";
 import type { TaskRow } from "../src/tasks.js";

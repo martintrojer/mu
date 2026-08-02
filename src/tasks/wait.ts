@@ -266,6 +266,10 @@ export async function waitForTasks(
           WHERE a.name = ? AND ws.name = ?`,
       )
       .get(owner, workstream) as { status: string; updated_at: string } | undefined;
+    // The explicit `!row` guard narrows `row` for the `row.updated_at` below;
+    // `row?.status !== ...` reads the same but leaves `row` possibly-undefined,
+    // so the next line stops compiling under strict.
+    // biome-ignore lint/complexity/useOptionalChain: narrowing, see above
     if (!row || row.status !== "needs_input") return false;
     const ageMs = Date.now() - new Date(row.updated_at).getTime();
     return ageMs >= stuckAfterMs;

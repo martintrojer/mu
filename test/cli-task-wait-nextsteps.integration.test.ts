@@ -18,7 +18,7 @@ import { insertAgent } from "../src/agents.js";
 import { type Db, openDb } from "../src/db.js";
 import { addTask, claimTask, closeTask } from "../src/tasks.js";
 import { resetTmuxExecutor, setTmuxExecutor } from "../src/tmux.js";
-import { type WorkspaceRow, createWorkspace } from "../src/workspace.js";
+import { createWorkspace, type WorkspaceRow } from "../src/workspace.js";
 import { ensureWorkstream } from "../src/workstream.js";
 import { runCli } from "./_runCli.js";
 

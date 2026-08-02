@@ -12,7 +12,7 @@
 // that came after it are never replayed.
 
 import { randomUUID } from "node:crypto";
-import { type Op, applyOp } from "../apply.js";
+import { applyOp, type Op } from "../apply.js";
 import {
   type ArchiveMarker,
   ArchiveNotFoundError,

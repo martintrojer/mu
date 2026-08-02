@@ -31,8 +31,8 @@ import { ReadyPopup } from "../src/cli/tui/popups/ready.js";
 import { RecentPopup } from "../src/cli/tui/popups/recent.js";
 import { type Db, openDb } from "../src/db.js";
 import type { WorkstreamSnapshot } from "../src/state.js";
-import { type TaskRow, addTask, listTasks, setTaskStatus } from "../src/tasks.js";
 import { sortTasks } from "../src/tasks/sort.js";
+import { addTask, listTasks, setTaskStatus, type TaskRow } from "../src/tasks.js";
 import {
   CaptureStream,
   createInkCaptureStream,

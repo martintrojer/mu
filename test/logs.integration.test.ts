@@ -6,8 +6,8 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type Db, openDb } from "../src/db.js";
 import { appendLog, lastClaimActor, latestSeq, listLogs } from "../src/logs.js";
-import { addTask } from "../src/tasks.js";
 import { claimTask } from "../src/tasks/claim.js";
+import { addTask } from "../src/tasks.js";
 import { ensureWorkstream } from "../src/workstream.js";
 
 describe("logs SDK", () => {

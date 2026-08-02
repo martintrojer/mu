@@ -10,18 +10,18 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { relTime } from "../src/cli.js";
 import { inkColorForStatus, relTimeAgo } from "../src/cli/format.js";
+import { relTime } from "../src/cli.js";
 import { type Db, openDb } from "../src/db.js";
 import {
-  TASK_STATUS_LIST,
-  TaskExistsError,
   addTask,
   idFromTitle,
   isTaskStatus,
   isValidTaskId,
   slugifyTitle,
   slugifyTitleVerbose,
+  TASK_STATUS_LIST,
+  TaskExistsError,
 } from "../src/tasks.js";
 
 // ─── Setup / teardown ──────────────────────────────────────────────────

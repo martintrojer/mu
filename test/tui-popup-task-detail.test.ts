@@ -12,7 +12,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { TaskDetailDrill, renderNotes } from "../src/cli/tui/popups/task-detail.js";
+import { renderNotes, TaskDetailDrill } from "../src/cli/tui/popups/task-detail.js";
 import { type Db, openDb } from "../src/db.js";
 import { addNote, addTask } from "../src/tasks.js";
 import { ensureWorkstream } from "../src/workstream.js";

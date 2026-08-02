@@ -19,13 +19,13 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Text, render } from "ink";
+import { render, Text } from "ink";
 import { createElement, useEffect, useRef } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import { renderNotes } from "../src/cli/tui/popups/task-detail.js";
 import { useNotesDrill } from "../src/cli/tui/use-notes-drill.js";
 import { type Db, openDb } from "../src/db.js";
-import { type TaskRow, addNote, addTask, listTasks } from "../src/tasks.js";
+import { addNote, addTask, listTasks, type TaskRow } from "../src/tasks.js";
 import { CaptureStream, createInkCaptureStream, waitForInkOutput } from "./_ink-render.js";
 
 const openDbs: Db[] = [];

@@ -12,12 +12,10 @@ import {
   resolveEntityRef,
   resolveWorkstream,
 } from "../cli.js";
-import { type Db, WorkstreamNotFoundError, tryResolveWorkstreamId } from "../db.js";
+import { type Db, tryResolveWorkstreamId, WorkstreamNotFoundError } from "../db.js";
 import { type NextStep, pc, printNextSteps } from "../output.js";
 import type { VcsBackendName } from "../vcs.js";
 import {
-  type StrandedWorkspaceOrphan,
-  WorkspaceNotFoundError,
   createWorkspace,
   decorateWithStaleness,
   freeWorkspace,
@@ -28,6 +26,8 @@ import {
   listWorkspaces,
   recreateWorkspace,
   refreshWorkspace,
+  type StrandedWorkspaceOrphan,
+  WorkspaceNotFoundError,
 } from "../workspace.js";
 
 export async function cmdWorkspaceCreate(
@@ -345,7 +345,7 @@ export async function cmdWorkspaceOrphans(
 // every per-namespace builder lives next to its cmd functions.
 
 import type { Command } from "commander";
-import { JSON_OPT, WORKSTREAM_OPT, handle } from "../cli.js";
+import { handle, JSON_OPT, WORKSTREAM_OPT } from "../cli.js";
 
 export function wireWorkspaceCommands(program: Command): void {
   const workspace = program

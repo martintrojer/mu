@@ -9,7 +9,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { buildProgram } from "../src/cli.js";
-import { type DocCommandProblem, checkDocCommand, extractDocCommands } from "./_doc-commands.js";
+import { checkDocCommand, type DocCommandProblem, extractDocCommands } from "./_doc-commands.js";
 
 const ROOT = join(import.meta.dirname, "..");
 

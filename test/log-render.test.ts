@@ -15,9 +15,9 @@
 import { describe, expect, it } from "vitest";
 import {
   KNOWN_INTENTS,
-  type RenderableOp,
   opSubject,
   parseOpKey,
+  type RenderableOp,
   renderOp,
   renderOpLine,
 } from "../src/log-render.js";

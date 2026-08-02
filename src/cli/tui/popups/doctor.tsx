@@ -43,11 +43,11 @@ import {
 import type { WorkstreamSnapshot } from "../../../state.js";
 import { colorForStatus, glyphFor } from "../cards/doctor.js";
 import { type ColumnSpec, contentWidthFromCols, layoutColumns, renderRow } from "../columns.js";
-import { type PopupAction, type PopupActionEnvelope, dispatchPopupKeyFromInk } from "../keys.js";
+import { dispatchPopupKeyFromInk, type PopupAction, type PopupActionEnvelope } from "../keys.js";
 import { ListRow } from "../list-row.js";
 import { PopupShell } from "../popup-shell.js";
 import { usePopupActionQueue } from "../use-popup-action-queue.js";
-import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
+import { applyFilter, FilterPrompt, usePopupFilter } from "../use-popup-filter.js";
 import { useTerminalSize } from "../use-terminal-size.js";
 import { DrillScrollView, useDrillKeymap } from "./drill.js";
 import { applyCursor, centredVisibleSlice, isNavAction } from "./scroll.js";

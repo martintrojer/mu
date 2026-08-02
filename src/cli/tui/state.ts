@@ -39,11 +39,11 @@ import { useEffect, useRef, useState } from "react";
 import type { Db } from "../../db.js";
 import {
   type LoadWorkstreamSnapshotOptions,
-  type WorkstreamSnapshot,
-  type WorkstreamSnapshotSlowFields,
   loadWorkstreamSnapshotFast,
   loadWorkstreamSnapshotSlow,
   mergeSnapshotFastSlow,
+  type WorkstreamSnapshot,
+  type WorkstreamSnapshotSlowFields,
 } from "../../state.js";
 import { ambientSyncPass, syncEnabled } from "../../sync.js";
 import type { CardId } from "./layout.js";

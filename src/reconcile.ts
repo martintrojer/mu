@@ -15,7 +15,7 @@
 import * as agentSdk from "./agents.js";
 import type { Db } from "./db.js";
 import { detectPiStatus } from "./detect.js";
-import { type TmuxPane, capturePane, listPanesInSession } from "./tmux.js";
+import { capturePane, listPanesInSession, type TmuxPane } from "./tmux.js";
 
 /**
  * What kind of reconciliation pass to run.

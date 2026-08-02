@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { sortTasks, TASK_SORT_KEYS, type TaskSortKey } from "../src/tasks/sort.js";
 import type { TaskRow } from "../src/tasks.js";
-import { TASK_SORT_KEYS, type TaskSortKey, sortTasks } from "../src/tasks/sort.js";
 
 function row(over: {
   name: string;

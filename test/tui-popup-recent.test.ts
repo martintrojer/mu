@@ -15,15 +15,15 @@ import { render } from "ink";
 import { createElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { insertAgent } from "../src/agents.js";
-import { RecentPopup, formatRoi, yankCommandForTask } from "../src/cli/tui/popups/recent.js";
+import { formatRoi, RecentPopup, yankCommandForTask } from "../src/cli/tui/popups/recent.js";
 import { type Db, openDb } from "../src/db.js";
 import type { WorkstreamSnapshot } from "../src/state.js";
 import { addNote, addTask, listTasks, setTaskStatus } from "../src/tasks.js";
 import {
   CaptureStream,
-  type InkInputStream,
   createInkCaptureStream,
   createInkInputStream,
+  type InkInputStream,
   latestRenderedFrame,
   simulateInput,
   waitForInkOutput,

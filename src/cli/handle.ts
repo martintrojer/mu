@@ -43,26 +43,26 @@ import {
   ArchiveNotFoundError,
   ArchiveRestoreTargetExistsError,
 } from "../archives.js";
-import { type Db, SchemaTooOldError, WorkstreamNotFoundError, openDb } from "../db.js";
+import { type Db, openDb, SchemaTooOldError, WorkstreamNotFoundError } from "../db.js";
 import { DriftDetectedError } from "../drift.js";
 import { GroupIdAmbiguousError } from "../logs.js";
 import {
-  type NextStep,
-  type UsageJson,
   hasNextSteps,
   isJsonMode,
+  type NextStep,
   pc,
   printNextStepsTo,
   printUsageHuman,
   renderUsageJson,
+  type UsageJson,
 } from "../output.js";
 import { RebuildTargetExistsError, RebuildTargetIsSourceError } from "../rebuild.js";
 import {
+  ambientFlush,
+  ambientIngest,
   SyncPeerNotFoundError,
   SyncPeerRefAmbiguousError,
   SyncSourceNotFoundError,
-  ambientFlush,
-  ambientIngest,
   syncEnabled,
 } from "../sync.js";
 import {

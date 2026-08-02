@@ -38,8 +38,8 @@
 //                Both cases land here and the test can pattern-match
 //                on which.
 
-import { buildProgram, injectBareNamespaceHelp } from "../src/cli.js";
 import { emitParseError, findCommandForArgv } from "../src/cli/handle.js";
+import { buildProgram, injectBareNamespaceHelp } from "../src/cli.js";
 
 export interface Capture {
   stdout: string;

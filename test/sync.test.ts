@@ -11,8 +11,8 @@
 import {
   mkdirSync,
   mkdtempSync,
-  readFileSync,
   readdirSync,
+  readFileSync,
   rmSync,
   utimesSync,
   writeFileSync,
@@ -23,17 +23,17 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type Db, openDb } from "../src/db.js";
 import { flushSegment, localMachineId, segmentPath, syncPass } from "../src/segments.js";
 import {
-  PEER_STALE_MS,
-  SyncPeerNotFoundError,
-  SyncPeerRefAmbiguousError,
-  SyncSourceNotFoundError,
   ambientFlush,
   ambientIngest,
   ambientSyncPass,
   ingestFromDb,
+  PEER_STALE_MS,
   peerStatuses,
   repairPeer,
   resolvePeerRef,
+  SyncPeerNotFoundError,
+  SyncPeerRefAmbiguousError,
+  SyncSourceNotFoundError,
   syncEnabled,
   transportNextSteps,
 } from "../src/sync.js";

@@ -3,10 +3,10 @@
 import type { Db } from "../db.js";
 import { emitEvent } from "../logs.js";
 import {
+  backendByName,
   type VcsBackend,
   type VcsBackendName,
   WorkspaceDirtyError,
-  backendByName,
 } from "../vcs.js";
 import { WorkspaceNotFoundError, type WorkspaceRow } from "./core.js";
 import {

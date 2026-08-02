@@ -43,7 +43,7 @@ import { resetSleep, resetTmuxExecutor, setSleepForTests, setTmuxExecutor } from
 import { listWorkspaces, workspacePath } from "../src/workspace.js";
 import { ensureWorkstream } from "../src/workstream.js";
 import { runCli } from "./_runCli.js";
-import { type MockState, freshMockState, mockTmux } from "./_verbs-mock.js";
+import { freshMockState, type MockState, mockTmux } from "./_verbs-mock.js";
 
 // ─── Helpers ──────────────────────────────────────────────────────────
 

@@ -24,15 +24,15 @@ import {
   insertAgent,
   listLiveAgents,
 } from "../src/agents.js";
-import { IDLE_GLYPH, formatAgentsTable } from "../src/cli.js";
+import { formatAgentsTable, IDLE_GLYPH } from "../src/cli.js";
 import { type Db, openDb } from "../src/db.js";
-import { addTask } from "../src/tasks.js";
 import { setTaskStatus } from "../src/tasks/lifecycle.js";
+import { addTask } from "../src/tasks.js";
 import {
-  type TmuxExecResult,
-  type TmuxExecutor,
   resetTmuxExecutor,
   setTmuxExecutor,
+  type TmuxExecResult,
+  type TmuxExecutor,
 } from "../src/tmux.js";
 
 const originalNoColor = process.env.NO_COLOR;

@@ -1,9 +1,9 @@
-import { Box, Text, render } from "ink";
+import { Box, render, Text } from "ink";
 import { createElement } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import {
-  type CardId,
   allocateRowBudgets,
+  type CardId,
   columnWidths,
   cullCardsForRows,
   layoutColumns,

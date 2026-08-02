@@ -13,16 +13,16 @@
 //     needing `mu log` (whose group surface is v2-log-verb's).
 //   * `--json` shape + a `Next:` block on every path.
 
-import { JSON_OPT, emitJson, handle } from "../cli.js";
+import { emitJson, handle, JSON_OPT } from "../cli.js";
 import type { Db } from "../db.js";
 import { type NextStep, pc, printNextSteps } from "../output.js";
 import {
   type GroupSummary,
-  NothingToUndoError,
-  type UndoPlan,
   listRecentGroups,
+  NothingToUndoError,
   planUndo,
   resolveGroupId,
+  type UndoPlan,
   undoGroup,
 } from "../undo.js";
 

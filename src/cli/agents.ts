@@ -14,13 +14,13 @@ import {
   type AdoptAgentOptions,
   type AdoptAgentResult,
   AgentNotFoundError,
-  type KickSignal,
   adoptAgent,
   closeAgent,
   ensureAgent,
   freeAgent,
   getAgent,
   isKickSignal,
+  type KickSignal,
   kickAgent,
   listLiveAgents,
   pollAgents,
@@ -36,7 +36,6 @@ import {
   waitForAgents,
 } from "../agents.js";
 import {
-  UsageError,
   applyQualifiedRef,
   assertAgentInWorkstream,
   emitJson,
@@ -46,19 +45,20 @@ import {
   resolveSelf,
   resolveWorkstream,
   statusIcon,
+  UsageError,
 } from "../cli.js";
 import type { Db } from "../db.js";
 import { detectPiStatus } from "../detect.js";
 import { type NextStep, pc, printNextSteps } from "../output.js";
 import { listTasksByOwner } from "../tasks.js";
 import {
-  type SendWarning,
   capturePane,
   enableMuPaneBordersForPane,
   listPanesInSession,
+  type SendWarning,
   sessionExists,
 } from "../tmux.js";
-import { type VcsBackendName, detectBackend } from "../vcs.js";
+import { detectBackend, type VcsBackendName } from "../vcs.js";
 import { getWorkspaceForAgent } from "../workspace.js";
 import { checkWorkspaceStalenessForDispatch } from "./staleness.js";
 
@@ -889,12 +889,12 @@ export async function cmdAgentWait(
 
 import type { Command } from "commander";
 import {
-  JSON_OPT,
-  WORKSTREAM_OPT,
   handle,
+  JSON_OPT,
   normalizeInheritedWorkstream,
   parseLines,
   parseNonNegativeInt,
+  WORKSTREAM_OPT,
 } from "../cli.js";
 // wireSelfCommands needs cmdMyTasks / cmdMyNext which live in cli/tasks.ts
 // (they're task queries scoped to the resolved-self agent). Lateral

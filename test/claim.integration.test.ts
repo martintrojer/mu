@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { spawnAgent } from "../src/agents.js";
 import { type Db, openDb } from "../src/db.js";
-import { TaskNotFoundError, addTask, claimTask, getTask } from "../src/tasks.js";
+import { addTask, claimTask, getTask, TaskNotFoundError } from "../src/tasks.js";
 import { killSession, resetTmuxExecutor } from "../src/tmux.js";
 import { freshWorkstream } from "./_fixture.js";
 

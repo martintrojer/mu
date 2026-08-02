@@ -33,7 +33,7 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Text, render } from "ink";
+import { render, Text } from "ink";
 import { createElement, useEffect, useRef } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import {

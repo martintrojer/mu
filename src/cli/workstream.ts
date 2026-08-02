@@ -12,14 +12,14 @@
 import { join } from "node:path";
 import { addArchiveMarker } from "../archives.js";
 import {
-  UsageError,
   emitJson,
   emitJsonCollection,
   formatWorkstreamsTable,
   resolveWorkstream,
+  UsageError,
 } from "../cli.js";
 import { type Db, defaultStateDir } from "../db.js";
-import { type NextStep, muTable, pc, printNextSteps } from "../output.js";
+import { muTable, type NextStep, pc, printNextSteps } from "../output.js";
 import { resolveActorIdentity } from "../tasks.js";
 import {
   enableMuPaneBordersForSession,
@@ -534,7 +534,7 @@ async function cmdDestroyEmpty(
 // every per-namespace builder lives next to its cmd functions.
 
 import type { Command } from "commander";
-import { JSON_OPT, WORKSTREAM_OPT, handle } from "../cli.js";
+import { handle, JSON_OPT, WORKSTREAM_OPT } from "../cli.js";
 
 /** Fold an optional positional workstream name into the opts bag.
  *

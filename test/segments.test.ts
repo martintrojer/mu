@@ -12,7 +12,6 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type Db, openDb } from "../src/db.js";
 import { withOpContext } from "../src/op-context.js";
 import {
-  SEGMENT_FORMAT_VERSION,
   discoverPeers,
   flushSegment,
   getWatermark,
@@ -20,6 +19,7 @@ import {
   localMachineId,
   readManifest,
   resetWatermark,
+  SEGMENT_FORMAT_VERSION,
   segmentPath,
   syncDir,
   syncPass,

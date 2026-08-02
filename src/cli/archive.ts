@@ -19,20 +19,20 @@
 // workstream), typed errors mapped by handle().
 
 import type { Command } from "commander";
-import { type ArchiveSummary, addArchiveMarker, getArchive, listArchives } from "../archives.js";
 import { exportArchive } from "../archives/export.js";
 import { restoreArchive } from "../archives/restore.js";
+import { type ArchiveSummary, addArchiveMarker, getArchive, listArchives } from "../archives.js";
 import {
-  JSON_OPT,
-  UsageError,
-  WORKSTREAM_OPT,
   emitJson,
   emitJsonCollection,
   handle,
+  JSON_OPT,
   resolveWorkstream,
+  UsageError,
+  WORKSTREAM_OPT,
 } from "../cli.js";
 import type { Db } from "../db.js";
-import { type NextStep, muTable, pc, printNextSteps } from "../output.js";
+import { muTable, type NextStep, pc, printNextSteps } from "../output.js";
 import { resolveActorIdentity } from "../tasks.js";
 
 // ─── add ──────────────────────────────────────────────────────────────

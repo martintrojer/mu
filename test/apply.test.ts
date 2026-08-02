@@ -14,11 +14,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  applyOp,
+  applyOps,
   type Op,
   OpEntityNotSyncedError,
   OpKeyMalformedError,
-  applyOp,
-  applyOps,
 } from "../src/apply.js";
 import { type Db, openDb } from "../src/db.js";
 import { formatHlc } from "../src/hlc.js";

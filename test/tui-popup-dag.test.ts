@@ -1,22 +1,22 @@
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Box, Text, render } from "ink";
+import { Box, render, Text } from "ink";
 import { createElement, useEffect, useRef } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import { cellWidth } from "../src/cli/tui/columns.js";
 import type { PopupAction } from "../src/cli/tui/keys.js";
 import {
-  DagPopup,
   buildDagBody,
+  DagPopup,
   dagYankCommand,
   truncateDagBody,
 } from "../src/cli/tui/popups/dag.js";
 import { useDrillKeymap } from "../src/cli/tui/popups/drill.js";
 import { loadFullDag, renderForest } from "../src/dag.js";
 import { type Db, openDb } from "../src/db.js";
-import { type TaskRow, addBlockEdge, addTask, setTaskStatus } from "../src/tasks.js";
 import { TASK_STATUSES } from "../src/tasks/status.js";
+import { addBlockEdge, addTask, setTaskStatus, type TaskRow } from "../src/tasks.js";
 import { CaptureStream, createInkCaptureStream, waitForInkOutput } from "./_ink-render.js";
 
 let openDbs: Db[] = [];

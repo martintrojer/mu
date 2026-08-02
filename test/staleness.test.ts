@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { WORKSPACE_STALE_THRESHOLD, isWorkspaceStale } from "../src/staleness.js";
+import { isWorkspaceStale, WORKSPACE_STALE_THRESHOLD } from "../src/staleness.js";
 
 describe("workspace staleness threshold", () => {
   it("marks null and values below 10 as fresh, and 10+ as stale", () => {

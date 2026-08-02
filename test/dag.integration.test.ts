@@ -4,8 +4,8 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { formatTreeNodeLabel, loadFullDag, renderForest, renderTaskTree } from "../src/dag.js";
 import { type Db, openDb } from "../src/db.js";
-import { addBlockEdge, addTask, setTaskStatus } from "../src/tasks.js";
 import type { TaskStatus } from "../src/tasks/status.js";
+import { addBlockEdge, addTask, setTaskStatus } from "../src/tasks.js";
 
 let openDbs: Db[] = [];
 

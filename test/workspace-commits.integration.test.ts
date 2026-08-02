@@ -17,18 +17,17 @@
 // test/workspace-backends.integration.test.ts.
 
 import { execFileSync } from "node:child_process";
-import { existsSync } from "node:fs";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { insertAgent } from "../src/agents.js";
 import { type Db, openDb } from "../src/db.js";
-import { WorkspaceVcsRequiredError, gitBackend, jjBackend } from "../src/vcs.js";
+import { gitBackend, jjBackend, WorkspaceVcsRequiredError } from "../src/vcs.js";
 import {
-  WorkspaceNotFoundError,
   createWorkspace,
   listCommitsForWorkspace,
+  WorkspaceNotFoundError,
 } from "../src/workspace.js";
 import { ensureWorkstream } from "../src/workstream.js";
 import { runCli } from "./_runCli.js";

@@ -18,14 +18,11 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type Db, openDb } from "../src/db.js";
 import {
-  CrossWorkstreamEdgeError,
-  CycleError,
-  TaskExistsError,
-  TaskIdInvalidError,
-  TaskNotFoundError,
   addBlockEdge,
   addNote,
   addTask,
+  CrossWorkstreamEdgeError,
+  CycleError,
   deleteTask,
   getPrerequisites,
   getTask,
@@ -36,6 +33,9 @@ import {
   listTasks,
   removeBlockEdge,
   reparentTask,
+  TaskExistsError,
+  TaskIdInvalidError,
+  TaskNotFoundError,
   updateTask,
 } from "../src/tasks.js";
 import { resetTmuxExecutor } from "../src/tmux.js";

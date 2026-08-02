@@ -20,11 +20,11 @@
 
 import type { Db } from "./db.js";
 import {
-  STATUSES_TERMINAL_OR_PARKED,
-  type TaskRow,
   getPrerequisites,
   listGoals,
   listReady,
+  STATUSES_TERMINAL_OR_PARKED,
+  type TaskRow,
 } from "./tasks.js";
 
 export interface Track {

@@ -9,23 +9,23 @@ import { Box, Text, useInput } from "ink";
 import { useMemo, useState } from "react";
 import type { Db } from "../../../db.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
-import { type TaskRow, listTasks } from "../../../tasks.js";
 import {
-  TASK_SORT_KEYS,
-  type TaskSortKey,
   relTimeBasisForSort,
   sortTasks,
+  TASK_SORT_KEYS,
+  type TaskSortKey,
 } from "../../../tasks/sort.js";
+import { listTasks, type TaskRow } from "../../../tasks.js";
 import { inkColorForStatus } from "../../format.js";
 import { agentByName, formatAgentRefDisplayName } from "../agent-display.js";
 import { type ColumnSpec, contentWidthFromCols, layoutColumns, renderRow } from "../columns.js";
 import { formatRoi } from "../format-helpers.js";
-import { type PopupAction, type PopupActionEnvelope, dispatchPopupKeyFromInk } from "../keys.js";
+import { dispatchPopupKeyFromInk, type PopupAction, type PopupActionEnvelope } from "../keys.js";
 import { ListRow } from "../list-row.js";
 import { PopupShell } from "../popup-shell.js";
 import { useNotesDrill } from "../use-notes-drill.js";
 import { usePopupActionQueue } from "../use-popup-action-queue.js";
-import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
+import { applyFilter, FilterPrompt, usePopupFilter } from "../use-popup-filter.js";
 import { StatusFilterStrip, useStatusFilter } from "../use-status-filter.js";
 import { useTerminalSize } from "../use-terminal-size.js";
 import { useDrillKeymap } from "./drill.js";
@@ -326,7 +326,11 @@ function SortStrip({
   sortKey,
   visible,
   total,
-}: { sortKey: TaskSortKey; visible: number; total: number }): JSX.Element {
+}: {
+  sortKey: TaskSortKey;
+  visible: number;
+  total: number;
+}): JSX.Element {
   return (
     <Box>
       <Text dimColor>

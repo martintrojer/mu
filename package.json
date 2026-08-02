@@ -1,6 +1,6 @@
 {
   "name": "@martintrojer/mu",
-  "version": "0.4.5",
+  "version": "1.0.0",
   "description": "A persistent, observable crew of pi agents running in one tmux session per workstream, coordinated through a built-in task DAG.",
   "publishConfig": {
     "access": "public"
@@ -39,7 +39,13 @@
   "bin": {
     "mu": "./dist/cli.js"
   },
-  "files": ["dist", "skills", "docs", "README.md", "AGENTS.md"],
+  "files": [
+    "dist",
+    "skills",
+    "docs",
+    "README.md",
+    "AGENTS.md"
+  ],
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
@@ -65,11 +71,11 @@
     "string-width": "^4.2.3"
   },
   "devDependencies": {
-    "@biomejs/biome": "^1.9.4",
-    "@types/better-sqlite3": "^7.6.12",
-    "@types/node": "^22.10.7",
+    "@biomejs/biome": "^2.5.6",
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/node": "^26.1.2",
     "@types/react": "^18.0.0",
-    "fast-check": "^4.8.0",
+    "fast-check": "^4.9.0",
     "tsup": "^8.3.5",
     "typescript": "^5.7.3",
     "vitest": "^2.1.8"

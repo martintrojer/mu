@@ -14,7 +14,7 @@ import {
 } from "../src/cli/tui/cards/blocked.js";
 import { type Db, openDb } from "../src/db.js";
 import type { WorkstreamSnapshot } from "../src/state.js";
-import { type TaskEdgeWithStatus, type TaskRow, addBlockEdge, addTask } from "../src/tasks.js";
+import { addBlockEdge, addTask, type TaskEdgeWithStatus, type TaskRow } from "../src/tasks.js";
 import { expectTextAbsent, expectTextOnce, renderCardToText } from "./_card-render.js";
 import { findListRowByCell } from "./_jsx-find.js";
 

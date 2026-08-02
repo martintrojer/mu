@@ -34,6 +34,7 @@ afterAll(() => {
     process.env.NO_COLOR = originalNoColor;
   }
 });
+
 import { runCli } from "./_runCli.js";
 
 // ── default mode (full top-to-bottom card) ─────────────────────────

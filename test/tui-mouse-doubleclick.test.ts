@@ -9,7 +9,7 @@ import type { PopupActionEnvelope } from "../src/cli/tui/keys.js";
 import { ReadyPopup } from "../src/cli/tui/popups/ready.js";
 import { type Db, openDb } from "../src/db.js";
 import type { WorkstreamSnapshot } from "../src/state.js";
-import { type TaskRow, addTask } from "../src/tasks.js";
+import { addTask, type TaskRow } from "../src/tasks.js";
 import { CaptureStream, createInkCaptureStream, createInkInputStream } from "./_ink-render.js";
 
 let dir = "";

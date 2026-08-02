@@ -23,7 +23,7 @@ import {
   WorkspacePreservedError,
 } from "../src/agents.js";
 import { NameAmbiguousError } from "../src/cli.js";
-import { SchemaTooOldError, WorkstreamNotFoundError, openDb } from "../src/db.js";
+import { openDb, SchemaTooOldError, WorkstreamNotFoundError } from "../src/db.js";
 import { hasNextSteps } from "../src/output.js";
 import {
   ClaimerNotRegisteredError,

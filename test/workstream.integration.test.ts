@@ -13,19 +13,19 @@ import { insertAgent, listAgents } from "../src/agents.js";
 import { type Db, openDb } from "../src/db.js";
 import { addNote, addTask, listTasks } from "../src/tasks.js";
 import {
-  type TmuxExecResult,
-  type TmuxExecutor,
   resetTmuxExecutor,
   setTmuxExecutor,
+  type TmuxExecResult,
+  type TmuxExecutor,
 } from "../src/tmux.js";
-import { type VcsBackend, noneBackend } from "../src/vcs.js";
+import { noneBackend, type VcsBackend } from "../src/vcs.js";
 import {
-  WorkstreamNameInvalidError,
   destroyWorkstream,
   ensureWorkstream,
   isValidWorkstreamName,
   listWorkstreams,
   summarizeWorkstream,
+  WorkstreamNameInvalidError,
 } from "../src/workstream.js";
 
 // ─── v5 vcs_workspaces test helper ───

@@ -28,7 +28,7 @@ import { withOpContext } from "./op-context.js";
 import type { HasNextSteps, NextStep } from "./output.js";
 import { parkedStatus } from "./parked.js";
 import { killSession, listSessions, sessionExists, tmux } from "./tmux.js";
-import { type VcsBackend, type VcsBackendName, backendByName } from "./vcs.js";
+import { backendByName, type VcsBackend, type VcsBackendName } from "./vcs.js";
 import { listWorkspaces } from "./workspace.js";
 
 /**

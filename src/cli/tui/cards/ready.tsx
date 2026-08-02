@@ -12,7 +12,7 @@
 // CLIPPABLE.
 
 import { Text } from "ink";
-import { type WorkstreamSnapshot, roiBucket } from "../../../state.js";
+import { roiBucket, type WorkstreamSnapshot } from "../../../state.js";
 import { inkColorForStatus } from "../../format.js";
 import { agentByName, formatAgentRefDisplayName } from "../agent-display.js";
 import {

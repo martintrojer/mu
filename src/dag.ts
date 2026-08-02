@@ -6,8 +6,8 @@
 
 import pc from "picocolors";
 import type { Db } from "./db.js";
-import { type TaskRow, getTask, listTasks } from "./tasks.js";
 import type { TaskStatus } from "./tasks/status.js";
+import { getTask, listTasks, type TaskRow } from "./tasks.js";
 
 // One-line marker appended to a tree node when its subtree was already
 // rendered earlier in the forest (DAG diamond collapse). Symbol-only

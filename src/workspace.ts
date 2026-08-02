@@ -4,35 +4,35 @@
 // src/workspace/ cluster. This root file preserves the public
 // `import { ... } from "./workspace.js"` surface.
 
-export { WORKSPACE_STALE_THRESHOLD, isWorkspaceStale } from "./staleness.js";
+export { isWorkspaceStale, WORKSPACE_STALE_THRESHOLD } from "./staleness.js";
 export {
   HomeDirAsProjectRootError,
   type RawWorkspaceRow,
+  rowFromDb,
   SELECT_WS_COLS,
-  WS_FROM_JOIN,
   WorkspaceExistsError,
   WorkspaceNotFoundError,
   WorkspacePathNotEmptyError,
   type WorkspaceRow,
   type WorkspaceStaleness,
-  rowFromDb,
+  WS_FROM_JOIN,
   workspacePath,
   workspacesRoot,
 } from "./workspace/core.js";
 export {
   type CreateWorkspaceOptions,
+  createWorkspace,
   type FreeWorkspaceOptions,
   type FreeWorkspaceResult,
-  type ListCommitsOptions,
-  type ListCommitsResult,
-  type RefreshWorkspaceOptions,
-  type RefreshWorkspaceResult,
-  createWorkspace,
   freeWorkspace,
   getWorkspaceForAgent,
   isWorkspaceClean,
+  type ListCommitsOptions,
+  type ListCommitsResult,
   listCommitsForWorkspace,
   listWorkspaces,
+  type RefreshWorkspaceOptions,
+  type RefreshWorkspaceResult,
   refreshWorkspace,
 } from "./workspace/crud.js";
 export {
@@ -41,10 +41,10 @@ export {
   getWorkspaceStaleness,
 } from "./workspace/decorate.js";
 export {
-  type StrandedWorkspaceOrphan,
-  type WorkspaceOrphan,
   listAllOrphanWorkspaces,
   listWorkspaceOrphans,
+  type StrandedWorkspaceOrphan,
+  type WorkspaceOrphan,
 } from "./workspace/orphans.js";
 export {
   type RecreateWorkspaceOptions,

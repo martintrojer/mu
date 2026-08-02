@@ -7,23 +7,23 @@ import { AgentNotFoundError } from "../agents/errors.js";
 import { type Db, tryResolveWorkstreamId } from "../db.js";
 import { emitEvent } from "../logs.js";
 import {
+  backendByName,
   type CommitSummary,
+  detectBackend,
   type RebaseResult,
   type VcsBackend,
   type VcsBackendName,
-  backendByName,
-  detectBackend,
 } from "../vcs.js";
 import {
   HomeDirAsProjectRootError,
   type RawWorkspaceRow,
+  rowFromDb,
   SELECT_WS_COLS,
-  WS_FROM_JOIN,
   WorkspaceExistsError,
   WorkspaceNotFoundError,
   WorkspacePathNotEmptyError,
   type WorkspaceRow,
-  rowFromDb,
+  WS_FROM_JOIN,
   workspacePath,
 } from "./core.js";
 

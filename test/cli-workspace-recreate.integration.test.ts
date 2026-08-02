@@ -27,10 +27,10 @@ import { AgentNotFoundError, insertAgent } from "../src/agents.js";
 import { type Db, openDb } from "../src/db.js";
 import { WorkspaceDirtyError } from "../src/vcs.js";
 import {
-  WorkspaceNotFoundError,
   createWorkspace,
   getWorkspaceForAgent,
   recreateWorkspace,
+  WorkspaceNotFoundError,
 } from "../src/workspace.js";
 import { ensureWorkstream } from "../src/workstream.js";
 import { runCli } from "./_runCli.js";

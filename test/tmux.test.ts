@@ -6,11 +6,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { STATUS_EMOJI } from "../src/agents.js";
 import {
-  PANE_ID_RE,
-  PaneNotFoundError,
-  TmuxError,
-  type TmuxExecResult,
-  type TmuxExecutor,
   assertValidPaneId,
   capturePane,
   defaultSendDelayMs,
@@ -26,6 +21,8 @@ import {
   newSession,
   newSessionWithPane,
   newWindow,
+  PANE_ID_RE,
+  PaneNotFoundError,
   paneExists,
   paneTTY,
   parseAgentNameFromTitle,
@@ -38,6 +35,9 @@ import {
   setSleepForTests,
   setTmuxExecutor,
   splitWindow,
+  TmuxError,
+  type TmuxExecResult,
+  type TmuxExecutor,
   tmux,
 } from "../src/tmux.js";
 

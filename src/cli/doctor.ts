@@ -13,11 +13,11 @@
 
 import { listLiveAgents } from "../agents.js";
 import { emitJson, resolveWorkstream } from "../cli.js";
-import { CURRENT_SCHEMA_VERSION, type Db, EXPECTED_TABLES, defaultDbPath } from "../db.js";
+import { CURRENT_SCHEMA_VERSION, type Db, defaultDbPath, EXPECTED_TABLES } from "../db.js";
 import {
-  DriftDetectedError,
   checkCheapDriftInvariant,
   checkDrift,
+  DriftDetectedError,
   driftRemediation,
   formatDriftRecord,
 } from "../drift.js";
@@ -446,7 +446,7 @@ function countBlocked(db: Db, workstream: string): number {
 // every per-namespace builder lives next to its cmd functions.
 
 import type { Command } from "commander";
-import { JSON_OPT, handle } from "../cli.js";
+import { handle, JSON_OPT } from "../cli.js";
 
 export function wireDoctorCommand(program: Command): void {
   program

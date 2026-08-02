@@ -11,23 +11,23 @@ import type { Db } from "./db.js";
 import { type DoctorSummary, loadDoctorSummary } from "./doctor-summary.js";
 import { type LogRow, listLogs } from "./logs.js";
 import {
-  type TaskRow,
   listBlocked,
   listInProgress,
   listReady,
   listRecentClosed,
   listTasks,
   listTasksByOwner,
+  type TaskRow,
 } from "./tasks.js";
-import { type Track, getParallelTracks } from "./tracks.js";
-import { type CommitSummary, type VcsBackendName, detectBackend } from "./vcs.js";
+import { getParallelTracks, type Track } from "./tracks.js";
+import { type CommitSummary, detectBackend, type VcsBackendName } from "./vcs.js";
 import {
-  type WorkspaceOrphan,
-  type WorkspaceRow,
   decorateWithDirty,
   decorateWithStaleness,
   listWorkspaceOrphans,
   listWorkspaces,
+  type WorkspaceOrphan,
+  type WorkspaceRow,
 } from "./workspace.js";
 
 // ─── WorkstreamSnapshot ───────────────────────────────────────────

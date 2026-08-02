@@ -34,9 +34,9 @@
 import { Text } from "ink";
 import type { WorkstreamSnapshot } from "../../../state.js";
 import {
+  isWorkspaceStale,
   WORKSPACE_STALE_THRESHOLD,
   type WorkspaceRow,
-  isWorkspaceStale,
 } from "../../../workspace.js";
 import { agentByName, formatAgentRefDisplayName } from "../agent-display.js";
 import {

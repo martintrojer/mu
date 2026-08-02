@@ -7,9 +7,9 @@ import type { Db } from "../db.js";
 import { type NextStep, pc } from "../output.js";
 import { TaskClaimStaleWorkspaceError } from "../tasks.js";
 import {
+  getWorkspaceStaleness,
   WORKSPACE_STALE_THRESHOLD,
   type WorkspaceStaleness,
-  getWorkspaceStaleness,
 } from "../workspace.js";
 
 export interface StalenessCheckResult {

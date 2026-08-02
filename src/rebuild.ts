@@ -61,8 +61,8 @@
 
 import { existsSync, mkdirSync, statSync } from "node:fs";
 import { dirname } from "node:path";
-import { type Op, applyOp } from "./apply.js";
-import { type Db, SYNCED_ENTITIES, openDb } from "./db.js";
+import { applyOp, type Op } from "./apply.js";
+import { type Db, openDb, SYNCED_ENTITIES } from "./db.js";
 import { compareHlc } from "./hlc.js";
 import { withCaptureSuppressed } from "./op-context.js";
 import type { HasNextSteps, NextStep } from "./output.js";

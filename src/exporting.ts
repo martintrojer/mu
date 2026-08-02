@@ -36,9 +36,9 @@ import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Db } from "./db.js";
 import { latestSeq } from "./logs.js";
-import { getTaskEdges, listNotes, listTasks } from "./tasks.js";
-import type { TaskNoteRow, TaskRow } from "./tasks.js";
 import { isTaskStatus } from "./tasks/status.js";
+import type { TaskNoteRow, TaskRow } from "./tasks.js";
+import { getTaskEdges, listNotes, listTasks } from "./tasks.js";
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -489,7 +489,7 @@ function inferTaskSummaryFromMarkdown(
     return fallback;
   }
   const lines = raw.split("\n");
-  const firstFence = lines.findIndex((line) => line === "---");
+  const firstFence = lines.indexOf("---");
   if (firstFence < 0) return fallback;
   let secondFence = -1;
   for (let i = firstFence + 1; i < lines.length; i += 1) {

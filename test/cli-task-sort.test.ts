@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { TASK_SORT_KEYS, parseSortOption } from "../src/cli.js";
+import { parseSortOption, TASK_SORT_KEYS } from "../src/cli.js";
 
 describe("parseSortOption", () => {
   it("accepts every key in TASK_SORT_KEYS verbatim", () => {

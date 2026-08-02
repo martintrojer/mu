@@ -22,13 +22,12 @@ import { join } from "node:path";
 import { execa } from "execa";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
-  type KickProcessExecutor,
-  NoForegroundProcessError,
-  type AgentNotFoundError as _AgentNotFoundError,
   foregroundPgid,
   insertAgent,
   isKickSignal,
+  type KickProcessExecutor,
   kickAgent,
+  NoForegroundProcessError,
   parsePsTtyOutput,
   resetKickProcessExecutor,
   setKickProcessExecutor,

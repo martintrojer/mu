@@ -23,7 +23,7 @@ import {
 import type { Db } from "../db.js";
 import { detectPiStatus } from "../detect.js";
 import { emitEvent } from "../logs.js";
-import { type NextStep, isJsonMode } from "../output.js";
+import { isJsonMode, type NextStep } from "../output.js";
 import {
   capturePane,
   enableMuPaneBordersForPane,

@@ -56,16 +56,16 @@ import { type Op, reprojectDeferredOps } from "./apply.js";
 import { type Db, SYNCED_ENTITIES } from "./db.js";
 import type { NextStep } from "./output.js";
 import {
-  type FlushResult,
-  type IngestResult,
-  type SegmentDefect,
   applyIncomingOp,
   discoverPeers,
+  type FlushResult,
   flushSegment,
   getWatermark,
+  type IngestResult,
   ingestSegment,
   localMachineId,
   resetWatermark,
+  type SegmentDefect,
   segmentLineCount,
   syncDir,
 } from "./segments.js";

@@ -16,7 +16,7 @@
 //     element introspection (no renderer needed) — same trick the
 //     existing src/cli/tui tests use.
 
-import { readFileSync, readdirSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { isValidElement } from "react";
 import { describe, expect, it } from "vitest";

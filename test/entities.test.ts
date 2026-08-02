@@ -16,10 +16,10 @@ import {
   type Db,
   EXPECTED_TABLES,
   MACHINE_LOCAL_TABLES,
+  openDb,
   PORTABLE_TABLES,
   SYNCED_ENTITIES,
   type SyncedEntity,
-  openDb,
 } from "../src/db.js";
 
 describe("syncability constants", () => {

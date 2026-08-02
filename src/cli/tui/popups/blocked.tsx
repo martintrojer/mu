@@ -27,7 +27,7 @@
 // Per ROADMAP pledge: ink/react import limited to src/cli/tui/*.
 
 import { useMemo } from "react";
-import { type WorkstreamSnapshot, roiBucket } from "../../../state.js";
+import { roiBucket, type WorkstreamSnapshot } from "../../../state.js";
 import { getTaskEdgesWithStatus } from "../../../tasks.js";
 import { inkColorForStatus } from "../../format.js";
 import { glyphFor, stillGating } from "../cards/blocked.js";

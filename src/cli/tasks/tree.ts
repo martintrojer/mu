@@ -14,7 +14,7 @@ import { assertTaskInWorkstream, colorStatus, emitJson, resolveEntityRef } from 
 import { renderTaskTree } from "../../dag.js";
 import type { Db } from "../../db.js";
 import { pc } from "../../output.js";
-import { TaskNotFoundError, type TaskRow, getTask, getTaskEdges } from "../../tasks.js";
+import { getTask, getTaskEdges, TaskNotFoundError, type TaskRow } from "../../tasks.js";
 
 interface TreeOpts {
   /** Show dependents (what this task blocks) instead of blockers. */

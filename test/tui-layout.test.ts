@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
-  type CardId,
   allocateRowBudgets,
   balanceColumns,
+  type CardId,
   columnWidths,
   cullCardsForRows,
   dashboardColumnCount,

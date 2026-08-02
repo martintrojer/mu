@@ -21,16 +21,16 @@ import { AgentNotFoundError, insertAgent } from "../src/agents.js";
 import { type Db, openDb } from "../src/db.js";
 import type { VcsBackend } from "../src/vcs.js";
 import {
-  HomeDirAsProjectRootError,
-  WorkspaceExistsError,
-  WorkspaceNotFoundError,
-  WorkspacePathNotEmptyError,
   createWorkspace,
   freeWorkspace,
   getWorkspaceForAgent,
+  HomeDirAsProjectRootError,
   listAllOrphanWorkspaces,
   listWorkspaceOrphans,
   listWorkspaces,
+  WorkspaceExistsError,
+  WorkspaceNotFoundError,
+  WorkspacePathNotEmptyError,
   workspacePath,
 } from "../src/workspace.js";
 import { ensureWorkstream } from "../src/workstream.js";

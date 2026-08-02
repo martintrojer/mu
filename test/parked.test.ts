@@ -18,9 +18,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type Db, openDb } from "../src/db.js";
-import { WORKSTREAM_PARKED_THRESHOLD_DAYS, parkedStatus } from "../src/parked.js";
-import { addTask } from "../src/tasks.js";
+import { parkedStatus, WORKSTREAM_PARKED_THRESHOLD_DAYS } from "../src/parked.js";
 import { setTaskStatus } from "../src/tasks/lifecycle.js";
+import { addTask } from "../src/tasks.js";
 import { ensureWorkstream } from "../src/workstream.js";
 
 let dir: string;

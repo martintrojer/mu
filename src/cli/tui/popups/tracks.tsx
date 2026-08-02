@@ -31,17 +31,17 @@ import { Box, Text, useInput } from "ink";
 import { useEffect, useMemo, useState } from "react";
 import type { Db } from "../../../db.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
-import { type TaskRow, getTask } from "../../../tasks.js";
+import { getTask, type TaskRow } from "../../../tasks.js";
 import { type ColumnSpec, contentWidthFromCols, layoutColumns, renderRow } from "../columns.js";
-import { type PopupAction, type PopupActionEnvelope, dispatchPopupKeyFromInk } from "../keys.js";
+import { dispatchPopupKeyFromInk, type PopupAction, type PopupActionEnvelope } from "../keys.js";
 import { ListRow } from "../list-row.js";
 import { PopupShell } from "../popup-shell.js";
 import { usePopupActionQueue } from "../use-popup-action-queue.js";
-import { FilterPrompt, applyFilter, usePopupFilter } from "../use-popup-filter.js";
+import { applyFilter, FilterPrompt, usePopupFilter } from "../use-popup-filter.js";
 import { useTerminalSize } from "../use-terminal-size.js";
 import { useDrillKeymap } from "./drill.js";
 import { applyCursor, centredVisibleSlice, isNavAction } from "./scroll.js";
-import { TaskDetailDrill, renderNotes } from "./task-detail.js";
+import { renderNotes, TaskDetailDrill } from "./task-detail.js";
 import { usePopupViewport } from "./viewport.js";
 
 export interface PopupProps {
@@ -358,6 +358,7 @@ export function TracksPopup({
           const padded = renderRow(row, widths, COLUMN_SPECS);
           return (
             <ListRow
+              // biome-ignore lint/suspicious/noArrayIndexKey: scroll-window position + track root name
               key={`tr-${start + i}-${t.roots[0]?.name ?? "?"}`}
               cells={padded}
               contentWidth={contentWidth}

@@ -12,10 +12,10 @@ import { listLogs } from "../src/logs.js";
 import { reconcile } from "../src/reconcile.js";
 import { addTask, claimTask, getTask, listNotes } from "../src/tasks.js";
 import {
-  type TmuxExecResult,
-  type TmuxExecutor,
   resetTmuxExecutor,
   setTmuxExecutor,
+  type TmuxExecResult,
+  type TmuxExecutor,
 } from "../src/tmux.js";
 
 // ─── Mock tmux harness for reconcile ───────────────────────────────────

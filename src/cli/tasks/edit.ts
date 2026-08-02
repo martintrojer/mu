@@ -18,7 +18,6 @@
 // to refactor_split_large_src_files.
 
 import {
-  UsageError,
   assertTaskInWorkstream,
   colorStatus,
   emitJson,
@@ -26,16 +25,13 @@ import {
   parseCsvFlag,
   resolveEntityRef,
   resolveWorkstream,
+  UsageError,
   withRoiAll,
 } from "../../cli.js";
 import type { Db } from "../../db.js";
 import { lastClaimActor } from "../../logs.js";
 import { type NextStep, pc, printNextSteps } from "../../output.js";
 import {
-  type TaskEdgeWithStatus,
-  TaskNotFoundError,
-  type TaskNoteRow,
-  type UpdateTaskOptions,
   addNote,
   addTask,
   getTask,
@@ -43,6 +39,10 @@ import {
   idFromTitleVerbose,
   listNotes,
   resolveActorIdentity,
+  type TaskEdgeWithStatus,
+  type TaskNoteRow,
+  TaskNotFoundError,
+  type UpdateTaskOptions,
   updateTask,
 } from "../../tasks.js";
 

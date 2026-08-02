@@ -7,12 +7,11 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { insertAgent } from "../src/agents.js";
 import type { AgentRow } from "../src/agents.js";
+import { insertAgent } from "../src/agents.js";
 import { type Db, openDb } from "../src/db.js";
 import { renderOp } from "../src/log-render.js";
 import {
-  type WorkstreamSnapshot,
   agentStatusHistogram,
   loadWorkstreamSnapshot,
   loadWorkstreamSnapshotFast,
@@ -20,8 +19,9 @@ import {
   mergeSnapshotFastSlow,
   roiBucket,
   summarizeOwnedTasks,
+  type WorkstreamSnapshot,
 } from "../src/state.js";
-import { type TaskRow, addTask, claimTask } from "../src/tasks.js";
+import { addTask, claimTask, type TaskRow } from "../src/tasks.js";
 import { resetTmuxExecutor, setTmuxExecutor } from "../src/tmux.js";
 import { ensureWorkstream } from "../src/workstream.js";
 import { rmFixtureDir } from "./_fs.js";

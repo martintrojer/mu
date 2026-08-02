@@ -12,7 +12,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { insertAgent } from "../src/agents.js";
 import { openDb } from "../src/db.js";
 import { addTask } from "../src/tasks.js";
-import { type WorkspaceRow, createWorkspace } from "../src/workspace.js";
+import { createWorkspace, type WorkspaceRow } from "../src/workspace.js";
 import { ensureWorkstream } from "../src/workstream.js";
 import { withEnv } from "./_env.js";
 import { runCli } from "./_runCli.js";

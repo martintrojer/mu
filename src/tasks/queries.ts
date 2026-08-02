@@ -4,15 +4,15 @@ import type { Db } from "../db.js";
 import { tryResolveWorkstreamId } from "../db.js";
 import { lastClaimEventAt } from "../logs.js";
 import {
+  noteFromDb,
   type RawTaskNoteRow,
   type RawTaskRow,
+  rowFromDb,
   SELECT_NOTE_COLS,
   SELECT_TASK_COLS,
   TASK_FROM_JOIN,
   type TaskNoteRow,
   type TaskRow,
-  noteFromDb,
-  rowFromDb,
   taskIdFor,
 } from "./core.js";
 import type { TaskStatus } from "./status.js";

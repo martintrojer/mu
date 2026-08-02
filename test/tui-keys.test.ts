@@ -4,6 +4,7 @@
 // design_global_keymap summary table.
 
 import { describe, expect, it } from "vitest";
+import type { InputMode, KeyFlags } from "../src/cli/tui/keys.js";
 import {
   dispatchGlobalKey,
   dispatchGlobalKeyFromInk,
@@ -12,7 +13,6 @@ import {
   shouldSwallowGlobalKey,
   shouldSwallowGlobalKeyFromInk,
 } from "../src/cli/tui/keys.js";
-import type { InputMode, KeyFlags } from "../src/cli/tui/keys.js";
 import { statusForToggleKey } from "../src/cli/tui/use-status-filter.js";
 
 const NO_KEY: KeyFlags = {};

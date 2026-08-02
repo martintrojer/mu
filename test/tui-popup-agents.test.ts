@@ -21,9 +21,9 @@ import type { WorkstreamSnapshot } from "../src/state.js";
 import { resetTmuxExecutor, setTmuxExecutor } from "../src/tmux.js";
 import {
   CaptureStream,
-  type InkInputStream,
   createInkCaptureStream,
   createInkInputStream,
+  type InkInputStream,
   latestRenderedFrame,
   simulateInput,
   waitForInkOutput,

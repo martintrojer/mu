@@ -14,13 +14,13 @@ import { render } from "ink";
 import { createElement } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import {
-  InProgressPopup,
   formatRoi,
+  InProgressPopup,
   yankCommandForTask,
 } from "../src/cli/tui/popups/inprogress.js";
 import { type Db, openDb } from "../src/db.js";
 import type { WorkstreamSnapshot } from "../src/state.js";
-import { type TaskRow, addNote, addTask, claimTask, listInProgress } from "../src/tasks.js";
+import { addNote, addTask, claimTask, listInProgress, type TaskRow } from "../src/tasks.js";
 import {
   CaptureStream,
   createInkCaptureStream,

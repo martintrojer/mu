@@ -27,6 +27,6 @@
 //   cmdMyNext / cmdMyTasks — src/cli/agents.ts (mu me next / mu me tasks)
 //   unescapeNoteText       — test/unescape-note-text.test.ts
 
-export { cmdMyNext, cmdMyTasks } from "./tasks/queries.js";
 export { unescapeNoteText } from "./tasks/edit.js";
+export { cmdMyNext, cmdMyTasks } from "./tasks/queries.js";
 export { wireTaskCommands } from "./tasks/wire.js";

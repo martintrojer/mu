@@ -17,14 +17,14 @@ import { addBlockEdge } from "../src/tasks/edges.js";
 import { addNote, addTask, deleteTask, updateTask } from "../src/tasks/edit.js";
 import { closeTask, rejectTask } from "../src/tasks/lifecycle.js";
 import {
-  NothingToUndoError,
-  UndoGroupNotFoundError,
-  UndoSupersededError,
   listRecentGroups,
   mostRecentGroup,
+  NothingToUndoError,
   planUndo,
   priorFieldValue,
   resolveGroupId,
+  UndoGroupNotFoundError,
+  UndoSupersededError,
   undoGroup,
 } from "../src/undo.js";
 import { destroyWorkstream, ensureWorkstream } from "../src/workstream.js";

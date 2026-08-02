@@ -7,16 +7,16 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { spawnAgent } from "../src/agents.js";
 import {
   type AgentStatusSnapshot,
   type AgentWaitRef,
   setAgentWaitSleepForTests,
   waitForAgents,
 } from "../src/agents/wait.js";
+import { spawnAgent } from "../src/agents.js";
 import { type Db, openDb } from "../src/db.js";
 import { resetSleep, resetTmuxExecutor, setSleepForTests, setTmuxExecutor } from "../src/tmux.js";
-import { type MockState, freshMockState, mockTmux } from "./_verbs-mock.js";
+import { freshMockState, type MockState, mockTmux } from "./_verbs-mock.js";
 
 describe("waitForAgents", () => {
   let dir: string;

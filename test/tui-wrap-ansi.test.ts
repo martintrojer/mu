@@ -1,4 +1,4 @@
-import { Box, Text, render } from "ink";
+import { Box, render, Text } from "ink";
 import { createElement } from "react";
 import stringWidth from "string-width";
 import { afterEach, describe, expect, it } from "vitest";

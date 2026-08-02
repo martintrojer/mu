@@ -20,9 +20,9 @@ import type { LogRow } from "../src/logs.js";
 import type { WorkstreamSnapshot } from "../src/state.js";
 import {
   CaptureStream,
-  type InkInputStream,
   createInkCaptureStream,
   createInkInputStream,
+  type InkInputStream,
   latestRenderedFrame,
   simulateInput,
   waitForInkOutput,

@@ -23,8 +23,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type Db, openDb } from "../src/db.js";
-import { addTask, setTaskStatus } from "../src/tasks.js";
 import { setWaitSleepForTests } from "../src/tasks/wait.js";
+import { addTask, setTaskStatus } from "../src/tasks.js";
 import { ensureWorkstream } from "../src/workstream.js";
 import { runCli } from "./_runCli.js";
 

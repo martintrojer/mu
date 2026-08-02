@@ -1,14 +1,14 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Box, Text, render } from "ink";
+import { Box, render, Text } from "ink";
 import { createElement, useEffect, useRef } from "react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { PopupAction } from "../src/cli/tui/keys.js";
 import { useDrillKeymap } from "../src/cli/tui/popups/drill.js";
 import { TaskDetailDrill } from "../src/cli/tui/popups/task-detail.js";
 import { type Db, openDb } from "../src/db.js";
-import { type TaskRow, addNote, addTask } from "../src/tasks.js";
+import { addNote, addTask, type TaskRow } from "../src/tasks.js";
 import { ensureWorkstream } from "../src/workstream.js";
 import { CaptureStream, createInkCaptureStream, waitForInkOutput } from "./_ink-render.js";
 

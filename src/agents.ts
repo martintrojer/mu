@@ -19,12 +19,18 @@ import { emitEvent, listLogs } from "./logs.js";
 import { withOpContext } from "./op-context.js";
 import { type ReconcileMode, type ReconcileReport, reconcile } from "./reconcile.js";
 import { addNote, listTasksByOwner } from "./tasks.js";
+
+export {
+  type AdoptAgentOptions,
+  type AdoptAgentResult,
+  adoptAgent,
+} from "./agents/adopt.js";
 // Re-export the cluster modules so external callers continue to
 // `import { AgentNotFoundError, spawnAgent, ... } from "./agents.js"`.
 export {
+  AgentBusyError,
   AgentDiedOnSpawnError,
   AgentExistsError,
-  AgentBusyError,
   AgentNotFoundError,
   AgentNotInWorkstreamError,
   AgentSpawnCliNotFoundError,
@@ -32,59 +38,55 @@ export {
   WorkspacePreservedError,
 } from "./agents/errors.js";
 export {
-  type CommandResolutionResult,
-  type CommandResolver,
-  type SpawnAgentOptions,
-  type EnsureAgentOptions,
-  type EnsureAgentResult,
-  checkCommandResolvable,
-  defaultSpawnLivenessMs,
-  defaultSpawnReadinessMs,
-  envVarNameForCli,
-  resetCommandResolverForTests,
-  resolveCliCommand,
-  resolveCliCommandWithSource,
-  setCommandResolverForTests,
-  ensureAgent,
-  spawnAgent,
-} from "./agents/spawn.js";
-export {
-  type AdoptAgentOptions,
-  type AdoptAgentResult,
-  adoptAgent,
-} from "./agents/adopt.js";
-export {
-  type KickAgentOptions,
-  type KickAgentResult,
-  type KickSignal,
-  type KickProcessExecutor,
-  NoForegroundProcessError,
   foregroundPgid,
   isKickSignal,
+  type KickAgentOptions,
+  type KickAgentResult,
+  type KickProcessExecutor,
+  type KickSignal,
   kickAgent,
+  NoForegroundProcessError,
   parsePsTtyOutput,
   resetKickProcessExecutor,
   setKickProcessExecutor,
 } from "./agents/kick.js";
 export {
-  type AgentWaitRef,
-  type AgentWaitOptions,
-  type AgentWaitResult,
-  type AgentWaitAgentState,
+  type CommandResolutionResult,
+  type CommandResolver,
+  checkCommandResolvable,
+  defaultSpawnLivenessMs,
+  defaultSpawnReadinessMs,
+  type EnsureAgentOptions,
+  type EnsureAgentResult,
+  ensureAgent,
+  envVarNameForCli,
+  resetCommandResolverForTests,
+  resolveCliCommand,
+  resolveCliCommandWithSource,
+  type SpawnAgentOptions,
+  setCommandResolverForTests,
+  spawnAgent,
+} from "./agents/spawn.js";
+export {
   type AgentStatusSnapshot,
+  type AgentWaitAgentState,
+  type AgentWaitOptions,
+  type AgentWaitRef,
+  type AgentWaitResult,
   setAgentWaitSleepForTests,
   waitForAgents,
 } from "./agents/wait.js";
+
 import { AgentNotFoundError, WorkspacePreservedError } from "./agents/errors.js";
 import {
   type CaptureOptions,
-  type SendOptions,
-  type TmuxPane,
   capturePane,
   killPane,
   listPanesInSession,
+  type SendOptions,
   sendToPane,
   setPaneTitle,
+  type TmuxPane,
 } from "./tmux.js";
 import {
   decorateWithStaleness,

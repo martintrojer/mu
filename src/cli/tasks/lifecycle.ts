@@ -10,11 +10,11 @@
 
 import { refreshAgentTitle } from "../../agents.js";
 import {
-  UsageError,
   assertTaskInWorkstream,
   emitJson,
   resolveEntityRef,
   resolveWorkstream,
+  UsageError,
 } from "../../cli.js";
 import type { Db } from "../../db.js";
 import { type NextStep, pc, printNextSteps } from "../../output.js";

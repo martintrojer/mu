@@ -25,7 +25,7 @@
 // Sibling pattern: tui-card-render-width.test.ts does the same
 // loop-over-cards/* sweep for the ListRow primitive.
 
-import { readFileSync, readdirSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 

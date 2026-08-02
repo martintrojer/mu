@@ -20,7 +20,7 @@
 
 import { useMemo } from "react";
 import type { Db } from "../../../db.js";
-import { type TaskRow, listNotes } from "../../../tasks.js";
+import { listNotes, type TaskRow } from "../../../tasks.js";
 import { DrillScrollView, type WrappedDrillBody } from "./drill.js";
 
 export type RenderNotesFn = (db: Db, taskId: string, workstream: string) => string;

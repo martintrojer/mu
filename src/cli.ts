@@ -26,11 +26,11 @@ import { wireArchiveCommands } from "./cli/archive.js";
 import { wireDbCommands } from "./cli/db.js";
 import { wireDoctorCommand } from "./cli/doctor.js";
 import {
-  NameAmbiguousError,
-  UsageError,
   emitParseError,
   findCommandForArgv,
   handle,
+  NameAmbiguousError,
+  UsageError,
 } from "./cli/handle.js";
 import { wireLogCommand } from "./cli/log.js";
 import { wireRebuildCommand } from "./cli/rebuild.js";
@@ -43,14 +43,14 @@ import { wireUndoCommand } from "./cli/undo.js";
 import { wireWorkspaceCommands } from "./cli/workspace.js";
 import { wireWorkstreamCommands } from "./cli/workstream.js";
 import { type Db, WorkstreamNotFoundError } from "./db.js";
+import { isTaskSortKey, TASK_SORT_KEYS, type TaskSortKey } from "./tasks/sort.js";
 import {
+  isTaskStatus,
   TASK_STATUS_LIST,
   TaskNotInWorkstreamError,
   type TaskRow,
   type TaskStatus,
-  isTaskStatus,
 } from "./tasks.js";
-import { TASK_SORT_KEYS, type TaskSortKey, isTaskSortKey } from "./tasks/sort.js";
 import { listWorkstreams, resolveTmuxSessionWorkstreamName } from "./workstream.js";
 
 // ─── Re-exports for downstream cli/* modules ──────────────────────────
@@ -60,7 +60,6 @@ import { listWorkstreams, resolveTmuxSessionWorkstreamName } from "./workstream.
 // them through `cli.ts` for ergonomic single-import lines.
 
 export {
-  IDLE_GLYPH,
   colorStatus,
   formatAgentsTable,
   formatReadyTable,
@@ -68,6 +67,7 @@ export {
   formatTracks,
   formatWorkspacesTable,
   formatWorkstreamsTable,
+  IDLE_GLYPH,
   printLogRow,
   relTime,
   statusIcon,
@@ -76,18 +76,18 @@ export {
 } from "./cli/format.js";
 export {
   CliExitError,
-  NameAmbiguousError,
-  UsageError,
   classifyError,
   handle,
+  NameAmbiguousError,
+  UsageError,
 } from "./cli/handle.js";
 export {
-  TASK_SORT_KEYS,
-  type TaskSortKey,
   byRoiDesc,
   isTaskSortKey,
   relTimeBasisForSort,
   sortTasks,
+  TASK_SORT_KEYS,
+  type TaskSortKey,
 } from "./tasks/sort.js";
 
 // ─── Workstream resolution ─────────────────────────────────────────────

@@ -27,7 +27,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { UsageError, runImporter } from "../scripts/migrate-to-1.0.js";
+import { runImporter, UsageError } from "../scripts/migrate-to-1.0.js";
 import { rmFixtureDir } from "./_fs.js";
 import { runCli } from "./_runCli.js";
 

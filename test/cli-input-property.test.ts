@@ -8,8 +8,8 @@ import {
   parseNonNegativeInt,
   parsePositiveNumber,
   parseQualifiedRef,
-  parseStatusOption,
   parseStatusesOption,
+  parseStatusOption,
 } from "../src/cli.js";
 import { TASK_STATUSES } from "../src/tasks.js";
 

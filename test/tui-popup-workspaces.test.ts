@@ -9,7 +9,7 @@ import { createElement, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { insertAgent } from "../src/agents.js";
 import { loadShowPreservingBody } from "../src/cli/tui/popups/show-loader.js";
-import { WorkspacesPopup, colorForDirty, formatDirty } from "../src/cli/tui/popups/workspaces.js";
+import { colorForDirty, formatDirty, WorkspacesPopup } from "../src/cli/tui/popups/workspaces.js";
 import { type Db, openDb, resolveWorkstreamId } from "../src/db.js";
 import type { WorkstreamSnapshot } from "../src/state.js";
 import type { WorkspaceRow } from "../src/workspace.js";

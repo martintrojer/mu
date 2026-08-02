@@ -2,11 +2,11 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  type NextStep,
   colorEnabled,
   hasNextSteps,
   isJsonMode,
   muTable,
+  type NextStep,
   printNextSteps,
   printNextStepsTo,
 } from "../src/output.js";

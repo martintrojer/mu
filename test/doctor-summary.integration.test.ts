@@ -9,8 +9,8 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type Db, openDb } from "../src/db.js";
 import {
-  type DoctorCheck,
   countProblems,
+  type DoctorCheck,
   loadDoctorSummary,
   remediationParagraph,
   yankCommandForCheck,

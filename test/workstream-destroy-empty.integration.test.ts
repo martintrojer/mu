@@ -23,10 +23,10 @@ import { insertAgent } from "../src/agents.js";
 import { type Db, openDb } from "../src/db.js";
 import { addTask } from "../src/tasks.js";
 import {
-  type TmuxExecResult,
-  type TmuxExecutor,
   resetTmuxExecutor,
   setTmuxExecutor,
+  type TmuxExecResult,
+  type TmuxExecutor,
 } from "../src/tmux.js";
 import { ensureWorkstream } from "../src/workstream.js";
 import { runCli } from "./_runCli.js";

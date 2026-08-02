@@ -12,12 +12,12 @@ import { createElement, useEffect } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import type { KeyFlags } from "../src/cli/tui/keys.js";
 import {
+  applyFilter,
+  classifyFilterKey,
   type FilterAction,
   FilterPrompt,
   type FilterState,
   INITIAL_FILTER_STATE,
-  applyFilter,
-  classifyFilterKey,
   popupFilterReducer,
   usePopupFilter,
 } from "../src/cli/tui/use-popup-filter.js";

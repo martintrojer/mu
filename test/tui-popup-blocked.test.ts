@@ -21,7 +21,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { BlockedPopup } from "../src/cli/tui/popups/blocked.js";
 import { type Db, openDb } from "../src/db.js";
 import type { WorkstreamSnapshot } from "../src/state.js";
-import { type TaskRow, addBlockEdge, addNote, addTask, listBlocked } from "../src/tasks.js";
+import { addBlockEdge, addNote, addTask, listBlocked, type TaskRow } from "../src/tasks.js";
 import {
   CaptureStream,
   createInkCaptureStream,

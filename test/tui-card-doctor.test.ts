@@ -3,8 +3,8 @@
 
 import { describe, expect, it } from "vitest";
 import {
-  DoctorCard,
   colorForStatus,
+  DoctorCard,
   formatSubtitle,
   glyphFor,
 } from "../src/cli/tui/cards/doctor.js";

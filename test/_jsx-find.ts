@@ -1,4 +1,4 @@
-import { type ReactElement, isValidElement } from "react";
+import { isValidElement, type ReactElement } from "react";
 
 export function findElementsByTypeName(node: unknown, typeName: string): unknown[] {
   const found: unknown[] = [];

@@ -9,12 +9,12 @@
 
 import { describe, expect, it } from "vitest";
 import {
-  type NavAction,
   applyCursor,
   applyScroll,
   centredVisibleSlice,
   clampScrollTop,
   isNavAction,
+  type NavAction,
 } from "../src/cli/tui/popups/scroll.js";
 
 describe("isNavAction", () => {

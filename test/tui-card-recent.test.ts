@@ -3,11 +3,11 @@
 
 import { describe, expect, it } from "vitest";
 import {
-  RecentCard,
   ageMs,
   formatSubtitle,
   formatWhen,
   glyphFor,
+  RecentCard,
 } from "../src/cli/tui/cards/recent.js";
 import type { WorkstreamSnapshot } from "../src/state.js";
 import type { TaskRow } from "../src/tasks.js";

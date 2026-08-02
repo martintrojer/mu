@@ -15,7 +15,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { insertAgent } from "../src/agents.js";
-import { type Db, SYNCED_ENTITIES, openDb } from "../src/db.js";
+import { type Db, openDb, SYNCED_ENTITIES } from "../src/db.js";
 import { KNOWN_INTENTS } from "../src/log-render.js";
 import { type LocalIntent, latestSeq, listLogs } from "../src/logs.js";
 import {

@@ -58,14 +58,14 @@ import {
   appendFileSync,
   existsSync,
   mkdirSync,
-  readFileSync,
   readdirSync,
+  readFileSync,
   statSync,
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
 import { crc32 } from "node:zlib";
-import { type Op, OpEntityNotSyncedError, applyOp, reprojectDeferredOps } from "./apply.js";
+import { applyOp, type Op, OpEntityNotSyncedError, reprojectDeferredOps } from "./apply.js";
 import { type Db, SYNCED_ENTITIES } from "./db.js";
 import { locksDir, withFileLock } from "./file-lock.js";
 import { receiveHlc } from "./hlc.js";

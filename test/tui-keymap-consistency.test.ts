@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   HELP_PANES,
-  type StatusHintContext,
   helpOverlayKeyIds,
+  type StatusHintContext,
   statusHintEntries,
   statusHintKeyIds,
 } from "../src/cli/tui/keymap-spec.js";

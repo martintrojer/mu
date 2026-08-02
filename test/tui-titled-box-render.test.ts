@@ -1,4 +1,4 @@
-import { Box, Text, render } from "ink";
+import { Box, render, Text } from "ink";
 import { createElement } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import { TitledBox } from "../src/cli/tui/titled-box.js";

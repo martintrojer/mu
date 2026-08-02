@@ -256,7 +256,10 @@ export function DrillScrollView({
           </Text>
         ) : (
           visible.map((ln, i) => (
-            // eslint-disable-next-line react/no-array-index-key
+            // Index IS the identity here: this is a fixed scroll window over a
+            // read-only line array, so a row's position is what it is. There is no
+            // stable per-line id to key on and nothing reorders in place.
+            // biome-ignore lint/suspicious/noArrayIndexKey: scroll-window position is the identity
             <Text key={`${start + i}`} wrap="truncate">
               {ln === "" ? " " : ln}
             </Text>

@@ -21,7 +21,7 @@ import {
   AgentSpawnStartupError,
   WorkspacePreservedError,
 } from "../src/agents.js";
-import { NameAmbiguousError, UsageError, classifyError } from "../src/cli.js";
+import { classifyError, NameAmbiguousError, UsageError } from "../src/cli.js";
 import { SchemaTooOldError, WorkstreamNotFoundError } from "../src/db.js";
 import {
   ClaimerNotRegisteredError,

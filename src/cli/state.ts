@@ -34,28 +34,28 @@
 
 import { idleThresholdMs } from "../agents.js";
 import {
-  JSON_OPT,
-  UsageError,
   emitJson,
   formatAgentsTable,
   formatTaskListTable,
   formatTracks,
   formatWorkspacesTable,
   handle,
+  JSON_OPT,
   parseCsvFlag,
   parseLines,
   printLogRow,
   resolveOptionalWorkstream,
+  UsageError,
   withRoiAll,
 } from "../cli.js";
-import { type Db, WorkstreamNotFoundError, tryResolveWorkstreamId } from "../db.js";
+import { type Db, tryResolveWorkstreamId, WorkstreamNotFoundError } from "../db.js";
 import { pc } from "../output.js";
 import {
-  WORKSPACE_STALE_THRESHOLD,
   isLingeringScratchAgent,
   isWorkspaceStale,
+  WORKSPACE_STALE_THRESHOLD,
 } from "../staleness.js";
-import { type WorkstreamSnapshot, loadWorkstreamSnapshot } from "../state.js";
+import { loadWorkstreamSnapshot, type WorkstreamSnapshot } from "../state.js";
 import { isScratchWorkstream, listWorkstreams } from "../workstream.js";
 import { resolveInitialTab } from "./tui-launch-focus.js";
 

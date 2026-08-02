@@ -2,11 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   CARD_CONFIGS,
   type CardId,
-  type RowBudgetMap,
   columnWidths,
   dashboardCardHitRegions,
   hitTestDashboardCard,
   layoutColumns,
+  type RowBudgetMap,
 } from "../src/cli/tui/layout.js";
 
 const EMPTY_BUDGETS: RowBudgetMap = {

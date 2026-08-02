@@ -10,33 +10,33 @@
 // Extracted from src/cli/tasks.ts as part of the wire-out follow-up
 // to refactor_split_large_src_files.
 
-import { refreshAgentTitle } from "../../agents.js";
 import { AgentNotFoundError } from "../../agents/errors.js";
+import { refreshAgentTitle } from "../../agents.js";
 import {
-  CliExitError,
-  UsageError,
   assertTaskInWorkstream,
+  CliExitError,
   emitJson,
   parseQualifiedRef,
   parseStatusOption,
   resolveEntityRef,
   resolveWorkstream,
+  UsageError,
 } from "../../cli.js";
-import { type Db, WorkstreamNotFoundError, tryResolveWorkstreamId } from "../../db.js";
+import { type Db, tryResolveWorkstreamId, WorkstreamNotFoundError } from "../../db.js";
 import { type NextStep, pc, printNextSteps } from "../../output.js";
 import { reconcile } from "../../reconcile.js";
 import {
+  claimTask,
+  getTask,
   ReaperDetectedDuringWaitError,
+  releaseTask,
   TaskNotFoundError,
   type TaskWaitRef,
   type TaskWaitTaskState,
-  claimTask,
-  getTask,
-  releaseTask,
   waitForTasks,
 } from "../../tasks.js";
 import { type CommitSummary, WorkspaceVcsRequiredError } from "../../vcs.js";
-import { WorkspaceNotFoundError, listCommitsForWorkspace } from "../../workspace.js";
+import { listCommitsForWorkspace, WorkspaceNotFoundError } from "../../workspace.js";
 import { checkWorkspaceStalenessForDispatch } from "../staleness.js";
 
 export async function cmdTaskRelease(

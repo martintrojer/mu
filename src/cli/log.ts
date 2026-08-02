@@ -12,8 +12,14 @@ import { getAgentByPane } from "../agents.js";
 import { emitJson, emitJsonCollection, printLogRow, resolveOptionalWorkstream } from "../cli.js";
 import type { Db } from "../db.js";
 import { renderOpLine } from "../log-render.js";
-import { groupIdFromPrefix } from "../logs.js";
-import { type ListLogsOptions, type LogRow, appendLog, latestSeq, listLogs } from "../logs.js";
+import {
+  appendLog,
+  groupIdFromPrefix,
+  type ListLogsOptions,
+  type LogRow,
+  latestSeq,
+  listLogs,
+} from "../logs.js";
 import { pc } from "../output.js";
 import { UndoGroupNotFoundError } from "../undo.js";
 
@@ -218,7 +224,7 @@ function defaultLogTailIntervalMs(): number {
 // every per-namespace builder lives next to its cmd functions.
 
 import type { Command } from "commander";
-import { JSON_OPT, WORKSTREAM_OPT, handle, parseLines, parseNonNegativeInt } from "../cli.js";
+import { handle, JSON_OPT, parseLines, parseNonNegativeInt, WORKSTREAM_OPT } from "../cli.js";
 
 export function wireLogCommand(program: Command): void {
   // mu log — overloaded:

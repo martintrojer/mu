@@ -3,13 +3,13 @@
 
 import { describe, expect, it } from "vitest";
 import {
-  WorkspacesCard,
   colorForBehind,
   colorForGlyph,
   formatBehind,
   formatSubtitle,
   glyphFor,
   isStale,
+  WorkspacesCard,
 } from "../src/cli/tui/cards/workspaces.js";
 import type { WorkstreamSnapshot } from "../src/state.js";
 import type { WorkspaceRow } from "../src/workspace.js";

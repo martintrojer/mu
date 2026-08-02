@@ -40,14 +40,14 @@
 // hook ran first, its ingest would have consumed everything and the
 // report would print "ingested 0" immediately after doing the opposite.
 
-import { JSON_OPT, emitJson, handle } from "../cli.js";
+import { emitJson, handle, JSON_OPT } from "../cli.js";
 import type { Db } from "../db.js";
-import { type NextStep, muTable, pc, printNextSteps } from "../output.js";
+import { muTable, type NextStep, pc, printNextSteps } from "../output.js";
 import { type IngestResult, syncDir, syncPass } from "../segments.js";
 import {
   type IngestFromDbResult,
-  type PeerStatus,
   ingestFromDb,
+  type PeerStatus,
   peerStatuses,
   repairPeer,
   transportNextSteps,

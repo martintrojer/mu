@@ -80,6 +80,7 @@ describe("DrillScrollView does not let Ink byte-wrap coloured pre-wrapped lines"
     const src = readFileSync("./src/cli/tui/popups/drill.tsx", "utf8");
     expect(src).toContain('color="magenta" wrap="truncate"');
     expect(src).toContain('dimColor wrap="truncate"');
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: asserting ON source text, not interpolating
     expect(src).toContain('key={`${start + i}`} wrap="truncate"');
   });
 

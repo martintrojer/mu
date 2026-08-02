@@ -20,13 +20,13 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
-  type SendWarning,
   awaitPaneQuiescence,
   capturePane,
   killSession,
   listPanes,
   newSession,
   resetTmuxExecutor,
+  type SendWarning,
   sendToPane,
 } from "../src/tmux.js";
 import { freshWorkstream } from "./_fixture.js";

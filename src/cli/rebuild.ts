@@ -105,7 +105,7 @@ export async function cmdRebuild(
 // ─── commander wiring ────────────────────────────────────────────────
 
 import type { Command } from "commander";
-import { JSON_OPT, emitJson, handle } from "../cli.js";
+import { emitJson, handle, JSON_OPT } from "../cli.js";
 
 export function wireRebuildCommand(program: Command): void {
   program

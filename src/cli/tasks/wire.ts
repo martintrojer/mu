@@ -10,14 +10,14 @@
 
 import type { Command } from "commander";
 import {
-  JSON_OPT,
-  TASK_SORT_KEYS,
-  WORKSTREAM_OPT,
   handle,
+  JSON_OPT,
   normalizeInheritedWorkstream,
   parseImpact,
   parseLines,
   parsePositiveNumber,
+  TASK_SORT_KEYS,
+  WORKSTREAM_OPT,
 } from "../../cli.js";
 import { TASK_STATUS_LIST } from "../../tasks.js";
 import { cmdClaim, cmdTaskRelease, cmdTaskWait } from "./claim.js";

@@ -8,8 +8,8 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
   CaptureStream,
-  type InkInputStream,
   createInkInputStream,
+  type InkInputStream,
   inputKeySequence,
   simulateInput,
 } from "./_ink-render.js";

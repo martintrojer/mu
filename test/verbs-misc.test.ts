@@ -21,7 +21,7 @@ import {
 } from "../src/agents.js";
 import { type Db, openDb } from "../src/db.js";
 import { resetSleep, resetTmuxExecutor, setSleepForTests, setTmuxExecutor } from "../src/tmux.js";
-import { type MockState, freshMockState, mockTmux } from "./_verbs-mock.js";
+import { freshMockState, type MockState, mockTmux } from "./_verbs-mock.js";
 
 // ─── Setup / teardown ──────────────────────────────────────────────────
 

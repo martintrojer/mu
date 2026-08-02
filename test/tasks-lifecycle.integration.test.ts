@@ -16,10 +16,8 @@ import { insertAgent } from "../src/agents.js";
 import { type Db, openDb } from "../src/db.js";
 import { lastClaimActor, listLogs } from "../src/logs.js";
 import {
-  ClaimerNotRegisteredError,
-  TaskAlreadyOwnedError,
-  TaskNotFoundError,
   addTask,
+  ClaimerNotRegisteredError,
   claimTask,
   closeTask,
   getTask,
@@ -28,8 +26,10 @@ import {
   releaseTask,
   resolveActorIdentity,
   setTaskStatus,
+  TaskAlreadyOwnedError,
+  TaskNotFoundError,
 } from "../src/tasks.js";
-import { type TmuxExecutor, resetTmuxExecutor, setTmuxExecutor } from "../src/tmux.js";
+import { resetTmuxExecutor, setTmuxExecutor, type TmuxExecutor } from "../src/tmux.js";
 import { withCleanIdentityEnv, withEnv } from "./_env.js";
 
 // ─── Setup / teardown ──────────────────────────────────────────────────

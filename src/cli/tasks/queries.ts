@@ -17,7 +17,6 @@
 // "What's NOT in mu".
 
 import {
-  type TaskSortKey,
   byRoiDesc,
   emitJsonCollection,
   formatTaskListTable,
@@ -27,6 +26,7 @@ import {
   resolveSelf,
   resolveWorkstream,
   sortTasks,
+  type TaskSortKey,
   withRoiAll,
 } from "../../cli.js";
 import type { Db } from "../../db.js";

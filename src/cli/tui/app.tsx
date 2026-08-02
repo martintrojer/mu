@@ -33,26 +33,26 @@ import { TracksCard } from "./cards/tracks.js";
 import { WorkspacesCard } from "./cards/workspaces.js";
 import { Help } from "./help.js";
 import {
+  dispatchGlobalKeyFromInk,
   type InputMode,
   type PopupAction,
   type PopupActionEnvelope,
-  dispatchGlobalKeyFromInk,
   shouldSwallowGlobalKeyFromInk,
 } from "./keys.js";
 import {
+  allocateRowBudgets,
+  balanceColumns,
   CARD_CONFIGS,
   type CardId,
   type ColumnAssignment,
   type ColumnWidth,
-  type RowBudgetMap,
-  allocateRowBudgets,
-  balanceColumns,
   columnWidths,
   cullCardsForRows,
   dashboardCardHitRegions,
   dataCountForCard,
   hitTestDashboardCard,
   layoutColumns as layoutDashboardColumns,
+  type RowBudgetMap,
 } from "./layout.js";
 import { type MouseEvent, useMouse } from "./mouse.js";
 import { AgentsPopup } from "./popups/agents.js";
@@ -71,9 +71,9 @@ import { WorkspacesPopup } from "./popups/workspaces.js";
 import {
   type CardVisibility,
   DEFAULT_CARD_VISIBILITY,
-  TICK_DEFAULT_MS,
   fasterTick,
   slowerTick,
+  TICK_DEFAULT_MS,
   useDashboardSnapshot,
 } from "./state.js";
 import { StatusBar } from "./status-bar.js";

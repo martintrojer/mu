@@ -19,7 +19,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { getAgent, reapIdleAgents, spawnAgent, updateAgentStatus } from "../src/agents.js";
 import { type Db, openDb } from "../src/db.js";
 import { resetSleep, resetTmuxExecutor, setSleepForTests, setTmuxExecutor } from "../src/tmux.js";
-import { type MockState, freshMockState, mockTmux } from "./_verbs-mock.js";
+import { freshMockState, type MockState, mockTmux } from "./_verbs-mock.js";
 
 /** Back-date an agent's updated_at by `ageMs` so the idle predicate fires
  *  without waiting wall-clock time. */

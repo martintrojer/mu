@@ -16,7 +16,6 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { insertAgent } from "../src/agents.js";
 import { type Db, openDb } from "../src/db.js";
 import {
-  TaskHasOpenDependentsError,
   addTask,
   closeTask,
   deferTask,
@@ -27,6 +26,7 @@ import {
   listTasksByOwner,
   rejectTask,
   setTaskStatus,
+  TaskHasOpenDependentsError,
 } from "../src/tasks.js";
 import { resetTmuxExecutor } from "../src/tmux.js";
 

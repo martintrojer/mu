@@ -3,12 +3,12 @@
 
 import { describe, expect, it } from "vitest";
 import {
-  TICK_CEILING_MS,
-  TICK_DEFAULT_MS,
-  TICK_FLOOR_MS,
   clampTick,
   fasterTick,
   slowerTick,
+  TICK_CEILING_MS,
+  TICK_DEFAULT_MS,
+  TICK_FLOOR_MS,
 } from "../src/cli/tui/state.js";
 
 describe("tick rate constants + clamp", () => {

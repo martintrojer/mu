@@ -11,13 +11,13 @@ export { jjBackend } from "./jj.js";
 export { noneBackend } from "./none.js";
 export { slBackend } from "./sl.js";
 export {
-  SHOW_COMMIT_MAX_CHARS,
   type CommitSummary,
   type CreateWorkspaceOptions,
   type CreateWorkspaceResult,
   type FreeWorkspaceOptions,
   type FreeWorkspaceResult,
   type RebaseResult,
+  SHOW_COMMIT_MAX_CHARS,
   type ShowCommitResult,
   type VcsBackend,
   type VcsBackendName,

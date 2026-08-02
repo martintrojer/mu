@@ -11,7 +11,7 @@
 //
 // Extracted from src/cli.ts as part of refactor_split_large_src_files.
 
-import { UsageError, emitJson } from "../cli.js";
+import { emitJson, UsageError } from "../cli.js";
 import type { Db } from "../db.js";
 import { withCaptureSuppressed } from "../op-context.js";
 import { muTable, pc } from "../output.js";
@@ -324,7 +324,7 @@ function formatCell(v: unknown): string {
 // every per-namespace builder lives next to its cmd functions.
 
 import type { Command } from "commander";
-import { JSON_OPT, handle, parseLines } from "../cli.js";
+import { handle, JSON_OPT, parseLines } from "../cli.js";
 
 export function wireSqlCommand(program: Command): void {
   program

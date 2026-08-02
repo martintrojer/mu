@@ -28,13 +28,13 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { insertAgent } from "../src/agents.js";
 import { type Db, openDb } from "../src/db.js";
 import {
+  gitBackend,
+  jjBackend,
   WorkspaceConflictError,
   WorkspaceDirtyError,
   WorkspaceVcsRequiredError,
-  gitBackend,
-  jjBackend,
 } from "../src/vcs.js";
-import { WorkspaceNotFoundError, createWorkspace, refreshWorkspace } from "../src/workspace.js";
+import { createWorkspace, refreshWorkspace, WorkspaceNotFoundError } from "../src/workspace.js";
 import { ensureWorkstream } from "../src/workstream.js";
 
 let stateRoot: string;

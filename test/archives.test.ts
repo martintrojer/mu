@@ -9,6 +9,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { rekey, restoreArchive } from "../src/archives/restore.js";
 import {
   ArchiveLabelInvalidError,
   ArchiveNotFoundError,
@@ -20,12 +21,11 @@ import {
   markerFor,
   pinnedHlcs,
 } from "../src/archives.js";
-import { rekey, restoreArchive } from "../src/archives/restore.js";
-import { type Db, SYNCED_ENTITIES, openDb } from "../src/db.js";
-import { getTaskEdges, listNotes, listTasks } from "../src/tasks.js";
+import { type Db, openDb, SYNCED_ENTITIES } from "../src/db.js";
 import { addBlockEdge } from "../src/tasks/edges.js";
 import { addNote, addTask } from "../src/tasks/edit.js";
 import { closeTask } from "../src/tasks/lifecycle.js";
+import { getTaskEdges, listNotes, listTasks } from "../src/tasks.js";
 import { destroyWorkstream, ensureWorkstream } from "../src/workstream.js";
 
 let dir: string;

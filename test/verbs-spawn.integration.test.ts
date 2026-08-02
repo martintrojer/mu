@@ -10,6 +10,7 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { detectSpawnStartupError } from "../src/agents/spawn.js";
 import {
   AgentDiedOnSpawnError,
   AgentExistsError,
@@ -23,22 +24,21 @@ import {
   setCommandResolverForTests,
   spawnAgent,
 } from "../src/agents.js";
-import { detectSpawnStartupError } from "../src/agents/spawn.js";
 import { type Db, openDb } from "../src/db.js";
 import { hasNextSteps } from "../src/output.js";
 import {
-  type TmuxExecutor,
   resetSleep,
   resetTmuxExecutor,
   setSleepForTests,
   setTmuxExecutor,
+  type TmuxExecutor,
 } from "../src/tmux.js";
 import { listWorkspaces, workspacePath } from "../src/workspace.js";
 import { ensureWorkstream } from "../src/workstream.js";
 import {
-  type MockState,
   fail,
   freshMockState,
+  type MockState,
   mockTmux,
   withMuPiCommand,
   withMuSpawnLivenessMs,

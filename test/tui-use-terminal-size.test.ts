@@ -15,7 +15,7 @@
 //   3. a resize event with UNCHANGED dims does NOT re-render.
 
 import type { EventEmitter } from "node:events";
-import { Text, render } from "ink";
+import { render, Text } from "ink";
 import { createElement, useRef } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import { useTerminalSize } from "../src/cli/tui/use-terminal-size.js";

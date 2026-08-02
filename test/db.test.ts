@@ -7,9 +7,9 @@ import { join } from "node:path";
 import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { classifyError } from "../src/cli/handle.js";
-import { type Db, SchemaTooOldError, defaultDbPath, openDb } from "../src/db.js";
-import { addBlockEdge, addTask } from "../src/tasks.js";
+import { type Db, defaultDbPath, openDb, SchemaTooOldError } from "../src/db.js";
 import { TaskNotFoundError } from "../src/tasks/errors.js";
+import { addBlockEdge, addTask } from "../src/tasks.js";
 
 describe("openDb", () => {
   let tempDir: string;

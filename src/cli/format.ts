@@ -16,8 +16,8 @@ import { type AgentRow, type AgentStatus, agentStatusGlyph } from "../agents.js"
 import { parseOpKey, renderOp } from "../log-render.js";
 import type { LogRow } from "../logs.js";
 import { muTable, pc } from "../output.js";
-import type { TaskRow } from "../tasks.js";
 import type { TaskStatus } from "../tasks/status.js";
+import type { TaskRow } from "../tasks.js";
 import type { Track } from "../tracks.js";
 import type { WorkspaceRow } from "../workspace.js";
 import type { WorkstreamSummary } from "../workstream.js";

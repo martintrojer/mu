@@ -6,9 +6,9 @@
 
 import { describe, expect, it } from "vitest";
 import {
-  TitledBox,
   computeBorderRowDashes,
   computeTopRowDashes,
+  TitledBox,
 } from "../src/cli/tui/titled-box.js";
 
 describe("computeTopRowDashes", () => {

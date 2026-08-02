@@ -15,7 +15,7 @@
 import { existsSync, mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import type { Command } from "commander";
-import { JSON_OPT, emitJson, handle } from "../cli.js";
+import { emitJson, handle, JSON_OPT } from "../cli.js";
 import type { Db } from "../db.js";
 import { pc, printNextSteps } from "../output.js";
 import { UsageError } from "./handle.js";

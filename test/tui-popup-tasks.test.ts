@@ -28,12 +28,12 @@ import { ReadyPopup } from "../src/cli/tui/popups/ready.js";
 import { type Db, openDb } from "../src/db.js";
 import type { WorkstreamSnapshot } from "../src/state.js";
 import {
-  type TaskRow,
   addNote,
   addTask,
   claimTask,
   listInProgress,
   listReady,
+  type TaskRow,
 } from "../src/tasks.js";
 import {
   CaptureStream,

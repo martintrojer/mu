@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  DOUBLE_CLICK_MS,
   createDoubleClickDetector,
+  DOUBLE_CLICK_MS,
   parseSgrMouseEvents,
 } from "../src/cli/tui/mouse.js";
 

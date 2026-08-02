@@ -18,10 +18,10 @@ import {
 import { applyCursor, centredVisibleSlice } from "../src/cli/tui/popups/scroll.js";
 import { type Db, openDb } from "../src/db.js";
 import type { WorkstreamSnapshot } from "../src/state.js";
-import { type TaskRow, addTask, listTasks, setTaskStatus } from "../src/tasks.js";
 import { addBlockEdge } from "../src/tasks/edges.js";
 import { sortTasks } from "../src/tasks/sort.js";
 import { TASK_STATUSES } from "../src/tasks/status.js";
+import { addTask, listTasks, setTaskStatus, type TaskRow } from "../src/tasks.js";
 import {
   CaptureStream,
   createInkCaptureStream,

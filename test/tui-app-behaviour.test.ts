@@ -189,10 +189,7 @@ interface Mounted {
 const COLUMNS = 160;
 const ROWS = 50;
 
-async function mountApp(opts: {
-  workstreams: string[];
-  initialActive?: number;
-}): Promise<Mounted> {
+async function mountApp(opts: { workstreams: string[]; initialActive?: number }): Promise<Mounted> {
   const stdin = createInkInputStream();
   const stdout = createInkCaptureStream({ columns: COLUMNS, rows: ROWS });
   const stderr = createInkCaptureStream({ columns: COLUMNS, rows: ROWS });
