@@ -1,11 +1,11 @@
 # mu — Usage Guide
 
-A practical, copy-pasteable tour of mu 2.0. Terms are canonical — see
+A practical, copy-pasteable tour of mu. Terms are canonical — see
 [VOCABULARY.md](VOCABULARY.md); the complete verb list is in
 `## CLI — complete verb list` of
 [skills/mu/SKILL.md](../skills/mu/SKILL.md).
 
-> **Status:** 2.0 (pre-release). ~60 typed verbs across 7 namespaces
+> **Status:** 1.0 (pre-release). ~60 typed verbs across 7 namespaces
 > (`workstream`, `agent`, `task`, `workspace`, `log`, `archive`, `me`)
 > plus bare top-level verbs (`state`, `doctor`, `sql`, `undo`, `sync`,
 > `rebuild`, `db`). Every verb accepts `--json` (one exception,
@@ -40,7 +40,7 @@ A practical, copy-pasteable tour of mu 2.0. Terms are canonical — see
 15.6. [Multi-machine sync](#156-multi-machine-sync)
 16. [One-shot demo script](#16-one-shot-demo-script)
 17. [Mental model in three sentences](#mental-model-in-three-sentences)
-18. [What's NOT in 2.0](#whats-not-in-20-and-how-to-work-around-it)
+18. [What's NOT in mu](#whats-not-in-mu-and-how-to-work-around-it)
 19. [Where to go from here](#where-to-go-from-here)
 
 ---
@@ -287,16 +287,16 @@ Then report it: drift is a capture/apply bug, and the named
 table/key/field is the reproduction. See
 [§ What to do when drift is reported](#what-to-do-when-drift-is-reported).
 
-### 0.6 Upgrading from mu 1.x
+### 0.6 Upgrading from mu 0.4.x
 
 `mu` refuses to open a pre-v9 DB (`SchemaTooOldError`, exit 4) and
-leaves the file alone. A sidecar, `scripts/v1-to-v2.ts`, imports a v1
-DB into a fresh v9 one; you run it once, by hand, against a copy.
-Workstreams, tasks, edges and notes come across; agents, workspaces and
-ownership do not.
+leaves the file alone. A sidecar, `scripts/migrate-to-1.0.ts`, imports
+a pre-1.0 DB into a fresh v9 one; you run it once, by hand, against a
+copy. Workstreams, tasks, edges and notes come across; agents,
+workspaces and ownership do not.
 
 Full recipe and flags: [scripts/README.md](../scripts/README.md).
-Summary here: [§ 15.7](#157-coming-from-mu-1x).
+Summary here: [§ 15.7](#157-coming-from-mu-04x).
 
 ---
 
@@ -2410,20 +2410,20 @@ winner, and the newer HLC takes it.
 
 ---
 
-## 15.7 Coming from mu 1.x
+## 15.7 Coming from mu 0.4.x
 
 `mu` refuses to open a pre-v9 DB (`SchemaTooOldError`, exit 4) and
 leaves the file untouched — a major version is the moment to stop
 carrying a migration ladder.
 
-A sidecar, `scripts/v1-to-v2.ts`, imports a v1 DB into a fresh v9 one.
-Run it once, by hand, against a copy. The shape:
+A sidecar, `scripts/migrate-to-1.0.ts`, imports a pre-1.0 DB into a
+fresh v9 one. Run it once, by hand, against a copy. The shape:
 
 ```bash
-cp ~/.local/state/mu/mu.db ~/mu-v1-backup-$(date +%Y%m%d).db   # there is no path back
-npx tsx scripts/v1-to-v2.ts ~/mu-v1-backup-$(date +%Y%m%d).db --out /tmp/mu-v2.db
-MU_DB_PATH=/tmp/mu-v2.db mu doctor --deep    # the check that matters: NO drift
-mv /tmp/mu-v2.db ~/.local/state/mu/mu.db
+cp ~/.local/state/mu/mu.db ~/mu-pre1.0-backup-$(date +%Y%m%d).db   # there is no path back
+npx tsx scripts/migrate-to-1.0.ts ~/mu-pre1.0-backup-$(date +%Y%m%d).db --out /tmp/mu-new.db
+MU_DB_PATH=/tmp/mu-new.db mu doctor --deep    # the check that matters: NO drift
+mv /tmp/mu-new.db ~/.local/state/mu/mu.db
 ```
 
 The importer is read-only on the source and **synthesizes ops rather
@@ -2431,7 +2431,7 @@ than inserting rows**, so the result is a first-class v9 DB.
 Workstreams, tasks, edges, notes and the agent log come across; agents,
 workspaces and task ownership do not (same reasons they do not sync).
 Old archives **refuse loudly** rather than half-importing — export them
-with mu 1.x first, or pass `--drop-archives`.
+with mu 0.4.x first, or pass `--drop-archives`.
 
 **Full recipe, every flag, and the rationale:
 [scripts/README.md](../scripts/README.md).**
@@ -2493,7 +2493,7 @@ ghost reconciliation) is plumbing in service of those three.
 
 ---
 
-## What's NOT in 2.0 (and how to work around it)
+## What's NOT in mu (and how to work around it)
 
 <!-- doc-cli-drift:skip-start -->
 

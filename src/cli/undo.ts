@@ -2,7 +2,7 @@
 //
 // The verb disappeared in v9 along with src/cli/snapshot.ts (it lived
 // there, not in its own module), so this re-wires it on the new
-// substrate. Semantics are entirely different: v1 swapped the whole DB
+// substrate. Semantics are entirely different: the old undo swapped the whole DB
 // file back to a snapshot, reverting unrelated workstreams too. This
 // emits inverse ops for ONE group.
 //

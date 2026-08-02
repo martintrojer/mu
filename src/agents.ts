@@ -734,8 +734,8 @@ export async function closeAgent(
       throw new WorkspacePreservedError(name, ws.path);
     }
   }
-  // 2.0: no pre-mutation snapshot. v9 dropped the `snapshots` table;
-  // v2-undo restores rollback via inverse ops over the ops log.
+  // No pre-mutation snapshot: v9 dropped the `snapshots` table and
+  // rollback is inverse ops over the ops log (`mu undo`).
   // Free the workspace BEFORE the agent (so the on-disk dir is
   // removed cleanly, not orphaned by FK cascade). freeWorkspace is
   // idempotent on missing rows.

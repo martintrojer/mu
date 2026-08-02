@@ -3,13 +3,13 @@
 // @deprecated — v2-log-verb replaces this module. v9 dropped the
 // `agent_logs` table; `ops` is now the single append-only record of
 // every change (VISION.md § 2b). Rather than rewrite ~25 consumers in
-// the schema commit, this module keeps its v1 signatures
+// the schema commit, this module keeps its legacy signatures
 // (appendLog / listLogs / latestSeq / emitEvent) and reads and writes
 // `ops` rows underneath. v2-capture makes triggers the real writers
 // and v2-log-verb re-renders `mu log` from intents; both delete
 // chunks of this file.
 //
-// Shim mapping (v1 log row -> op):
+// Shim mapping (legacy log row -> op):
 //   kind       -> ops.entity     ('message' | 'event' | ...)
 //   source     -> ops.actor
 //   workstream -> ops.key        (natural key; '' = machine-wide)
@@ -80,7 +80,7 @@ interface RawLogRow {
   created_at: string;
 }
 
-/** SELECT clause mapping op columns back onto the v1 log row shape.
+/** SELECT clause mapping op columns back onto the legacy log row shape.
  *  `ops.key` already holds the operator-facing workstream name (the
  *  natural key), so there is no join to do; '' means machine-wide and
  *  is normalised back to NULL in `rowFromDb`. */
@@ -340,7 +340,7 @@ export interface ListLogsOptions {
    *  re-sorted oldest-first. */
   limit?: number;
   source?: string;
-  /** Filter by `ops.entity` (the v1 `kind` column). */
+  /** Filter by `ops.entity` (the legacy `kind` column). */
   kind?: string;
   /** Filter by structured `ops.intent`, e.g. 'task.close'. */
   intent?: string;
@@ -456,8 +456,8 @@ export function latestSeq(db: Db, workstream?: string): number {
  * `intent` is REQUIRED (and typed), not optional, because the whole
  * point is that these rows render through the same formatter as
  * captured ops. An intent-less op cannot be rendered without
- * prefix-matching prose, which is the v1 brittleness
- * (`classifyEventVerb`, `CLAIM_EVENT_PREFIX`) that 2.0 deletes.
+ * prefix-matching prose, which is the brittleness
+ * (`classifyEventVerb`, `CLAIM_EVENT_PREFIX`) the ops log deletes.
  *
  * These entities are deliberately NOT in SYNCED_ENTITIES: every one of
  * them describes something about THIS machine (a pane id, a filesystem
@@ -502,7 +502,7 @@ function entityForIntent(intent: LocalIntent): string {
 
 // ─── claim attribution ─────────────────────────────────────────────
 //
-// v1 stored claim attribution as PROSE and re-parsed it: a
+// mu once stored claim attribution as PROSE and re-parsed it: a
 // tab-delimited `task.claim<TAB><id><TAB>actor=<a><TAB>...` prefix was
 // bolted onto the payload precisely because prefix-matching the prose
 // was brittle (review_code_last_claim_actor_brittle). Two helpers then
@@ -519,7 +519,7 @@ function entityForIntent(intent: LocalIntent): string {
  *
  *  `ops.key` is the natural key, so the task's own ops are keyed
  *  '<ws>/<localId>' exactly — no LIKE, no wildcard escaping, and no
- *  way for `foo` to cross-match `foo_2`. Unbounded by design: the v1
+ *  way for `foo` to cross-match `foo_2`. Unbounded by design: the old
  *  limit=100 ceiling silently dropped attribution on long-lived
  *  workstreams. */
 function lastClaimOp(
@@ -563,7 +563,7 @@ export function lastClaimEventAt(db: Db, workstream: string, localId: string): s
 
 // ─── retired: prose verb classification ───────────────────────────────
 //
-// v1 needed EVENT_VERB_PREFIXES + classifyEventVerb + ClassifiedEvent +
+// The old renderer needed EVENT_VERB_PREFIXES + classifyEventVerb + ClassifiedEvent +
 // logRowSubject to render a log line: every consumer prefix-matched a
 // payload's leading two words to find its verb, and CLAIM_EVENT_PREFIX
 // was bolted on because that matching kept breaking.

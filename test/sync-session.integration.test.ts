@@ -8,7 +8,7 @@
 // points. Measured verb coverage across them was 0 hits for `task
 // claim`, 0 for `task delete`, 0 for `archive`, 0 for `undo`, 2 for
 // notes and 3 for edges. So the substrate was proven and a SESSION was
-// not — which is a different claim, and the one 2.0 actually makes.
+// not — which is a different claim, and the one mu actually makes.
 //
 // The difference is not cosmetic. The single-round shape cannot express
 // "an op arrives before the op it depends on", because with one

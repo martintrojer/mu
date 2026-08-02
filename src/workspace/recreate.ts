@@ -70,7 +70,7 @@ export async function recreateWorkspace(
 
   // One event line at the end. The internal `_suppressEvent` flag on
   // free/create is private to this module — not part of the SDK
-  // contract. (2.0: no snapshot; v2-undo owns rollback.)
+  // contract. (No snapshot; `mu undo` owns rollback.)
   await freeWorkspace(db, agent, {
     workstream: opts.workstream,
     commit: false,

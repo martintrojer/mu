@@ -106,7 +106,7 @@ describe("blank (whitespace-only) flag fragments are a usage error", () => {
   });
 
   it("`task block --by ''` remains the all-empty usage error it already was", async () => {
-    // Pre-existing 2.0 behaviour, asserted here so the blank rule
+    // Pre-existing behaviour, asserted here so the blank rule
     // doesn't accidentally change which message an operator sees.
     const r = await runCli(["task", "block", "b", "--by", "", "-w", "ws"], dbPath);
     expect(r.exitCode).toBe(2);

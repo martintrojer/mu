@@ -31,7 +31,7 @@ describe("openDb", () => {
     // No throw = parent dirs created.
   });
 
-  it("applies exactly the 10 v9 tables (ops log substrate; v1 change-recording tables gone)", () => {
+  it("applies exactly the 10 v9 tables (ops log substrate; the old change-recording tables gone)", () => {
     const db = openDb({ path: dbPath });
     const tables = (
       db
@@ -198,8 +198,8 @@ describe("openDb", () => {
     db.close();
   });
 
-  it("refuses a v8-shaped DB with SchemaTooOldError (2.0 ships no migration)", () => {
-    // Hand-built v8 fixture: the v1 change-recording tables plus a
+  it("refuses a v8-shaped DB with SchemaTooOldError (mu ships no migration)", () => {
+    // Hand-built v8 fixture: the old change-recording tables plus a
     // schema_version stamp. No binary fixture — the shape is the point.
     {
       const raw = new Database(dbPath);

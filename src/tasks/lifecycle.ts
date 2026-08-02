@@ -44,7 +44,7 @@ export interface EvidenceOption {
 /**
  * Persist `--evidence` as a task note, so it survives as a captured op.
  *
- * v1 put evidence in the prose event payload AND (for close only) in a
+ * mu once put evidence in the prose event payload AND (for close only) in a
  * synthetic note. v2-retire-log-shim deleted the prose events, which
  * would have silently DROPPED evidence on reject/defer/open/release —
  * measured: `task close --evidence` kept it via the note, the other
@@ -227,8 +227,8 @@ function closeTaskImpl(
       };
     }
   }
-  // 2.0: no pre-mutation snapshot. v9 dropped the `snapshots` table;
-  // v2-undo restores rollback via inverse ops over the ops log.
+  // No pre-mutation snapshot: v9 dropped the `snapshots` table and
+  // rollback is inverse ops over the ops log (`mu undo`).
   const r = setTaskStatus(db, localId, "CLOSED", opts);
   // mufeedback task_close_evidence_does_not_append_the: evidence must
   // reach `mu task notes <id>` / `mu task show <id>`, not just the log.
@@ -301,7 +301,7 @@ export interface RejectDeferResult {
 
 /** Reject a task: terminal 'won't do' (out of scope, duplicate, wontfix).
  *  Refuses if dependents are open unless `--cascade`.
- *  (2.0: no snapshot; v2-undo restores rollback via inverse ops.) */
+ *  (No snapshot; rollback is inverse ops via `mu undo`.) */
 export function rejectTask(db: Db, localId: string, opts: RejectDeferOptions): RejectDeferResult {
   // group: "new" at the CASCADE ROOT — every dependent swept below
   // inherits it, so one `mu undo <group>` reverts the whole sweep.
@@ -312,7 +312,7 @@ export function rejectTask(db: Db, localId: string, opts: RejectDeferOptions): R
 
 /** Defer a task: parked, may revisit. Same dependent-stranding semantics
  *  as reject (DEFERRED also doesn't satisfy a `--blocked-by` edge).
- *  (2.0: no snapshot; v2-undo restores rollback via inverse ops.) */
+ *  (No snapshot; rollback is inverse ops via `mu undo`.) */
 export function deferTask(db: Db, localId: string, opts: RejectDeferOptions): RejectDeferResult {
   return withOpContext(db, { intent: "task.defer", group: "new" }, () =>
     setTerminalOrParked(db, localId, "DEFERRED", opts),

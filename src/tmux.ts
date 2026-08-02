@@ -779,7 +779,7 @@ export interface SendOptions {
   delayMs?: number;
   /**
    * Override the pre-send readiness budget, in ms. 0 disables the wait
-   * AND the post-send submit verification — i.e. the bare pre-2.0
+   * AND the post-send submit verification — i.e. the bare
    * fire-and-forget protocol. Defaults to MU_SEND_READINESS_MS, else
    * 15 000.
    */

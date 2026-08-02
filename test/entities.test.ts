@@ -84,7 +84,7 @@ describe("syncability constants", () => {
   // than needing a special case: `tasks.owner_id` is an FK into
   // `agents`, and `agents` is machine-local (it holds `pane_id`, e.g.
   // '%17', which names nothing on another machine). So a synced
-  // `task` op cannot carry a meaningful owner. v1's deleted
+  // `task` op cannot carry a meaningful owner. The deleted
   // db-sync.ts reached the same conclusion via an `includeOwners`
   // flag; here it is structural. If this test ever needs an exception
   // list, the design has drifted.

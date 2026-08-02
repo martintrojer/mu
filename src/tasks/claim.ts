@@ -90,8 +90,8 @@ function releaseTaskImpl(db: Db, localId: string, opts: ReleaseTaskOptions): Rel
     };
   }
 
-  // 2.0: no pre-mutation snapshot. v9 dropped the `snapshots` table;
-  // v2-undo restores rollback via inverse ops over the ops log.
+  // No pre-mutation snapshot: v9 dropped the `snapshots` table and
+  // rollback is inverse ops over the ops log (`mu undo`).
 
   db.prepare(
     `UPDATE tasks SET owner_id = NULL, status = ?, updated_at = ?

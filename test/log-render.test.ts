@@ -1,6 +1,6 @@
 // v2-log-verb — the ONE op → prose formatter (src/log-render.ts).
 //
-// v1 rendered log lines by prefix-matching free prose against
+// mu once rendered log lines by prefix-matching free prose against
 // EVENT_VERB_PREFIXES, and CLAIM_EVENT_PREFIX was bolted on because that
 // matching kept breaking. The load-bearing property now is the opposite:
 // rendering reads `intent` + `key` + named payload fields, and NEVER
@@ -180,7 +180,7 @@ describe("renderOp prose", () => {
 });
 
 describe("renderOp is never fooled by payload text", () => {
-  // The anti-regression for v1's whole failure mode. A payload that LOOKS
+  // The anti-regression for that whole failure mode. A payload that LOOKS
   // like another verb must not be classified as one — the intent decides.
   it("payload prose cannot override the intent", () => {
     const r = renderOp(
@@ -236,7 +236,7 @@ describe("opSubject resolves the show-command target from structure", () => {
     ).toEqual({ kind: "agent", id: "worker-7" });
   });
 
-  it("keeps dashed task ids intact (v1's logRowSubject truncated them)", () => {
+  it("keeps dashed task ids intact (the old logRowSubject truncated them)", () => {
     // The retired logRowSubject split on /[#>-]/, so a task named
     // 'my-task' yanked `mu task show my`. Splitting on the KEY structure
     // instead of a character class fixes it.

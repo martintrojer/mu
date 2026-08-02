@@ -118,7 +118,7 @@ vi.mock("../src/parked.js", async (importOriginal) => {
 
 // Yank backend probe: don't shell out to pbcopy/wl-copy/xclip during
 // tests. Returning a no-op backend keeps the footer state-machine
-// reachable (footer assertions aren't in scope for v1 of this file).
+// reachable (footer assertions aren't in scope for the first cut of this file).
 vi.mock("../src/cli/tui/yank.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../src/cli/tui/yank.js")>();
   return {

@@ -270,8 +270,8 @@ function deleteTaskImpl(
       present: true,
     };
   }
-  // 2.0: no pre-mutation snapshot. v9 dropped the `snapshots` table;
-  // v2-undo restores rollback via inverse ops over the ops log.
+  // No pre-mutation snapshot: v9 dropped the `snapshots` table and
+  // rollback is inverse ops over the ops log (`mu undo`).
   const result = db.prepare("DELETE FROM tasks WHERE id = ?").run(taskId);
   // No emitEvent: the DELETE fired the capture trigger, which wrote a
   // tombstone op (op='del', intent='task.delete').

@@ -42,7 +42,7 @@ for.
 Carrying a migration path would have meant keeping the four dead
 mechanisms alive in code purely to read them once. The honest cost:
 the upgrade is one-way, so keep your old DB file. There is a verified
-path across — `scripts/v1-to-v2.ts`, read-only on the source, run
+path across — `scripts/migrate-to-1.0.ts`, read-only on the source, run
 against a real 857-task database with `mu doctor --deep` reporting no
 drift.
 
@@ -57,10 +57,10 @@ drift.
 
 ### Breaking
 
-- **`mu undo` semantics changed completely.** v1 restored a whole-DB
+- **`mu undo` semantics changed completely.** mu used to restore a whole-DB
   snapshot: `mu undo --yes` (optionally `--to <id>`) swapped the database
   file, reverting every workstream, and each restore took a fresh
-  pre-restore snapshot. 2.0 `mu undo <group>` emits inverse ops for ONE
+  pre-restore snapshot. `mu undo <group>` now emits inverse ops for ONE
   group — granular, composable, and itself an op (so it syncs and is
   itself undoable). There are no snapshot files, so `--to` is gone along
   with `mu snapshot list / show / prune`. Consequences: undo no longer
@@ -73,19 +73,19 @@ drift.
   with `SchemaTooOldError` (exit 4) and leaves the file untouched.
   `MIN_ACCEPTED_SCHEMA_VERSION === CURRENT_SCHEMA_VERSION === 9`, so
   the in-place forward-bump ladder (including the v6→v7 `approvals`
-  DROP) is gone. Keep a copy of your v1 DB (a plain `cp` of the file, as
+  DROP) is gone. Keep a copy of your old DB (a plain `cp` of the file, as
   in the recipe below) and re-import it
-  through **`scripts/v1-to-v2.ts`** — a sidecar you run once, by hand,
+  through **`scripts/migrate-to-1.0.ts`** — a sidecar you run once, by hand,
   against a copy. See [scripts/README.md](scripts/README.md) for the
   exact upgrade recipe (BACK UP FIRST) and the honest list of what does
   NOT come across.
 
   ```bash
-  cp ~/.local/state/mu/mu.db ~/mu-v1-backup.db            # keep this forever
-  mv ~/.local/state/mu/mu.db ~/.local/state/mu/mu.db.v1
-  npx tsx scripts/v1-to-v2.ts ~/.local/state/mu/mu.db.v1 --out /tmp/mu-v2.db
-  MU_DB_PATH=/tmp/mu-v2.db mu doctor --deep               # must report NO drift
-  mv /tmp/mu-v2.db ~/.local/state/mu/mu.db
+  cp ~/.local/state/mu/mu.db ~/mu-pre1.0-backup.db        # keep this forever
+  mv ~/.local/state/mu/mu.db ~/.local/state/mu/mu.db.old
+  npx tsx scripts/migrate-to-1.0.ts ~/.local/state/mu/mu.db.old --out /tmp/mu-new.db
+  MU_DB_PATH=/tmp/mu-new.db mu doctor --deep              # must report NO drift
+  mv /tmp/mu-new.db ~/.local/state/mu/mu.db
   ```
 
   The importer is READ-ONLY on the source (sha256 printed before and
@@ -94,18 +94,18 @@ drift.
   rows written behind the log would be invisible to sync, unrecoverable
   by `mu rebuild`, and reported as drift by `mu doctor --deep`. One
   `put` op per source row, HLC-ordered by the source `created_at`, all
-  under one synthetic group with intent `migrate.v1`.
+  under one synthetic group with intent `migrate.v8`.
 
   Carried: `workstreams`, `tasks`, `task_edges`, `task_notes`, and
-  `agent_logs` (as log-only `event` ops with intent `migrate.v1-log`,
+  `agent_logs` (as log-only `event` ops with intent `migrate.v8-log`,
   droppable with `--drop-logs`). NOT carried, printed with counts on
   every run: `agents` (meaningless `pane_id`), `vcs_workspaces`
   (absolute paths), `snapshots` (table gone; the `.db` files stay on
   disk), `workstream_sync` (superseded by `sync_peers`), and task
-  owners (`owner_id` FKs into machine-local `agents`). v1 **archives
-  refuse loudly** rather than half-importing: v1 stored a column subset
-  rather than history, and after a v1 destroy the ops a v2 marker would
-  pin do not exist — export them with mu 1.x first, or pass
+  owners (`owner_id` FKs into machine-local `agents`). Pre-1.0 **archives
+  refuse loudly** rather than half-importing: v8 stored a column subset
+  rather than history, and after a v8 destroy the ops a v9 marker would
+  pin do not exist — export them with mu 0.4.x first, or pass
   `--drop-archives`.
 
   Unlike `scripts/migrate-v4-to-v5.ts` (deleted post-landing per the
@@ -131,7 +131,7 @@ drift.
   `VACUUM INTO` one-liner for the "one file I can scp" case, which is
   the only thing `db export` was actually used for. It never
   overwrites — the copy `SchemaTooOldError` tells you to take before
-  `scripts/v1-to-v2.ts` is not one to clobber on a retry.
+  `scripts/migrate-to-1.0.ts` is not one to clobber on a retry.
 - **Destructive verbs no longer snapshot.** `workstream destroy`,
   `task delete` / `close` / `reject` / `defer` / `release`,
   `agent close`, and `workspace free` / `recreate` used to capture a
@@ -298,7 +298,7 @@ drift.
   mu workstream destroy proj --yes --archive v0-3   # pin, THEN destroy
   ```
 
-  Every v1 property survives, and each was verified against a real DB
+  Every previous property survives, and each was verified against a real DB
   rather than assumed:
 
   - **Outlives destroy.** `workstream destroy` writes TOMBSTONES, so the
@@ -309,7 +309,7 @@ drift.
   - **Additive.** Markers are append-only *because they are ops*, so
     `lastAddedAt` is `MAX(hlc)` — no stored column to keep in sync.
   - **Lossless restore.** Replaying ops reproduces every captured column,
-    strictly more faithful than v1's column-subset copy. Restore stops AT
+    strictly more faithful than the old column-subset copy. Restore stops AT
     the marker (later work is not resurrected) and honours tombstones
     below it (a task deleted before the pin stays deleted).
 
@@ -478,7 +478,7 @@ drift.
 
 - **`mu rebuild <file>` — replay the ops log into a fresh DB
   (`src/rebuild.ts`).** The disaster-recovery story that replaces the
-  snapshot files 2.0 deleted: given an intact `ops` table, every portable
+  snapshot files mu no longer keeps: given an intact `ops` table, every portable
   row is reconstructable, because the log is canonical and the tables are
   a projection of it. Also the foundation the forthcoming doctor drift
   check stands on.
@@ -613,14 +613,14 @@ drift.
   row out from under its own key.
 
 - **Op capture via SQLite triggers (`src/capture.ts`)** — the linchpin
-  of the 2.0 design. Every INSERT / UPDATE / DELETE on a portable table
+  of the design. Every INSERT / UPDATE / DELETE on a portable table
   (`workstreams`, `tasks`, `task_edges`, `task_notes`) writes an op
   inside the SAME TRANSACTION as the mutation, in the same file, so
   capture is atomic with the change and the two cannot drift — not even
   on power loss mid-write.
 
   Hand-emitted ops (an `emitOp(...)` beside each mutation) were
-  rejected because they can be FORGOTTEN, and in 2.0 undo, archives,
+  rejected because they can be FORGOTTEN, and undo, archives,
   sync and history are all projections of this one log, so a single
   missing op is silent corruption of all four at once. A future SDK
   function that mutates `tasks` must not be ABLE to skip capture;
@@ -710,7 +710,7 @@ drift.
 
   Falls out with no special case: `tasks.owner_id` is an FK into
   `agents`, and `agents` is machine-local, therefore **ownership does
-  not sync** — the conclusion v1's deleted `db-sync.ts` reached via an
+  not sync** — the conclusion the deleted `db-sync.ts` reached via an
   `includeOwners` flag is now structural. Machine-local ops are still
   RECORDED, so `mu log` and the TUI Recent card keep showing agent
   spawn/close; "not synced" is not "not logged".
@@ -743,13 +743,13 @@ drift.
   `BEGIN IMMEDIATE` because its three-way max is a genuine
   read-then-write. Additive columns on an existing v9 table — the table
   count stays at 10 and `CURRENT_SCHEMA_VERSION` stays at 9
-  (2.0 is unreleased).
+  (1.0 is unreleased).
 
 ### Changed
 
-- **Documentation sweep for 2.0, plus a CI guard so the next drift is
+- **Documentation sweep for 1.0, plus a CI guard so the next drift is
   caught by a test rather than by a human (`v2-docs`).** Every previous
-  2.0 task updated the docs it touched; this pass swept for the
+  release task updated the docs it touched; this pass swept for the
   contradictions no single task could see. Fixed: `mu undo` documented
   as a whole-DB snapshot restore with a `--to <id>` flag and a
   `mu snapshot list / show / prune / delete` family (USAGE_GUIDE § 14);
@@ -767,7 +767,7 @@ drift.
   `mu db export`/`import` with divergence sidecars (now ambient sync +
   per-field merge + `mu rebuild`); AGENTS.md's module tree listing
   `db-sync.ts`, `db-sync-replay.ts`, `snapshots.ts` and `cli/db.ts`
-  while omitting all thirteen modules 2.0 added; AGENTS.md's
+  while omitting all thirteen modules the ops-log arc added; AGENTS.md's
   "Update the schema" section still documenting v8 as current.
   ARCHITECTURE gained rows for `src/undo.ts`, `src/cli/undo.ts`,
   `src/parked.ts` and `src/project-root.ts`, which had none.
@@ -807,7 +807,7 @@ drift.
   Recent card, the ink Activity-log card, and the log popup all render
   through it, so no surface can invent its own phrasing. It reads
   `intent` + `key` + named payload fields and **never string-matches a
-  payload to decide what an op is** — that was v1's failure mode.
+  payload to decide what an op is** — that was the old failure mode.
 
   This finishes the job R7 started: `classifyEventVerb`,
   `EVENT_VERB_PREFIXES`, `ClassifiedEvent`, and `logRowSubject` are
@@ -864,7 +864,7 @@ drift.
   human-readable narrative could never reach a peer while the typed ops
   did — and with `intent=NULL` they could not be rendered by the single
   intent-driven formatter v2-log-verb builds, only by prefix-matching
-  their text, which is the v1 brittleness 2.0 exists to delete.
+  their text, which is the brittleness the ops log exists to delete.
 
   Census of all 20 `emitEvent` call sites, classified by whether a
   capture trigger can see the change:
@@ -928,7 +928,7 @@ drift.
   seq `listLogs` returns.
 
 - `src/logs.ts` reads and writes `ops` rows (`kind`→`entity`,
-  `source`→`actor`, `workstream`→`key`). Superseded within 2.0 by
+  `source`→`actor`, `workstream`→`key`). Superseded within the arc by
   v2-retire-log-shim above, which retired the duplicate-emit half of the
   shim and changed `emitEvent` to require a typed intent; what remains is
   a thin typed reader plus the one write path triggers cannot cover.
@@ -1086,7 +1086,7 @@ drift.
   65-68% of an 800k context by wave 6; ~$5 → ~$35 per task) and the
   caveat that an orchestrator runs the INSTALLED mu, so the send fix
   may not be in the binary doing the dispatching. Verification is not
-  optional until 2.0 is installed.
+  optional until 1.0 is installed.
 
 - **Blank (whitespace-only) list-flag fragments no longer silently
   vanish (`bug_whitespace_status_fragment`).** `parseCsvFlag` trimmed
@@ -1125,9 +1125,9 @@ drift.
   misfiled as the known load-flake; it was fast-check randomness, not
   concurrency. Now 15/15 green in isolation.
 
-- **Three pre-existing test failures across two files (not v2
-  regressions).** All three reproduce on the v1 commit v2 branched
-  from, and all three are FIXTURE bugs, not production bugs.
+- **Three pre-existing test failures across two files (not new
+  regressions).** All three reproduce on the commit the ops-log branch
+  forked from, and all three are FIXTURE bugs, not production bugs.
 
   - `test/_fixture.ts` `freshWorkstream()` documented a 17-char suffix
     budget but did not enforce it: `Date.now().toString(36)` is 8

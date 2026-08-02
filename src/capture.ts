@@ -9,7 +9,7 @@
 // neither did.
 //
 // Hand-emitted ops (an `emitOp(...)` next to each mutation) were
-// rejected because they can be FORGOTTEN. In 2.0 a forgotten op is no
+// rejected because they can be FORGOTTEN. A forgotten op is no
 // longer "sync missed something" — undo, archives, sync and history are
 // ALL projections of this one log, so one missing op is silent
 // corruption of all four at once. A future SDK function that mutates

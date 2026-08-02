@@ -1,18 +1,18 @@
 #!/usr/bin/env -S npx tsx
-// scripts/v1-to-v2.ts — the mu 1.x → 2.0 data escape hatch.
+// scripts/migrate-to-1.0.ts — the mu 0.4.x → 1.0 data escape hatch.
 //
-// mu 2.0 is a CLEAN BREAK: `openDb` refuses every pre-v9 DB with
+// mu 1.0 is a CLEAN BREAK: `openDb` refuses every pre-v9 DB with
 // `SchemaTooOldError` (exit 4), there is no in-process migration ladder,
 // and `CURRENT_SCHEMA` carries no v8 knowledge. That decision stands.
 // This is not a migration path — it is a SIDECAR the operator runs ONCE,
-// by hand, against a COPY, to carry v1 task data into a fresh v9 DB.
+// by hand, against a COPY, to carry pre-1.0 task data into a fresh v9 DB.
 //
 // USAGE
-//   npx tsx scripts/v1-to-v2.ts <v1.db>                  # writes <v1>.v2.db
-//   npx tsx scripts/v1-to-v2.ts <v1.db> --out <new.db>
-//   npx tsx scripts/v1-to-v2.ts <v1.db> --force          # overwrite target
-//   npx tsx scripts/v1-to-v2.ts <v1.db> --drop-logs      # skip agent_logs
-//   npx tsx scripts/v1-to-v2.ts <v1.db> --drop-archives  # proceed past archives
+//   npx tsx scripts/migrate-to-1.0.ts <old.db>                  # writes <old>.v9.db
+//   npx tsx scripts/migrate-to-1.0.ts <old.db> --out <new.db>
+//   npx tsx scripts/migrate-to-1.0.ts <old.db> --force          # overwrite target
+//   npx tsx scripts/migrate-to-1.0.ts <old.db> --drop-logs      # skip agent_logs
+//   npx tsx scripts/migrate-to-1.0.ts <old.db> --drop-archives  # proceed past archives
 //
 // See scripts/README.md for the full upgrade recipe (BACK UP FIRST).
 //
@@ -36,7 +36,7 @@
 //
 //   CAUSALITY  a task's ops precede the edges and notes that reference
 //              it, so `applyOp` never skips a child as 'absent'. Verified
-//              against the real v1 DB: zero notes/edges predate their
+//              against the real pre-1.0 DB: zero notes/edges predate their
 //              task, zero tasks predate their workstream. If a future
 //              source violates that, the preflight below says so and
 //              refuses rather than silently dropping the child.
@@ -47,8 +47,8 @@
 //              nextHlc's counter, so an out-of-order source timestamp
 //              costs precision, never correctness.
 //
-// Every op shares ONE synthetic `group_id` with intent `migrate.v1`
-// (`migrate.v1-log` for carried log lines), because it WAS one operator
+// Every op shares ONE synthetic `group_id` with intent `migrate.v8`
+// (`migrate.v8-log` for carried log lines), because it WAS one operator
 // action. `mu log` therefore renders the import as an import, and
 // `mu undo <group>` addresses it as one thing.
 
@@ -65,23 +65,23 @@ import { withCaptureSuppressed } from "../src/op-context.js";
 
 /** Intent stamped on every entity op. Not a `CaptureIntent`: these ops
  *  did not come from a live edit and must not pretend to have. */
-const IMPORT_INTENT = "migrate.v1";
-/** Intent stamped on carried v1 `agent_logs` rows. */
-const LOG_INTENT = "migrate.v1-log";
+const IMPORT_INTENT = "migrate.v8";
+/** Intent stamped on carried pre-1.0 `agent_logs` rows. */
+const LOG_INTENT = "migrate.v8-log";
 /** Actor for rows with no human author of their own. */
-const IMPORT_ACTOR = "v1-import";
+const IMPORT_ACTOR = "v8-import";
 
 /** Entity used for carried log lines.
  *
  *  'event', NOT 'message'. 'message' is in SYNCED_ENTITIES and would
- *  ship v1 prose to every peer forever; 'event' is log-only, so
+ *  ship pre-1.0 prose to every peer forever; 'event' is log-only, so
  *  `mu rebuild` copies it verbatim and `applyOp` is never asked to
  *  project it. Machine-local by construction, which is the honest
- *  status of a v1 log line. */
+ *  status of a pre-1.0 log line. */
 const LOG_ENTITY = "event";
 
 /** The only source schema version this script understands. v8 is the
- *  final v1-series schema; anything older predates `machine_identity`
+ *  final pre-1.0 schema; anything older predates `machine_identity`
  *  and the surrogate-PK substrate and is not something we can claim to
  *  have tested. */
 const SUPPORTED_SOURCE_VERSION = 8;
@@ -94,19 +94,19 @@ interface Args {
   dropArchives: boolean;
 }
 
-const USAGE = `usage: npx tsx scripts/v1-to-v2.ts <v1.db> [--out <new.db>] [--force]
-                                            [--drop-logs] [--drop-archives]
+const USAGE = `usage: npx tsx scripts/migrate-to-1.0.ts <old.db> [--out <new.db>] [--force]
+                                                 [--drop-logs] [--drop-archives]
 
-  <v1.db>           the v8 source DB. Opened READ-ONLY; never modified.
-  --out <new.db>    target path (default: <v1.db> with '.v2.db' suffix).
+  <old.db>          the v8 source DB. Opened READ-ONLY; never modified.
+  --out <new.db>    target path (default: <old.db> with '.v9.db' suffix).
   --force           overwrite an existing target.
   --drop-logs       do not carry agent_logs into the ops log.
-  --drop-archives   proceed even though the source has v1 archives,
+  --drop-archives   proceed even though the source has pre-1.0 archives,
                     which cannot be faithfully reconstructed.`;
 
 /** Every refusal in this script. THROWN, not `process.exit`-ed, so the
  *  whole importer stays callable IN-PROCESS from
- *  test/v1-to-v2.integration.test.ts. A sidecar nobody can test is a
+ *  test/migrate-to-1.0.integration.test.ts. A sidecar nobody can test is a
  *  sidecar nobody should trust, and `tsx` is deliberately NOT a
  *  dependency of this repo (the shebang goes through `npx`), so a test
  *  that shelled out would either add a dep or skip itself in CI.
@@ -149,15 +149,15 @@ function parseArgs(argv: readonly string[]): Args {
     }
   }
 
-  if (source === undefined) usage("missing <v1.db>");
+  if (source === undefined) usage("missing <old.db>");
   const sourcePath = resolve(source);
   const outPath = resolve(out ?? defaultTarget(sourcePath));
   return { source: sourcePath, out: outPath, force, dropLogs, dropArchives };
 }
 
-/** `/x/mu.db` -> `/x/mu.v2.db`; `/x/mu.db.v1` -> `/x/mu.db.v1.v2.db`. */
+/** `/x/mu.db` -> `/x/mu.v9.db`; `/x/mu.db.old` -> `/x/mu.db.old.v9.db`. */
 function defaultTarget(source: string): string {
-  return source.endsWith(".db") ? `${source.slice(0, -3)}.v2.db` : `${source}.v2.db`;
+  return source.endsWith(".db") ? `${source.slice(0, -3)}.v9.db` : `${source}.v9.db`;
 }
 
 // ─── source shapes ────────────────────────────────────────────────────
@@ -318,8 +318,8 @@ function planOps(src: Db, dropLogs: boolean): Planned[] {
   for (const note of notes) {
     planned.push({
       entity: "note",
-      // '#<v1 note id>' keeps the ORIGIN identity the note key format
-      // expects. The id is this machine's v1 surrogate, which is exactly
+      // '#<source note id>' keeps the ORIGIN identity the note key format
+      // expects. The id is this machine's v8 surrogate, which is exactly
       // what the key documents (src/apply.ts § applyNotePut).
       key: `${note.task_key}#${note.id}`,
       payload: JSON.stringify({
@@ -354,8 +354,8 @@ function planOps(src: Db, dropLogs: boolean): Planned[] {
         key: log.workstream ?? "",
         payload: log.payload,
         actor: log.source,
-        // A distinct intent so `mu log` never presents imported v1 prose
-        // as a typed 2.0 op. It renders as 'migrate v1-log', which is
+        // A distinct intent so `mu log` never presents imported pre-1.0
+        // prose as a typed op. It renders as 'migrate v8-log', which is
         // exactly what it is.
         intent: LOG_INTENT,
         createdAt: log.created_at,
@@ -411,7 +411,7 @@ function countSource(src: Db): SourceCounts {
  *  A note or edge whose `created_at` precedes its parent task's would
  *  sort ahead of the task and be skipped by `applyOp` as 'absent' —
  *  silent data loss, the one outcome this script must never produce. So
- *  it is a REFUSAL, not a warning. The real v1 DB has zero of these; the
+ *  it is a REFUSAL, not a warning. The real v8 DB has zero of these; the
  *  check exists because "zero on one DB" is not "zero on every DB". */
 function causalityViolations(src: Db): string[] {
   const problems: string[] = [];
@@ -439,11 +439,11 @@ function causalityViolations(src: Db): string[] {
   return problems;
 }
 
-/** Notes that will COLLAPSE under v2's grow-only note identity.
+/** Notes that will COLLAPSE under v9's grow-only note identity.
  *
- *  A v2 note is identified by (task, author, content) — see
+ *  A v9 note is identified by (task, author, content) — see
  *  src/apply.ts § applyNotePut — because a note's surrogate id is
- *  assigned by whichever machine inserted it and is not portable. v1 had
+ *  assigned by whichever machine inserted it and is not portable. v8 had
  *  no such constraint, so byte-identical duplicate notes on one task
  *  merge into one row. That is the merge rule doing its job, not a bug
  *  in the import, but it changes a row count and must be REPORTED. */
@@ -611,7 +611,7 @@ export function runImporter(argv: readonly string[], say: (text: string) => void
     )?.v;
     if (version !== SUPPORTED_SOURCE_VERSION) {
       usage(
-        `source schema is v${version ?? "?"}; this importer only understands v${SUPPORTED_SOURCE_VERSION} (the final 1.x schema)`,
+        `source schema is v${version ?? "?"}; this importer only understands v${SUPPORTED_SOURCE_VERSION} (the final pre-1.0 schema)`,
       );
     }
 
@@ -622,15 +622,15 @@ export function runImporter(argv: readonly string[], say: (text: string) => void
       usage(
         `REFUSING: the source violates the ordering this import depends on:\n  ${violations.join(
           "\n  ",
-        )}\nA child row timestamped before its parent would be applied before the\nparent exists and silently dropped. Report this DB — it is a v1 bug.`,
+        )}\nA child row timestamped before its parent would be applied before the\nparent exists and silently dropped. Report this DB — it is a source-DB bug.`,
       );
     }
 
-    // ARCHIVES. v1 stored a COLUMN SUBSET of the archived rows; v2
+    // ARCHIVES. v8 stored a COLUMN SUBSET of the archived rows; v9
     // archives are MARKERS pinning a point in the ops log. A marker can
     // only mean something when the ops it pins exist — and for the
-    // motivating v1 case, an archive of a DESTROYED workstream, they
-    // never will, because v1's destroy erased the rows rather than
+    // motivating v8 case, an archive of a DESTROYED workstream, they
+    // never will, because v8's destroy erased the rows rather than
     // writing tombstones. There is no honest reconstruction:
     //   * a marker over an import of the LIVE workstream would pin the
     //     CURRENT state, not the state at archive time — a lie;
@@ -644,19 +644,19 @@ export function runImporter(argv: readonly string[], say: (text: string) => void
       ).map((r) => r.label);
       usage(
         [
-          `REFUSING: the source has ${counts.archives} v1 archive(s): ${labels.join(", ")}`,
+          `REFUSING: the source has ${counts.archives} pre-1.0 archive(s): ${labels.join(", ")}`,
           "",
-          "v1 archives cannot be faithfully carried into 2.0. v1 stored a column",
-          "SUBSET of the archived rows; a v2 archive is a MARKER pinning a point in",
+          "Pre-1.0 archives cannot be faithfully carried into 1.0. v8 stored a column",
+          "SUBSET of the archived rows; a v9 archive is a MARKER pinning a point in",
           "the ops log, and the ops an archive of a destroyed workstream would need",
-          "do not exist — v1's destroy deleted rows instead of writing tombstones.",
+          "do not exist — v8's destroy deleted rows instead of writing tombstones.",
           "Anything this script synthesized would pin the wrong moment.",
           "",
           "Options:",
-          "  1. Export them from the v1 DB with mu 1.x BEFORE upgrading:",
+          "  1. Export them from the old DB with mu 0.4.x BEFORE upgrading:",
           "       mu archive show <label> > <label>.txt",
           "  2. Re-run with --drop-archives to import tasks and drop the archives.",
-          "  3. Keep the v1 DB (you should anyway) and read them with sqlite3.",
+          "  3. Keep the old DB (you should anyway) and read them with sqlite3.",
         ].join("\n"),
       );
     }
@@ -664,7 +664,7 @@ export function runImporter(argv: readonly string[], say: (text: string) => void
     const dupNotes = duplicateNotes(src);
     const planned = planOps(src, args.dropLogs);
 
-    say("mu 1.x → 2.0 import");
+    say("mu 0.4.x → 1.0 import");
     say(
       `  source  ${args.source}  (v${version}, READ-ONLY, sha256 ${sourceDigestBefore.slice(0, 12)}…)`,
     );
@@ -675,7 +675,7 @@ export function runImporter(argv: readonly string[], say: (text: string) => void
     const target = openDb({ path: args.out });
     let result: ImportResult;
     try {
-      result = runImport(target, planned, `migrate-v1-${sourceDigestBefore.slice(0, 16)}`);
+      result = runImport(target, planned, `migrate-v8-${sourceDigestBefore.slice(0, 16)}`);
     } finally {
       target.close();
     }
@@ -685,7 +685,7 @@ export function runImporter(argv: readonly string[], say: (text: string) => void
     say("CARRIED ACROSS");
     say(
       table([
-        ["  what", "v1 rows", "v2 result"],
+        ["  what", "v8 rows", "v9 result"],
         ["  workstreams", String(counts.workstreams), String(result.targetRows.workstreams ?? 0)],
         ["  tasks", String(counts.tasks), String(result.targetRows.tasks ?? 0)],
         ["  task_edges", String(counts.task_edges), String(result.targetRows.task_edges ?? 0)],
@@ -709,7 +709,7 @@ export function runImporter(argv: readonly string[], say: (text: string) => void
     say("NOT CARRIED ACROSS — these do not survive a machine, a schema, or both");
     say(
       table([
-        ["  what", "v1 rows", "why"],
+        ["  what", "v8 rows", "why"],
         ["  agents", String(counts.agents), "pane_id names a tmux pane that no longer exists"],
         ["  vcs_workspaces", String(counts.vcs_workspaces), "absolute paths; re-create per agent"],
         [
@@ -741,7 +741,7 @@ export function runImporter(argv: readonly string[], say: (text: string) => void
     say(`       MU_DB_PATH=${args.out} mu doctor --deep`);
     say("  2. Look at it:");
     say(`       MU_DB_PATH=${args.out} mu workstream list`);
-    say("  3. Swap it in (KEEP the v1 DB — there is no path back):");
+    say("  3. Swap it in (KEEP the old DB — there is no path back):");
     say(`       mv ${args.out} "\${MU_DB_PATH:-$HOME/.local/state/mu/mu.db}"`);
     return sourceDigestBefore === sourceDigestAfter ? 0 : 1;
   } finally {
@@ -778,7 +778,7 @@ function main(): void {
 // file; `process.argv[1]` names whatever node/tsx was pointed at. When
 // the test imports `runImporter`, the two differ and nothing runs —
 // without this, importing the module would immediately try to import
-// the test runner's own argv as a v1 DB.
+// the test runner's own argv as a source DB.
 if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main();
 }

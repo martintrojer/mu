@@ -2,7 +2,7 @@
 // heuristic surfaced in `mu workstream list` and the TUI tab strip.
 //
 // The detection key is the latest op in the workstream being a
-// `db export` event (no local activity since export). 2.0 removed
+// `db export` event (no local activity since export). mu removed
 // `mu db export` itself, and v2-retire-log-shim removed the untyped
 // prose emitEvent that could stand in for it, so these tests insert the
 // marker op with raw SQL — the only remaining way to produce the shape

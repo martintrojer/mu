@@ -1,8 +1,8 @@
 // v2-archive-markers — archives as markers pinning the ops log.
 //
-// v1 stored archives as a COPY in five `archived_*` tables (dropped in
-// R1). The rebuild is one marker op per archive, and the tests below are
-// organised around the v1 PROPERTIES that had to survive, because those
+// mu once stored archives as a COPY in five `archived_*` tables (dropped
+// in R1). The rebuild is one marker op per archive, and the tests below
+// are organised around the PROPERTIES that had to survive, because those
 // are the contract — not the implementation.
 
 import { mkdtempSync, rmSync } from "node:fs";
@@ -125,7 +125,7 @@ describe("markers are ops", () => {
   });
 });
 
-describe("v1 property: ADDITIVE (markers are append-only)", () => {
+describe("carried property: ADDITIVE (markers are append-only)", () => {
   it("adding twice pins two moments rather than replacing one", () => {
     seedProject();
     const first = addArchiveMarker(db, { label: "v0-3", workstream: "proj" });
@@ -154,7 +154,7 @@ describe("v1 property: ADDITIVE (markers are append-only)", () => {
   });
 });
 
-describe("v1 property: CROSS-WORKSTREAM accumulation", () => {
+describe("carried property: CROSS-WORKSTREAM accumulation", () => {
   it("one label accumulates markers from several workstreams", () => {
     seedNamed("alpha", "al");
     seedNamed("beta", "be");
@@ -189,7 +189,7 @@ describe("v1 property: CROSS-WORKSTREAM accumulation", () => {
   });
 });
 
-describe("v1 property: OUTLIVES workstream destroy", () => {
+describe("carried property: OUTLIVES workstream destroy", () => {
   // THE headline property. `destroy` writes tombstones rather than
   // erasing history, so the puts below the marker are still in the log.
   it("restores a DESTROYED workstream, losslessly", async () => {

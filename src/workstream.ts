@@ -451,9 +451,9 @@ export async function destroyWorkstream(
 ): Promise<DestroyResult> {
   const tmuxSession = opts.tmuxSession ?? `mu-${opts.workstream}`;
 
-  // 2.0: destroy no longer snapshots. v9 dropped the `snapshots`
-  // table; the destroy writes tombstone ops instead and v2-undo
-  // replays inverses (VISION.md § 2b).
+  // Destroy does not snapshot. v9 dropped the `snapshots` table; the
+  // destroy writes tombstone ops instead and `mu undo` replays the
+  // inverses (VISION.md § 2b).
 
   // Pre-count the cascade victims so we can report them — SQLite's
   // changes() only reports rows directly affected by the last statement,

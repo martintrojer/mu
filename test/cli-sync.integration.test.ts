@@ -59,7 +59,7 @@ describe("mu sync (CLI)", () => {
     return rows[0]?.n ?? 0;
   };
 
-  // ─── the workflow that justifies the whole 2.0 rewrite ─────────────
+  // ─── the workflow that justifies the whole ops-log rewrite ────────
 
   it("round-trips work between two machines THROUGH THE VERB", async () => {
     await runCli(["workstream", "init", "demo"], lap);

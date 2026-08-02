@@ -44,7 +44,7 @@ describe("docs name only real CLI surface", () => {
   });
 
   // A guard that cannot fail is theatre. Plant each drift shape the
-  // 2.0 arc actually produced and assert it is named.
+  // 1.0 arc actually produced and assert it is named.
   it.each([
     // `db` SURVIVES as a namespace (v2 R17 wired `mu db backup`), so the
     // guard names the missing SUBCOMMAND rather than the namespace. That

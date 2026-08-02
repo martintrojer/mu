@@ -1,4 +1,4 @@
-// scripts/v1-to-v2.ts — the 1.x → 2.0 data escape hatch.
+// scripts/migrate-to-1.0.ts — the 0.4.x → 1.0 data escape hatch.
 //
 // Integration tier: it writes several real DB files per test and runs
 // `mu doctor --deep` (a full rebuild) over them.
@@ -9,7 +9,7 @@
 // `main()` is only the try/catch + process.exitCode shell around it.
 //
 // The acceptance run that matters was against a COPY of the user's live
-// v1 DB (857 tasks / 1601 edges / 2295 notes / 7430 log rows); see the
+// pre-1.0 DB (857 tasks / 1601 edges / 2295 notes / 7430 log rows); see the
 // task note on v2-data-escape-hatch. This file pins the CONTRACT so a
 // later refactor cannot quietly break it:
 //
@@ -27,11 +27,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { UsageError, runImporter } from "../scripts/v1-to-v2.js";
+import { UsageError, runImporter } from "../scripts/migrate-to-1.0.js";
 import { rmFixtureDir } from "./_fs.js";
 import { runCli } from "./_runCli.js";
 
-/** The v8 (final 1.x) schema, trimmed to the tables the importer reads
+/** The v8 (final pre-1.0) schema, trimmed to the tables the importer reads
  *  or counts. Inlined because src/db.ts no longer knows v8 exists —
  *  that is the whole point of the clean break. */
 const V8_SCHEMA = `
@@ -176,7 +176,7 @@ function makeV8Db(path: string, opts: { archives?: boolean } = {}): Fixture {
   );
   note.run(1, "worker-1", "first note", T(7));
   note.run(1, null, "anonymous note", T(8));
-  // Byte-identical duplicate: v1 allowed it, v2's grow-only note
+  // Byte-identical duplicate: v8 allowed it, v9's grow-only note
   // identity (task, author, content) collapses it to one row.
   note.run(2, "worker-1", "dup", T(9));
   note.run(2, "worker-1", "dup", T(10));
@@ -220,15 +220,15 @@ function runScript(args: readonly string[]): Run {
   }
 }
 
-describe("scripts/v1-to-v2.ts (the 1.x → 2.0 escape hatch)", () => {
+describe("scripts/migrate-to-1.0.ts (the 0.4.x → 1.0 escape hatch)", () => {
   let dir: string;
   let source: Fixture;
   let out: string;
 
   beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), "mu-v1-to-v2-"));
-    source = makeV8Db(join(dir, "v1.db"));
-    out = join(dir, "v2.db");
+    dir = mkdtempSync(join(tmpdir(), "mu-migrate-to-1.0-"));
+    source = makeV8Db(join(dir, "old.db"));
+    out = join(dir, "new.db");
   });
 
   afterEach(() => {
@@ -335,14 +335,14 @@ describe("scripts/v1-to-v2.ts (the 1.x → 2.0 escape hatch)", () => {
       // Only the two import intents: nothing pretends to be a live edit.
       expect(intents).toEqual([
         // 2 ws + 3 tasks + 1 edge + 4 notes
-        { intent: "migrate.v1", n: 10 },
-        { intent: "migrate.v1-log", n: 2 },
+        { intent: "migrate.v8", n: 10 },
+        { intent: "migrate.v8-log", n: 2 },
       ]);
 
       // Log ops use the log-only 'event' entity, so they never ship to a
       // peer (not in SYNCED_ENTITIES) and are never projected.
       expect(
-        db.prepare("SELECT DISTINCT entity AS e FROM ops WHERE intent = 'migrate.v1-log'").all(),
+        db.prepare("SELECT DISTINCT entity AS e FROM ops WHERE intent = 'migrate.v8-log'").all(),
       ).toEqual([{ e: "event" }]);
 
       // HLC order === source causality: the workstream op precedes its
@@ -463,7 +463,7 @@ describe("scripts/v1-to-v2.ts (the 1.x → 2.0 escape hatch)", () => {
     try {
       expect(
         (
-          db.prepare("SELECT COUNT(*) AS n FROM ops WHERE intent = 'migrate.v1-log'").get() as {
+          db.prepare("SELECT COUNT(*) AS n FROM ops WHERE intent = 'migrate.v8-log'").get() as {
             n: number;
           }
         ).n,
@@ -473,7 +473,7 @@ describe("scripts/v1-to-v2.ts (the 1.x → 2.0 escape hatch)", () => {
     }
   });
 
-  it("refuses v1 archives loudly rather than producing a half-archive", async () => {
+  it("refuses pre-1.0 archives loudly rather than producing a half-archive", async () => {
     const archived = makeV8Db(join(dir, "arch.db"), { archives: true });
     const target = join(dir, "arch-out.db");
     const run = runScript([archived.path, "--out", target]);
@@ -502,8 +502,8 @@ describe("scripts/v1-to-v2.ts (the 1.x → 2.0 escape hatch)", () => {
     // --force is the explicit opt-in, and it works.
     expect(runScript([source.path, "--out", out, "--force"]).exitCode).toBe(0);
 
-    // A v9 DB is not a v1 DB; importing one would double every row.
-    const v9 = join(dir, "already-v2.db");
+    // A v9 DB is not a v8 DB; importing one would double every row.
+    const v9 = join(dir, "already-v9.db");
     await runCli(["workstream", "init", "demo"], v9);
     const wrongVersion = runScript([v9, "--out", join(dir, "nope.db")]);
     expect(wrongVersion.exitCode).toBe(2);

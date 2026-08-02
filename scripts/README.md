@@ -6,37 +6,37 @@ run by hand, by an operator, for a one-time job.
 
 ---
 
-## `v1-to-v2.ts` — the mu 1.x → 2.0 data escape hatch
+## `migrate-to-1.0.ts` — the mu 0.4.x → 1.0 data escape hatch
 
-mu 2.0 is a **clean break**. `openDb` refuses every pre-v9 DB with
+mu 1.0 is a **clean break**. `openDb` refuses every pre-v9 DB with
 `SchemaTooOldError` (exit 4), there is no in-process migration ladder,
 and `CURRENT_SCHEMA` carries no v8 knowledge. That decision stands and
 this script does not change it. This is a **separate artifact you run
-once, by hand, against a copy** — it carries your v1 tasks, edges,
+once, by hand, against a copy** — it carries your pre-1.0 tasks, edges,
 notes and log into a brand-new v9 DB.
 
 ### Back up first
 
 ```bash
-# 1. STOP. Copy the v1 DB somewhere you will still have it in a year.
-cp ~/.local/state/mu/mu.db ~/mu-v1-backup-$(date +%Y%m%d).db
+# 1. STOP. Copy the old DB somewhere you will still have it in a year.
+cp ~/.local/state/mu/mu.db ~/mu-pre1.0-backup-$(date +%Y%m%d).db
 
-# 2. Move the live v1 DB aside. (Do NOT delete it.)
-mv ~/.local/state/mu/mu.db ~/.local/state/mu/mu.db.v1
+# 2. Move the live old DB aside. (Do NOT delete it.)
+mv ~/.local/state/mu/mu.db ~/.local/state/mu/mu.db.old
 
 # 3. Import it into a NEW file.
-npx tsx scripts/v1-to-v2.ts ~/.local/state/mu/mu.db.v1 --out /tmp/mu-v2.db
+npx tsx scripts/migrate-to-1.0.ts ~/.local/state/mu/mu.db.old --out /tmp/mu-new.db
 
 # 4. Verify — this is the check that matters.
-MU_DB_PATH=/tmp/mu-v2.db mu doctor --deep     # must report NO drift
-MU_DB_PATH=/tmp/mu-v2.db mu workstream list
-MU_DB_PATH=/tmp/mu-v2.db mu task list -w <your-workstream>
+MU_DB_PATH=/tmp/mu-new.db mu doctor --deep     # must report NO drift
+MU_DB_PATH=/tmp/mu-new.db mu workstream list
+MU_DB_PATH=/tmp/mu-new.db mu task list -w <your-workstream>
 
 # 5. Swap it in.
-mv /tmp/mu-v2.db ~/.local/state/mu/mu.db
+mv /tmp/mu-new.db ~/.local/state/mu/mu.db
 ```
 
-**Keep the v1 DB indefinitely.** There is no path back. mu 2.0 cannot
+**Keep the old DB indefinitely.** There is no path back. mu 1.0 cannot
 write a v8 file and this importer is one-way. Storage is cheap; the DB
 is a few megabytes; your task history is not reproducible. If you ever
 need something the import did not carry (see below), that file is the
@@ -46,10 +46,10 @@ only place it exists.
 
 | flag | effect |
 | --- | --- |
-| `--out <path>` | target path. Default: the source with a `.v2.db` suffix. |
+| `--out <path>` | target path. Default: the source with a `.v9.db` suffix. |
 | `--force` | overwrite an existing target. Off by default. |
 | `--drop-logs` | do not carry `agent_logs` into the ops log. |
-| `--drop-archives` | proceed past v1 archives, dropping them. |
+| `--drop-archives` | proceed past pre-1.0 archives, dropping them. |
 
 ### The contract
 
@@ -70,7 +70,7 @@ only place it exists.
   reference them; a source that violates that (a note timestamped
   before its task) is a REFUSAL, not a silent drop.
 - **One group.** Every op shares one synthetic `group_id` with intent
-  `migrate.v1` (`migrate.v1-log` for carried log lines), because it was
+  `migrate.v8` (`migrate.v8-log` for carried log lines), because it was
   one operator action. `mu log` renders it as an import rather than
   pretending each row was a live edit.
 
@@ -81,21 +81,21 @@ only place it exists.
 
 Task notes are a **grow-only set** in v9, identified by
 `(task, author, content)` — a note's surrogate id is assigned by
-whichever machine inserted it and is not portable. v1 had no such
+whichever machine inserted it and is not portable. v8 had no such
 constraint, so byte-identical duplicate notes on one task merge into
 one row. The importer counts them and says so.
 
 Carried log lines land as ops with entity `event`, which is log-only
 and NOT in `SYNCED_ENTITIES` — so they show up in `mu log` and in
 `mu rebuild`, and they never ship to a peer. That is the honest status
-of a v1 log line: it is this machine's history.
+of a carried log line: it is this machine's history.
 
 ### What does NOT come across
 
 The script prints this table on every run, with counts, so nothing is
 dropped silently.
 
-| v1 table | why not |
+| v8 table | why not |
 | --- | --- |
 | `agents` | `pane_id` names a tmux pane on a tmux server that no longer has it. Re-spawn instead. |
 | `vcs_workspaces` | absolute paths. Re-create with `mu workspace create`. |
@@ -106,11 +106,11 @@ dropped silently.
 
 ### Archives: an honest refusal
 
-**v1 archives of destroyed workstreams cannot be faithfully
-reconstructed.** v1 stored a column SUBSET of the archived rows in
-`archived_tasks` / `archived_edges` / `archived_notes`. A v2 archive is
+**Pre-1.0 archives of destroyed workstreams cannot be faithfully
+reconstructed.** v8 stored a column SUBSET of the archived rows in
+`archived_tasks` / `archived_edges` / `archived_notes`. A v9 archive is
 a MARKER pinning a point in the ops log, and the ops a marker would
-need do not exist — v1's `workstream destroy` deleted rows rather than
+need do not exist — v8's `workstream destroy` deleted rows rather than
 writing tombstones. Anything synthesized would pin the wrong moment: a
 marker over the imported LIVE workstream pins its CURRENT state, not
 its state at archive time.
@@ -118,11 +118,11 @@ its state at archive time.
 So the script REFUSES when the source has archives, rather than
 producing a half-archive. Your options, in order of preference:
 
-1. **Before upgrading**, export them with mu 1.x:
+1. **Before upgrading**, export them with mu 0.4.x:
    `mu archive show <label> > <label>.txt`
 2. Re-run with `--drop-archives` to import the tasks and drop the
    archives.
-3. Keep the v1 DB (you should anyway) and read them with `sqlite3`.
+3. Keep the old DB (you should anyway) and read them with `sqlite3`.
 
 ### Why this one is kept
 
@@ -133,6 +133,6 @@ everyone was on v5 nobody could ever need it again.
 This one is different. It crosses a MAJOR VERSION that real users cross
 on their own schedule, possibly months apart, possibly on a second
 machine they had not touched since. A deleted script is useless to
-someone upgrading in six months. It stays until 2.1 at the earliest,
-and is covered by `test/v1-to-v2.integration.test.ts` so it cannot rot
+someone upgrading in six months. It stays until 1.1 at the earliest,
+and is covered by `test/migrate-to-1.0.integration.test.ts` so it cannot rot
 silently.

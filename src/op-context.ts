@@ -57,7 +57,7 @@ export interface OpContext {
    * Ignored when `intent` is also provided.
    */
   intentIfUnset?: string | undefined;
-  /** Who caused it. Free text, same semantics as v1's
+  /** Who caused it. Free text, same semantics as the old
    *  `agent_logs.source`: an agent name, "user", "system". */
   actor?: string | undefined;
   /**

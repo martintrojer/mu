@@ -14,7 +14,7 @@
 // survive — `mu state` / `mu tracks` consume them, and `searchTasks`
 // keeps its unit-test coverage as reusable surface. The audit's SQL
 // recipes for the removed verbs live in docs/USAGE_GUIDE.md
-// "What's NOT in 0.2.0".
+// "What's NOT in mu".
 
 import {
   type TaskSortKey,

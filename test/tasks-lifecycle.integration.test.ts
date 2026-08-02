@@ -200,7 +200,7 @@ describe("claimTask", () => {
 
   // The load-bearing attribution case. On the `--self` path
   // tasks.owner_id stays NULL by design, so the op PAYLOAD cannot name
-  // who claimed it \u2014 `ops.actor` must. v1 smuggled the actor through a
+  // who claimed it \u2014 `ops.actor` must. mu once smuggled the actor through a
   // tab-delimited prose prefix and re-parsed it
   // (review_code_last_claim_actor_brittle); v2-retire-log-shim reads the
   // column, which is why lastClaimActor still works with no prose at all.
@@ -533,7 +533,7 @@ describe("evidence on lifecycle verbs", () => {
   // status payload must scope to it explicitly.
   /** Evidence is retrievable from the NOTE timeline.
    *
-   *  v1 put `evidence="..."` in a prose event payload (and, for close
+   *  mu once put `evidence="..."` in a prose event payload (and, for close
    *  only, also in a synthetic note). v2-retire-log-shim deleted those
    *  prose events, which would have silently DROPPED evidence on
    *  reject / defer / open / release / claim \u2014 measured: only close
@@ -564,7 +564,7 @@ describe("evidence on lifecycle verbs", () => {
       .all() as Array<{ intent: string; entity: string; key: string }>;
     expect(ops.length).toBeGreaterThan(0);
     expect(ops.some((o) => o.entity === "task" && o.key === "auth/design")).toBe(true);
-    // The v1 prose breadcrumb must NOT come back.
+    // The old prose breadcrumb must NOT come back.
     const prose = db.prepare("SELECT COUNT(*) AS n FROM ops WHERE entity = 'event'").get() as {
       n: number;
     };
@@ -610,7 +610,7 @@ describe("evidence on lifecycle verbs", () => {
   });
 
   it("evidence with quotes and backslashes survives verbatim in the note", () => {
-    // v1 needed JSON.stringify to keep these legible inside a prose
+    // mu once needed JSON.stringify to keep these legible inside a prose
     // payload. A note holds the raw string, so no escaping is involved.
     closeTask(db, "design", { evidence: 'has "quotes" and a \\backslash', workstream: "auth" });
     expect(noteContents()).toContain('CLOSE: has "quotes" and a \\backslash');

@@ -1,8 +1,8 @@
-// mu — `mu db backup <file>`: the whole survivor of v1's `db` namespace.
+// mu — `mu db backup <file>`: the whole survivor of the old `db` namespace.
 //
-// v1 had `mu db export / import / replay` — a whole-DB sync mechanism
-// with manifests, per-workstream drift detection, and divergence
-// sidecars (1500+ LOC). 2.0 deleted all three: sync is ambient over
+// mu once had `mu db export / import / replay` — a whole-DB sync
+// mechanism with manifests, per-workstream drift detection, and
+// divergence sidecars (1500+ LOC). All three are gone: sync is ambient over
 // segments, and disaster recovery is `mu rebuild`. What survives is the
 // one case those verbs were actually used for — "give me one file I can
 // scp" — which SQLite already implements as a single statement.

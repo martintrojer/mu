@@ -1,6 +1,6 @@
 // mu — `mu archive restore`: replay a workstream's ops up to a marker.
 //
-// This is where "an archive is a marker" pays off. v1 restore copied a
+// This is where "an archive is a marker" pays off. The old restore copied a
 // column subset out of five `archived_*` tables, so anything those
 // columns missed was simply lost. Replaying ops reproduces every column
 // the capture triggers recorded, which makes restore strictly MORE

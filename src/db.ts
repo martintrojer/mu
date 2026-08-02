@@ -3,7 +3,7 @@
 // Opens ~/.mu/mu.db (or MU_DB_PATH override), enables WAL + foreign keys,
 // applies the schema idempotently, and exposes the live Database handle.
 //
-// Schema (v9 — the 2.0 ops-log substrate; see CHANGELOG.md §[2.0.0]):
+// Schema (v9 — the ops-log substrate; see CHANGELOG.md §[1.0.0]):
 //   - 6 entity tables: workstreams, agents, tasks, task_edges,
 //                      task_notes, vcs_workspaces
 //   - 1 ops log:       ops        (the single append-only record of
@@ -13,7 +13,7 @@
 //   - 3 views:         ready, blocked, goals
 //   => EXPECTED_TABLES is exactly 10 entries.
 //
-// v9 is a BREAKING, migration-free redesign. It DROPS v1's four
+// v9 is a BREAKING, migration-free redesign. It DROPS v8's four
 // separate change-recording mechanisms — `agent_logs`, `snapshots`,
 // `workstream_sync`, and the five `archived_*` tables — and replaces
 // all of them with one **ops log**. Sync, undo, archive, and history
@@ -32,8 +32,8 @@
 // IMPORTANT: MIN_ACCEPTED_SCHEMA_VERSION === CURRENT_SCHEMA_VERSION
 // === 9. There is NO migration from v8 and no in-place forward bump
 // ladder any more: every pre-v9 DB is rejected at openDb time with
-// SchemaTooOldError (exit 4). The operator keeps their v1 DB with
-// `mu db backup` and re-imports through scripts/v1-to-v2.ts.
+// SchemaTooOldError (exit 4). The operator keeps their pre-1.0 DB with
+// `mu db backup` and re-imports through scripts/migrate-to-1.0.ts.
 
 import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
@@ -106,7 +106,7 @@ export function openDb(options: OpenDbOptions = {}): Db {
     // silently stamped as v9 by the CREATE-IF-NOT-EXISTS in applySchema.
     const detectedVersion = detectExistingSchemaVersion(db);
     if (detectedVersion !== null && detectedVersion < MIN_ACCEPTED_SCHEMA_VERSION) {
-      // Loud-fail: refuse to touch a pre-v9 DB. 2.0 is a clean break —
+      // Loud-fail: refuse to touch a pre-v9 DB. 1.0 is a clean break —
       // there is no in-place migration to run, so the only safe move is
       // to leave the old file untouched and tell the operator how to
       // keep it (see SchemaTooOldError.errorNextSteps).
@@ -258,11 +258,11 @@ export function tryResolveAgentId(db: Db, workstreamId: number, name: string): n
 /**
  * Thrown by openDb when the on-disk DB is older than v9.
  *
- * 2.0 is a deliberate clean break: v9 replaced v1's four separate
+ * 1.0 is a deliberate clean break: v9 replaced v8's four separate
  * change-recording mechanisms with the single **ops log** and there
  * is NO in-place migration. A v8-or-older DB is left untouched; the
  * operator keeps a copy (`mu db backup`) and re-imports through
- * scripts/v1-to-v2.ts.
+ * scripts/migrate-to-1.0.ts.
  *
  * Maps to exit code 4 (conflict) in cli.ts handle().
  */
@@ -273,22 +273,22 @@ export class SchemaTooOldError extends Error implements HasNextSteps {
     public readonly requiredVersion: number,
   ) {
     super(
-      `Detected v${detectedVersion} schema; v${requiredVersion} is required. mu 2.0 replaced the v1 change-recording tables with the ops log and ships NO in-place migration — your v${detectedVersion} DB is untouched. Back it up, then re-import it with scripts/v1-to-v2.ts against a fresh v${requiredVersion} DB.`,
+      `Detected v${detectedVersion} schema; v${requiredVersion} is required. mu 1.0 replaced the pre-1.0 change-recording tables with the ops log and ships NO in-place migration — your v${detectedVersion} DB is untouched. Back it up, then re-import it with scripts/migrate-to-1.0.ts against a fresh v${requiredVersion} DB.`,
     );
   }
   errorNextSteps(): NextStep[] {
     return [
       {
-        intent: "Keep a copy of the v1 DB before anything else",
-        command: `mu db backup "$HOME/mu-v1-backup.db"`,
+        intent: "Keep a copy of the old DB before anything else",
+        command: `mu db backup "$HOME/mu-pre1.0-backup.db"`,
       },
       {
-        intent: "Move the v1 DB aside so mu starts a fresh v9 DB",
-        command: `mv "\${MU_DB_PATH:-$HOME/.local/state/mu/mu.db}" "\${MU_DB_PATH:-$HOME/.local/state/mu/mu.db}.v1"`,
+        intent: "Move the old DB aside so mu starts a fresh v9 DB",
+        command: `mv "\${MU_DB_PATH:-$HOME/.local/state/mu/mu.db}" "\${MU_DB_PATH:-$HOME/.local/state/mu/mu.db}.old"`,
       },
       {
-        intent: "Re-import the v1 tasks/notes into the new DB (2.0 importer)",
-        command: `npx tsx scripts/v1-to-v2.ts "\${MU_DB_PATH:-$HOME/.local/state/mu/mu.db}.v1"`,
+        intent: "Re-import the old tasks/notes into the new DB",
+        command: `npx tsx scripts/migrate-to-1.0.ts "\${MU_DB_PATH:-$HOME/.local/state/mu/mu.db}.old"`,
       },
       {
         intent: "Inspect the on-disk DB version",
@@ -303,7 +303,7 @@ export class SchemaTooOldError extends Error implements HasNextSteps {
  * can distinguish:
  *   - Brand-new DB: no tables at all -> returns null (fresh, will be
  *     stamped to CURRENT_SCHEMA_VERSION by applySchema).
- *   - Pre-versioning DB (had v1 tables before schema_version existed):
+ *   - Pre-versioning DB (had the original tables before schema_version existed):
  *     workstreams exists, schema_version doesn't -> returns 1.
  *   - Already-versioned DB: schema_version row present -> returns its
  *     value.
@@ -318,8 +318,8 @@ function detectExistingSchemaVersion(db: Db): number | null {
       | undefined;
     return row?.version ?? null;
   }
-  // No schema_version table. Check whether any of the original v1
-  // tables exist; if so this is a pre-versioning v1 DB.
+  // No schema_version table. Check whether any of the original
+  // tables exist; if so this is a pre-versioning DB.
   const hasWorkstreams = db
     .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='workstreams'")
     .get() as { name: string } | undefined;
@@ -387,14 +387,14 @@ function applySchema(db: Db): void {
   );
 }
 
-/** The schema version a fresh DB starts at. v9 is the 2.0 ops-log
+/** The schema version a fresh DB starts at. v9 is the ops-log
  *  substrate: it drops `agent_logs`, `snapshots`, `workstream_sync`
  *  and the five `archived_*` tables and adds `ops` + `sync_peers`.
  *  See VISION.md § 2b. */
 export const CURRENT_SCHEMA_VERSION = 9;
 
 /** The lowest schema version `openDb` will accept. Equal to
- *  CURRENT_SCHEMA_VERSION: 2.0 ships no migration, so every pre-v9 DB
+ *  CURRENT_SCHEMA_VERSION: mu ships no migration, so every pre-v9 DB
  *  throws `SchemaTooOldError` (exit 4) and is left untouched on disk. */
 const MIN_ACCEPTED_SCHEMA_VERSION = 9;
 
@@ -465,7 +465,7 @@ export type PortableTable = (typeof PORTABLE_TABLES)[number];
  *
  *  Consequence that falls out with no special case: `tasks.owner_id`
  *  is an FK into `agents`, and `agents` is machine-local. Therefore
- *  OWNERSHIP DOES NOT SYNC. v1's deleted db-sync.ts reached the same
+ *  OWNERSHIP DOES NOT SYNC. The deleted db-sync.ts reached the same
  *  conclusion via an `includeOwners` flag; here it is structural. */
 export const MACHINE_LOCAL_TABLES = [
   "agents",
@@ -680,7 +680,7 @@ CREATE INDEX IF NOT EXISTS idx_task_notes_task ON task_notes (task_id);
 --   group_id   the undo unit: all ops of one operator action
 --   actor      who caused it (may not be a registered worker)
 --   intent     semantic label ('task.close', 'agent.spawn')
---   entity/key what it addresses ('task', 'mu/v2-schema')
+--   entity/key what it addresses ('task', 'mu/ops-log')
 --   op         'put' (semantic partial update) | 'del' (tombstone)
 --   payload    JSON of ONLY the columns that changed
 --
@@ -702,7 +702,7 @@ CREATE TABLE IF NOT EXISTS ops (
   UNIQUE (machine_id, hlc)
 );
 
--- Three indexes, one per read shape that actually exists in 2.0:
+-- Three indexes, one per read shape that actually exists:
 --   hlc         — replay/rebuild walks the log in HLC order.
 --   entity,key  — "what happened to this task" (history + per-field merge).
 --   group_id    — 'mu undo <group>' gathers one action's ops.

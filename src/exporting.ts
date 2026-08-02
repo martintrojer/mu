@@ -46,7 +46,7 @@ export const EXPORT_MANIFEST_VERSION = 2;
 
 /** One per-task summary inside a per-source-ws section of the manifest. */
 export interface ExportTaskEntry {
-  /** Task local_id == filename stem (`<id>.md`). Kept for v1 manifest compatibility. */
+  /** Task local_id == filename stem (`<id>.md`). Kept for old-manifest compatibility. */
   id: string;
   /** Task local_id, duplicated under the operator-facing SDK name so bucket INDEX can render from manifest alone. */
   name: string;
@@ -81,7 +81,7 @@ export interface ExportSourceManifest {
 
 /** Top-level bucket manifest. `bucketVersion: 2` — the v0.3 disk layout.
  *  `manifest_version` is the schema of the manifest JSON payload itself:
- *  v1 lacked task summaries, v2 stores enough per-task data to render
+ *  Manifest v1 lacked task summaries; manifest v2 stores enough per-task data to render
  *  bucket INDEX.md from `manifest.sources` alone. Manifests without
  *  `bucketVersion: 2` fall through to the `corrupt` lane in `readManifest`. */
 export interface ExportManifest {

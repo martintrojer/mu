@@ -122,7 +122,7 @@ export function formatHlc(hlc: Hlc): string {
 }
 
 /** Inverse of `formatHlc`. Throws `HlcParseError` on anything else —
- *  including the v1 placeholder `<iso>|<uuid>` shape. */
+ *  including the legacy placeholder `<iso>|<uuid>` shape. */
 export function parseHlc(value: string): Hlc {
   const parts = value.split(SEP);
   if (parts.length !== 3) throw new HlcParseError(value);

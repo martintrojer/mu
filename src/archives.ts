@@ -1,8 +1,8 @@
 // mu — archives, as MARKERS pinning points in the ops log.
 //
-// WHAT CHANGED FROM v1
+// WHAT CHANGED FROM THE OLD SCHEMA
 //
-// v1 archives were five tables (`archives`, `archived_tasks`,
+// Pre-1.0 archives were five tables (`archives`, `archived_tasks`,
 // `archived_edges`, `archived_notes`, `archived_events`) holding a COPY
 // of a column subset, plus verbs to create and destroy those rows. R1
 // dropped all five. This module rebuilds the feature on the ops log,
@@ -12,7 +12,7 @@
 //   mu archive restore v0-3 --as r   → replay ws's ops up to that hlc,
 //                                      under the new name
 //
-// Every v1 property survives, and each is load-bearing enough to state:
+// Every previous property survives, and each is load-bearing enough to state:
 //
 //   OUTLIVES DESTROY   `workstream destroy` writes TOMBSTONES; it does
 //                      not erase history. The ops below the marker are
@@ -23,7 +23,7 @@
 //   ADDITIVE           Markers are append-only by construction (they
 //                      are ops). `lastAddedAt` is just MAX(hlc).
 //   LOSSLESS RESTORE   Replaying ops reproduces every captured column,
-//                      which is strictly MORE faithful than v1's
+//                      which is strictly MORE faithful than the old
 //                      column-subset copy.
 //
 // ┌─ LOAD-BEARING INVARIANT ────────────────────────────────────────┐

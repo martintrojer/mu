@@ -149,7 +149,7 @@ describe("logs SDK", () => {
   // ─── FK CASCADE on workstream destroy ───────────────────────────────
 
   it("ops OUTLIVE their workstream (no FK cascade — v9 behaviour change)", () => {
-    // v1's agent_logs had an FK ON DELETE CASCADE, so destroying a
+    // The old agent_logs had an FK ON DELETE CASCADE, so destroying a
     // workstream erased its history. The ops log is deliberately
     // FK-free: an op must stay readable after the row it records is
     // gone, which is what makes tombstones and archive markers work
@@ -187,9 +187,9 @@ describe("logs SDK", () => {
 
 // ─── claim attribution (ops.actor) ──────────────────────────────────────────
 //
-// review_code_last_claim_actor_brittle: v1's consumer (lastClaimActor)
+// review_code_last_claim_actor_brittle: the old consumer (lastClaimActor)
 // prefix-matched a free-prose payload AND was capped at the most recent
-// 100 events. v1 patched the brittleness by bolting a tab-delimited
+// 100 events. mu patched the brittleness by bolting a tab-delimited
 // `task.claim<TAB><id><TAB>actor=...` prefix onto the payload.
 //
 // v2-retire-log-shim deletes that whole apparatus. `withOpContext` seeds
@@ -272,7 +272,7 @@ describe("claim attribution via ops.actor", () => {
   });
 
   it("attribution keys on the EXACT natural key, so similar ids cannot cross-match", async () => {
-    // v1 matched a LIKE pattern against prose and had to escape `_`
+    // mu once matched a LIKE pattern against prose and had to escape `_`
     // (a LIKE wildcard, and a legal task-id char) to stop `foo_a` from
     // answering for `foo1a`. ops.key is the exact natural key
     // '<ws>/<localId>', so there is no pattern and nothing to escape.

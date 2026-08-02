@@ -2,7 +2,7 @@
 //
 // WHY THIS EXISTS
 //
-// Two doc/code divergences in the 2.0 arc were caught by a human
+// Two doc/code divergences in the 1.0 arc were caught by a human
 // running a documented command, not by any test: VOCABULARY § portable
 // omitted two tables, and `mu archive restore --source <ws>` kept
 // documenting a flag that had become `-w`. Both are the same failure
@@ -23,7 +23,7 @@
 import type { Command } from "commander";
 
 /** Marker an author puts on a fenced block or line whose `mu ...` text
- *  is illustrative (a shell alias, a future verb, a v1 command being
+ *  is illustrative (a shell alias, a future verb, a retired command being
  *  called out as REMOVED) and must not be parsed. A whole region is
  *  bracketed with `<!-- doc-cli-drift:skip-start -->` /
  *  `<!-- doc-cli-drift:skip-end -->` — that is the shape the

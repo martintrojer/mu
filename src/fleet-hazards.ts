@@ -48,7 +48,7 @@ export function isPathInside(child: string, parent: string): boolean {
 }
 
 /**
- * THE footgun of the whole 2.0 design, and the reason it is `fail` rather
+ * THE footgun of the whole sync design, and the reason it is `fail` rather
  * than `warn`.
  *
  * Sync tools (Syncthing, Dropbox, iCloud, rsync loops) copy files

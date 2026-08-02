@@ -65,7 +65,7 @@ describe("hlc", () => {
       expect(parseHlc(formatHlc(hlc))).toEqual(hlc);
     });
 
-    it("rejects malformed values, including the v1 placeholder shape", () => {
+    it("rejects malformed values, including the legacy placeholder shape", () => {
       const placeholder = `2026-01-01T00:00:00.000Z|${"a".repeat(8)}`;
       expect(() => parseHlc(placeholder)).toThrow(HlcParseError);
       expect(() => parseHlc("")).toThrow(HlcParseError);

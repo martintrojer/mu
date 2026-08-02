@@ -1,13 +1,13 @@
 // mu — undo: emit INVERSE OPS for one group.
 //
-// THE CHANGE IN SEMANTICS FROM v1
+// THE CHANGE IN SEMANTICS FROM THE OLD UNDO
 // ------------------------------
-// v1's `mu undo --yes` swapped the whole DB file back to a snapshot. That
+// The old `mu undo --yes` swapped the whole DB file back to a snapshot. That
 // reverts your OTHER workstreams too — on the real dogfood DB, 812 tasks
 // across three workstreams — so it was a blunt instrument you hesitated
 // to reach for. It also did not sync, so a peer kept the mistake.
 //
-// 2.0 undo emits inverse ops for one `group_id`:
+// `mu undo` emits inverse ops for one `group_id`:
 //
 //   * GRANULAR   — touches only the rows that action touched.
 //   * COMPOSABLE — it is itself an ordinary op, in its own group, so it

@@ -16,10 +16,10 @@
 //
 // The detection key is a `db export` op: if the LATEST op in the
 // workstream is a `db export`, nothing local has happened since the
-// export ran. NOTE: 2.0 removed `mu db export` (sync is ambient over
-// segments now), so nothing in-tree emits that marker any more and
-// this heuristic reports `parked: false` until v2-sync re-grounds it
-// on peer watermarks.
+// export ran. NOTE: `mu db export` no longer exists (sync is ambient
+// over segments), so nothing in-tree emits that marker any more and
+// this heuristic reports `parked: false` until it is re-grounded on
+// peer watermarks.
 // Any subsequent `task add` / `task note` / `agent spawn` / etc.
 // supersedes the marker and the workstream stops being parked.
 //
@@ -31,11 +31,11 @@ import type { Db } from "./db.js";
 
 /** The op intent that marks a workstream as shipped-elsewhere.
  *
- *  `workstream.export` is the closest surviving relative of v1's
- *  `db export` marker. NOTE this heuristic is effectively dormant: 2.0
- *  removed `mu db export`, and `mu workstream export` writes a bucket
+ *  `workstream.export` is the closest surviving relative of the old
+ *  `db export` marker. NOTE this heuristic is effectively dormant:
+ *  `mu db export` is gone, and `mu workstream export` writes a bucket
  *  rather than handing the workstream to another machine, so in practice
- *  it will rarely be the LATEST op. v2-sync re-grounds "parked" on peer
+ *  it will rarely be the LATEST op. Sync re-grounds "parked" on peer
  *  watermarks, which is the honest signal. Kept keyed on an intent (not
  *  a payload prefix) so it cannot silently mis-fire in the meantime. */
 const PARKED_MARKER_INTENT = "workstream.export";

@@ -2,7 +2,7 @@
 //
 // The third leg of the ops-log substrate, after capture (write side) and
 // apply (read side). This is the DISASTER-RECOVERY story that replaces
-// the snapshot files 2.0 deleted: given an intact `ops` table, every
+// the snapshot files mu no longer keeps: given an intact `ops` table, every
 // portable row is reconstructable, because the log is the canonical
 // record and the tables are a projection of it.
 //

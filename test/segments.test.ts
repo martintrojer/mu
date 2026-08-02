@@ -175,7 +175,7 @@ describe("segments", () => {
 
   // ─── THE MONEY TEST ──────────────────────────────────────────────────
 
-  describe("convergence (the 2.0 thesis)", () => {
+  describe("convergence (the sync thesis)", () => {
     it("A and B edit DIFFERENT fields of the SAME task and both keep BOTH", async () => {
       // Proven at the applyOp level in R5; this proves it end-to-end
       // THROUGH FILES, which is the claim that actually matters.

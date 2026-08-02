@@ -143,7 +143,7 @@ describe("mu archive list", () => {
     expect(plain(listed.stdout)).toContain("proj");
   });
 
-  it("`list <label>` shows the markers (v1's separate `show`)", async () => {
+  it("`list <label>` shows the markers (the old separate `show`)", async () => {
     await seed();
     await runCli(["archive", "add", "v0-3", "-w", "proj"], dbPath);
     const r = await runCli(["archive", "list", "v0-3", "--json"], dbPath);
@@ -198,7 +198,7 @@ describe("mu archive export reuses the workstream-export renderer", () => {
   });
 });
 
-describe("retired v1 verbs are gone", () => {
+describe("retired archive verbs are gone", () => {
   // create/remove/delete are consequences of the marker model, not scope
   // cuts: a label with no markers pins nothing, and markers are ops
   // (append-only), so removing one would mean rewriting history.

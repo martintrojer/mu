@@ -226,8 +226,8 @@ export async function freeWorkspace(
   const row = getWorkspaceForAgent(db, agent, opts.workstream);
   if (!row) return { removed: false, rowDeleted: false };
 
-  // 2.0: no pre-mutation snapshot. v9 dropped the `snapshots` table;
-  // v2-undo restores rollback via inverse ops over the ops log.
+  // No pre-mutation snapshot: v9 dropped the `snapshots` table and
+  // rollback is inverse ops over the ops log (`mu undo`).
 
   const backend = backendByName(row.backend);
   const result = await backend.freeWorkspace({

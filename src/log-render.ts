@@ -2,7 +2,7 @@
 //
 // WHY THIS FILE EXISTS
 //
-// v1 rendered log lines by prefix-matching free prose: `classifyEventVerb`
+// mu once rendered log lines by prefix-matching free prose: `classifyEventVerb`
 // walked `EVENT_VERB_PREFIXES` looking for a leading two-word verb, and
 // `CLAIM_EVENT_PREFIX` was bolted on because that matching kept breaking
 // (review_code_last_claim_actor_brittle). Rewording any payload silently
@@ -14,7 +14,7 @@
 // payload holding ONLY the columns that changed. So rendering is a
 // lookup on intent, not a search through text. THIS FILE MUST NEVER
 // STRING-MATCH A PAYLOAD to decide what an op is — that is the exact
-// brittleness 2.0 deletes. It reads `intent`, then pulls named fields
+// brittleness the ops log deletes. It reads `intent`, then pulls named fields
 // out of the parsed payload.
 //
 // Layering: pure and colour-free. `src/cli/format.ts` adds picocolors
@@ -219,16 +219,16 @@ export function renderOp(row: RenderableOp): RenderedOp | null {
 
   if (!isKnownIntent(intent)) {
     // Forward-compatible: an intent written by a NEWER mu (ingested from
-    // a peer's segment) — or by the one-shot scripts/v1-to-v2.ts
-    // importer, whose 'migrate.v1' / 'migrate.v1-log' ops deliberately
-    // do NOT claim to be typed 2.0 verbs — still renders legibly
+    // a peer's segment) — or by the one-shot scripts/migrate-to-1.0.ts
+    // importer, whose 'migrate.v8' / 'migrate.v8-log' ops deliberately
+    // do NOT claim to be typed verbs — still renders legibly
     // instead of vanishing. Deliberately not a throw: sync must never
     // be blocked by a rendering gap.
     //
     // A PROSE payload is shown as the detail, because for an unknown
     // intent the prose is the only information the line carries and
     // dropping it renders a bare verb with no subject at all (which is
-    // what every carried v1 log line looked like). A JSON payload is
+    // what every carried pre-1.0 log line looked like). A JSON payload is
     // still withheld — "no raw JSON in mu log" is a hard property —
     // and reduced to its changed field names.
     const bag = fields(row.payload);

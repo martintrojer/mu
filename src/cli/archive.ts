@@ -1,6 +1,6 @@
 // mu — `mu archive add / list / restore / export`.
 //
-// v1 had seven verbs over five tables: create, list, show, add, restore,
+// Pre-1.0 mu had seven verbs over five tables: create, list, show, add, restore,
 // remove, delete (+ search, export). Three survive, and the deletions are
 // consequences of the marker model rather than scope cuts:
 //
@@ -231,7 +231,7 @@ export function wireArchiveCommands(program: Command): void {
 
   archive
     .command("list [label]")
-    .description("List archives, or one archive's markers. Replaces v1's separate `show`.")
+    .description("List archives, or one archive's markers. Replaces the old separate `show`.")
     .option(...JSON_OPT)
     .action(function (label: string | undefined) {
       const opts = (this as Command).optsWithGlobals() as { json?: boolean };
