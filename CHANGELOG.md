@@ -89,6 +89,11 @@ markers land in follow-up work.
   `mu archive` namespace (`create` / `list` / `show` / `add` /
   `restore` / `remove` / `delete` / `search` / `export`).
   `mu workstream destroy --archive <label>` loses its flag.
+  **`mu db backup <file>` survives** as the whole `db` namespace: a
+  `VACUUM INTO` one-liner for the "one file I can scp" case, which is
+  the only thing `db export` was actually used for. It never
+  overwrites — the copy `SchemaTooOldError` tells you to take before
+  `scripts/v1-to-v2.ts` is not one to clobber on a retry.
 - **Destructive verbs no longer snapshot.** `workstream destroy`,
   `task delete` / `close` / `reject` / `defer` / `release`,
   `agent close`, and `workspace free` / `recreate` used to capture a

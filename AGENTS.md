@@ -87,8 +87,6 @@ mu/
 │   ├── workstream.ts      # ensureWorkstream / list / summarize / destroy / export
 │   ├── archives.ts        # cross-workstream archive bucket SDK hub (re-exports src/archives/*)
 │   ├── exporting.ts       # unified bucket renderer (workstream + archive export; read-only buckets)
-│   ├── db-sync.ts         # whole-DB export/import + drift detection + sidecar park SDK
-│   ├── db-sync-replay.ts  # manual replay of divergence sidecars parked by db import --force-source
 │   ├── logs.ts            # agent_logs SDK (append, list, latestSeq, emitEvent)
 │   ├── vcs.ts             # VcsBackend hub (re-exports src/vcs/*: jj/sl/git/none impls)
 │   ├── workspace.ts       # per-agent VCS workspaces hub (re-exports src/workspace/*)
@@ -151,7 +149,7 @@ mu/
 │   │   │                          # cursor-row.tsx, scroll.ts (applyCursor/applyScroll), viewport.ts,
 │   │   │                          # show-loader.ts (shared subprocess-preserving loader)
 │   │   ├── snapshot.ts    # undo / snapshot list / snapshot show
-│   │   ├── db.ts          # db export / import / replay
+│   │   ├── db.ts          # db backup (VACUUM INTO; export/import/replay removed in 2.0)
 │   │   ├── sql.ts         # sql escape hatch
 │   │   ├── doctor.ts      # doctor diagnostic
 │   │   ├── format.ts      # pure rendering helpers (table renderers, status colourers, truncate/relTime)
