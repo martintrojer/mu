@@ -1,14 +1,14 @@
 // The herdr mux backend, topology half.
 //
-// Every JSON body below is a VERBATIM capture from a real herdr 0.8.0
-// server (protocol 19) driven through an isolated `herdr --session
-// mutest-topo`. Hardcoding the recordings keeps this in the fast tier:
-// no subprocess, no server, no sleeps.
+// Fast tier: every response is a recorded fixture from test/_mux-fixtures.ts
+// (verbatim captures from a real herdr 0.8.0 server, protocol 19). No
+// subprocess, no server, no sleeps. The backend + executor pair is
+// installed through the shared seam in test/_mux.ts, so this file never
+// has to know that "testing herdr" means calling two setters.
 
 import { afterEach, describe, expect, it } from "vitest";
 import {
   HerdrError,
-  type HerdrExecResult,
   HerdrNotImplementedError,
   HerdrSyntaxError,
   herdrBackend,
@@ -19,188 +19,54 @@ import {
   newSession,
   newWindow,
   paneExists,
-  resetHerdrExecutor,
   sessionExists,
-  setHerdrExecutor,
   setPaneTitle,
   splitWindow,
 } from "../src/mux/herdr.js";
 import { PaneNotFoundError } from "../src/mux/types.js";
-
-// ─── Recorded fixtures ─────────────────────────────────────────────────
-
-const WORKSPACE_LIST = JSON.stringify({
-  id: "cli:workspace:list",
-  result: {
-    type: "workspace_list",
-    workspaces: [
-      {
-        active_tab_id: "w1:t1",
-        agent_status: "unknown",
-        focused: true,
-        label: "mu-topotest",
-        number: 1,
-        pane_count: 1,
-        tab_count: 1,
-        workspace_id: "w1",
-      },
-    ],
-  },
-});
-
-const WORKSPACE_LIST_EMPTY = JSON.stringify({
-  id: "cli:workspace:list",
-  result: { type: "workspace_list", workspaces: [] },
-});
-
-const WORKSPACE_CREATED = JSON.stringify({
-  id: "cli:workspace:create",
-  result: {
-    root_pane: {
-      agent_status: "unknown",
-      cwd: "/var/home/martintrojer",
-      focused: true,
-      pane_id: "w1:p1",
-      tab_id: "w1:t1",
-      terminal_id: "term_658aea428bdf51",
-      workspace_id: "w1",
-    },
-    tab: { focused: true, label: "1", number: 1, tab_id: "w1:t1", workspace_id: "w1" },
-    type: "workspace_created",
-    workspace: { label: "mu-topotest", number: 1, workspace_id: "w1" },
-  },
-});
-
-const TAB_LIST = JSON.stringify({
-  id: "cli:tab:list",
-  result: {
-    tabs: [
-      { focused: true, label: "1", number: 1, pane_count: 1, tab_id: "w1:t1", workspace_id: "w1" },
-      {
-        focused: false,
-        label: "mytab",
-        number: 2,
-        pane_count: 1,
-        tab_id: "w1:t2",
-        workspace_id: "w1",
-      },
-    ],
-    type: "tab_list",
-  },
-});
-
-const TAB_CREATED = JSON.stringify({
-  id: "cli:tab:create",
-  result: {
-    root_pane: {
-      cwd: "/var/home/martintrojer",
-      focused: false,
-      pane_id: "w1:p2",
-      tab_id: "w1:t2",
-      workspace_id: "w1",
-    },
-    tab: { focused: false, label: "mytab", number: 2, tab_id: "w1:t2", workspace_id: "w1" },
-    type: "tab_created",
-  },
-});
-
-const PANE_LIST = JSON.stringify({
-  id: "cli:pane:list",
-  result: {
-    panes: [
-      { focused: true, label: "worker-1", pane_id: "w1:p1", tab_id: "w1:t1", workspace_id: "w1" },
-      { focused: false, pane_id: "w1:p2", tab_id: "w1:t2", workspace_id: "w1" },
-    ],
-    type: "pane_list",
-  },
-});
-
-const PANE_SPLIT = JSON.stringify({
-  id: "cli:pane:split",
-  result: {
-    pane: { cwd: "/tmp", focused: false, pane_id: "w1:p3", tab_id: "w1:t1", workspace_id: "w1" },
-    type: "pane_info",
-  },
-});
-
-const PANE_GET = JSON.stringify({
-  id: "cli:pane:get",
-  result: {
-    pane: {
-      focused: true,
-      label: "mylabel",
-      pane_id: "w1:p1",
-      tab_id: "w1:t1",
-      workspace_id: "w1",
-    },
-    type: "pane_info",
-  },
-});
-
-const PANE_NOT_FOUND = JSON.stringify({
-  error: { code: "pane_not_found", message: "pane w9:p9 not found" },
-  id: "cli:pane:get",
-});
-
-const WORKSPACE_NOT_FOUND = JSON.stringify({
-  error: { code: "workspace_not_found", message: "workspace w99 not found" },
-  id: "cli:workspace:close",
-});
-
-const OK = JSON.stringify({ id: "cli:pane:close", result: { type: "ok" } });
-
-const STATUS_RUNNING = [
-  "client:",
-  "  version: 0.8.0",
-  "  protocol: 19",
-  "",
-  "server:",
-  "  status: running",
-  "  protocol: 19",
-  "  compatible: yes",
-].join("\n");
-
-const STATUS_STOPPED = [
-  "client:",
-  "  version: 0.8.0",
-  "",
-  "server:",
-  "  status: not running",
-  "  socket: /home/u/.config/herdr/herdr.sock",
-].join("\n");
+import { installMux, type MuxExecResult, type MuxExecutor, type MuxHarness } from "./_mux.js";
+import {
+  OK,
+  PANE_GET,
+  PANE_LIST,
+  PANE_NOT_FOUND,
+  PANE_SPLIT,
+  STATUS_INCOMPATIBLE,
+  STATUS_RUNNING,
+  STATUS_STOPPED,
+  TAB_CREATED,
+  TAB_LIST,
+  WORKSPACE_CREATED,
+  WORKSPACE_LIST,
+  WORKSPACE_LIST_EMPTY,
+  WORKSPACE_NOT_FOUND,
+} from "./_mux-fixtures.js";
 
 // ─── Executor harness ──────────────────────────────────────────────────
 
-interface Call {
-  args: readonly string[];
+let harness: MuxHarness | undefined;
+
+/** Install the herdr backend with a prefix-routed executor. */
+function mockHerdr(routes: Array<[string, MuxExecResult | string]>): MuxHarness {
+  harness = installMux("herdr", routes);
+  return harness;
 }
 
-/** Route by a prefix of the args vector; record every call. */
-function mockHerdr(routes: Array<[string, HerdrExecResult | string]>): Call[] {
-  const calls: Call[] = [];
-  setHerdrExecutor(async (args) => {
-    calls.push({ args });
-    const key = args.join(" ");
-    for (const [prefix, response] of routes) {
-      if (key.startsWith(prefix)) {
-        return typeof response === "string"
-          ? { stdout: response, stderr: "", exitCode: 0 }
-          : response;
-      }
-    }
-    return { stdout: "", stderr: `unrouted: ${key}`, exitCode: 1 };
-  });
-  return calls;
+/** Install an executor with arbitrary behaviour (throwing, counting). */
+function mockHerdrWith(executor: MuxExecutor): MuxHarness {
+  harness = installMux("herdr", executor);
+  return harness;
 }
 
-const serverError = (payload: string): HerdrExecResult => ({
+const serverError = (payload: string): MuxExecResult => ({
   stdout: "",
   stderr: payload,
   exitCode: 1,
 });
 
 afterEach(() => {
-  resetHerdrExecutor();
+  harness?.restore();
+  harness = undefined;
 });
 
 // ─── Pane id validation ────────────────────────────────────────────────
@@ -304,7 +170,7 @@ describe("herdr sessions (= workspaces, addressed by label)", () => {
   it("newSession labels the workspace and never steals focus", async () => {
     const calls = mockHerdr([["workspace create", WORKSPACE_CREATED]]);
     await newSession("mu-auth", { cwd: "/repo" });
-    expect(calls[0]?.args).toEqual([
+    expect(calls.argsOf(0)).toEqual([
       "workspace",
       "create",
       "--label",
@@ -321,14 +187,14 @@ describe("herdr sessions (= workspaces, addressed by label)", () => {
     // to --focus" refactor.
     const calls = mockHerdr([["workspace create", WORKSPACE_CREATED]]);
     await newSession("mu-auth", { detached: false });
-    expect(calls[0]?.args).toContain("--no-focus");
-    expect(calls[0]?.args).not.toContain("--focus");
+    expect(calls.argsOf(0)).toContain("--no-focus");
+    expect(calls.argsOf(0)).not.toContain("--focus");
   });
 
   it("newSession forwards env as --env KEY=VALUE", async () => {
     const calls = mockHerdr([["workspace create", WORKSPACE_CREATED]]);
     await newSession("mu-auth", { env: { MU_AGENT_NAME: "w1" } });
-    expect(calls[0]?.args).toEqual([
+    expect(calls.argsOf(0)).toEqual([
       "workspace",
       "create",
       "--label",
@@ -358,7 +224,7 @@ describe("herdr sessions (= workspaces, addressed by label)", () => {
       ["workspace close", OK],
     ]);
     await herdrBackend.killSession("mu-topotest");
-    expect(calls[1]?.args).toEqual(["workspace", "close", "w1"]);
+    expect(calls.argsOf(1)).toEqual(["workspace", "close", "w1"]);
   });
 
   it("killSession is idempotent for a workspace that is already gone", async () => {
@@ -387,7 +253,7 @@ describe("herdr windows (= tabs)", () => {
       { id: "w1:t1", name: "1" },
       { id: "w1:t2", name: "mytab" },
     ]);
-    expect(calls[1]?.args).toEqual(["tab", "list", "--workspace", "w1"]);
+    expect(calls.argsOf(1)).toEqual(["tab", "list", "--workspace", "w1"]);
   });
 
   it("listWindows returns [] for a workspace that no longer exists", async () => {
@@ -411,7 +277,7 @@ describe("herdr windows (= tabs)", () => {
       ["tab create", TAB_CREATED],
     ]);
     expect(await newWindow({ session: "mu-topotest", name: "mytab", command: "" })).toBe("w1:p2");
-    expect(calls[1]?.args).toEqual([
+    expect(calls.argsOf(1)).toEqual([
       "tab",
       "create",
       "--workspace",
@@ -433,7 +299,7 @@ describe("herdr windows (= tabs)", () => {
 
   it("selectLayout is a no-op: herdr splits are explicit", async () => {
     // No executor installed on purpose — a no-op must not shell out.
-    setHerdrExecutor(async () => {
+    mockHerdrWith(async () => {
       throw new Error("selectLayout must not call herdr");
     });
     await expect(herdrBackend.selectLayout("w1:t1", "tiled")).resolves.toBeUndefined();
@@ -472,7 +338,7 @@ describe("herdr panes", () => {
       { paneId: "w1:p2", title: "", command: "", windowId: "w1:t2" },
     ]);
     // Filtering is client-side: herdr's pane list is workspace-scoped.
-    expect(calls[0]?.args).toEqual(["pane", "list", "--workspace", "w1"]);
+    expect(calls.argsOf(0)).toEqual(["pane", "list", "--workspace", "w1"]);
   });
 
   it("listPanes('*') fans out across every workspace", async () => {
@@ -488,7 +354,7 @@ describe("herdr panes", () => {
   it("splitWindow defaults to a right split and never steals focus", async () => {
     const calls = mockHerdr([["pane split", PANE_SPLIT]]);
     expect(await splitWindow({ target: "w1:p1", command: "", cwd: "/tmp" })).toBe("w1:p3");
-    expect(calls[0]?.args).toEqual([
+    expect(calls.argsOf(0)).toEqual([
       "pane",
       "split",
       "w1:p1",
@@ -503,14 +369,14 @@ describe("herdr panes", () => {
   it("splitWindow maps horizontal:false to --direction down", async () => {
     const calls = mockHerdr([["pane split", PANE_SPLIT]]);
     await splitWindow({ target: "w1:p1", command: "", horizontal: false });
-    expect(calls[0]?.args).toContain("down");
-    expect(calls[0]?.args).not.toContain("right");
+    expect(calls.argsOf(0)).toContain("down");
+    expect(calls.argsOf(0)).not.toContain("right");
   });
 
   it("splitWindow rejects a tmux target before it ever reaches herdr", async () => {
     const calls = mockHerdr([["pane split", PANE_SPLIT]]);
     await expect(splitWindow({ target: "%15", command: "" })).rejects.toBeInstanceOf(TypeError);
-    expect(calls).toHaveLength(0);
+    expect(calls.calls).toHaveLength(0);
   });
 
   it("killPane is idempotent when the pane is already gone", async () => {
@@ -538,7 +404,7 @@ describe("herdr panes", () => {
   it("paneExists is false for a tmux id without shelling out", async () => {
     const calls = mockHerdr([["", OK]]);
     expect(await paneExists("%15")).toBe(false);
-    expect(calls).toHaveLength(0);
+    expect(calls.calls).toHaveLength(0);
   });
 
   it("paneTTY throws PaneNotFoundError when the pane is gone", async () => {
@@ -553,7 +419,7 @@ describe("herdr identity", () => {
   it("setPaneTitle writes herdr's pane label", async () => {
     const calls = mockHerdr([["pane rename", PANE_GET]]);
     await setPaneTitle("w1:p1", "worker-2 · ⏳ · t-17");
-    expect(calls[0]?.args).toEqual(["pane", "rename", "w1:p1", "worker-2 · ⏳ · t-17"]);
+    expect(calls.argsOf(0)).toEqual(["pane", "rename", "w1:p1", "worker-2 · ⏳ · t-17"]);
   });
 
   it("getPaneTitle reads the label back", async () => {
@@ -588,7 +454,7 @@ describe("herdr identity", () => {
   it("currentAgentName is undefined outside a herdr-managed pane", async () => {
     const key = "HERDR_PANE_ID";
     delete process.env[key];
-    setHerdrExecutor(async () => {
+    mockHerdrWith(async () => {
       throw new Error("must not shell out without $HERDR_PANE_ID");
     });
     expect(await herdrBackend.currentAgentName()).toBeUndefined();
@@ -615,7 +481,7 @@ describe("herdrBackend.available", () => {
       [
         "status",
         {
-          stdout: STATUS_RUNNING.replace("compatible: yes", "compatible: no"),
+          stdout: STATUS_INCOMPATIBLE,
           stderr: "",
           exitCode: 0,
         },
@@ -625,7 +491,7 @@ describe("herdrBackend.available", () => {
   });
 
   it("is false when the binary is not installed", async () => {
-    setHerdrExecutor(async () => {
+    mockHerdrWith(async () => {
       throw new Error("ENOENT");
     });
     expect(await herdrBackend.available()).toBe(false);
@@ -646,7 +512,7 @@ describe("the IO half is a clear stub, not a guess", () => {
   });
 
   it("pane borders are a no-op: herdr owns its own chrome", async () => {
-    setHerdrExecutor(async () => {
+    mockHerdrWith(async () => {
       throw new Error("chrome no-ops must not shell out");
     });
     expect(await herdrBackend.enableMuPaneBordersForSession("mu-x")).toBe(0);

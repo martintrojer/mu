@@ -21,47 +21,27 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { insertAgent, readAgent, refreshAgentTitle, sendToAgent } from "../src/agents.js";
 import { type Db, openDb } from "../src/db.js";
-import {
-  type MuxBackend,
-  NoMultiplexerError,
-  resetMux,
-  setMuxForTests,
-  tmuxBackend,
-} from "../src/mux.js";
+import { NoMultiplexerError, resetMux, setMuxForTests } from "../src/mux.js";
 import { reconcile } from "../src/reconcile.js";
 import { resetTmuxExecutor, setTmuxExecutor } from "../src/tmux.js";
 import { ensureWorkstream, listWorkstreams, summarizeWorkstream } from "../src/workstream.js";
-
-/**
- * A backend that cannot reach its multiplexer. Every method rejects the
- * way `activeMux()` itself would on a box with nothing installed, so a
- * call site's try/catch (or lack of one) is what the test observes.
- */
-function unreachableMux(): MuxBackend {
-  const boom = async (): Promise<never> => {
-    throw new NoMultiplexerError(["tmux"]);
-  };
-  const backend: Record<string, unknown> = { name: "tmux" };
-  for (const key of Object.keys(tmuxBackend)) {
-    if (key === "name") continue;
-    backend[key] = boom;
-  }
-  return backend as unknown as MuxBackend;
-}
+import { installUnreachableMux } from "./_mux.js";
 
 let tempDir: string;
 let db: Db;
-let previous: MuxBackend | undefined;
+let unreachable: { restore(): void };
 
 beforeEach(() => {
   tempDir = mkdtempSync(join(tmpdir(), "mu-mux-callsites-"));
   db = openDb({ path: join(tempDir, "mu.db") });
-  previous = setMuxForTests(unreachableMux());
+  // Every method rejects the way `activeMux()` itself would on a box
+  // with nothing installed, so a call site's try/catch (or lack of one)
+  // is what the test observes.
+  unreachable = installUnreachableMux("tmux", () => new NoMultiplexerError(["tmux"]));
 });
 
 afterEach(() => {
-  setMuxForTests(previous);
-  resetMux();
+  unreachable.restore();
   resetTmuxExecutor();
   try {
     db.close();
