@@ -2596,10 +2596,11 @@ The backend is resolved once per process and cached.
 | Attach hint | `tmux a -t mu-<ws>` | `herdr session attach mu-<ws>` |
 | Pane borders | 4-side border showing agent name + status glyph | no-op — herdr owns its pane chrome; mu-managed panes carry the label instead |
 | Layout | `select-layout` | no-op — herdr splits are explicit, geometry is yours |
-| Status detection | scrollback scraping (`src/detect.ts`) | herdr classifies panes natively; the scraper is bypassed. Not wired up yet — see the limits below. |
+| Status detection | scrollback scraping (`src/detect.ts`) | herdr classifies panes natively via `paneStatus()`; the scraper is bypassed |
 | Focus | mu creates detached | `--no-focus` on every mutating call, always. `detached: false` still gets you a detached workspace; run `herdr workspace focus` yourself. |
 | Isolation seam | `MU_TMUX_SOCKET` (`-L <name>`) | `MU_HERDR_SESSION` (`--session <name>`, its own socket) |
-| `mu agent spawn` / `send` / `read` | works | **not implemented**, exit 5 |
+| `mu agent send` / `read` | six-step paste/Enter protocol | one atomic `agent prompt --wait` |
+| `mu agent spawn` | works | **not implemented**, exit 5 |
 
 `MU_TMUX_SOCKET` is tmux-only and ignored under herdr;
 `MU_HERDR_SESSION` is its herdr analogue. Both exist so a test run can
@@ -2607,16 +2608,16 @@ never observe or destroy your real panes.
 
 ### Known limits on herdr
 
-- **Spawn, send and read are not implemented.** The creation verbs
-  refuse a command rather than silently dropping it — dropping would
-  leave an empty shell that mu records as an agent, which is the worst
-  available failure. herdr has no create-and-run form, so spawn is
-  inherently two steps (create the pane, then start the agent in it)
-  and that second step is unwritten.
+- **Spawn is not implemented.** The creation verbs refuse a command
+  rather than silently dropping it — dropping would leave an empty
+  shell that mu records as an agent, which is the worst available
+  failure. herdr has no create-and-run form, so spawn is inherently two
+  steps (create the pane, then start the agent in it) and that second
+  step is unwritten. Send, read and status detection DO work.
 - **`--lines` cannot recover scrolled-off rows from an
   alternate-screen pane.** A pane on the alternate screen does not
   spill into host scrollback, so there is nothing behind the viewport
-  to read. Applies to the capture path once it lands.
+  to read.
 - **`mu agent kick` is Linux-only on herdr.** herdr reports a shell
   pid, not a tty, so `paneTTY` resolves `/proc/<pid>/fd/0`. On macOS
   that path does not exist and the call fails with a `HerdrError`
@@ -2627,7 +2628,7 @@ never observe or destroy your real panes.
   fake it.
 - **`MU_<UPPER_CLI>_COMMAND` has no herdr equivalent.** herdr resolves
   the agent binary itself by kind. The override is honoured on tmux
-  only; on herdr it is moot while spawn is unimplemented, and the
+  only; on herdr it stays moot while spawn is unimplemented, and the
   spawn work has to either pass it through or refuse it explicitly.
 
 ### A degraded backend reports, it does not crash
