@@ -46,9 +46,55 @@ breaking changes are called out under "Breaking" in each entry.
   `setHerdrExecutor` / `resetHerdrExecutor` mirror the tmux executor
   seam so the fast tier never shells out.
 
-  The IO half (`sendToPane` / `capturePane`) and command-running spawn
-  throw `HerdrNotImplementedError` naming their owning task rather than
+  Command-running spawn (a creation verb carrying `opts.command`) still
+  throws `HerdrNotImplementedError` naming its owning task rather than
   guessing at a protocol.
+
+- **herdr mux backend — IO half**: `sendToPane`, `capturePane`, and
+  native pane status. Mostly a DELETION relative to tmux.
+
+  - **The send protocol collapses from six steps to one.** tmux needs
+    `awaitPaneQuiescence` before, an `MU_SEND_DELAY_MS` gap in the
+    middle, and a confirm-the-Enter-took retry loop after, purely
+    because a TUI rendering a modal swallows a separately-sent Enter and
+    strands the pasted text while `mu agent send` reports exit 0
+    (`dogfood_send_after_new_dropped`). `herdr agent prompt <pane>
+    <text> --wait` submits the text *and* an encoded Enter atomically,
+    honouring the pane's live bracketed-paste mode, so none of that can
+    apply. No `--until`: `--wait` already defaults to the first settled
+    idle / done / blocked. `readinessMs: 0` drops `--wait`; `delayMs` is
+    accepted and ignored, so callers need no backend branch.
+  - **An unconfirmed send warns, never throws** — the same contract as
+    tmux. herdr's `agent_prompt_stalled` (a prompt from a non-working
+    state that produced no lifecycle change within 5s) maps onto the
+    existing `SendWarning` surface with reason `paste-vanished`.
+  - **Panes with no recognized agent fall back to the pane surface.**
+    `agent prompt` only addresses targets herdr has classified as an
+    agent; a plain shell pane answers `agent_not_found`, and mu retries
+    once through `pane run`, herdr's atomic text+Enter for raw shells.
+    Any other server error propagates instead of being re-run as a
+    shell command.
+  - **`capturePane` uses `pane read --source recent-unwrapped`** (soft
+    wraps joined; herdr's recommendation for logs and transcripts),
+    with `lines: 0` mapping to `--source visible`. Known limit,
+    documented in the code: a pane on the terminal's ALTERNATE screen
+    does not spill rows into herdr's host scrollback, so a larger
+    `--lines` cannot recover scrolled-off output.
+
+- **`MuxBackend.paneStatus?()` — status detection is now genuinely
+  backend-dependent.** An optional method returning the pane's
+  lifecycle status *as the mux itself classifies it*. tmux omits it and
+  mu keeps scraping scrollback with the per-CLI detector in
+  `src/detect.ts`; herdr implements it from its native `agent_status`,
+  so the detector is bypassed entirely — guessing from a 100-line tail
+  would be strictly worse information and would misclassify every
+  non-pi CLI. The mapping is `working` → `busy`, `blocked` →
+  `needs_permission`, and `idle` / `done` / `unknown` → `needs_input`.
+  `unknown` deliberately does **not** map to `free`: herdr documents
+  that it does not prove completion, and a false `free` would make mu
+  hand the worker a second task mid-run. Nothing on this path calls a
+  focus or seen-marking verb, so mu's polling never clears the user's
+  `done` badge.
 
 - **Mux detection grows a `HERDR_ENV` rung** above the `$TMUX` check.
   herdr routinely runs a tmux server inside its panes, so both signals

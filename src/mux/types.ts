@@ -14,6 +14,7 @@
 // Same shape as src/vcs/: a types module, one file per impl, and an
 // index that dispatches. See docs/VOCABULARY.md § "mux backend".
 
+import type { DetectedStatus } from "../detect.js";
 import type { HasNextSteps, NextStep } from "../output.js";
 
 /** The multiplexers mu can drive. */
@@ -318,6 +319,25 @@ export interface MuxBackend {
   // — io —
   sendToPane(paneId: string, text: string, opts?: SendOptions): Promise<void>;
   capturePane(paneId: string, opts?: CaptureOptions): Promise<string>;
+
+  /**
+   * The pane's lifecycle status AS THE MUX ITSELF CLASSIFIES IT, or
+   * undefined when the pane is gone / unclassified.
+   *
+   * OPTIONAL by design, and the one place the two backends genuinely
+   * differ in kind rather than in syntax. tmux knows nothing about what
+   * runs inside a pane, so it omits this and mu falls back to scraping
+   * scrollback with the per-CLI detector in `src/detect.ts`. herdr
+   * watches the terminal continuously across every agent kind it
+   * recognises, so it implements this and the detector is BYPASSED
+   * entirely — guessing from a 100-line tail would be strictly worse
+   * information than the substrate's own answer.
+   *
+   * Absent method ⇒ "ask the detector". Present-but-undefined result ⇒
+   * "this pane has no status", NOT "free": no detector may mint `free`,
+   * which only `mu agent free` sets.
+   */
+  paneStatus?(paneId: string): Promise<DetectedStatus | undefined>;
 
   // — chrome (decorative; a backend with no equivalent no-ops) —
   enableMuPaneBordersForSession(session: string): Promise<number>;

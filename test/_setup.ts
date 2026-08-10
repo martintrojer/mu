@@ -33,11 +33,20 @@
 //     drop us back onto the user's default socket and re-introduce
 //     the residue + cross-run contention that Layer 3 fixed.
 //
+//   MU_HERDR_SESSION — the herdr analogue: it routes every herdr call
+//     through a NAMED server instead of the user's default one. Only
+//     `*.integration.test.ts` reads it, and only to self-skip when it
+//     is absent, so wiping it here would make herdr integration tests
+//     unrunnable while ALSO being the thing that would let a stray
+//     call reach the user's real panes.
+//
 // Anything else starting with MU_ goes.
 
 const ALLOWED: ReadonlySet<string> = new Set([
   // Layer-3 test-isolation socket (see _global-teardown.ts).
   "MU_TMUX_SOCKET",
+  // The herdr equivalent: an isolated named herdr server.
+  "MU_HERDR_SESSION",
 ]);
 
 for (const key of Object.keys(process.env)) {

@@ -561,10 +561,18 @@ returning. Three steps, in order:
 - **Reality wins**: the mux is the source of truth for what panes
   exist. The DB records what we last *observed*. Reconciliation closes
   the gap on every `mu agent list`.
-- **Status detection is backend-dependent**: on tmux, `src/detect.ts`
-  scrapes scrollback (`busy` / `needs_input` / `needs_permission` via
-  a known pi marker, with a Braille-spinner fallback for other CLIs).
-  On a mux that classifies panes natively, mu takes its word instead.
+- **Status detection is backend-dependent**, expressed as the optional
+  `MuxBackend.paneStatus?()`. A backend that omits it (tmux) means "ask
+  the detector": `src/detect.ts` scrapes scrollback (`busy` /
+  `needs_input` / `needs_permission` via a known pi marker, with a
+  Braille-spinner fallback for other CLIs). A backend that implements it
+  (herdr) classifies panes natively across every agent kind it
+  recognises, and mu takes its word — `src/detect.ts` is bypassed
+  entirely on that backend. herdr's `working` → `busy`, `blocked` →
+  `needs_permission`, `idle` / `done` / `unknown` → `needs_input`.
+  `unknown` must never become `free`: herdr documents that it does not
+  prove completion, and no detector of either kind may mint `free`,
+  which only `mu agent free` sets.
 - **No silent adoption**: orphans are reported, never claimed.
 - **`mu doctor` calls the same routine** and reports counts.
 
@@ -601,7 +609,7 @@ separately below.
 | `src/fleet-hazards.ts`| **Mixed-fleet hazards** — three environment checks in the default doctor: `MU_DB_PATH` inside `MU_SYNC_DIR` (fail), DB on a network mount (warn), two workstream names differing only by case (warn). All no-op when `MU_SYNC_DIR` is unset. |
 | `src/op-context.ts`   | The **op context** seam: `withOpContext(db, {intent, actor, group}, fn)` labels every op in a scope, restored in a `finally`. Nested scopes inherit the group, which puts a cascade under one `mu undo`. `withCaptureSuppressed` is the echo guard. |
 | `src/mux.ts`          | **Mux backend hub** — re-exports `src/mux/*`, same shape as `src/vcs.ts`. The public `MuxBackend` surface every call site imports. |
-| `src/mux/*.ts`        | **Multiplexer backends**: `types.ts` (the `MuxBackend` interface + `MuxError` / `PaneNotFoundError`), `detect.ts` (`MU_MUX` → `HERDR_ENV` → `$TMUX` → `PATH` ladder + test seam), `tmux.ts`, `herdr.ts`. The backend owns topology, the send protocol, capture, **pane id** validation (tmux `%15` vs herdr `w1:p1`), and the identity fallback — so no global pane-id regex and no per-call-site branching. |
+| `src/mux/*.ts`        | **Multiplexer backends**: `types.ts` (the `MuxBackend` interface + `MuxError` / `PaneNotFoundError`), `detect.ts` (`MU_MUX` → `HERDR_ENV` → `$TMUX` → `PATH` ladder + test seam), `tmux.ts`, `herdr.ts`. The backend owns topology, the send protocol, capture, **pane id** validation (tmux `%15` vs herdr `w1:p1`), the identity fallback, and optionally native pane status (`paneStatus?()`) — so no global pane-id regex and no per-call-site branching. The send protocol is where the two diverge most: tmux needs a six-step paste/Enter dance to survive a modal swallowing the Enter, while herdr's `agent prompt --wait` is one atomic call. |
 | `src/tmux.ts`         | Re-export of the tmux backend, kept for genuinely tmux-only concerns: the `MU_TMUX_SOCKET` test seam and the shared `sleep` / `setSleepForTests` poll seam. Everything else imports `src/mux.ts` and goes through `activeMux()`. |
 | `src/detect.ts`       | Pi status detector (`busy` / `needs_input` / `needs_permission`) + Braille-spinner fallback. Used when the mux cannot classify panes itself — i.e. always on tmux, never on herdr. |
 | `src/reconcile.ts`    | Ghost prune + status detect + orphan surface; "reality wins"                              |

@@ -500,14 +500,14 @@ describe("herdrBackend.available", () => {
 
 // ─── Deferred surfaces ─────────────────────────────────────────────────
 
-describe("the IO half is a clear stub, not a guess", () => {
-  it("sendToPane names the owning task", async () => {
-    await expect(herdrBackend.sendToPane("w1:p1", "hi")).rejects.toThrow(/mux-herdr-io/);
-  });
-
-  it("capturePane names the owning task", async () => {
-    await expect(herdrBackend.capturePane("w1:p1")).rejects.toBeInstanceOf(
+describe("deferred surfaces", () => {
+  it("spawn (a creation verb carrying a command) still names its owning task", async () => {
+    // IO landed (see mux-herdr-io.test.ts); spawn deliberately did not.
+    await expect(herdrBackend.newSession("mu-x", { command: "pi" })).rejects.toBeInstanceOf(
       HerdrNotImplementedError,
+    );
+    await expect(herdrBackend.newSession("mu-x", { command: "pi" })).rejects.toThrow(
+      /mux-herdr-spawn/,
     );
   });
 

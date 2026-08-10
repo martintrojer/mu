@@ -34,14 +34,20 @@
 //
 // ─── Scope ────────────────────────────────────────────────────────────
 //
-// This module implements the topology half of `MuxBackend`: sessions,
-// windows, panes, pane-id validation, availability, identity. The IO
-// half (send / capture / status) is task `mux-herdr-io`; those methods
-// throw `HerdrNotImplementedError` and are marked `[mux-herdr-io]`.
-// Running a COMMAND in a freshly created pane is `mux-herdr-spawn` and
-// is marked `[mux-herdr-spawn]`.
+// This module implements the topology AND io halves of `MuxBackend`:
+// sessions, windows, panes, pane-id validation, availability, identity,
+// send, capture, and native pane status. Running a COMMAND in a freshly
+// created pane is still `mux-herdr-spawn` and is marked
+// `[mux-herdr-spawn]`; those paths throw `HerdrNotImplementedError`.
+//
+// ─── Two exceptions to "everything is JSON" ───────────────────────────
+//
+// `herdr status` and `herdr pane read` both emit PLAIN TEXT. They go
+// through `currentExecutor` directly rather than `herdr()`, which would
+// reject their unparseable stdout as CLI drift.
 
 import { execa } from "execa";
+import type { DetectedStatus } from "../detect.js";
 import type { NextStep } from "../output.js";
 import {
   type AttachTarget,
@@ -58,6 +64,7 @@ import {
   type NewWindowOptions,
   PaneNotFoundError,
   type SendOptions,
+  type SendWarning,
   type SplitWindowOptions,
 } from "./types.js";
 
@@ -690,27 +697,201 @@ export async function currentSessionName(): Promise<string | undefined> {
   return undefined;
 }
 
-// ─── IO (owned by mux-herdr-io) ────────────────────────────────────────
+// ─── IO ────────────────────────────────────────────────────────────────
+//
+// THE SEND PROTOCOL IS ONE CALL. Read the header of ./tmux.ts for what
+// that replaces: six steps, of which THREE (awaitPaneQuiescence,
+// the MU_SEND_DELAY_MS gap, and the confirm-the-Enter-took retry loop)
+// exist purely because a TUI rendering a modal SWALLOWS a `send-keys
+// Enter`, stranding the pasted text while `mu agent send` reports exit 0
+// (dogfood_send_after_new_dropped).
+//
+// `herdr agent prompt` submits the text AND an encoded Enter atomically,
+// honouring the pane's live bracketed-paste mode, so the Enter cannot be
+// separated from the paste and cannot be swallowed. There is nothing
+// left for a quiescence poll to protect against — porting one here would
+// re-add latency to work around a bug this substrate does not have.
+//
+// Do not add a scrollback poll to this file. If a send ever looks
+// unconfirmed on herdr, that is a herdr bug, and the `agent_prompt_
+// stalled` guard below is how it surfaces.
 
-/**
- * [mux-herdr-io] herdr has `pane send-text` / `pane send-keys` / `pane
- * run`, and `agent prompt` which atomically submits text plus Enter
- * while honouring the pane's live bracketed-paste mode. Which of those
- * mu should use — and whether the tmux quiescence/verification dance is
- * still needed when herdr classifies pane state natively — is that
- * task's call, not a guess to make here.
- */
-export async function sendToPane(
-  _paneId: string,
-  _text: string,
-  _opts?: SendOptions,
-): Promise<void> {
-  throw new HerdrNotImplementedError("sendToPane", "mux-herdr-io");
+/** herdr's error code for "submitted, but the agent's lifecycle never
+ *  moved within its 5s guard". Not an outage — a suspicious send. */
+const PROMPT_STALLED_CODE = "agent_prompt_stalled";
+
+/** Codes meaning "the pane hosts no RECOGNIZED agent", so the `agent`
+ *  surface cannot address it and we fall back to the `pane` surface. */
+const NO_AGENT_CODES: readonly string[] = ["agent_not_found", "agent_not_recognized"];
+
+/** Default handler for an unconfirmed send: warn on stderr. Loud by
+ *  design, exactly as on tmux — silence is the failure mode. */
+function defaultUndeliveredWarning(warning: SendWarning): void {
+  console.warn(`warning: ${warning.message}`);
 }
 
-/** [mux-herdr-io] `herdr pane read --source recent-unwrapped --lines N`. */
-export async function capturePane(_paneId: string, _opts?: CaptureOptions): Promise<string> {
-  throw new HerdrNotImplementedError("capturePane", "mux-herdr-io");
+/**
+ * Submit `text` to a pane and press Enter, atomically.
+ *
+ * WHICH SURFACE (topology note 9): `agent prompt` only accepts targets
+ * herdr has RECOGNIZED as an agent — a plain shell pane is
+ * `agent_not_found` there. mu therefore tries the agent surface FIRST
+ * (the overwhelmingly common case: every mu-managed pane runs a coding
+ * CLI, and it is the only surface that understands lifecycle state) and
+ * falls back to `pane run`, herdr's atomic text+Enter for raw shells,
+ * only when herdr says there is no agent. The happy path is one call;
+ * the fallback path is two, and never polls.
+ *
+ * `opts.readinessMs === 0` drops `--wait`, the herdr analogue of tmux's
+ * "bare protocol" opt-out: submit and return without waiting for a
+ * settled state. Any other value is ignored — there is no readiness to
+ * budget for. `opts.delayMs` is likewise meaningless here: the gap it
+ * sizes does not exist. Neither is an error; the tmux-shaped knobs stay
+ * accepted so callers need no backend branch.
+ *
+ * No `--until`: `--wait` already defaults to the first settled idle /
+ * done / blocked, which is precisely what mu's callers want, and herdr's
+ * skill doc calls repeating those defaults a bug.
+ *
+ * DELIVERY CONTRACT, same as tmux: an unconfirmed send WARNS and keeps
+ * going, never throws. herdr returns `agent_prompt_stalled` when a
+ * prompt from a non-working state produces no lifecycle change within
+ * 5s — the same observable as tmux's stranded paste, so it maps onto the
+ * existing `paste-vanished` reason: the pane was calm, we submitted, and
+ * nothing happened.
+ */
+export async function sendToPane(
+  paneId: string,
+  text: string,
+  opts: SendOptions = {},
+): Promise<void> {
+  assertValidPaneId(paneId);
+  const wait = opts.readinessMs === 0 ? [] : ["--wait"];
+  try {
+    await herdr(["agent", "prompt", paneId, text, ...wait]);
+    return;
+  } catch (err) {
+    if (!(err instanceof HerdrError) || err.code === undefined) throw err;
+    if (err.code === PROMPT_STALLED_CODE) {
+      const warn = opts.onUndelivered ?? defaultUndeliveredWarning;
+      warn({
+        paneId,
+        reason: "paste-vanished",
+        message: `send to ${paneId} was submitted but the agent's state never changed (herdr: ${PROMPT_STALLED_CODE}). The agent may NOT have seen it. Read the pane, or re-send.`,
+      });
+      return;
+    }
+    if (!NO_AGENT_CODES.includes(err.code)) throw err;
+  }
+  // No recognized agent in this pane: raw shell. `pane run` is herdr's
+  // atomic text+Enter for that case. It has no lifecycle to wait on, so
+  // there is nothing to confirm and nothing to warn about.
+  await herdr(["pane", "run", paneId, text]);
+}
+
+/**
+ * Read pane output as plain text.
+ *
+ *   - no options → everything herdr has available, soft wraps joined
+ *   - `lines: 0`  → the rendered viewport only (`--source visible`)
+ *   - `lines: N`  → the last N rows, soft wraps joined
+ *
+ * `recent-unwrapped` is the source herdr recommends for logs and
+ * transcripts: it joins soft wraps, so a wrapped line reads as one line
+ * rather than as terminal-width fragments.
+ *
+ * KNOWN LIMIT — do not paper over this: a pane running its agent on the
+ * terminal's ALTERNATE screen does not spill rows into herdr's host
+ * scrollback. Rows that have left the alternate screen are GONE, so a
+ * bigger `--lines` cannot recover them. If a read looks truncated, that
+ * is why, and the fix is to ask the agent to write its output to a file
+ * — not to raise the line count.
+ *
+ * `pane read` emits PLAIN TEXT, so it bypasses `herdr()` (which would
+ * treat unparseable stdout as CLI drift) and reads the executor result
+ * directly, mapping herdr's JSON error envelope by hand.
+ */
+export async function capturePane(paneId: string, opts: CaptureOptions = {}): Promise<string> {
+  assertValidPaneId(paneId);
+  const args = ["pane", "read", paneId];
+  if (opts.lines === 0) {
+    args.push("--source", "visible");
+  } else {
+    args.push("--source", "recent-unwrapped");
+    if (opts.lines !== undefined) args.push("--lines", String(opts.lines));
+  }
+  const result = await currentExecutor(args);
+  if (result.exitCode === 2) throw new HerdrSyntaxError(args, result.stderr || result.stdout);
+  if (result.exitCode !== 0) {
+    throw new HerdrError(
+      args,
+      result.stderr,
+      result.stdout,
+      result.exitCode,
+      parseErrorEnvelope(result.stderr)?.code,
+    );
+  }
+  return result.stdout;
+}
+
+// ─── Native status ─────────────────────────────────────────────────────
+
+/**
+ * herdr's five agent lifecycle states, mapped onto mu's.
+ *
+ *   working → busy
+ *   blocked → needs_permission   (herdr recognized an approval/question UI)
+ *   idle    → needs_input
+ *   done    → needs_input
+ *   unknown → needs_input
+ *
+ * `unknown` MUST NOT become `free`. herdr's skill doc is explicit that
+ * unknown "does not prove completion"; a false `free` makes mu hand the
+ * worker a second task while the first is still running. `needs_input`
+ * is the safe reading of "an agent is there and we cannot classify it".
+ * (`free` is not a detected status at all — it is set by `mu agent
+ * free`, i.e. by the user, and no detector may mint it.)
+ *
+ * `done` is herdr's idle-after-UNSEEN-background-work, and CLI reads
+ * deliberately do NOT mark a tab seen. mu polling therefore never clears
+ * the user's done badge — which is the point, and why nothing in this
+ * file calls a focus or seen-marking verb.
+ */
+export function mapAgentStatus(agentStatus: string): DetectedStatus {
+  switch (agentStatus) {
+    case "working":
+      return "busy";
+    case "blocked":
+      return "needs_permission";
+    default:
+      // idle / done / unknown, and any state a future herdr adds: the
+      // conservative reading is "waiting on a human", never "free".
+      return "needs_input";
+  }
+}
+
+/**
+ * The pane's status as HERDR classifies it, or undefined when the pane
+ * is gone (or reports no state at all).
+ *
+ * This is why `src/detect.ts` — the scrollback-scraping PI STATUS
+ * DETECTOR — is bypassed on this backend. herdr watches the terminal
+ * continuously across every agent kind it knows; mu guessing from a
+ * 100-line tail would be strictly worse information, and would
+ * misclassify every non-pi CLI. See docs/ARCHITECTURE.md § "Status
+ * detection is backend-dependent".
+ */
+export async function paneStatus(paneId: string): Promise<DetectedStatus | undefined> {
+  if (!isValidPaneId(paneId)) return undefined;
+  const result = await herdrTolerating(
+    ["pane", "get", paneId],
+    ["pane_not_found", "workspace_not_found"],
+  );
+  if (result === undefined) return undefined;
+  const pane = result.pane;
+  const status = isRecord(pane) ? asString(pane.agent_status) : undefined;
+  if (status === undefined) return undefined;
+  return mapAgentStatus(status);
 }
 
 // ─── Chrome ────────────────────────────────────────────────────────────
@@ -916,6 +1097,7 @@ export const herdrBackend: MuxBackend = Object.freeze({
 
   sendToPane,
   capturePane,
+  paneStatus,
 
   enableMuPaneBordersForSession,
   enableMuPaneBordersForPane,
