@@ -68,6 +68,64 @@ describe("claimTask", () => {
     expect(getTask(db, "auth", "test")?.status).toBe("IN_PROGRESS");
   });
 
+  // ─ Worker-claim identity: the SAME env-first ladder as --self ─
+  //
+  // A worker running `mu task claim <id>` with no --for must identify
+  // itself the same way resolveActorIdentity() does. Before
+  // mux-identity-env this path went straight to the pane title, so a
+  // worker whose pane title had been rewritten (tmux titles are a
+  // server-wide resource anything can set) claimed as the wrong agent
+  // — or failed the FK lookup — despite $MU_AGENT_NAME being correct.
+
+  it("bare claim identifies the worker from $MU_AGENT_NAME", async () => {
+    await withCleanIdentityEnv(async () => {
+      await withEnv("MU_AGENT_NAME", "alice", async () => {
+        // Pane title says someone else entirely. The env var must win:
+        // it is set once at spawn and cannot be rewritten from another
+        // pane, which is exactly the property a claim needs.
+        setTmuxExecutor(async (args) => {
+          if (args[0] === "display-message" && args.includes("#{pane_title}")) {
+            return { stdout: "bob\n", stderr: "", exitCode: 0 };
+          }
+          return { stdout: "", stderr: "unmocked", exitCode: 1 };
+        });
+        await withEnv("TMUX_PANE", "%1", async () => {
+          const result = await claimTask(db, "auth", { workstream: "test" });
+          expect(result.ownerName).toBe("alice");
+          expect(getTask(db, "auth", "test")?.ownerName).toBe("alice");
+        });
+      });
+    });
+  });
+
+  it("bare claim falls back to the pane title for adopted panes", async () => {
+    // Adopted panes predate the env injection, so the fallback is the
+    // only identity they have. Deleting it would break `mu agent adopt`.
+    await withCleanIdentityEnv(async () => {
+      setTmuxExecutor(async (args) => {
+        if (args[0] === "display-message" && args.includes("#{pane_title}")) {
+          return { stdout: "bob\n", stderr: "", exitCode: 0 };
+        }
+        return { stdout: "", stderr: "unmocked", exitCode: 1 };
+      });
+      await withEnv("TMUX_PANE", "%2", async () => {
+        const result = await claimTask(db, "auth", { workstream: "test" });
+        expect(result.ownerName).toBe("bob");
+      });
+    });
+  });
+
+  it("explicit agentName still outranks $MU_AGENT_NAME", async () => {
+    // `--for bob` is the operator dispatching on someone's behalf; it
+    // must not be silently overridden by the caller's own identity.
+    await withCleanIdentityEnv(async () => {
+      await withEnv("MU_AGENT_NAME", "alice", async () => {
+        const result = await claimTask(db, "auth", { agentName: "bob", workstream: "test" });
+        expect(result.ownerName).toBe("bob");
+      });
+    });
+  });
+
   it("flips OPEN → IN_PROGRESS but leaves IN_PROGRESS unchanged on re-claim", async () => {
     await claimTask(db, "auth", { agentName: "alice", workstream: "test" });
     const second = await claimTask(db, "auth", { agentName: "alice", workstream: "test" });
@@ -721,6 +779,19 @@ describe("resolveActorIdentity", () => {
           const actor = await resolveActorIdentity();
           expect(actor).toBe("orchestrator");
         });
+      });
+    });
+  });
+
+  it("degrades to $USER when NO multiplexer is reachable at all", async () => {
+    // Attribution is best-effort and must never fail a verb. `mu archive
+    // add` / `mu task note` on a box with no tmux want a name, not a
+    // NoMultiplexerError. Regression: routing identity through
+    // activeMux() made the whole ladder throw before reaching $USER.
+    setTmuxExecutor(async () => ({ stdout: "", stderr: "no server", exitCode: 1 }));
+    await withCleanIdentityEnv(async () => {
+      await withEnv("USER", "martin", async () => {
+        expect(await resolveActorIdentity()).toBe("martin");
       });
     });
   });

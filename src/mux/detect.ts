@@ -32,8 +32,9 @@ const KNOWN_NAMES: readonly string[] = BACKENDS.map((b) => b.name);
  *      unknown value throws rather than silently falling through: a
  *      typo'd backend name should fail loud, not quietly run on tmux.
  *   2. Ambient signal    — an env var proving the CALLER is already
- *      inside a managed pane of that mux ($TMUX for tmux). The most
- *      specific signal wins, since a mux can run nested inside another.
+ *      inside a managed pane of that mux ($TMUX or $TMUX_PANE for
+ *      tmux). The most specific signal wins, since a mux can run
+ *      nested inside another.
  *   3. Availability      — whichever backend's binary actually runs.
  *      Ties break in BACKENDS order (tmux is the incumbent).
  *   4. Throw `NoMultiplexerError`.
@@ -50,7 +51,11 @@ export async function detectMux(): Promise<MuxBackend> {
     return muxByName(override as MuxBackendName);
   }
 
-  if (process.env.TMUX) return tmuxBackend;
+  // Both vars, not just $TMUX: tmux sets $TMUX_PANE in every pane too,
+  // and some setups (sudo -E, direnv, ssh with a restrictive SendEnv)
+  // pass one through but not the other. Either one proves we are in a
+  // tmux pane, which is what this rung is asking.
+  if (process.env.TMUX || process.env.TMUX_PANE) return tmuxBackend;
 
   for (const backend of BACKENDS) {
     if (await backend.available()) return backend;

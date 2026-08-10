@@ -36,12 +36,14 @@ describe("detectMux", () => {
   beforeEach(() => {
     delete process.env[MU_MUX];
     delete process.env[TMUX];
+    delete process.env.TMUX_PANE;
     resetMux();
   });
 
   afterEach(() => {
     delete process.env[MU_MUX];
     delete process.env[TMUX];
+    delete process.env.TMUX_PANE;
     resetTmuxExecutor();
     resetMux();
   });
@@ -74,6 +76,20 @@ describe("detectMux", () => {
     makeTmuxUnavailable();
     process.env[TMUX] = "/tmp/tmux-1000/default,1,0";
     expect((await detectMux()).name).toBe("tmux");
+  });
+
+  it("$TMUX_PANE alone also selects tmux", async () => {
+    // tmux sets both vars, but sudo -E / direnv / ssh SendEnv setups can
+    // pass one and drop the other. Either proves we are in a tmux pane.
+    // Regression: checking only $TMUX made identity resolution throw
+    // NoMultiplexerError for a worker whose $TMUX had been stripped.
+    makeTmuxUnavailable();
+    process.env.TMUX_PANE = "%42";
+    try {
+      expect((await detectMux()).name).toBe("tmux");
+    } finally {
+      delete process.env.TMUX_PANE;
+    }
   });
 
   it("falls back to availability when no ambient signal is present", async () => {
