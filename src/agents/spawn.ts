@@ -23,20 +23,12 @@ import {
 import type { Db } from "../db.js";
 import { detectPiStatus } from "../detect.js";
 import { emitEvent } from "../logs.js";
+import { activeMux } from "../mux.js";
 import { isJsonMode, type NextStep } from "../output.js";
-import {
-  capturePane,
-  enableMuPaneBordersForPane,
-  killPane,
-  listWindows,
-  newSessionWithPane,
-  newWindow,
-  paneExists,
-  sessionExists,
-  setPaneTitle,
-  sleep,
-  splitWindow,
-} from "../tmux.js";
+// `sleep` is the shared poll-sleep TEST SEAM (setSleepForTests), not a
+// multiplexer operation, so it stays on the tmux module rather than
+// joining the MuxBackend contract.
+import { sleep } from "../tmux.js";
 import type { VcsBackendName } from "../vcs.js";
 import { createWorkspace, freeWorkspace } from "../workspace.js";
 import {
@@ -301,7 +293,7 @@ export async function ensureAgent(db: Db, opts: EnsureAgentOptions): Promise<Ens
   const ghost =
     existing !== undefined &&
     !isPendingPaneId(existing.paneId) &&
-    !(await paneExists(existing.paneId));
+    !(await (await activeMux()).paneExists(existing.paneId));
   if (existing === undefined || ghost) {
     if (ghost) deleteAgent(db, opts.name, opts.workstream);
     const agent = await spawnAgent(db, opts);
@@ -451,12 +443,13 @@ export async function spawnAgent(db: Db, opts: SpawnAgentOptions): Promise<Agent
       // undefined and rollbackSpawn skipped killPane, leaking the pane
       // (finding_verbs_spawn_rolls_back_pane).
       paneId = pid;
-      await setPaneTitle(pid, opts.name);
+      const mux = await activeMux();
+      await mux.setPaneTitle(pid, opts.name);
       // Apply the mu pane border to the new window. Window-scoped option;
       // see enableMuPaneBorders docstring for why this is required per
       // window (and not just per session). Self-checks MU_BANNER_QUIET
       // and is best-effort — the border is decorative.
-      await enableMuPaneBordersForPane(pid);
+      await mux.enableMuPaneBordersForPane(pid);
       const row = finalizeAgentRow(db, { opts, cli, paneId: pid, hasWorkspace });
       return { pid, row };
     });
@@ -595,7 +588,13 @@ async function rollbackSpawn(
   hasWorkspace: boolean,
   workstream: string,
 ): Promise<void> {
-  if (paneId !== undefined) await killPane(paneId).catch(() => {});
+  if (paneId !== undefined) {
+    // Best-effort: rollback runs on an already-failing path and must not
+    // mask the original error, even if the mux itself went away.
+    await activeMux()
+      .then((mux) => mux.killPane(paneId))
+      .catch(() => {});
+  }
   if (hasWorkspace) {
     // Scope cleanup to the spawn's workstream so a same-named worker
     // elsewhere isn't torn down by accident
@@ -734,8 +733,9 @@ async function awaitSpawnLiveness(paneId: string, agentName: string): Promise<vo
   // Capture-pane first so we have something to attach to the error if the
   // pane is in the process of being torn down (the buffer survives a beat
   // longer than the pane's existence in some tmux builds).
-  const scrollback = await capturePane(paneId, { lines: 50 }).catch(() => undefined);
-  if (!(await paneExists(paneId))) {
+  const mux = await activeMux();
+  const scrollback = await mux.capturePane(paneId, { lines: 50 }).catch(() => undefined);
+  if (!(await mux.paneExists(paneId))) {
     throw new AgentDiedOnSpawnError(agentName, paneId, scrollback);
   }
   // Pane is alive — but "alive" doesn't mean "working". Scan the tail of
@@ -792,10 +792,11 @@ async function awaitSpawnReadiness(paneId: string, agentName: string): Promise<v
   const budgetMs = defaultSpawnReadinessMs();
   if (budgetMs === 0) return;
 
+  const mux = await activeMux();
   const deadline = Date.now() + budgetMs;
   while (Date.now() < deadline) {
-    const scrollback = await capturePane(paneId, { lines: 50 }).catch(() => undefined);
-    if (!(await paneExists(paneId))) {
+    const scrollback = await mux.capturePane(paneId, { lines: 50 }).catch(() => undefined);
+    if (!(await mux.paneExists(paneId))) {
       throw new AgentDiedOnSpawnError(agentName, paneId, scrollback);
     }
     if (scrollback !== undefined) {
@@ -828,8 +829,10 @@ async function createOrReusePane(opts: {
   cwd?: string;
   env?: Record<string, string>;
 }): Promise<string> {
-  if (!(await sessionExists(opts.session))) {
-    return newSessionWithPane(opts.session, {
+  // Load-bearing from top to bottom: this IS the pane creation.
+  const mux = await activeMux();
+  if (!(await mux.sessionExists(opts.session))) {
+    return mux.newSessionWithPane(opts.session, {
       windowName: opts.windowName,
       command: opts.command,
       cwd: opts.cwd,
@@ -837,11 +840,11 @@ async function createOrReusePane(opts: {
     });
   }
 
-  const windows = await listWindows(opts.session);
+  const windows = await mux.listWindows(opts.session);
   const matching = windows.find((w) => w.name === opts.windowName);
 
   if (matching) {
-    return splitWindow({
+    return mux.splitWindow({
       target: `${opts.session}:${opts.windowName}`,
       command: opts.command,
       cwd: opts.cwd,
@@ -849,7 +852,7 @@ async function createOrReusePane(opts: {
     });
   }
 
-  return newWindow({
+  return mux.newWindow({
     session: opts.session,
     name: opts.windowName,
     command: opts.command,

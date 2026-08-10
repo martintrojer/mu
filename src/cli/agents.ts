@@ -49,15 +49,9 @@ import {
 } from "../cli.js";
 import type { Db } from "../db.js";
 import { detectPiStatus } from "../detect.js";
+import { activeMux, type SendWarning } from "../mux.js";
 import { type NextStep, pc, printNextSteps } from "../output.js";
 import { listTasksByOwner } from "../tasks.js";
-import {
-  capturePane,
-  enableMuPaneBordersForPane,
-  listPanesInSession,
-  type SendWarning,
-  sessionExists,
-} from "../tmux.js";
 import { detectBackend, type VcsBackendName } from "../vcs.js";
 import { getWorkspaceForAgent } from "../workspace.js";
 import { checkWorkspaceStalenessForDispatch } from "./staleness.js";
@@ -467,7 +461,10 @@ export async function cmdAgentShow(
   const lines = opts.lines ?? 20;
   let scrollback: string;
   try {
-    scrollback = await capturePane(agent.paneId, { lines });
+    // Best-effort: `mu agent show` still has a registry row to print
+    // when the mux is unreachable. Empty scrollback degrades the
+    // status refresh below, it doesn't fail the verb.
+    scrollback = await (await activeMux()).capturePane(agent.paneId, { lines });
   } catch {
     scrollback = "";
   }
@@ -605,11 +602,12 @@ export async function cmdAdopt(db: Db, paneOrTitle: string, opts: AdoptCliOpts):
     paneId = paneOrTitle;
   } else {
     const session = `mu-${ws}`;
-    const panes = await listPanesInSession(session);
+    // Load-bearing: resolving the title to a pane id IS the verb's input.
+    const panes = await (await activeMux()).listPanesInSession(session);
     const match = panes.find((p) => p.title === paneOrTitle);
     if (!match) {
       throw new UsageError(
-        `no pane with title '${paneOrTitle}' in tmux session ${session} (try \`mu agent list -w ${ws}\` and pass the pane id)`,
+        `no pane with title '${paneOrTitle}' in session ${session} (try \`mu agent list -w ${ws}\` and pass the pane id)`,
       );
     }
     paneId = match.paneId;
@@ -630,7 +628,9 @@ export async function cmdAdopt(db: Db, paneOrTitle: string, opts: AdoptCliOpts):
   // Window-scoped border for the adopted pane's window. (cmdInit set
   // it on _mu but adopted panes can be in any window.) Self-checks
   // MU_BANNER_QUIET; best-effort.
-  await enableMuPaneBordersForPane(paneId);
+  await activeMux()
+    .then((mux) => mux.enableMuPaneBordersForPane(paneId))
+    .catch(() => {});
 
   const nextSteps: NextStep[] = [
     { intent: "Send work", command: `mu agent send ${result.agent.name} "..." -w ${ws}` },
@@ -744,21 +744,24 @@ export async function cmdAttach(
   // session/server vanished, listLiveAgents observes an empty pane set
   // and reaps registered agents before we tell the operator there is no
   // session to attach to.
+  const mux = await activeMux();
   const view = await listLiveAgents(db, { workstream });
-  if (!(await sessionExists(sessionName))) {
-    throw new UsageError(`workstream "${workstream}" has no tmux session yet`);
+  if (!(await mux.sessionExists(sessionName))) {
+    throw new UsageError(`workstream "${workstream}" has no ${mux.name} session yet`);
   }
   const agent = view.agents.find((a) => a.name === name);
   if (!agent) {
     throw new AgentNotFoundError(name);
   }
   // Capture and print its scrollback.
-  const text = await capturePane(agent.paneId);
+  const text = await mux.capturePane(agent.paneId);
   process.stdout.write(text);
   console.log("");
+  // The attach recipe is the BACKEND's to spell: a herdr user must
+  // never be handed a tmux command line.
   console.log(
     pc.dim(
-      `Attach with: tmux a -t ${sessionName} && tmux select-window -t ${agent.tab ?? agent.name}`,
+      `Attach with: ${mux.attachHint({ session: sessionName, window: agent.tab ?? agent.name })}`,
     ),
   );
 }
@@ -818,7 +821,7 @@ export async function cmdAgentWait(
     if (!agent) return { status: null };
     let scrollback: string;
     try {
-      scrollback = await capturePane(agent.paneId, { lines: captureLines });
+      scrollback = await (await activeMux()).capturePane(agent.paneId, { lines: captureLines });
     } catch {
       return { status: null };
     }

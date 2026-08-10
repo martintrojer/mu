@@ -19,15 +19,9 @@ import {
   UsageError,
 } from "../cli.js";
 import { type Db, defaultStateDir } from "../db.js";
+import { activeMux } from "../mux.js";
 import { muTable, type NextStep, pc, printNextSteps } from "../output.js";
 import { resolveActorIdentity } from "../tasks.js";
-import {
-  enableMuPaneBordersForSession,
-  listWindows,
-  newSession,
-  newWindow,
-  sessionExists,
-} from "../tmux.js";
 import {
   assertWorkstreamInitable,
   destroyWorkstream,
@@ -42,10 +36,12 @@ export async function cmdInit(db: Db, name: string, opts: { json?: boolean } = {
   assertWorkstreamInitable(name);
   const sessionName = `mu-${name}`;
   const dbCreated = ensureWorkstream(db, name);
-  const tmuxAlready = await sessionExists(sessionName);
+  // Load-bearing: `workstream init` IS session creation.
+  const mux = await activeMux();
+  const sessionAlready = await mux.sessionExists(sessionName);
   let muWindowRepaired = false;
-  if (!tmuxAlready) {
-    await newSession(sessionName, { detached: true, windowName: "_mu" });
+  if (!sessionAlready) {
+    await mux.newSession(sessionName, { detached: true, windowName: "_mu" });
   } else {
     // Session already exists — check whether the placeholder `_mu`
     // window is still there. Common reason for it being missing:
@@ -54,10 +50,10 @@ export async function cmdInit(db: Db, name: string, opts: { json?: boolean } = {
     // pane, which surprises the operator who expects an empty
     // orchestration shell. Recreate idempotently.
     // (review_bug_workstream_init_does_not_repair_missing_mu_window)
-    const windows = await listWindows(sessionName).catch(() => []);
+    const windows = await mux.listWindows(sessionName).catch(() => []);
     const hasMuWindow = windows.some((w) => w.name === "_mu");
     if (!hasMuWindow) {
-      await newWindow({
+      await mux.newWindow({
         session: sessionName,
         name: "_mu",
         command: process.env.SHELL ?? "/bin/sh",
@@ -72,10 +68,10 @@ export async function cmdInit(db: Db, name: string, opts: { json?: boolean } = {
   // MU_BANNER_QUIET=1 (covers this and the spawn-time decoration; see
   // spawnAgent). Older tmux without pane-border-status support is benign
   // here: the cue is a nice-to-have, not load-bearing. Don't fail init.
-  await enableMuPaneBordersForSession(sessionName).catch(() => {});
-  const created = !tmuxAlready || dbCreated;
+  await mux.enableMuPaneBordersForSession(sessionName).catch(() => {});
+  const created = !sessionAlready || dbCreated;
   const nextSteps: NextStep[] = [
-    { intent: "Attach the tmux session", command: `tmux a -t ${sessionName}` },
+    { intent: "Attach the session", command: mux.attachHint({ session: sessionName }) },
     {
       intent: "Plan tasks",
       command: `mu task add -w ${name} --title "..." --impact 50 --effort-days 1`,
@@ -88,14 +84,14 @@ export async function cmdInit(db: Db, name: string, opts: { json?: boolean } = {
       workstreamName: name,
       sessionName,
       created,
-      tmuxSessionAlreadyExisted: tmuxAlready,
+      tmuxSessionAlreadyExisted: sessionAlready,
       dbRowAlreadyExisted: !dbCreated,
       muWindowRepaired,
       nextSteps,
     });
     return;
   }
-  if (tmuxAlready && !dbCreated) {
+  if (sessionAlready && !dbCreated) {
     const repaired = muWindowRepaired ? ` — ${pc.yellow("repaired missing _mu window")}` : "";
     console.log(
       pc.dim(

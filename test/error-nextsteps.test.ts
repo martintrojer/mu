@@ -25,7 +25,7 @@ import {
 import { NameAmbiguousError } from "../src/cli.js";
 import { openDb, SchemaTooOldError, WorkstreamNotFoundError } from "../src/db.js";
 import { HerdrError } from "../src/mux/herdr.js";
-import { MuxError, NoMultiplexerError } from "../src/mux.js";
+import { MuxError, NoMultiplexerError, tmuxBackend } from "../src/mux.js";
 import { hasNextSteps } from "../src/output.js";
 import {
   ClaimerNotRegisteredError,
@@ -204,7 +204,13 @@ const cases: NextStepsCase[] = [
     label: "TmuxError",
     expectedTokens: ["doctor", "list-panes"],
   },
-  { error: new PaneNotFoundError("%999"), label: "PaneNotFoundError", expectedTokens: ["%999"] },
+  {
+    // Backend-aware: the pane-probe steps come FROM the backend, so the
+    // no-backend form below legitimately carries only mu's own verbs.
+    error: new PaneNotFoundError("%999", tmuxBackend),
+    label: "PaneNotFoundError",
+    expectedTokens: ["%999"],
+  },
 
   // src/mux/herdr.ts
   {
@@ -419,10 +425,20 @@ describe("error-specific structured-step assertions", () => {
     expect(commands.some((command) => command.includes("mu archive restore"))).toBe(true);
   });
 
-  it("PaneNotFoundError suggests scanning for live panes", () => {
-    const err = new PaneNotFoundError("%999");
+  it("PaneNotFoundError borrows its pane-probe steps from the backend that raised it", () => {
+    const err = new PaneNotFoundError("%999", tmuxBackend);
     const steps = err.errorNextSteps();
     expect(steps.some((s) => s.command.includes("list-panes"))).toBe(true);
+  });
+
+  // A herdr user must never be shown `tmux list-panes`. With no backend
+  // attached we degrade to mu's own verbs rather than guessing.
+  it("PaneNotFoundError with no backend offers only backend-agnostic steps", () => {
+    const err = new PaneNotFoundError("%999");
+    const commands = err.errorNextSteps().map((s) => s.command);
+    expect(commands.length).toBeGreaterThan(0);
+    expect(commands.every((c) => !c.includes("tmux "))).toBe(true);
+    expect(commands.some((c) => c.startsWith("mu "))).toBe(true);
   });
 
   // agent_spawn_liveness_check_trips_on: the spawn-died Next: block

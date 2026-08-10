@@ -13,6 +13,7 @@
 // § "Mux session topology".
 
 export {
+  type AttachTarget,
   activeMux,
   type CaptureOptions,
   detectMux,
@@ -22,7 +23,10 @@ export {
   herdrBackend,
   type MuxBackend,
   type MuxBackendName,
+  type MuxCommand,
+  type MuxDiagnostics,
   MuxError,
+  type MuxHealth,
   type MuxPane,
   type MuxSession,
   type MuxWindow,
@@ -32,6 +36,7 @@ export {
   type NewWindowOptions,
   NoMultiplexerError,
   PaneNotFoundError,
+  parseAgentNameFromTitle,
   resetHerdrExecutor,
   resetMux,
   type SendOptions,

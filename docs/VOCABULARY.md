@@ -434,7 +434,7 @@ XDG-Base-Directory-Spec compliant. The state directory resolves as:
 | `MU_STATE_DIR`    | Override the state directory                                 | beats `XDG_STATE_HOME` |
 | `XDG_STATE_HOME`  | Standard XDG base-directory state path; `mu/` appended      | default fallback chain |
 | `MU_SESSION`      | Override active workstream name (when not auto-detectable)   | n/a |
-| `MU_MUX`          | Force the **mux backend**, bypassing **mux detection**. *Not yet load-bearing:* the interface and detection ladder exist, but call sites still import the tmux backend directly, so today every invocation runs on tmux regardless. Wired up by `mux-callsite-migration`. | wins over all detection |
+| `MU_MUX`          | Force the **mux backend**, bypassing **mux detection**. Load-bearing: every verb reaches its multiplexer through `activeMux()`, so an unknown value fails the invocation rather than silently running on tmux. | wins over all detection |
 | `MU_SYNC_DIR`     | Shared folder holding one **segment** per machine. Unset = sync off, zero cost. The WHOLE cluster configuration; there is no peer list. | n/a |
 
 ### Env vars passed to spawned children

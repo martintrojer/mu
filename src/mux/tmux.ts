@@ -27,9 +27,12 @@ import { execa } from "execa";
 import { detectPiStatus } from "../detect.js";
 import type { NextStep } from "../output.js";
 import {
+  type AttachTarget,
   type CaptureOptions,
   type MuxBackend,
+  type MuxCommand,
   MuxError,
+  type MuxHealth,
   type MuxPane,
   type MuxSession,
   type MuxWindow,
@@ -37,6 +40,7 @@ import {
   type NewSessionWithPaneOptions,
   type NewWindowOptions,
   PaneNotFoundError,
+  parseAgentNameFromTitle,
   type SendOptions,
   type SendWarning,
   type SplitWindowOptions,
@@ -45,12 +49,16 @@ import {
 // Re-exported so the historical `import { ... } from "./tmux.js"` surface
 // keeps resolving these names (47 test files and 12 src modules use it).
 export {
+  type AttachTarget,
   type CaptureOptions,
+  type MuxCommand,
   MuxError,
+  type MuxHealth,
   type NewSessionOptions,
   type NewSessionWithPaneOptions,
   type NewWindowOptions,
   PaneNotFoundError,
+  parseAgentNameFromTitle,
   type SendOptions,
   type SendWarning,
   type SplitWindowOptions,
@@ -637,7 +645,7 @@ export async function paneTTY(paneId: string): Promise<string> {
   const result = await currentExecutor(["display-message", "-t", paneId, "-p", "#{pane_tty}"]);
   if (result.exitCode !== 0) {
     if (/can't find pane|pane not found/i.test(result.stderr)) {
-      throw new PaneNotFoundError(paneId);
+      throw new PaneNotFoundError(paneId, tmuxBackend);
     }
     throw new TmuxError(
       ["display-message", "-t", paneId, "-p", "#{pane_tty}"],
@@ -647,7 +655,7 @@ export async function paneTTY(paneId: string): Promise<string> {
     );
   }
   const tty = result.stdout.trim();
-  if (tty === "") throw new PaneNotFoundError(paneId);
+  if (tty === "") throw new PaneNotFoundError(paneId, tmuxBackend);
   return tty;
 }
 
@@ -671,27 +679,26 @@ export async function currentPaneTitle(): Promise<string | undefined> {
 }
 
 /**
- * Extract the agent-name token from a (possibly composed) pane title.
- * mu's composeAgentTitle renders titles as `name · <glyph> · task_id`,
- * where <glyph> is a Nerd Font codepoint from STATUS_EMOJI (see
- * src/agents.ts). The agent name is always the first ' · '-separated
- * token. Adopted panes that haven't been re-titled by mu have just the
- * name (one token) — still parses.
- *
- * Returns trimmed name, or the input unchanged if no separator.
- */
-export function parseAgentNameFromTitle(title: string): string {
-  const idx = title.indexOf(" · ");
-  return idx === -1 ? title.trim() : title.slice(0, idx).trim();
-}
-
-/**
  * Convenience: read the current pane's title and extract the agent name.
  */
 export async function currentAgentName(): Promise<string | undefined> {
   const title = await currentPaneTitle();
   if (title === undefined) return undefined;
   return parseAgentNameFromTitle(title);
+}
+
+/**
+ * Name of the tmux session this process is running inside, or
+ * undefined outside tmux. Gated on `$TMUX` so a call from a plain
+ * shell doesn't get whatever session the server happens to consider
+ * current.
+ */
+export async function currentSessionName(): Promise<string | undefined> {
+  if (!process.env.TMUX) return undefined;
+  const result = await currentExecutor(["display-message", "-p", "#S"]);
+  if (result.exitCode !== 0) return undefined;
+  const name = result.stdout.trim();
+  return name === "" ? undefined : name;
 }
 
 export async function selectLayout(window: string, layout: string): Promise<void> {
@@ -1034,6 +1041,78 @@ async function tmuxAvailable(): Promise<boolean> {
   }
 }
 
+// ─── Attach ────────────────────────────────────────────────────
+//
+// From INSIDE a tmux client the right verb is `switch-client`, which
+// repoints the existing client and returns immediately. From outside
+// it is `attach-session` followed by a separate `select-window`: `tmux
+// attach -t session:window` does not reliably select the window across
+// tmux versions, and the select must run after the attach detaches.
+
+function attachTargetSpec(target: AttachTarget): string {
+  return target.window === undefined ? target.session : `${target.session}:${target.window}`;
+}
+
+export function attachHint(target: AttachTarget): string {
+  const spec = attachTargetSpec(target);
+  if (target.inside === true) return `tmux switch-client -t ${spec}`;
+  if (target.window === undefined) return `tmux attach -t ${target.session}`;
+  return `tmux attach -t ${target.session} && tmux select-window -t ${spec}`;
+}
+
+export function attachCommands(target: AttachTarget): readonly MuxCommand[] {
+  const spec = attachTargetSpec(target);
+  if (target.inside === true) {
+    return [{ command: "tmux", args: ["switch-client", "-t", spec] }];
+  }
+  const steps: MuxCommand[] = [{ command: "tmux", args: ["attach-session", "-t", target.session] }];
+  if (target.window !== undefined) {
+    // Best-effort: if it fails the user is at least in the right session.
+    steps.push({ command: "tmux", args: ["select-window", "-t", spec], optional: true });
+  }
+  return steps;
+}
+
+// ─── Diagnostics ────────────────────────────────────────────────
+
+export function paneNotFoundNextSteps(paneId: string): NextStep[] {
+  return [
+    {
+      intent: `Verify the pane id ${paneId} actually exists`,
+      command: `tmux display-message -t ${paneId} -p '#{pane_id} #{pane_title}'`,
+    },
+    {
+      intent: "List all live panes across all sessions",
+      command:
+        "tmux list-panes -a -F '#{session_name}:#{window_id}.#{pane_id}\\t#{pane_title}\\t#{pane_current_command}'",
+    },
+  ];
+}
+
+/**
+ * Version probe + the two ambient env facts tmux exposes. Returns DATA;
+ * `mu doctor` owns every string the user sees, so a second backend
+ * reporting different env vars needs no doctor change.
+ */
+export async function healthCheck(): Promise<MuxHealth> {
+  let version: string | null = null;
+  try {
+    version = (await tmux(["-V"])).trim();
+  } catch {
+    version = null;
+  }
+  return {
+    name: "tmux",
+    ok: version !== null,
+    version,
+    env: [
+      { name: "$TMUX", value: process.env.TMUX ?? null },
+      { name: "$TMUX_PANE", value: process.env.TMUX_PANE ?? null },
+    ],
+    remediation: "install tmux ≥ 3.0",
+  };
+}
+
 /**
  * The tmux implementation of `MuxBackend`. A frozen record of the
  * module's functions — no state of its own, so swapping backends is a
@@ -1066,10 +1145,17 @@ export const tmuxBackend: MuxBackend = Object.freeze({
   setPaneTitle,
   getPaneTitle,
   currentAgentName,
+  currentSessionName,
 
   sendToPane,
   capturePane,
 
   enableMuPaneBordersForSession,
   enableMuPaneBordersForPane,
+
+  attachHint,
+  attachCommands,
+
+  paneNotFoundNextSteps,
+  healthCheck,
 });

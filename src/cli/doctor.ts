@@ -1,7 +1,7 @@
 // mu — `mu doctor` diagnostic verb (human + --json forms).
 //
 // Reports:
-//   - environment: tmux, $TMUX, $TMUX_PANE, $MU_SESSION
+//   - environment: the active mux + its ambient env facts, $MU_SESSION
 //   - db: schema integrity, schema_version, journal_mode, foreign_keys
 //   - workstream: auto-detected current workstream
 //   - state: per-workstream agent / task / log counts + reconcile drift
@@ -22,9 +22,26 @@ import {
   formatDriftRecord,
 } from "../drift.js";
 import { checkFleetHazards } from "../fleet-hazards.js";
+import { activeMux, type MuxHealth } from "../mux.js";
 import { pc } from "../output.js";
-import { tmux } from "../tmux.js";
 import { summarizeWorkstream } from "../workstream.js";
+
+/** Column width for the `label : value` environment block. */
+const LABEL_WIDTH = 17;
+const pad = (s: string): string => s.padEnd(LABEL_WIDTH);
+
+/**
+ * Health of the active mux, or undefined when NO backend resolves.
+ * Never throws: doctor's whole job is reporting a broken substrate,
+ * so `NoMultiplexerError` here is a finding, not a failure.
+ */
+async function muxHealth(): Promise<MuxHealth | undefined> {
+  try {
+    return await (await activeMux()).healthCheck();
+  } catch {
+    return undefined;
+  }
+}
 
 export async function cmdDoctor(
   db: Db,
@@ -36,17 +53,22 @@ export async function cmdDoctor(
   console.log(pc.bold("mu doctor"));
 
   // ─ Environment
+  //
+  // The backend reports DATA (name / version / its own env facts);
+  // doctor owns every string below. A second mux with different
+  // ambient vars needs no change here.
   console.log(pc.bold("\nenvironment"));
-  try {
-    const version = (await tmux(["-V"])).trim();
-    console.log(`  tmux             : ${pc.green("ok")} (${version})`);
-  } catch {
-    console.log(`  tmux             : ${pc.red("NOT FOUND")} — install tmux ≥ 3.0`);
+  const health = await muxHealth();
+  if (health === undefined) {
+    console.log(`  multiplexer      : ${pc.red("NONE")} — install tmux ≥ 3.0`);
+  } else {
+    const label = pad(health.name);
+    if (health.ok) console.log(`  ${label}: ${pc.green("ok")} (${health.version ?? "?"})`);
+    else console.log(`  ${label}: ${pc.red("NOT FOUND")} — ${health.remediation}`);
+    for (const fact of health.env) {
+      console.log(`  ${pad(fact.name)}: ${fact.value ? pc.green(fact.value) : pc.dim("not set")}`);
+    }
   }
-  console.log(`  $TMUX            : ${process.env.TMUX ? pc.green("set") : pc.yellow("not set")}`);
-  console.log(
-    `  $TMUX_PANE       : ${process.env.TMUX_PANE ? pc.green(process.env.TMUX_PANE) : pc.dim("not set")}`,
-  );
   console.log(
     `  $MU_SESSION      : ${process.env.MU_SESSION ? pc.green(process.env.MU_SESSION) : pc.dim("not set")}`,
   );
@@ -116,7 +138,7 @@ export async function cmdDoctor(
     console.log(`  current          : ${pc.green(currentWorkstream)}`);
   } catch {
     console.log(
-      `  current          : ${pc.yellow("none")} (set $MU_SESSION, cd into an mu-<name> tmux session, or pass -w to a subcommand)`,
+      `  current          : ${pc.yellow("none")} (set $MU_SESSION, cd into an mu-<name> mux session, or pass -w to a subcommand)`,
     );
   }
 
@@ -247,18 +269,14 @@ export async function cmdDoctor(
  */
 export async function cmdDoctorJson(db: Db, opts: { deep?: boolean } = {}): Promise<void> {
   // environment
-  let tmuxVersion: string | null = null;
-  let tmuxOk = false;
-  try {
-    tmuxVersion = (await tmux(["-V"])).trim();
-    tmuxOk = true;
-  } catch {
-    tmuxOk = false;
-  }
+  const health = await muxHealth();
   const env = {
-    tmux: { ok: tmuxOk, version: tmuxVersion },
-    TMUX: process.env.TMUX ?? null,
-    TMUX_PANE: process.env.TMUX_PANE ?? null,
+    // `mux` is the backend-agnostic key. `tmux` is kept as an alias for
+    // back-compat with scripts that grew around the pre-MuxBackend
+    // shape; it reports the ACTIVE backend, whatever it is.
+    mux: health ?? { name: null, ok: false, version: null },
+    tmux: { ok: health?.ok ?? false, version: health?.version ?? null },
+    ...Object.fromEntries(health?.env.map((f) => [f.name.replace(/^\$/, ""), f.value]) ?? []),
     MU_SESSION: process.env.MU_SESSION ?? null,
   };
 

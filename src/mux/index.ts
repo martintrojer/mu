@@ -11,10 +11,14 @@ export {
 } from "./herdr.js";
 export { tmuxBackend } from "./tmux.js";
 export {
+  type AttachTarget,
   type CaptureOptions,
   type MuxBackend,
   type MuxBackendName,
+  type MuxCommand,
+  type MuxDiagnostics,
   MuxError,
+  type MuxHealth,
   type MuxPane,
   type MuxSession,
   type MuxWindow,
@@ -23,6 +27,7 @@ export {
   type NewWindowOptions,
   NoMultiplexerError,
   PaneNotFoundError,
+  parseAgentNameFromTitle,
   type SendOptions,
   type SendWarning,
   type SplitWindowOptions,

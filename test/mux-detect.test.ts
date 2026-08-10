@@ -269,3 +269,78 @@ describe("tmuxBackend conforms to the MuxBackend contract", () => {
     expect(await tmuxBackend.available()).toBe(true);
   });
 });
+
+describe("tmuxBackend.attachHint / attachCommands", () => {
+  // src/cli/agents.ts prints the hint and the TUI runs the commands.
+  // Both must come from the BACKEND: a herdr user handed `tmux attach`
+  // is worse off than one handed nothing.
+  it("inside a client, switches rather than attaching a second one", () => {
+    const target = { session: "mu-auth", window: "worker-1", inside: true };
+    expect(tmuxBackend.attachHint(target)).toBe("tmux switch-client -t mu-auth:worker-1");
+    expect(tmuxBackend.attachCommands(target)).toEqual([
+      { command: "tmux", args: ["switch-client", "-t", "mu-auth:worker-1"] },
+    ]);
+  });
+
+  it("outside a client, attaches then selects the window in two steps", () => {
+    // `tmux attach -t session:window` does not reliably select the
+    // window across tmux versions, hence the explicit second step.
+    const target = { session: "mu-auth", window: "worker-1" };
+    expect(tmuxBackend.attachHint(target)).toBe(
+      "tmux attach -t mu-auth && tmux select-window -t mu-auth:worker-1",
+    );
+    const cmds = tmuxBackend.attachCommands(target);
+    expect(cmds.map((c) => c.args[0])).toEqual(["attach-session", "select-window"]);
+    // The select is decorative: failing it still leaves the user in
+    // the right session, so the runner must not report an error.
+    expect(cmds[1]?.optional).toBe(true);
+  });
+
+  it("a session-only target omits window selection entirely", () => {
+    // `mu workstream init` has no agent yet, so there is no window.
+    expect(tmuxBackend.attachHint({ session: "mu-auth" })).toBe("tmux attach -t mu-auth");
+    expect(tmuxBackend.attachCommands({ session: "mu-auth" })).toHaveLength(1);
+  });
+});
+
+describe("tmuxBackend.healthCheck", () => {
+  afterEach(() => {
+    resetTmuxExecutor();
+    delete process.env[TMUX];
+    delete process.env.TMUX_PANE;
+  });
+
+  it("reports the version and the ambient env facts tmux owns", async () => {
+    makeTmuxAvailable();
+    process.env[TMUX] = "/tmp/tmux-1000/default,1,0";
+    process.env.TMUX_PANE = "%7";
+
+    const health = await tmuxBackend.healthCheck();
+
+    expect(health.name).toBe("tmux");
+    expect(health.ok).toBe(true);
+    expect(health.version).toBe("tmux 3.4");
+    // DATA, not prose: `mu doctor` owns every string the user sees, so
+    // a second backend with different env vars needs no doctor change.
+    expect(health.env).toEqual([
+      { name: "$TMUX", value: "/tmp/tmux-1000/default,1,0" },
+      { name: "$TMUX_PANE", value: "%7" },
+    ]);
+  });
+
+  it("reports ok:false with a remediation instead of throwing", async () => {
+    // doctor's job is REPORTING a broken substrate. A throw here would
+    // make `mu doctor` useless on exactly the box that needs it.
+    makeTmuxUnavailable();
+    const health = await tmuxBackend.healthCheck();
+    expect(health.ok).toBe(false);
+    expect(health.version).toBeNull();
+    expect(health.remediation.length).toBeGreaterThan(0);
+  });
+
+  it("reports unset env facts as null, not the empty string", async () => {
+    makeTmuxAvailable();
+    const health = await tmuxBackend.healthCheck();
+    expect(health.env.every((f) => f.value === null)).toBe(true);
+  });
+});

@@ -248,6 +248,40 @@ The diagram below uses the tmux spelling.
 - **`mu doctor`** warns about cross-session pollution (orphan panes,
   ghost rows, agents whose mux session no longer exists)
 
+### The `activeMux()` seam
+
+Every call site reaches its multiplexer through
+`(await activeMux()).<method>()`. Nothing outside `src/mux/` names a
+backend, and `MU_MUX` is therefore load-bearing: an unknown value
+fails the invocation rather than quietly running on tmux.
+
+Call sites are classified, and the classification is the seam's real
+content. With a second backend in play, "no reachable multiplexer"
+stops being a broken-box edge case and becomes routine, so each site
+has to have already decided what it means:
+
+| | Behaviour on `NoMultiplexerError` | Examples |
+| --- | --- | --- |
+| **Load-bearing** | propagate; `handle()` maps it to exit 5 | spawn, send, read, kill, adopt, kick, reconcile, session create/destroy |
+| **Best-effort** | `try`/`catch`, degrade | actor identity, pane titles, pane borders, workstream listings, liveness polls, TUI attach |
+
+`resolveWorkerIdentity()` in `src/tasks/claim.ts` is the canonical
+best-effort shape. `reconcile()` is pointedly load-bearing: treating
+an unreachable mux as "zero panes exist" would prune every registered
+agent as a ghost and reap its in-progress tasks.
+
+Three things that look like caller concerns belong to the backend,
+because each would otherwise hardcode a tmux string in a place a herdr
+user can see: `attachHint()` / `attachCommands()` (the printed recipe
+and the TUI's executed argv), `healthCheck()` (version + ambient env
+facts as DATA — `mu doctor` owns rendering), and
+`paneNotFoundNextSteps()` (borrowed by `PaneNotFoundError` from the
+backend that raised it).
+
+`src/tmux.ts` survives as a re-export for genuinely tmux-only
+concerns: the `MU_TMUX_SOCKET` test-isolation seam and the shared
+`sleep` / `setSleepForTests` poll seam.
+
 ### Window vs pane
 
 By default each agent gets its own **window** (a tmux window, a herdr
@@ -568,7 +602,7 @@ separately below.
 | `src/op-context.ts`   | The **op context** seam: `withOpContext(db, {intent, actor, group}, fn)` labels every op in a scope, restored in a `finally`. Nested scopes inherit the group, which puts a cascade under one `mu undo`. `withCaptureSuppressed` is the echo guard. |
 | `src/mux.ts`          | **Mux backend hub** — re-exports `src/mux/*`, same shape as `src/vcs.ts`. The public `MuxBackend` surface every call site imports. |
 | `src/mux/*.ts`        | **Multiplexer backends**: `types.ts` (the `MuxBackend` interface + `MuxError` / `PaneNotFoundError`), `detect.ts` (`MU_MUX` → `HERDR_ENV` → `$TMUX` → `PATH` ladder + test seam), `tmux.ts`, `herdr.ts`. The backend owns topology, the send protocol, capture, **pane id** validation (tmux `%15` vs herdr `w1:p1`), and the identity fallback — so no global pane-id regex and no per-call-site branching. |
-| `src/tmux.ts`         | Back-compat re-export of the tmux backend. Historical import path; new code imports `src/mux.ts`. |
+| `src/tmux.ts`         | Re-export of the tmux backend, kept for genuinely tmux-only concerns: the `MU_TMUX_SOCKET` test seam and the shared `sleep` / `setSleepForTests` poll seam. Everything else imports `src/mux.ts` and goes through `activeMux()`. |
 | `src/detect.ts`       | Pi status detector (`busy` / `needs_input` / `needs_permission`) + Braille-spinner fallback. Used when the mux cannot classify panes itself — i.e. always on tmux, never on herdr. |
 | `src/reconcile.ts`    | Ghost prune + status detect + orphan surface; "reality wins"                              |
 | `src/agents.ts`       | Hub: CRUD + send / read / list / close / free + liveness + reaper. Re-exports `src/agents/*`; pane-title composition (`composeAgentTitle`) lives here. |

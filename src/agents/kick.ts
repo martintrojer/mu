@@ -26,8 +26,8 @@
 import { type AgentRow, getAgent } from "../agents.js";
 import type { Db } from "../db.js";
 import { emitEvent } from "../logs.js";
+import { activeMux } from "../mux.js";
 import type { HasNextSteps, NextStep } from "../output.js";
-import { paneTTY } from "../tmux.js";
 import { AgentNotFoundError } from "./errors.js";
 
 // ─── Allowed signals ─────────────────────────────────────────────────
@@ -310,7 +310,8 @@ export async function kickAgent(
   const signal: KickSignal = opts.signal ?? "SIGINT";
   const agent: AgentRow | undefined = getAgent(db, name, opts.workstream);
   if (!agent) throw new AgentNotFoundError(name, opts.workstream);
-  const tty = await paneTTY(agent.paneId);
+  // Load-bearing: no pane TTY, no process to signal.
+  const tty = await (await activeMux()).paneTTY(agent.paneId);
   const lookup = await foregroundPgid(tty);
   if (lookup.kind === "no-foreground") {
     throw new NoForegroundProcessError(name, tty, "no-foreground");

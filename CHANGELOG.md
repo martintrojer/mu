@@ -85,6 +85,52 @@ breaking changes are called out under "Breaking" in each entry.
 
 ### Changed
 
+- **`MU_MUX` is load-bearing: call sites now route through
+  `activeMux()`.** The `MuxBackend` seam shipped with tmux as its sole
+  consumer, so every verb still reached tmux directly and the override
+  did nothing (`MU_MUX=herdrr mu agent list` exited 0). It now exits 1.
+  Migrated: `src/agents.ts`, `src/agents/{spawn,adopt,kick}.ts`,
+  `src/reconcile.ts`, `src/workstream.ts`, `src/cli/{agents,workstream,
+  doctor}.ts`, and `src/cli/tui/tmux-attach.ts`.
+
+  Every migrated site is classified **load-bearing** or
+  **best-effort**, and the distinction is deliberate: with a second
+  backend in play, "no reachable multiplexer" stops being a broken-box
+  edge case and becomes routine. Spawn, send, read, kill, adopt,
+  reconcile and session create/destroy let `NoMultiplexerError`
+  propagate to exit 5. Identity, pane titles, banners, liveness hints
+  and workstream listings degrade instead — `mu workstream list` on a
+  box with no multiplexer reports the registered set rather than
+  failing. Reconcile is pointedly in the first group: treating an
+  unreachable mux as "zero panes" would prune every agent as a ghost.
+
+  Three sites needed judgement rather than a mechanical rewrite, and
+  each grew a method on `MuxBackend` so no caller spells a
+  backend-specific string:
+
+  - `attachHint()` / `attachCommands()` — the copy-pasteable line
+    printed by `mu agent attach` and `mu workstream init`, and the
+    argv the TUI's `a` key executes. A herdr user must never be shown
+    a tmux command.
+  - `healthCheck()` — version plus the backend's own ambient env facts
+    as a typed record. `mu doctor` owns all rendering; `--json` gains
+    an `environment.mux` object (the old `environment.tmux` key stays
+    as an alias, now reporting the active backend).
+  - `PaneNotFoundError` takes the backend that raised it and borrows
+    its remediation steps. Without one it offers only mu's own verbs
+    instead of guessing tmux.
+
+  Also new on the interface: `currentSessionName()`, backing the
+  `mu-<name>` rung of workstream auto-detection
+  (`resolveTmuxSessionWorkstreamName` → `resolveMuxSessionWorkstreamName`).
+  `parseAgentNameFromTitle` moved to `src/mux/types.ts` — the title
+  format is mu's, not any multiplexer's.
+
+  `src/tmux.ts` stays as the re-export hub for genuinely tmux-only
+  concerns: the `MU_TMUX_SOCKET` test-isolation seam and the shared
+  `sleep`/`setSleepForTests` poll seam. Test files that exercise the
+  tmux backend keep importing it, which is correct.
+
 - **Vocabulary: the multiplexer is a backend.** Groundwork for
   supporting herdr alongside tmux. mu's
   substrate is now described as a **mux session** — a tmux session on

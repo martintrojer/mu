@@ -1,16 +1,17 @@
-// Drop into a managed agent's tmux pane from inside the TUI.
+// Drop into a managed agent's pane from inside the TUI.
 //
 // Mirrors the `tuicr.ts` / `lazygit.ts` per-popup escape-hatch
-// pattern: leave the alt screen, hand the terminal to tmux, restore
-// the alt screen on return. Bound to `a` in the Agents popup
+// pattern: leave the alt screen, hand the terminal to the multiplexer,
+// restore the alt screen on return. Bound to `a` in the Agents popup
 // (counterpart to per-revision `t tuicr` and per-cwd `l lazygit`).
 //
-// Mechanics: the user is almost certainly already inside a tmux
-// client (mu's TUI was launched from a pane). From-inside the right
-// verb is `tmux switch-client -t <session>:<window>`; from-outside
-// (no $TMUX) we fall back to `tmux attach -t <session>` then
-// `select-window`. Both branches keep stdio inherited so any tmux
-// password / prompt / confirmation reaches the user.
+// Mechanics live in the BACKEND, not here. `attachCommands()` returns
+// the argv steps for the active mux; this module only runs them with
+// stdio inherited (so any password / prompt / confirmation reaches the
+// user) and bookends them with the alt-screen dance. On tmux that is
+// `switch-client` when the caller is already inside a client and
+// `attach-session` + `select-window` otherwise, but this file does not
+// know that and must not.
 //
 // Returning to the orchestrator: the user navigates back to the
 // originating window themselves (Ctrl-B p, Ctrl-B <window>, etc.).
@@ -19,7 +20,7 @@
 // matches `tuicr` / `lazygit` semantics: the escape is one-way until
 // the user explicitly comes back.
 //
-// In practice for the in-tmux case (the common path): switch-client
+// In practice for the in-mux case (the common path): switch-client
 // returns immediately after pointing the client at the new
 // session:window, so the alt-screen restore fires almost instantly
 // and the user is now looking at the worker pane in the same client.
@@ -27,10 +28,11 @@
 // back via Ctrl-B p brings it into view, alt-screen still active.
 
 import { spawnSync } from "node:child_process";
+import { activeMux, type MuxCommand } from "../../mux.js";
 import { ALT_SCREEN_ENTER, ALT_SCREEN_EXIT } from "./escapes.js";
 
 export interface RunTmuxAttachOptions {
-  /** Tmux session name, e.g. `mu-multimachine`. */
+  /** Mux session name, e.g. `mu-multimachine`. */
   session: string;
   /** Window name or index inside the session (the agent's `tab`
    *  field, or its `name` if `tab` is null). */
@@ -52,6 +54,9 @@ export interface RunTmuxAttachDeps {
   spawn?: SpawnSyncFn;
   write?: (text: string) => void;
   env?: NodeJS.ProcessEnv;
+  /** Pre-resolved attach steps. Tests inject these to stay off a real
+   *  mux; production resolves them from `activeMux()`. */
+  commands?: readonly MuxCommand[];
 }
 
 export interface RunTmuxAttachResult {
@@ -59,46 +64,59 @@ export interface RunTmuxAttachResult {
   error?: string;
 }
 
-export function runTmuxAttachInteractive(
+/**
+ * Resolve the attach steps for `opts` from the active backend.
+ *
+ * Best-effort by design: the TUI's `a` key is an escape hatch, not a
+ * verb. With no reachable mux the caller gets an error string in the
+ * footer instead of a crashed TUI.
+ */
+export async function resolveAttachCommands(
   opts: RunTmuxAttachOptions,
-  deps: RunTmuxAttachDeps = {},
-): RunTmuxAttachResult {
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<readonly MuxCommand[] | undefined> {
+  try {
+    const mux = await activeMux();
+    // `inside` is a tmux-shaped question ("are we in a client of this
+    // mux?"), but the ANSWER is the backend's business — we just report
+    // the ambient evidence we have.
+    const inside = typeof env.TMUX === "string" && env.TMUX.length > 0;
+    return mux.attachCommands({ session: opts.session, window: opts.window, inside });
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Run pre-resolved attach steps with the alt screen bookended around
+ * them. Takes STEPS rather than a target because the backend owns the
+ * argv and resolving it is async, while ink's key handler is not.
+ */
+export function runTmuxAttachInteractive(deps: RunTmuxAttachDeps = {}): RunTmuxAttachResult {
   const run = deps.spawn ?? (spawnSync as SpawnSyncFn);
   const write = deps.write ?? ((text: string) => process.stdout.write(text));
   const env = deps.env ?? process.env;
-  const target = `${opts.session}:${opts.window}`;
-  const insideTmux = typeof env.TMUX === "string" && env.TMUX.length > 0;
+  const commands = deps.commands;
+  if (commands === undefined || commands.length === 0) {
+    return { ok: false, error: "no multiplexer available to attach with" };
+  }
   let result: RunTmuxAttachResult = { ok: true };
 
   try {
     write(ALT_SCREEN_EXIT);
-    if (insideTmux) {
-      const r = run("tmux", ["switch-client", "-t", target], {
-        stdio: "inherit",
-        env,
-      });
+    for (const step of commands) {
+      const r = run(step.command, step.args, { stdio: "inherit", env });
+      if (step.optional === true) continue;
       if (r.error !== undefined) {
         result = { ok: false, error: tmuxAttachErrorMessage(r.error) };
-      } else if (typeof r.status === "number" && r.status !== 0) {
-        result = { ok: false, error: `tmux switch-client exited ${r.status}` };
+        break;
       }
-    } else {
-      // Not inside tmux: attach to the session, then select the
-      // window. Two separate invocations because `tmux attach -t
-      // session:window` doesn't reliably select the window across
-      // tmux versions; the explicit two-step works everywhere.
-      const attach = run("tmux", ["attach-session", "-t", opts.session], {
-        stdio: "inherit",
-        env,
-      });
-      if (attach.error !== undefined) {
-        result = { ok: false, error: tmuxAttachErrorMessage(attach.error) };
-      } else if (typeof attach.status === "number" && attach.status !== 0) {
-        result = { ok: false, error: `tmux attach-session exited ${attach.status}` };
-      } else {
-        // Best-effort window selection AFTER the attach detaches.
-        // If this fails the user is at least in the right session.
-        run("tmux", ["select-window", "-t", target], { stdio: "inherit", env });
+      if (typeof r.status === "number" && r.status !== 0) {
+        result = {
+          ok: false,
+          error: `${step.command} ${step.args[0] ?? ""} exited ${r.status}`.trim(),
+        };
+        break;
       }
     }
   } catch (err) {
@@ -117,7 +135,7 @@ export function runTmuxAttachInteractive(
 export function tmuxAttachErrorMessage(err: unknown): string {
   if (err instanceof Error) {
     const code = (err as NodeJS.ErrnoException).code;
-    if (code === "ENOENT") return "tmux not found · install tmux";
+    if (code === "ENOENT") return "multiplexer binary not found";
     return err.message.length > 0 ? err.message : String(err);
   }
   return String(err);

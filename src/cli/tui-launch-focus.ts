@@ -18,7 +18,7 @@ import path from "node:path";
 import type { Db } from "../db.js";
 import { workspaceProjectRoot } from "../project-root.js";
 import { listWorkspaces } from "../workspace.js";
-import { resolveTmuxSessionWorkstreamName } from "../workstream.js";
+import { resolveMuxSessionWorkstreamName } from "../workstream.js";
 
 function normalizeExistingPath(candidatePath: string): string {
   try {
@@ -57,7 +57,7 @@ export async function resolveInitialTab(names: readonly string[], db: Db): Promi
 
   if (names.length <= 1) return 0;
 
-  const tmuxWs = await resolveTmuxSessionWorkstreamName();
+  const tmuxWs = await resolveMuxSessionWorkstreamName();
   const tmuxIndex = tmuxWs === null ? -1 : names.indexOf(tmuxWs);
   if (tmuxIndex >= 0) return tmuxIndex;
 

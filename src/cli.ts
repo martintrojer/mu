@@ -51,7 +51,7 @@ import {
   type TaskRow,
   type TaskStatus,
 } from "./tasks.js";
-import { listWorkstreams, resolveTmuxSessionWorkstreamName } from "./workstream.js";
+import { listWorkstreams, resolveMuxSessionWorkstreamName } from "./workstream.js";
 
 // ─── Re-exports for downstream cli/* modules ──────────────────────────
 //
@@ -114,7 +114,7 @@ export async function resolveWorkstream(explicit?: string): Promise<string> {
   }
   if (explicit) return explicit;
   if (process.env.MU_SESSION) return process.env.MU_SESSION;
-  const tmuxWorkstream = await resolveTmuxSessionWorkstreamName();
+  const tmuxWorkstream = await resolveMuxSessionWorkstreamName();
   if (tmuxWorkstream !== null) return tmuxWorkstream;
   throw new UsageError(
     "workstream required: pass --workstream <name>, set $MU_SESSION, or run inside an mu-<name> tmux session",

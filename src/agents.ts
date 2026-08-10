@@ -78,16 +78,7 @@ export {
 } from "./agents/wait.js";
 
 import { AgentNotFoundError, WorkspacePreservedError } from "./agents/errors.js";
-import {
-  type CaptureOptions,
-  capturePane,
-  killPane,
-  listPanesInSession,
-  type SendOptions,
-  sendToPane,
-  setPaneTitle,
-  type TmuxPane,
-} from "./tmux.js";
+import { activeMux, type CaptureOptions, type MuxPane, type SendOptions } from "./mux.js";
 import {
   decorateWithStaleness,
   freeWorkspace,
@@ -492,7 +483,11 @@ export async function refreshAgentTitle(
   if (!agent) return;
   if (isPendingPaneId(agent.paneId)) return; // workspace pre-stage placeholder; see PENDING_PANE_PREFIX
   const title = composeAgentTitle(db, agent);
-  await setPaneTitle(agent.paneId, title).catch(() => {});
+  // Best-effort all the way down, including "no mux reachable at all":
+  // pane titles are decorative and must never fail the calling verb.
+  await activeMux()
+    .then((mux) => mux.setPaneTitle(agent.paneId, title))
+    .catch(() => {});
 }
 
 /**
@@ -594,7 +589,8 @@ export async function sendToAgent(
 ): Promise<void> {
   const agent = getAgent(db, name, opts.workstream);
   if (!agent) throw new AgentNotFoundError(name);
-  await sendToPane(agent.paneId, text, opts);
+  // Load-bearing: a send that cannot reach a pane is a failed send.
+  await (await activeMux()).sendToPane(agent.paneId, text, opts);
 }
 
 /**
@@ -608,7 +604,8 @@ export async function readAgent(
 ): Promise<string> {
   const agent = getAgent(db, name, opts.workstream);
   if (!agent) throw new AgentNotFoundError(name);
-  return capturePane(agent.paneId, opts);
+  // Load-bearing: the scrollback IS the output of this verb.
+  return (await activeMux()).capturePane(agent.paneId, opts);
 }
 
 // ─── freeAgent (verb) ─────────────────────────────────────────────────────
@@ -746,9 +743,11 @@ export async function closeAgent(
     await freeWorkspace(db, name, { commit: false, workstream: agent.workstreamName });
     workspaceFreed = true;
   }
-  await killPane(agent.paneId).catch(() => {
-    /* idempotent — pane may already be gone */
-  });
+  await activeMux()
+    .then((mux) => mux.killPane(agent.paneId))
+    .catch(() => {
+      /* idempotent — pane may already be gone, or the mux with it */
+    });
   const deletedRow = deleteAgent(db, name, agent.workstreamName);
   // Machine-local table (`agents`): no trigger, so this emit is the
   // only record.
@@ -801,7 +800,7 @@ export interface LiveAgentsView {
   /** All registered agents in the workstream, post-reconcile. */
   agents: AgentRow[];
   /** Panes in the tmux session that look like agents but aren't registered. */
-  orphans: TmuxPane[];
+  orphans: MuxPane[];
   /** Diagnostic numbers from the reconcile pass; useful for `mu doctor`. */
   report: ReconcileReport;
 }
@@ -892,10 +891,10 @@ export async function pollAgents(db: Db, opts: PollAgentsOptions): Promise<Agent
   const sessionName = opts.tmuxSession ?? `mu-${opts.workstream}`;
   let livePaneIds: Set<string>;
   try {
-    const panes = await listPanesInSession(sessionName);
+    const panes = await (await activeMux()).listPanesInSession(sessionName);
     livePaneIds = new Set(panes.map((p) => p.paneId));
   } catch {
-    // Treat a tmux failure as "can't confirm liveness" rather than
+    // Treat a mux failure as "can't confirm liveness" rather than
     // throwing — poll is a read-only observation, never a hard error.
     livePaneIds = new Set();
   }

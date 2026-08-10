@@ -15,7 +15,7 @@
 import * as agentSdk from "./agents.js";
 import type { Db } from "./db.js";
 import { detectPiStatus } from "./detect.js";
-import { capturePane, listPanesInSession, type TmuxPane } from "./tmux.js";
+import { activeMux, type MuxPane } from "./mux.js";
 
 /**
  * What kind of reconciliation pass to run.
@@ -72,7 +72,7 @@ export interface ReconcileReport {
   statusChanges: number;
   /** Panes in the workstream's tmux session that look like agents but
    *  aren't in the registry. NOT auto-adopted. */
-  orphans: TmuxPane[];
+  orphans: MuxPane[];
   /** Which mode this report was generated in. Lets callers switch their
    *  output text ("agents pruned" vs "would-be-pruned (suppressed)")
    *  without re-deriving from options. */
@@ -107,7 +107,7 @@ function knownAgentCommands(): ReadonlySet<string> {
  * tick. Also pins the env-var snapshot for the loop, so test suites
  * that twiddle MU_PI_COMMAND in afterEach can't race the inner check.
  */
-function buildAgentPaneRecogniser(): (pane: TmuxPane) => boolean {
+function buildAgentPaneRecogniser(): (pane: MuxPane) => boolean {
   const known = knownAgentCommands();
   return (pane) => known.has(pane.command);
 }
@@ -116,12 +116,16 @@ export async function reconcile(db: Db, opts: ReconcileOptions): Promise<Reconci
   const sessionName = opts.tmuxSession ?? `mu-${opts.workstream}`;
   const mode: ReconcileMode = opts.mode ?? "full";
   const dbAgents = agentSdk.listAgents(db, { workstream: opts.workstream });
-  const tmuxPanes = await listPanesInSession(sessionName);
-  const tmuxByPaneId = new Map(tmuxPanes.map((p) => [p.paneId, p]));
+  // Load-bearing: reconcile IS the mux read. With no reachable mux there
+  // is no reality to reconcile against, and silently reporting "zero
+  // panes" would prune every registered agent as a ghost.
+  const mux = await activeMux();
+  const muxPanes = await mux.listPanesInSession(sessionName);
+  const paneById = new Map(muxPanes.map((p) => [p.paneId, p]));
 
   let prunedGhosts = 0;
   let statusChanges = 0;
-  const orphans: TmuxPane[] = [];
+  const orphans: MuxPane[] = [];
 
   // 1. Prune ghosts (DB row references a pane that no longer exists).
   //    `full` mode deletes (and therefore reaps); `report-only` counts
@@ -135,7 +139,7 @@ export async function reconcile(db: Db, opts: ReconcileOptions): Promise<Reconci
   for (const agent of dbAgents) {
     if (agentSdk.isPendingPaneId(agent.paneId)) {
       pendingSurvivors.push(agent);
-    } else if (tmuxByPaneId.has(agent.paneId)) {
+    } else if (paneById.has(agent.paneId)) {
       survivors.push(agent);
     } else {
       if (mode === "full") agentSdk.deleteAgent(db, agent.name, agent.workstreamName);
@@ -155,7 +159,7 @@ export async function reconcile(db: Db, opts: ReconcileOptions): Promise<Reconci
   //    step 1, so no sentinel-aware branch belongs here.
   if (mode === "full") {
     for (const agent of survivors) {
-      const scrollback = await capturePane(agent.paneId, { lines: 100 });
+      const scrollback = await mux.capturePane(agent.paneId, { lines: 100 });
       const detected = detectPiStatus(scrollback);
       if (
         agentSdk.shouldOverwriteAgentStatus(agent.status, detected) &&
@@ -183,7 +187,7 @@ export async function reconcile(db: Db, opts: ReconcileOptions): Promise<Reconci
   //    Pure read; runs in every mode.
   const dbPaneIds = new Set(survivors.map((a) => a.paneId));
   const looksLikeAgentPane = buildAgentPaneRecogniser();
-  for (const pane of tmuxPanes) {
+  for (const pane of muxPanes) {
     if (dbPaneIds.has(pane.paneId)) continue;
     if (looksLikeAgentPane(pane)) orphans.push(pane);
   }

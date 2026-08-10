@@ -23,14 +23,7 @@ import {
 } from "../agents.js";
 import type { Db } from "../db.js";
 import { emitEvent } from "../logs.js";
-import {
-  listPanesInSession,
-  PaneNotFoundError,
-  paneExists,
-  parseAgentNameFromTitle,
-  setPaneTitle,
-  type TmuxPane,
-} from "../tmux.js";
+import { activeMux, type MuxPane, PaneNotFoundError, parseAgentNameFromTitle } from "../mux.js";
 import { AgentExistsError, AgentNotInWorkstreamError } from "./errors.js";
 
 export interface AdoptAgentOptions {
@@ -95,14 +88,17 @@ export interface AdoptAgentResult {
  * adoption shouldn't depend on a captured-pane probe succeeding.
  */
 export async function adoptAgent(db: Db, opts: AdoptAgentOptions): Promise<AdoptAgentResult> {
+  // Load-bearing throughout: adopting a pane requires reading a pane.
+  const mux = await activeMux();
+
   // Step 1+2: pane format + existence.
-  if (!(await paneExists(opts.paneId))) {
-    throw new PaneNotFoundError(opts.paneId);
+  if (!(await mux.paneExists(opts.paneId))) {
+    throw new PaneNotFoundError(opts.paneId, mux);
   }
 
-  // Step 3: pane must be in the workstream's tmux session.
+  // Step 3: pane must be in the workstream's mux session.
   const expectedSession = opts.tmuxSession ?? `mu-${opts.workstream}`;
-  const panesInSession: TmuxPane[] = await listPanesInSession(expectedSession);
+  const panesInSession: MuxPane[] = await mux.listPanesInSession(expectedSession);
   const matchingPane = panesInSession.find((p) => p.paneId === opts.paneId);
   if (!matchingPane) {
     // Pane exists (passed step 2) but isn't in the expected session.
@@ -171,7 +167,7 @@ export async function adoptAgent(db: Db, opts: AdoptAgentOptions): Promise<Adopt
     role: opts.role,
   });
   if (resolvedName !== previousTitle) {
-    await setPaneTitle(opts.paneId, resolvedName);
+    await mux.setPaneTitle(opts.paneId, resolvedName);
   }
   // Machine-local table (`agents`): no trigger, so this emit is the
   // only record.

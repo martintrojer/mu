@@ -27,7 +27,7 @@ import { type ColumnSpec, contentWidthFromCols, layoutColumns, renderRow } from 
 import { dispatchPopupKeyFromInk, type PopupAction, type PopupActionEnvelope } from "../keys.js";
 import { ListRow } from "../list-row.js";
 import { PopupShell } from "../popup-shell.js";
-import { runTmuxAttachInteractive } from "../tmux-attach.js";
+import { resolveAttachCommands, runTmuxAttachInteractive } from "../tmux-attach.js";
 import { usePopupActionQueue } from "../use-popup-action-queue.js";
 import { applyFilter, FilterPrompt, usePopupFilter } from "../use-popup-filter.js";
 import { useTerminalSize } from "../use-terminal-size.js";
@@ -216,16 +216,18 @@ export function AgentsPopup({
           return;
         }
         if (action.key === "a") {
-          // Per-popup TUI escape: hand off to tmux to switch the
-          // user's client to the agent's pane. Mirrors `t tuicr` /
+          // Per-popup TUI escape: hand off to the multiplexer to put
+          // the user on the agent's pane. Mirrors `t tuicr` /
           // `l lazygit`. Read-only-by-design TUI is preserved — we
           // don't mutate state, we just let the user look at /
           // interact with the pane until they navigate back.
           const session = `mu-${ws}`;
           const window = a.tab ?? a.name;
-          const r = runTmuxAttachInteractive({ session, window });
-          if (!r.ok) onFooter?.(r.error ?? "tmux attach failed", false, "error");
-          else onFooter?.(`tmux switch-client → ${session}:${window}`, true, "info");
+          void resolveAttachCommands({ session, window }).then((commands) => {
+            const r = runTmuxAttachInteractive({ commands });
+            if (!r.ok) onFooter?.(r.error ?? "attach failed", false, "error");
+            else onFooter?.(`attach → ${session}:${window}`, true, "info");
+          });
           return;
         }
         return;

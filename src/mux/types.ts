@@ -98,6 +98,42 @@ export interface SplitWindowOptions {
   env?: Record<string, string>;
 }
 
+/** Where an attach should land the user. */
+export interface AttachTarget {
+  /** Mux session name, e.g. `mu-auth`. */
+  session: string;
+  /** Window inside that session (the agent's `tab`, or its name). */
+  window?: string;
+  /** True when the caller is already inside a client of this mux, which
+   *  on tmux means `switch-client` rather than `attach-session`. */
+  inside?: boolean;
+}
+
+/** One argv the caller may execute to hand the terminal to the mux. */
+export interface MuxCommand {
+  command: string;
+  args: readonly string[];
+  /** Best-effort step: a non-zero exit is not a failure of the attach
+   *  as a whole (tmux's post-attach `select-window`, for instance). */
+  optional?: boolean;
+}
+
+/** What a backend can say about its own health. Deliberately DATA, not
+ *  prose: `mu doctor` owns all rendering (human and --json). */
+export interface MuxHealth {
+  /** Backend name, echoed so doctor can label the row. */
+  name: MuxBackendName;
+  /** True iff the backend answered a version probe. */
+  ok: boolean;
+  /** Version string as the backend reports it, or null when unreachable. */
+  version: string | null;
+  /** Ambient env facts this backend cares about, in display order
+   *  (tmux: $TMUX / $TMUX_PANE). Values are null when unset. */
+  env: readonly { name: string; value: string | null }[];
+  /** Remediation line shown when `ok` is false. */
+  remediation: string;
+}
+
 export interface SendOptions {
   /** Override the default delay between paste and Enter, in ms. */
   delayMs?: number;
@@ -128,6 +164,24 @@ export interface CaptureOptions {
   lines?: number;
 }
 
+// ─── Title parsing ───────────────────────────────────────────────
+
+/**
+ * Extract the agent-name token from a (possibly composed) pane title.
+ * mu's `composeAgentTitle` renders titles as `name · <glyph> · task_id`;
+ * the agent name is always the first ' · '-separated token. Adopted
+ * panes mu never re-titled have just the name — still parses.
+ *
+ * Backend-INDEPENDENT: the format is mu's, not any multiplexer's, so
+ * every backend that can read a pane title parses it the same way.
+ * Lives here rather than in an impl so migrated call sites can use it
+ * without importing tmux.
+ */
+export function parseAgentNameFromTitle(title: string): string {
+  const idx = title.indexOf(" · ");
+  return idx === -1 ? title.trim() : title.slice(0, idx).trim();
+}
+
 // ─── Errors ────────────────────────────────────────────────────────────
 
 /**
@@ -149,27 +203,23 @@ export class MuxError extends Error implements HasNextSteps {
  * (`mu` maps it to 5 alongside other mux issues, but the message is
  * more actionable than raw backend stderr).
  *
- * The remediation hints below are tmux-flavoured because tmux is
- * currently the only backend. Genericising them per-backend is part
- * of the `mux-callsite-migration` task — a herdr user reading
- * "tmux info | head" would be worse off than with no hint at all.
+ * The backend-specific half of the remediation comes from the backend
+ * that raised it: showing a herdr user `tmux info | head` would be
+ * worse than showing no hint at all. Callers that construct this error
+ * already hold the active backend, so passing it is free; the
+ * no-backend form degrades to mu's own verbs only.
  */
 export class PaneNotFoundError extends Error implements HasNextSteps {
   override readonly name = "PaneNotFoundError";
-  constructor(public readonly paneId: string) {
-    super(`tmux pane not found: ${paneId}`);
+  constructor(
+    public readonly paneId: string,
+    private readonly backend?: MuxDiagnostics,
+  ) {
+    super(`${backend?.name ?? "mux"} pane not found: ${paneId}`);
   }
   errorNextSteps(): NextStep[] {
     return [
-      {
-        intent: `Verify the pane id ${this.paneId} actually exists`,
-        command: `tmux display-message -t ${this.paneId} -p '#{pane_id} #{pane_title}'`,
-      },
-      {
-        intent: "List all live panes across all sessions",
-        command:
-          "tmux list-panes -a -F '#{session_name}:#{window_id}.#{pane_id}\\t#{pane_title}\\t#{pane_current_command}'",
-      },
+      ...(this.backend?.paneNotFoundNextSteps(this.paneId) ?? []),
       {
         intent: "List workstreams to choose the right scope",
         command: "mu workstream list",
@@ -180,6 +230,13 @@ export class PaneNotFoundError extends Error implements HasNextSteps {
       },
     ];
   }
+}
+
+/** The slice of a backend `PaneNotFoundError` needs. Structural so the
+ *  error type doesn't depend on the whole backend contract. */
+export interface MuxDiagnostics {
+  readonly name: MuxBackendName;
+  paneNotFoundNextSteps(paneId: string): NextStep[];
 }
 
 /**
@@ -253,6 +310,10 @@ export interface MuxBackend {
   setPaneTitle(paneId: string, title: string): Promise<void>;
   getPaneTitle(paneId: string): Promise<string | undefined>;
   currentAgentName(): Promise<string | undefined>;
+  /** Name of the session the CALLER is running inside, or undefined
+   *  when outside one. Backs the `mu-<name>` rung of workstream
+   *  auto-detection, which is why it is identity and not topology. */
+  currentSessionName(): Promise<string | undefined>;
 
   // — io —
   sendToPane(paneId: string, text: string, opts?: SendOptions): Promise<void>;
@@ -261,4 +322,23 @@ export interface MuxBackend {
   // — chrome (decorative; a backend with no equivalent no-ops) —
   enableMuPaneBordersForSession(session: string): Promise<number>;
   enableMuPaneBordersForPane(paneId: string): Promise<void>;
+
+  // — attach —
+  //
+  // Two shapes for the same intent because mu has two consumers:
+  // `mu agent attach` PRINTS a copy-pasteable line, the TUI's `a` key
+  // EXECUTES the steps. Neither may hardcode a tmux string.
+
+  /** Copy-pasteable shell line that lands the user on `target`. */
+  attachHint(target: AttachTarget): string;
+  /** The same attach, as argv steps to spawn in order. */
+  attachCommands(target: AttachTarget): readonly MuxCommand[];
+
+  // — diagnostics —
+
+  /** Backend-specific `PaneNotFoundError` remediation. */
+  paneNotFoundNextSteps(paneId: string): NextStep[];
+  /** Version + ambient facts for `mu doctor`. Never throws: an
+   *  unreachable backend reports `ok: false`. */
+  healthCheck(): Promise<MuxHealth>;
 }

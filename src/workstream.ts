@@ -24,10 +24,10 @@ import {
   renderToBucket,
 } from "./exporting.js";
 import { emitEvent } from "./logs.js";
+import { activeMux } from "./mux.js";
 import { withOpContext } from "./op-context.js";
 import type { HasNextSteps, NextStep } from "./output.js";
 import { parkedStatus } from "./parked.js";
-import { killSession, listSessions, sessionExists, tmux } from "./tmux.js";
 import { backendByName, type VcsBackend, type VcsBackendName } from "./vcs.js";
 import { listWorkspaces } from "./workspace.js";
 
@@ -64,21 +64,48 @@ export const RESERVED_WORKSTREAM_NAMES = new Set(["scratch"]);
 /** The canonical off-the-cuff workstream name. */
 export const SCRATCH_WORKSTREAM = "scratch";
 
+// ─── Best-effort mux reads ─────────────────────────────────────────
+//
+// Every workstream READ decorates DB truth with mux liveness. The DB
+// half always works, so an unreachable mux must degrade the decoration
+// ("no sessions", "not alive") rather than fail `mu workstream list`
+// on a box where nobody is running a multiplexer right now.
+
+async function listMuxSessions(): Promise<readonly { name: string }[]> {
+  try {
+    return await (await activeMux()).listSessions();
+  } catch {
+    return [];
+  }
+}
+
+async function sessionAlive(session: string): Promise<boolean> {
+  try {
+    return await (await activeMux()).sessionExists(session);
+  } catch {
+    return false;
+  }
+}
+
 /** True iff `name` is a scratch/ephemeral workstream (special-cased by
  *  the staleness nudge and the TUI ephemeral marker). */
 export function isScratchWorkstream(name: string): boolean {
   return RESERVED_WORKSTREAM_NAMES.has(name);
 }
 
-export async function resolveTmuxSessionWorkstreamName(): Promise<string | null> {
-  if (!process.env.TMUX) return null;
+/**
+ * The workstream implied by the mux session the caller sits in, or
+ * null. Best-effort: this is one rung of the -w resolution ladder, so
+ * an unreachable mux means "no ambient answer", never a thrown verb.
+ */
+export async function resolveMuxSessionWorkstreamName(): Promise<string | null> {
   try {
-    const name = (await tmux(["display-message", "-p", "#S"])).trim();
-    if (name.startsWith(RESERVED_WORKSTREAM_PREFIX)) {
+    const name = await (await activeMux()).currentSessionName();
+    if (name?.startsWith(RESERVED_WORKSTREAM_PREFIX)) {
       return name.slice(RESERVED_WORKSTREAM_PREFIX.length);
     }
   } catch {
-    // fall through: tmux context is best-effort for workstream resolution
+    // fall through: mux context is best-effort for workstream resolution
   }
   return null;
 }
@@ -316,13 +343,16 @@ export async function listWorkstreams(db: Db): Promise<WorkstreamSummary[]> {
     (db.prepare("SELECT name FROM workstreams").all() as { name: string }[]).map((r) => r.name),
   );
 
-  const tmuxNames = new Set<string>();
-  for (const session of await listSessions()) {
+  // Best-effort: the DB half of the union is always answerable, so a
+  // missing mux degrades to "registered workstreams only" rather than
+  // failing a read-only listing.
+  const muxNames = new Set<string>();
+  for (const session of await listMuxSessions()) {
     if (session.name.startsWith(RESERVED_WORKSTREAM_PREFIX))
-      tmuxNames.add(session.name.slice(RESERVED_WORKSTREAM_PREFIX.length));
+      muxNames.add(session.name.slice(RESERVED_WORKSTREAM_PREFIX.length));
   }
 
-  const allNames = Array.from(new Set([...dbNames, ...tmuxNames])).sort();
+  const allNames = Array.from(new Set([...dbNames, ...muxNames])).sort();
   return Promise.all(allNames.map((name) => summarizeWorkstream(db, { workstream: name })));
 }
 
@@ -386,7 +416,7 @@ export async function listEmptyWorkstreams(db: Db): Promise<WorkstreamSummary[]>
     (db.prepare("SELECT name FROM workstreams").all() as { name: string }[]).map((r) => r.name),
   );
   const tmuxOnlyNames: string[] = [];
-  for (const session of await listSessions()) {
+  for (const session of await listMuxSessions()) {
     if (!session.name.startsWith("mu-")) continue;
     const name = session.name.slice(RESERVED_WORKSTREAM_PREFIX.length);
     if (dbNames.has(name)) continue;
@@ -418,7 +448,7 @@ export async function summarizeWorkstream(
   return {
     name: opts.workstream,
     tmuxSession,
-    tmuxAlive: await sessionExists(tmuxSession),
+    tmuxAlive: await sessionAlive(tmuxSession),
     agentCount: countAgents(db, opts.workstream),
     taskCount: countTasks(db, opts.workstream),
     noteCount: countNotes(db, opts.workstream),
@@ -467,9 +497,12 @@ export async function destroyWorkstream(
   // Tmux first: if killSession throws we don't want the DB rows already
   // gone with no way to recover. (killSession is itself idempotent on
   // missing sessions — a real throw here is an unexpected tmux error.)
-  const tmuxAliveBefore = await sessionExists(tmuxSession);
+  // Load-bearing: destroy must actually kill the session, not silently
+  // report success while leaving panes running.
+  const mux = await activeMux();
+  const tmuxAliveBefore = await mux.sessionExists(tmuxSession);
   if (tmuxAliveBefore) {
-    await killSession(tmuxSession);
+    await mux.killSession(tmuxSession);
   }
 
   // Workspaces SECOND, before the FK cascade. The cascade silently
