@@ -105,7 +105,11 @@ npx skills add martintrojer/mu          # auto-detects pi / claude-code / codex 
 
 **Requirements:**
 - Node 22.12–24 (see `.nvmrc`), matching `engines` in `package.json`.
-- tmux ≥ 3.0 (`mu doctor` checks)
+- A terminal multiplexer: tmux ≥ 3.0, or [herdr](https://github.com/martintrojer/herdr)
+  (`mu doctor` reports which one is active). tmux is the complete
+  backend; herdr currently covers session/window/pane topology but not
+  spawn, send, or read — see
+  [docs/USAGE_GUIDE.md § 20](docs/USAGE_GUIDE.md#20-multiplexer-backends-tmux-and-herdr).
 - pi (the agent CLI mu orchestrates)
 - For `--workspace`: jj, sl, or git on PATH (or `--backend none`)
 

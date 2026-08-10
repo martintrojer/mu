@@ -42,6 +42,7 @@ A practical, copy-pasteable tour of mu. Terms are canonical — see
 17. [Mental model in three sentences](#mental-model-in-three-sentences)
 18. [What's NOT in mu](#whats-not-in-mu-and-how-to-work-around-it)
 19. [Where to go from here](#where-to-go-from-here)
+20. [Multiplexer backends (tmux and herdr)](#20-multiplexer-backends-tmux-and-herdr)
 
 ---
 
@@ -371,8 +372,11 @@ alias mu="node $PWD/dist/cli.js"
 See [README.md § Install](../README.md#install) for the full set of
 install patterns.
 
-mu requires tmux ≥ 3.0. Make sure you're inside a tmux session before
-proceeding:
+mu requires a terminal multiplexer. tmux ≥ 3.0 is the complete
+backend and what the rest of this guide assumes; herdr is supported
+for topology but not yet for spawn/send/read (see
+[§ 20](#20-multiplexer-backends-tmux-and-herdr)). Make sure you're
+inside a session before proceeding:
 
 ```bash
 tmux       # if you're not already in one
@@ -2533,4 +2537,120 @@ to `mu sql`, twice in one session". File it in [ROADMAP.md](ROADMAP.md).
 If you're trying mu and something doesn't work as documented, file an
 issue with: the exact `mu` command, the full output (set
 `MU_DB_PATH=/tmp/mu-debug.db` to isolate from your real registry),
-your tmux version (`tmux -V`), and your platform.
+your multiplexer version (the `environment` block of `mu doctor`), and
+your platform.
+
+---
+
+## 20. Multiplexer backends (tmux and herdr)
+
+mu drives exactly one multiplexer per invocation. tmux is the
+incumbent and the complete backend. [herdr](https://github.com/martintrojer/herdr)
+is the second, and is **not yet complete**: it implements sessions,
+windows, panes, identity and diagnostics, but `mu agent spawn`,
+`mu agent send` and `mu agent read` are not implemented on it and fail
+with exit 5. If you want a working crew today, use tmux.
+
+### Which backend am I on?
+
+```bash
+mu doctor           # the `environment` block names the active backend
+mu doctor --json    # .environment.mux = { name, ok, version, env, remediation }
+```
+
+`.environment.tmux` is kept in `--json` as an alias reporting the
+*active* backend, so existing scripts keep working. Read
+`.environment.mux.name` if you care which one it is.
+
+### The detection ladder
+
+1. `MU_MUX=<name>` — explicit override, wins over everything. An
+   unknown value fails the invocation (`error: unknown mux backend:
+   nope`, exit 1) rather than quietly running on tmux.
+2. `HERDR_ENV=1` → herdr. Compared literally against `1`, as herdr
+   documents.
+3. `$TMUX` or `$TMUX_PANE` set → tmux. Either one proves the caller is
+   in a tmux pane; some setups (`sudo -E`, ssh with a restrictive
+   `SendEnv`) pass one and not the other.
+4. Availability — whichever binary actually runs, tmux first.
+5. `NoMultiplexerError`, exit 5.
+
+Rung 2 outranks rung 3 because it is the narrower claim: herdr panes
+routinely host a tmux server, so both signals can be live at once, and
+only `HERDR_ENV` says "herdr manages *this* pane". Rungs 2–3 answer
+"which mux is the caller in", rung 4 answers "which mux works here" —
+mu can create a detached session from a plain shell, so rung 4 alone
+is enough to operate.
+
+The backend is resolved once per process and cached.
+
+### What differs between the two
+
+| | tmux | herdr |
+| --- | --- | --- |
+| Mux session (holds one workstream) | tmux session `mu-<ws>` | herdr *workspace* labelled `mu-<ws>`. herdr's own "session" is server-level and is NOT the workstream unit. |
+| Window | tmux window | herdr tab |
+| Agent | pane | pane |
+| Pane id | `%15` | `w1:p1` (workspace-qualified, so a pane moved between workspaces gets a new id) |
+| Pane title | `select-pane -T` | `herdr pane rename` writes the pane *label* |
+| Attach hint | `tmux a -t mu-<ws>` | `herdr session attach mu-<ws>` |
+| Pane borders | 4-side border showing agent name + status glyph | no-op — herdr owns its pane chrome; mu-managed panes carry the label instead |
+| Layout | `select-layout` | no-op — herdr splits are explicit, geometry is yours |
+| Status detection | scrollback scraping (`src/detect.ts`) | herdr classifies panes natively; the scraper is bypassed. Not wired up yet — see the limits below. |
+| Focus | mu creates detached | `--no-focus` on every mutating call, always. `detached: false` still gets you a detached workspace; run `herdr workspace focus` yourself. |
+| Isolation seam | `MU_TMUX_SOCKET` (`-L <name>`) | `MU_HERDR_SESSION` (`--session <name>`, its own socket) |
+| `mu agent spawn` / `send` / `read` | works | **not implemented**, exit 5 |
+
+`MU_TMUX_SOCKET` is tmux-only and ignored under herdr;
+`MU_HERDR_SESSION` is its herdr analogue. Both exist so a test run can
+never observe or destroy your real panes.
+
+### Known limits on herdr
+
+- **Spawn, send and read are not implemented.** The creation verbs
+  refuse a command rather than silently dropping it — dropping would
+  leave an empty shell that mu records as an agent, which is the worst
+  available failure. herdr has no create-and-run form, so spawn is
+  inherently two steps (create the pane, then start the agent in it)
+  and that second step is unwritten.
+- **`--lines` cannot recover scrolled-off rows from an
+  alternate-screen pane.** A pane on the alternate screen does not
+  spill into host scrollback, so there is nothing behind the viewport
+  to read. Applies to the capture path once it lands.
+- **`mu agent kick` is Linux-only on herdr.** herdr reports a shell
+  pid, not a tty, so `paneTTY` resolves `/proc/<pid>/fd/0`. On macOS
+  that path does not exist and the call fails with a `HerdrError`
+  naming the limitation rather than lying about the tty.
+- **`herdr pane list` has no foreground-command field**, so a pane's
+  command reads as empty from a listing. The authoritative answer
+  costs one `herdr pane process-info` round trip per pane. mu does not
+  fake it.
+- **`MU_<UPPER_CLI>_COMMAND` has no herdr equivalent.** herdr resolves
+  the agent binary itself by kind. The override is honoured on tmux
+  only; on herdr it is moot while spawn is unimplemented, and the
+  spawn work has to either pass it through or refuse it explicitly.
+
+### A degraded backend reports, it does not crash
+
+With no herdr server running, `mu doctor` still prints a full report
+(exit 0) and any verb that genuinely needs the mux fails with exit 5
+and herdr's own message plus remediation steps:
+
+```bash
+MU_MUX=herdr mu doctor              # exit 0; `herdr: ok (0.8.0)` from the client
+MU_MUX=herdr mu agent list -w foo   # exit 5: no herdr server is running at ...
+MU_MUX=herdr mu task claim t1 -w foo --self   # exit 0 — identity is best-effort
+```
+
+That last line is the load-bearing / best-effort split. Verbs that ARE
+the mux (spawn, send, kill, reconcile, session create/destroy) fail
+loudly. Verbs where the mux is decoration (identity fallback, pane
+titles, banners, `mu workstream list`) degrade and carry on. Reconcile
+is pointedly in the first group: treating an unreachable mux as "zero
+panes" would prune every agent as a ghost.
+
+One error is deliberately outside that scheme. herdr returns argument
+errors with exit 2, which mu raises as `HerdrSyntaxError` — not a
+`MuxError`. That is CLI drift after a herdr upgrade, i.e. a bug in mu,
+and bucketing it as "herdr is down" would send you chasing a healthy
+server.

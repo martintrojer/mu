@@ -28,8 +28,13 @@ both. `--json` exists on every verb:
 
 ## Vocabulary
 
-- **workstream** — unit of organization; tmux session `mu-<name>`.
-- **agent** — named worker in a tmux pane (you may be one).
+- **workstream** — unit of organization; one **mux session** named
+  `mu-<name>` (a tmux session, or a herdr workspace).
+- **agent** — named worker in a pane (you may be one).
+- **mux** — the multiplexer mu drives: tmux, or herdr. One per
+  invocation. `mu doctor` names the active one; `MU_MUX` forces it.
+  Only relevant to you if a verb fails with a mux error — on herdr,
+  `agent spawn` / `send` / `read` are not implemented yet (exit 5).
 - **task** — DAG node with mandatory `impact` (1–100) and
   `effort_days`. Status: `OPEN`, `IN_PROGRESS`, `CLOSED`
   (satisfies `--blocked-by`), `REJECTED` (terminal won't-do; still
@@ -97,7 +102,7 @@ the middle: "fire, but keep the channel open."
 
 ### Workstreams, DAGs, tracks
 
-One workstream = one tmux session named `mu-<workstream>`. Every
+One workstream = one mux session named `mu-<workstream>`. Every
 agent is a pane in that session. DB rows are partitioned by
 `workstream`.
 
@@ -385,8 +390,9 @@ mu task notes <id>
 
 ## In-pane worker loop
 
-`$TMUX_PANE` resolves identity. Pane title set at spawn is the agent
-identity.
+`$MU_AGENT_NAME`, injected at spawn, resolves identity; the pane title
+is the fallback that adopted panes need. Env-first means this loop is
+identical whichever multiplexer you are in — you never need to know.
 
 - Worker pane: spawned/adopted by mu; bare `mu task claim <id>` works.
 - Orchestrator pane: not registered; bare `claim` errors with next
