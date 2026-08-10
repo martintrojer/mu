@@ -8,7 +8,7 @@
 ## What This Is
 
 mu is a small, durable **control plane** for a persistent crew of AI
-agents in tmux panes. Agents have names, roles, and status; they live
+agents in multiplexer panes. Agents have names, roles, and status; they live
 across sessions; they work on a built-in task graph with VCS
 workspace isolation; humans and other agents drive them through one
 CLI. State lives in one SQLite file; every mu feature is a typed verb
@@ -103,7 +103,7 @@ present.
 
 ### 3. Reality wins reconciliation
 
-`mu agent list` queries tmux, prunes ghosts, surfaces orphans. The DB
+`mu agent list` queries the mux, prunes ghosts, surfaces orphans. The DB
 records what we last observed, not what we wish were true. If
 worker-1's pane crashed, the next `mu agent list` notices.
 
@@ -120,20 +120,36 @@ deterministic queries against the graph, not LLM judgment calls. The
 LLM decides *what to type to the agent*; the graph decides *which
 agent gets which task*.
 
-### 5. One workstream per tmux session
+### 5. One workstream per mux session
 
-A mu workstream is a tmux session. All its agents are panes/windows
-inside that session. `tmux a -t mu-<workstream>` shows the whole crew
-live. Multiple workstreams on one machine are multiple isolated tmux
-sessions, partitioned in the DB by `session_id`. Detach and reattach
-as you would any tmux session — the crew survives.
+A mu workstream is a **mux session** — a tmux session on the tmux
+backend, a herdr workspace on the herdr backend. All its agents are
+panes/windows inside that session. `tmux a -t mu-<workstream>` shows
+the whole crew live. Multiple workstreams on one machine are multiple
+isolated mux sessions, partitioned in the DB by `session_id`. Detach
+and reattach as you would any tmux session — the crew survives.
 
-### 6. Pi-only, by current scope
+The multiplexer is a **backend**, chosen by detection
+(`MU_MUX` → `HERDR_ENV` → `$TMUX` → `PATH`), the same shape as the
+VCS backend. Everything backend-specific — topology, the send
+protocol, scrollback capture, pane-id validation, identity fallback —
+lives behind `MuxBackend` in `src/mux/`. Two implementations, not an
+anticipatory abstraction: a third earns its way in on its own
+friction evidence.
 
-Mu's status detection (`busy` / `needs_input` / `idle` / `done`) is
-pi-only. `--cli <name>` accepts other strings, but no other CLI ships
-with detection support, so a non-pi pane always shows `needs_input`.
-mu is a pi orchestrator.
+### 6. Pi-first, and what the mux knows
+
+Mu's own status detection (`busy` / `needs_input` / `needs_permission`)
+is pi-only, plus a Braille-spinner fallback that catches most TUI
+wrappers. `--cli <name>` accepts other strings, but on the tmux
+backend no other CLI ships with a detector, so an unrecognized pane
+tends to read `needs_input`.
+
+A mux that classifies panes itself changes this. The herdr backend
+reports agent state natively across the agent kinds it knows, so on
+that backend mu takes the mux's word and skips scrollback scraping
+entirely. Detection is a property of the **mux backend**, not a fixed
+property of mu.
 
 `--cli` and `MU_<UPPER_CLI>_COMMAND` stay useful for swapping the pi
 binary: set `MU_PI_COMMAND=<name>` once and every spawn picks it up.
@@ -310,7 +326,7 @@ orchestrator stays in charge.
   audit-trail discipline, not enforcement.)
 - **DB-undoable, not substrate-undoable.** `mu undo <group> --yes`
   emits inverse ops for one action and restores the rows. It does not
-  replay killed tmux panes or recreate freed workspace directories;
+  replay killed mux panes or recreate freed workspace directories;
   after an undo, reconciliation reports ghosts/orphans and the caller
   decides what to re-spawn or adopt.
 

@@ -87,6 +87,11 @@ real use surfaces them.
 
 ### Per-CLI status detection (claude, codex, …)
 
+**Partly superseded on the herdr backend**, which classifies panes
+natively across the agent kinds it knows — mu takes its word there and
+skips scrollback scraping entirely. This item stays live for the tmux
+backend, where mu has to do its own detecting.
+
 mu is a pi orchestrator. The Braille-spinner fallback catches every
 TUI wrapper using standard spinner glyphs (U+2800–U+28FF), so
 pi-meta + solo + many vanilla TUIs (claude, codex) work without a
@@ -114,6 +119,15 @@ Critical subtleties any new detector must keep:
   detection** to prevent already-answered prompts re-triggering.
 - **Permission overrides busy** — if a permission prompt is
   visible, agent is `NeedsPermission`, not `Busy`.
+
+### A third mux backend (zellij, wezterm, kitty)
+
+**Not promoted.** tmux and herdr are two real implementations, which
+is what justifies `MuxBackend` existing at all — the interface was
+extracted to serve a concrete second case, not in anticipation of an
+nth. A third backend needs its own friction evidence under the
+[promotion criteria](#promotion-criteria) like anything else. "The
+abstraction already exists" is not evidence.
 
 ### Subscription-based wakeups
 

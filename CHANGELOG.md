@@ -8,6 +8,38 @@ breaking changes are called out under "Breaking" in each entry.
 
 ---
 
+## [Unreleased]
+
+### Changed
+
+- **Vocabulary: the multiplexer is a backend.** Groundwork for
+  supporting herdr alongside tmux. mu's
+  substrate is now described as a **mux session** — a tmux session on
+  the tmux backend, a herdr workspace on the herdr backend — with
+  **window** and **pane** unchanged below it. VISION pillar 5 is
+  reworded from "One workstream per tmux session" to "One workstream
+  per mux session"; Key Constraint 1 becomes "A multiplexer is
+  required"; pillar 6 softens from "Pi-only" to "Pi-first", since
+  status detection is a property of the backend rather than of mu (a
+  mux that classifies panes natively is taken at its word).
+
+  Two naming decisions worth recording. **"mux session", not "mux
+  workspace"** — `workspace` already means a VCS-isolated checkout
+  throughout mu (`mu workspace`, `vcs_workspaces`, "workspace orphan",
+  "stale workspace"), and a second sense would make `mu workspace
+  list` ambiguous; herdr's spelling is kept only when describing
+  herdr's own CLI. And **pane-id shape belongs to the backend** — tmux
+  `%15` vs herdr `w1:p1` — so validation moves onto the `MuxBackend`
+  interface instead of a global regex or scheme-prefixed ids.
+
+  Agent identity is documented as env-first: `$MU_AGENT_NAME` (already
+  injected at spawn) with the backend's pane-title lookup as fallback,
+  which adopted panes still need.
+
+  Docs only — no code changes yet.
+
+---
+
 
 ## [1.0.0] — 2026-08-02
 

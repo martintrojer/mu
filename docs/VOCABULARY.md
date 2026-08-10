@@ -11,14 +11,19 @@ defined here, fix the doc. If you need a new term, add it here first.
 
 | Use this              | For…                                                                     | Don't use                                          |
 | --------------------- | ------------------------------------------------------------------------ | -------------------------------------------------- |
-| **workstream**        | The unit of organization. One workstream = one tmux session = one DB partition | "project", "session" (ambiguous), "context"      |
+| **workstream**        | The unit of organization. One workstream = one **mux session** = one DB partition | "project", "session" (ambiguous), "context"      |
+| **multiplexer** / **mux** | The terminal substrate that owns panes. Two supported: **tmux** and **herdr**. "mux" is the short form used in code (`src/mux/`, `MU_MUX`); "multiplexer" is the prose form. Exactly one is active per mu invocation, chosen by **mux detection** — mu never drives two at once. | "terminal", "emulator", "backend" (alone — say **mux backend**) |
+| **mux backend**       | An implementation of the `MuxBackend` interface (`src/mux/tmux.ts`, `src/mux/herdr.ts`). Owns everything backend-specific: session/window/pane topology, the send protocol, scrollback capture, **pane id** validation, and **actor** identity fallback. Sibling of **VCS backend**; same `src/vcs/` shape. | "driver", "provider", "adapter"                  |
+| **mux session**       | The mux-level container holding one workstream's panes. On tmux it is a **tmux session** named `mu-<workstream>`; on herdr it is a herdr *workspace* labelled `mu-<workstream>`. Use the generic term in cross-backend prose and the specific term when the backend matters. | "mux workspace" (collides with mu's VCS **workspace**), "session" alone |
+| **mux detection**     | The ladder that picks the active **mux backend**: `MU_MUX` override → `HERDR_ENV=1` → `$TMUX` → whichever binary is on `PATH` (tmux wins a tie as the incumbent) → `NoMultiplexerError`. `HERDR_ENV` outranks `$TMUX` because it is the narrower signal: only a herdr-managed pane sets it, and herdr may itself be running inside tmux. | "auto-detect" (vague), "probe"                   |
 | **scratch workstream**| The reserved workstream named `scratch` for off-the-cuff agent use — spin up a helper you'll keep talking to without crew/DAG ceremony. Explicit `-w scratch` (no implicit fallback); auto-created on first spawn; `mu workstream init scratch` is rejected (loud). Agents in it are still **agents**, NOT pi-subagents. Task-less is fine; the DAG stays opt-in. | "throwaway ws", "temp workstream", "subagent" |
-| **tmux session**      | The literal tmux session a workstream lives in                           | "session" alone (ambiguous)                        |
-| **window**            | A tmux window (tmux's tabs); identified by `window_name`                 | "tab" (except as the frontmatter field name)       |
-| **pane**              | A tmux pane (one shell view inside a window); identified by **stable pane id** like `%15` | "terminal", "shell"                          |
-| **pane title**        | The string set on a pane via `select-pane -T`. **Equals the agent's name.** Read by the claim protocol. | "pane name"                          |
-| **window name**       | The tmux window's name. **Equals the agent's `tab:` value** (groups one or more agents). | "tab name" (in code; `tab:` only in frontmatter) |
-| **agent**             | A named worker running in a pane; identity = pane title; row in `agents` table | "subagent" (reserved for pi-subagents), "worker" (only the specific role) |
+| **tmux session**      | The literal tmux session a workstream lives in — the tmux flavour of a **mux session** | "session" alone (ambiguous)                        |
+| **window**            | The mid-level grouping inside a **mux session** (tmux window / herdr tab); identified by `window_name` | "tab" (except as the frontmatter field name)       |
+| **pane**              | One shell view inside a **window**; identified by **pane id**            | "terminal", "shell"                          |
+| **pane id**           | The mux's stable handle for a **pane**. Shape is backend-specific — tmux `%15`, herdr `w1:p1` — so validation lives on the **mux backend**, never as a global regex. Stable for the pane's lifetime; never reused after close. Distinct from a tmux pane *index* (`0`, `1`, …), which is volatile and must never be stored. | "pane number", "pane index"                       |
+| **pane title**        | The string identifying which **agent** occupies a pane. **Equals the agent's name.** Set via `select-pane -T` on tmux; on herdr the agent name is registered with the mux itself. A fallback for **actor** identity — `$MU_AGENT_NAME` is consulted first. | "pane name"                          |
+| **window name**       | The **window**'s name. **Equals the agent's `tab:` value** (groups one or more agents). | "tab name" (in code; `tab:` only in frontmatter) |
+| **agent**             | A named worker running in a pane; identity = `$MU_AGENT_NAME`, falling back to **pane title**; row in `agents` table | "subagent" (reserved for pi-subagents), "worker" (only the specific role) |
 | **worker**            | An **agent** in its role-as-task-claimer. Synonym for the registered side of identity — a row in `agents`, owns tasks via the FK. | (when ambiguous, prefer **agent**)                 |
 | **actor**             | The party that *caused* a state change. May or may not be a registered worker. Recorded in `ops.actor` for every op. The orchestrator running mu from a top-level shell is an actor but not a worker. | "caller", "author" (only on notes)            |
 | **crew**              | *Informal* collective noun for the agents in a workstream                | (no API surface; prose only)                       |
@@ -48,15 +53,15 @@ defined here, fix the doc. If you need a new term, add it here first.
 | **role**              | `full-access` or `read-only` capability flag                             | "permission" (avoid), "tier"                       |
 | **persistent**        | Agent that stays alive across tasks                                      | "long-lived" (only in prose)                       |
 | **one-shot**          | Agent that exists for a single task and then terminates                  | "ephemeral", "transient"                           |
-| **workspace**         | A VCS-isolated checkout (jj workspace / sl worktree / git worktree / cp) | "branch" (it has one but isn't one), "checkout" (only for `none` backend) |
-| **ghost**             | An `agents` row whose `pane_id` no longer exists in tmux. Pruned by **reconcile**, which runs in `mu agent list` and `mu doctor`. | "dead agent" (a dead agent may still have a pane), "stale row" |
+| **workspace**         | A VCS-isolated checkout (jj workspace / sl worktree / git worktree / cp). **In mu, "workspace" is always the VCS sense** — never the mux sense. herdr calls its session-level container a "workspace" too; in mu docs and code that is a **mux session**. | "branch" (it has one but isn't one), "checkout" (only for `none` backend), the herdr sense |
+| **ghost**             | An `agents` row whose `pane_id` no longer exists in the **mux**. Pruned by **reconcile**, which runs in `mu agent list` and `mu doctor`. | "dead agent" (a dead agent may still have a pane), "stale row" |
 | **reaper**            | The part of reconcile that releases a **ghost**'s tasks: `IN_PROGRESS → OPEN`, owner cleared. Makes `mu task wait` exit 6. | "garbage collector", "janitor" |
 | **workspace orphan**  | A directory under `<state-dir>/workspaces/<workstream>/` with no row in `vcs_workspaces`. Blocks subsequent `--workspace` spawns. Surfaced by `mu workspace orphans -w X` and `mu state -w X`. | "stray dir", "leftover workspace"                  |
 | **stale workspace**   | A workspace whose `parent_ref` is N commits behind the project's default branch HEAD (per the workspace's local refs cache). Rendered as a color-coded `behind` column (green ≤2, yellow 3–9, red ≥10) in `mu workspace list` and `mu state`; ≥10 triggers a one-line warn in `mu state`, `mu task claim --for`, and `mu agent send` (or refusal on the two dispatch verbs with `--strict-staleness`). Pure observation — mu never auto-fetches. | "out of date", "drifting"                          |
 | **refresh**           | `mu workspace refresh <agent>` — rebase the agent's workspace onto a fresh base (default = backend's tracked main; `--from <ref>` overrides) WITHOUT touching the agent or pane. Refuses on dirty WC; surfaces conflicts as exit 5 with a resolve-in-place hint. The `none` backend errors (no VCS to rebase). | "recycle", "reset" (overloaded)                     |
 | **recreate**          | `mu workspace recreate <agent>` — free + create the agent's workspace in one shot. The between-wave "prep this worker for the next dispatch" verb. Reuses the previous backend unless `--backend` overrides; bases on current main unless `--from <ref>` overrides. Refuses on dirty WC the same way `free` does; `--force` discards the dirty edits (lossy). Sibling of **refresh**: refresh PRESERVES the worker's commits (rebases them onto fresh main); recreate THROWS THEM AWAY. | "recycle", "reset" (overloaded), "free+create" (only in commit messages) |
-| **backend**           | Implementation of `AgentBackend` or `VcsBackend`                         | "driver", "provider"                               |
-| **detector**          | Per-CLI pattern matcher for busy/permission/ready. Today mu has one (`detectPiStatus` in `src/detect.ts`); covers vanilla pi + any TUI wrapper that uses Braille spinner glyphs. Other CLIs spawned via `--cli <other>` may misclassify; trust scrollback over the emoji. | "matcher", "parser"                                |
+| **backend**           | Implementation of `MuxBackend` or `VcsBackend`. Always qualify which (**mux backend** / **VCS backend**) when both are in scope. | "driver", "provider"                               |
+| **detector**          | Per-CLI pattern matcher for busy/permission/ready, used when the **mux backend** cannot report status itself. On tmux that is always (`detectPiStatus` in `src/detect.ts`, covering vanilla pi + any TUI wrapper using Braille spinner glyphs); on herdr the mux classifies panes natively across its known agent kinds, so the detector is bypassed. Other CLIs spawned via `--cli <other>` may misclassify on tmux; trust scrollback over the emoji. | "matcher", "parser"                                |
 | **op**                | The atomic unit of change: one row in the `ops` table, written by a trigger inside the same transaction as the mutation it records. Carries `(hlc, machine_id, group_id, actor, intent, entity, key, op, payload)`. A **semantic partial update** — the payload holds only the columns that actually changed, which is what makes per-field merge free. | "event", "delta", "change" (all overloaded)         |
 | **ops log**           | The `ops` table: the single append-only record of every change, and the substrate **sync**, **undo**, **archive**, and history are all queries or replays over. Canonical and ACID because it lives in `mu.db` alongside the tables it records. | "event log", "journal", "WAL" (reserved by SQLite)  |
 | **intent**            | The semantic label on an **op** (`task.close`, `task.reparent`, `agent.spawn`). Set once per public SDK function via **op context**, not per mutation. `mu log` renders prose from it through one formatter. | "verb" (overloaded by CLI verbs), "action"          |
@@ -95,10 +100,10 @@ defined here, fix the doc. If you need a new term, add it here first.
 | **extension**         | The pi extension shipped in the same package                             | "plugin"                                           |
 | **skill**             | The bundled SKILL.md that teaches the LLM                                | "system prompt", "instruction"                     |
 | **DB** / **registry** | `~/.local/state/mu/mu.db` and its tables                                             | "store", "database" (full word OK in prose)        |
-| **substrate**         | An external system mu depends on (tmux, jj, sl, git, sqlite)             | "dependency" (means npm dep), "service"            |
+| **substrate**         | An external system mu depends on (tmux, herdr, jj, sl, git, sqlite)      | "dependency" (means npm dep), "service"            |
 | **operation**         | A canonical mu verb (e.g. `mu task add`). Each verb is a thin CLI wrapper over a typed function in `src/*.ts` — the SDK and the CLI share one surface. | "command" (overloaded), "action"             |
-| **reconcile**         | Verb: re-derive registry rows from substrate reality (tmux). Always runs in `mu agent list` and `mu doctor`. | "sync", "refresh"                              |
-| **adopt**             | Verb (`mu agent adopt`): register an existing tmux pane as a managed **agent**. The inverse of `mu agent list`'s 'orphan' state. Pane must be in the workstream's tmux session. | "import", "absorb"                       |
+| **reconcile**         | Verb: re-derive registry rows from substrate reality (the **mux**). Always runs in `mu agent list` and `mu doctor`. | "sync", "refresh"                              |
+| **adopt**             | Verb (`mu agent adopt`): register an existing pane as a managed **agent**. The inverse of `mu agent list`'s 'orphan' state. Pane must be in the workstream's **mux session**. | "import", "absorb"                       |
 | **pi-subagents**      | A different package by Nico Bailon for in-pi focused delegation. Mu and pi-subagents are complementary, not competing. | conflating with mu                                 |
 | **TUI**               | The interactive ink-based dashboard launched by bare `mu` in a TTY or explicitly by `mu state --tui`. Lives in `src/cli/tui/`. Read-only against SQLite (yanks, never executes). | "GUI", "interactive mode"                         |
 | **dashboard**         | The TUI's main screen — the grid of cards above the status bar. | "home screen", "main view"                         |
@@ -122,7 +127,7 @@ defined here, fix the doc. If you need a new term, add it here first.
   workstream  (one mu instance, one DB partition)
   ──────────
   ┌───────────────────────────────────────────────────────────────────┐
-  │  tmux session: mu-auth-refactor                                   │
+  │  mux session: mu-auth-refactor    (tmux session / herdr workspace) │
   │  ───────────                                                      │
   │                                                                   │
   │  ┌──────────────────────────┐  ┌──────────────────────────────┐   │
@@ -142,14 +147,20 @@ defined here, fix the doc. If you need a new term, add it here first.
   partitioned by session_id in ~/.local/state/mu/mu.db
 ```
 
-**Identity convention:** the agent's name == the tmux **pane title**
-(set by `select-pane -T <name>` on spawn). The window name comes from
-the `tab:` frontmatter field and may group multiple agents in one
+**Identity convention:** the agent's name == `$MU_AGENT_NAME`, injected
+into the pane's environment on spawn. It also == the **pane title**,
+which is the fallback when the env var is absent. The window name comes
+from the `tab:` frontmatter field and may group multiple agents in one
 window.
 
 This makes the claim protocol zero-config: an agent runs
-`mu task claim foo` and mu reads `tmux display-message -p '#{pane_title}'`
-to know who's claiming. **Read pane title (`#{pane_title}`), not
+`mu task claim foo` and mu resolves the **actor** by reading
+`$MU_AGENT_NAME`, falling back to asking the **mux backend** for the
+current pane's title. Env-first is backend-independent and more
+reliable than scraping; the fallback exists because **adopted** panes
+predate the env injection and carry only a title.
+
+When the fallback runs on tmux, **read pane title (`#{pane_title}`), not
 window name (`#W`)** — they differ when several agents share a
 window.
 
@@ -232,10 +243,11 @@ Don't use them in mu code or docs:
 | Avoided word     | Why                                                              | Use instead                                          |
 | ---------------- | ---------------------------------------------------------------- | ---------------------------------------------------- |
 | "subagent"       | Pi-subagents owns this term in our ecosystem                     | "agent" (mu's unit) or quote `pi-subagents` explicitly |
-| "session"        | Pi has its own "session"; tmux has "session"; ambiguous alone    | "workstream" (mu's unit) or "tmux session" (literal) |
+| "session"        | Pi has its own "session"; tmux has "session"; herdr has a third (server-level); ambiguous alone | "workstream" (mu's unit), "mux session" (cross-backend), or "tmux session" (literal) |
+| "workspace" (mux sense) | mu already uses "workspace" for a VCS-isolated checkout. herdr's session-level container is also called a workspace, and letting both senses in would make `mu workspace list` ambiguous | "mux session"; say "herdr workspace" only when describing herdr's own CLI |
 | "project"        | Means a `.pi/` project root; conflict with mu's organizational unit | "workstream"                                       |
 | "context"        | Overloaded (LLM context, project context, fork context)          | Be specific: "task context", "forked context", etc.  |
-| "tab"            | Tmux has windows, not tabs. Pi-subagents and dg use "tab" as a frontmatter field; we keep that field for compatibility but use "window" everywhere else | "window" (in prose); only `tab:` in frontmatter      |
+| "tab"            | Tmux has windows, not tabs (herdr does call them tabs). Pi-subagents and dg use "tab" as a frontmatter field; we keep that field for compatibility but use "window" everywhere else | "window" (in prose); only `tab:` in frontmatter      |
 | "thread"         | OS threads + chat threads + git threads; bad word                | Be specific                                          |
 | "message"        | Overloaded (LLM message, log message, send-keys input)           | "log entry" (for the **ops log**), "send" (for input to a pane) |
 | "config"         | Already means the global mu config; don't reuse                  | Specific: "settings", "frontmatter", "options"       |
@@ -422,6 +434,7 @@ XDG-Base-Directory-Spec compliant. The state directory resolves as:
 | `MU_STATE_DIR`    | Override the state directory                                 | beats `XDG_STATE_HOME` |
 | `XDG_STATE_HOME`  | Standard XDG base-directory state path; `mu/` appended      | default fallback chain |
 | `MU_SESSION`      | Override active workstream name (when not auto-detectable)   | n/a |
+| `MU_MUX`          | Force the **mux backend** (`tmux` \| `herdr`), bypassing **mux detection** | wins over all detection |
 | `MU_SYNC_DIR`     | Shared folder holding one **segment** per machine. Unset = sync off, zero cost. The WHOLE cluster configuration; there is no peer list. | n/a |
 
 ### Env vars passed to spawned children
@@ -430,12 +443,12 @@ XDG-Base-Directory-Spec compliant. The state directory resolves as:
 | ---------------------------- | ---------------------------------------------------- |
 | `MU_SESSION_ID`              | Workstream identifier                                |
 | `MU_AGENT_NAME`              | This agent's name                                    |
-| `MU_PARENT_PANE`             | Tmux pane ID of the spawning process                 |
+| `MU_PARENT_PANE`             | **Pane id** of the spawning process (backend-specific shape) |
 | `MU_DB_PATH` / `MU_STATE_DIR` | Inherited from parent unless overridden            |
 | `XDG_STATE_HOME`             | Inherited; mu uses `<XDG_STATE_HOME>/mu` by default  |
 | `MU_SEND_DELAY_MS`           | Delay between bracketed paste and Enter (default `500`) |
 | `MU_SEND_READINESS_MS`       | Budget for `mu agent send` to wait out a pane's modal / re-init before pasting, and to re-confirm the Enter landed (default `15000`; `0` restores fire-and-forget). A busy-but-working pane is not waited on. |
-| `MU_TMUX_SOCKET`             | Override tmux socket (`-L <name>`); default uses `$TMUX` |
+| `MU_TMUX_SOCKET`             | Override tmux socket (`-L <name>`); default uses `$TMUX`. tmux **mux backend** only — ignored under herdr, which reaches its server over a unix socket it manages itself. |
 | `MU_<UPPER_CLI>_COMMAND`     | Override the executable launched for `--cli <cli>` (e.g. `MU_PI_COMMAND=pi-alt` makes `--cli pi` exec `pi-alt`; hyphens in the cli key become underscores in the env var name, so `--cli pi-meta` reads `MU_PI_META_COMMAND`). Accepts multi-word strings (`MU_PI_COMMAND="pi-alt --some-flag"`); tmux exec's via a shell. Reconcile also treats the resolved binary as agent-worthy when surfacing orphan panes. When this env var supplies the override (and `--command` did not), the spawn-success line surfaces the env-var name (`Spawned worker-1 (pi-meta via $MU_PI_META_COMMAND)`) so stale aliases are visible without `mu agent show`. |
 | `MU_SPAWN_LIVENESS_MS`       | After spawn, wait this many ms then verify the pane is still alive AND scan the tail of its scrollback for known startup-error patterns (provider auth failures — `No API key found for X`, `401 Unauthorized`, … — plus shell-level `command not found` / `No such file or directory` when the spawned binary vanished post-pre-flight). Default 1500. Set to 0 to disable (useful in CI). On detected death the DB row is rolled back and `AgentDiedOnSpawnError` is thrown with the captured scrollback; on a startup-error match (pane alive but parked at an error prompt) the row is rolled back and `AgentSpawnStartupError` is thrown with the matched line + remediation hints. The complementary pre-flight check (PATH lookup of `--cli`'s resolved binary BEFORE any side effect) is not env-tunable; on miss it throws `AgentSpawnCliNotFoundError` with no orphan workspace / pane / row. |
 
@@ -452,7 +465,9 @@ and the disambiguated terms:
 | Generic word | mu term used in docs/code             | What it actually is                              |
 | ------------ | ------------------------------------- | ------------------------------------------------ |
 | session      | **workstream**                        | mu's unit of organization                        |
+| session      | **mux session**                       | The backend-agnostic container for a workstream's panes |
 | session      | **tmux session**                      | The tmux process group `mu-<workstream>`         |
+| session      | **herdr session**                     | herdr's *server*-level unit (one socket). NOT a **mux session** — mu maps a workstream to a herdr *workspace*, one level down. |
 | session      | **pi session**                        | The thing pi calls a session (its conversation)  |
 | session      | **agent session** (avoid in code)     | Colloquial for "an agent's run/lifetime"; prefer "lifetime" or "the work alice has done" |
 

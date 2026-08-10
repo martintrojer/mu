@@ -151,18 +151,31 @@ from colliding on the shared dependency:
 
 The graph algorithm decides, not the LLM.
 
-### Claim protocol via tmux pane title
+### Claim protocol via ambient identity
 
-`mu task claim <task>` reads the current pane's **pane title** (set on
-spawn via `select-pane -T <agent-name>`) and atomically:
+`mu task claim <task>` resolves who is claiming, then atomically:
 
 1. Sets `tasks.owner = <agent_name>`
 2. Flips `tasks.status = IN_PROGRESS`
 3. Emits a `task.claim` op carrying the resolved `actor`
 
-Reads via `tmux display-message -p '#{pane_title}'`, **not** `#W`
-(window name). Window names come from the `tab:` frontmatter and may
-group multiple agents in one window.
+Identity resolution is a two-rung ladder:
+
+1. **`$MU_AGENT_NAME`** — injected into the pane's environment at
+   spawn. Backend-independent, and more reliable than scraping even on
+   tmux.
+2. **`backend.currentAgentName()`** — the mux backend's fallback. On
+   tmux that is `display-message -p '#{pane_title}'`; on herdr the
+   agent name is registered with the mux and looked up by pane id.
+
+The fallback earns its place because **adopted** panes
+(`mu agent adopt`) predate the env injection and carry only a title.
+Because it lives behind `MuxBackend`, the call site has no idea which
+multiplexer it is running under.
+
+When the tmux fallback runs, it reads pane title, **not** `#W` (window
+name). Window names come from the `tab:` frontmatter and may group
+multiple agents in one window.
 
 Two agents can't claim the same task — atomic CAS in SQLite. The
 agent doesn't have to know its own name.
@@ -176,12 +189,25 @@ slice without an LLM inferring the scope.
 
 ---
 
-## Tmux session topology
+## Mux session topology
 
-mu organizes agents into **one tmux session per workstream**. One mu
-workstream = one tmux session = one `session_id` partition in
+mu organizes agents into **one mux session per workstream**. One mu
+workstream = one mux session = one `session_id` partition in
 `~/.local/state/mu/mu.db`. Multiple workstreams on one machine coexist as
-independent tmux sessions, fully isolated.
+independent mux sessions, fully isolated.
+
+A **mux session** is a tmux session on the tmux backend and a herdr
+*workspace* on the herdr backend (herdr's own "session" is
+server-level — one socket — and is the wrong granularity). The
+three-level shape is identical either way:
+
+| mu term          | tmux         | herdr             |
+| ---------------- | ------------ | ----------------- |
+| **mux session**  | session      | workspace         |
+| **window**       | window       | tab               |
+| **pane**         | pane (`%15`) | pane (`w1:p1`)    |
+
+The diagram below uses the tmux spelling.
 
 ```
   tmux session: mu-auth-refactor              (one mu workstream)
@@ -212,26 +238,28 @@ independent tmux sessions, fully isolated.
 - **Subsequent operations** in the same shell (or any child shell with
   `MU_SESSION_ID` set) target the same session.
 - **`tmux attach -t mu-<workstream>`** → attach to the whole
-  workstream's tmux session
+  workstream's mux session (herdr: `herdr workspace focus <id>`)
 - **`mu agent attach <agent>`** → print the agent's scrollback plus
-  the one-paste tmux attach command for that pane
+  the one-paste attach command for that pane, in the active backend's
+  dialect
 - **`mu agent list`** is scoped to one workstream — the current one by
   default; `mu agent list -w <workstream>` for another
 - **`session_id`** is the partition key on the `agents` table
 - **`mu doctor`** warns about cross-session pollution (orphan panes,
-  ghost rows, agents whose tmux session no longer exists)
+  ghost rows, agents whose mux session no longer exists)
 
 ### Window vs pane
 
-By default each agent gets its own **tmux window** (what most
-terminals call a "tab"), named after the agent's `tab:` value —
-default, the agent name. Agents sharing a `tab:` value share a window
-with multiple panes.
+By default each agent gets its own **window** (a tmux window, a herdr
+tab — what most terminals call a "tab"), named after the agent's
+`tab:` value; default, the agent name. Agents sharing a `tab:` value
+share a window with multiple panes.
 
-Claim/identity depends on the **pane title**, not the window name:
-every agent pane gets `select-pane -T <name>` on spawn regardless of
-how panes are grouped. The canonical tmux protocol is in the comment
-block at the top of `src/tmux.ts`.
+Claim/identity depends on the agent's name, not the window name:
+every agent pane gets `$MU_AGENT_NAME` in its environment on spawn,
+plus a **pane title** as fallback, regardless of how panes are
+grouped. The canonical tmux protocol is in the comment block at the
+top of `src/mux/tmux.ts`.
 
 ### Why one session per workstream
 
@@ -496,12 +524,13 @@ returning. Three steps, in order:
 
 `src/reconcile.ts` is the only implementation. Key properties:
 
-- **Reality wins**: tmux is the source of truth for what panes exist.
-  The DB records what we last *observed*. Reconciliation closes the
-  gap on every `mu agent list`.
-- **Pi-only status detection** (`src/detect.ts`): `busy` /
-  `needs_input` / `idle` / `done` via a known pi marker. Other CLIs
-  fall back to a Braille-spinner heuristic.
+- **Reality wins**: the mux is the source of truth for what panes
+  exist. The DB records what we last *observed*. Reconciliation closes
+  the gap on every `mu agent list`.
+- **Status detection is backend-dependent**: on tmux, `src/detect.ts`
+  scrapes scrollback (`busy` / `needs_input` / `needs_permission` via
+  a known pi marker, with a Braille-spinner fallback for other CLIs).
+  On a mux that classifies panes natively, mu takes its word instead.
 - **No silent adoption**: orphans are reported, never claimed.
 - **`mu doctor` calls the same routine** and reports counts.
 
@@ -510,12 +539,13 @@ returning. Three steps, in order:
 ## Modules (actual src/ layout)
 
 Mostly-flat `src/`: root `.ts` modules plus cohesive subclusters
-(`src/agents/`, `src/tasks/`, and `src/cli/` wrappers with their own
-`src/cli/tasks/` and `src/cli/tui/` sub-clusters). Cluster files
-import from neighbours and root substrate modules, never from the hub
-they're re-exported through. `src/tasks.ts`, `src/vcs.ts` and
-`src/workspace.ts` are pure re-export hubs, kept so external imports
-keep working; they hold no logic and are not listed separately below.
+(`src/agents/`, `src/tasks/`, `src/mux/`, and `src/cli/` wrappers with
+their own `src/cli/tasks/` and `src/cli/tui/` sub-clusters). Cluster
+files import from neighbours and root substrate modules, never from
+the hub they're re-exported through. `src/tasks.ts`, `src/vcs.ts`,
+`src/mux.ts` and `src/workspace.ts` are pure re-export hubs, kept so
+external imports keep working; they hold no logic and are not listed
+separately below.
 
 | Module                | Responsibility                                                                            |
 | --------------------- | ----------------------------------------------------------------------------------------- |
@@ -536,8 +566,10 @@ keep working; they hold no logic and are not listed separately below.
 | `src/file-lock.ts`    | Cross-process advisory lock via atomic `fs.mkdir`; `src/agents/spawn-lock.ts` wraps it per tmux session. Flush takes it so two local `mu` processes cannot interleave partial lines. Best-effort: a non-contention failure runs the body unlocked. |
 | `src/fleet-hazards.ts`| **Mixed-fleet hazards** — three environment checks in the default doctor: `MU_DB_PATH` inside `MU_SYNC_DIR` (fail), DB on a network mount (warn), two workstream names differing only by case (warn). All no-op when `MU_SYNC_DIR` is unset. |
 | `src/op-context.ts`   | The **op context** seam: `withOpContext(db, {intent, actor, group}, fn)` labels every op in a scope, restored in a `finally`. Nested scopes inherit the group, which puts a cascade under one `mu undo`. `withCaptureSuppressed` is the echo guard. |
-| `src/tmux.ts`         | Single tmux executor wrapper, send protocol (bracketed-paste), pane validation            |
-| `src/detect.ts`       | Pi-only status detector (`busy` / `needs_input` / `idle` / `done`)                        |
+| `src/mux.ts`          | **Mux backend hub** — re-exports `src/mux/*`, same shape as `src/vcs.ts`. The public `MuxBackend` surface every call site imports. |
+| `src/mux/*.ts`        | **Multiplexer backends**: `types.ts` (the `MuxBackend` interface + `MuxError` / `PaneNotFoundError`), `detect.ts` (`MU_MUX` → `HERDR_ENV` → `$TMUX` → `PATH` ladder + test seam), `tmux.ts`, `herdr.ts`. The backend owns topology, the send protocol, capture, **pane id** validation (tmux `%15` vs herdr `w1:p1`), and the identity fallback — so no global pane-id regex and no per-call-site branching. |
+| `src/tmux.ts`         | Back-compat re-export of the tmux backend. Historical import path; new code imports `src/mux.ts`. |
+| `src/detect.ts`       | Pi status detector (`busy` / `needs_input` / `needs_permission`) + Braille-spinner fallback. Used when the mux cannot classify panes itself — i.e. always on tmux, never on herdr. |
 | `src/reconcile.ts`    | Ghost prune + status detect + orphan surface; "reality wins"                              |
 | `src/agents.ts`       | Hub: CRUD + send / read / list / close / free + liveness + reaper. Re-exports `src/agents/*`; pane-title composition (`composeAgentTitle`) lives here. |
 | `src/agents/*.ts`     | Agent-lifecycle internals: `spawn.ts` (spawn, CLI resolution, liveness wait, pane create-or-reuse, rollback), `spawn-lock.ts` (per-session lock around topology+finalize), `wait.ts`, `adopt.ts`, `kick.ts` (signal a wedged pane's pgid), `errors.ts`. |
