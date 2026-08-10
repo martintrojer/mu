@@ -12,6 +12,52 @@ breaking changes are called out under "Breaking" in each entry.
 
 ### Added
 
+- **herdr mux backend — topology half** (`src/mux/herdr.ts`). The
+  second `MuxBackend` implementation, covering sessions, windows,
+  panes, pane-id validation, identity, and availability. The locked
+  mapping is **mu workstream = herdr workspace labelled
+  `mu-<workstream>`, mu window = herdr tab, mu agent = herdr pane**.
+  herdr's own "session" is server-level (one socket) and is NOT the
+  workstream unit.
+
+  Four decisions worth recording:
+
+  - **Addressing is by LABEL, resolved to an id per call.** mu
+    persists a session *name*; herdr addresses workspaces by opaque
+    handle (`w1`). Every session-taking method resolves label → id
+    first, and IDs are always READ from creation responses
+    (`.result.workspace`, `.result.tab`, `.result.pane.pane_id`),
+    never predicted — herdr does not reuse closed ids and a pane moved
+    between workspaces is renumbered.
+  - **Exit 2 is a bug in mu, not an outage.** herdr returns JSON errors
+    on stderr with exit 1 (→ `HerdrError`, a `MuxError`, exit 5) and
+    *syntax* errors with exit 2 (→ `HerdrSyntaxError`, deliberately
+    outside the `MuxError` family). Bucketing CLI drift as "herdr is
+    down" would send operators chasing a healthy server.
+  - **`--no-focus` on every mutating call**, even when the caller asks
+    for an attached session. A background agent manager must never move
+    the user's focus.
+  - **`selectLayout` and the pane-border chrome are no-ops.** herdr has
+    no layout algorithm (splits are explicit) and owns its own pane
+    chrome; mu-managed panes are marked by their label instead.
+
+  `MU_HERDR_SESSION=<name>` routes every call through a named herdr
+  server, mirroring `MU_TMUX_SOCKET` as the test-isolation seam.
+  `setHerdrExecutor` / `resetHerdrExecutor` mirror the tmux executor
+  seam so the fast tier never shells out.
+
+  The IO half (`sendToPane` / `capturePane`) and command-running spawn
+  throw `HerdrNotImplementedError` naming their owning task rather than
+  guessing at a protocol.
+
+- **Mux detection grows a `HERDR_ENV` rung** above the `$TMUX` check.
+  herdr routinely runs a tmux server inside its panes, so both signals
+  can be live at once; `HERDR_ENV=1` is the narrower claim ("herdr
+  manages THIS pane") and wins. The comparison is exactly `= 1`, as
+  `herdr --skill` mandates — truthiness would misfire on a stale `0`.
+  `MU_MUX=herdr` selects the backend explicitly; tmux still wins a pure
+  availability tie as the incumbent.
+
 - **`MuxBackend`: the multiplexer is now a backend seam** (`src/mux/`).
   Same shape as `src/vcs/` — `types.ts` (interface + `MuxError` /
   `PaneNotFoundError` / `NoMultiplexerError`), `detect.ts` (the

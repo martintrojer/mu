@@ -1,6 +1,14 @@
 // mu — multiplexer backend dispatcher.
 
 export { activeMux, detectMux, muxByName, resetMux, setMuxForTests } from "./detect.js";
+export {
+  HerdrError,
+  HerdrNotImplementedError,
+  HerdrSyntaxError,
+  herdrBackend,
+  resetHerdrExecutor,
+  setHerdrExecutor,
+} from "./herdr.js";
 export { tmuxBackend } from "./tmux.js";
 export {
   type CaptureOptions,

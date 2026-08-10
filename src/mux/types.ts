@@ -17,7 +17,7 @@
 import type { HasNextSteps, NextStep } from "../output.js";
 
 /** The multiplexers mu can drive. */
-export type MuxBackendName = "tmux";
+export type MuxBackendName = "herdr" | "tmux";
 
 // ─── Domain types ──────────────────────────────────────────────────────
 //

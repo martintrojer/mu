@@ -56,7 +56,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, statSync, unlinkSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { type Op, applyOp } from "../src/apply.js";
+import { applyOp, type Op } from "../src/apply.js";
 import { type Db, openDb } from "../src/db.js";
 import { nextHlc } from "../src/hlc.js";
 import { withCaptureSuppressed } from "../src/op-context.js";

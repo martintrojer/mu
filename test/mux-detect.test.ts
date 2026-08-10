@@ -9,10 +9,13 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   activeMux,
   detectMux,
+  herdrBackend,
   type MuxBackend,
   muxByName,
   NoMultiplexerError,
+  resetHerdrExecutor,
   resetMux,
+  setHerdrExecutor,
   setMuxForTests,
   tmuxBackend,
 } from "../src/mux.js";
@@ -20,6 +23,25 @@ import { resetTmuxExecutor, setTmuxExecutor } from "../src/tmux.js";
 
 const MU_MUX = "MU_MUX";
 const TMUX = "TMUX";
+const HERDR_ENV = "HERDR_ENV";
+
+/** Make `herdr status` report no running server. */
+function makeHerdrUnavailable(): void {
+  setHerdrExecutor(async () => ({
+    stdout: "server:\n  status: not running",
+    stderr: "",
+    exitCode: 0,
+  }));
+}
+
+/** Make `herdr status` report a running, compatible server. */
+function makeHerdrAvailable(): void {
+  setHerdrExecutor(async () => ({
+    stdout: "server:\n  status: running\n  compatible: yes",
+    stderr: "",
+    exitCode: 0,
+  }));
+}
 
 /** Make `tmux -V` (and everything else) fail, so tmuxBackend.available()
  *  reports false without touching a real tmux server. */
@@ -36,15 +58,19 @@ describe("detectMux", () => {
   beforeEach(() => {
     delete process.env[MU_MUX];
     delete process.env[TMUX];
+    delete process.env[HERDR_ENV];
     delete process.env.TMUX_PANE;
+    makeHerdrUnavailable();
     resetMux();
   });
 
   afterEach(() => {
     delete process.env[MU_MUX];
     delete process.env[TMUX];
+    delete process.env[HERDR_ENV];
     delete process.env.TMUX_PANE;
     resetTmuxExecutor();
+    resetHerdrExecutor();
     resetMux();
   });
 
@@ -106,13 +132,65 @@ describe("detectMux", () => {
 
   it("NoMultiplexerError names what it tried, so the message is actionable", async () => {
     makeTmuxUnavailable();
-    await expect(detectMux()).rejects.toThrow(/tried: tmux/);
+    await expect(detectMux()).rejects.toThrow(/tried: tmux, herdr/);
+  });
+
+  it("MU_MUX=herdr selects the herdr backend", async () => {
+    makeTmuxAvailable();
+    process.env[MU_MUX] = "herdr";
+    expect((await detectMux()).name).toBe("herdr");
+  });
+
+  it("$HERDR_ENV=1 selects herdr without shelling out", async () => {
+    makeTmuxUnavailable();
+    setHerdrExecutor(async () => {
+      throw new Error("the ambient signal is conclusive; no probe expected");
+    });
+    process.env[HERDR_ENV] = "1";
+    expect((await detectMux()).name).toBe("herdr");
+  });
+
+  it("$HERDR_ENV=1 WINS over $TMUX when both are set", async () => {
+    // The subtle one. herdr routinely runs a tmux server inside its
+    // panes, so an agent can legitimately see BOTH sets of vars. $TMUX
+    // then only proves "there is a tmux somewhere in my ancestry";
+    // $HERDR_ENV is the narrower claim ("herdr manages THIS pane") and
+    // is the one that names the mux owning the pane mu must drive. If
+    // ordering regressed, mu would address herdr panes through tmux and
+    // every pane id would be rejected as malformed.
+    makeTmuxAvailable();
+    makeHerdrAvailable();
+    process.env[HERDR_ENV] = "1";
+    process.env[TMUX] = "/tmp/tmux-1000/default,1,0";
+    process.env.TMUX_PANE = "%42";
+    expect((await detectMux()).name).toBe("herdr");
+  });
+
+  it("a non-'1' HERDR_ENV does not select herdr", async () => {
+    // `herdr --skill` mandates exactly `test "${HERDR_ENV:-}" = 1`.
+    // Truthiness would misfire on a stale "0" left in a user's shell.
+    makeTmuxAvailable();
+    process.env[HERDR_ENV] = "0";
+    expect((await detectMux()).name).toBe("tmux");
+  });
+
+  it("falls back to herdr availability when tmux is absent", async () => {
+    makeTmuxUnavailable();
+    makeHerdrAvailable();
+    expect((await detectMux()).name).toBe("herdr");
+  });
+
+  it("tmux wins a pure availability tie, since it is the incumbent", async () => {
+    makeTmuxAvailable();
+    makeHerdrAvailable();
+    expect((await detectMux()).name).toBe("tmux");
   });
 });
 
 describe("muxByName", () => {
   it("resolves a known backend", () => {
     expect(muxByName("tmux")).toBe(tmuxBackend);
+    expect(muxByName("herdr")).toBe(herdrBackend);
   });
 
   it("throws on an unknown backend", () => {

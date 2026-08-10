@@ -6,11 +6,14 @@
 // the mux backend is a property of the PROCESS, so it is resolved once
 // and cached (see `activeMux`).
 
+import { herdrBackend } from "./herdr.js";
 import { tmuxBackend } from "./tmux.js";
 import { type MuxBackend, type MuxBackendName, NoMultiplexerError } from "./types.js";
 
-/** Every backend mu knows about, in detection-precedence order. */
-const BACKENDS: readonly MuxBackend[] = [tmuxBackend];
+/** Every backend mu knows about, in detection-precedence order. tmux is
+ *  the incumbent and wins pure availability ties; herdr is selected by
+ *  the narrower `$HERDR_ENV` ambient signal (see `detectMux`). */
+const BACKENDS: readonly MuxBackend[] = [tmuxBackend, herdrBackend];
 
 /** Look up a backend by name. Throws on unknown name. Backs `MU_MUX`. */
 export function muxByName(name: MuxBackendName): MuxBackend {
@@ -32,9 +35,11 @@ const KNOWN_NAMES: readonly string[] = BACKENDS.map((b) => b.name);
  *      unknown value throws rather than silently falling through: a
  *      typo'd backend name should fail loud, not quietly run on tmux.
  *   2. Ambient signal    — an env var proving the CALLER is already
- *      inside a managed pane of that mux ($TMUX or $TMUX_PANE for
- *      tmux). The most specific signal wins, since a mux can run
- *      nested inside another.
+ *      inside a managed pane of that mux ($HERDR_ENV for herdr, $TMUX
+ *      or $TMUX_PANE for tmux). The most specific signal wins, since a
+ *      mux can run nested inside another: herdr panes routinely host a
+ *      tmux server, so BOTH sets of vars can be present at once and
+ *      $HERDR_ENV — the narrower claim — is checked first.
  *   3. Availability      — whichever backend's binary actually runs.
  *      Ties break in BACKENDS order (tmux is the incumbent).
  *   4. Throw `NoMultiplexerError`.
@@ -50,6 +55,13 @@ export async function detectMux(): Promise<MuxBackend> {
   if (override !== undefined && override.length > 0) {
     return muxByName(override as MuxBackendName);
   }
+
+  // herdr FIRST. herdr can run inside tmux and vice versa, so both
+  // signals can be live simultaneously; `$HERDR_ENV=1` is the narrower
+  // one (herdr sets it only in panes IT manages) and must win. The
+  // exact-"1" comparison is what `herdr --skill` mandates: any other
+  // value, including "0" or "true", is not the documented contract.
+  if (process.env.HERDR_ENV === "1") return herdrBackend;
 
   // Both vars, not just $TMUX: tmux sets $TMUX_PANE in every pane too,
   // and some setups (sudo -E, direnv, ssh with a restrictive SendEnv)

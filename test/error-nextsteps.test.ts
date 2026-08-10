@@ -24,6 +24,7 @@ import {
 } from "../src/agents.js";
 import { NameAmbiguousError } from "../src/cli.js";
 import { openDb, SchemaTooOldError, WorkstreamNotFoundError } from "../src/db.js";
+import { HerdrError } from "../src/mux/herdr.js";
 import { MuxError, NoMultiplexerError } from "../src/mux.js";
 import { hasNextSteps } from "../src/output.js";
 import {
@@ -204,6 +205,13 @@ const cases: NextStepsCase[] = [
     expectedTokens: ["doctor", "list-panes"],
   },
   { error: new PaneNotFoundError("%999"), label: "PaneNotFoundError", expectedTokens: ["%999"] },
+
+  // src/mux/herdr.ts
+  {
+    error: new HerdrError(["pane", "list"], "", "", 1),
+    label: "HerdrError",
+    expectedTokens: ["doctor", "pane list"],
+  },
 
   // src/workspace/core.ts
   {
