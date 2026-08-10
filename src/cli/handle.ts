@@ -46,7 +46,13 @@ import {
 import { type Db, openDb, SchemaTooOldError, WorkstreamNotFoundError } from "../db.js";
 import { DriftDetectedError } from "../drift.js";
 import { GroupIdAmbiguousError } from "../logs.js";
-import { MuxError, NoMultiplexerError, PaneNotFoundError } from "../mux.js";
+import {
+  HerdrCommandOverrideError,
+  HerdrUnsupportedCliError,
+  MuxError,
+  NoMultiplexerError,
+  PaneNotFoundError,
+} from "../mux.js";
 import {
   hasNextSteps,
   isJsonMode,
@@ -225,7 +231,15 @@ export function classifyError(err: unknown): { label: string; exitCode: number }
   if (
     err instanceof UsageError ||
     err instanceof WorkstreamNameInvalidError ||
-    err instanceof WorkstreamNameReservedError
+    err instanceof WorkstreamNameReservedError ||
+    // The operator asked the ACTIVE backend for something it cannot do:
+    // a `--cli` the mux does not recognise as an agent kind, or a
+    // `--command` / `MU_<CLI>_COMMAND` override it cannot honour. The
+    // substrate is healthy and answered precisely, so this is the usage
+    // lane, not the exit-5 "mux is down" lane. Both refuse BEFORE any
+    // side effect.
+    err instanceof HerdrUnsupportedCliError ||
+    err instanceof HerdrCommandOverrideError
   ) {
     return { label: "error", exitCode: 2 };
   }

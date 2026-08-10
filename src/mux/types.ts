@@ -157,6 +157,36 @@ export interface SendWarning {
   message: string;
 }
 
+/**
+ * What `startAgentInPane` needs to know. mu has already resolved the
+ * command it WOULD have run in a create-and-run backend; a backend that
+ * starts agents itself needs both that string and the `--cli` key it came
+ * from, because those select different routes (see the herdr impl).
+ */
+export interface StartAgentInPaneOptions {
+  /** An existing pane, sitting at its interactive shell prompt. */
+  paneId: string;
+  /** mu's agent name. Backends with their own agent registry use it as
+   *  the mux-level handle too. */
+  name: string;
+  /** mu's `--cli` key, e.g. "pi". A backend that classifies agent kinds
+   *  natively maps this onto its own kind vocabulary. */
+  cli: string;
+  /** Fully resolved command string mu would otherwise have spawned. */
+  command: string;
+  /**
+   * Where `command` came from. A backend that resolves the executable
+   * ITSELF (rather than running the string mu hands it) must not silently
+   * discard an operator's explicit choice, and needs to know which one it
+   * is so the diagnostic can name the right thing to change:
+   *
+   *   "cli-key"  — just the `--cli` value; nothing to honour, proceed.
+   *   "env"      — a `MU_<UPPER_CLI>_COMMAND` override.
+   *   "explicit" — an explicit `--command "…"`.
+   */
+  commandSource: "cli-key" | "env" | "explicit";
+}
+
 export interface CaptureOptions {
   /**
    * Number of trailing lines to capture. Omitted = full scrollback.
@@ -315,6 +345,20 @@ export interface MuxBackend {
    *  when outside one. Backs the `mu-<name>` rung of workstream
    *  auto-detection, which is why it is identity and not topology. */
   currentSessionName(): Promise<string | undefined>;
+
+  // — spawn —
+  //
+  // OPTIONAL, and its absence is the DEFAULT shape: tmux creates a pane
+  // and runs a command in one atomic call, so `NewWindowOptions.command`
+  // et al. carry the command and there is nothing left to do.
+  //
+  // A backend that has no create-and-run form implements this instead.
+  // mu then creates the pane bare, calls `startAgentInPane`, and — because
+  // such a backend only returns once IT considers the agent ready for
+  // input — SKIPS its own liveness/readiness polling. This is a capability
+  // flag, not a backend name check: `src/agents/spawn.ts` branches on the
+  // method being present, never on `mux.name`.
+  startAgentInPane?(opts: StartAgentInPaneOptions): Promise<void>;
 
   // — io —
   sendToPane(paneId: string, text: string, opts?: SendOptions): Promise<void>;

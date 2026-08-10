@@ -282,6 +282,42 @@ backend that raised it).
 concerns: the `MU_TMUX_SOCKET` test-isolation seam and the shared
 `sleep` / `setSleepForTests` poll seam.
 
+### The spawn seam: create-and-run vs create-then-start
+
+Backends disagree on something structural: tmux creates a pane **and**
+runs a command in one atomic call, while herdr has no create-and-run
+form at all. Its creation verbs always start a plain shell, and `agent
+start` requires an already-existing pane at its interactive prompt.
+
+That difference is expressed as a **capability**, not a name check:
+
+| | tmux | herdr |
+| --- | --- | --- |
+| `NewWindowOptions.command` etc. | carries the command | **refused** if non-empty |
+| `startAgentInPane()` | not implemented | implemented |
+| liveness / readiness wait | mu polls scrollback | the mux blocks until ready |
+
+`spawnAgent` branches on `mux.startAgentInPane !== undefined`. When it
+is absent (tmux) the command rides along on the creation verb and the
+path is exactly what it always was. When present, mu creates the pane
+bare, then calls `startAgentInPane` — and **skips**
+`awaitSpawnLiveness` / `awaitSpawnReadiness`, because such a backend
+returns only once it has itself detected the agent and judged it ready
+for input, which is strictly stronger than what scrollback polling can
+prove. `MU_SPAWN_LIVENESS_MS` / `MU_SPAWN_READINESS_MS` are therefore
+tmux-tier knobs.
+
+The creation verbs **refuse** a non-empty command on a backend that
+cannot honour it rather than dropping it silently: a dropped command
+leaves an empty shell mu believes hosts an agent, which is the worst
+available failure mode. Both the refusal and every step-2 failure route
+through `rollbackSpawn`, so no path records an agent row for a pane with
+nothing running in it.
+
+Both the pane-creation call and the agent start sit **outside** the
+per-session spawn lock's slow half, so a parallel fan-out still
+parallelises.
+
 ### Window vs pane
 
 By default each agent gets its own **window** (a tmux window, a herdr
@@ -609,12 +645,12 @@ separately below.
 | `src/fleet-hazards.ts`| **Mixed-fleet hazards** — three environment checks in the default doctor: `MU_DB_PATH` inside `MU_SYNC_DIR` (fail), DB on a network mount (warn), two workstream names differing only by case (warn). All no-op when `MU_SYNC_DIR` is unset. |
 | `src/op-context.ts`   | The **op context** seam: `withOpContext(db, {intent, actor, group}, fn)` labels every op in a scope, restored in a `finally`. Nested scopes inherit the group, which puts a cascade under one `mu undo`. `withCaptureSuppressed` is the echo guard. |
 | `src/mux.ts`          | **Mux backend hub** — re-exports `src/mux/*`, same shape as `src/vcs.ts`. The public `MuxBackend` surface every call site imports. |
-| `src/mux/*.ts`        | **Multiplexer backends**: `types.ts` (the `MuxBackend` interface + `MuxError` / `PaneNotFoundError`), `detect.ts` (`MU_MUX` → `HERDR_ENV` → `$TMUX` → `PATH` ladder + test seam), `tmux.ts`, `herdr.ts`. The backend owns topology, the send protocol, capture, **pane id** validation (tmux `%15` vs herdr `w1:p1`), the identity fallback, and optionally native pane status (`paneStatus?()`) — so no global pane-id regex and no per-call-site branching. The send protocol is where the two diverge most: tmux needs a six-step paste/Enter dance to survive a modal swallowing the Enter, while herdr's `agent prompt --wait` is one atomic call. |
+| `src/mux/*.ts`        | **Multiplexer backends**: `types.ts` (the `MuxBackend` interface + `MuxError` / `PaneNotFoundError`), `detect.ts` (`MU_MUX` → `HERDR_ENV` → `$TMUX` → `PATH` ladder + test seam), `tmux.ts`, `herdr.ts`. The backend owns topology, the send protocol, capture, **pane id** validation (tmux `%15` vs herdr `w1:p1`), the identity fallback, and optionally native pane status (`paneStatus?()`) and agent start (`startAgentInPane?()`) — so no global pane-id regex and no per-call-site branching. The send protocol is where the two diverge most: tmux needs a six-step paste/Enter dance to survive a modal swallowing the Enter, while herdr's `agent prompt --wait` is one atomic call. |
 | `src/tmux.ts`         | Re-export of the tmux backend, kept for genuinely tmux-only concerns: the `MU_TMUX_SOCKET` test seam and the shared `sleep` / `setSleepForTests` poll seam. Everything else imports `src/mux.ts` and goes through `activeMux()`. |
 | `src/detect.ts`       | Pi status detector (`busy` / `needs_input` / `needs_permission`) + Braille-spinner fallback. Used when the mux cannot classify panes itself — i.e. always on tmux, never on herdr. |
 | `src/reconcile.ts`    | Ghost prune + status detect + orphan surface; "reality wins"                              |
 | `src/agents.ts`       | Hub: CRUD + send / read / list / close / free + liveness + reaper. Re-exports `src/agents/*`; pane-title composition (`composeAgentTitle`) lives here. |
-| `src/agents/*.ts`     | Agent-lifecycle internals: `spawn.ts` (spawn, CLI resolution, liveness wait, pane create-or-reuse, rollback), `spawn-lock.ts` (per-session lock around topology+finalize), `wait.ts`, `adopt.ts`, `kick.ts` (signal a wedged pane's pgid), `errors.ts`. |
+| `src/agents/*.ts`     | Agent-lifecycle internals: `spawn.ts` (spawn, CLI resolution, liveness wait *or* backend `startAgentInPane`, pane create-or-reuse, rollback), `spawn-lock.ts` (per-session lock around topology+finalize), `wait.ts`, `adopt.ts`, `kick.ts` (signal a wedged pane's pgid), `errors.ts`. |
 | `src/dag.ts`          | Shared DAG read/render helpers: `loadFullDag` plus pure `renderForest` / `renderTaskTree`, reused by `mu task tree` and the TUI DAG popup. |
 | `src/tasks/*.ts`      | Task-graph internals: `core.ts` (row shapes, id resolution), `id.ts`, `queries.ts` (reads), `edit.ts`, `edges.ts` (+ cycle check), `status.ts` (TaskStatus), `sort.ts`, `claim.ts` (atomic CAS), `lifecycle.ts` (+ cascade), `wait.ts`, `errors.ts`. |
 | `src/tracks.ts`       | Parallel-tracks union-find with diamond merge                                             |

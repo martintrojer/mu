@@ -2,9 +2,11 @@
 
 export { activeMux, detectMux, muxByName, resetMux, setMuxForTests } from "./detect.js";
 export {
+  HerdrCommandOverrideError,
   HerdrError,
   HerdrNotImplementedError,
   HerdrSyntaxError,
+  HerdrUnsupportedCliError,
   herdrBackend,
   resetHerdrExecutor,
   setHerdrExecutor,
@@ -31,4 +33,5 @@ export {
   type SendOptions,
   type SendWarning,
   type SplitWindowOptions,
+  type StartAgentInPaneOptions,
 } from "./types.js";

@@ -24,7 +24,11 @@ import {
 } from "../src/agents.js";
 import { NameAmbiguousError } from "../src/cli.js";
 import { openDb, SchemaTooOldError, WorkstreamNotFoundError } from "../src/db.js";
-import { HerdrError } from "../src/mux/herdr.js";
+import {
+  HerdrCommandOverrideError,
+  HerdrError,
+  HerdrUnsupportedCliError,
+} from "../src/mux/herdr.js";
 import { MuxError, NoMultiplexerError, tmuxBackend } from "../src/mux.js";
 import { hasNextSteps } from "../src/output.js";
 import {
@@ -217,6 +221,19 @@ const cases: NextStepsCase[] = [
     error: new HerdrError(["pane", "list"], "", "", 1),
     label: "HerdrError",
     expectedTokens: ["doctor", "pane list"],
+  },
+  {
+    // Refusals, not outages: the steps must offer a supported kind AND
+    // the tmux escape hatch, since tmux runs any command.
+    error: new HerdrUnsupportedCliError("notacli", "unsupported interactive agent kind"),
+    label: "HerdrUnsupportedCliError",
+    expectedTokens: ["notacli", "MU_MUX=tmux"],
+  },
+  {
+    error: new HerdrCommandOverrideError("pi", "pi-alt", "MU_PI_COMMAND"),
+    label: "HerdrCommandOverrideError",
+    // Names the variable to unset — the whole point of refusing loudly.
+    expectedTokens: ["MU_PI_COMMAND", "MU_MUX=tmux"],
   },
 
   // src/workspace/core.ts

@@ -23,7 +23,7 @@ import {
 import type { Db } from "../db.js";
 import { detectPiStatus } from "../detect.js";
 import { emitEvent } from "../logs.js";
-import { activeMux } from "../mux.js";
+import { activeMux, type MuxBackend } from "../mux.js";
 import { isJsonMode, type NextStep } from "../output.js";
 // `sleep` is the shared poll-sleep TEST SEAM (setSleepForTests), not a
 // multiplexer operation, so it stays on the tmux module rather than
@@ -356,7 +356,13 @@ export async function spawnAgent(db: Db, opts: SpawnAgentOptions): Promise<Agent
   const session = opts.tmuxSession ?? `mu-${opts.workstream}`;
   const windowName = opts.tab ?? opts.name;
   const cli = opts.cli ?? "pi";
-  const command = opts.command ?? resolveCliCommand(cli);
+  const resolved = resolveCliCommandWithSource(cli);
+  const command = opts.command ?? resolved.command;
+  // Where `command` came from. Backends that resolve the executable
+  // themselves may not silently ignore an operator's choice, and need to
+  // know WHICH knob to name (see `StartAgentInPaneOptions.commandSource`).
+  const commandSource =
+    opts.command !== undefined ? "explicit" : resolved.resolvedFromEnv ? "env" : "cli-key";
 
   // Pre-flight PATH resolution. Catches `--cli does-not-exist` (and
   // typos in `MU_<UPPER>_COMMAND` overrides) before any side effect.
@@ -459,7 +465,26 @@ export async function spawnAgent(db: Db, opts: SpawnAgentOptions): Promise<Agent
     // Catches the silent-spawn-failure class of bugs where the CLI dies
     // immediately (lock conflict, bad credentials, etc.). On failure,
     // surface a typed error with whatever scrollback tmux still has.
-    await awaitSpawnLiveness(paneId, opts.name);
+    //
+    // On a backend with no create-and-run form the pane above is a BARE
+    // SHELL and this is where the agent actually starts. Both branches
+    // live outside the spawn lock on purpose — they are the slow part
+    // (1.5s+ here, up to herdr's 30s there) and holding the lock across
+    // either would serialise the very fan-out the operator asked for.
+    // Either branch throwing routes through the same `rollbackSpawn`,
+    // so a pane that never became an agent never keeps its agent row.
+    const startAgent = (await activeMux()).startAgentInPane;
+    if (startAgent === undefined) {
+      await awaitSpawnLiveness(paneId, opts.name);
+    } else {
+      // `startAgentInPane` returns only once the MUX has detected the
+      // agent in that pane and considers it ready for input — strictly
+      // stronger than what awaitSpawnLiveness's scrollback poll can
+      // prove, so MU_SPAWN_LIVENESS_MS / MU_SPAWN_READINESS_MS are
+      // subsumed and deliberately not consulted. Branching on the
+      // CAPABILITY, never on `mux.name`.
+      await startAgent({ paneId, name: opts.name, cli, command, commandSource });
+    }
   } catch (err) {
     await rollbackSpawn(db, opts.name, paneId, hasWorkspace, opts.workstream);
     if (hasWorkspace) attachOrphanCleanupHint(err, opts.name, opts.workstream);
@@ -821,6 +846,15 @@ async function awaitSpawnReadiness(paneId: string, agentName: string): Promise<v
  *   - session doesn't exist          → create session+window+pane in one shot
  *   - session exists, no such window → create a new window for this agent
  *   - session and window both exist  → split the window to add a pane
+ *
+ * BARE-PANE MODE. A backend implementing `startAgentInPane` has no
+ * create-and-run form, so passing a command to the creation verbs is a
+ * hard error there (deliberately, so it can never be dropped silently).
+ * For those backends this creates the pane EMPTY and the caller starts
+ * the agent in it as a second step. Keyed on the capability, never on
+ * the backend name; on tmux the command still rides along exactly as
+ * before and this function is byte-for-byte equivalent to its previous
+ * behaviour.
  */
 async function createOrReusePane(opts: {
   session: string;
@@ -831,10 +865,11 @@ async function createOrReusePane(opts: {
 }): Promise<string> {
   // Load-bearing from top to bottom: this IS the pane creation.
   const mux = await activeMux();
+  const command = mux.startAgentInPane === undefined ? opts.command : "";
   if (!(await mux.sessionExists(opts.session))) {
     return mux.newSessionWithPane(opts.session, {
       windowName: opts.windowName,
-      command: opts.command,
+      command,
       cwd: opts.cwd,
       env: opts.env,
     });
@@ -845,8 +880,16 @@ async function createOrReusePane(opts: {
 
   if (matching) {
     return mux.splitWindow({
-      target: `${opts.session}:${opts.windowName}`,
-      command: opts.command,
+      // tmux splits a WINDOW and accepts the `session:window` form;
+      // herdr splits a PANE and has no window-target form at all. Ask
+      // the backend for a concrete pane in that window when it needs
+      // one — cheaper than a `target` union type for two backends, and
+      // the tmux string stays exactly as it was.
+      target:
+        mux.startAgentInPane === undefined
+          ? `${opts.session}:${opts.windowName}`
+          : await firstPaneInWindow(mux, opts.session, matching.id),
+      command,
       cwd: opts.cwd,
       env: opts.env,
     });
@@ -855,8 +898,34 @@ async function createOrReusePane(opts: {
   return mux.newWindow({
     session: opts.session,
     name: opts.windowName,
-    command: opts.command,
+    command,
     cwd: opts.cwd,
     env: opts.env,
   });
+}
+
+/**
+ * A concrete pane id inside `windowId`, for backends that split panes
+ * rather than windows. Any pane in the window is a correct split target
+ * — the new pane lands in the same window either way, which is all mu
+ * cares about; geometry is the user's business.
+ *
+ * Throws rather than guessing when the window is empty: an empty window
+ * cannot exist on either backend (a window IS its panes), so seeing one
+ * means the window vanished between `listWindows` and here, and the
+ * caller must roll back rather than create a pane somewhere else.
+ */
+async function firstPaneInWindow(
+  mux: MuxBackend,
+  session: string,
+  windowId: string,
+): Promise<string> {
+  const panes = await mux.listPanesInSession(session);
+  const pane = panes.find((p) => p.windowId === windowId);
+  if (pane === undefined) {
+    throw new Error(
+      `spawnAgent: window ${windowId} in session ${session} has no panes to split (it vanished mid-spawn?)`,
+    );
+  }
+  return pane.paneId;
 }

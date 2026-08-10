@@ -36,6 +36,82 @@ for the difference table and the known limits.
   `index.ts` dispatcher. `src/mux.ts` is the public hub; `src/tmux.ts`
   survives as a back-compat re-export for genuinely tmux-only concerns
   (the `MU_TMUX_SOCKET` isolation seam, the shared `sleep` poll seam).
+- **`mu agent spawn` works on the herdr backend** — as a two-step
+  create-then-start, because herdr has no create-and-run form.
+  `workspace create` / `tab create` / `pane split` always start a plain
+  shell, and `agent start` never creates, splits or moves layout: it
+  requires an already-existing pane at its interactive prompt. So mu
+  creates the pane **bare**, then runs `herdr agent start <name> --kind
+  <cli> --pane <id>`.
+
+  The seam is a new **optional** `MuxBackend.startAgentInPane()`, and
+  its *absence* is the default shape: tmux creates-and-runs in one call,
+  so it does not implement it and its spawn path is untouched.
+  `src/agents/spawn.ts` branches on the **capability**, never on
+  `mux.name`.
+
+  What collapses on herdr: `agent start` returns only once herdr has
+  detected the expected agent in that pane and considers it ready for
+  input (30s default, herdr's own). That is strictly stronger than
+  scrollback polling, so `awaitSpawnLiveness` / `awaitSpawnReadiness` —
+  and with them `MU_SPAWN_LIVENESS_MS` / `MU_SPAWN_READINESS_MS` — are
+  subsumed and not consulted. The tmux polling loop was **not** ported.
+
+  Three decisions worth recording, all of them refusals:
+
+  - **An unknown `--cli` is refused, not shell-run.** herdr's `--kind`
+    is a closed enum of 21 agent kinds. Falling back to `pane run
+    <command>` would start the binary but leave herdr unable to classify
+    that pane — and on this backend herdr's classification *is* mu's
+    status source. A pane mu can start but never observe is the same
+    family of failure as a pane with nothing running in it. mu does not
+    hardcode the kind list: it forwards `--cli` and translates the
+    rejection, so a herdr release adding a kind needs no mu change.
+  - **`MU_<UPPER_CLI>_COMMAND` and `--command` are refused, not
+    ignored.** `agent start --kind` resolves the canonical executable
+    itself and has no override flag; args after `--` go to the agent,
+    not to executable selection (verified: `--kind pi -- --model m`
+    reports `argv:["pi"]`). Accepting an override and not honouring it
+    was the one outcome ruled out, so mu refuses and names the exact
+    knob to change. Both refusals exit **2** (usage) rather than 5: the
+    substrate is healthy and answered precisely.
+  - **Agent names pass straight through.** herdr requires
+    `[a-z][a-z0-9_-]{0,31}` unique among live agents, byte-identical to
+    mu's `isValidAgentName`. A test asserts the equivalence over both
+    boundary probes and a small fuzz, so a future widening of either
+    side fails loudly here instead of surfacing as a confusing
+    herdr-side rejection after a pane already exists.
+
+  The **anti-empty-shell property** is preserved end to end: the
+  creation verbs still *refuse* a non-empty command rather than dropping
+  it, and every failure in step 2 — timeout, rejected name, name already
+  live, unsupported kind, refused override — routes through
+  `rollbackSpawn`, which kills the bare pane and deletes the row. There
+  is no path where mu records an agent for a pane with nothing in it.
+
+  Two things found by probing a real server that would have bitten
+  later:
+
+  - **herdr pane ordinals are Crockford base32, not decimal.** Opening
+    38 panes yields `p1…p9, pA…pH, pJ, pK, pM, pN, pP…pZ, p10, p11…`
+    (and `wA` after `w9`). The previous `/^w\d+:p\d+$/` accepted exactly
+    nine panes per workspace and then started rejecting *live* ids —
+    a `TypeError` on the tenth agent. Now matched as an opaque
+    `[0-9A-Z]+` run.
+  - **`agent start` immediately after `pane split` loses a race**
+    (`agent_pane_busy`, ~100% of the time; a 200ms gap always
+    succeeded). The pane exists the moment split returns but its shell
+    has not drawn a prompt. Since the condition is observable, mu
+    retries on that specific code instead of pre-sleeping a guessed
+    constant.
+
+- **herdr mux backend — topology half** (`src/mux/herdr.ts`). The
+  second `MuxBackend` implementation, covering sessions, windows,
+  panes, pane-id validation, identity, and availability. The locked
+  mapping is **mu workstream = herdr workspace labelled
+  `mu-<workstream>`, mu window = herdr tab, mu agent = herdr pane**.
+  herdr's own "session" is server-level (one socket) and is NOT the
+  workstream unit.
 
   Two things the interface owns that were previously global:
   **pane-id validation** (tmux `%15` vs herdr `w1:p1`, so no widened

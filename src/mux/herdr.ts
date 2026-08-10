@@ -34,21 +34,32 @@
 //
 // ─── Scope ────────────────────────────────────────────────────────────
 //
-// This module implements the topology AND io halves of `MuxBackend`:
-// sessions, windows, panes, pane-id validation, availability, identity,
-// send, capture, and native pane status. Running a COMMAND in a freshly
-// created pane is still `mux-herdr-spawn` and is marked
-// `[mux-herdr-spawn]`; those paths throw `HerdrNotImplementedError`.
+// This module implements ALL of `MuxBackend` for herdr: sessions,
+// windows, panes, pane-id validation, availability, identity, send,
+// capture, native pane status, and the two-step spawn
+// (`startAgentInPane`).
 //
 // ─── Two exceptions to "everything is JSON" ───────────────────────────
 //
 // `herdr status` and `herdr pane read` both emit PLAIN TEXT. They go
 // through `currentExecutor` directly rather than `herdr()`, which would
 // reject their unparseable stdout as CLI drift.
+//
+// ─── Why spawn is two steps ───────────────────────────────────────────
+//
+// herdr has NO create-and-run form: `workspace create` / `tab create` /
+// `pane split` always start a plain shell, and `agent start` never
+// creates, splits or moves layout — it requires an ALREADY-EXISTING
+// pane sitting at its interactive prompt. So the creation verbs below
+// REFUSE a non-empty `opts.command` (silently dropping it would leave
+// an empty shell mu believes hosts an agent — the worst failure mode),
+// and `startAgentInPane` is the second step mu calls afterwards.
+// See `MuxBackend.startAgentInPane` for how spawn.ts branches on it.
 
 import { execa } from "execa";
 import type { DetectedStatus } from "../detect.js";
 import type { NextStep } from "../output.js";
+import { sleep } from "./tmux.js";
 import {
   type AttachTarget,
   type CaptureOptions,
@@ -66,6 +77,7 @@ import {
   type SendOptions,
   type SendWarning,
   type SplitWindowOptions,
+  type StartAgentInPaneOptions,
 } from "./types.js";
 
 // ─── Error types ───────────────────────────────────────────────────────
@@ -121,6 +133,107 @@ export class HerdrSyntaxError extends Error {
   }
 }
 
+/**
+ * `mu agent spawn --cli <key>` named something herdr does not recognise
+ * as an interactive agent kind.
+ *
+ * A REFUSAL, not a fallback. herdr's `pane run <command>` would happily
+ * start the binary, but herdr would then never classify that pane, and
+ * on this backend herdr's classification IS mu's status source
+ * (`paneStatus()` bypasses src/detect.ts entirely). A pane mu can start
+ * but never observe is the same family of failure as a pane mu records
+ * with nothing running in it: it looks fine and lies forever.
+ *
+ * Not a `MuxError`: the substrate is healthy and answered precisely.
+ * This is an operator asking for something the active backend cannot
+ * do, which `handle()` maps to exit 2 alongside the usage family.
+ *
+ * herdr is the AUTHORITY on the kind list — mu does not hardcode one,
+ * it forwards `--cli` and translates herdr's rejection. A herdr release
+ * that adds a kind therefore works without a mu change.
+ */
+export class HerdrUnsupportedCliError extends Error {
+  override readonly name = "HerdrUnsupportedCliError";
+  constructor(
+    public readonly cli: string,
+    public readonly detail: string,
+  ) {
+    super(
+      `herdr does not recognise --cli ${cli} as an interactive agent kind, so it cannot classify that pane's status. herdr said: ${detail}`,
+    );
+  }
+  errorNextSteps(): NextStep[] {
+    return [
+      {
+        intent: "List the agent kinds this herdr knows",
+        command: "herdr agent start --help",
+      },
+      {
+        intent: "Spawn with a kind herdr supports",
+        command: "mu agent spawn <name> --cli pi -w <workstream>",
+      },
+      {
+        intent: "Or spawn this cli under tmux, which runs any command",
+        command: `MU_MUX=tmux mu agent spawn <name> --cli ${this.cli}`,
+      },
+    ];
+  }
+}
+
+/**
+ * The operator pinned an exact command line — `--command "…"` or
+ * `MU_<UPPER_CLI>_COMMAND` — and herdr cannot honour it.
+ *
+ * `herdr agent start --kind <k>` resolves the canonical executable
+ * ITSELF; there is no "use this binary instead" flag. Args after `--`
+ * are passed to the agent, NOT used to choose it (verified against
+ * 0.8.0: `agent start x --kind pi -- --model m` reports
+ * `argv:["pi"]`), so forwarding an override there would append a binary
+ * NAME as an argument and start the wrong thing while reporting success.
+ *
+ * Accepting the override and not honouring it is the one outcome ruled
+ * out, so mu refuses and names the variable.
+ */
+export class HerdrCommandOverrideError extends Error {
+  override readonly name = "HerdrCommandOverrideError";
+  constructor(
+    public readonly cli: string,
+    public readonly command: string,
+    /** The `MU_<UPPER_CLI>_COMMAND` var, when that is where the override
+     *  came from; undefined for an explicit `--command`. */
+    public readonly envVar?: string,
+  ) {
+    super(
+      (envVar === undefined
+        ? `--command ${JSON.stringify(command)} cannot be honoured on the herdr backend`
+        : `${envVar}=${command} cannot be honoured on the herdr backend`) +
+        `: 'herdr agent start --kind ${cli}' resolves the executable itself and has no override flag. ` +
+        `mu refuses rather than starting a different binary than you asked for.`,
+    );
+  }
+  errorNextSteps(): NextStep[] {
+    return [
+      ...(this.envVar === undefined
+        ? [
+            {
+              intent: "Spawn without --command so herdr resolves the agent itself",
+              command: `mu agent spawn <name> --cli ${this.cli} -w <workstream>`,
+            },
+          ]
+        : [
+            {
+              intent: `Unset the override so herdr resolves ${this.cli} itself`,
+              command: `unset ${this.envVar}`,
+            },
+          ]),
+      {
+        intent: "Or spawn under tmux, which runs the command you name",
+        command: `MU_MUX=tmux mu agent spawn <name> --cli ${this.cli}`,
+      },
+    ];
+  }
+}
+
 /** A `MuxBackend` method whose herdr implementation is owned by another
  *  task. Never thrown on any path mu currently drives on herdr. */
 export class HerdrNotImplementedError extends Error {
@@ -139,10 +252,21 @@ export class HerdrNotImplementedError extends Error {
 //
 // This is exactly why `isValidPaneId` is a backend method: a tmux `%15`
 // must be rejected here, and a herdr `w1:p1` must be rejected by tmux.
+//
+// The ORDINALS ARE NOT DECIMAL. Verified on herdr 0.8.0 by opening 38
+// panes: the sequence runs `p1 … p9, pA, pB, … pH, pJ, pK, pM, pN, pP …
+// pZ, p10, p11 …` — Crockford base32 (digits plus A-Z minus I, L, O, U).
+// Workspace and tab ordinals use the same alphabet (`wA` after `w9`).
+// A decimal-only pattern therefore works for exactly nine panes and then
+// starts rejecting live ids, which on the spawn path is a TypeError on
+// the 10th agent in a workstream. Matched as an opaque `[0-9A-Z]+` run
+// rather than by spelling out the alphabet: mu's job is to tell a herdr
+// id from a tmux one, not to re-derive herdr's numbering.
 
-export const PANE_ID_RE = /^w\d+:p\d+$/;
-const WORKSPACE_ID_RE = /^w\d+$/;
-const TAB_ID_RE = /^w\d+:t\d+$/;
+const HERDR_ORDINAL = "[0-9A-Z]+";
+export const PANE_ID_RE = new RegExp(`^w${HERDR_ORDINAL}:p${HERDR_ORDINAL}$`);
+const WORKSPACE_ID_RE = new RegExp(`^w${HERDR_ORDINAL}$`);
+const TAB_ID_RE = new RegExp(`^w${HERDR_ORDINAL}:t${HERDR_ORDINAL}$`);
 
 export function isValidPaneId(s: string): boolean {
   return PANE_ID_RE.test(s);
@@ -150,7 +274,9 @@ export function isValidPaneId(s: string): boolean {
 
 export function assertValidPaneId(s: string): void {
   if (!isValidPaneId(s)) {
-    throw new TypeError(`invalid herdr pane id: ${JSON.stringify(s)} (expected /^w\\d+:p\\d+$/)`);
+    throw new TypeError(
+      `invalid herdr pane id: ${JSON.stringify(s)} (expected ${PANE_ID_RE.source})`,
+    );
   }
 }
 
@@ -716,6 +842,103 @@ export async function currentSessionName(): Promise<string | undefined> {
 // unconfirmed on herdr, that is a herdr bug, and the `agent_prompt_
 // stalled` guard below is how it surfaces.
 
+// ─── Spawn, step 2 ─────────────────────────────────────────────────────
+//
+// The creation verbs above make a BARE pane; this turns it into a running
+// agent. Both halves exist because herdr has no create-and-run form.
+
+/**
+ * Retry budget for `agent start` while herdr reports the target pane is
+ * not yet an available shell.
+ *
+ * VERIFIED RACE (0.8.0): `agent start` immediately after `pane split`
+ * fails `agent_pane_busy` ~100% of the time; with a 200ms gap it
+ * succeeded every time. The pane exists the moment split returns, but its
+ * shell has not drawn a prompt yet, and `agent start` requires an
+ * interactive prompt with nothing in the foreground.
+ *
+ * A retry rather than a fixed pre-sleep: the condition is observable, so
+ * mu polls instead of guessing a constant that is simultaneously too long
+ * for a fast box and too short for a loaded one. ~3s nominal, because
+ * losing the race means a rolled-back spawn while a pane that never frees
+ * up is a real failure and must not be spun on forever. Counted in
+ * ATTEMPTS not wall-clock, so `setSleepForTests` alone makes the loop
+ * instant and deterministic in the fast tier.
+ */
+const PANE_READY_RETRY_INTERVAL_MS = 50;
+const PANE_READY_MAX_ATTEMPTS = 60;
+
+/**
+ * Turn an existing bare pane into a running agent, and return only once
+ * herdr considers that agent ready for input.
+ *
+ * `herdr agent start <name> --kind <cli> --pane <id>` blocks until herdr
+ * has DETECTED the expected agent in that terminal and it is
+ * interactive-ready (30s default timeout, herdr's own). That subsumes
+ * mu's tmux-side `awaitSpawnLiveness` + `awaitSpawnReadiness` scrollback
+ * polling completely, which is why `src/agents/spawn.ts` skips both when
+ * a backend implements this method. Nothing here re-implements them.
+ *
+ * Three refusals, all deliberate (see each error class):
+ *   - an operator-pinned command      → `HerdrCommandOverrideError`
+ *   - a `--cli` herdr does not know   → `HerdrUnsupportedCliError`
+ *   - an agent name herdr rejects     → the raw `HerdrError`
+ * On any of them nothing has started, and the caller's rollback kills the
+ * bare pane. No path leaves mu holding an agent row for a pane with
+ * nothing running in it.
+ *
+ * Addressed BY PANE ID: the herdr-level agent NAME is cleared when the
+ * occupant exits, so the pane id is the only durable handle (and the
+ * only one mu persists). Matching `sendToPane`'s choice.
+ */
+export async function startAgentInPane(opts: StartAgentInPaneOptions): Promise<void> {
+  assertValidPaneId(opts.paneId);
+  // Refuse BEFORE touching the server: an override we cannot honour is
+  // decidable locally, and failing fast keeps the pane pristine for the
+  // caller's rollback.
+  if (opts.commandSource !== "cli-key") {
+    throw new HerdrCommandOverrideError(
+      opts.cli,
+      opts.command,
+      // Name the env var only when that is actually where the override
+      // came from; "unset MU_PI_COMMAND" is useless advice to someone who
+      // typed --command.
+      opts.commandSource === "env" ? envVarNameForCli(opts.cli) : undefined,
+    );
+  }
+  const args = ["agent", "start", opts.name, "--kind", opts.cli, "--pane", opts.paneId];
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      await herdr(args);
+      return;
+    } catch (err) {
+      // An unknown --kind is a SYNTAX error to herdr's arg parser (exit
+      // 2), because `--kind` is a closed enum. Everywhere else exit 2
+      // means mu drifted from the CLI, so translate it here — an
+      // operator typo must not read as "bug in mu".
+      if (err instanceof HerdrSyntaxError) {
+        throw new HerdrUnsupportedCliError(opts.cli, err.output.trim().split("\n")[0] ?? "");
+      }
+      const busy = err instanceof HerdrError && err.code === "agent_pane_busy";
+      if (!busy || attempt >= PANE_READY_MAX_ATTEMPTS) throw err;
+      await sleep(PANE_READY_RETRY_INTERVAL_MS);
+    }
+  }
+}
+
+/**
+ * `MU_<UPPER_CLI>_COMMAND`, mirroring `envVarNameForCli` in
+ * src/agents/spawn.ts. Duplicated rather than imported because the mux
+ * cluster may not depend on the agent layer (imports run cluster →
+ * root, never sideways into another feature); it is one string join and
+ * `test/mux-herdr-spawn.test.ts` asserts the two stay identical.
+ */
+function envVarNameForCli(cli: string): string {
+  return `MU_${cli.toUpperCase().replace(/-/g, "_")}_COMMAND`;
+}
+
+// ─── IO (owned by mux-herdr-io) ────────────────────────────────────────
+
 /** herdr's error code for "submitted, but the agent's lifecycle never
  *  moved within its 5s guard". Not an outage — a suspicious send. */
 const PROMPT_STALLED_CODE = "agent_prompt_stalled";
@@ -1094,6 +1317,8 @@ export const herdrBackend: MuxBackend = Object.freeze({
   getPaneTitle,
   currentAgentName,
   currentSessionName,
+
+  startAgentInPane,
 
   sendToPane,
   capturePane,
