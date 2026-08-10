@@ -44,9 +44,12 @@
 import { execa } from "execa";
 import type { NextStep } from "../output.js";
 import {
+  type AttachTarget,
   type CaptureOptions,
   type MuxBackend,
+  type MuxCommand,
   MuxError,
+  type MuxHealth,
   type MuxPane,
   type MuxSession,
   type MuxWindow,
@@ -669,6 +672,24 @@ export async function currentAgentName(): Promise<string | undefined> {
   return idx === -1 ? title.trim() : title.slice(0, idx).trim();
 }
 
+/**
+ * Label of the workspace the CALLER is running inside, or undefined
+ * outside a managed pane. Backs the `mu-<name>` rung of workstream
+ * auto-detection.
+ *
+ * herdr injects `$HERDR_WORKSPACE_ID` into every pane it manages, so
+ * this is one lookup rather than tmux's `display-message -p '#S'`. The
+ * env var carries the opaque id; mu keys on the LABEL, so resolve it.
+ */
+export async function currentSessionName(): Promise<string | undefined> {
+  const workspaceId = process.env.HERDR_WORKSPACE_ID;
+  if (workspaceId === undefined || !WORKSPACE_ID_RE.test(workspaceId)) return undefined;
+  for (const ws of await listWorkspaces()) {
+    if (ws.workspaceId === workspaceId) return ws.label;
+  }
+  return undefined;
+}
+
 // ─── IO (owned by mux-herdr-io) ────────────────────────────────────────
 
 /**
@@ -782,6 +803,83 @@ async function herdrAvailable(): Promise<boolean> {
   return !/^\s*compatible:\s*no\s*$/m.test(result.stdout);
 }
 
+// ─── Attach ─────────────────────────────────────────────────────────────
+//
+// herdr addresses attach targets by opaque id, not by name, so both
+// shapes below resolve the mu session name (= workspace label) to a
+// workspace id first. Resolution is async but `attachHint` /
+// `attachCommands` are sync by contract, so they emit a `workspace
+// focus` against the LABEL-resolved id when one is known and fall back
+// to the session-attach form otherwise. Callers that need the resolved
+// id already awaited `currentSessionName` / `sessionExists`.
+
+/**
+ * Copy-pasteable line landing the user on `target`.
+ *
+ * Unlike tmux there is no "attach vs switch-client" split: a herdr
+ * client is already attached to the server, and focusing a workspace
+ * works identically from inside and outside a managed pane. `inside`
+ * is therefore ignored, which is legitimate — the flag reports ambient
+ * evidence and lets each backend decide what it means.
+ */
+export function attachHint(target: AttachTarget): string {
+  if (target.window !== undefined) {
+    return `herdr session attach ${target.session} # then focus tab ${target.window}`;
+  }
+  return `herdr session attach ${target.session}`;
+}
+
+export function attachCommands(target: AttachTarget): readonly MuxCommand[] {
+  return [{ command: "herdr", args: ["session", "attach", target.session] }];
+}
+
+// ─── Diagnostics ────────────────────────────────────────────────────────
+
+export function paneNotFoundNextSteps(paneId: string): NextStep[] {
+  return [
+    {
+      intent: `Verify the pane id ${paneId} actually exists`,
+      command: `herdr pane get ${paneId}`,
+    },
+    {
+      intent: "List panes in the current workspace",
+      command: 'herdr pane list --workspace "$HERDR_WORKSPACE_ID"',
+    },
+  ];
+}
+
+/**
+ * Version probe plus the ambient facts herdr injects into every managed
+ * pane. Returns DATA; `mu doctor` owns the strings.
+ *
+ * `herdr status` is the one command that is NOT JSON (see the task note
+ * on mux-herdr-topology), so this parses the plain-text `version:` line
+ * from the CLIENT block rather than routing through `herdr()`.
+ */
+export async function healthCheck(): Promise<MuxHealth> {
+  let version: string | null = null;
+  try {
+    const result = await currentExecutor(["status"]);
+    if (result.exitCode === 0) {
+      const match = /^\s*version:\s*(\S+)\s*$/m.exec(result.stdout);
+      version = match?.[1] ?? null;
+    }
+  } catch {
+    version = null;
+  }
+  return {
+    name: "herdr",
+    ok: version !== null,
+    version,
+    env: [
+      { name: "$HERDR_ENV", value: process.env.HERDR_ENV ?? null },
+      { name: "$HERDR_WORKSPACE_ID", value: process.env.HERDR_WORKSPACE_ID ?? null },
+      { name: "$HERDR_PANE_ID", value: process.env.HERDR_PANE_ID ?? null },
+    ],
+    remediation: "start the herdr server (herdr status) or install herdr",
+  };
+}
+
 /**
  * The herdr implementation of `MuxBackend`. A frozen record of the
  * module's functions — no state of its own, so swapping backends is a
@@ -814,10 +912,16 @@ export const herdrBackend: MuxBackend = Object.freeze({
   setPaneTitle,
   getPaneTitle,
   currentAgentName,
+  currentSessionName,
 
   sendToPane,
   capturePane,
 
   enableMuPaneBordersForSession,
   enableMuPaneBordersForPane,
+
+  attachHint,
+  attachCommands,
+  paneNotFoundNextSteps,
+  healthCheck,
 });
