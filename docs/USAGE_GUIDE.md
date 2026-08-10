@@ -2545,11 +2545,11 @@ your platform.
 ## 20. Multiplexer backends (tmux and herdr)
 
 mu drives exactly one multiplexer per invocation. tmux is the
-incumbent and the complete backend. [herdr](https://github.com/martintrojer/herdr)
-is the second, and is **not yet complete**: it implements sessions,
-windows, panes, identity and diagnostics, but `mu agent spawn`,
-`mu agent send` and `mu agent read` are not implemented on it and fail
-with exit 5. If you want a working crew today, use tmux.
+incumbent; [herdr](https://github.com/martintrojer/herdr) is the second
+backend, and spawn, send, read and status detection all work on it. The
+remaining gaps are narrow and listed under
+[Known limits on herdr](#known-limits-on-herdr) — the notable one is
+that `mu agent kick` is Linux-only there.
 
 ### Which backend am I on?
 
@@ -2600,7 +2600,7 @@ The backend is resolved once per process and cached.
 | Focus | mu creates detached | `--no-focus` on every mutating call, always. `detached: false` still gets you a detached workspace; run `herdr workspace focus` yourself. |
 | Isolation seam | `MU_TMUX_SOCKET` (`-L <name>`) | `MU_HERDR_SESSION` (`--session <name>`, its own socket) |
 | `mu agent send` / `read` | six-step paste/Enter protocol | one atomic `agent prompt --wait` |
-| `mu agent spawn` | works | **not implemented**, exit 5 |
+| `mu agent spawn` | one `new-window`/`split-window` carrying the command | create-then-start: bare pane, then `agent start` |
 
 `MU_TMUX_SOCKET` is tmux-only and ignored under herdr;
 `MU_HERDR_SESSION` is its herdr analogue. Both exist so a test run can
@@ -2608,12 +2608,12 @@ never observe or destroy your real panes.
 
 ### Known limits on herdr
 
-- **Spawn is not implemented.** The creation verbs refuse a command
-  rather than silently dropping it — dropping would leave an empty
-  shell that mu records as an agent, which is the worst available
-  failure. herdr has no create-and-run form, so spawn is inherently two
-  steps (create the pane, then start the agent in it) and that second
-  step is unwritten. Send, read and status detection DO work.
+- **Spawn is two steps, not one.** herdr has no create-and-run form, so
+  mu creates a bare pane and then calls `agent start` in it. The
+  creation verbs refuse a command rather than silently dropping it —
+  dropping would leave an empty shell that mu records as an agent,
+  which is the worst available failure. If step two fails, mu closes
+  the pane and writes no agent row.
 - **`--lines` cannot recover scrolled-off rows from an
   alternate-screen pane.** A pane on the alternate screen does not
   spill into host scrollback, so there is nothing behind the viewport
