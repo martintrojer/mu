@@ -27,9 +27,9 @@ Need one quick helper without the DAG? `mu agent spawn scout-1 -w
 scratch` gives you a low-ceremony agent you can still send/read/wait
 on.
 
-Nothing here is a black box. Agents are tmux panes you can `tmux
-attach` to, tasks live in a SQLite DAG, and workspaces are real jj
-workspaces / sl shares / git worktrees on disk. **mu persists state
+Nothing here is a black box. Agents are multiplexer panes you can
+attach to yourself, tasks live in a SQLite DAG, and workspaces are real
+jj workspaces / sl shares / git worktrees on disk. **mu persists state
 and coordinates handoffs; the model still decides what to do.**
 
 For the full copy-paste flow, see [Quick start](#quick-start).
@@ -65,10 +65,10 @@ For the full copy-paste flow, see [Quick start](#quick-start).
 - **Not a verifier.** `task close --evidence "tests pass"` records
   the claim; mu doesn't run the tests.
 - **Not a replacement for [pi-subagents](https://github.com/nicobailon/pi-subagents).**
-  Mu agents are driveable tmux panes; pi-subagents is for one-shot
+  Mu agents are driveable panes; pi-subagents is for one-shot
   focused delegation. See [vs `pi-subagents`](#vs-pi-subagents).
 - **Not a hosted service.** Local-first SQLite.
-- **DB-undoable, not tmux-undoable.** Every change is captured as ops
+- **DB-undoable, not substrate-undoable.** Every change is captured as ops
   under one group, so `mu undo <group> --yes` reverses exactly that
   one action — not your other workstreams. Killed panes and freed
   workspace dirs are NOT replayed; they aren't portable state.
@@ -106,9 +106,9 @@ npx skills add martintrojer/mu          # auto-detects pi / claude-code / codex 
 **Requirements:**
 - Node 22.12–24 (see `.nvmrc`), matching `engines` in `package.json`.
 - A terminal multiplexer: tmux ≥ 3.0, or [herdr](https://github.com/martintrojer/herdr)
-  (`mu doctor` reports which one is active). tmux is the complete
-  backend; herdr currently covers session/window/pane topology but not
-  spawn, send, or read — see
+  (`mu doctor` reports which one is active). Spawn, send, read and
+  status detection work on both; the remaining herdr gaps are narrow
+  and listed in
   [docs/USAGE_GUIDE.md § 20](docs/USAGE_GUIDE.md#20-multiplexer-backends-tmux-and-herdr).
 - pi (the agent CLI mu orchestrates)
 - For `--workspace`: jj, sl, or git on PATH (or `--backend none`)
@@ -156,10 +156,11 @@ dashboard when tuicr exits.
 ## Quick start
 
 ```bash
-# Make sure you're inside tmux.
+# Make sure you're inside a multiplexer. tmux is the common path;
+# herdr works too (mu picks whichever it detects).
 tmux
 
-# Initialize the workstream (creates tmux session mu-auth-refactor)
+# Initialize the workstream (creates mux session mu-auth-refactor)
 mu workstream init auth-refactor
 
 # Plan the work as a DAG. IDs auto-derive from titles.
@@ -241,9 +242,9 @@ restore <label> --as <new-ws>`.
 
 |                          | [`pi-subagents`](https://github.com/nicobailon/pi-subagents) | `mu` |
 | ------------------------ | -------------------------------------------------------- | ---- |
-| Best for                 | "Send this focused task to a specialist, return a result" | "Keep a driveable agent/persistent crew in tmux" |
+| Best for                 | "Send this focused task to a specialist, return a result" | "Keep a driveable agent/persistent crew in a multiplexer" |
 | Lifetime                 | one-shot per task                                        | from off-the-cuff `scratch` helper to long-lived crew |
-| Substrate                | `pi` subprocess + result files                           | tmux panes running pi sessions |
+| Substrate                | `pi` subprocess + result files                           | tmux/herdr panes running pi sessions |
 | Built-in task graph      | no                                                       | yes: parallel-tracks union-find with diamond-merge |
 | Drivable from outside pi | no (extension-only)                                      | yes (`mu` is a real CLI) |
 

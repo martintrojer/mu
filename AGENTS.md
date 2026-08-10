@@ -1,8 +1,9 @@
 # Repo guide for AI coding agents
 
 You're an AI coding agent working on the `mu` repo, which builds
-**mu** — a CLI that manages a persistent crew of AI agents in tmux
-panes coordinated through a built-in task DAG.
+**mu** — a CLI that manages a persistent crew of AI agents in
+multiplexer panes (tmux or herdr) coordinated through a built-in
+task DAG.
 
 Read the linked docs before you write code. Follow the conventions
 below.
@@ -56,17 +57,24 @@ mu/
 │   └── ARCHITECTURE.md    # module layout, TUI architecture, key seams
 ├── src/                   # all source (root files: SDK + shared infra; one
 │                          # level of subdirs OK for cohesive clusters — see
-│                          # `src/cli/`, `src/agents/`, `src/tasks/` below)
+│                          # `src/cli/`, `src/agents/`, `src/tasks/`, `src/mux/`)
 │   ├── db.ts              # SQLite schema + openDb (single CREATE-IF-NOT-EXISTS block; v9)
 │   │                      # also owns SYNCED_ENTITIES / PORTABLE_TABLES / MACHINE_LOCAL_TABLES
-│   ├── tmux.ts            # tmux wrapper, send protocol, pane validation
-│   ├── detect.ts          # pi status detector + Braille-spinner fallback for other CLIs
+│   ├── mux.ts             # multiplexer backend hub (re-exports src/mux/*)
+│   ├── mux/               # cohesive cluster: one file per multiplexer
+│   │   ├── types.ts       # MuxBackend interface + MuxError / PaneNotFoundError / NoMultiplexerError
+│   │   ├── detect.ts      # MU_MUX → HERDR_ENV → $TMUX → availability ladder; activeMux()
+│   │   ├── tmux.ts        # tmux impl: wrapper, 6-step send protocol, pane validation
+│   │   └── herdr.ts       # herdr impl: JSON socket API, atomic send, native pane status
+│   ├── tmux.ts            # back-compat re-export of the tmux backend (new code imports mux.js)
+│   ├── detect.ts          # pi status detector + Braille-spinner fallback; used only when
+│   │                      # the backend has no paneStatus() of its own (i.e. tmux)
 │   ├── reconcile.ts       # ghost prune + status detect + orphan surface
 │   ├── agents.ts          # CRUD + send/read/list/close/free + liveness + reaper hub (re-exports src/agents/*)
 │   ├── agents/            # cohesive cluster of agent-lifecycle internals
 │   │   ├── spawn.ts       # spawnAgent + resolveCliCommand / awaitSpawnLiveness / pane create-or-reuse / prestage / rollback
 │   │   ├── kick.ts        # reaper events + cleanup of dead agent rows
-│   │   ├── adopt.ts       # adoptAgent: register an existing tmux pane as a managed agent
+│   │   ├── adopt.ts       # adoptAgent: register an existing pane as a managed agent
 │   │   └── errors.ts      # typed agent error classes (AgentNotFoundError, AgentDiedOnSpawnError, …)
 │   ├── tasks.ts           # task SDK hub (re-exports src/tasks/*)
 │   ├── tasks/             # cohesive cluster of task-graph internals
@@ -219,7 +227,8 @@ skip themselves otherwise; CI runs inside tmux.
 - No `any`. Use `unknown` and narrow.
 - No non-null assertions (`!`). Use early returns or `if (!x) throw`.
 - Errors are typed classes (e.g. `AgentNotFoundError`,
-  `TaskAlreadyOwnedError`, `CycleError`, `TmuxError`,
+  `TaskAlreadyOwnedError`, `CycleError`, `MuxError` and its per-backend
+  subclasses `TmuxError` / `HerdrError`,
   `AgentDiedOnSpawnError`) so the CLI's `handle()` wrapper can map
   them to specific exit codes.
 - Imports stay sorted (Biome's `organizeImports` enforces this).
@@ -240,7 +249,11 @@ skip themselves otherwise; CI runs inside tmux.
 ### Tests
 
 - Unit tests: real SQLite (in-temp-dir), mocked tmux executor via
-  `setTmuxExecutor()`. Fast, deterministic.
+  `setTmuxExecutor()`. Fast, deterministic. For anything touching the
+  multiplexer, use `installMux()` from `test/_mux.ts` rather than the
+  raw setters — it installs the backend AND its executor together and
+  hands back one `restore()`, which removes the ordering hazard of
+  stubbing one backend while asserting against another.
 - TUI popup/card behaviour tests should follow `test/README.md`:
   prefer the `test/_ink-render.ts` CaptureStream seam over
   `readFileSync` source-greps except for narrow structural guards.
@@ -252,16 +265,28 @@ skip themselves otherwise; CI runs inside tmux.
   above 50ms.
 - Integration tests: full-only tests use the `.integration.test.ts`
   suffix (e.g. `tmux.integration.test.ts`). They may touch real tmux
-  servers, git/jj/sl fixture repos, subprocess-backed smoke paths,
-  filesystem-heavy export/import/snapshot flows, or intentionally
-  slower in-process CLI flows. Real-tmux tests are skipped when
-  `$TMUX` is unset. These tests typically opt out of the spawn
+  or herdr servers, git/jj/sl fixture repos, subprocess-backed smoke
+  paths, filesystem-heavy export/import/snapshot flows, or
+  intentionally slower in-process CLI flows. Real-tmux tests are
+  skipped when `$TMUX` is unset; real-herdr tests skip unless a
+  running, protocol-compatible server is present. These tests typically opt out of the spawn
   liveness check via `process.env.MU_SPAWN_LIVENESS_MS = "0"` in
   `beforeEach`, since the sh subprocesses they spawn are intentionally
   long-lived.
 - Each test gets its own temp DB and (for integration) a unique
   tmux session like `mu-test-<pid>-<ts>-<rand>` to avoid colliding
   with the user's panes or with parallel test runs.
+- **herdr isolation is a guard, not a socket.** tmux gets a private
+  server via `MU_TMUX_SOCKET`, so a stray test is contained
+  structurally. herdr has no equivalent: its only isolation is a named
+  session (`MU_HERDR_SESSION`), so `test/_mux.ts` enforces it at
+  runtime — `assertHerdrIsolated()` refuses to run when the var is
+  unset or names `default`, and the fatal verbs (`server stop`,
+  `server restart`, `server kill`) are refused even inside a correct
+  session, because a stopped server is shared-fate. **Never stop the
+  herdr server or kill its main process from a test.** That destroys
+  the user's real panes and their unsaved work, with no undo. Clean up
+  per-entity (close what you created), never by nuking the server.
 - Dogfood reality: multiple pi worker agents often run `npm run test`
   concurrently on the same machine from different workspaces. Treat
   flakes that pass in isolation but fail under load as concurrency
@@ -330,7 +355,8 @@ meeting these criteria, **stop**. Add an entry to
 The "anti-feature pledges" in ROADMAP.md are firm:
 
 - No config file
-- No daemon / background process beyond what tmux + SQLite give us
+- No daemon / background process beyond what the multiplexer +
+  SQLite give us
 - No anticipatory abstractions (no traits with zero implementors)
 - No wrappers around wrappers
 - No codegen / embedded JS engine / workflow DSL
@@ -374,7 +400,9 @@ proves itself.
 7. If this verb promotes a `mu sql` workaround, remove the
    workaround entry from the `docs/USAGE_GUIDE.md` gaps table.
 8. Smoke-test: `MU_DB_PATH=/tmp/mu-smoke.db node dist/cli.js <verb>
-   ...` to verify it works against real tmux.
+   ...` to verify it works against real tmux. If the verb touches the
+   agent layer, smoke it on herdr too — `MU_MUX=herdr` plus a private
+   `MU_HERDR_SESSION` (never the default session).
 
 ### "Update the schema"
 
@@ -395,16 +423,39 @@ proves itself.
 4. Update [CHANGELOG.md](CHANGELOG.md) under the upcoming version's
    `### Changed` section.
 
-### "Add a new tmux operation"
+### "Add a new multiplexer operation"
 
-All tmux invocations go through `src/tmux.ts` `tmux(args)`. **No
-raw `execa("tmux", …)` anywhere else.** The wrapper produces typed
-`TmuxError` and the test suite mocks via `setTmuxExecutor`.
+mu drives **two** multiplexers, tmux and herdr, behind the
+`MuxBackend` interface in `src/mux/types.ts`. Call sites resolve one
+with `await activeMux()` and never name a backend.
 
-For send-style operations: use the canonical bracketed-paste
-sequence already in `src/tmux.ts` `sendToPane`. Naive `tmux
-send-keys "<text>"` is broken — characters like `/`, `?`, `f` get
-interpreted by the agent's TUI.
+1. **Add the method to `MuxBackend`** with a doc comment saying what
+   it means, not how tmux does it.
+2. **Implement it in BOTH** `src/mux/tmux.ts` and `src/mux/herdr.ts`.
+   A backend with no equivalent no-ops (see
+   `enableMuPaneBorders*`, `selectLayout`) — it does not throw.
+3. **If only one backend can do it**, make it an OPTIONAL method
+   (`paneStatus?()`, `startAgentInPane?()`) and have the caller
+   branch on the CAPABILITY being present, never on `mux.name`.
+4. **Decide load-bearing vs best-effort.** Load-bearing calls (spawn,
+   send, kill) let `NoMultiplexerError` propagate to exit 5.
+   Best-effort calls (identity, decoration, orphan surfacing) wrap in
+   try/catch so a missing mux degrades instead of failing the verb —
+   `resolveWorkerIdentity` in `src/tasks/claim.ts` is the shape.
+
+All tmux invocations go through `src/mux/tmux.ts` `tmux(args)`; all
+herdr invocations through `src/mux/herdr.ts` `herdr(args)`. **No raw
+`execa("tmux", …)` / `execa("herdr", …)` anywhere else.** Each wrapper
+produces a typed error (`TmuxError` / `HerdrError`, both extending
+`MuxError`) and each has an executor seam the tests mock — use
+`installMux()` from `test/_mux.ts` rather than the raw setters.
+
+For send-style operations the two backends differ sharply, and that
+difference is the point: tmux needs the canonical bracketed-paste
+sequence in `sendToPane` (naive `tmux send-keys "<text>"` is broken —
+`/`, `?`, `f` get eaten by the agent's TUI), while herdr's
+`agent prompt` is one atomic call. Do not port the tmux workaround
+to herdr.
 
 ### "Fix a flaky integration test"
 

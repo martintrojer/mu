@@ -334,21 +334,26 @@ orchestrator stays in charge.
 
 ## Key Constraints
 
-1. **Tmux required.** The substrate is tmux panes. No tmux, no agents.
-   `mu doctor` checks for it on every run that touches the agent layer.
+1. **A multiplexer is required.** The substrate is mux panes — tmux or
+   herdr. No multiplexer, no agents. `mu doctor` reports the resolved
+   backend and its version; verbs that touch the agent layer fail with
+   exit 5 when none is reachable.
 
 2. **Local-first persistence.** SQLite file at
    `~/.local/state/mu/mu.db`. Cross-machine state moves as
    append-only JSONL segments in a shared folder; you own transport.
 
-3. **Pi-only.** Status detection (and de-facto the entire product)
-   targets pi. `--cli pi` is the meaningful default; `--cli` accepts
-   other strings as a key for the `MU_<UPPER_CLI>_COMMAND` env var
-   resolver but no other CLI has a detector. We optimize for
+3. **Pi-first.** mu's own status detection targets pi. `--cli pi` is
+   the meaningful default; `--cli` accepts other strings as a key for
+   the `MU_<UPPER_CLI>_COMMAND` env var resolver. On tmux no other CLI
+   has a detector; on a backend that classifies panes itself (herdr),
+   mu defers to it. Either way we optimize for
    false-negative-then-poll over false-positive-then-act.
 
-4. **Send is fire-and-forget.** `mu agent send` delivers to the pane;
-   no acknowledgment. Orchestrators poll status or subscribe to
+4. **Send is delivered, not acknowledged.** `mu agent send` gets the
+   text into the pane and warns loudly when it cannot confirm
+   submission, but the AGENT never acknowledges receipt.
+   Orchestrators poll status or subscribe to
    `mu log --tail` for confirmation. This is by design — the
    alternative requires a protocol every CLI would have to speak.
 

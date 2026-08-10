@@ -1,12 +1,13 @@
 ---
 name: mu
-description: Manage AI agents in tmux panes — from a single off-the-cuff helper to a persistent crew coordinated through a built-in task graph. Use when the user asks to "create/spin up a subagent to X", "run X in the background", "do this in parallel", "use one subagent per X to do Y", "kick off a helper to watch/investigate/draft X", or to spawn, send work to, observe, or coordinate one or many agents — especially work you'll keep talking to, long-lived agents, background tasks, or anything that benefits from a dependency graph and parallel-track detection. For zero-ceremony single helpers use the reserved `scratch` workstream; for one-shot "fire and get a result back" prefer pi-subagents.
+description: Manage AI agents in terminal-multiplexer panes (tmux or herdr) — from a single off-the-cuff helper to a persistent crew coordinated through a built-in task graph. Use when the user asks to "create/spin up a subagent to X", "run X in the background", "do this in parallel", "use one subagent per X to do Y", "kick off a helper to watch/investigate/draft X", or to spawn, send work to, observe, or coordinate one or many agents — especially work you'll keep talking to, long-lived agents, background tasks, or anything that benefits from a dependency graph and parallel-track detection. For zero-ceremony single helpers use the reserved `scratch` workstream; for one-shot "fire and get a result back" prefer pi-subagents.
 ---
 
 # mu — Multi-agent orchestration
 
-`mu` manages long-lived AI agents in tmux panes, coordinated by a
-SQLite task DAG at `<XDG_STATE_HOME or ~/.local/state>/mu/mu.db`.
+`mu` manages long-lived AI agents in multiplexer panes (tmux or
+herdr), coordinated by a SQLite task DAG at
+`<XDG_STATE_HOME or ~/.local/state>/mu/mu.db`.
 
 **Trust `mu --help` / `mu <verb> --help` over this skill.** Verbs
 not in `--help` do not exist.
@@ -219,9 +220,11 @@ Every turn:
   SIGINT to the pane TTY foreground process group. Escalate with
   `--signal SIGTERM` / `SIGKILL`. It refuses when the foreground is
   the wrapping CLI; use `mu agent close` then.
-- **Use `mu agent send`; never raw `tmux send-keys <text>`.** mu uses
-  bracketed paste so `/`, `?`, `f`, etc. are delivered as text
-  instead of agent-TUI keybindings.
+- **Use `mu agent send`; never raw `tmux send-keys <text>` or
+  `herdr pane send-text`.** mu delivers text atomically — bracketed
+  paste on tmux, `agent prompt` on herdr — so `/`, `?`, `f`, etc.
+  arrive as text instead of agent-TUI keybindings, and the Enter
+  cannot be swallowed by a modal.
 - **Prompt quoting:** single-quote prompts containing `$VAR`,
   `$(...)`, backticks, or `!history`, or use a quoted heredoc.
 
@@ -238,7 +241,7 @@ git cherry-pick "$sha" && npm test
 ## Universal flags
 
 - `-w, --workstream <name>` resolves explicit > `$MU_SESSION` >
-  current tmux session minus `mu-` > error. For entity verbs it is a
+  current mux session minus `mu-` > error. For entity verbs it is a
   scope check; for pickers it selects which workstream.
 - Qualified refs `<workstream>/<name>` skip `-w`; mismatched `-w`
   errors. Bare ambiguous names raise `NameAmbiguousError` (exit 4)

@@ -26,8 +26,10 @@ import { activeMux, type MuxHealth } from "../mux.js";
 import { pc } from "../output.js";
 import { summarizeWorkstream } from "../workstream.js";
 
-/** Column width for the `label : value` environment block. */
-const LABEL_WIDTH = 17;
+/** Column width for the `label : value` environment block. Wide enough
+ *  for the longest label any backend contributes — `$HERDR_WORKSPACE_ID`
+ *  at 19 — so the colons stay in one column on every mux. */
+const LABEL_WIDTH = 19;
 const pad = (s: string): string => s.padEnd(LABEL_WIDTH);
 
 /**
@@ -70,7 +72,7 @@ export async function cmdDoctor(
     }
   }
   console.log(
-    `  $MU_SESSION      : ${process.env.MU_SESSION ? pc.green(process.env.MU_SESSION) : pc.dim("not set")}`,
+    `  ${pad("$MU_SESSION")}: ${process.env.MU_SESSION ? pc.green(process.env.MU_SESSION) : pc.dim("not set")}`,
   );
 
   // ─ DB + schema

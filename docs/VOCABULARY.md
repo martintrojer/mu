@@ -181,8 +181,9 @@ window.
 | `unreachable`     | ❓   | Transport down, status uncertain                    |
 | `terminated`      | ✕    | Process gone, awaiting reaping                      |
 
-**Source of truth:** the substrate (tmux + detector). The DB is a
-cache; `mu agent list` reconciles on every call.
+**Source of truth:** the substrate — the **mux backend**, plus the
+**detector** when that backend cannot classify panes itself. The DB is
+a cache; `mu agent list` reconciles on every call.
 
 ### The four "stop talking to this agent" verbs — keep them straight
 

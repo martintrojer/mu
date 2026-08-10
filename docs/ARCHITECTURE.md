@@ -1,9 +1,9 @@
 # Architecture
 
-mu is one SQLite file, a crew of agents in tmux panes, a task DAG,
-and one append-only op log everything else is derived from. It is
+mu is one SQLite file, a crew of agents in multiplexer panes, a task
+DAG, and one append-only op log everything else is derived from. It is
 layered: callers on top, a shared TypeScript core in the middle,
-SQLite + tmux + VCS substrates at the base. The CLI verbs and the
+SQLite + mux + VCS substrates at the base. The CLI verbs and the
 programmatic SDK are thin facades over the same core modules.
 
 - For canonical terms (*workstream*, *agent*, *task DAG*, *track*,
@@ -28,16 +28,17 @@ programmatic SDK are thin facades over the same core modules.
 │  mu core (shared TS modules)                                    │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌─────────────────┐  │
 │  │ agents/  │  │  tasks/  │  │   vcs/   │  │  ops log/       │  │
-│  │ tmux     │  │ schema   │  │ jj       │  │  capture        │  │
-│  │ detect   │  │ queries  │  │ sapling  │  │  apply/sync     │  │
-│  │ state    │  │ tracks   │  │ git      │  │  doctor         │  │
-│  │          │  │ claim    │  │ none     │  │                 │  │
+│  │ mux/     │  │ schema   │  │ jj       │  │  capture        │  │
+│  │ tmux     │  │ queries  │  │ sapling  │  │  apply/sync     │  │
+│  │ herdr    │  │ tracks   │  │ git      │  │  doctor         │  │
+│  │ detect   │  │ claim    │  │ none     │  │                 │  │
+│  │ state    │  │          │  │          │  │                 │  │
 │  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────────┬────────┘  │
 └───────┼─────────────┼─────────────┼─────────────────┼───────────┘
         ▼             ▼             ▼                 ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │  Substrates                                                     │
-│  SQLite (~/.local/state/mu/mu.db) · tmux panes · jj/sl/git      │
+│  SQLite (~/.local/state/mu/mu.db) · tmux/herdr panes · jj/sl/git│
 └─────────────────────────────────────────────────────────────────┘
 ```
 

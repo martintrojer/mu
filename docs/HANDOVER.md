@@ -47,8 +47,15 @@ ls ~/.local/state/mu/workspaces/   # one top-level dir per workstream
 mu workstream list                 # canonical list from the DB
 ```
 
-If `$MU_SESSION` is set, that's the active one. If you're inside a
-tmux session named `mu-<name>`, that's it. Otherwise ask.
+If `$MU_SESSION` is set, that's the active one. If you're inside a mux
+session named `mu-<name>` — a tmux session, or a herdr workspace with
+that label — that's it. Otherwise ask.
+
+The first row of `mu doctor`'s environment block is the resolved
+multiplexer — `tmux : ok (3.7b)` or `herdr : ok (0.8.0)` — followed by
+that backend's ambient vars. If you are driving a crew you are almost
+certainly on tmux; herdr supports the same verbs, but `mu agent kick`
+is Linux-only there.
 
 Throughout the rest of this doc the placeholder `<ws>` means the
 active workstream name.
@@ -319,6 +326,13 @@ time = two workers' vitest processes racing on `/tmp` cleanup, tmux
 sockets, or VCS fixtures. **NOT a real test failure.** The fix is in
 the test infra (`test/_fs.ts` `rmFixtureDir()` retries, etc), not the
 code under test. Re-run the test in isolation to confirm:
+
+> Distinguish this from a test that fails in ISOLATION too — that is a
+> real bug, and "pre-existing flake" is not a diagnosis. The
+> `exit-empty` race in `test/tmux.integration.test.ts` looked like this
+> class for a while; it turned out to be a genuine defect that also hit
+> any user with `exit-empty off` in their `~/.tmux.conf`. Bisect before
+> you shrug.
 
 ```
 npm run test -- <flaky-test-file>
