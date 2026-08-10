@@ -10,6 +10,33 @@ breaking changes are called out under "Breaking" in each entry.
 
 ## [Unreleased]
 
+### Added
+
+- **`MuxBackend`: the multiplexer is now a backend seam** (`src/mux/`).
+  Same shape as `src/vcs/` — `types.ts` (interface + `MuxError` /
+  `PaneNotFoundError` / `NoMultiplexerError`), `detect.ts` (the
+  `MU_MUX` → `$TMUX` → availability ladder, plus `activeMux()`
+  memoization and a `setMuxForTests` seam), `tmux.ts` (the existing
+  implementation, moved), and an `index.ts` dispatcher. `src/mux.ts` is
+  the public hub.
+
+  Two things the interface owns that were previously global: **pane-id
+  validation** (tmux `%15` vs herdr `w1:p1` — so no widened regex and
+  no scheme-prefixed DB ids) and the **identity fallback** behind
+  `mu task claim`.
+
+  `TmuxError` now extends `MuxError`, so `handle()` maps every
+  backend's error family to exit 5 through one `instanceof`. Its label
+  changed from `tmux` to `mux`, and `NoMultiplexerError` gets its own
+  label.
+
+  **No behaviour change.** tmux remains the only implementation and
+  every call site still reaches it through `src/tmux.ts`, now a
+  back-compat re-export (12 src modules and 47 test files import it
+  directly; churning them here would have made the diff unreviewable).
+  `MU_MUX` is therefore inert until `mux-callsite-migration` wires the
+  call sites through `activeMux()`.
+
 ### Changed
 
 - **Vocabulary: the multiplexer is a backend.** Groundwork for

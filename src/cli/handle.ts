@@ -46,6 +46,7 @@ import {
 import { type Db, openDb, SchemaTooOldError, WorkstreamNotFoundError } from "../db.js";
 import { DriftDetectedError } from "../drift.js";
 import { GroupIdAmbiguousError } from "../logs.js";
+import { MuxError, NoMultiplexerError, PaneNotFoundError } from "../mux.js";
 import {
   hasNextSteps,
   isJsonMode,
@@ -79,7 +80,6 @@ import {
   TaskNotFoundError,
   TaskNotInWorkstreamError,
 } from "../tasks.js";
-import { PaneNotFoundError, TmuxError } from "../tmux.js";
 import { NothingToUndoError, UndoGroupNotFoundError, UndoSupersededError } from "../undo.js";
 import { WorkspaceConflictError, WorkspaceDirtyError, WorkspaceVcsRequiredError } from "../vcs.js";
 import {
@@ -331,8 +331,13 @@ export function classifyError(err: unknown): { label: string; exitCode: number }
     // errorNextSteps() carries the remediation recipe.
     return { label: "spawn startup error", exitCode: 1 };
   }
-  if (err instanceof TmuxError || err instanceof PaneNotFoundError) {
-    return { label: "tmux", exitCode: 5 };
+  if (err instanceof NoMultiplexerError) {
+    return { label: "no multiplexer", exitCode: 5 };
+  }
+  if (err instanceof MuxError || err instanceof PaneNotFoundError) {
+    // MuxError is the base of the per-backend families (TmuxError, …),
+    // so one instanceof covers every multiplexer.
+    return { label: "mux", exitCode: 5 };
   }
   if (err instanceof WorkspaceConflictError) {
     // Rebase produced conflicts — the operator must `cd` and resolve.

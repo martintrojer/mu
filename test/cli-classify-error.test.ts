@@ -23,6 +23,7 @@ import {
 } from "../src/agents.js";
 import { classifyError, NameAmbiguousError, UsageError } from "../src/cli.js";
 import { SchemaTooOldError, WorkstreamNotFoundError } from "../src/db.js";
+import { MuxError, NoMultiplexerError } from "../src/mux.js";
 import {
   ClaimerNotRegisteredError,
   CrossWorkstreamEdgeError,
@@ -115,9 +116,12 @@ describe("classifyError exit-code map", () => {
       "spawn startup error",
     ],
 
-    // switch branch 7: tmux substrate
-    [new TmuxError(["list-panes"], "no server", "", 1), 5, "tmux"],
-    [new PaneNotFoundError("%999"), 5, "tmux"],
+    // switch branch 7: mux substrate. TmuxError extends MuxError, so the
+    // one branch covers every backend's error family.
+    [new TmuxError(["list-panes"], "no server", "", 1), 5, "mux"],
+    [new MuxError("no server"), 5, "mux"],
+    [new PaneNotFoundError("%999"), 5, "mux"],
+    [new NoMultiplexerError(["tmux"]), 5, "no multiplexer"],
 
     // switch branch 8: VCS conflict during workspace refresh
     [

@@ -24,6 +24,7 @@ import {
 } from "../src/agents.js";
 import { NameAmbiguousError } from "../src/cli.js";
 import { openDb, SchemaTooOldError, WorkstreamNotFoundError } from "../src/db.js";
+import { MuxError, NoMultiplexerError } from "../src/mux.js";
 import { hasNextSteps } from "../src/output.js";
 import {
   ClaimerNotRegisteredError,
@@ -184,7 +185,19 @@ const cases: NextStepsCase[] = [
     expectedTokens: ["alice"],
   },
 
-  // src/tmux.ts
+  // src/mux/types.ts
+  {
+    error: new MuxError("mux is unhappy"),
+    label: "MuxError",
+    expectedTokens: ["doctor"],
+  },
+  {
+    error: new NoMultiplexerError(["tmux"]),
+    label: "NoMultiplexerError",
+    expectedTokens: ["doctor", "tmux"],
+  },
+
+  // src/mux/tmux.ts
   {
     error: new TmuxError(["list-panes"], "no server", "", 1),
     label: "TmuxError",
@@ -306,6 +319,7 @@ describe("typed errors all carry actionable errorNextSteps()", () => {
       import("../src/workspace.js"),
       import("../src/db.js"),
       import("../src/workstream.js"),
+      import("../src/mux.js"),
       import("../src/tmux.js"),
       import("../src/cli.js"),
     ]);

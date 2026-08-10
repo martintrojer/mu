@@ -214,6 +214,22 @@ export {
   latestSeq,
   listLogs,
 } from "./logs.js";
+export * as mux from "./mux.js";
+export {
+  activeMux,
+  detectMux,
+  type MuxBackend,
+  type MuxBackendName,
+  MuxError,
+  type MuxPane,
+  type MuxSession,
+  type MuxWindow,
+  muxByName,
+  NoMultiplexerError,
+  resetMux,
+  setMuxForTests,
+  tmuxBackend,
+} from "./mux.js";
 export {
   currentOpContext,
   type OpContext,
