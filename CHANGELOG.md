@@ -8,7 +8,7 @@ breaking changes are called out under "Breaking" in each entry.
 
 ---
 
-## [Unreleased]
+## [1.0.1] — 2026-08-10
 
 **mu now supports two multiplexers.** tmux was hardwired: ~382
 references across 12 modules, a pane-id regex assumed to be `%N`
@@ -17,14 +17,22 @@ whoever was reading. This release turns the multiplexer into a
 backend, adds [herdr](https://github.com/martintrojer/herdr) as the
 second one, and routes every call site through it.
 
-**Where herdr actually stands.** Topology, identity and diagnostics
-work: sessions, windows, panes, pane-id validation, attach hints,
-health check. `mu agent spawn` / `send` / `read` do NOT — they raise
-`HerdrNotImplementedError`. herdr has no create-and-run form, so spawn
-is inherently two steps (create the pane, then start the agent in it)
-and the second step is unwritten. tmux remains the complete backend;
-see [docs/USAGE_GUIDE.md § 20](docs/USAGE_GUIDE.md#20-multiplexer-backends-tmux-and-herdr)
-for the difference table and the known limits.
+**Where herdr actually stands.** Spawn, send, read and status
+detection all work, alongside topology, identity and diagnostics. The
+remaining differences are narrow rather than blocking: `mu agent kick`
+is Linux-only on herdr (herdr reports a shell pid, not a tty, so
+`paneTTY` resolves `/proc/<pid>/fd/0`), a pane on the alternate screen
+cannot have scrolled-off rows recovered by `--lines`, `herdr pane list`
+carries no foreground-command field, and `MU_<UPPER_CLI>_COMMAND` has
+no herdr equivalent because herdr resolves the agent binary itself.
+See [docs/USAGE_GUIDE.md § 20](docs/USAGE_GUIDE.md#20-multiplexer-backends-tmux-and-herdr)
+for the full difference table.
+
+Verified end to end on herdr 0.8.0, not just in tests: `mu agent spawn
+worker-1 --cli pi` produced a real pi agent, `mu agent send` delivered
+through the one-call atomic protocol, the agent replied, `mu agent
+read` returned it, and `mu agent list` showed status resolved natively
+by herdr.
 
 ### Added
 
@@ -105,20 +113,10 @@ for the difference table and the known limits.
     retries on that specific code instead of pre-sleeping a guessed
     constant.
 
-- **herdr mux backend — topology half** (`src/mux/herdr.ts`). The
-  second `MuxBackend` implementation, covering sessions, windows,
-  panes, pane-id validation, identity, and availability. The locked
-  mapping is **mu workstream = herdr workspace labelled
-  `mu-<workstream>`, mu window = herdr tab, mu agent = herdr pane**.
-  herdr's own "session" is server-level (one socket) and is NOT the
-  workstream unit.
-
-  Two things the interface owns that were previously global:
-  **pane-id validation** (tmux `%15` vs herdr `w1:p1`, so no widened
-  regex and no scheme-prefixed DB ids) and the **identity fallback**
-  behind `mu task claim`. `TmuxError` now extends `MuxError`, so
-  `handle()` maps every backend's family to exit 5 through one
-  `instanceof`; its classify label changed from `tmux` to `mux`.
+- **`TmuxError` now extends `MuxError`**, so `handle()` maps every
+  backend's error family to exit 5 through one `instanceof`. Its
+  classify label changed from `tmux` to `mux`, and
+  `NoMultiplexerError` gets its own.
 
 - **The herdr backend** (`src/mux/herdr.ts`), verified against herdr
   0.8.0 / protocol 19. The locked mapping is **mu workstream = herdr
@@ -205,52 +203,15 @@ for the difference table and the known limits.
   focus or seen-marking verb, so mu's polling never clears the user's
   `done` badge.
 
-- **Mux detection grows a `HERDR_ENV` rung** above the `$TMUX` check.
-  herdr routinely runs a tmux server inside its panes, so both signals
-  can be live at once; `HERDR_ENV=1` is the narrower claim ("herdr
-  manages THIS pane") and wins. The comparison is exactly `= 1`, as
-  `herdr --skill` mandates — truthiness would misfire on a stale `0`.
-  `MU_MUX=herdr` selects the backend explicitly; tmux still wins a pure
-  availability tie as the incumbent.
-
-- **`MuxBackend`: the multiplexer is now a backend seam** (`src/mux/`).
-  Same shape as `src/vcs/` — `types.ts` (interface + `MuxError` /
-  `PaneNotFoundError` / `NoMultiplexerError`), `detect.ts` (the
-  `MU_MUX` → `$TMUX` → availability ladder, plus `activeMux()`
-  memoization and a `setMuxForTests` seam), `tmux.ts` (the existing
-  implementation, moved), and an `index.ts` dispatcher. `src/mux.ts` is
-  the public hub.
-
-  Two things the interface owns that were previously global: **pane-id
-  validation** (tmux `%15` vs herdr `w1:p1` — so no widened regex and
-  no scheme-prefixed DB ids) and the **identity fallback** behind
-  `mu task claim`.
-
-  `TmuxError` now extends `MuxError`, so `handle()` maps every
-  backend's error family to exit 5 through one `instanceof`. Its label
-  changed from `tmux` to `mux`, and `NoMultiplexerError` gets its own
-  label.
-
-  **No behaviour change.** tmux remains the only implementation and
-  every call site still reaches it through `src/tmux.ts`, now a
-  back-compat re-export (12 src modules and 47 test files import it
-  directly; churning them here would have made the diff unreviewable).
-  `MU_MUX` is therefore inert until `mux-callsite-migration` wires the
-  call sites through `activeMux()`.
-  Two herdr limits are documented rather than papered over: `paneTTY`
-  resolves `/proc/<shell_pid>/fd/0` because herdr reports a pid and
-  not a tty, making `mu agent kick` Linux-only on this backend; and
-  `herdr pane list` has no foreground-command field, so a pane's
-  command reads empty from a listing instead of being guessed.
-
 - **Mux detection**: `MU_MUX` → `HERDR_ENV=1` → `$TMUX` / `$TMUX_PANE`
   → availability → `NoMultiplexerError`. `HERDR_ENV` sits above the
   tmux rung because herdr routinely runs a tmux server inside its
   panes, so both signals can be live at once and `HERDR_ENV=1` is the
   narrower claim ("herdr manages THIS pane"). The comparison is
   exactly `= 1`, as `herdr --skill` mandates — truthiness would
-  misfire on a stale `0`. tmux still wins a pure availability tie as
-  the incumbent.
+  misfire on a stale `0`. `MU_MUX=<name>` selects a backend
+  explicitly and an unknown value throws rather than falling through;
+  tmux still wins a pure availability tie as the incumbent.
 
 ### Changed
 
@@ -320,6 +281,21 @@ for the difference table and the known limits.
   herdr's own CLI. And **pane-id shape belongs to the backend**, so
   validation lives on `MuxBackend` instead of a global regex or
   scheme-prefixed ids.
+
+### Fixed
+
+- **`killSession` and `listPanesInSession` threw when the tmux server
+  outlived its last session.** With zero sessions, tmux answers
+  `-t <name>` with `no current target` rather than `can't find
+  session`, and neither swallow-list matched that wording — so two
+  operations documented as idempotent threw instead. Reachable by any
+  user whose `~/.tmux.conf` sets `exit-empty off`, not just by the test
+  suite that surfaced it.
+
+- **`mu doctor`'s environment block misaligned on herdr.** The label
+  column was 17 wide against a 19-char `$HERDR_WORKSPACE_ID`, and
+  `$MU_SESSION` used a hardcoded pad that bypassed the constant
+  entirely. Colons now line up on both backends.
 
 ---
 

@@ -720,7 +720,7 @@ export function buildProgram(): Command {
   program
     .name("mu")
     .description(
-      "Persistent crew of AI agents in tmux panes coordinated through a built-in task DAG.",
+      "Persistent crew of AI agents in tmux or herdr panes coordinated through a built-in task DAG.",
     )
     .version(readPackageVersion())
     .helpOption("-h, --help")
