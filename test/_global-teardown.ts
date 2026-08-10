@@ -100,9 +100,34 @@ async function bootstrapPrivateTmuxServer(): Promise<void> {
   // ballooned 3s→48s before `-f /dev/null` was added. The user's
   // config has zero relevance to test correctness — the suite drives
   // tmux through the documented protocol, not through bound keys.
-  const r = await execa("tmux", ["-L", TEST_SOCKET, "-f", "/dev/null", "start-server"], {
-    reject: false,
-  });
+  //
+  // `set -s exit-empty off` in the SAME invocation is what keeps this
+  // server alive for the whole run, and it fixes a real flake
+  // (flake-tmux-server-exited). tmux's server-level `exit-empty` option
+  // defaults to ON: the server exits as soon as its last session is
+  // killed. Integration tests kill their session in afterEach, so at
+  // every test boundary the server is shutting down while the next
+  // test's `new-session` connects to the socket — the client attaches
+  // to a doomed server and gets `server exited unexpectedly` (exit 1).
+  // Measured: 17/200 raw-tmux new-sessions, and
+  // test/tmux.integration.test.ts failed 5/10 runs.
+  //
+  // With `exit-empty` off the server survives zero sessions, so the
+  // race window never opens. It MUST be spliced into the same command
+  // list as `start-server` (`;` is tmux's command separator): as a
+  // SECOND execa call it is useless, because the freshly-started empty
+  // server has already exited by then — that variant still failed
+  // 23/200 in a raw-tmux probe; the atomic one, 0/200.
+  //
+  // Cost: if teardown() never runs (SIGKILLed runner) an idle empty
+  // server lingers on the private socket instead of self-reaping. The
+  // socket name is per-run, so it can never be reused or contended;
+  // `tmux -L <socket> kill-server` clears it.
+  const r = await execa(
+    "tmux",
+    ["-L", TEST_SOCKET, "-f", "/dev/null", "start-server", ";", "set", "-s", "exit-empty", "off"],
+    { reject: false },
+  );
   if (r.exitCode !== 0) {
     // Don't crash the suite — fall back to the user's default socket
     // and rely on Layer 1+2 (unique names + sweep) for isolation.

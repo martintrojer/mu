@@ -277,6 +277,18 @@ describe("killSession", () => {
     await expect(killSession("foo")).resolves.toBeUndefined();
   });
 
+  it("succeeds idempotently when the server is up with zero sessions", async () => {
+    // tmux says "no current target" — not "can't find session" — when the
+    // server is running but has no sessions at all, because `-t <name>`
+    // has no session list to resolve against. Reachable whenever the
+    // server outlives its last session: the suite's private server
+    // (`exit-empty off`, test/_global-teardown.ts) and any user config
+    // that sets `exit-empty off`.
+    const { executor } = harness(() => fail("no current target"));
+    setTmuxExecutor(executor);
+    await expect(killSession("foo")).resolves.toBeUndefined();
+  });
+
   it("propagates other errors", async () => {
     const { executor } = harness(() => fail("server unreachable"));
     setTmuxExecutor(executor);
@@ -372,6 +384,13 @@ describe("listPanesInSession", () => {
   it("returns [] when tmux reports 'can't find window' for the session target (tmux quirk)", async () => {
     // Some tmux versions report the missing-session case with a 'window' wording.
     const { executor } = harness(() => fail("can't find window: mu-ghost"));
+    setTmuxExecutor(executor);
+    const { listPanesInSession } = await import("../src/tmux.js");
+    expect(await listPanesInSession("mu-ghost")).toEqual([]);
+  });
+
+  it("returns [] when the server is up with zero sessions ('no current target')", async () => {
+    const { executor } = harness(() => fail("no current target"));
     setTmuxExecutor(executor);
     const { listPanesInSession } = await import("../src/tmux.js");
     expect(await listPanesInSession("mu-ghost")).toEqual([]);

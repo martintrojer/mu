@@ -301,7 +301,7 @@ export async function newSessionWithPane(
 /**
  * Idempotent: succeeds even if the session is already gone.
  *
- * Three swallowed shapes:
+ * Four swallowed shapes:
  *   - "can't find session: <name>"  — session never existed.
  *   - "session not found"           — alternate phrasing on some tmux builds.
  *   - "no server running on <path>" — the tmux server itself has exited
@@ -310,12 +310,20 @@ export async function newSessionWithPane(
  *     quietly shuts the server down). Without this, killSession would
  *     throw on the very next idempotent call — only visible under
  *     Layer 3 of bug_test_suite_flake_leaks_isolation.
+ *   - "no current target"           — the server is UP but has zero
+ *     sessions, so `-t <name>` has no session list to resolve against
+ *     and tmux never gets as far as "can't find session". Reachable
+ *     whenever the server outlives its last session: the suite's
+ *     private server (`exit-empty off`, see test/_global-teardown.ts)
+ *     and any user whose ~/.tmux.conf sets `exit-empty off`. Same
+ *     meaning as "can't find session" for our purposes — the session
+ *     we were asked to kill is gone.
  */
 export async function killSession(name: string): Promise<void> {
   const result = await currentExecutor(["kill-session", "-t", name]);
   if (
     result.exitCode !== 0 &&
-    !/can't find session|session not found|no server running/i.test(result.stderr)
+    !/can't find session|session not found|no server running|no current target/i.test(result.stderr)
   ) {
     throw new TmuxError(
       ["kill-session", "-t", name],
@@ -391,8 +399,9 @@ export async function newWindow(opts: NewWindowOptions): Promise<string> {
  * Returns `[]` (not throws) when the session doesn't exist or has no
  * panes. tmux destroys a session as soon as its last pane closes, so the
  * "session was just here a moment ago" case is normal during reconcile.
- * tmux's error wording in this case varies ("can't find session" or
- * "can't find window"), so we match either.
+ * tmux's error wording in this case varies ("can't find session",
+ * "can't find window", or "no current target" when the server is up
+ * with zero sessions), so we match any of them.
  */
 export async function listPanesInSession(session: string): Promise<TmuxPane[]> {
   const args = [
@@ -405,7 +414,11 @@ export async function listPanesInSession(session: string): Promise<TmuxPane[]> {
   ];
   const result = await currentExecutor(args);
   if (result.exitCode !== 0) {
-    if (/can't find (session|window)|no server running|no sessions/i.test(result.stderr)) {
+    if (
+      /can't find (session|window)|no server running|no sessions|no current target/i.test(
+        result.stderr,
+      )
+    ) {
       return [];
     }
     throw new TmuxError(args, result.stderr, result.stdout, result.exitCode);
