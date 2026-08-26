@@ -10,6 +10,23 @@ breaking changes are called out under "Breaking" in each entry.
 
 ## [Unreleased]
 
+### Changed
+
+- **TypeScript 7 (the Go-native compiler) for typechecking.**
+  `npm run typecheck` drops from ~9s to ~0.6s. The upgrade is not a
+  plain version bump, because TS 7.0 ships **no programmatic compiler
+  API** — `ts.createProgram` and friends are gone, the package exports
+  two keys, and the API is deferred to 7.1. `tsup --dts` goes through
+  `rollup-plugin-dts`, which needs that API, so `typescript@7` alone
+  builds JS and then dies on declaration emit.
+
+  Resolved with the aliasing the TS team documents for exactly this
+  case: `@typescript/native` is TS 7 and provides the `tsc` binary,
+  while `typescript` resolves to `@typescript/typescript6` so library
+  consumers still get the JS API. The two bins do not collide (`tsc`
+  vs `tsc6`). Revertible to a single dependency once 7.1 ships its API
+  and `rollup-plugin-dts` adopts it.
+
 ### Fixed
 
 - **Log-only ops are no longer replayed, flushed, or projected

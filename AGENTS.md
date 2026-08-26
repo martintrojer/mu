@@ -202,6 +202,32 @@ npm run test:watch       # vitest in watch mode
 npm run test:watch:fast  # fast-tier watch mode
 ```
 
+#### Two TypeScript compilers, on purpose
+
+`tsc` is **TypeScript 7** (the Go-native compiler) and `tsc6` is the
+TypeScript 6 JS compiler. `package.json` aliases them:
+
+```json
+"@typescript/native": "npm:typescript@^7.0.2",
+"typescript": "npm:@typescript/typescript6@^6.0.2"
+```
+
+This looks backwards and is not. TS 7.0 ships **no programmatic
+compiler API** (`ts.createProgram` and friends return undefined; the
+package exports exactly two keys). It is deferred to 7.1. `tsup --dts`
+goes through `rollup-plugin-dts`, which needs that API, so a plain
+`typescript@7` install builds JS fine and then dies with
+`Cannot read properties of undefined (reading 'useCaseSensitiveFileNames')`.
+
+The alias resolves both needs at once: anything that `require`s
+`typescript` as a LIBRARY gets the 6.x JS API, while the `tsc` BINARY
+is the fast Go compiler (typecheck went ~9s → ~0.6s). The two bins do
+not collide, so no shim is needed.
+
+Revisit when 7.1 lands its new API and `rollup-plugin-dts` adopts it;
+at that point `typescript` can point at 7.x directly and
+`@typescript/native` disappears.
+
 Use `npm run test:fast` for the inner dev loop and concurrent worker
 checks; it is the concurrency-safe tier that avoids real tmux/VCS
 subprocess fixtures. The green gates still include `npm run test`
