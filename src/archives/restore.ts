@@ -22,6 +22,7 @@ import {
 } from "../archives.js";
 import type { Db } from "../db.js";
 import { nextHlc } from "../hlc.js";
+import { LOG_ONLY_INTENTS } from "../rebuild.js";
 import { isValidWorkstreamName } from "../workstream.js";
 
 export interface RestoreArchiveOptions {
@@ -150,7 +151,18 @@ export function restoreArchive(db: Db, opts: RestoreArchiveOptions): RestoreArch
     )
     .all(marker.hlc) as RawOpRow[];
 
-  const mine = rows.filter((r) => belongsTo(r.key, sourceWorkstream));
+  // Drop log-only ops whose ENTITY collides with a projectable one.
+  // `emitEvent` derives an op's entity from its intent prefix, so
+  // 'workstream.export' lands on entity='workstream' while carrying a
+  // PROSE payload; replaying it drives applyOp's JSON.parse into
+  // 'Unexpected token w'. `rebuild.ts` already excludes these by INTENT
+  // (§ LOG_ONLY_INTENTS) and restore has to make the same exclusion, or
+  // the two projections of one log disagree. Reachable in practice
+  // because destroy's pre-destroy auto-export writes exactly this op,
+  // and re-pinning after it puts the op BELOW the marker.
+  const mine = rows.filter(
+    (r) => belongsTo(r.key, sourceWorkstream) && !LOG_ONLY_INTENTS.has(r.intent ?? ""),
+  );
   const sourceDestroyed =
     (db.prepare("SELECT 1 AS x FROM workstreams WHERE name = ?").get(sourceWorkstream) as
       | { x: number }

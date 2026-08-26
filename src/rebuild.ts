@@ -164,7 +164,7 @@ const LOG_ONLY_ENTITIES = new Set(["message", "event", "broadcast", "marker"]);
  *  a log line". Any future LocalIntent whose prefix names a portable
  *  table needs an entry here; the test asserting no LocalIntent is
  *  projectable is what will tell you. */
-const LOG_ONLY_INTENTS = new Set(["workstream.export"]);
+export const LOG_ONLY_INTENTS = new Set(["workstream.export"]);
 
 /** Ops that `applyOp` knows how to project into a portable table. This
  *  is the intersection of "synced" and "has a table", which excludes

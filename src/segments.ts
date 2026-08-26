@@ -69,6 +69,7 @@ import { applyOp, type Op, OpEntityNotSyncedError, reprojectDeferredOps } from "
 import { type Db, SYNCED_ENTITIES } from "./db.js";
 import { locksDir, withFileLock } from "./file-lock.js";
 import { receiveHlc } from "./hlc.js";
+import { LOG_ONLY_INTENTS } from "./rebuild.js";
 
 /** Current segment line format. Bumped only on a breaking shape change;
  *  a reader that sees a version it does not know REFUSES the line rather
@@ -407,6 +408,18 @@ function flushLocked(db: Db, path: string, machineId: string): FlushResult {
 
   for (const row of rows) {
     if (!synced.has(row.entity)) {
+      skippedLocal += 1;
+      continue;
+    }
+    // Log-only ops whose ENTITY collides with a synced one. `emitEvent`
+    // derives an op's entity from its intent prefix, so 'workstream.export'
+    // lands on entity='workstream' — which IS synced — while carrying a
+    // PROSE payload. `encodeSegmentLine` embeds payload as RAW JSON, so
+    // flushing one writes a MALFORMED line; `readSegmentTail` then stops
+    // at it, resetting the watermark, and every later flush re-appends the
+    // whole tail (observed: a 2.7MB segment grown to 102MB, ops repeated
+    // 96x). Same exclusion rebuild.ts and archives/restore.ts make.
+    if (LOG_ONLY_INTENTS.has(row.intent ?? "")) {
       skippedLocal += 1;
       continue;
     }
