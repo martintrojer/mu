@@ -8,6 +8,66 @@ breaking changes are called out under "Breaking" in each entry.
 
 ---
 
+## [Unreleased]
+
+### Fixed
+
+- **Log-only ops are no longer replayed, flushed, or projected
+  (`workstream.export`).** `emitEvent` derives an op's entity from its
+  intent prefix, so `workstream.export` lands on `entity='workstream'`
+  — a synced, projectable entity — while carrying a PROSE payload
+  rather than JSON. `rebuild.ts` already excluded it by intent; two
+  other consumers did not, and each broke differently:
+
+  - `mu archive restore` crashed with `Unexpected token 'w'` whenever
+    the marker sat above a `workstream.export` op. Reachable on any
+    archive, because `workstream destroy` auto-exports and re-pinning
+    puts that op BELOW the new marker. Observed on a real DB: 8 of 10
+    archived workstreams refused to restore.
+  - `flushSegment` wrote a MALFORMED segment line for it, because
+    `encodeSegmentLine` embeds the payload as raw JSON. Worse, it
+    compounded: `readSegmentTail` stops at the first bad record to
+    recover its watermark, so the watermark rewound and every later
+    flush re-appended the whole tail. Observed in the wild: a 2.7 MB
+    segment grown to 102 MB, 221,627 lines holding 12,978 distinct
+    ops, some repeated 96 times. A corrupt segment is repaired by
+    deleting it and re-running `mu sync` — the ops log is canonical,
+    so the segment is rebuilt from it with no data at risk.
+
+  `LOG_ONLY_INTENTS` moved from private to exported so all three
+  consumers share one list rather than three copies drifting apart.
+
+- **`mu archive list` no longer blows past the terminal width.** One
+  label accumulates markers from many workstreams (cross-workstream
+  pinning is the point), so a dozen names joined into a ~150-char cell
+  and pushed the table to ~206 columns. The `workstreams` column now
+  takes a budget from the actual terminal width and overflows into
+  `+N more`, so the hidden count — the thing that tells you whether to
+  run `mu archive list <label>` — survives. `--json` still emits every
+  name, and the per-label view is unchanged. Same failure and same
+  remedy as the `path` column in `mu workspace list`
+  (`tables_truncate_long_cols_audit`), which this table was missed by.
+
+### Added
+
+- **`scripts/restore-pre1.0-archives.ts`** — carries pre-1.0 archives
+  into v9, which `scripts/migrate-to-1.0.ts` refuses to do. That
+  refusal rests on two true claims (a v9 archive is a marker pinning
+  the ops log; v8's `workstream destroy` deleted rows rather than
+  writing tombstones, so the ops to pin do not exist) and one
+  conclusion that does not follow: v8's `archived_tasks` /
+  `archived_edges` / `archived_notes` retained enough per row to
+  SYNTHESIZE those ops. The script mints them the same ops-not-rows
+  way the v8 importer does, then pins a marker above them.
+
+  Exact for a source workstream that no longer exists. For one that is
+  still live, a marker necessarily pins CURRENT state, so the script
+  compares archived rows against live ones field by field and REFUSES
+  unless they agree (`--allow-divergent` to override). Verified
+  end-to-end on a real DB: 680 tasks, 551 edges and 1376 notes
+  round-tripped through `mu archive export` with zero field
+  mismatches.
+
 ## [1.0.1] — 2026-08-10
 
 **mu now supports two multiplexers.** tmux was hardwired: ~382
