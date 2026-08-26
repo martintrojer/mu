@@ -97,7 +97,7 @@ export function inkColorForStatus(status: TaskStatus): InkColor {
  */
 const DEFAULT_TERMINAL_WIDTH = 100;
 
-function terminalWidth(): number {
+export function terminalWidth(): number {
   return process.stdout.columns ?? DEFAULT_TERMINAL_WIDTH;
 }
 

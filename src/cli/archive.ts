@@ -34,6 +34,7 @@ import {
 import type { Db } from "../db.js";
 import { muTable, type NextStep, pc, printNextSteps } from "../output.js";
 import { resolveActorIdentity } from "../tasks.js";
+import { terminalWidth, truncate } from "./format.js";
 
 // ─── add ──────────────────────────────────────────────────────────────
 
@@ -110,9 +111,33 @@ export function cmdArchiveList(db: Db, label: string | undefined, opts: { json?:
     printNextSteps(nextSteps);
     return;
   }
-  const table = muTable({ head: ["label", "workstreams", "markers", "last added"] });
+  // The workstreams column is the one that bites: one label accumulates
+  // markers from many workstreams (CROSS-WORKSTREAM is the point), so a
+  // dozen names join into a ~150-char cell and push the table past 200
+  // cols — unreadable in any terminal. Same failure and same remedy as
+  // the path column in `mu workspace list`
+  // (tables_truncate_long_cols_audit), which this table was missed by.
+  //
+  // Budget from the ACTUAL terminal minus the three fixed columns, so a
+  // wide terminal shows more rather than being capped at a guess.
+  const labelW = Math.max(5, ...archives.map((a) => a.label.length)) + 2;
+  const markersW = 9;
+  const lastAddedW = 22;
+  const padding = 8; // cli-table3 borders + per-cell padding
+  const wsBudget = Math.max(24, terminalWidth() - labelW - markersW - lastAddedW - padding);
+  const table = muTable({
+    head: ["label", "workstreams", "markers", "last added"],
+    colWidths: [null, wsBudget, null, null],
+  });
   for (const a of archives) {
-    table.push([a.label, a.workstreams.join(", "), String(a.markers.length), lastAddedDisplay(a)]);
+    // Pre-truncate so the ellipsis lands on a name boundary where it can,
+    // rather than mid-word; colWidths is the safety belt behind it.
+    table.push([
+      a.label,
+      truncateList(a.workstreams, wsBudget - 2),
+      String(a.markers.length),
+      lastAddedDisplay(a),
+    ]);
   }
   console.log(table.toString());
   printNextSteps(nextSteps);
@@ -120,6 +145,30 @@ export function cmdArchiveList(db: Db, label: string | undefined, opts: { json?:
 
 function withCounts(a: ArchiveSummary): ArchiveSummary & { markerCount: number } {
   return { ...a, markerCount: a.markers.length };
+}
+
+/** Join names to fit `max` columns, replacing the overflow with a
+ *  '+N more' count. Preferred over a blind character truncate because
+ *  the dropped information (HOW MANY are hidden) is exactly what the
+ *  operator needs to decide whether to run `mu archive list <label>`. */
+function truncateList(names: readonly string[], max: number): string {
+  const full = names.join(", ");
+  if (full.length <= max) return full;
+  const kept: string[] = [];
+  let used = 0;
+  for (let i = 0; i < names.length; i += 1) {
+    const name = names[i];
+    if (name === undefined) continue;
+    // Reserve room for the widest plausible suffix so adding it never
+    // re-overflows the budget we just fit inside.
+    const suffix = `, +${names.length - i} more`;
+    const cost = (kept.length === 0 ? 0 : 2) + name.length;
+    if (used + cost + suffix.length > max) break;
+    kept.push(name);
+    used += cost;
+  }
+  if (kept.length === 0) return truncate(full, max);
+  return `${kept.join(", ")}, +${names.length - kept.length} more`;
 }
 
 /** `lastAddedAt` is MAX(hlc) — additive needs no stored column — but an
