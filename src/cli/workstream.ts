@@ -1,15 +1,13 @@
-// mu — `mu workstream` verbs (init / list / destroy / export).
+// mu — `mu workstream` verbs (init / list / destroy).
 //
 // A workstream = one tmux session (`mu-<name>`) + every DB row tagged
 // with that name (agents / tasks / edges / notes / workspaces / logs).
 // `init` creates the session + DB row pair; `list` shows
 // every workstream on the machine; `destroy` is the symmetric inverse,
-// two-phase by default (dry-run; `--yes` commits); `export` renders a
-// read-only markdown bucket.
+// two-phase by default (dry-run; `--yes` commits).
 //
 // Extracted from src/cli.ts as part of refactor_split_large_src_files.
 
-import { join } from "node:path";
 import {
   emitJson,
   emitJsonCollection,
@@ -17,14 +15,13 @@ import {
   resolveWorkstream,
   UsageError,
 } from "../cli.js";
-import { type Db, defaultStateDir } from "../db.js";
+import type { Db } from "../db.js";
 import { activeMux } from "../mux.js";
 import { muTable, type NextStep, pc, printNextSteps } from "../output.js";
 import {
   assertWorkstreamInitable,
   destroyWorkstream,
   ensureWorkstream,
-  exportWorkstream,
   listEmptyWorkstreams,
   listWorkstreams,
   summarizeWorkstream,
@@ -116,68 +113,12 @@ export async function cmdWorkstreamList(db: Db, opts: { json?: boolean } = {}): 
   console.log(formatWorkstreamsTable(summaries));
 }
 
-export async function cmdWorkstreamExport(
-  db: Db,
-  opts: { workstream?: string; out?: string; json?: boolean },
-): Promise<void> {
-  const workstream = await resolveWorkstream(opts.workstream);
-  const result = exportWorkstream(db, { workstream, outDir: opts.out });
-  const nextSteps: NextStep[] = [
-    { intent: "Browse the bucket", command: `ls ${result.outDir}` },
-    {
-      intent: "Append another workstream to the same bucket (additive)",
-      command: `mu workstream export -w <other-ws> --out ${result.outDir}`,
-    },
-    {
-      intent: "Track in git",
-      command: `(cd ${result.outDir} && git init && git add . && git commit -m '${workstream} export')`,
-    },
-  ];
-  if (opts.json) {
-    emitJson({
-      workstreamName: workstream,
-      outDir: result.outDir,
-      bucketLayoutVersion: result.manifest.bucketVersion,
-      written: result.written,
-      unchanged: result.unchanged,
-      preserved: result.preserved,
-      manifestPath: result.manifestPath,
-      tasks: result.source.tasks,
-      sourceCount: Object.keys(result.manifest.sources).length,
-      nextSteps,
-    });
-    return;
-  }
-  console.log(
-    `Exported ${pc.bold(workstream)} → ${pc.bold(result.outDir)} ${pc.dim(
-      `(written=${result.written}, unchanged=${result.unchanged}, preserved=${result.preserved}; bucket sources=${Object.keys(result.manifest.sources).length})`,
-    )}`,
-  );
-  printNextSteps(nextSteps);
-}
-
-/** Default auto-export path used by `mu workstream destroy`'s
- *  pre-destroy hook. Lives under the state directory so it survives
- *  the destroy itself; the timestamp is suffixed so back-to-back
- *  destroy/recreate cycles don't clobber prior exports. */
-function autoExportDir(workstream: string): string {
-  const ts = new Date().toISOString().replace(/[:.]/g, "-");
-  return join(defaultStateDir(), "exports", `${workstream}-${ts}`);
-}
-
-function destroyConfirmCommand(workstream: string, opts: { export?: boolean }): string {
-  const parts = [`mu workstream destroy -w ${workstream} --yes`];
-  if (opts.export === false) parts.push("--no-export");
-  return parts.join(" ");
-}
-
 export async function cmdDestroy(
   db: Db,
   opts: {
     workstream?: string;
     yes?: boolean;
     json?: boolean;
-    export?: boolean;
     empty?: boolean;
   },
 ): Promise<void> {
@@ -216,11 +157,10 @@ export async function cmdDestroy(
   }
 
   if (!opts.yes) {
-    const confirmCommand = destroyConfirmCommand(workstream, opts);
     const dryRunNextSteps: NextStep[] = [
       {
         intent: "Confirm and actually destroy",
-        command: confirmCommand,
+        command: `mu workstream destroy -w ${workstream} --yes`,
       },
     ];
     if (opts.json) {
@@ -250,40 +190,12 @@ export async function cmdDestroy(
     return;
   }
 
-  // Auto-export to the state dir BEFORE killing tmux / dropping rows.
-  // Opt-out via --no-export. Per the originating design note: a failed
-  // export must NOT block the destroy (warn + proceed) — operators
-  // running destroy in a CI cleanup script should not be silently
-  // gated by a transient disk error in an artifact dir.
-  const autoExport = opts.export !== false;
-  let autoExportOutDir: string | undefined;
-  let autoExportError: string | undefined;
-  if (autoExport) {
-    const dir = autoExportDir(workstream);
-    try {
-      const exp = exportWorkstream(db, { workstream, outDir: dir });
-      autoExportOutDir = exp.outDir;
-    } catch (err) {
-      autoExportError = err instanceof Error ? err.message : String(err);
-      if (!opts.json) {
-        console.log(
-          pc.yellow(
-            `WARNING: auto-export to ${dir} failed: ${autoExportError}; proceeding with destroy anyway`,
-          ),
-        );
-      }
-    }
-  }
-
   const result = await destroyWorkstream(db, { workstream });
   if (opts.json) {
     emitJson({
       workstreamName: workstream,
       destroyed: true,
       ...result,
-      autoExport: autoExport
-        ? { outDir: autoExportOutDir, error: autoExportError }
-        : { skipped: true },
     });
     return;
   }
@@ -300,9 +212,6 @@ export async function cmdDestroy(
   console.log(
     `Destroyed ${pc.bold(workstream)}: killed tmux=${result.killedTmux}, agents=${result.deletedAgents}, tasks=${result.deletedTasks}, edges=${result.deletedEdges}, notes=${result.deletedNotes}, workspaces=${result.freedWorkspaces}/${summary.workspaceCount}${result.alreadyGoneWorkspaces > 0 ? ` (${result.alreadyGoneWorkspaces} already gone on disk)` : ""}`,
   );
-  if (autoExportOutDir !== undefined) {
-    console.log(pc.dim(`Pre-destroy export: ${autoExportOutDir}`));
-  }
   if (result.failedWorkspaces.length > 0) {
     console.log("");
     console.log(
@@ -497,7 +406,7 @@ import { handle, JSON_OPT, WORKSTREAM_OPT } from "../cli.js";
 /** Fold an optional positional workstream name into the opts bag.
  *
  *  dogfood-destroy-w-flag: `workstream init` takes its target
- *  POSITIONALLY while `destroy` / `export` only took `-w`, so
+ *  POSITIONALLY while `destroy` only took `-w`, so
  *  `mu workstream destroy v2 --yes` printed help ("too many
  *  arguments") instead of destroying. The positional is now an
  *  additive ALIAS for -w on both verbs; -w keeps working unchanged.
@@ -547,7 +456,6 @@ export function wireWorkstreamCommands(program: Command): void {
     )
     .option(...WORKSTREAM_OPT)
     .option("-y, --yes", "actually destroy (without this flag, prints a dry-run summary)")
-    .option("--no-export", "skip the pre-destroy markdown export to <state-dir>/exports/<ws>-<ts>/")
     .option(
       "--empty",
       "sweep every empty workstream (zero tasks, agents, vcs_workspaces); mutually exclusive with -w",
@@ -558,31 +466,10 @@ export function wireWorkstreamCommands(program: Command): void {
         workstream?: string;
         yes?: boolean;
         json?: boolean;
-        export?: boolean;
         empty?: boolean;
       };
       return handle(
         (db) => cmdDestroy(db, withPositionalWorkstream(opts, name)),
-        this as Command,
-      )();
-    });
-
-  workstream
-    .command("export [name]")
-    .description(
-      "Render a workstream's task graph + notes to a bucket directory of markdown. The source workstream may be given positionally (matching `workstream init <name>`) or via -w. Bucket layout: <out>/README.md + INDEX.md + manifest.json (bucketVersion 2) + <ws>/{README.md,INDEX.md,tasks/<id>.md}. Idempotent + additive: re-export refreshes only changed task files; passing -w with a different workstream into the same --out appends a sibling source-ws subdir; deleted tasks are preserved with a banner. Pre-0.3 export dirs are not migrated in place.",
-    )
-    .option(...WORKSTREAM_OPT)
-    .option("--out <dir>", "output directory (the bucket; defaults to ./<workstream>/)")
-    .option(...JSON_OPT)
-    .action(function (name: string | undefined) {
-      const opts = (this as Command).opts() as {
-        workstream?: string;
-        out?: string;
-        json?: boolean;
-      };
-      return handle(
-        (db) => cmdWorkstreamExport(db, withPositionalWorkstream(opts, name)),
         this as Command,
       )();
     });

@@ -199,8 +199,8 @@ function knownFlag(cmd: Command, flag: string): boolean {
   for (let c: Command | null = cmd; c; c = c.parent) {
     for (const opt of c.options) {
       if (opt.short === name || opt.long === name) return true;
-      // Commander records `--no-export` as long `--no-export`; also
-      // accept the positive form a doc might write.
+      // Commander records a negated option (`--no-foo`) under that long
+      // name; also accept the positive form a doc might write.
       if (opt.long?.startsWith("--no-") && `--${opt.long.slice(5)}` === name) {
         return true;
       }

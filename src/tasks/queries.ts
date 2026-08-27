@@ -176,8 +176,8 @@ export function listRecentClosed(db: Db, workstream: string, limit = 5): TaskRow
 
 /** Optional filter knobs for `listNotes`. Default-everything-undefined
  *  preserves the historical "return every note, oldest-first" shape so
- *  every existing caller (cmdTaskShow's notes block, exporting.ts's
- *  bucket renderer, agents.test.ts) keeps working unchanged.
+ *  every existing caller (cmdTaskShow's notes block, agents.test.ts)
+ *  keeps working unchanged.
  *
  *  Filters compose multiplicatively when both apply (`since` AND
  *  `tail`): the timestamp filter is applied first, then `tail` slices

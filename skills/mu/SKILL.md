@@ -251,8 +251,7 @@ git cherry-pick "$sha" && npm test
 
 - **Workstream:** `init`, `list`, `destroy` (dry-run by default,
   `--yes` commits; writes TOMBSTONE ops so history survives and
-  `mu undo <group> --yes` reverses the row deletions), `export`
-  (read-only markdown bucket for humans/git/docs).
+  `mu undo <group> --yes` reverses the row deletions).
 - **Agents:** `spawn` (`--workspace`, `--role read-only`, `--command`),
   `send`, `read`, `show`, `list`, `close`, `free`, `kick`,
   `adopt <pane-id|title>` for orphan panes. Four worth knowing:

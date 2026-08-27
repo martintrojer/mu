@@ -283,9 +283,7 @@ describe("the op formatter", () => {
     const { createWorkspace, freeWorkspace, recreateWorkspace, refreshWorkspace } = await import(
       "../src/workspace.js"
     );
-    const { destroyWorkstream, ensureWorkstream, exportWorkstream } = await import(
-      "../src/workstream.js"
-    );
+    const { destroyWorkstream, ensureWorkstream } = await import("../src/workstream.js");
     const { freshMockState, mockTmux } = await import("./_verbs-mock.js");
 
     const tempDir = mkdtempSync(join(tmpdir(), "mu-state-render-events-"));
@@ -487,9 +485,6 @@ describe("the op formatter", () => {
         }),
       );
 
-      await captureNewEvents(() =>
-        exportWorkstream(db, { workstream: "events", outDir: join(tempDir, "bucket") }),
-      );
       ensureWorkstream(db, "doomed");
       await captureNewEvents(async () => {
         setTmuxExecutor(async (args) => {
@@ -504,8 +499,8 @@ describe("the op formatter", () => {
       // workstream.destroy prose emits are GONE — each duplicated a
       // capture-trigger op that already had a real intent and key. What
       // survives is exactly the set no trigger can see: `agents` and
-      // `vcs_workspaces` are machine-local, `agent stalled` mutates
-      // nothing, and `workstream export` writes files.
+      // `vcs_workspaces` are machine-local, and `agent stalled` mutates
+      // nothing.
       const expected = [
         "agent adopt",
         "agent close",
@@ -516,7 +511,6 @@ describe("the op formatter", () => {
         "workspace free",
         "workspace recreate",
         "workspace refresh",
-        "workstream export",
       ];
       expect([...captured.keys()].sort()).toEqual(expected.sort());
       // Every verb the session produced must be one the formatter

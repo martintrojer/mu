@@ -450,7 +450,6 @@ export function latestSeq(db: Db, workstream?: string): number {
  *                trigger and never will be.
  *   workspace.*  create / free / refresh / recreate — `vcs_workspaces`
  *                is machine-local (absolute paths).
- *   workstream.export  writes FILES, mutating no table at all.
  *   agent.stall  a pure observation; nothing is mutated.
  *
  * `intent` is REQUIRED (and typed), not optional, because the whole
@@ -488,8 +487,7 @@ export type LocalIntent =
   | "workspace.create"
   | "workspace.free"
   | "workspace.refresh"
-  | "workspace.recreate"
-  | "workstream.export";
+  | "workspace.recreate";
 
 /** Entity for a local intent: the token before the dot. Keeps
  *  `entity`/`intent` consistent by construction instead of asking each

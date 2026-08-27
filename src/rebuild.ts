@@ -149,27 +149,15 @@ const UNREBUILDABLE_TABLES = ["agents", "vcs_workspaces"] as const;
  *  applyOp, which would reject the log kinds as non-synced. */
 const LOG_ONLY_ENTITIES = new Set(["message", "event", "broadcast"]);
 
-/** Log-only ops whose ENTITY collides with a projectable one, so the
- *  entity alone cannot classify them. `emitEvent` derives an op's entity
- *  from its intent prefix (v2 R7's `entityForIntent`), and
- *  'workstream.export' therefore lands on entity='workstream' — which IS
- *  projectable — while carrying a PROSE payload rather than a JSON
- *  object. Projecting it drove `applyOp`'s `JSON.parse` into
- *  'Unexpected token w', crashing `mu doctor --deep` on any DB whose
- *  workstream had ever been exported (the pre-destroy auto-export means
- *  every destroy produced one).
- *
- *  Keyed on INTENT, not entity, because the intent is what says "this is
- *  a log line". Any future LocalIntent whose prefix names a portable
- *  table needs an entry here; the test asserting no LocalIntent is
- *  projectable is what will tell you. */
-export const LOG_ONLY_INTENTS = new Set(["workstream.export"]);
-
 /** Ops that `applyOp` knows how to project into a portable table. This
  *  is the intersection of "synced" and "has a table", which excludes
- *  'message' even though it is in SYNCED_ENTITIES. */
-function isProjectable(entity: string, intent: string | null): boolean {
-  if (intent !== null && LOG_ONLY_INTENTS.has(intent)) return false;
+ *  'message' even though it is in SYNCED_ENTITIES.
+ *
+ *  Every intent `emitEvent` writes is machine-local (`agent.*` /
+ *  `workspace.*`), and `entityForIntent` derives the entity from the
+ *  intent prefix, so none of them can name a synced entity. That is why
+ *  the entity alone is a sufficient classifier here. */
+function isProjectable(entity: string): boolean {
   if (LOG_ONLY_ENTITIES.has(entity)) return false;
   return (SYNCED_ENTITIES as readonly string[]).includes(entity);
 }
@@ -361,7 +349,7 @@ export function rebuildInto(source: Db, opts: RebuildOptions): RebuildReport {
             createdAt: row.created_at,
           });
 
-          if (!isProjectable(row.entity, row.intent)) {
+          if (!isProjectable(row.entity)) {
             logOnlyByEntity[row.entity] = (logOnlyByEntity[row.entity] ?? 0) + 1;
             continue;
           }

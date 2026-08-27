@@ -229,10 +229,9 @@ For disaster recovery, `mu rebuild <file>` replays the whole ops log
 into a fresh DB and prints the swap command; `mu undo <group>` reverts
 one past action by emitting inverse ops.
 
-For humans / git / docs, `mu workstream export` renders a workstream
-as Markdown: per-task `.md` files plus an `INDEX.md`, suitable for
-committing, reviewing, or pasting. Bucket exports are read-only
-artifacts; the lossless recovery path is `mu undo <group> --yes`.
+For a safety copy before anything destructive, `mu db backup <file>`
+writes a `VACUUM INTO` copy of the whole DB. To read the graph out for
+review or grep, every verb takes `--json`.
 
 ---
 

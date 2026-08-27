@@ -123,16 +123,6 @@ export {
   formatDriftRecord,
 } from "./drift.js";
 export {
-  type ExportManifest,
-  type ExportSource,
-  type ExportSourceManifest,
-  type ExportTaskEntry,
-  exportSourceForWorkstream,
-  type RenderBucketInput,
-  type RenderBucketResult,
-  renderToBucket,
-} from "./exporting.js";
-export {
   type FileLockOptions,
   locksDir,
   readFileLockMeta,
@@ -475,10 +465,7 @@ export {
 export {
   type DestroyResult,
   destroyWorkstream,
-  type ExportResult,
-  type ExportWorkstreamOptions,
   ensureWorkstream,
-  exportWorkstream,
   isValidWorkstreamName,
   listWorkstreams,
   summarizeWorkstream,

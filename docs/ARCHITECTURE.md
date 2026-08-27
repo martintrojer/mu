@@ -626,9 +626,8 @@ separately below.
 | `src/hlc.ts`          | The **HLC** (VOCABULARY § HLC), serialized as sortable TEXT `<wall_ms:15>.<counter:6>.<machine_id>`. `nextHlc` / `receiveHlc` / `compareHlc` / `parseHlc` / `formatHlc`. Clock state lives in `machine_identity`. |
 | `src/capture.ts`      | **Op capture**: builds the triggers that record every write to a portable table as an op in the same transaction. |
 | `src/apply.ts`        | **The apply path** — capture's counterpart: given one op, local or from a peer, make the tables reflect it. Also owns `reprojectDeferredOps` ([§ ambient sync hook](#the-ambient-sync-hook)). |
-| `src/exporting.ts`    | Bucket renderer for `mu workstream export`: per-task markdown + `manifest.json` (`bucketVersion: 2`), idempotent via per-file sha256, deleted-task preservation banner. Read-only artifacts, not a round-trip substrate. |
 | `src/undo.ts` + `src/cli/undo.ts` | **Undo as inverse ops**: inverses for one `group_id`, derived from log provenance, refusing a superseded group (exit 4; `--force` overrides). Bare form lists undoable groups (`-n` widens), a prefix previews, `--yes` applies. |
-| `src/parked.ts`       | Read-only "presumed parked on another machine" heuristic behind `mu workstream list`'s `parked` column and the TUI tab strip's dim marker. **Effectively dormant**: it keys on `workstream.export`, which rarely happens. |
+| `src/parked.ts`       | Read-only "presumed parked on another machine" heuristic behind `mu workstream list`'s `parked` column and the TUI tab strip's dim marker. **Dormant**: it keys on an export marker intent that no in-tree code path emits any more, so it reports `parked: false` until re-grounded on peer watermarks. |
 | `src/project-root.ts` | `detectProjectRoot` — the launch-cwd ladder bare `mu` uses to guess which workstream to focus. Pure filesystem walk; no DB. |
 | `src/rebuild.ts` + `src/cli/rebuild.ts` | **Rebuild** — disaster recovery: `rebuildInto` replays the whole log into a NEW DB file via `applyOp`. The verb renders the report: counts, `--json`, an `mv`-swap `Next:` step, a warning that `agents` / `vcs_workspaces` are not reconstructible. |
 | `src/drift.ts`        | **Drift detection**, two tiers: `checkDrift` (`mu doctor --deep`) rebuilds into a temp DB and diffs field-by-field; `checkCheapDriftInvariant` (the default) asserts every live row has ≥1 op naming its key. Plus `driftRemediation`. |
@@ -649,7 +648,7 @@ separately below.
 | `src/tasks/*.ts`      | Task-graph internals: `core.ts` (row shapes, id resolution), `id.ts`, `queries.ts` (reads), `edit.ts`, `edges.ts` (+ cycle check), `status.ts` (TaskStatus), `sort.ts`, `claim.ts` (atomic CAS), `lifecycle.ts` (+ cascade), `wait.ts`, `errors.ts`. |
 | `src/tracks.ts`       | Parallel-tracks union-find with diamond merge                                             |
 | `src/staleness.ts`    | `WORKSPACE_STALE_THRESHOLD = 10` and the pure `isWorkspaceStale` predicate, shared by static state, the TUI Workspaces card, and dispatch-time checks. |
-| `src/workstream.ts`   | ensureWorkstream / list / summarize / destroy / export (thin wrapper around the bucket renderer) |
+| `src/workstream.ts`   | ensureWorkstream / list / summarize / destroy |
 | `src/logs.ts`         | Typed READER over `ops` (`listLogs` / `latestSeq`), plus the write paths triggers cannot cover: `appendLog` (operator prose) and `emitEvent` (changes mutating no portable table — `agent.*`, `workspace.*`), under a typed `LocalIntent`. |
 | `src/log-render.ts`   | **The ONE op → prose formatter.** `renderOp` maps an intent (+ key + payload fields) to `{verb, subject, detail}`; plus `renderOpLine`, `opSubject`, `parseOpKey`. Pure and colour-free, so CLI and TUI share one phrasing. |
 | `src/vcs/*.ts`        | One backend per file (`git.ts`, `jj.ts`, `sl.ts`, `none.ts`) plus `types.ts` (the `VcsBackend` interface), `helpers.ts`, and `index.ts` (detection precedence `jj` → `sl` → `git` → none; `backendByName`). |

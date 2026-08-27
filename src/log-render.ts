@@ -178,7 +178,6 @@ const VERBS: Record<KnownIntent, string> = {
   "workspace.free": "workspace free",
   "workspace.refresh": "workspace refresh",
   "workspace.recreate": "workspace recreate",
-  "workstream.export": "workstream export",
 };
 
 /** Every intent this formatter knows, derived from the verb table so
@@ -344,8 +343,7 @@ function renderKnown(row: RenderableOp, intent: KnownIntent): RenderedOp {
     case "workspace.create":
     case "workspace.free":
     case "workspace.refresh":
-    case "workspace.recreate":
-    case "workstream.export": {
+    case "workspace.recreate": {
       const verb = VERBS[intent];
       // These payloads are prose by construction (emitEvent writes them).
       // Guard anyway: a JSON payload here would otherwise be dumped raw

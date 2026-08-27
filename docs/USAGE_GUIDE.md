@@ -624,7 +624,6 @@ IS the primary entity, so it may be positional:
 mu workstream init  v2                 # positional
 mu workstream destroy v2 --yes         # positional (aliases -w)
 mu workstream destroy -w v2 --yes      # -w still works
-mu workstream export v2 --out ./bucket # positional (aliases -w)
 ```
 
 Passing both a positional and a disagreeing `-w` is a usage error
@@ -2016,81 +2015,29 @@ Or nuke the entire DB:
 rm ~/.local/state/mu/mu.db                           # next mu invocation re-creates an empty schema
 ```
 
-### Preserve the conversation as markdown before destroying
+### Before destroying a workstream
 
 A workstream's task graph + notes IS the project memory.
-`mu workstream destroy` removes the live rows (the ops log keeps them,
-but only `mu undo` reads them back). For code
-review, handoff, git-checked-in artifacts, or `grep`, render the
-workstream as markdown first.
+`mu workstream destroy` removes the live rows; the ops log keeps them,
+and `mu undo <group> --yes` reverses the row deletions.
 
-Exports use a **bucket** layout: the `--out` directory is a
-multi-source bucket whose top-level contains a bucket-wide
-README/INDEX/manifest, and one subdirectory per source workstream:
-
-```
-<bucket>/
-  README.md           # bucket-level summary (every source-ws + dates + totals)
-  INDEX.md            # union of all task tables; first column = source-ws
-  manifest.json       # bucketVersion: 2, manifest_version: 2, per-source-ws task summaries + sha256s
-  <source-ws>/
-    README.md         # per-source-ws (counts)
-    INDEX.md          # per-source-ws (table of every task)
-    tasks/<id>.md     # one .md per task; YAML frontmatter + notes
-```
-
-Bucket exports are **additive**: `mu workstream export -w X --out
-<bucket>` creates the bucket scaffolding plus `X/` on first use, and a
-follow-up call with `-w Y --out <same-bucket>` appends a sibling `Y/`
-without touching `X/`. The top-level `INDEX.md` is the union from
-`manifest.sources`, so a single-workstream refresh does not drop
-siblings. Re-running with the same `-w` is sha256-idempotent: only
-changed task files are rewritten (mtime preserved on identical files),
-and tasks deleted from the DB STAY on disk with a
-`> **Deleted from DB on <ts>**` banner so you never lose context that
-may already be git-blamed.
-
-```bash
-# One-shot dump (bucket happens to contain just one source-ws)
-mu workstream export -w auth-refactor                         # → ./auth-refactor/
-mu workstream export -w auth-refactor --out ~/notes/auth/     # explicit dir
-
-# Additive accumulation across multiple workstreams in one bucket
-mu workstream export -w mufeedback     --out exports/mu       # creates exports/mu/mufeedback/
-mu workstream export -w roadmap-v0-2   --out exports/mu       # adds exports/mu/roadmap-v0-2/
-mu workstream export -w mufeedback-v03 --out exports/mu       # adds exports/mu/mufeedback-v03/
-```
-
-`mu workstream destroy --yes` auto-runs an export to
-`<state-dir>/exports/<workstream>-<timestamp>/` BEFORE killing the
-tmux session and dropping the rows, so the conversation survives
-even if you forgot. Pass `--no-export` to opt out.
-
-```bash
-(cd ~/notes/auth && git init && git add . && git commit -m 'auth-refactor snapshot')
-```
-
-If `--out` points at a directory whose `manifest.json` predates the
-bucket layout (no `bucketVersion`, top-level `workstream` field), the
-export refuses: `rm -rf <dir>` and re-run, or pick a different `--out`.
-
-Markdown only by design — no HTML/PDF, no embedded VCS, no
-cross-workstream merge. Operators can pandoc / `git init`
-themselves.
-
-### Bucket exports are read-only artifacts
-
-Bucket exports (`mu workstream export`) are **read-only** artifacts for
-humans / git / docs — good for grep, code review and handoff, but not a
-DB round-trip path.
-
-Use the typed surfaces for recovery and movement:
+There is no markdown export. Use the typed surfaces instead:
 
 | Need | Verb |
 | ---- | ---- |
+| A safety copy before a destructive change | `mu db backup <file>` (`VACUUM INTO`; never overwrites) |
+| Reverse a destroy you regret | `mu undo <group> --yes` |
 | Laptop ↔ devserver handoff | Ambient **sync** — set `MU_SYNC_DIR` and every command carries it (§ 15.6) |
 | Peer status / a torn segment | `mu sync`, `mu sync --repair <peer>` |
 | Disaster recovery from the ops log | `mu rebuild <file>` |
+
+Anything else — reading the graph out for grep, review or a git-checked-in
+artifact — goes through `--json` and whatever renderer you prefer:
+
+```bash
+mu task list -w auth-refactor --json
+mu task notes <id> -w auth-refactor --json
+```
 
 ---
 

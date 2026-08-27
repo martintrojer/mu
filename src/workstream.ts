@@ -15,15 +15,8 @@
 // non-default name) work without env-var gymnastics.
 
 import { existsSync, readdirSync, rmdirSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { type Db, defaultStateDir } from "./db.js";
-import {
-  type ExportManifest,
-  type ExportSourceManifest,
-  exportSourceForWorkstream,
-  renderToBucket,
-} from "./exporting.js";
-import { emitEvent } from "./logs.js";
 import { activeMux } from "./mux.js";
 import { withOpContext } from "./op-context.js";
 import type { HasNextSteps, NextStep } from "./output.js";
@@ -259,8 +252,9 @@ export interface WorkstreamSummary {
   registered: boolean;
   /** "Presumed parked on another machine" derived signal. Present
    *  iff `parkedStatus(db, name)` reports `parked: true` (most recent
-   *  agent_logs row is a `db export` event, no alive agents, no
-   *  IN_PROGRESS tasks, threshold elapsed). Consumed by
+   *  op is an export marker, no alive agents, no
+   *  IN_PROGRESS tasks, threshold elapsed). Dormant in practice — see
+   *  src/parked.ts for why nothing emits that marker. Consumed by
    *  `mu workstream list` and the TUI tab strip / workstreams card.
    *  See src/parked.ts. */
   parked?: { sinceDays: number };
@@ -642,94 +636,4 @@ function countEdges(db: Db, workstream: string): number {
     )
     .get(workstream) as { n: number };
   return row.n;
-}
-
-// ─── exportWorkstream ──────────────────────────────────────────────────
-//
-// Thin sugar over `renderToBucket` (src/exporting.ts): one live
-// workstream → one ExportSource → bucket render. The renderer holds
-// every byte of layout knowledge; this wrapper just adapts the SDK
-// reads (listTasks / getTaskEdges / listNotes / latestSeq) and
-// emits the workstream-flavoured event.
-//
-// The on-disk shape is the v0.3 BUCKET layout (see src/exporting.ts):
-//
-//   <outDir>/
-//     README.md / INDEX.md / manifest.json    # bucket-level
-//     <workstream>/
-//       README.md / INDEX.md / tasks/<id>.md  # per-source-ws
-//
-// Re-export against the same outDir is additive: a different `-w`
-// adds a sibling subdir without touching the existing one. A re-run
-// with the same `-w` refreshes that subdir (sha256 short-circuit).
-//
-// Anti-features (preserved from the originating design note):
-//   - re-import: out of scope
-//   - HTML/PDF: markdown-only
-//   - embedded VCS: caller can `git init && git add . && git commit`
-//   - cross-workstream merge: source-ws subdirs stay separate
-
-export interface ExportWorkstreamOptions {
-  workstream: string;
-  /** Output directory (the bucket). Defaults to `./<workstream>/`
-   *  in the cwd — i.e. the bucket and its single source-ws subdir
-   *  share a name. */
-  outDir?: string;
-}
-
-export interface ExportResult {
-  outDir: string;
-  /** Per-task files rewritten this call. */
-  written: number;
-  /** Per-task files sha256-skipped this call. */
-  unchanged: number;
-  /** Tasks present in a prior manifest that are no longer in the DB.
-   *  Their .md stays on disk; a banner is added once. */
-  preserved: number;
-  manifestPath: string;
-  manifest: ExportManifest;
-  /** Per-source-ws manifest entry for this workstream — convenience
-   *  for callers who only want one source's view. */
-  source: ExportSourceManifest;
-}
-
-/**
- * Export one live workstream to a bucket directory. Idempotent +
- * additive: re-exporting the same workstream is sha256-skipped,
- * exporting a different workstream into the same bucket appends a
- * sibling subdir.
- *
- */
-export function exportWorkstream(db: Db, opts: ExportWorkstreamOptions): ExportResult {
-  const outDir = resolve(opts.outDir ?? join(process.cwd(), opts.workstream));
-  const source = exportSourceForWorkstream(db, opts.workstream);
-  const result = renderToBucket({
-    sources: [source],
-    bucketLabel: null,
-    outDir,
-  });
-  const sourceManifest = result.manifest.sources[opts.workstream];
-  if (!sourceManifest) {
-    // Defensive: renderToBucket always inserts a manifest entry per
-    // source it received. If this ever fires the renderer regressed.
-    throw new Error(
-      `exportWorkstream: renderer did not write a manifest entry for ${opts.workstream}`,
-    );
-  }
-  // Writes FILES to a bucket; mutates no table, so no trigger sees it.
-  emitEvent(
-    db,
-    opts.workstream,
-    "workstream.export",
-    `workstream export ${opts.workstream} (out=${result.outDir}, tasks=${source.tasks.length}, written=${result.written}, unchanged=${result.unchanged}, preserved=${result.preserved})`,
-  );
-  return {
-    outDir: result.outDir,
-    written: result.written,
-    unchanged: result.unchanged,
-    preserved: result.preserved,
-    manifestPath: result.manifestPath,
-    manifest: result.manifest,
-    source: sourceManifest,
-  };
 }

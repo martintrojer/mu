@@ -219,7 +219,7 @@ describe("fleet hazards", () => {
       const text = (hazard.remediation ?? []).join("\n");
       expect(text).toContain("APFS");
       // A rename path, since there is no in-place rename verb.
-      expect(text).toContain("mu workstream export");
+      expect(text).toContain("mu workstream init");
     });
 
     it("detects three-way collisions as one group", () => {

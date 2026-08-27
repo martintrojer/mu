@@ -73,7 +73,9 @@ breaking changes are called out under "Breaking" in each entry.
     so the segment is rebuilt from it with no data at risk.
 
   `LOG_ONLY_INTENTS` moved from private to exported so all three
-  consumers share one list rather than three copies drifting apart.
+  consumers shared one list rather than three copies drifting apart.
+  The list is now gone along with its only member — see the
+  `mu workstream export` removal below.
 
 - **`mu archive list` no longer blows past the terminal width.** One
   label accumulates markers from many workstreams (cross-workstream
@@ -87,6 +89,46 @@ breaking changes are called out under "Breaking" in each entry.
   (`tables_truncate_long_cols_audit`), which this table was missed by.
 
 ### Removed
+
+- **`mu workstream export` deleted, along with the markdown bucket
+  renderer (surface-audit).** The read-only markdown artifact was a
+  second, lossy way to get data out of mu, and it paid for itself in
+  complexity rather than use: a bucket layout with its own version
+  discriminator, a manifest schema with its own migration path,
+  per-file sha256 idempotency, and a deleted-task preservation banner
+  — all for output nothing could read back in. `src/exporting.ts`
+  (~600 LOC) and `exportWorkstream` are gone, as are the
+  `ExportManifest` / `ExportSource` / `ExportTaskEntry` /
+  `RenderBucketInput` / `RenderBucketResult` / `ExportResult` /
+  `ExportWorkstreamOptions` types and `EXPORT_MANIFEST_VERSION` from
+  the SDK.
+
+  `mu workstream destroy` no longer auto-exports before destroying, and
+  `--no-export` is gone with it. Destroy is now just preview → confirm
+  → destroy. The pre-destroy safety copy is `mu db backup <file>`;
+  reversing a destroy is `mu undo <group> --yes` (destroy writes
+  tombstone ops, so the history survives either way).
+
+  No aliases, no deprecation window, no replacement format. The three
+  surviving paths each do one job properly: **sync** moves state
+  losslessly between machines, `mu db backup` takes the safety copy,
+  and `mu rebuild` / `mu undo` recover from the ops log. Reading the
+  graph out for review or grep is `--json` on any verb.
+
+  `workstream.export` is removed from `LocalIntent` and the
+  log-render verb table, so the intent can no longer be emitted. That
+  empties `LOG_ONLY_INTENTS`, whose entire purpose was excluding this
+  one intent from segment flush and rebuild projection: every
+  remaining `LocalIntent` is `agent.*` or `workspace.*`, neither of
+  which names a synced entity, so the entity check alone is again a
+  sufficient classifier. `isProjectable` drops its `intent` parameter
+  and `src/segments.ts` drops its import of it.
+
+  `src/parked.ts` keys its dormant heuristic on `workstream.export`
+  and is now dormant by construction rather than by accident — no code
+  path emits the marker. It is left in place (the branch still
+  classifies ops written by older versions) but documented as a
+  deletion candidate if the peer-watermark re-grounding never happens.
 
 - **`mu archive` namespace deleted** (`add`, `list`, `restore`, `export`). The
   marker machinery was a point-in-time snapshot concept that added complexity

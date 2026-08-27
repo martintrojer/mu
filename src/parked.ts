@@ -1,27 +1,28 @@
 // "Presumed parked on another machine" detection.
 //
-// When a user runs `mu db export` to ship a workstream off to another
-// machine, then leaves the local copy alone for a while, the local
-// rows still consume a slot in `mu workstream list` and the TUI tab
-// strip. The user gets tempted to `mu workstream destroy` it, which
-// works but loses the `workstream_sync` row and degrades drift
-// detection on the next round-trip (the workstream re-imports as
-// IMPORT-on-clean rather than FAST_FORWARD).
+// When a user ships a workstream off to another machine and then
+// leaves the local copy alone for a while, the local rows still
+// consume a slot in `mu workstream list` and the TUI tab strip. The
+// user gets tempted to `mu workstream destroy` it, which works but
+// degrades drift detection on the next round-trip.
 //
 // This module exposes a small read-only heuristic: a workstream is
-// "parked" iff it has been quiet since its most recent `db export`
-// event, has zero alive agents, and has zero IN_PROGRESS tasks. The
-// signal is consumed by `mu workstream list` (a `parked` column) and
-// the TUI tab strip (dim+prefix). No schema change; no new state.
+// "parked" iff it has been quiet since its most recent export-style
+// marker op, has zero alive agents, and has zero IN_PROGRESS tasks.
+// The signal is consumed by `mu workstream list` (a `parked` column)
+// and the TUI tab strip (dim+prefix). No schema change; no new state.
 //
-// The detection key is a `db export` op: if the LATEST op in the
-// workstream is a `db export`, nothing local has happened since the
-// export ran. NOTE: `mu db export` no longer exists (sync is ambient
-// over segments), so nothing in-tree emits that marker any more and
-// this heuristic reports `parked: false` until it is re-grounded on
-// peer watermarks.
-// Any subsequent `task add` / `task note` / `agent spawn` / etc.
-// supersedes the marker and the workstream stops being parked.
+// DORMANT. The heuristic keys on the LATEST op being a marker that no
+// in-tree code path emits any more: `mu db export` went away when sync
+// became ambient over segments, and `mu workstream export` was deleted
+// with the rest of the markdown-bucket surface. So this reports
+// `parked: false` for every workstream until it is re-grounded on peer
+// watermarks, which is the honest signal anyway. Kept keyed on an
+// intent (rather than a payload prefix) so it cannot silently mis-fire
+// in the meantime; it is a deletion candidate if the re-grounding never
+// happens.
+// Any `task add` / `task note` / `agent spawn` / etc. supersedes the
+// marker and the workstream stops being parked.
 //
 // Threshold: at least one full day (24h) since the export event, so
 // "I exported five minutes ago to test" doesn't immediately trip the
@@ -31,16 +32,14 @@ import type { Db } from "./db.js";
 
 /** The op intent that marks a workstream as shipped-elsewhere.
  *
- *  `workstream.export` is the closest surviving relative of the old
- *  `db export` marker. NOTE this heuristic is effectively dormant:
- *  `mu db export` is gone, and `mu workstream export` writes a bucket
- *  rather than handing the workstream to another machine, so in practice
- *  it will rarely be the LATEST op. Sync re-grounds "parked" on peer
- *  watermarks, which is the honest signal. Kept keyed on an intent (not
- *  a payload prefix) so it cannot silently mis-fire in the meantime. */
+ *  Nothing in-tree emits this any more (see the module comment), so the
+ *  heuristic is dormant rather than wrong: no op carries this intent, so
+ *  the marker branch below never matches on a freshly written log. Ops
+ *  recorded by older versions still classify correctly, which is why the
+ *  constant stays rather than the branch being deleted outright. */
 const PARKED_MARKER_INTENT = "workstream.export";
 
-/** Days that must have elapsed since the most recent `db export`
+/** Days that must have elapsed since the most recent marker
  *  event before a workstream is considered parked. Default 1: prevents
  *  a same-session "I exported to verify" from instantly flipping the
  *  TUI tab to dim. Tuning higher would just delay the banner. */
@@ -57,13 +56,13 @@ export interface ParkedStatus {
  * Compute the parked status for one workstream. Pure read; no writes.
  *
  * Returns `{ parked: false }` when:
- *  - the workstream has no `db export` event in the ops log, OR
- *  - any op newer than the most recent `db export` exists
+ *  - the workstream has no marker event in the ops log, OR
+ *  - any op newer than the most recent marker exists
  *    (i.e. local activity since export), OR
  *  - the workstream has any alive agents (status not in
  *    terminated/unreachable), OR
  *  - the workstream has any IN_PROGRESS tasks, OR
- *  - the most recent `db export` is younger than the threshold.
+ *  - the most recent marker is younger than the threshold.
  *
  * Otherwise returns `{ parked: true, sinceDays: <whole days> }`.
  *

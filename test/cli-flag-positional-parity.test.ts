@@ -12,8 +12,7 @@
 //                            repeat/comma forms `--blocked-by` does.
 //   dogfood-destroy-w-flag   `mu workstream destroy <name>` accepts the
 //                            positional as an alias for -w, matching
-//                            `workstream init <name>`. Same for
-//                            `workstream export <name>`.
+//                            `workstream init <name>`.
 //   dogfood-note-arg-shape   `mu task note <id> --text "..."` is an
 //                            alias for the positional text.
 //
@@ -215,27 +214,6 @@ describe("flag-vs-positional parity sweep (dogfood-*)", () => {
       const r = await runCli(["workstream", "destroy", "ws", "--empty"], dbPath);
       expect(r.exitCode).toBe(2);
       expect(r.stderr).toMatch(/mutually exclusive/);
-    });
-
-    it("`workstream export ws --out <dir>` accepts the positional too", async () => {
-      await seedTasks("a");
-      const outDir = join(tempDir, "bucket");
-      const r = await runCli(["workstream", "export", "ws", "--out", outDir, "--json"], dbPath);
-      expect(r.error).toBeUndefined();
-      expect(r.exitCode).toBeNull();
-      const payload = JSON.parse(r.stdout.trim()) as { workstreamName: string };
-      expect(payload.workstreamName).toBe("ws");
-    });
-
-    it("`workstream export -w ws --out <dir>` (pre-existing form) still works", async () => {
-      await seedTasks("a");
-      const outDir = join(tempDir, "bucket2");
-      const r = await runCli(
-        ["workstream", "export", "-w", "ws", "--out", outDir, "--json"],
-        dbPath,
-      );
-      expect(r.exitCode).toBeNull();
-      expect((JSON.parse(r.stdout.trim()) as { workstreamName: string }).workstreamName).toBe("ws");
     });
   });
 

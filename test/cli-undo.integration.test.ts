@@ -196,7 +196,7 @@ describe("mu undo", () => {
     await seed();
     await runCli(["task", "block", "b", "--by", "a", "-w", "demo"], dbPath);
     await runCli(["task", "note", "a", "context", "-w", "demo"], dbPath);
-    await runCli(["workstream", "destroy", "demo", "--yes", "--no-export"], dbPath);
+    await runCli(["workstream", "destroy", "demo", "--yes"], dbPath);
 
     const group = await newestGroup();
     const undone = await runCli(["undo", group, "--yes"], dbPath);
