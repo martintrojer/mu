@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type Db, openDb } from "../src/db.js";
+import { nextHlc } from "../src/hlc.js";
 import { emitEvent } from "../src/logs.js";
 import {
   RebuildTargetExistsError,
@@ -294,6 +295,35 @@ describe("rebuildInto", () => {
   // ─── rebuild is NOT ingest ───────────────────────────────────────────
 
   describe("rebuild replays machine-local ops too (rebuild != ingest)", () => {
+    it("copies a historical prose workstream.export op without projecting it", () => {
+      seedRealisticSource();
+      const machineId = (
+        db.prepare("SELECT machine_id FROM machine_identity WHERE id = 1").get() as {
+          machine_id: string;
+        }
+      ).machine_id;
+      db.prepare(
+        `INSERT INTO ops
+           (hlc, machine_id, group_id, actor, intent, entity, key, op, payload, created_at)
+         VALUES (?, ?, 'legacy-export', 'system', 'workstream.export', 'workstream',
+                 'demo', 'put', 'workstream export demo (out=/tmp/x)', ?)`,
+      ).run(nextHlc(db), machineId, new Date().toISOString());
+
+      const path = targetPath();
+      expect(() => rebuildInto(db, { targetPath: path })).not.toThrow();
+      expect(
+        withTarget(
+          path,
+          (conn) =>
+            (
+              conn
+                .prepare("SELECT COUNT(*) AS n FROM ops WHERE intent = 'workstream.export'")
+                .get() as { n: number }
+            ).n,
+        ),
+      ).toBe(1);
+    });
+
     it("copies log-only entities that ingest would refuse", () => {
       // 'agent' is not in SYNCED_ENTITIES, so applyOp REJECTS it and a
       // peer must never send one. But it is this machine's own log

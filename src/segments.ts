@@ -69,6 +69,7 @@ import { applyOp, type Op, OpEntityNotSyncedError, reprojectDeferredOps } from "
 import { type Db, SYNCED_ENTITIES } from "./db.js";
 import { locksDir, withFileLock } from "./file-lock.js";
 import { receiveHlc } from "./hlc.js";
+import { isLegacyLogOnlyIntent } from "./legacy-ops.js";
 
 /** Current segment line format. Bumped only on a breaking shape change;
  *  a reader that sees a version it does not know REFUSES the line rather
@@ -406,7 +407,7 @@ function flushLocked(db: Db, path: string, machineId: string): FlushResult {
   let lastHlc = existing.lastHlc;
 
   for (const row of rows) {
-    if (!synced.has(row.entity)) {
+    if (!synced.has(row.entity) || isLegacyLogOnlyIntent(row.intent)) {
       skippedLocal += 1;
       continue;
     }

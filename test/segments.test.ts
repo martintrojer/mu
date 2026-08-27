@@ -117,6 +117,25 @@ describe("segments", () => {
       .split("\n")
       .filter((l) => l.trim() !== "");
 
+  it("does not flush historical prose workstream.export ops", async () => {
+    const machineId = localMachineId(a);
+    a.prepare(
+      `INSERT INTO ops
+         (hlc, machine_id, group_id, actor, intent, entity, key, op, payload, created_at)
+       VALUES (?, ?, 'legacy-export', 'system', 'workstream.export', 'workstream',
+               'demo', 'put', 'workstream export demo (out=/tmp/x)', ?)`,
+    ).run(
+      formatHlc({ wallMs: 2_000_000_000_000, counter: 0, machineId }),
+      machineId,
+      new Date().toISOString(),
+    );
+
+    const result = await flushSegment(a, dir);
+    expect(result.appended).toBe(0);
+    expect(result.skippedLocal).toBe(1);
+    expect(readFileSync(result.segmentPath ?? "", "utf8")).toBe("");
+  });
+
   // ─── round trip ──────────────────────────────────────────────────────
 
   describe("round trip between two machines", () => {

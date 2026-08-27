@@ -64,6 +64,7 @@ import { dirname } from "node:path";
 import { applyOp, type Op } from "./apply.js";
 import { type Db, openDb, SYNCED_ENTITIES } from "./db.js";
 import { compareHlc } from "./hlc.js";
+import { isLegacyLogOnlyIntent } from "./legacy-ops.js";
 import { withCaptureSuppressed } from "./op-context.js";
 import type { HasNextSteps, NextStep } from "./output.js";
 
@@ -153,11 +154,10 @@ const LOG_ONLY_ENTITIES = new Set(["message", "event", "broadcast"]);
  *  is the intersection of "synced" and "has a table", which excludes
  *  'message' even though it is in SYNCED_ENTITIES.
  *
- *  Every intent `emitEvent` writes is machine-local (`agent.*` /
- *  `workspace.*`), and `entityForIntent` derives the entity from the
- *  intent prefix, so none of them can name a synced entity. That is why
- *  the entity alone is a sufficient classifier here. */
-function isProjectable(entity: string): boolean {
+ *  Historical log-only intents can name a synced entity, so intent is
+ *  also part of the classification even after its command is removed. */
+function isProjectable(entity: string, intent: string | null): boolean {
+  if (isLegacyLogOnlyIntent(intent)) return false;
   if (LOG_ONLY_ENTITIES.has(entity)) return false;
   return (SYNCED_ENTITIES as readonly string[]).includes(entity);
 }
@@ -349,7 +349,7 @@ export function rebuildInto(source: Db, opts: RebuildOptions): RebuildReport {
             createdAt: row.created_at,
           });
 
-          if (!isProjectable(row.entity)) {
+          if (!isProjectable(row.entity, row.intent)) {
             logOnlyByEntity[row.entity] = (logOnlyByEntity[row.entity] ?? 0) + 1;
             continue;
           }

@@ -53,6 +53,13 @@ breaking changes are called out under "Breaking" in each entry.
 
 ### Fixed
 
+- **Removed commands no longer erase their historical op compatibility.**
+  `workstream.export` ops used a synced `workstream` entity but carried a
+  prose payload. The export command is still removed, but its intent now
+  remains in a narrow permanent compatibility classifier used by rebuild
+  and segment flush. Old databases therefore retain the row as history
+  without sending it to `applyOp` or writing malformed segment JSON.
+
 - **Log-only ops are no longer replayed, flushed, or projected
   (`workstream.export`).** `emitEvent` derives an op's entity from its
   intent prefix, so `workstream.export` lands on `entity='workstream'`
