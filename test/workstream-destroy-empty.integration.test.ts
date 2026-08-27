@@ -161,7 +161,7 @@ describe("mu workstream destroy --empty", () => {
     const env = JSON.parse(j.stdout.trim()) as {
       items: Array<{
         name: string;
-        tmuxAlive: boolean;
+        muxAlive: boolean;
         agentCount: number;
         taskCount: number;
       }>;
@@ -169,8 +169,8 @@ describe("mu workstream destroy --empty", () => {
     };
     const arr = env.items;
     expect(arr.map((w) => w.name)).toEqual(["empty-a", "empty-b"]);
-    expect(arr[0]?.tmuxAlive).toBe(true);
-    expect(arr[1]?.tmuxAlive).toBe(false);
+    expect(arr[0]?.muxAlive).toBe(true);
+    expect(arr[1]?.muxAlive).toBe(false);
     expect(arr[0]?.agentCount).toBe(0);
     expect(arr[0]?.taskCount).toBe(0);
     expect(env.count).toBe(2);
@@ -199,7 +199,7 @@ describe("mu workstream destroy --empty", () => {
     expect(r.exitCode).toBeNull();
     const env = JSON.parse(r.stdout.trim()) as {
       destroyed: number;
-      results: Array<{ workstreamName: string; killedTmux: boolean }>;
+      results: Array<{ workstreamName: string; killedMux: boolean }>;
       failed: unknown[];
     };
     expect(env.destroyed).toBe(2);
@@ -234,11 +234,11 @@ describe("mu workstream destroy --empty", () => {
     const r = await runCli(["workstream", "destroy", "--empty", "--yes", "--json"], dbPath);
     expect(r.error).toBeUndefined();
     const env = JSON.parse(r.stdout.trim()) as {
-      results: Array<{ workstreamName: string; killedTmux: boolean }>;
+      results: Array<{ workstreamName: string; killedMux: boolean }>;
     };
     expect(env.results).toHaveLength(1);
     expect(env.results[0]?.workstreamName).toBe("empty-a");
-    expect(env.results[0]?.killedTmux).toBe(true);
+    expect(env.results[0]?.killedMux).toBe(true);
     expect(state.killed).toEqual(["mu-empty-a"]);
   });
 
@@ -333,13 +333,13 @@ describe("mu workstream destroy --empty", () => {
     db.close();
 
     // JSON form: synthetic summaries with registered=false,
-    // tmuxAlive=true, all counts 0.
+    // muxAlive=true, all counts 0.
     const j = await runCli(["workstream", "destroy", "--empty", "--json"], dbPath);
     expect(j.error).toBeUndefined();
     const env = JSON.parse(j.stdout.trim()) as {
       items: Array<{
         name: string;
-        tmuxAlive: boolean;
+        muxAlive: boolean;
         registered: boolean;
         agentCount: number;
         taskCount: number;
@@ -353,7 +353,7 @@ describe("mu workstream destroy --empty", () => {
     expect(arr.map((w) => w.name)).toEqual(["bar", "foo"]);
     for (const ws of arr) {
       expect(ws.registered).toBe(false);
-      expect(ws.tmuxAlive).toBe(true);
+      expect(ws.muxAlive).toBe(true);
       expect(ws.agentCount).toBe(0);
       expect(ws.taskCount).toBe(0);
       expect(ws.noteCount).toBe(0);
@@ -383,13 +383,13 @@ describe("mu workstream destroy --empty", () => {
     expect(r.error).toBeUndefined();
     const env = JSON.parse(r.stdout.trim()) as {
       destroyed: number;
-      results: Array<{ workstreamName: string; killedTmux: boolean }>;
+      results: Array<{ workstreamName: string; killedMux: boolean }>;
       failed: unknown[];
     };
     expect(env.destroyed).toBe(2);
     expect(env.failed).toEqual([]);
     expect(env.results.map((x) => x.workstreamName).sort()).toEqual(["bar", "foo"]);
-    for (const x of env.results) expect(x.killedTmux).toBe(true);
+    for (const x of env.results) expect(x.killedMux).toBe(true);
     expect(state.killed.sort()).toEqual(["mu-bar", "mu-foo"]);
 
     // No DB rows ever existed for these names → still none.
@@ -416,7 +416,7 @@ describe("mu workstream destroy --empty", () => {
     expect(r.error).toBeUndefined();
     const env = JSON.parse(r.stdout.trim()) as {
       destroyed: number;
-      results: Array<{ workstreamName: string; killedTmux: boolean }>;
+      results: Array<{ workstreamName: string; killedMux: boolean }>;
     };
     expect(env.destroyed).toBe(2);
     expect(env.results.map((x) => x.workstreamName).sort()).toEqual(["empty-a", "foo"]);

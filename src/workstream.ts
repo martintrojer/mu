@@ -1,17 +1,17 @@
 // mu — workstream-level operations.
 //
-// One workstream = one tmux session + N agents + M tasks (and their
+// One workstream = one mux session + N agents + M tasks (and their
 // edges/notes) all sharing the workstream column. 0.1.0 ships `mu init`
-// (create the tmux session) and `mu destroy` (this module: nuke the
-// tmux session and every DB row tagged with the workstream name).
+// (create the mux session) and `mu destroy` (this module: nuke the
+// mux session and every DB row tagged with the workstream name).
 //
 // `destroyWorkstream` is idempotent on every leg:
-//   - tmux session already gone        → killSession swallows the error
+//   - mux session already gone         → killSession swallows the error
 //   - no agents/tasks for this name    → DELETE returns zero changes
 //   - workstream never existed at all  → returns all-zero counts
 //
-// Both summarize and destroy take an optional `tmuxSession` override so
-// tests (and the rare workstream whose tmux session was created with a
+// Both summarize and destroy take an optional `muxSession` override so
+// tests (and the rare workstream whose mux session was created with a
 // non-default name) work without env-var gymnastics.
 
 import { existsSync, readdirSync, rmdirSync } from "node:fs";
@@ -227,10 +227,10 @@ function ensureWorkstreamImpl(db: Db, name: string): boolean {
 export interface WorkstreamSummary {
   /** The workstream's own name. */
   name: string;
-  /** Tmux session name, defaults to `mu-<name>`. */
-  tmuxSession: string;
-  /** True iff `tmux has-session -t <tmuxSession>` succeeds right now. */
-  tmuxAlive: boolean;
+  /** Mux session name, defaults to `mu-<name>`. */
+  muxSession: string;
+  /** True iff the mux session `<muxSession>` is alive right now. */
+  muxAlive: boolean;
   /** Rows in `agents` for this workstream. */
   agentCount: number;
   /** Rows in `tasks` for this workstream. */
@@ -261,8 +261,8 @@ export interface WorkstreamSummary {
 }
 
 export interface DestroyResult {
-  /** True iff `tmux kill-session` actually killed something. */
-  killedTmux: boolean;
+  /** True iff killing the mux session actually killed something. */
+  killedMux: boolean;
   /** Number of `agents` rows deleted. */
   deletedAgents: number;
   /** Number of `tasks` rows deleted (edges/notes cascade via FK). */
@@ -298,8 +298,8 @@ export interface WorkspaceFailure {
 
 export interface WorkstreamOptions {
   workstream: string;
-  /** Override the tmux session name. Defaults to `mu-<workstream>`. */
-  tmuxSession?: string;
+  /** Override the mux session name. Defaults to `mu-<workstream>`. */
+  muxSession?: string;
   /** Override the per-name VcsBackend resolver. Defaults to
    *  `backendByName`. Lets tests inject a fake backend (e.g. one whose
    *  `freeWorkspace` throws) without mutating the exported singletons —
@@ -320,9 +320,9 @@ export interface DestroyWorkstreamOptions extends WorkstreamOptions {
  * Discover every workstream visible on this machine. The union of:
  *   - rows in the `workstreams` table (canonical DB source; populated by
  *     `mu init` and auto-created by insertAgent / addTask)
- *   - tmux sessions named `mu-*` (with the prefix stripped) — catches
- *     externally-created `tmux new-session -s mu-foo` that mu hasn't
- *     observed yet
+ *   - mux sessions named `mu-*` (with the prefix stripped) — catches
+ *     externally-created sessions (e.g. `tmux new-session -s mu-foo`)
+ *     that mu hasn't observed yet
  *
  * Returns one `WorkstreamSummary` per workstream, sorted by name.
  * Useful as a pre-flight before `mu init` ("is this name taken?") and
@@ -351,21 +351,21 @@ export async function listWorkstreams(db: Db): Promise<WorkstreamSummary[]> {
  * attached. Two flavours unioned:
  *
  *   1. REGISTERED-empty: a row in `workstreams` with zero tasks,
- *      zero agents, zero vcs_workspaces. Tmux
+ *      zero agents, zero vcs_workspaces. Mux
  *      session presence and agent_logs entries do NOT disqualify
  *      — the session itself was created at init time and contains
  *      no agent panes; the events are audit, not state.
  *
- *   2. TMUX-only: a tmux session named `mu-*` with no row in the
+ *   2. MUX-only: a mux session named `mu-*` with no row in the
  *      `workstreams` table. Catches test litter and remnants of a
- *      partial destroy where the DB row was wiped but the tmux
+ *      partial destroy where the DB row was wiped but the mux
  *      session survived (or sessions created out-of-band via
  *      `tmux new-session -s mu-foo`). The synthetic summary has
- *      `registered=false`, all counts 0, and `tmuxAlive=true` (it
+ *      `registered=false`, all counts 0, and `muxAlive=true` (it
  *      wouldn't have been surfaced otherwise).
  *
  * The predicate is intentionally narrow on the prefix: only
- * `mu-*` sessions are eligible. Arbitrary tmux sessions the
+ * `mu-*` sessions are eligible. Arbitrary mux sessions the
  * operator created for unrelated work are NEVER matched — mu only
  * owns its own namespace.
  *
@@ -374,7 +374,7 @@ export async function listWorkstreams(db: Db): Promise<WorkstreamSummary[]> {
  * over `mu workstream list --json`).
  *
  * Returns one `WorkstreamSummary` per match, sorted by name (with
- * defensive dedup — a registered-empty and a tmux-only of the same
+ * defensive dedup — a registered-empty and a mux-only of the same
  * name can't both arise from the same call by construction, but
  * belt-and-braces).
  */
@@ -397,7 +397,7 @@ export async function listEmptyWorkstreams(db: Db): Promise<WorkstreamSummary[]>
     registeredRows.map((r) => summarizeWorkstream(db, { workstream: r.name })),
   );
 
-  // Tmux-only mu-* sessions: enumerate every running tmux session,
+  // Mux-only mu-* sessions: enumerate every running mux session,
   // keep the ones with the `mu-` prefix (strip it to get the
   // would-be workstream name), then subtract names already in the
   // `workstreams` table. The mirror of listWorkstreams above; see
@@ -405,22 +405,22 @@ export async function listEmptyWorkstreams(db: Db): Promise<WorkstreamSummary[]>
   const dbNames = new Set<string>(
     (db.prepare("SELECT name FROM workstreams").all() as { name: string }[]).map((r) => r.name),
   );
-  const tmuxOnlyNames: string[] = [];
+  const muxOnlyNames: string[] = [];
   for (const session of await listMuxSessions()) {
     if (!session.name.startsWith("mu-")) continue;
     const name = session.name.slice(RESERVED_WORKSTREAM_PREFIX.length);
     if (dbNames.has(name)) continue;
-    tmuxOnlyNames.push(name);
+    muxOnlyNames.push(name);
   }
-  const tmuxOnly = await Promise.all(
-    tmuxOnlyNames.map((name) => summarizeWorkstream(db, { workstream: name })),
+  const muxOnly = await Promise.all(
+    muxOnlyNames.map((name) => summarizeWorkstream(db, { workstream: name })),
   );
 
   // Compose + sort + dedup-by-name (defensive; no overlap is possible
-  // by construction since tmuxOnlyNames excludes every dbName).
+  // by construction since muxOnlyNames excludes every dbName).
   const seen = new Set<string>();
   const all: WorkstreamSummary[] = [];
-  for (const ws of [...registeredEmpty, ...tmuxOnly]) {
+  for (const ws of [...registeredEmpty, ...muxOnly]) {
     if (seen.has(ws.name)) continue;
     seen.add(ws.name);
     all.push(ws);
@@ -433,12 +433,12 @@ export async function summarizeWorkstream(
   db: Db,
   opts: WorkstreamOptions,
 ): Promise<WorkstreamSummary> {
-  const tmuxSession = opts.tmuxSession ?? `mu-${opts.workstream}`;
+  const muxSession = opts.muxSession ?? `mu-${opts.workstream}`;
   const parked = parkedStatus(db, opts.workstream);
   return {
     name: opts.workstream,
-    tmuxSession,
-    tmuxAlive: await sessionAlive(tmuxSession),
+    muxSession,
+    muxAlive: await sessionAlive(muxSession),
     agentCount: countAgents(db, opts.workstream),
     taskCount: countTasks(db, opts.workstream),
     noteCount: countNotes(db, opts.workstream),
@@ -457,7 +457,7 @@ function isRegistered(db: Db, workstream: string): boolean {
 }
 
 /**
- * Tear down a workstream: kill its tmux session and delete every DB row
+ * Tear down a workstream: kill its mux session and delete every DB row
  * tagged with its name. Cascades on `tasks` clean up `task_edges` and
  * `task_notes` automatically (FK ON DELETE CASCADE in the schema).
  *
@@ -469,7 +469,7 @@ export async function destroyWorkstream(
   db: Db,
   opts: DestroyWorkstreamOptions,
 ): Promise<DestroyResult> {
-  const tmuxSession = opts.tmuxSession ?? `mu-${opts.workstream}`;
+  const muxSession = opts.muxSession ?? `mu-${opts.workstream}`;
 
   // Destroy does not snapshot. v9 dropped the `snapshots` table; the
   // destroy writes tombstone ops instead and `mu undo` replays the
@@ -484,15 +484,16 @@ export async function destroyWorkstream(
   const edgesBefore = countEdges(db, opts.workstream);
   const workspacesBefore = listWorkspaces(db, opts.workstream);
 
-  // Tmux first: if killSession throws we don't want the DB rows already
-  // gone with no way to recover. (killSession is itself idempotent on
-  // missing sessions — a real throw here is an unexpected tmux error.)
-  // Load-bearing: destroy must actually kill the session, not silently
-  // report success while leaving panes running.
+  // Mux session first: if killSession throws we don't want the DB rows
+  // already gone with no way to recover. (killSession is itself
+  // idempotent on missing sessions — a real throw here is an
+  // unexpected mux error.) Load-bearing: destroy must actually kill
+  // the session, not silently report success while leaving panes
+  // running.
   const mux = await activeMux();
-  const tmuxAliveBefore = await mux.sessionExists(tmuxSession);
-  if (tmuxAliveBefore) {
-    await mux.killSession(tmuxSession);
+  const muxAliveBefore = await mux.sessionExists(muxSession);
+  if (muxAliveBefore) {
+    await mux.killSession(muxSession);
   }
 
   // Workspaces SECOND, before the FK cascade. The cascade silently
@@ -556,8 +557,8 @@ export async function destroyWorkstream(
   // workstreams → tasks → task_edges + task_notes, workstreams →
   // agent_logs, workstreams → vcs_workspaces) cleans every row in
   // one shot, atomically. If the workstream was never registered
-  // (e.g. an orphan tmux session that mu never observed),
-  // changes() = 0 and we still report the killed tmux session
+  // (e.g. an orphan mux session that mu never observed),
+  // changes() = 0 and we still report the killed mux session
   // honestly.
   // One group for the entire destroy: the DELETE cascades to tasks,
   // edges and notes, and each cascaded row gets its own tombstone op
@@ -574,7 +575,7 @@ export async function destroyWorkstream(
   // cascade because ops is FK-free.
 
   return {
-    killedTmux: tmuxAliveBefore,
+    killedMux: muxAliveBefore,
     deletedAgents: agentsBefore,
     deletedTasks: tasksBefore,
     deletedNotes: notesBefore,

@@ -1973,19 +1973,19 @@ mu workstream destroy --yes                                # workstream auto-det
 # litter, or a partial destroy that dropped the DB row but left the
 # session). ONLY `mu-`-prefixed sessions are touched. Mutually
 # exclusive with -w. Dry-run lists what WOULD go
-# (created_at renders `—` for tmux-only entries); --yes destroys.
+# (created_at renders `—` for mux-only entries); --yes destroys.
 mu workstream destroy --empty                  # dry-run: table of empties
 mu workstream destroy --empty --yes            # destroy them all
 ```
 
 ```
-Workstream auth-refactor (tmux session mu-auth-refactor)
-  tmux session : alive (will be killed)
+Workstream auth-refactor (mux session mu-auth-refactor)
+  mux session  : alive (will be killed)
   agents       : 1
   tasks        : 1  (edges: 0, notes: 0)
   workspaces   : 0
 
-Destroyed auth-refactor: killed tmux=true, agents=1, tasks=1, edges=0, notes=0, workspaces=0/0
+Destroyed auth-refactor: killed mux=true, agents=1, tasks=1, edges=0, notes=0, workspaces=0/0
 Pre-destroy export: ~/.local/state/mu/exports/auth-refactor-2026-08-02T06-00-05-869Z
 ```
 

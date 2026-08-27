@@ -171,7 +171,7 @@ describe("undo", () => {
       addBlockEdge(db, "demo", "b", "a");
       addNote(db, "a", "context", { workstream: "demo", author: "worker-1" });
 
-      await destroyWorkstream(db, { workstream: "demo", tmuxSession: "mu-absent-for-test" });
+      await destroyWorkstream(db, { workstream: "demo", muxSession: "mu-absent-for-test" });
       expect((db.prepare("SELECT COUNT(*) AS n FROM workstreams").get() as { n: number }).n).toBe(
         0,
       );

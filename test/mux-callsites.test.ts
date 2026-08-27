@@ -67,7 +67,7 @@ describe("best-effort call sites degrade when no mux is reachable", () => {
     const summary = await summarizeWorkstream(db, { workstream: "alpha" });
     // DB truth survives; only the mux-sourced decoration degrades.
     expect(summary.name).toBe("alpha");
-    expect(summary.tmuxAlive).toBe(false);
+    expect(summary.muxAlive).toBe(false);
   });
 
   it("listWorkstreams falls back to the registered set instead of throwing", async () => {

@@ -12,6 +12,24 @@ breaking changes are called out under "Breaking" in each entry.
 
 ### Breaking
 
+- **`mu workstream` fields renamed to backend-neutral mux naming**
+  (`find_workstream_json_tmux_named_fields_on_herdr`). The `mu
+  workstream list` / `init` / `destroy` JSON shapes and CLI prose used
+  `tmuxSession` / `tmuxAlive` / `killedTmux` and "tmux session" wording
+  even when the active backend was herdr, contradicting the
+  backend-agnostic `activeMux()` seam both verbs already went through.
+  `WorkstreamSummary.tmuxSession` → `muxSession`,
+  `WorkstreamSummary.tmuxAlive` → `muxAlive`,
+  `DestroyResult.killedTmux` → `killedMux`; `WorkstreamOptions.tmuxSession`
+  (the session-name override on `summarizeWorkstream` /
+  `destroyWorkstream`) → `muxSession`. The `mu workstream list` table
+  header and the `destroy` dry-run / result lines now say "mux" /
+  "mux session" instead of "tmux". No deprecated aliases are kept —
+  scripts consuming the old JSON field names must update. `mu agent
+  spawn` / `mu agent adopt` / `mu state`'s unrelated `tmuxSession`
+  session-override option (a different interface, orthogonal to this
+  rename) is unchanged.
+
 - **Three-state task lifecycle (schema v10).** `REJECTED` and `DEFERRED`
   task statuses are removed. Only `OPEN`, `IN_PROGRESS`, and `CLOSED`
   remain. `mu task reject` and `mu task defer` are deleted. Use task

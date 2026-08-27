@@ -1,6 +1,6 @@
 // mu — `mu workstream` verbs (init / list / destroy).
 //
-// A workstream = one tmux session (`mu-<name>`) + every DB row tagged
+// A workstream = one mux session (`mu-<name>`) + every DB row tagged
 // with that name (agents / tasks / edges / notes / workspaces / logs).
 // `init` creates the session + DB row pair; `list` shows
 // every workstream on the machine; `destroy` is the symmetric inverse,
@@ -79,7 +79,7 @@ export async function cmdInit(db: Db, name: string, opts: { json?: boolean } = {
       workstreamName: name,
       sessionName,
       created,
-      tmuxSessionAlreadyExisted: sessionAlready,
+      muxSessionAlreadyExisted: sessionAlready,
       dbRowAlreadyExisted: !dbCreated,
       muWindowRepaired,
       nextSteps,
@@ -90,13 +90,13 @@ export async function cmdInit(db: Db, name: string, opts: { json?: boolean } = {
     const repaired = muWindowRepaired ? ` — ${pc.yellow("repaired missing _mu window")}` : "";
     console.log(
       pc.dim(
-        `workstream "${name}" already exists (tmux session ${sessionName}, DB row registered)${repaired}`,
+        `workstream "${name}" already exists (mux session ${sessionName}, DB row registered)${repaired}`,
       ),
     );
     printNextSteps(nextSteps);
     return;
   }
-  console.log(`Created workstream ${pc.bold(name)} (tmux session ${pc.bold(sessionName)})`);
+  console.log(`Created workstream ${pc.bold(name)} (mux session ${pc.bold(sessionName)})`);
   printNextSteps(nextSteps);
 }
 
@@ -107,7 +107,7 @@ export async function cmdWorkstreamList(db: Db, opts: { json?: boolean } = {}): 
     return;
   }
   if (summaries.length === 0) {
-    console.log(pc.dim("no workstreams found (no DB rows, no mu-* tmux sessions)"));
+    console.log(pc.dim("no workstreams found (no DB rows, no mu-* mux sessions)"));
     return;
   }
   console.log(formatWorkstreamsTable(summaries));
@@ -131,9 +131,9 @@ export async function cmdDestroy(
   // Empty-but-registered workstreams (a row in `workstreams` with no
   // agents/tasks/etc.) ARE worth destroying — otherwise the bare
   // registry row is orphaned forever. nothingToDo is the strict
-  // intersection: nothing on disk, in tmux, OR in the DB.
+  // intersection: nothing on disk, in mux, OR in the DB.
   const nothingToDo =
-    !summary.tmuxAlive &&
+    !summary.muxAlive &&
     !summary.registered &&
     summary.agentCount === 0 &&
     summary.taskCount === 0 &&
@@ -151,7 +151,7 @@ export async function cmdDestroy(
       return;
     }
     console.log(
-      pc.dim(`workstream "${workstream}" has no tmux session and no DB rows; nothing to destroy`),
+      pc.dim(`workstream "${workstream}" has no mux session and no DB rows; nothing to destroy`),
     );
     return;
   }
@@ -173,9 +173,9 @@ export async function cmdDestroy(
       });
       return;
     }
-    console.log(pc.bold(`Workstream ${workstream} (tmux session ${summary.tmuxSession})`));
+    console.log(pc.bold(`Workstream ${workstream} (mux session ${summary.muxSession})`));
     console.log(
-      `  tmux session : ${summary.tmuxAlive ? pc.yellow("alive (will be killed)") : pc.dim("not running")}`,
+      `  mux session  : ${summary.muxAlive ? pc.yellow("alive (will be killed)") : pc.dim("not running")}`,
     );
     console.log(`  agents       : ${summary.agentCount}`);
     console.log(
@@ -199,9 +199,9 @@ export async function cmdDestroy(
     });
     return;
   }
-  console.log(pc.bold(`Workstream ${workstream} (tmux session ${summary.tmuxSession})`));
+  console.log(pc.bold(`Workstream ${workstream} (mux session ${summary.muxSession})`));
   console.log(
-    `  tmux session : ${summary.tmuxAlive ? pc.yellow("alive (will be killed)") : pc.dim("not running")}`,
+    `  mux session  : ${summary.muxAlive ? pc.yellow("alive (will be killed)") : pc.dim("not running")}`,
   );
   console.log(`  agents       : ${summary.agentCount}`);
   console.log(
@@ -210,7 +210,7 @@ export async function cmdDestroy(
   console.log(`  workspaces   : ${summary.workspaceCount}`);
   console.log("");
   console.log(
-    `Destroyed ${pc.bold(workstream)}: killed tmux=${result.killedTmux}, agents=${result.deletedAgents}, tasks=${result.deletedTasks}, edges=${result.deletedEdges}, notes=${result.deletedNotes}, workspaces=${result.freedWorkspaces}/${summary.workspaceCount}${result.alreadyGoneWorkspaces > 0 ? ` (${result.alreadyGoneWorkspaces} already gone on disk)` : ""}`,
+    `Destroyed ${pc.bold(workstream)}: killed mux=${result.killedMux}, agents=${result.deletedAgents}, tasks=${result.deletedTasks}, edges=${result.deletedEdges}, notes=${result.deletedNotes}, workspaces=${result.freedWorkspaces}/${summary.workspaceCount}${result.alreadyGoneWorkspaces > 0 ? ` (${result.alreadyGoneWorkspaces} already gone on disk)` : ""}`,
   );
   if (result.failedWorkspaces.length > 0) {
     console.log("");
@@ -244,7 +244,7 @@ export async function cmdDestroy(
 
 interface EmptyDestroyResult {
   workstreamName: string;
-  killedTmux: boolean;
+  killedMux: boolean;
   deletedAgents: number;
   deletedTasks: number;
   deletedNotes: number;
@@ -259,7 +259,7 @@ interface EmptyDestroyFailure {
 }
 
 /** Read created_at for a registered workstream. Returns the empty
- *  string for tmux-only rows that listEmptyWorkstreams won't surface
+ *  string for mux-only rows that listEmptyWorkstreams won't surface
  *  anyway (the predicate requires a workstreams row), keeping the
  *  signature total. */
 function workstreamCreatedAt(db: Db, name: string): string {
@@ -298,16 +298,16 @@ async function cmdDestroyEmpty(
       return;
     }
     const table = muTable({
-      head: ["workstream", "created_at", "tmux"].map((h) => pc.bold(h)),
+      head: ["workstream", "created_at", "mux"].map((h) => pc.bold(h)),
       colWidths: [40, null, null],
     });
     for (const ws of empties) {
       const createdAt = workstreamCreatedAt(db, ws.name);
-      // Tmux-only entries have no DB row and so no created_at;
+      // Mux-only entries have no DB row and so no created_at;
       // render an em-dash placeholder so the column never goes
-      // visually empty (matches the tmux column's idiom below).
+      // visually empty (matches the mux column's idiom below).
       const createdCell = createdAt === "" ? pc.dim("\u2014") : pc.dim(createdAt);
-      table.push([ws.name, createdCell, ws.tmuxAlive ? pc.green("alive") : pc.dim("\u2014")]);
+      table.push([ws.name, createdCell, ws.muxAlive ? pc.green("alive") : pc.dim("\u2014")]);
     }
     console.log(table.toString());
     console.log("");
@@ -342,7 +342,7 @@ async function cmdDestroyEmpty(
       const result = await destroyWorkstream(db, { workstream: ws.name });
       results.push({
         workstreamName: ws.name,
-        killedTmux: result.killedTmux,
+        killedMux: result.killedMux,
         deletedAgents: result.deletedAgents,
         deletedTasks: result.deletedTasks,
         deletedNotes: result.deletedNotes,
@@ -368,7 +368,7 @@ async function cmdDestroyEmpty(
   for (const r of results) {
     console.log(
       `Destroyed ${pc.bold(r.workstreamName)} ${pc.dim(
-        `(killedTmux=${r.killedTmux}, agents=${r.deletedAgents}, tasks=${r.deletedTasks}, notes=${r.deletedNotes}, edges=${r.deletedEdges})`,
+        `(killedMux=${r.killedMux}, agents=${r.deletedAgents}, tasks=${r.deletedTasks}, notes=${r.deletedNotes}, edges=${r.deletedEdges})`,
       )}`,
     );
   }
@@ -388,7 +388,7 @@ async function cmdDestroyEmpty(
   if (failed.length === 0) {
     printNextSteps([
       {
-        intent: "Undo (a snapshot was taken before the sweep; DB only, tmux not rolled back)",
+        intent: "Undo (a snapshot was taken before the sweep; DB only, mux not rolled back)",
         command: "mu undo --yes",
       },
     ]);
@@ -433,7 +433,7 @@ export function wireWorkstreamCommands(program: Command): void {
 
   workstream
     .command("init <name>")
-    .description("Create the workstream's tmux session and register it in the DB")
+    .description("Create the workstream's mux session and register it in the DB")
     .option(...JSON_OPT)
     .action(function (name: string) {
       const opts = (this as Command).opts() as { json?: boolean };
@@ -442,7 +442,7 @@ export function wireWorkstreamCommands(program: Command): void {
 
   workstream
     .command("list")
-    .description("List every workstream on this machine (DB rows + mu-* tmux sessions)")
+    .description("List every workstream on this machine (DB rows + mu-* mux sessions)")
     .option(...JSON_OPT)
     .action(function () {
       const opts = (this as Command).opts() as { json?: boolean };
@@ -452,7 +452,7 @@ export function wireWorkstreamCommands(program: Command): void {
   workstream
     .command("destroy [name]")
     .description(
-      "Tear down a workstream: kill its tmux session and cascade-delete every DB row tagged with its name. The target may be given positionally (matching `workstream init <name>`) or via -w. Pass --yes to actually destroy; otherwise prints a dry-run summary. With --empty, sweeps every empty workstream (zero tasks/agents/workspaces) in one call.",
+      "Tear down a workstream: kill its mux session and cascade-delete every DB row tagged with its name. The target may be given positionally (matching `workstream init <name>`) or via -w. Pass --yes to actually destroy; otherwise prints a dry-run summary. With --empty, sweeps every empty workstream (zero tasks/agents/workspaces) in one call.",
     )
     .option(...WORKSTREAM_OPT)
     .option("-y, --yes", "actually destroy (without this flag, prints a dry-run summary)")

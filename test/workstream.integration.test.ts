@@ -253,8 +253,8 @@ describe("summarizeWorkstream", () => {
     const summary = await summarizeWorkstream(db, { workstream: "auth" });
     expect(summary).toEqual({
       name: "auth",
-      tmuxSession: "mu-auth",
-      tmuxAlive: true,
+      muxSession: "mu-auth",
+      muxAlive: true,
       agentCount: 2,
       taskCount: 3,
       edgeCount: 2,
@@ -264,25 +264,25 @@ describe("summarizeWorkstream", () => {
     });
   });
 
-  it("returns all-zero counts and tmuxAlive=false for an unknown workstream", async () => {
+  it("returns all-zero counts and muxAlive=false for an unknown workstream", async () => {
     setTmuxExecutor(mockTmux(state).executor);
     const summary = await summarizeWorkstream(db, { workstream: "nope" });
     expect(summary.agentCount).toBe(0);
     expect(summary.taskCount).toBe(0);
     expect(summary.edgeCount).toBe(0);
     expect(summary.noteCount).toBe(0);
-    expect(summary.tmuxAlive).toBe(false);
+    expect(summary.muxAlive).toBe(false);
   });
 
-  it("honours tmuxSession override", async () => {
+  it("honours muxSession override", async () => {
     state.sessions.add("custom");
     setTmuxExecutor(mockTmux(state).executor);
     const summary = await summarizeWorkstream(db, {
       workstream: "auth",
-      tmuxSession: "custom",
+      muxSession: "custom",
     });
-    expect(summary.tmuxSession).toBe("custom");
-    expect(summary.tmuxAlive).toBe(true);
+    expect(summary.muxSession).toBe("custom");
+    expect(summary.muxAlive).toBe(true);
   });
 });
 
@@ -312,17 +312,17 @@ describe("listWorkstreams", () => {
     expect(list.map((w) => w.name)).toEqual(["auth", "billing", "empty"]);
 
     const auth = list.find((w) => w.name === "auth");
-    expect(auth?.tmuxAlive).toBe(true);
+    expect(auth?.muxAlive).toBe(true);
     expect(auth?.agentCount).toBe(2);
     expect(auth?.taskCount).toBe(3);
 
     const billing = list.find((w) => w.name === "billing");
-    expect(billing?.tmuxAlive).toBe(false);
+    expect(billing?.muxAlive).toBe(false);
     expect(billing?.agentCount).toBe(1);
     expect(billing?.taskCount).toBe(0);
 
     const empty = list.find((w) => w.name === "empty");
-    expect(empty?.tmuxAlive).toBe(true);
+    expect(empty?.muxAlive).toBe(true);
     expect(empty?.agentCount).toBe(0);
     expect(empty?.taskCount).toBe(0);
   });
@@ -347,7 +347,7 @@ describe("destroyWorkstream", () => {
 
     const result = await destroyWorkstream(db, { workstream: "auth" });
     expect(result).toEqual({
-      killedTmux: true,
+      killedMux: true,
       deletedAgents: 2,
       deletedTasks: 3,
       deletedNotes: 2,
@@ -402,7 +402,7 @@ describe("destroyWorkstream", () => {
     setTmuxExecutor(mockTmux(state).executor);
     const result = await destroyWorkstream(db, { workstream: "nope" });
     expect(result).toEqual({
-      killedTmux: false,
+      killedMux: false,
       deletedAgents: 0,
       deletedTasks: 0,
       deletedNotes: 0,
@@ -418,7 +418,7 @@ describe("destroyWorkstream", () => {
     seedAuth(); // no tmux session for it
 
     const result = await destroyWorkstream(db, { workstream: "auth" });
-    expect(result.killedTmux).toBe(false);
+    expect(result.killedMux).toBe(false);
     expect(result.deletedAgents).toBe(2);
     expect(result.deletedTasks).toBe(3);
     expect(state.killed).toEqual([]);
@@ -430,7 +430,7 @@ describe("destroyWorkstream", () => {
 
     const result = await destroyWorkstream(db, { workstream: "empty" });
     expect(result).toEqual({
-      killedTmux: true,
+      killedMux: true,
       deletedAgents: 0,
       deletedTasks: 0,
       deletedNotes: 0,
@@ -450,7 +450,7 @@ describe("destroyWorkstream", () => {
     await destroyWorkstream(db, { workstream: "auth" });
     const second = await destroyWorkstream(db, { workstream: "auth" });
     expect(second).toEqual({
-      killedTmux: false,
+      killedMux: false,
       deletedAgents: 0,
       deletedTasks: 0,
       deletedNotes: 0,
@@ -494,7 +494,7 @@ describe("destroyWorkstream", () => {
     ensureWorkstream(db, "orphan");
     const summary = await summarizeWorkstream(db, { workstream: "orphan" });
     expect(summary.registered).toBe(true);
-    expect(summary.tmuxAlive).toBe(false);
+    expect(summary.muxAlive).toBe(false);
     expect(summary.agentCount).toBe(0);
     expect(summary.taskCount).toBe(0);
     expect(summary.workspaceCount).toBe(0);
@@ -505,7 +505,7 @@ describe("destroyWorkstream", () => {
     setTmuxExecutor(mockTmux(state).executor);
     const summary = await summarizeWorkstream(db, { workstream: "tmuxonly" });
     expect(summary.registered).toBe(false);
-    expect(summary.tmuxAlive).toBe(true);
+    expect(summary.muxAlive).toBe(true);
   });
 
   // Regression for review_code_destroy_freed_workspaces_double_count:

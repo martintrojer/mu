@@ -334,14 +334,14 @@ export function formatWorkstreamsTable(rows: WorkstreamSummary[]): string {
   // is a small int / fixed-shape token. Cap the name column so a long
   // workstream name doesn't push the row counts off-screen.
   const table = muTable({
-    head: ["name", "tmux", "agents", "tasks", "edges", "notes", "parked"].map((h) => pc.bold(h)),
+    head: ["name", "mux", "agents", "tasks", "edges", "notes", "parked"].map((h) => pc.bold(h)),
     colWidths: [40, null, null, null, null, null, null],
   });
   for (const r of rows) {
     const parkedCell = r.parked ? pc.yellow(`${r.parked.sinceDays}d`) : pc.dim("—");
     table.push([
       r.name,
-      r.tmuxAlive ? pc.green("alive") : pc.dim("—"),
+      r.muxAlive ? pc.green("alive") : pc.dim("—"),
       String(r.agentCount),
       String(r.taskCount),
       String(r.edgeCount),

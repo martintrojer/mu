@@ -476,7 +476,7 @@ describe("op capture (triggers)", () => {
       addNote(db, "a", "note text", { workstream: "demo" });
       clearOps();
 
-      await destroyWorkstream(db, { workstream: "demo", tmuxSession: "mu-capture-test-absent" });
+      await destroyWorkstream(db, { workstream: "demo", muxSession: "mu-capture-test-absent" });
 
       const rows = ops();
       expect(rows.length).toBeGreaterThan(0);
@@ -520,7 +520,7 @@ describe("op capture (triggers)", () => {
       addNote(db, "a", "keep me", { workstream: "demo" });
       clearOps();
 
-      await destroyWorkstream(db, { workstream: "demo", tmuxSession: "mu-capture-test-absent" });
+      await destroyWorkstream(db, { workstream: "demo", muxSession: "mu-capture-test-absent" });
 
       const byEntity = (e: string) => ops(e).filter((r) => r.op === "del");
       // One tombstone per row, at every level of the cascade.
