@@ -378,8 +378,7 @@ export interface MuxBackend {
    * information than the substrate's own answer.
    *
    * Absent method ⇒ "ask the detector". Present-but-undefined result ⇒
-   * "this pane has no status", NOT "free": no detector may mint `free`,
-   * which only `mu agent free` sets.
+   * "this pane has no status", NOT "free": no detector may mint `free`.
    */
   paneStatus?(paneId: string): Promise<DetectedStatus | undefined>;
 
@@ -389,9 +388,9 @@ export interface MuxBackend {
 
   // — attach —
   //
-  // Two shapes for the same intent because mu has two consumers:
-  // `mu agent attach` PRINTS a copy-pasteable line, the TUI's `a` key
-  // EXECUTES the steps. Neither may hardcode a tmux string.
+  // Two shapes for the same intent because mu prints attach hints after
+  // workstream creation while the TUI's `a` key executes the steps.
+  // Neither may hardcode a tmux string.
 
   /** Copy-pasteable shell line that lands the user on `target`. */
   attachHint(target: AttachTarget): string;

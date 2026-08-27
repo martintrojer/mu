@@ -41,8 +41,6 @@ both. `--json` exists on every verb:
   (satisfies `--blocked-by`), `REJECTED` (terminal won't-do; still
   blocks), `DEFERRED` (parked; still blocks).
 - **claim / release** — atomic take/clear of `tasks.owner`.
-- **free** — mark the *agent* available (`mu agent free`); pane
-  untouched. **Release is about the task; free is about the agent.**
 - **note** — append-only task context; survives sessions.
 - **track** — independent DAG subtree; don't spawn more agents than
   ready tracks.
@@ -264,15 +262,6 @@ git cherry-pick "$sha" && npm test
     anything else). The task-less counterpart to `mu task wait`, for
     helpers that own no task. Exit 0 met, 5 timeout, 6 pane died. Use
     it instead of `sleep` loops.
-  - `ensure <name>` — watcher-safe spawn: missing → spawn, idle → reuse
-    and exit 0, busy → reuse with `busy: true`. `--idle-only` turns the
-    busy case into exit 4, i.e. a concurrency lock.
-  - `poll` — the non-blocking dual of `wait`: one read-only snapshot of
-    the pool (`{name,status,idleMs,lastActivitySeq,workspaceBehind,
-    dead}`) for a tick loop to diff against the previous tick.
-  - `reap-idle` — sweeps and closes finished, idle, SAFE helpers
-    (`--idle-for`, default 300s). Skips dirty workspaces unless
-    `--discard-dirty`; `--dry-run` supported.
 - **Tasks:** `add` (`--note` for initial context), `list`, `next`,
   `show`, `tree`, `notes`
   (`--tail`, `--since`, `--since-claim`), `note`, `claim`

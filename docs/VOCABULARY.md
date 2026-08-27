@@ -176,7 +176,7 @@ window.
 | `busy`            | ⚙️    | Actively working (detector saw busy marker)         |
 | `needs_input`     | 💤   | Idle prompt visible, waiting for input              |
 | `needs_permission`| 🔐   | Permission prompt visible (e.g., "Allow once")      |
-| `free`            | ✓    | Marked available by user (`mu agent free`)                |
+| `free`            | ✓    | Available; retained for persisted/runtime status compatibility |
 | `managed`         | 🤝   | Under external orchestration; mu observes only      |
 | `unreachable`     | ❓   | Transport down, status uncertain                    |
 | `terminated`      | ✕    | Process gone, awaiting reaping                      |
@@ -185,22 +185,15 @@ window.
 **detector** when that backend cannot classify panes itself. The DB is
 a cache; `mu agent list` reconciles on every call.
 
-### The four "stop talking to this agent" verbs — keep them straight
+### Agent lifecycle verbs
 
 | Verb                  | Effect                                                                      |
 | --------------------- | --------------------------------------------------------------------------- |
-| `mu agent free alice`       | Sets `alice.status = 'free'`. Agent stays alive. Means "I'm done with you for now; you're available."  |
 | `mu task release feature_a`| Clears the task owner for `feature_a`. The agent who claimed it is unaffected.  |
 | `mu agent close alice`      | Terminates alice's pane and removes from registry. Destructive.             |
 | `mu agent kick alice`       | Signals (default SIGINT) the foreground process group of alice's pane TTY. For wedged tool subprocesses (`find /`, busy-wait); the wrapping CLI itself is untouched. Refuses when the foreground IS the wrapping CLI. |
-| `mu agent ensure alice`     | Idempotent spawn-or-reuse. Missing agent spawns with spawn flags (`--workspace`, `--role`, `--cli`, `--cwd`, `--tab`, workspace backend/from/project-root); existing idle/free agent reuses and exits 0. Existing busy/spawning/needs_permission agent reuses by default with `busy: true`; `--idle-only` turns that case into a typed conflict (exit 4) for watcher concurrency locks. |
 | `mu agent wait alice bob --first` | Blocks until an agent finishes (busy → any other state). The task-less counterpart to `mu task wait` for scratch/off-the-cuff helpers that own no task. `--any`/`--first` fire on the first; default all. Exit 0 met, 5 timeout, 6 a watched pane died. |
-| `mu agent poll`             | Non-blocking, read-only snapshot of every agent in the workstream (the dual of `mu agent wait`): per-agent `{name,status,idleMs,lastActivitySeq,workspaceBehind,dead}`. For a `/watch` loop or orchestrator tick to diff against the previous tick. Does NOT reconcile, capture scrollback, or fetch from a VCS remote. |
-| `mu agent reap-idle`        | One-line graveyard cleanup: sweep the workstream and close finished, idle, SAFE helpers (the scratch `fixer-N` pile-up). Closes agents whose status is `needs_input`/`needs_permission`/`free` and that have been idle `>= --idle-for` (default `MU_IDLE_THRESHOLD_MS`, 300s). Skips any with a dirty workspace (uncommitted changes / commits since fork) so work is never lost unexpectedly — pass `--discard-dirty` to override (lossy). `--dry-run` previews. JSON returns `{items,count}` where `count` is the number CLOSED and each item carries `action: "closed"|"skipped"` + a skip `reason`. |
 | *(none)*              | There is no detach verb. Use tmux detach to leave a workstream attached session without killing panes. |
-
-**Don't conflate `free` and `release`.** Free is about the *agent*;
-release is about the *task*.
 
 ### Verbs that move tasks through the lifecycle
 

@@ -21,7 +21,6 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   closeAgent,
   deleteAgent,
-  freeAgent,
   getAgent,
   insertAgent,
   refreshAgentTitle,
@@ -247,14 +246,6 @@ describe("v5 name-clash regression: agent verbs scope correctly", () => {
     updateAgentStatus(db, "worker-1", "busy", "wsa");
     expect(getAgent(db, "worker-1", "wsa")?.status).toBe("busy");
     expect(getAgent(db, "worker-1", "wsb")?.status).toBe("free");
-  });
-
-  it("freeAgent({ workstream }) only mutates the right row", () => {
-    updateAgentStatus(db, "worker-1", "busy", "wsa");
-    updateAgentStatus(db, "worker-1", "busy", "wsb");
-    freeAgent(db, "worker-1", "wsa");
-    expect(getAgent(db, "worker-1", "wsa")?.status).toBe("free");
-    expect(getAgent(db, "worker-1", "wsb")?.status).toBe("busy");
   });
 
   it("deleteAgent({ workstream }) only deletes the right row", () => {

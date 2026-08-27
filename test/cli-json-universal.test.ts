@@ -31,14 +31,12 @@ import { buildProgram } from "../src/cli.js";
  * Allowlist key is the leaf command name (the first argument to
  * .command(), e.g. "attach <name>").
  *
- * Current allowlist:
- *   - "attach <name>": prints scrollback + a `tmux attach` command for
- *     the human to copy-paste; no machine-actionable output.
+ * Current allowlist: empty.
  *
  * If you're tempted to add a new entry, ask: does this verb have NO
  * meaningful output a script would want? If unsure, add --json instead.
  */
-const ALLOWLIST: ReadonlySet<string> = new Set(["attach <name>"]);
+const ALLOWLIST: ReadonlySet<string> = new Set();
 
 interface VerbInfo {
   /** The full path: ["task", "add <id>"] for `mu task add`. */

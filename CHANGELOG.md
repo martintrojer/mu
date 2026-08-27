@@ -12,6 +12,14 @@ breaking changes are called out under "Breaking" in each entry.
 
 ### Changed
 
+- **`mu agent ensure`, `poll`, `reap-idle`, `free`, and `attach` removed
+  (surface-audit).** These five secondary convenience verbs are gone with
+  no compatibility aliases. The remaining lifecycle is: `spawn`, `send`,
+  `read`, `show`, `list`, `wait`, `kick`, `adopt`, `close`. SDK helpers
+  `ensureAgent`, `freeAgent`, `pollAgents`, `reapIdleAgents` and their
+  types are removed from `src/agents.ts` and `src/index.ts`.
+  `agent.free` removed from `LocalIntent` and the log-render verb table.
+
 - **TypeScript 7 (the Go-native compiler) for typechecking.**
   `npm run typecheck` drops from ~9s to ~0.6s. The upgrade is not a
   plain version bump, because TS 7.0 ships **no programmatic compiler

@@ -1,4 +1,4 @@
-// Send / read / close / free verbs from src/agents.ts. Real
+// Send / read / close verbs from src/agents.ts. Real
 // SQLite + mocked tmux executor.
 //
 // Split out of test/verbs.test.ts under
@@ -13,9 +13,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   AgentNotFoundError,
   closeAgent,
-  freeAgent,
   getAgent,
-  insertAgent,
   readAgent,
   sendToAgent,
   spawnAgent,
@@ -145,51 +143,5 @@ describe("closeAgent", () => {
     const result = await closeAgent(db, "alice", { workstream: "auth" });
     expect(result.deletedRow).toBe(true);
     expect(getAgent(db, "alice", "auth")).toBeUndefined();
-  });
-});
-
-describe("freeAgent", () => {
-  it("flips status to 'free' and reports the change", () => {
-    insertAgent(db, { name: "alice", workstream: "auth", paneId: "%1", status: "busy" });
-    const r = freeAgent(db, "alice", "auth");
-    expect(r).toEqual({ previousStatus: "busy", status: "free", changed: true });
-    expect(getAgent(db, "alice", "auth")?.status).toBe("free");
-  });
-
-  it("is idempotent on an already-free agent", () => {
-    insertAgent(db, { name: "alice", workstream: "auth", paneId: "%1", status: "free" });
-    const r = freeAgent(db, "alice", "auth");
-    expect(r).toEqual({ previousStatus: "free", status: "free", changed: false });
-  });
-
-  it("throws AgentNotFoundError on missing agent", () => {
-    expect(() => freeAgent(db, "ghost", "auth")).toThrow(AgentNotFoundError);
-  });
-
-  it("works from any persisted status (spawning, needs_input, needs_permission)", () => {
-    insertAgent(db, {
-      name: "a1",
-      workstream: "auth",
-      paneId: "%1",
-      status: "spawning",
-    });
-    insertAgent(db, {
-      name: "a2",
-      workstream: "auth",
-      paneId: "%2",
-      status: "needs_input",
-    });
-    insertAgent(db, {
-      name: "a3",
-      workstream: "auth",
-      paneId: "%3",
-      status: "needs_permission",
-    });
-    expect(freeAgent(db, "a1", "auth").changed).toBe(true);
-    expect(freeAgent(db, "a2", "auth").changed).toBe(true);
-    expect(freeAgent(db, "a3", "auth").changed).toBe(true);
-    for (const name of ["a1", "a2", "a3"] as const) {
-      expect(getAgent(db, name, "auth")?.status).toBe("free");
-    }
   });
 });

@@ -17,7 +17,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { insertAgent } from "../src/agents.js";
 import { type Db, openDb, SYNCED_ENTITIES } from "../src/db.js";
 import { KNOWN_INTENTS } from "../src/log-render.js";
-import { type LocalIntent, latestSeq, listLogs } from "../src/logs.js";
+import { emitEvent, type LocalIntent, latestSeq, listLogs } from "../src/logs.js";
 import {
   addBlockEdge,
   addNote,
@@ -186,10 +186,8 @@ describe("machine-local lifecycle ops", () => {
   // trigger can see them and the emit must stay.
   it("agent lifecycle ops exist, carry agent.* intents, and are machine-local", async () => {
     const { spawnAgent } = await import("../src/agents.js");
-    // insertAgent is the pure-DB path; use it plus a free to avoid tmux.
-    insertAgent(db, { name: "worker-1", workstream: "demo", paneId: "%1", status: "busy" });
-    const { freeAgent } = await import("../src/agents.js");
-    freeAgent(db, "worker-1", "demo");
+    // Use emitEvent to write a machine-local agent op without needing tmux.
+    emitEvent(db, "demo", "agent.spawn", "agent spawn worker-1");
     expect(typeof spawnAgent).toBe("function");
 
     const agentOps = ops().filter((r) => r.entity === "agent");
@@ -212,7 +210,6 @@ describe("machine-local lifecycle ops", () => {
     const locals: LocalIntent[] = [
       "agent.spawn",
       "agent.close",
-      "agent.free",
       "agent.adopt",
       "agent.kick",
       "agent.stall",

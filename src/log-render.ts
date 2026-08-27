@@ -169,7 +169,6 @@ const VERBS: Record<KnownIntent, string> = {
   "workstream.destroy": "workstream destroy",
   "agent.spawn": "agent spawn",
   "agent.close": "agent close",
-  "agent.free": "agent free",
   "agent.adopt": "agent adopt",
   "agent.kick": "agent kick",
   // Payload prose reads "agent stalled ..."; keep the verb matching it
@@ -339,7 +338,6 @@ function renderKnown(row: RenderableOp, intent: KnownIntent): RenderedOp {
     // is stripped so it is not printed twice.
     case "agent.spawn":
     case "agent.close":
-    case "agent.free":
     case "agent.adopt":
     case "agent.kick":
     case "agent.stall":

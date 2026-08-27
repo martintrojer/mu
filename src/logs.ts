@@ -482,7 +482,6 @@ export function emitEvent(
 export type LocalIntent =
   | "agent.spawn"
   | "agent.close"
-  | "agent.free"
   | "agent.adopt"
   | "agent.kick"
   | "agent.stall"

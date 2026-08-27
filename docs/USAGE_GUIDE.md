@@ -5,11 +5,11 @@ A practical, copy-pasteable tour of mu. Terms are canonical — see
 `mu --help`, with the gotchas in `## CLI overview` of
 [skills/mu/SKILL.md](../skills/mu/SKILL.md).
 
-> **Status:** 1.0 (pre-release). ~60 typed verbs across 8 namespaces
+> **Status:** 1.0 (pre-release). Typed verbs span 8 namespaces
 > (`workstream`, `agent`, `task`, `workspace`, `log`, `archive`, `me`,
 > `db`) plus bare top-level verbs (`state`, `doctor`, `sql`, `undo`,
-> `sync`, `rebuild`). Every verb accepts `--json` (one exception,
-> `mu agent attach`). Schema v9. See [CHANGELOG.md](../CHANGELOG.md).
+> `sync`, `rebuild`). Every verb accepts `--json`. Schema v9. See
+> [CHANGELOG.md](../CHANGELOG.md).
 
 **In a hurry? Start at [§ 0. Common scenarios](#0-common-scenarios).**
 
@@ -511,9 +511,7 @@ you never have to leave the terminal to learn what to do next.
 Every verb accepts `--json` for machine-readable output. Errors
 in `--json` mode emit a `{ error, message, nextSteps, exitCode }`
 record to stderr; the `nextSteps` array carries resolutions you can
-`eval` directly. (One verb opts out:
-`mu agent attach`, which prints a `tmux attach` command for a
-human to copy.)
+`eval` directly.
 
 ### CLI conventions: validation errors
 
@@ -1584,44 +1582,6 @@ mu sql "SELECT name FROM sqlite_master WHERE type IN ('table','view') ORDER BY t
 | Read the activity log / subscribe to events           | `mu log [--tail] [--intent task.close]` |
 | Block until tasks reach a status (orchestrator wait)  | `mu task wait <ref> [<ref>...] [--first|--any] [--timeout S]` |
 | Block until agents finish working (task-less wait)    | `mu agent wait <name> [<name>...] [--first|--any] [--timeout S]` |
-| Ensure an agent exists, reusing it if already present  | `mu agent ensure <name> [-w <ws>] [--idle-only] [--json]` |
-| Snapshot the whole agent pool once (non-blocking)     | `mu agent poll [-w <ws>] [--json]`      |
-| Sweep finished, idle, safe helpers in one line        | `mu agent reap-idle [-w <ws>] [--idle-for S] [--dry-run] [--json]` |
-
-### `mu agent ensure`: idempotent spawn-or-reuse
-
-`mu agent ensure <name>` is the watcher-friendly form of `spawn`: if the
-agent is missing, it spawns it with the same practical flags as
-`mu agent spawn` (`--workspace`, `--role`, `--cli`, `--cwd`, `--tab`,
-`--workspace-backend`, `--workspace-from`, `--workspace-project-root`). If
-an agent by that name already exists in the workstream, `ensure` reuses
-it and exits 0 instead of treating the name collision as an error.
-
-```bash
-mu agent ensure fixer-1 -w scratch --workspace --json
-# => {"agent":{...},"changed":true,"created":true,"reused":false,"busy":false,...}
-
-mu agent ensure fixer-1 -w scratch --json
-# => {"agent":{...},"changed":false,"created":false,"reused":true,"busy":false,...}
-```
-
-Default busy behavior is conservative: an existing busy / spawning /
-permission-blocked agent is **reused without mutation** and reported
-with `busy: true`, so watcher loops neither duplicate fixers nor
-interrupt the running one. For a concurrency lock, pass `--idle-only`:
-when the existing agent is busy, `ensure` fails with a typed conflict
-(exit 4) so the script can skip the tick.
-
-```bash
-mu agent ensure fixer-1 -w scratch --idle-only --json || echo "lock held"
-```
-
-JSON always returns a typed singleton result on success:
-`{agent, changed, created, reused, busy, existed, previousStatus,
-workspace, nextSteps}`. `created=true` means a spawn happened;
-`reused=true` means no state changed. `previousStatus` is `null` when
-created and the existing status when reused.
-
 ### `mu agent wait`: the task-less counterpart to `mu task wait`
 
 Scratch helpers usually own no task, so `mu task wait` has nothing to
@@ -1643,57 +1603,6 @@ ref; `--json` carries `nextSteps`; refs may be qualified
 `<workstream>/<name>`. Exit codes: `0` met, `5` timeout, `6` a watched
 agent's pane died. Status detection is pi-only (a non-pi pane always
 reads `needs_input`, so it never goes busy and the wait times out).
-
-### `mu agent poll`: the non-blocking dual of `mu agent wait`
-
-Where `mu agent wait` *blocks* until an agent transitions, `mu agent
-poll` captures the current pool state **exactly once and returns** — the
-shape a `/watch` loop or orchestrator tick wants: poll each tick, diff
-against the previous tick. It does NOT reconcile (no DB mutation), does
-NOT capture per-pane scrollback, and does NOT fetch from any VCS remote
-(`workspaceBehind` is as fresh as the workspace's local refs cache).
-
-```bash
-mu agent poll -w auth-refactor --json
-# => {"items":[{"name":"worker-1","status":"busy","idleMs":1200,
-#       "lastActivitySeq":42,"workspaceBehind":3,"dead":false}, ...],
-#     "count":2}
-```
-
-Per-agent fields: `name`; `status` (last-reconciled runtime status);
-`idleMs` (since the row's last update); `lastActivitySeq` (highest
-`ops.seq` sourced by this agent — a monotonic cursor to diff
-tick-over-tick); `workspaceBehind` (commits behind main, `null` when
-uncomputable); `dead` (the pane is gone). Plain output is one line per
-agent; `--json` is the `{items,count}` shape.
-
-### `mu agent reap-idle`: one-line graveyard cleanup
-
-The scratch watcher pattern leaves a graveyard of finished `fixer-N`
-panes. `mu agent reap-idle` sweeps the workstream and closes the
-finished, idle, SAFE ones in one shot:
-
-```bash
-mu agent reap-idle -w scratch --idle-for 600 --json
-# => {"items":[{"name":"fixer-1","action":"closed","status":"needs_input",
-#       "idleMs":700000,"workspaceFreed":false},
-#      {"name":"fixer-2","action":"skipped","status":"busy",
-#       "idleMs":900000,"reason":"status busy (working)"}],
-#     "count":1}
-```
-
-A candidate has status `needs_input`, `needs_permission`, or `free`
-(**not** `busy`/`spawning`) AND has been idle for `>= --idle-for`
-seconds (default `MU_IDLE_THRESHOLD_MS`, 300). Each is closed via the
-`mu agent close` path, which **auto-frees a clean workspace and refuses
-a dirty one** — a helper with uncommitted changes is *skipped*
-(`reason: "workspace dirty ..."`), never silently discarded.
-`--discard-dirty` overrides (lossy); `--dry-run` previews.
-
-`count` is the number CLOSED (in `--dry-run`, the number that *would*
-be). Every agent the sweep saw appears in `items` with
-`action: "closed"|"skipped"` and a skip `reason`. Works in any
-workstream, not just `scratch`.
 
 ### `mu task wait`: cross-workstream refs + `--first` returns WHICH
 

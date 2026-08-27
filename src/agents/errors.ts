@@ -112,35 +112,6 @@ export class AgentExistsError extends Error implements HasNextSteps {
   }
 }
 
-export class AgentBusyError extends Error implements HasNextSteps {
-  override readonly name = "AgentBusyError";
-  constructor(
-    public readonly agentName: string,
-    public readonly status: string,
-    public readonly workstream: string,
-  ) {
-    super(
-      `agent ${agentName} is ${status} in workstream ${workstream}; refusing because --idle-only was set`,
-    );
-  }
-  errorNextSteps(): NextStep[] {
-    return [
-      {
-        intent: "Wait until the agent finishes",
-        command: `mu agent wait ${this.agentName} -w ${this.workstream} --first`,
-      },
-      {
-        intent: "Inspect the agent before deciding whether to reuse it",
-        command: `mu agent show ${this.agentName} -w ${this.workstream}`,
-      },
-      {
-        intent: "Ensure without the idle-only concurrency lock (reuses the existing agent)",
-        command: `mu agent ensure ${this.agentName} -w ${this.workstream}`,
-      },
-    ];
-  }
-}
-
 export class AgentNotFoundError extends Error implements HasNextSteps {
   override readonly name = "AgentNotFoundError";
   constructor(

@@ -254,7 +254,6 @@ describe("the op formatter", () => {
       AgentNotFoundError,
       adoptAgent,
       closeAgent,
-      freeAgent,
       insertAgent,
       resetCommandResolverForTests,
       setCommandResolverForTests,
@@ -342,7 +341,6 @@ describe("the op formatter", () => {
       const { executor } = mockTmux(tmuxState);
       setTmuxExecutor(executor);
       await captureNewEvents(() => spawnAgent(db, { name: "worker-1", workstream: "agents" }));
-      await captureNewEvents(() => freeAgent(db, "worker-1", "agents"));
       const orphanWindowId = `@${tmuxState.nextWindowId++}`;
       const orphanPaneId = `%${tmuxState.nextPaneId++}`;
       tmuxState.windows.get("mu-agents")?.push({ id: orphanWindowId, name: "orphan" });
@@ -516,7 +514,6 @@ describe("the op formatter", () => {
       const expected = [
         "agent adopt",
         "agent close",
-        "agent free",
         "agent kick",
         "agent spawn",
         "agent stalled",

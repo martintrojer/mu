@@ -1,5 +1,5 @@
 // mu — every `mu agent ...` verb + spawn / send / read / list / show /
-// close / free / adopt / attach + the top-level `mu me` agent-self
+// close / adopt + the top-level `mu me` agent-self
 // verb (default + `tasks` / `next` subcommands).
 //
 // Extracted from src/cli.ts as part of refactor_split_large_src_files.
@@ -16,16 +16,12 @@ import {
   AgentNotFoundError,
   adoptAgent,
   closeAgent,
-  ensureAgent,
-  freeAgent,
   getAgent,
   isKickSignal,
   type KickSignal,
   kickAgent,
   listLiveAgents,
-  pollAgents,
   readAgent,
-  reapIdleAgents,
   refreshAgentTitle,
   resolveCliCommand,
   resolveCliCommandWithSource,
@@ -76,9 +72,7 @@ interface SpawnOpts {
 // 60GB project tree because --workspace-project-root pointed at a
 // non-VCS dir; surfaced by bug_agent_spawn_workspace_aborts_without_status).
 // Skipped on --json so machine consumers get a single structured
-// output, not preflight chatter. Shared by cmdSpawn + cmdEnsure (sibling
-// entry points for the same workspace-creation path) so the warning,
-// backend detection, and JSON suppression never drift between them.
+// output, not preflight chatter.
 async function maybePrintWorkspacePreflight(opts: SpawnOpts): Promise<void> {
   if (!opts.workspace || opts.json) return;
   const projectRoot = opts.workspaceProjectRoot ?? process.cwd();
@@ -174,86 +168,6 @@ export async function cmdSpawn(db: Db, name: string, opts: SpawnOpts): Promise<v
     `Spawned ${pc.bold(agent.name)} (${cliDisplay}) in window ${pc.bold(agent.tab ?? agent.name)} of ${pc.bold(`mu-${workstream}`)}, pane ${pc.dim(agent.paneId)}${wsBit}`,
   );
   if (workspace) console.log(pc.dim(`  workspace: ${workspace.path} (${workspace.backend})`));
-  printNextSteps(nextSteps);
-}
-
-interface EnsureOpts extends SpawnOpts {
-  idleOnly?: boolean;
-}
-
-export async function cmdEnsure(db: Db, name: string, opts: EnsureOpts): Promise<void> {
-  const workstream = await resolveWorkstream(opts.workstream);
-
-  await maybePrintWorkspacePreflight(opts);
-
-  const result = await ensureAgent(db, {
-    name,
-    workstream,
-    ...(opts.cli !== undefined ? { cli: opts.cli } : {}),
-    ...(opts.command !== undefined ? { command: opts.command } : {}),
-    ...(opts.tab !== undefined ? { tab: opts.tab } : {}),
-    ...(opts.role !== undefined ? { role: opts.role } : {}),
-    ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}),
-    ...(opts.workspace !== undefined ? { workspace: opts.workspace } : {}),
-    ...(opts.workspaceBackend !== undefined ? { workspaceBackend: opts.workspaceBackend } : {}),
-    ...(opts.workspaceFrom !== undefined ? { workspaceFrom: opts.workspaceFrom } : {}),
-    ...(opts.workspaceProjectRoot !== undefined
-      ? { workspaceProjectRoot: opts.workspaceProjectRoot }
-      : {}),
-    ...(opts.idleOnly === true ? { idleOnly: true } : {}),
-  });
-  const workspace = getWorkspaceForAgent(db, name, workstream);
-  const nextSteps: NextStep[] = result.created
-    ? [
-        { intent: "Send work", command: `mu agent send ${name} "..." -w ${workstream}` },
-        { intent: "Read pane", command: `mu agent read ${name} -w ${workstream}` },
-        {
-          intent: "Close (drops registry row, kills pane)",
-          command: `mu agent close ${name} -w ${workstream}`,
-        },
-      ]
-    : result.busy
-      ? [
-          {
-            intent: "Inspect existing busy agent",
-            command: `mu agent show ${name} -w ${workstream}`,
-          },
-          {
-            intent: "Wait for it to finish",
-            command: `mu agent wait ${name} -w ${workstream} --first`,
-          },
-        ]
-      : [
-          {
-            intent: "Send work to the reused agent",
-            command: `mu agent send ${name} "..." -w ${workstream}`,
-          },
-          { intent: "Read pane", command: `mu agent read ${name} -w ${workstream}` },
-        ];
-
-  if (opts.json) {
-    emitJson({ ...result, workspace: workspace ?? null, nextSteps });
-    return;
-  }
-
-  if (result.created) {
-    const resolvedCommand = opts.command ?? resolveCliCommand(result.agent.cli);
-    const commandOverridden = resolvedCommand !== result.agent.cli;
-    const wsBit = workspace ? pc.dim(" with auto-workspace") : "";
-    const cmdBit = commandOverridden ? pc.dim(` (cmd: ${resolvedCommand})`) : "";
-    console.log(
-      `Ensured ${pc.bold(result.agent.name)} by spawning it (${result.agent.cli}${cmdBit}) in window ${pc.bold(result.agent.tab ?? result.agent.name)} of ${pc.bold(`mu-${workstream}`)}, pane ${pc.dim(result.agent.paneId)}${wsBit}`,
-    );
-    if (workspace) console.log(pc.dim(`  workspace: ${workspace.path} (${workspace.backend})`));
-    printNextSteps(nextSteps);
-    return;
-  }
-
-  const status = result.previousStatus ?? result.agent.status;
-  const busyBit = result.busy ? pc.yellow("busy; reused without mutation") : "idle; reused";
-  console.log(
-    `Ensured ${pc.bold(result.agent.name)} by reusing existing agent (${status}; ${busyBit})`,
-  );
   printNextSteps(nextSteps);
 }
 
@@ -365,85 +279,6 @@ export async function cmdList(
       );
     }
   }
-}
-
-/**
- * `mu agent poll` — a non-blocking, read-only snapshot of every agent in
- * a workstream (the dual of `mu agent wait`). Where `wait` blocks until
- * an agent finishes, `poll` returns the current pool state once so a
- * `/watch` loop or orchestrator tick can diff it against the prior tick.
- * Does NOT reconcile, capture scrollback, or fetch from any VCS remote.
- */
-export async function cmdPoll(
-  db: Db,
-  opts: { workstream?: string; json?: boolean },
-): Promise<void> {
-  const workstream = await resolveWorkstream(opts.workstream);
-  const view = await pollAgents(db, { workstream });
-  if (opts.json) {
-    emitJson({ items: view.items, count: view.count });
-    return;
-  }
-  console.log(pc.bold(`mu-${workstream}`));
-  if (view.count === 0) {
-    console.log(pc.dim("  (no agents)"));
-    return;
-  }
-  for (const a of view.items) {
-    const idleSecs = Math.round(a.idleMs / 1000);
-    const behind = a.workspaceBehind === null ? "—" : `${a.workspaceBehind}`;
-    const flags = a.dead ? pc.red(" DEAD") : "";
-    console.log(
-      `  ${pc.bold(a.name)}  ${statusIcon(a.status)} ${a.status}  ` +
-        `idle=${idleSecs}s  seq=${a.lastActivitySeq}  behind=${behind}${flags}`,
-    );
-  }
-}
-
-interface ReapIdleOpts {
-  workstream?: string;
-  json?: boolean;
-  idleFor?: number;
-  dryRun?: boolean;
-  discardDirty?: boolean;
-}
-
-/**
- * `mu agent reap-idle` — one-line graveyard cleanup of finished, idle,
- * SAFE helpers. Sweeps the workstream and closes agents that are
- * idle/needs_input/free for >= --idle-for, skipping any with a dirty
- * workspace by default (no lossy surprise). The core use case is the
- * scratch watcher `fixer-N` pile-up, but it works for any workstream.
- */
-export async function cmdReapIdle(db: Db, opts: ReapIdleOpts): Promise<void> {
-  const workstream = await resolveWorkstream(opts.workstream);
-  const view = await reapIdleAgents(db, {
-    workstream,
-    ...(opts.idleFor !== undefined ? { idleForMs: opts.idleFor * 1000 } : {}),
-    ...(opts.dryRun === true ? { dryRun: true } : {}),
-    ...(opts.discardDirty === true ? { discardDirty: true } : {}),
-  });
-  if (opts.json) {
-    emitJson({ items: view.items, count: view.count });
-    return;
-  }
-  const verb = opts.dryRun ? "Would close" : "Closed";
-  console.log(pc.bold(`mu-${workstream}`));
-  const closed = view.items.filter((i) => i.action === "closed");
-  const skipped = view.items.filter((i) => i.action === "skipped");
-  if (closed.length === 0) {
-    console.log(pc.dim("  (no idle agents to reap)"));
-  }
-  for (const i of closed) {
-    const idleSecs = Math.round(i.idleMs / 1000);
-    console.log(
-      `  ${pc.green(verb)} ${pc.bold(i.name)}  ${pc.dim(`(${i.status}, idle=${idleSecs}s)`)}`,
-    );
-  }
-  for (const i of skipped) {
-    console.log(pc.dim(`  skipped ${i.name}: ${i.reason}`));
-  }
-  console.log(pc.dim(`  ${view.count} ${opts.dryRun ? "would be closed" : "closed"}`));
 }
 
 export async function cmdAgentShow(
@@ -704,68 +539,6 @@ export async function cmdKick(
   printNextSteps(nextSteps);
 }
 
-export async function cmdFree(
-  db: Db,
-  rawName: string,
-  opts: { workstream?: string; json?: boolean } = {},
-): Promise<void> {
-  const { name } = await resolveEntityRef(db, rawName, opts, "agent");
-  assertAgentInWorkstream(db, name, opts.workstream);
-  const ws = await resolveWorkstream(opts.workstream);
-  const r = freeAgent(db, name, ws);
-  if (r.changed) await refreshAgentTitle(db, name, ws);
-  const nextSteps: NextStep[] = [
-    { intent: "Send work to the freed agent", command: `mu agent send ${name} '...' -w ${ws}` },
-    { intent: "Close the agent", command: `mu agent close ${name} -w ${ws}` },
-    { intent: "See workstream state", command: `mu state -w ${ws}` },
-  ];
-  if (opts.json) {
-    emitJson({ agentName: name, ...r, nextSteps });
-    return;
-  }
-  if (!r.changed) {
-    console.log(pc.dim(`${name} already free (no-op)`));
-    printNextSteps(nextSteps);
-    return;
-  }
-  console.log(`Freed ${pc.bold(name)} ${pc.dim(`(${r.previousStatus} → ${r.status})`)}`);
-  printNextSteps(nextSteps);
-}
-
-export async function cmdAttach(
-  db: Db,
-  rawName: string,
-  opts: { workstream?: string },
-): Promise<void> {
-  const { name } = await resolveEntityRef(db, rawName, opts, "agent");
-  const workstream = await resolveWorkstream(opts.workstream);
-  const sessionName = `mu-${workstream}`;
-  // Reconcile before the friendly session precheck. If the whole tmux
-  // session/server vanished, listLiveAgents observes an empty pane set
-  // and reaps registered agents before we tell the operator there is no
-  // session to attach to.
-  const mux = await activeMux();
-  const view = await listLiveAgents(db, { workstream });
-  if (!(await mux.sessionExists(sessionName))) {
-    throw new UsageError(`workstream "${workstream}" has no ${mux.name} session yet`);
-  }
-  const agent = view.agents.find((a) => a.name === name);
-  if (!agent) {
-    throw new AgentNotFoundError(name);
-  }
-  // Capture and print its scrollback.
-  const text = await mux.capturePane(agent.paneId);
-  process.stdout.write(text);
-  console.log("");
-  // The attach recipe is the BACKEND's to spell: a herdr user must
-  // never be handed a tmux command line.
-  console.log(
-    pc.dim(
-      `Attach with: ${mux.attachHint({ session: sessionName, window: agent.tab ?? agent.name })}`,
-    ),
-  );
-}
-
 /**
  * `mu agent wait <names...>` — block until agents finish working.
  *
@@ -955,50 +728,6 @@ export function wireAgentCommands(program: Command): void {
     });
 
   agent
-    .command("ensure <name>")
-    .description(
-      "Idempotently spawn an agent if missing, or reuse the existing one. With --idle-only, fail when the existing agent is actively busy (concurrency lock).",
-    )
-    .option(
-      "--cli <cli>",
-      "agent CLI key (default: pi); also used as the lookup key for $MU_<UPPER_CLI>_COMMAND, e.g. --cli pi_big resolves $MU_PI_BIG_COMMAND",
-      "pi",
-    )
-    .option(
-      "--command <cmd>",
-      "executable to run in the pane when spawning (defaults to $MU_<CLI>_COMMAND or the cli value)",
-    )
-    .option("--tab <tab>", "tmux window name to group under when spawning (defaults to agent name)")
-    .option("--role <role>", "full-access | read-only", "full-access")
-    .option(
-      "--cwd <cwd>",
-      "initial working directory when spawning (ignored when --workspace is set)",
-    )
-    .option("--workspace", "auto-create a VCS workspace if the agent must be spawned")
-    .option(
-      "--workspace-backend <name>",
-      "force a specific VCS backend for --workspace (jj | sl | git | none)",
-    )
-    .option(
-      "--workspace-from <ref>",
-      "base the workspace on a specific commit / branch / changeset",
-    )
-    .option(
-      "--workspace-project-root <path>",
-      "override the project root the workspace branches from (default: cwd)",
-    )
-    .option(
-      "--idle-only",
-      "if the agent already exists but is actively busy/spawning/needs_permission, fail with a conflict exit code instead of reusing it",
-    )
-    .option(...WORKSTREAM_OPT)
-    .option(...JSON_OPT)
-    .action(function (name: string) {
-      const opts = (this as Command).opts() as EnsureOpts;
-      return handle((db) => cmdEnsure(db, name, opts), this as Command)();
-    });
-
-  agent
     .command("send <name> <text>")
     .description("Send text to an agent's pane (bracketed-paste protocol)")
     .option(
@@ -1042,43 +771,6 @@ export function wireAgentCommands(program: Command): void {
         json?: boolean;
       };
       return handle((db) => cmdList(db, opts), this as Command)();
-    });
-
-  agent
-    .command("poll")
-    .description(
-      "Non-blocking, read-only snapshot of all agents in the workstream (the dual of `mu agent wait`): per-agent status, idleMs, lastActivitySeq, workspaceBehind, and dead-pane flag. For a `/watch` loop or orchestrator tick to diff against the previous tick. Does NOT block.",
-    )
-    .option(...WORKSTREAM_OPT)
-    .option(...JSON_OPT)
-    .action(function () {
-      const opts = (this as Command).opts() as {
-        workstream?: string;
-        json?: boolean;
-      };
-      return handle((db) => cmdPoll(db, opts), this as Command)();
-    });
-
-  agent
-    .command("reap-idle")
-    .description(
-      "Sweep the workstream and close finished, idle, SAFE helpers in one line (the scratch `fixer-N` graveyard cleanup). Closes agents that are needs_input/needs_permission/free and idle for >= --idle-for; skips any with a dirty workspace by default (no lossy surprise). JSON returns {items,count} with per-agent action/skipped reason.",
-    )
-    .option(
-      "--idle-for <seconds>",
-      "minimum idle seconds before an agent is eligible (default: MU_IDLE_THRESHOLD_MS, 300)",
-      parseNonNegativeInt,
-    )
-    .option("--dry-run", "report what would be closed without killing any pane")
-    .option(
-      "--discard-dirty",
-      "also close agents with a dirty workspace, discarding it (LOSSY; off by default)",
-    )
-    .option(...WORKSTREAM_OPT)
-    .option(...JSON_OPT)
-    .action(function () {
-      const opts = (this as Command).opts() as ReapIdleOpts;
-      return handle((db) => cmdReapIdle(db, opts), this as Command)();
     });
 
   agent
@@ -1135,30 +827,6 @@ export function wireAgentCommands(program: Command): void {
         json?: boolean;
       };
       return handle((db) => cmdKick(db, name, opts), this as Command)();
-    });
-
-  agent
-    .command("free <name>")
-    .description(
-      "Mark an agent's status as 'free' (idempotent). Pane untouched; reconcile flips back to busy on real activity.",
-    )
-    .option(...WORKSTREAM_OPT)
-    .option(...JSON_OPT)
-    .action(function (name: string) {
-      const opts = (this as Command).opts() as { workstream?: string; json?: boolean };
-      return handle((db) => cmdFree(db, name, opts), this as Command)();
-    });
-
-  agent
-    .command("attach <name>")
-    .description("Print an agent's full scrollback and the tmux command to attach")
-    .option(...WORKSTREAM_OPT)
-    .action(function (name: string) {
-      const opts = (this as Command).opts() as { workstream?: string };
-      // Routed through handle() like every other verb — errorNextSteps
-      // fire on typed errors, exit codes classify uniformly
-      // (review_code_attach_bypasses_handle).
-      return handle((db) => cmdAttach(db, name, opts), this as Command)();
     });
 
   // `mu agent wait` — the task-less counterpart to `mu task wait`. Block

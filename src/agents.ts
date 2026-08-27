@@ -15,7 +15,7 @@
 
 import { type Db, resolveWorkstreamId, tryResolveWorkstreamId } from "./db.js";
 import type { AgentStatus } from "./detect.js";
-import { emitEvent, listLogs } from "./logs.js";
+import { emitEvent } from "./logs.js";
 import { withOpContext } from "./op-context.js";
 import { type ReconcileMode, type ReconcileReport, reconcile } from "./reconcile.js";
 import { addNote, listTasksByOwner } from "./tasks.js";
@@ -28,7 +28,6 @@ export {
 // Re-export the cluster modules so external callers continue to
 // `import { AgentNotFoundError, spawnAgent, ... } from "./agents.js"`.
 export {
-  AgentBusyError,
   AgentDiedOnSpawnError,
   AgentExistsError,
   AgentNotFoundError,
@@ -56,9 +55,6 @@ export {
   checkCommandResolvable,
   defaultSpawnLivenessMs,
   defaultSpawnReadinessMs,
-  type EnsureAgentOptions,
-  type EnsureAgentResult,
-  ensureAgent,
   envVarNameForCli,
   resetCommandResolverForTests,
   resolveCliCommand,
@@ -79,13 +75,7 @@ export {
 
 import { AgentNotFoundError, WorkspacePreservedError } from "./agents/errors.js";
 import { activeMux, type CaptureOptions, type MuxPane, type SendOptions } from "./mux.js";
-import {
-  decorateWithStaleness,
-  freeWorkspace,
-  getWorkspaceForAgent,
-  isWorkspaceClean,
-  listWorkspaces,
-} from "./workspace.js";
+import { freeWorkspace, getWorkspaceForAgent, isWorkspaceClean } from "./workspace.js";
 // (freeWorkspace is used by the spawn rollback paths below, not by closeAgent.
 // Closing an agent is intentionally a separate concern from freeing its workspace;
 // see the closeAgent docstring.)
@@ -608,40 +598,6 @@ export async function readAgent(
   return (await activeMux()).capturePane(agent.paneId, opts);
 }
 
-// ─── freeAgent (verb) ─────────────────────────────────────────────────────
-
-export interface FreeAgentResult {
-  /** Status before the call. */
-  previousStatus: AgentStatus;
-  /** Status after the call (always 'free' on success). */
-  status: AgentStatus;
-  /** True iff the row actually changed. False on idempotent no-op. */
-  changed: boolean;
-}
-
-/**
- * Mark an agent's status as `free` — the explicit "I'm done with you
- * for now; you're available" signal. The agent's pane and DB row are
- * untouched; reconcile treats `free` as sticky (only flips back to busy
- * on real activity, never on an idle prompt) so this verb composes
- * cleanly with the existing scrollback detector.
- *
- * Idempotent: setting an already-free agent to free is a no-op (returns
- * `changed: false`). Throws AgentNotFoundError on missing.
- */
-export function freeAgent(db: Db, name: string, workstream: string): FreeAgentResult {
-  const before = getAgent(db, name, workstream);
-  if (!before) throw new AgentNotFoundError(name);
-  if (before.status === "free") {
-    return { previousStatus: before.status, status: "free", changed: false };
-  }
-  updateAgentStatus(db, name, "free", before.workstreamName);
-  // Machine-local table (`agents`): no trigger, so this emit is the
-  // only record.
-  emitEvent(db, before.workstreamName, "agent.free", `agent free ${name} (was ${before.status})`);
-  return { previousStatus: before.status, status: "free", changed: true };
-}
-
 export interface CloseAgentOptions {
   /**
    * Lossy override: when true, free the agent's workspace BEFORE
@@ -778,7 +734,7 @@ export interface ListLiveAgentsOptions {
    * Which kind of reconciliation pass to run. Forwarded to
    * `reconcile()`'s same-name option. Default `"full"` (the
    * documented mutating behaviour `mu agent list` has always had,
-   * now also used by `mu state` and `mu agent attach`).
+   * now also used by `mu state`).
    *
    * `mu doctor` and `mu undo` pass `"report-only"`: count drift,
    * mutate nothing. `mu undo` MUST use this so a post-restore
@@ -807,8 +763,8 @@ export interface LiveAgentsView {
 
 /**
  * Return the live, reality-reconciled view of agents in a workstream.
- * `mu state`, `mu agent list`, and `mu agent attach` call this with the
- * default `mode: "full"` (mutating); read-only diagnostic / restore paths
+ * `mu state` and `mu agent list` call this with the default `mode: "full"`
+ * (mutating); read-only diagnostic / restore paths
  * (`mu doctor`, `mu undo`) call it with `mode: "report-only"` to mutate
  * nothing at all.
  */
@@ -828,252 +784,4 @@ export async function listLiveAgents(db: Db, opts: ListLiveAgentsOptions): Promi
     computeAgentIdle(db, a, now) ? { ...a, idle: true } : a,
   );
   return { agents, orphans: report.orphans, report };
-}
-
-/** One agent's snapshot in a `pollAgents` view. The non-blocking,
- *  read-only dual of `waitForAgents`'s per-agent state: instead of
- *  blocking until a status transition, it captures the current pool
- *  state once so a `/watch` loop or orchestrator tick can diff it
- *  against the previous tick. */
-export interface AgentPollSnapshot {
-  /** Agent name (per-workstream unique). */
-  name: string;
-  /** Persisted runtime status (as last reconciled). */
-  status: AgentStatus;
-  /** Milliseconds since the agent's row was last updated (its last
-   *  observed activity). Floored at 0. */
-  idleMs: number;
-  /** Highest `agent_logs.seq` whose source is this agent, or 0 when the
-   *  agent has emitted no activity. A monotonically-increasing cursor a
-   *  watcher can diff tick-over-tick to detect progress. */
-  lastActivitySeq: number;
-  /** How many commits the agent's workspace parent_ref is behind main,
-   *  or null when the agent has no workspace / it cannot be computed. */
-  workspaceBehind: number | null;
-  /** True when the agent's pane no longer exists in the tmux session
-   *  (a dead/ghost pane the next reconcile would prune). */
-  dead: boolean;
-}
-
-/** The whole-pool result of `pollAgents`. Mirrors the `{items,count}`
- *  collection-read JSON shape every `--json` collection verb uses. */
-export interface AgentPollView {
-  items: AgentPollSnapshot[];
-  count: number;
-}
-
-export interface PollAgentsOptions {
-  workstream: string;
-  /** Override the tmux session name (defaults to `mu-<workstream>`). */
-  tmuxSession?: string;
-}
-
-/**
- * Non-blocking, read-only snapshot of every agent in a workstream — the
- * dual of `waitForAgents` (`mu agent wait`). Where `wait` blocks until a
- * status transition fires, `poll` captures the current pool state exactly
- * once and returns. A `/watch` loop or orchestrator tick calls this each
- * tick and diffs against the prior result.
- *
- * MUST NOT block: it issues a single `list-panes` (to detect dead panes),
- * reads the persisted agent rows, the activity log, and the workspace
- * staleness cache. It does NOT reconcile (no DB mutation), does NOT
- * capture per-pane scrollback, and does NOT fetch from any VCS remote —
- * `workspaceBehind` is as fresh as the workspace's local refs cache.
- */
-export async function pollAgents(db: Db, opts: PollAgentsOptions): Promise<AgentPollView> {
-  const agents = listAgents(db, { workstream: opts.workstream });
-  if (agents.length === 0) return { items: [], count: 0 };
-
-  // Single non-blocking tmux read to find which panes are still alive.
-  // listPanesInSession returns [] for a missing session, so a torn-down
-  // workstream simply reports every agent dead.
-  const sessionName = opts.tmuxSession ?? `mu-${opts.workstream}`;
-  let livePaneIds: Set<string>;
-  try {
-    const panes = await (await activeMux()).listPanesInSession(sessionName);
-    livePaneIds = new Set(panes.map((p) => p.paneId));
-  } catch {
-    // Treat a mux failure as "can't confirm liveness" rather than
-    // throwing — poll is a read-only observation, never a hard error.
-    livePaneIds = new Set();
-  }
-
-  // Last-activity cursor: highest agent_logs.seq sourced by each agent.
-  // One scoped read of the workstream's log, bucketed by source.
-  const lastSeqByAgent = new Map<string, number>();
-  for (const row of listLogs(db, { workstream: opts.workstream })) {
-    const prev = lastSeqByAgent.get(row.source) ?? 0;
-    if (row.seq > prev) lastSeqByAgent.set(row.source, row.seq);
-  }
-
-  // Workspace staleness: decorate only the workspaces in this workstream,
-  // keyed by agent name. decorateWithStaleness reads local refs only — no
-  // network fetch — so this stays non-blocking.
-  const wsRows = listWorkspaces(db, opts.workstream);
-  const behindByAgent = new Map<string, number | null>();
-  if (wsRows.length > 0) {
-    for (const decorated of await decorateWithStaleness(wsRows)) {
-      behindByAgent.set(decorated.agentName, decorated.commitsBehindMain ?? null);
-    }
-  }
-
-  const now = Date.now();
-  const items: AgentPollSnapshot[] = agents.map((a) => {
-    const updated = Date.parse(a.updatedAt);
-    const idleMs = Number.isFinite(updated) ? Math.max(0, now - updated) : 0;
-    // A mid-spawn placeholder pane id is not dead — it just hasn't landed
-    // a real pane yet; treat it as alive so a freshly-spawning agent
-    // isn't surfaced as a ghost.
-    const dead = !isPendingPaneId(a.paneId) && !livePaneIds.has(a.paneId);
-    return {
-      name: a.name,
-      status: a.status,
-      idleMs,
-      lastActivitySeq: lastSeqByAgent.get(a.name) ?? 0,
-      workspaceBehind: behindByAgent.get(a.name) ?? null,
-      dead,
-    };
-  });
-  return { items, count: items.length };
-}
-
-/** Statuses that count as 'finished / awaiting input' — the candidates a
- *  sweep is allowed to consider. `busy` and `spawning` are excluded: an
- *  actively-working agent is never idle, regardless of clock time. */
-const REAPABLE_STATUSES: ReadonlySet<AgentStatus> = new Set<AgentStatus>([
-  "needs_input",
-  "needs_permission",
-  "free",
-]);
-
-/** Per-agent outcome of a `reapIdleAgents` sweep. `action: "closed"` rows
- *  were closed (pane killed + row removed; clean workspace auto-freed);
- *  `action: "skipped"` rows were left untouched with a human-readable
- *  `reason`. */
-export interface ReapAgentResult {
-  name: string;
-  action: "closed" | "skipped";
-  /** Pre-close status (so callers can log what was swept). */
-  status: AgentStatus;
-  /** Milliseconds the agent had been idle at sweep time. */
-  idleMs: number;
-  /** Why a candidate was skipped. Set only when action === "skipped". */
-  reason?: string;
-  /** True iff the close auto-freed a clean workspace. */
-  workspaceFreed?: boolean;
-}
-
-/** The whole-pool result of `reapIdleAgents`. Mirrors the `{items,count}`
- *  collection-read JSON shape. `count` is the number of agents CLOSED
- *  (not the number considered), so a caller can branch on "did anything
- *  get swept". */
-export interface ReapView {
-  items: ReapAgentResult[];
-  count: number;
-}
-
-export interface ReapIdleAgentsOptions {
-  workstream: string;
-  /** Minimum idle duration (ms) before an agent is eligible. Defaults to
-   *  `idleThresholdMs()` (MU_IDLE_THRESHOLD_MS, 5m). */
-  idleForMs?: number;
-  /** When true, compute the plan but mutate nothing — every closeable
-   *  candidate is reported `action: "closed"` but no pane is killed and
-   *  no row removed. Lets the operator preview a graveyard sweep. */
-  dryRun?: boolean;
-  /** When true, also close agents whose workspace is dirty (uncommitted
-   *  changes / commits since fork), discarding the workspace (LOSSY).
-   *  Off by default: the whole point of the verb is to never lose work
-   *  unexpectedly. */
-  discardDirty?: boolean;
-}
-
-/**
- * Sweep a workstream and close finished, idle, SAFE helpers — the
- * one-line graveyard cleanup for the `fixer-N` scratch-watcher pattern
- * (spawn a helper per unit, let them pile up, reap the clean ones).
- *
- * An agent is a candidate when its status is one of `REAPABLE_STATUSES`
- * (needs_input / needs_permission / free — i.e. NOT busy/spawning) AND it
- * has been idle (no row update) for >= `idleForMs`. Each candidate is
- * then closed via `closeAgent`, which auto-frees a clean workspace and
- * REFUSES a dirty one (WorkspacePreservedError). By default that refusal
- * is caught and the agent is skipped with a reason — no work is lost
- * unexpectedly. Pass `discardDirty: true` to override and discard.
- *
- * Non-candidates are reported as skipped with a reason so the JSON is a
- * full audit of what the sweep saw, not just what it touched.
- */
-export async function reapIdleAgents(db: Db, opts: ReapIdleAgentsOptions): Promise<ReapView> {
-  // Defensive: a NaN/Infinity/negative idleForMs (e.g. a non-numeric CLI
-  // arg that slipped past validation) would make the `idleMs < idleForMs`
-  // guard below silently false, closing EVERY reapable agent regardless of
-  // how recently it went idle. Fall back to the default threshold instead.
-  const idleForMs =
-    opts.idleForMs !== undefined && Number.isFinite(opts.idleForMs) && opts.idleForMs >= 0
-      ? opts.idleForMs
-      : idleThresholdMs();
-  const agents = listAgents(db, { workstream: opts.workstream });
-  const now = Date.now();
-  const items: ReapAgentResult[] = [];
-
-  for (const a of agents) {
-    const updated = Date.parse(a.updatedAt);
-    const idleMs = Number.isFinite(updated) ? Math.max(0, now - updated) : 0;
-    const base = { name: a.name, status: a.status, idleMs } as const;
-
-    if (!REAPABLE_STATUSES.has(a.status)) {
-      items.push({ ...base, action: "skipped", reason: `status ${a.status} (working)` });
-      continue;
-    }
-    if (idleMs < idleForMs) {
-      items.push({
-        ...base,
-        action: "skipped",
-        reason: `idle ${Math.round(idleMs / 1000)}s < ${Math.round(idleForMs / 1000)}s`,
-      });
-      continue;
-    }
-
-    // Dirty-workspace guard: peek BEFORE close so a dry run reports the
-    // skip and a real run never throws into the loop. closeAgent would
-    // refuse a dirty workspace anyway; we surface it as a clean skip.
-    if (opts.discardDirty !== true) {
-      const ws = getWorkspaceForAgent(db, a.name, a.workstreamName);
-      if (ws !== undefined && !(await isWorkspaceClean(ws))) {
-        items.push({
-          ...base,
-          action: "skipped",
-          reason: "workspace dirty (uncommitted changes or commits since fork)",
-        });
-        continue;
-      }
-    }
-
-    if (opts.dryRun === true) {
-      items.push({ ...base, action: "closed" });
-      continue;
-    }
-
-    try {
-      const result = await closeAgent(db, a.name, {
-        workstream: a.workstreamName,
-        ...(opts.discardDirty === true ? { discardWorkspace: true } : {}),
-      });
-      items.push({ ...base, action: "closed", workspaceFreed: result.workspaceFreed });
-    } catch (err) {
-      // Defensive: a dirty workspace can appear between the peek above
-      // and the close (or discardDirty=false races a fresh edit). Treat
-      // any close failure as a skip rather than aborting the whole sweep.
-      if (err instanceof WorkspacePreservedError) {
-        items.push({ ...base, action: "skipped", reason: "workspace preserved (dirty)" });
-        continue;
-      }
-      throw err;
-    }
-  }
-
-  const count = items.filter((i) => i.action === "closed").length;
-  return { items, count };
 }

@@ -198,8 +198,8 @@ export function AgentsPopup({
         const a = agents[safeCursor];
         if (!a || !snapshot) return;
         const ws = snapshot.workstreamName;
-        // Default yank: a `mu agent send` template the user can
-        // edit. The popup-verb keys f / x cover free / close.
+        // Default yank: a `mu agent send` template the user can edit.
+        // The popup-verb key x covers close.
         void yank(`mu agent send ${a.name} '...' -w ${ws}`);
         return;
       }
@@ -207,10 +207,6 @@ export function AgentsPopup({
         const a = agents[safeCursor];
         if (!a || !snapshot) return;
         const ws = snapshot.workstreamName;
-        if (action.key === "f") {
-          void yank(`mu agent free ${a.name} -w ${ws}`);
-          return;
-        }
         if (action.key === "x") {
           void yank(`mu agent close ${a.name} -w ${ws}`);
           return;
@@ -291,7 +287,7 @@ export function AgentsPopup({
   return (
     <PopupShell
       title={`Agents · popup (${safeCursor + 1}/${agents.length})`}
-      hint="a attach · f free · x close · y yanks `mu agent send`"
+      hint="a attach · x close · y yanks `mu agent send`"
     >
       <Box flexDirection="column" flexGrow={1}>
         {visible.map((a, i) => {

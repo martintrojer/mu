@@ -308,7 +308,7 @@ describe("listLiveAgents — idle enrichment wiring", () => {
     expect(view.agents[0]?.idle).toBeUndefined();
   });
 
-  // Mode propagation: status-pollers (`mu state`, `mu agent attach`) use
+  // Mode propagation: status-pollers such as `mu state` use
   // full mode; read-only diagnostic verbs (`mu doctor`, `mu undo`) use
   // report-only. The idle enrichment runs after `reconcile` returns and is
   // therefore mode-independent — these tests pin that contract so a future

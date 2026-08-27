@@ -240,9 +240,6 @@ The diagram below uses the tmux spelling.
   `MU_SESSION_ID` set) target the same session.
 - **`tmux attach -t mu-<workstream>`** → attach to the whole
   workstream's mux session (herdr: `herdr workspace focus <id>`)
-- **`mu agent attach <agent>`** → print the agent's scrollback plus
-  the one-paste attach command for that pane, in the active backend's
-  dialect
 - **`mu agent list`** is scoped to one workstream — the current one by
   default; `mu agent list -w <workstream>` for another
 - **`session_id`** is the partition key on the `agents` table
@@ -608,8 +605,7 @@ returning. Three steps, in order:
   entirely on that backend. herdr's `working` → `busy`, `blocked` →
   `needs_permission`, `idle` / `done` / `unknown` → `needs_input`.
   `unknown` must never become `free`: herdr documents that it does not
-  prove completion, and no detector of either kind may mint `free`,
-  which only `mu agent free` sets.
+  prove completion, and no detector of either kind may mint `free`.
 - **No silent adoption**: orphans are reported, never claimed.
 - **`mu doctor` calls the same routine** and reports counts.
 

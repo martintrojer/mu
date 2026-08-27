@@ -188,7 +188,7 @@ describe("AgentsPopup behaviour (mount + simulateInput)", () => {
     unmount();
   });
 
-  it("verb keys 'f' / 'x' yank `mu agent free` / `mu agent close`", async () => {
+  it("verb key 'x' yanks `mu agent close`", async () => {
     const db = fixtureDb();
     const agents = seedAgents(db);
     const snap = snapshotFor(agents);
@@ -201,11 +201,8 @@ describe("AgentsPopup behaviour (mount + simulateInput)", () => {
     });
     await waitForInkOutput(stdout);
 
-    await simulateInput(stdin, "f");
-    expect(yank.mock.calls[0]?.[0]).toBe("mu agent free worker_1 -w demo");
-
     await simulateInput(stdin, "x");
-    expect(yank.mock.calls[1]?.[0]).toBe("mu agent close worker_1 -w demo");
+    expect(yank.mock.calls[0]?.[0]).toBe("mu agent close worker_1 -w demo");
 
     unmount();
   });
