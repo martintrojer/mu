@@ -271,8 +271,8 @@ export const jjBackend: VcsBackend = {
 
   // jj is always-snapshotted: there is no "uncommitted" state. The
   // working copy is itself a commit; the next snapshot folds any
-  // edits in. Surface that by returning [] so `recreateWorkspace`
-  // never refuses a jj workspace as "dirty".
+  // edits in. Surface that by returning [] so dirty-checking callers
+  // never refuse a jj workspace as "dirty".
   async listDirtyFiles(_workspacePath) {
     return [];
   },

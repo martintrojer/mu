@@ -178,8 +178,8 @@ describe("workspace SDK (with noneBackend)", () => {
     expect(() => execFileSync("ls", [futurePath], { stdio: "pipe" })).toThrow();
   });
 
-  // Regression: workspace_create_typed_no_agent_error. Pre-fix, a
-  // `mu workspace create <name>` for an agent that doesn't exist in the
+  // Regression: workspace_create_typed_no_agent_error. Pre-fix, creating
+  // a workspace for an agent that doesn't exist in the
   // target workstream leaked SQLite's bare
   // `NOT NULL constraint failed: vcs_workspaces.agent_id` error to the
   // operator. The fix throws a typed AgentNotFoundError before the
@@ -209,21 +209,6 @@ describe("workspace SDK (with noneBackend)", () => {
     // No row was inserted.
     const after = db.prepare("SELECT COUNT(*) AS c FROM vcs_workspaces").get() as { c: number };
     expect(after.c).toBe(before.c);
-  });
-
-  it("mu workspace create <missing-agent> exits 3 with a human-friendly message (CLI)", async () => {
-    ensureWorkstream(db, "empty2");
-    const result = await runCli(
-      ["workspace", "create", "ghost", "-w", "empty2", "--project-root", projectRoot],
-      join(dbDir, "mu.db"),
-    );
-    expect(result.error).toBeUndefined();
-    expect(result.exitCode).toBe(3);
-    const combined = `${result.stdout}\n${result.stderr}`;
-    expect(combined).toContain("ghost");
-    expect(combined).toContain("empty2");
-    expect(combined).not.toMatch(/NOT NULL constraint/i);
-    expect(combined).not.toMatch(/FOREIGN KEY/i);
   });
 
   it("listWorkspaces filters by workstream", async () => {
@@ -416,7 +401,7 @@ describe("createWorkspace cleanup on backend throw (snap_dogfood Finding 4b)", (
     expect(partialDirSeenByCleanup).toBe(true);
     // CRITICAL: the partial dir is gone, not orphaned. Pre-fix this
     // would leave the dir behind and block subsequent
-    // `mu workspace create` with WorkspacePathNotEmptyError.
+    // a subsequent create with WorkspacePathNotEmptyError.
     expect(() => execFileSync("ls", [wsPath], { stdio: "pipe" })).toThrow();
     // And the registry has no row either.
     expect(getWorkspaceForAgent(db, "worker-1", "auth")).toBeUndefined();

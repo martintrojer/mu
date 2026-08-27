@@ -118,7 +118,7 @@ export class AgentNotFoundError extends Error implements HasNextSteps {
     public readonly agentName: string,
     /** Optional workstream context. When set, the message is enriched
      *  with `(in workstream <ws>)` so the verb that hit the miss
-     *  (e.g. `mu workspace create <agent> -w <ws>`) doesn't leave the
+     *  (e.g. `mu workspace path <agent> -w <ws>`) doesn't leave the
      *  operator guessing which scope was searched. Optional so existing
      *  call sites that only know the agent name keep their original
      *  one-line message. */

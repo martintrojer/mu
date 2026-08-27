@@ -15,8 +15,26 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { insertAgent } from "../src/agents.js";
 import { type Db, openDb } from "../src/db.js";
+import { createWorkspace } from "../src/workspace.js";
 import { ensureWorkstream } from "../src/workstream.js";
 import { runCli } from "./_runCli.js";
+
+// Workspace creation has no standalone verb (it happens inside
+// `mu agent spawn --workspace`), so fixtures allocate the workspace
+// through the SDK and then drive the read verbs over the CLI.
+async function seedWorkspace(backend: "git" | "none", projectRoot: string): Promise<void> {
+  const seedDb = openDb({ path: dbPath });
+  try {
+    await createWorkspace(seedDb, {
+      agent: "worker-1",
+      workstream: "auth",
+      backend,
+      projectRoot,
+    });
+  } finally {
+    seedDb.close();
+  }
+}
 
 let stateRoot: string;
 let dbDir: string;
@@ -91,23 +109,8 @@ gitDescribe("workspace staleness rendering", () => {
     consumerProject = mkdtempSync(join(tmpdir(), "mu-stale-consumer-"));
     rmSync(consumerProject, { recursive: true, force: true });
     execFileSync("git", ["clone", "-q", originDir, consumerProject], { stdio: "ignore" });
-    // Create the workspace via the CLI so it records the row + parent_ref.
-    const create = await runCli(
-      [
-        "workspace",
-        "create",
-        "worker-1",
-        "-w",
-        "auth",
-        "--backend",
-        "git",
-        "--project-root",
-        consumerProject,
-      ],
-      dbPath,
-    );
-    expect(create.error).toBeUndefined();
-    expect(create.exitCode).not.toBe(1);
+    // Allocate the workspace so the row + parent_ref are recorded.
+    await seedWorkspace("git", consumerProject);
     // Advance origin by N commits and fetch into the workspace.
     if (commitsAhead > 0) {
       const advancer = mkdtempSync(join(tmpdir(), "mu-stale-advance-"));
@@ -183,7 +186,7 @@ gitDescribe("workspace staleness rendering", () => {
     const r = await runCli(["state", "-w", "auth"], dbPath);
     expect(r.error).toBeUndefined();
     expect(r.stdout).not.toMatch(/stale .* commits behind/);
-    expect(r.stdout).not.toMatch(/Tip: Free \+ recreate/);
+    expect(r.stdout).not.toMatch(/Tip: Refresh stale workspaces/);
   });
 
   it("mu state shows the warn line + tip when ANY workspace is >=10 behind", async () => {
@@ -191,9 +194,8 @@ gitDescribe("workspace staleness rendering", () => {
     const r = await runCli(["state", "-w", "auth"], dbPath);
     expect(r.error).toBeUndefined();
     expect(r.stdout).toMatch(/1 stale .*10 commits behind/);
-    expect(r.stdout).toMatch(/Tip: Free \+ recreate stale workspaces/);
-    expect(r.stdout).toMatch(/mu workspace free worker-1/);
-    expect(r.stdout).toMatch(/mu workspace create worker-1/);
+    expect(r.stdout).toMatch(/Tip: Refresh stale workspaces/);
+    expect(r.stdout).toMatch(/mu workspace refresh worker-1/);
   });
 });
 
@@ -204,21 +206,7 @@ describe("workspace staleness (none-backend)", () => {
     const projectRoot = mkdtempSync(join(tmpdir(), "mu-stale-none-"));
     writeFileSync(join(projectRoot, "README"), "x\n");
     try {
-      const create = await runCli(
-        [
-          "workspace",
-          "create",
-          "worker-1",
-          "-w",
-          "auth",
-          "--backend",
-          "none",
-          "--project-root",
-          projectRoot,
-        ],
-        dbPath,
-      );
-      expect(create.error).toBeUndefined();
+      await seedWorkspace("none", projectRoot);
       const r = await runCli(["state", "-w", "auth"], dbPath);
       expect(r.error).toBeUndefined();
       expect(r.stdout).not.toMatch(/stale .* commits behind/);

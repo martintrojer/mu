@@ -72,8 +72,9 @@ export class WorkspaceVcsRequiredError extends Error implements HasNextSteps {
   errorNextSteps(): NextStep[] {
     return [
       {
-        intent: "Free the snapshot and re-create with a real VCS backend",
-        command: "mu workspace free <agent>  &&  mu workspace create <agent> --backend <jj|sl|git>",
+        intent: "Free the snapshot and re-spawn with a real VCS backend",
+        command:
+          "mu workspace free <agent>  &&  mu agent spawn <agent> --workspace --workspace-backend <jj|sl|git>",
       },
     ];
   }
@@ -86,10 +87,8 @@ export class WorkspaceVcsRequiredError extends Error implements HasNextSteps {
  */
 export class WorkspaceDirtyError extends Error implements HasNextSteps {
   override readonly name = "WorkspaceDirtyError";
-  /** The verb that refused ("rebase", "recreate", ...). Used to make
-   *  the error message + nextSteps point the operator at the right
-   *  escape hatch (e.g. recreate's `--force`). Default "rebase" for
-   *  backward compatibility with the original rebaseTo call sites. */
+  /** The verb that refused. Only `rebaseTo` refuses this way today,
+   *  but the field keeps the message + nextSteps self-describing. */
   public readonly verb: string;
   constructor(
     public readonly workspacePath: string,
@@ -102,7 +101,7 @@ export class WorkspaceDirtyError extends Error implements HasNextSteps {
     this.verb = verb;
   }
   errorNextSteps(): NextStep[] {
-    const steps: NextStep[] = [
+    return [
       {
         intent: "Inspect the dirty files",
         command: `(cd ${this.workspacePath} && git status -s)  # or jj st / sl st`,
@@ -115,14 +114,11 @@ export class WorkspaceDirtyError extends Error implements HasNextSteps {
         intent: "Or stash them first (git only)",
         command: `(cd ${this.workspacePath} && git stash)`,
       },
+      {
+        intent: "Or DISCARD the workspace entirely (the lossy escape)",
+        command: "mu workspace free <agent>",
+      },
     ];
-    if (this.verb === "recreate") {
-      steps.push({
-        intent: "Or DISCARD all uncommitted changes (the lossy escape)",
-        command: "mu workspace recreate <agent> --force",
-      });
-    }
-    return steps;
   }
 }
 
@@ -300,9 +296,8 @@ export interface VcsBackend {
    * Return the list of dirty (uncommitted / unstaged / untracked-not-
    * ignored) paths in the workspace. Empty array = clean.
    *
-   * Used by `mu workspace recreate` to refuse a free+create cycle on
-   * a dirty workspace unless the operator passes `--force` (the lossy
-   * escape hatch). Mirrors the dirty-check `rebaseTo` does internally.
+   * Used by `mu workspace list`'s dirty decoration and by the
+   * dirty-check `rebaseTo` does internally before a refresh.
    *
    * Backend semantics:
    *   - git: `git status --porcelain` (working-tree + staged +

@@ -445,7 +445,7 @@ export async function cmdTaskWait(
 
   // Build nextSteps. The structure differs by exit shape:
   //   - --first / --any success: name the firing ref, suggest
-  //     cherry-pick + verify + free + recreate (the dispatch-pipeline
+  //     cherry-pick + verify + refresh (the dispatch-pipeline
   //     recipe). The cherry-pick command uses the firing ref's owner
   //     as the worker name when known.
   //   - --all success: list closed refs, suggest verify.
@@ -467,8 +467,8 @@ export async function cmdTaskWait(
     });
     if (owner !== null) {
       nextSteps.push({
-        intent: `Free + recreate ${owner}'s workspace for the next dispatch`,
-        command: `mu workspace free ${owner} -w ${firingRef.workstreamName} && mu workspace create ${owner} -w ${firingRef.workstreamName}`,
+        intent: `Refresh ${owner}'s workspace onto current main for the next dispatch`,
+        command: `mu workspace refresh ${owner} -w ${firingRef.workstreamName}`,
       });
     }
   } else if (!result.timedOut && wantFirstShape === false) {

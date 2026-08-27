@@ -125,8 +125,9 @@ and no commits since fork. Non-clean close fails with
 Between waves:
 - `mu workspace refresh <agent>` rebases onto fresh main without
   killing LLM context.
-- `mu workspace recreate <agent>` = free + create for fresh
-  single-purpose workers; `--force` discards dirty edits.
+- `mu workspace free <agent>` throws the workspace away for good; a
+  later `mu agent spawn --workspace` allocates a fresh one. There is
+  no standalone create verb.
 - `mu workspace commits <agent>` lists since-fork commits for
   cherry-picking.
 
@@ -205,7 +206,7 @@ Every turn:
   worker range each time.
 - **Bucket fix waves by file cluster, not severity.** Two workers
   editing one file create merge conflicts.
-- **Refresh/recreate workspaces between waves.** The `behind` column
+- **Refresh workspaces between waves.** The `behind` column
   in `mu workspace list` shows stale-parent risk.
 - **Cross-workstream wait/claim:** pass qualified refs
   `<workstream>/<name>`. For `claim --for A/worker-1` on a task in
@@ -267,8 +268,9 @@ git cherry-pick "$sha" && npm test
   `block`, `unblock`, `update`, `reparent`, `wait`, `delete --yes`.
   Edge direction: `block <blocked> --by <blocker>`.
 - **Self:** `mu me`, `mu me tasks`, `mu me next`.
-- **Workspace:** `create`, `list` (`behind`), `refresh`, `recreate`,
-  `commits`, `free`, `path`, `orphans`.
+- **Workspace:** `list` (`behind`), `refresh`, `commits`, `free`,
+  `path`, `orphans`. Creation is not a verb — it happens inside
+  `mu agent spawn --workspace`.
 - **Log:** `mu log "text"`, `mu log -n N`, `mu log --tail`. Reads render
   every op as prose ("task close a → CLOSED"), from the op's structured
   intent. Filters: `--intent task.close` (what mu recorded),

@@ -28,6 +28,27 @@ breaking changes are called out under "Breaking" in each entry.
 
 ### Changed
 
+- **`mu workspace create` and `mu workspace recreate` removed
+  (surface-audit).** Both standalone verbs are gone with no
+  compatibility aliases. Workspace creation is not an operator verb:
+  it happens inside `mu agent spawn --workspace` (with
+  `--workspace-backend` / `--workspace-from` /
+  `--workspace-project-root`), and cleanup on `mu agent close` is
+  unchanged. The remaining namespace is `list`, `refresh`, `commits`,
+  `free`, `path`, `orphans`. Between waves use `mu workspace refresh`
+  (preserves the worker's commits by rebasing onto fresh main); for
+  destructive cleanup use `mu workspace free`. The SDK no longer
+  exports `recreateWorkspace`, `RecreateWorkspaceOptions`, or
+  `RecreateWorkspaceResult`, and `src/workspace/recreate.ts` is
+  deleted; the lower-level `createWorkspace` remains, since spawn
+  needs it. `workspace.recreate` is removed from `LocalIntent` and the
+  log-render verb table, and the private `_suppressEvent` flag on
+  `createWorkspace` / `freeWorkspace` (which only existed to give
+  recreate one atomic event line) is gone. Operator-facing hints that
+  recommended free + create — the `mu state` stale-workspace tip and
+  the `mu task wait` next-step recipe — now recommend
+  `mu workspace refresh`.
+
 - **`mu agent ensure`, `poll`, `reap-idle`, `free`, and `attach` removed
   (surface-audit).** These five secondary convenience verbs are gone with
   no compatibility aliases. The remaining lifecycle is: `spawn`, `send`,

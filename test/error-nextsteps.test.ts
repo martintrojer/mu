@@ -253,9 +253,9 @@ const cases: NextStepsCase[] = [
     expectedTokens: ["workspace", "<jj|sl|git>"],
   },
   {
-    error: new WorkspaceDirtyError("/path/to/ws", ["src/file.ts"], "recreate"),
+    error: new WorkspaceDirtyError("/path/to/ws", ["src/file.ts"]),
     label: "WorkspaceDirtyError",
-    expectedTokens: ["/path/to/ws", "--force"],
+    expectedTokens: ["/path/to/ws", "mu workspace free"],
   },
   {
     error: new WorkspaceConflictError("/path/to/ws", "origin/main", ["src/file.ts"]),

@@ -653,7 +653,7 @@ separately below.
 | `src/logs.ts`         | Typed READER over `ops` (`listLogs` / `latestSeq`), plus the write paths triggers cannot cover: `appendLog` (operator prose) and `emitEvent` (changes mutating no portable table — `agent.*`, `workspace.*`), under a typed `LocalIntent`. |
 | `src/log-render.ts`   | **The ONE op → prose formatter.** `renderOp` maps an intent (+ key + payload fields) to `{verb, subject, detail}`; plus `renderOpLine`, `opSubject`, `parseOpKey`. Pure and colour-free, so CLI and TUI share one phrasing. |
 | `src/vcs/*.ts`        | One backend per file (`git.ts`, `jj.ts`, `sl.ts`, `none.ts`) plus `types.ts` (the `VcsBackend` interface), `helpers.ts`, and `index.ts` (detection precedence `jj` → `sl` → `git` → none; `backendByName`). |
-| `src/workspace/*.ts`  | Per-agent VCS workspaces, a registry on top of `vcs.ts`: `core.ts` (row shapes, paths, errors), `crud.ts`, `decorate.ts` (staleness + dirty), `orphans.ts`, `recreate.ts`. |
+| `src/workspace/*.ts`  | Per-agent VCS workspaces, a registry on top of `vcs.ts`: `core.ts` (row shapes, paths, errors), `crud.ts`, `decorate.ts` (staleness + dirty), `orphans.ts`. |
 | `src/output.ts`       | NextStep type + `printNextSteps` + `errorNextSteps` plumbing for self-documenting output |
 | `src/shell-quote.ts`  | `shellQuote` — POSIX single-quoting for tokens interpolated into copy-pasteable next-step hints. |
 | `src/state.ts`        | SDK seam for `mu state`: `loadWorkstreamSnapshotFast` (pure SQL, TUI 1s tick), `loadWorkstreamSnapshotSlow` (subprocesses), `mergeSnapshotFastSlow`, `loadWorkstreamSnapshot`. Opt-in: `withDirty`, `withDoctor`, `withRecentCommits`, `withAllTasks`. |

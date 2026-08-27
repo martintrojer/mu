@@ -216,7 +216,6 @@ describe("machine-local lifecycle ops", () => {
       "workspace.create",
       "workspace.free",
       "workspace.refresh",
-      "workspace.recreate",
     ];
     for (const intent of locals) {
       const entity = intent.slice(0, intent.indexOf("."));

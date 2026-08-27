@@ -280,7 +280,7 @@ describe("the op formatter", () => {
     } = await import("../src/tasks.js");
     const { claimTask, releaseTask } = await import("../src/tasks/claim.js");
     const { resetTmuxExecutor, setTmuxExecutor } = await import("../src/tmux.js");
-    const { createWorkspace, freeWorkspace, recreateWorkspace, refreshWorkspace } = await import(
+    const { createWorkspace, freeWorkspace, refreshWorkspace } = await import(
       "../src/workspace.js"
     );
     const { destroyWorkstream, ensureWorkstream } = await import("../src/workstream.js");
@@ -397,12 +397,6 @@ describe("the op formatter", () => {
         }),
       );
       await captureNewEvents(() =>
-        recreateWorkspace(db, "worker-1", {
-          workstream: "events",
-          projectRoot: noneProjectRoot,
-        }),
-      );
-      await captureNewEvents(() =>
         freeWorkspace(db, "worker-1", { workstream: "events", commit: false }),
       );
       await expect(
@@ -509,7 +503,6 @@ describe("the op formatter", () => {
         "agent stalled",
         "workspace create",
         "workspace free",
-        "workspace recreate",
         "workspace refresh",
       ];
       expect([...captured.keys()].sort()).toEqual(expected.sort());

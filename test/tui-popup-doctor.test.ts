@@ -310,7 +310,6 @@ describe("DoctorPopup: yank intents — informational only (read-only pledge)", 
       "mu agent close",
       "mu agent kick",
       "mu workspace free",
-      "mu workspace recreate",
       "mu workspace refresh",
       "mu undo",
     ]) {

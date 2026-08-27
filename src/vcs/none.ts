@@ -66,7 +66,7 @@ export const noneBackend: VcsBackend = {
   },
 
   // No VCS → nothing to compare against; "dirty" is unanswerable.
-  // Caller (`recreateWorkspace`) treats [] as "clean" and proceeds.
+  // Callers treat [] as "clean" and proceed.
   async listDirtyFiles(_workspacePath) {
     return [];
   },

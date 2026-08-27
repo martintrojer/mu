@@ -41,11 +41,6 @@ export interface CreateWorkspaceOptions {
   backend?: VcsBackendName | VcsBackend;
   /** Optional ref to base the workspace on. Backend-specific. */
   parentRef?: string;
-  /** INTERNAL. When false, suppress the `workspace create` system
-   *  event. Used by `recreateWorkspace` so the audit trail records
-   *  ONE atomic `workspace recreate` line instead of separate
-   *  free + create entries. Defaults to true. */
-  _suppressEvent?: boolean;
 }
 
 /**
@@ -63,8 +58,9 @@ export async function createWorkspace(db: Db, opts: CreateWorkspaceOptions): Pro
   const projectRoot = opts.projectRoot ?? process.cwd();
 
   // Footgun guard: refuse projectRoot=$HOME. resolve() normalises a
-  // trailing slash, `.`, symlinks-in-name, etc., so `cd && mu workspace
-  // create ...` and `--project-root ~/` are all blocked the same way.
+  // trailing slash, `.`, symlinks-in-name, etc., so `cd && mu agent spawn
+  // --workspace ...` and `--workspace-project-root ~/` are all blocked
+  // the same way.
   // Direct children of $HOME (e.g. ~/Documents) are NOT blocked —
   // that would be overreach. See snap_dogfood Finding 4.
   if (resolve(projectRoot) === resolve(homedir())) {
@@ -98,7 +94,7 @@ export async function createWorkspace(db: Db, opts: CreateWorkspaceOptions): Pro
   // worktree add fails after creating the dir, an interrupt during a
   // long copy), the partial dir would otherwise be left behind with
   // no DB row — exactly the failure mode from snap_dogfood Finding 4,
-  // which then blocked subsequent `mu workspace create` calls with
+  // which then blocked subsequent `--workspace` spawns with
   // WorkspacePathNotEmptyError. Best-effort: if the rm itself fails,
   // surface the original error and let the user clean up via
   // `mu workspace orphans`.
@@ -139,16 +135,14 @@ export async function createWorkspace(db: Db, opts: CreateWorkspaceOptions): Pro
     throw err;
   }
 
-  if (opts._suppressEvent !== true) {
-    // `vcs_workspaces` is machine-local (absolute paths), so no trigger
-    // covers it and this emit is the only record.
-    emitEvent(
-      db,
-      opts.workstream,
-      "workspace.create",
-      `workspace create ${opts.agent} (backend=${backend.name}, path=${path}${created.parentRef ? `, parent=${created.parentRef.slice(0, 12)}` : ""})`,
-    );
-  }
+  // `vcs_workspaces` is machine-local (absolute paths), so no trigger
+  // covers it and this emit is the only record.
+  emitEvent(
+    db,
+    opts.workstream,
+    "workspace.create",
+    `workspace create ${opts.agent} (backend=${backend.name}, path=${path}${created.parentRef ? `, parent=${created.parentRef.slice(0, 12)}` : ""})`,
+  );
 
   return {
     agentName: opts.agent,
@@ -195,12 +189,6 @@ export interface FreeWorkspaceOptions {
   /** If true, attempt to commit pending changes before tearing down.
    *  Backend-specific; see VcsBackend.freeWorkspace. */
   commit?: boolean;
-  /** INTERNAL. When false, suppress the `workspace free` system
-   *  event AND skip the pre-mutation snapshot capture. Used by
-   *  `recreateWorkspace` so the audit trail records ONE atomic
-   *  `workspace recreate` line and one snapshot for the whole
-   *  free+create cycle. Defaults to true. */
-  _suppressEvent?: boolean;
 }
 
 export interface FreeWorkspaceResult {
@@ -247,15 +235,13 @@ export async function freeWorkspace(
                AND workstream_id = ?`,
           )
           .run(agent, wsIdForDel, wsIdForDel);
-  if (opts._suppressEvent !== true) {
-    // Machine-local table: no trigger, only record.
-    emitEvent(
-      db,
-      row.workstreamName,
-      "workspace.free",
-      `workspace free ${agent} (backend=${row.backend}, path=${row.path}${result.committedRef ? `, committed=${result.committedRef.slice(0, 12)}` : ""})`,
-    );
-  }
+  // Machine-local table: no trigger, only record.
+  emitEvent(
+    db,
+    row.workstreamName,
+    "workspace.free",
+    `workspace free ${agent} (backend=${row.backend}, path=${row.path}${result.committedRef ? `, committed=${result.committedRef.slice(0, 12)}` : ""})`,
+  );
 
   return {
     removed: result.removed,

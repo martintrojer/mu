@@ -46,8 +46,3 @@ export {
   type StrandedWorkspaceOrphan,
   type WorkspaceOrphan,
 } from "./workspace/orphans.js";
-export {
-  type RecreateWorkspaceOptions,
-  type RecreateWorkspaceResult,
-  recreateWorkspace,
-} from "./workspace/recreate.js";

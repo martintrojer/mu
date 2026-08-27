@@ -46,7 +46,8 @@ export async function detectBackend(projectRoot: string): Promise<VcsBackend> {
 }
 
 /** Look up a backend by name. Throws on unknown name. Used by
- *  `mu workspace create --backend ...` to honour an explicit override. */
+ *  `mu agent spawn --workspace-backend ...` to honour an explicit
+ *  override. */
 export function backendByName(name: VcsBackendName): VcsBackend {
   for (const backend of BACKENDS) {
     if (backend.name === name) return backend;

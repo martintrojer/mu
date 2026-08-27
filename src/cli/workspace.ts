@@ -1,4 +1,8 @@
-// mu — `mu workspace` verbs (create / list / free / path / orphans).
+// mu — `mu workspace` verbs (list / refresh / free / commits / path / orphans).
+//
+// Workspace CREATION is not a standalone verb: it happens inside
+// `mu agent spawn --workspace`. Between waves use `refresh`; for
+// destructive cleanup use `free`.
 //
 // Per-agent VCS workspaces (registry layer on top of vcs.ts).
 //
@@ -14,9 +18,7 @@ import {
 } from "../cli.js";
 import { type Db, tryResolveWorkstreamId, WorkstreamNotFoundError } from "../db.js";
 import { type NextStep, pc, printNextSteps } from "../output.js";
-import type { VcsBackendName } from "../vcs.js";
 import {
-  createWorkspace,
   decorateWithStaleness,
   freeWorkspace,
   getWorkspaceForAgent,
@@ -24,50 +26,10 @@ import {
   listCommitsForWorkspace,
   listWorkspaceOrphans,
   listWorkspaces,
-  recreateWorkspace,
   refreshWorkspace,
   type StrandedWorkspaceOrphan,
   WorkspaceNotFoundError,
 } from "../workspace.js";
-
-export async function cmdWorkspaceCreate(
-  db: Db,
-  rawAgent: string,
-  opts: {
-    workstream?: string;
-    backend?: VcsBackendName;
-    from?: string;
-    projectRoot?: string;
-    json?: boolean;
-  },
-): Promise<void> {
-  const { name: agent } = await resolveEntityRef(db, rawAgent, opts, "workspace");
-  const workstream = await resolveWorkstream(opts.workstream);
-  const createOpts: Parameters<typeof createWorkspace>[1] = { agent, workstream };
-  if (opts.backend !== undefined) createOpts.backend = opts.backend;
-  if (opts.from !== undefined) createOpts.parentRef = opts.from;
-  if (opts.projectRoot !== undefined) createOpts.projectRoot = opts.projectRoot;
-  const ws = await createWorkspace(db, createOpts);
-  const nextSteps: NextStep[] = [
-    { intent: "cd into the workspace", command: `cd $(mu workspace path ${agent})` },
-    {
-      intent: "Free it later (with optional --commit)",
-      command: `mu workspace free ${agent}  (--commit to commit pending changes first)`,
-    },
-    {
-      intent: "Spawn an agent that uses this workspace as cwd",
-      command: `mu agent spawn <name> -w ${workstream} --workspace`,
-    },
-  ];
-  if (opts.json) {
-    emitJson({ workspace: ws, nextSteps });
-    return;
-  }
-  console.log(
-    `Created workspace ${pc.bold(ws.path)} ${pc.dim(`(backend=${ws.backend}, agent=${ws.agentName}, parent=${ws.parentRef ?? "—"})`)}`,
-  );
-  printNextSteps(nextSteps);
-}
 
 export async function cmdWorkspaceList(
   db: Db,
@@ -89,50 +51,6 @@ export async function cmdWorkspaceList(
     return;
   }
   console.log(formatWorkspacesTable(decorated));
-}
-
-export async function cmdWorkspaceRecreate(
-  db: Db,
-  rawAgent: string,
-  opts: {
-    workstream?: string;
-    backend?: VcsBackendName;
-    from?: string;
-    projectRoot?: string;
-    force?: boolean;
-    json?: boolean;
-  },
-): Promise<void> {
-  const { name: agent } = await resolveEntityRef(db, rawAgent, opts, "workspace");
-  assertAgentInWorkstream(db, agent, opts.workstream);
-  const workstream = await resolveWorkstream(opts.workstream);
-  const recreateOpts: Parameters<typeof recreateWorkspace>[2] = { workstream };
-  if (opts.backend !== undefined) recreateOpts.backend = opts.backend;
-  if (opts.from !== undefined) recreateOpts.parentRef = opts.from;
-  if (opts.projectRoot !== undefined) recreateOpts.projectRoot = opts.projectRoot;
-  if (opts.force === true) recreateOpts.force = true;
-  const r = await recreateWorkspace(db, agent, recreateOpts);
-  const nextSteps: NextStep[] = [
-    {
-      intent: "Send work to the agent (workspace is ready)",
-      command: `mu agent send ${agent} -w ${workstream} "<prompt>"`,
-    },
-    {
-      intent: "cd into the freshly recreated workspace",
-      command: `cd $(mu workspace path ${agent} -w ${workstream})`,
-    },
-    { intent: "List workspaces in this workstream", command: `mu workspace list -w ${workstream}` },
-  ];
-  if (opts.json) {
-    emitJson({ workspace: r.workspace, previousParentRef: r.previousParentRef, nextSteps });
-    return;
-  }
-  const oldRef = r.previousParentRef ? r.previousParentRef.slice(0, 12) : "—";
-  const newRef = r.workspace.parentRef ? r.workspace.parentRef.slice(0, 12) : "—";
-  console.log(
-    `Recreated workspace ${pc.bold(agent)} ${pc.dim(`(backend=${r.workspace.backend}, ${oldRef} → ${newRef})`)}`,
-  );
-  printNextSteps(nextSteps);
 }
 
 export async function cmdWorkspaceFree(
@@ -353,27 +271,6 @@ export function wireWorkspaceCommands(program: Command): void {
     .description("VCS workspace commands (per-agent isolated working copies)");
 
   workspace
-    .command("create <agent>")
-    .description(
-      "Create a fresh isolated working copy for an agent. Backend auto-detected (jj > sl > git > none) unless --backend overrides.",
-    )
-    .option("--backend <name>", "force a backend instead of auto-detecting (jj | sl | git | none)")
-    .option("--from <ref>", "base the workspace on a specific commit / branch / changeset")
-    .option("--project-root <path>", "override the project root to branch from (default: cwd)")
-    .option(...WORKSTREAM_OPT)
-    .option(...JSON_OPT)
-    .action(function (agent: string) {
-      const opts = (this as Command).opts() as {
-        backend?: VcsBackendName;
-        from?: string;
-        projectRoot?: string;
-        workstream?: string;
-        json?: boolean;
-      };
-      return handle((db) => cmdWorkspaceCreate(db, agent, opts), this as Command)();
-    });
-
-  workspace
     .command("list")
     .description("List workspaces in the current workstream (--all spans every workstream)")
     .option("--all", "list workspaces across every workstream")
@@ -420,32 +317,6 @@ export function wireWorkspaceCommands(program: Command): void {
         json?: boolean;
       };
       return handle((db) => cmdWorkspaceFree(db, agent, opts), this as Command)();
-    });
-
-  workspace
-    .command("recreate <agent>")
-    .description(
-      "Free + create an agent's workspace in one shot — the canonical between-wave \"prep this worker for the next dispatch\" verb. Atomic guarantees match the underlying free + create pair (one pre-mutation snapshot, one `workspace recreate` event in the audit trail). Reuses the previous backend unless --backend overrides; bases on the project's current main unless --from <ref> overrides. Refuses on a dirty workspace (uncommitted changes) the same way `free` does — pass --force to discard the dirty changes (the lossy escape hatch).",
-    )
-    .option(
-      "--backend <name>",
-      "force a backend instead of reusing the previous one (jj | sl | git | none)",
-    )
-    .option("--from <ref>", "base the new workspace on a specific commit / branch / changeset")
-    .option("--project-root <path>", "override the project root to branch from (default: cwd)")
-    .option("--force", "discard uncommitted changes in the existing workspace (the lossy escape)")
-    .option(...WORKSTREAM_OPT)
-    .option(...JSON_OPT)
-    .action(function (agent: string) {
-      const opts = (this as Command).opts() as {
-        backend?: VcsBackendName;
-        from?: string;
-        projectRoot?: string;
-        force?: boolean;
-        workstream?: string;
-        json?: boolean;
-      };
-      return handle((db) => cmdWorkspaceRecreate(db, agent, opts), this as Command)();
     });
 
   workspace

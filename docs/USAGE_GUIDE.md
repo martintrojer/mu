@@ -1659,10 +1659,10 @@ while (( ${#in_flight[@]} > 0 )); do
   #    overrides. Refuses on dirty WC; conflicts exit 5 with a `cd`
   #    hint to resolve in-place.
   mu workspace refresh "$worker" -w "$ws"
-  # Alt: `mu workspace recreate "$worker" -w "$ws"` does free + create
-  #      atomically — same shortcut, but throws away the worker's local
-  #      changes (the lossy escape: requires --force on a dirty WC).
-  #      Use when you don't care about replaying the worker's commits.
+  # Alt: `mu workspace free "$worker" -w "$ws"` throws the workspace
+  #      away entirely (the lossy escape). The next
+  #      `mu agent spawn --workspace` allocates a fresh one. Use when
+  #      you don't care about replaying the worker's commits.
 
   # 4. Drop $closed from in_flight, dispatch the next task, repeat.
   in_flight=( "${in_flight[@]/$closed}" )
@@ -1680,7 +1680,7 @@ The `--json` shape on success is `{ firing, all, timedOut, nextSteps,
 * `timedOut` — array of refs that did NOT reach the target. Empty on
   clean success; populated on partial-progress timeout.
 * `nextSteps`— the same hint list printed to stdout (cherry-pick,
-  verify, free + recreate, or `mu task show` for unmet refs).
+  verify, refresh, or `mu task show` for unmet refs).
 
 ### Wait exit codes (`mu task wait`)
 

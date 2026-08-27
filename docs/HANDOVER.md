@@ -15,7 +15,7 @@ human-in-the-loop conversation.
 > **Reading order.** Load the bundled mu skill first
 > ([skills/mu/SKILL.md](../skills/mu/SKILL.md)): it is the canonical
 > reference for the dispatch loop, the task-note contract,
-> claim-before-send, workspace recreate, `mu task wait` semantics,
+> claim-before-send, workspace refresh, `mu task wait` semantics,
 > and the `mu` CLI surface. **HANDOVER.md does not repeat that.** It
 > covers driving THIS repo: onboarding, behavior rules with the user,
 > conflict resolution, known gotchas, communication style, and
@@ -153,7 +153,7 @@ beats chatty hand-holding.
 
 ## The dispatch loop
 
-The 8-phase loop (file → note → block → claim → recreate-workspace →
+The 8-phase loop (file → note → block → claim → refresh-workspace →
 send → wait → cherry-pick) lives in
 [SKILL.md](../skills/mu/SKILL.md). Orchestrator-only deltas:
 
@@ -162,7 +162,7 @@ send → wait → cherry-pick) lives in
 Four steps, in this order, every single dispatch:
 
 ```
-mu workspace recreate worker-N -w <ws>
+mu workspace refresh worker-N -w <ws>
 mu agent send worker-N -w <ws> '/new'
 mu agent send worker-N -w <ws> "$(cat /tmp/<slug>.txt)"
 mu agent read worker-N -w <ws> -n 3     # must show nonzero context
@@ -346,9 +346,12 @@ MU_TEST_STRESS_MODE=parallel MU_TEST_STRESS_PARALLEL=2 npm run test:stress
 
 ### 5. Worker workspaces drift fast
 
-After every cherry-pick, recreate the worker workspace before the
-next dispatch. Without this, every cherry-pick starts a CHANGELOG
-conflict.
+After every cherry-pick, refresh the worker workspace before the
+next dispatch (`mu workspace refresh worker-N -w <ws>`). Without
+this, every cherry-pick starts a CHANGELOG conflict. When you want
+to discard the worker's local state outright, `mu workspace free`
+it and let the next `mu agent spawn --workspace` allocate a fresh
+one.
 
 ### 6. Per-popup hint vs global drill hint cluster
 

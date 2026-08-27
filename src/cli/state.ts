@@ -307,7 +307,7 @@ function renderFullCard(d: PerWsData): void {
     const example = staleWorkspaces[0]?.agentName ?? "<agent>";
     console.log(
       pc.yellow(
-        `⚠ Tip: Free + recreate stale workspaces to land patches against current main: mu workspace free ${example} + mu workspace create ${example}`,
+        `⚠ Tip: Refresh stale workspaces to land patches against current main: mu workspace refresh ${example}`,
       ),
     );
   }

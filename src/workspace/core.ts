@@ -80,8 +80,8 @@ export class WorkspaceExistsError extends Error implements HasNextSteps {
         command: `mu workspace free ${this.agent}  (--commit to commit pending changes first)`,
       },
       {
-        intent: "Then re-create with a different backend or base ref",
-        command: `mu workspace create ${this.agent} --backend <jj|sl|git|none> --from <ref>`,
+        intent: "Then re-spawn the agent with a fresh workspace",
+        command: `mu agent spawn ${this.agent} --workspace --workspace-backend <jj|sl|git|none> --workspace-from <ref>`,
       },
     ];
   }
@@ -97,8 +97,8 @@ export class WorkspaceNotFoundError extends Error implements HasNextSteps {
       { intent: "List workspaces in current workstream", command: "mu workspace list" },
       { intent: "List workspaces across all workstreams", command: "mu workspace list --all" },
       {
-        intent: "Create one for this agent",
-        command: `mu workspace create ${this.agent}`,
+        intent: "Spawn the agent with a workspace (creation happens at spawn)",
+        command: `mu agent spawn ${this.agent} --workspace`,
       },
     ];
   }
@@ -166,11 +166,11 @@ export class HomeDirAsProjectRootError extends Error implements HasNextSteps {
     return [
       {
         intent: "Re-run from inside a real project directory",
-        command: `cd <your-project> && mu workspace create ${this.agent} -w ${this.workstream}`,
+        command: `cd <your-project> && mu agent spawn ${this.agent} -w ${this.workstream} --workspace`,
       },
       {
-        intent: "Or pass --project-root explicitly",
-        command: `mu workspace create ${this.agent} -w ${this.workstream} --project-root <your-project>`,
+        intent: "Or pass --workspace-project-root explicitly",
+        command: `mu agent spawn ${this.agent} -w ${this.workstream} --workspace --workspace-project-root <your-project>`,
       },
     ];
   }
