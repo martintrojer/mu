@@ -8,7 +8,7 @@ A practical, copy-pasteable tour of mu. Terms are canonical — see
 > **Status:** 1.0 (pre-release). Typed verbs span 7 namespaces
 > (`workstream`, `agent`, `task`, `workspace`, `log`, `me`, `db`) plus
 > bare top-level verbs (`state`, `doctor`, `sql`, `undo`, `sync`,
-> `rebuild`). Every verb accepts `--json`. Schema v9. See
+> `rebuild`). Every verb accepts `--json`. Schema v10. See
 > [CHANGELOG.md](../CHANGELOG.md).
 
 **In a hurry? Start at [§ 0. Common scenarios](#0-common-scenarios).**
@@ -287,16 +287,16 @@ Then report it: drift is a capture/apply bug, and the named
 table/key/field is the reproduction. See
 [§ What to do when drift is reported](#what-to-do-when-drift-is-reported).
 
-### 0.6 Upgrading from mu 0.4.x
+### 0.6 Upgrading an older DB
 
-`mu` refuses to open a pre-v9 DB (`SchemaTooOldError`, exit 4) and
-leaves the file alone. A sidecar, `scripts/migrate-to-1.0.ts`, imports
-a pre-1.0 DB into a fresh v9 one; you run it once, by hand, against a
-copy. Workstreams, tasks, edges and notes come across; agents,
-workspaces and ownership do not.
+`mu` refuses to open a pre-v10 DB (`SchemaTooOldError`, exit 4) and
+leaves the file alone. The retained `scripts/migrate.ts` sidecar
+auto-detects v8 or v9 and writes a fresh v10 DB. It never migrates in
+place. Legacy v9 `REJECTED` / `DEFERRED` tasks become `OPEN` with a
+migration note while their original op payloads remain unchanged.
 
-Full recipe and flags: [scripts/README.md](../scripts/README.md).
-Summary here: [§ 15.7](#157-coming-from-mu-04x).
+Full backup, migration, verification, and swap recipe:
+[scripts/README.md](../scripts/README.md).
 
 ---
 
@@ -2188,30 +2188,31 @@ winner, and the newer HLC takes it.
 
 ---
 
-## 15.7 Coming from mu 0.4.x
+## 15.7 Upgrading a v8 or v9 DB
 
-`mu` refuses to open a pre-v9 DB (`SchemaTooOldError`, exit 4) and
-leaves the file untouched — a major version is the moment to stop
-carrying a migration ladder.
-
-A sidecar, `scripts/migrate-to-1.0.ts`, imports a pre-1.0 DB into a
-fresh v9 one. Run it once, by hand, against a copy. The shape:
+`mu` refuses to write a pre-v10 DB and leaves it untouched. Use the
+single retained sidecar against a backup:
 
 ```bash
-cp ~/.local/state/mu/mu.db ~/mu-pre1.0-backup-$(date +%Y%m%d).db   # there is no path back
-npx tsx scripts/migrate-to-1.0.ts ~/mu-pre1.0-backup-$(date +%Y%m%d).db --out /tmp/mu-new.db
-MU_DB_PATH=/tmp/mu-new.db mu doctor --deep    # the check that matters: NO drift
-mv /tmp/mu-new.db ~/.local/state/mu/mu.db
+DB=${MU_DB_PATH:-$HOME/.local/state/mu/mu.db}
+BACKUP="$HOME/mu-old-backup-$(date +%Y%m%d-%H%M%S).db"
+sqlite3 "$DB" ".backup '$BACKUP'"
+npx tsx scripts/migrate.ts "$BACKUP" --out "${DB}.v10"
+MU_DB_PATH="${DB}.v10" mu doctor --deep
+mv "$DB" "${DB}.old-kept" && mv "${DB}.v10" "$DB"
+mu doctor
 ```
 
-The importer is read-only on the source and **synthesizes ops rather
-than inserting rows**, so the result is a first-class v9 DB.
-Workstreams, tasks, edges, notes and the agent log come across; agents,
-workspaces and task ownership do not (same reasons they do not sync).
-Old archives **refuse loudly** rather than becoming live work — export
-them with mu 0.4.x first, or pass `--drop-archives`.
+The script auto-detects v8 or v9, opens it read-only, compares its
+SHA-256 before and after, and never overwrites a target unless `--force`
+is explicit. v9 history is retained unchanged; legacy statuses normalize
+only while projecting into v10, with one durable migration note per
+currently affected task. Valid v9 agents, workspaces, owners, peer
+watermarks, and machine identity carry across, but pane ids and absolute
+workspace paths cannot be proven live until `mu doctor` reconciles them.
+The v8 path keeps the older conservative omissions.
 
-**Full recipe, every flag, and the rationale:
+**Full recipe, every flag, and the precise carry/omit rules:
 [scripts/README.md](../scripts/README.md).**
 
 ---

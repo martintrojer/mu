@@ -439,7 +439,14 @@ function filterAppliable(
 
 function applyTaskPut(db: Db, op: Op): ApplyResult {
   const { workstream, localId } = parseTaskKey(op.key);
-  const entries = filterAppliable("tasks", decodePayload(op.payload));
+  // v9 peers and retained history may still carry removed lifecycle
+  // values. Normalize only the decoded projection: callers record the
+  // original payload unchanged, preserving the historical evidence.
+  const entries = filterAppliable("tasks", decodePayload(op.payload)).map(([field, value]) =>
+    field === "status" && (value === "REJECTED" || value === "DEFERRED")
+      ? ([field, "OPEN"] as const)
+      : ([field, value] as const),
+  );
 
   const existing = taskRowId(db, op.key);
   if (existing === null) {

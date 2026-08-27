@@ -1,18 +1,18 @@
 #!/usr/bin/env -S npx tsx
-// scripts/migrate-to-1.0.ts — the mu 0.4.x → 1.0 data escape hatch.
+// scripts/migrate.ts — retained v8/v9 → v10 migration sidecar.
 //
 // mu 1.0 is a CLEAN BREAK: `openDb` refuses every pre-v9 DB with
 // `SchemaTooOldError` (exit 4), there is no in-process migration ladder,
 // and `CURRENT_SCHEMA` carries no v8 knowledge. That decision stands.
 // This is not a migration path — it is a SIDECAR the operator runs ONCE,
-// by hand, against a COPY, to carry pre-1.0 task data into a fresh v9 DB.
+// by hand, against a COPY, to carry pre-1.0 task data into a fresh v10 DB.
 //
 // USAGE
-//   npx tsx scripts/migrate-to-1.0.ts <old.db>                  # writes <old>.v9.db
-//   npx tsx scripts/migrate-to-1.0.ts <old.db> --out <new.db>
-//   npx tsx scripts/migrate-to-1.0.ts <old.db> --force          # overwrite target
-//   npx tsx scripts/migrate-to-1.0.ts <old.db> --drop-logs      # skip agent_logs
-//   npx tsx scripts/migrate-to-1.0.ts <old.db> --drop-archives  # proceed past archives
+//   npx tsx scripts/migrate.ts <old.db>                  # writes <old>.v10.db
+//   npx tsx scripts/migrate.ts <old.db> --out <new.db>
+//   npx tsx scripts/migrate.ts <old.db> --force          # overwrite target
+//   npx tsx scripts/migrate.ts <old.db> --drop-logs      # skip agent_logs
+//   npx tsx scripts/migrate.ts <old.db> --drop-archives  # proceed past archives
 //
 // See scripts/README.md for the full upgrade recipe (BACK UP FIRST).
 //
@@ -25,7 +25,7 @@
 // emits one `put` op per source row and lets `applyOp` — the SAME apply
 // path sync ingest and rebuild use — materialise the tables. Whatever the
 // merge rules do to the data, they do it here too, which is exactly the
-// property that makes the result a first-class v9 DB rather than a
+// property that makes the result a first-class v10 DB rather than a
 // look-alike.
 //
 // ─── ORDERING ─────────────────────────────────────────────────────────
@@ -60,6 +60,7 @@ import { applyOp, type Op } from "../src/apply.js";
 import { type Db, openDb } from "../src/db.js";
 import { nextHlc } from "../src/hlc.js";
 import { withCaptureSuppressed } from "../src/op-context.js";
+import { rebuildInto } from "../src/rebuild.js";
 
 // ─── what the import carries, and what it cannot ──────────────────────
 
@@ -84,7 +85,6 @@ const LOG_ENTITY = "event";
  *  final pre-1.0 schema; anything older predates `machine_identity`
  *  and the surrogate-PK substrate and is not something we can claim to
  *  have tested. */
-const SUPPORTED_SOURCE_VERSION = 8;
 
 interface Args {
   source: string;
@@ -94,11 +94,11 @@ interface Args {
   dropArchives: boolean;
 }
 
-const USAGE = `usage: npx tsx scripts/migrate-to-1.0.ts <old.db> [--out <new.db>] [--force]
-                                                 [--drop-logs] [--drop-archives]
+const USAGE = `usage: npx tsx scripts/migrate.ts <old.db> [--out <new.db>] [--force]
+                                      [--drop-logs] [--drop-archives]
 
-  <old.db>          the v8 source DB. Opened READ-ONLY; never modified.
-  --out <new.db>    target path (default: <old.db> with '.v9.db' suffix).
+  <old.db>          a v8 or v9 source DB. Opened READ-ONLY; never modified.
+  --out <new.db>    target path (default: <old.db> with '.v10.db' suffix).
   --force           overwrite an existing target.
   --drop-logs       do not carry agent_logs into the ops log.
   --drop-archives   proceed even though the source has pre-1.0 archives,
@@ -106,7 +106,7 @@ const USAGE = `usage: npx tsx scripts/migrate-to-1.0.ts <old.db> [--out <new.db>
 
 /** Every refusal in this script. THROWN, not `process.exit`-ed, so the
  *  whole importer stays callable IN-PROCESS from
- *  test/migrate-to-1.0.integration.test.ts. A sidecar nobody can test is a
+ *  test/migrate.integration.test.ts. A sidecar nobody can test is a
  *  sidecar nobody should trust, and `tsx` is deliberately NOT a
  *  dependency of this repo (the shebang goes through `npx`), so a test
  *  that shelled out would either add a dep or skip itself in CI.
@@ -155,9 +155,9 @@ function parseArgs(argv: readonly string[]): Args {
   return { source: sourcePath, out: outPath, force, dropLogs, dropArchives };
 }
 
-/** `/x/mu.db` -> `/x/mu.v9.db`; `/x/mu.db.old` -> `/x/mu.db.old.v9.db`. */
+/** `/x/mu.db` -> `/x/mu.v10.db`; `/x/mu.db.old` -> `/x/mu.db.old.v10.db`. */
 function defaultTarget(source: string): string {
-  return source.endsWith(".db") ? `${source.slice(0, -3)}.v9.db` : `${source}.v9.db`;
+  return source.endsWith(".db") ? `${source.slice(0, -3)}.v10.db` : `${source}.v10.db`;
 }
 
 // ─── source shapes ────────────────────────────────────────────────────
@@ -550,6 +550,165 @@ function runImport(target: Db, planned: readonly Planned[], groupId: string): Im
 
 // ─── reporting ────────────────────────────────────────────────────────
 
+interface LegacyTask {
+  workstream: string;
+  local_id: string;
+  status: "REJECTED" | "DEFERRED";
+  updated_at: string;
+}
+
+function legacyTasks(src: Db): LegacyTask[] {
+  return src
+    .prepare(
+      `SELECT w.name AS workstream, t.local_id, t.status, t.updated_at
+         FROM tasks t JOIN workstreams w ON w.id = t.workstream_id
+        WHERE t.status IN ('REJECTED', 'DEFERRED')
+        ORDER BY w.name, t.local_id`,
+    )
+    .all() as LegacyTask[];
+}
+
+function appendLegacyNotes(target: Db, tasks: readonly LegacyTask[]): void {
+  const machineId = (
+    target.prepare("SELECT machine_id FROM machine_identity WHERE id = 1").get() as {
+      machine_id: string;
+    }
+  ).machine_id;
+  const insert = target.prepare(
+    `INSERT INTO ops (hlc, machine_id, group_id, actor, intent, entity, key, op, payload, created_at)
+     VALUES (@hlc, @machineId, 'migrate-legacy-status', 'migration', 'migrate.status',
+             'note', @key, 'put', @payload, @createdAt)`,
+  );
+  for (const task of tasks) {
+    const content = `MIGRATION: previous status was ${task.status}`;
+    const wallMs = Date.parse(task.updated_at);
+    const hlc = nextHlc(target, Number.isNaN(wallMs) ? Date.now() : wallMs);
+    const payload = JSON.stringify({ author: "migration", content, created_at: task.updated_at });
+    const op: Op = {
+      hlc,
+      machineId,
+      groupId: "migrate-legacy-status",
+      actor: "migration",
+      intent: "migrate.status",
+      entity: "note",
+      key: `${task.workstream}/${task.local_id}#migration-${task.status.toLowerCase()}`,
+      op: "put",
+      payload,
+    };
+    insert.run({
+      hlc,
+      machineId,
+      key: op.key,
+      payload,
+      createdAt: task.updated_at,
+    });
+    applyOp(target, op);
+  }
+}
+
+interface V9MigrationResult {
+  opsCopied: number;
+  legacyNotes: number;
+  agents: number;
+  workspaces: number;
+}
+
+function migrateV9(src: Db, targetPath: string): V9MigrationResult {
+  const legacy = legacyTasks(src);
+
+  const rebuilt = rebuildInto(src, { targetPath });
+  const target = openDb({ path: targetPath });
+  try {
+    const migrate = target.transaction(() => {
+      // The v9 live tables are the canonical read state. Preserve the
+      // original history, then append one reconciliation group so a
+      // stale tombstone or uncaptured legacy repair cannot erase current
+      // work when v10 replays that history.
+      const currentProjection = planOps(src, true).map((planned) => ({
+        ...planned,
+        actor: "v9-migration",
+        intent: "migrate.v9-projection",
+      }));
+      runImport(target, currentProjection, "migrate-v9-projection");
+      appendLegacyNotes(target, legacy);
+
+      const agents = src
+        .prepare(
+          `SELECT sw.name AS workstream, a.name, a.cli, a.pane_id, a.status, a.role, a.tab,
+                  a.created_at, a.updated_at
+             FROM agents a JOIN workstreams sw ON sw.id = a.workstream_id
+            ORDER BY a.id`,
+        )
+        .all() as Array<Record<string, string | null>>;
+      const insertAgent = target.prepare(
+        `INSERT INTO agents (workstream_id, name, cli, pane_id, status, role, tab, created_at, updated_at)
+         SELECT id, @name, @cli, @pane_id, @status, @role, @tab, @created_at, @updated_at
+           FROM workstreams WHERE name = @workstream`,
+      );
+      let agentsCopied = 0;
+      for (const agent of agents) agentsCopied += insertAgent.run(agent).changes;
+
+      const workspaces = src
+        .prepare(
+          `SELECT sw.name AS workstream, a.name AS agent, v.backend, v.path, v.parent_ref, v.created_at
+             FROM vcs_workspaces v
+             JOIN agents a ON a.id = v.agent_id
+             JOIN workstreams sw ON sw.id = v.workstream_id
+            ORDER BY v.id`,
+        )
+        .all() as Array<Record<string, string | null>>;
+      const insertWorkspace = target.prepare(
+        `INSERT INTO vcs_workspaces (agent_id, workstream_id, backend, path, parent_ref, created_at)
+         SELECT a.id, w.id, @backend, @path, @parent_ref, @created_at
+           FROM agents a JOIN workstreams w ON w.id = a.workstream_id
+          WHERE w.name = @workstream AND a.name = @agent`,
+      );
+      let workspacesCopied = 0;
+      for (const workspace of workspaces)
+        workspacesCopied += insertWorkspace.run(workspace).changes;
+
+      const owners = src
+        .prepare(
+          `SELECT tw.name AS workstream, t.local_id, aw.name AS owner
+             FROM tasks t
+             JOIN workstreams tw ON tw.id = t.workstream_id
+             JOIN agents aw ON aw.id = t.owner_id
+            ORDER BY t.id`,
+        )
+        .all() as Array<{ workstream: string; local_id: string; owner: string }>;
+      const restoreOwner = target.prepare(
+        `UPDATE tasks
+            SET owner_id = (SELECT a.id FROM agents a WHERE a.workstream_id = tasks.workstream_id AND a.name = @owner)
+          WHERE local_id = @local_id
+            AND workstream_id = (SELECT id FROM workstreams WHERE name = @workstream)`,
+      );
+      // Ownership is machine-local. Carry it without inventing portable
+      // history that could later sync a meaningless local agent id.
+      withCaptureSuppressed(target, () => {
+        for (const owner of owners) restoreOwner.run(owner);
+      });
+
+      return { agentsCopied, workspacesCopied };
+    });
+    const local = migrate();
+    return {
+      opsCopied: rebuilt.opsCopied,
+      legacyNotes: legacy.length,
+      agents: local.agentsCopied,
+      workspaces: local.workspacesCopied,
+    };
+  } catch (err) {
+    target.close();
+    for (const suffix of ["", "-wal", "-shm"]) {
+      const path = `${targetPath}${suffix}`;
+      if (existsSync(path)) unlinkSync(path);
+    }
+    throw err;
+  } finally {
+    if (target.open) target.close();
+  }
+}
+
 function sha256(path: string): string {
   return createHash("sha256").update(readFileSync(path)).digest("hex");
 }
@@ -609,10 +768,39 @@ export function runImporter(argv: readonly string[], say: (text: string) => void
         | { v: number }
         | undefined
     )?.v;
-    if (version !== SUPPORTED_SOURCE_VERSION) {
-      usage(
-        `source schema is v${version ?? "?"}; this importer only understands v${SUPPORTED_SOURCE_VERSION} (the final pre-1.0 schema)`,
+    if (version !== 8 && version !== 9) {
+      usage(`source schema is v${version ?? "?"}; this importer only understands v8 and v9`);
+    }
+    if (version === 9) {
+      if (args.dropLogs || args.dropArchives) {
+        usage("--drop-logs and --drop-archives apply only to v8 sources");
+      }
+      let result: V9MigrationResult;
+      try {
+        result = migrateV9(src, args.out);
+      } catch (err) {
+        removeDbFiles(args.out);
+        throw err;
+      }
+      const sourceDigestAfter = sha256(args.source);
+      say("mu schema v9 → v10 migration");
+      say(`  source  ${args.source}  (READ-ONLY, sha256 ${sourceDigestBefore.slice(0, 12)}…)`);
+      say(`  target  ${args.out}`);
+      say(`  ops preserved      ${result.opsCopied}`);
+      say(`  legacy task notes  ${result.legacyNotes}`);
+      say(`  agents carried     ${result.agents}`);
+      say(`  workspaces carried ${result.workspaces}`);
+      say(
+        "  WARNING: carried pane ids and workspace paths are structurally valid but not verified against the current mux/filesystem; run mu doctor after swapping.",
       );
+      say(
+        `  source unchanged ${sourceDigestBefore === sourceDigestAfter ? "YES" : "NO — THIS IS A BUG"}  (sha256 ${sourceDigestAfter.slice(0, 12)}…)`,
+      );
+      say("");
+      say("NEXT");
+      say(`  1. MU_DB_PATH=${args.out} mu doctor --deep`);
+      say(`  2. mv ${args.out} "\${MU_DB_PATH:-$HOME/.local/state/mu/mu.db}"`);
+      return sourceDigestBefore === sourceDigestAfter ? 0 : 1;
     }
 
     const counts = countSource(src);
@@ -664,6 +852,7 @@ export function runImporter(argv: readonly string[], say: (text: string) => void
     let result: ImportResult;
     try {
       result = runImport(target, planned, `migrate-v8-${sourceDigestBefore.slice(0, 16)}`);
+      appendLegacyNotes(target, legacyTasks(src));
     } finally {
       target.close();
     }
@@ -673,7 +862,7 @@ export function runImporter(argv: readonly string[], say: (text: string) => void
     say("CARRIED ACROSS");
     say(
       table([
-        ["  what", "v8 rows", "v9 result"],
+        ["  what", "v8 rows", "v10 result"],
         ["  workstreams", String(counts.workstreams), String(result.targetRows.workstreams ?? 0)],
         ["  tasks", String(counts.tasks), String(result.targetRows.tasks ?? 0)],
         ["  task_edges", String(counts.task_edges), String(result.targetRows.task_edges ?? 0)],
@@ -734,6 +923,13 @@ export function runImporter(argv: readonly string[], say: (text: string) => void
     return sourceDigestBefore === sourceDigestAfter ? 0 : 1;
   } finally {
     src.close();
+  }
+}
+
+function removeDbFiles(path: string): void {
+  for (const suffix of ["", "-wal", "-shm"]) {
+    const candidate = `${path}${suffix}`;
+    if (existsSync(candidate)) unlinkSync(candidate);
   }
 }
 

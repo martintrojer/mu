@@ -1,4 +1,4 @@
-// scripts/migrate-to-1.0.ts — the 0.4.x → 1.0 data escape hatch.
+// scripts/migrate.ts — the 0.4.x → 1.0 data escape hatch.
 //
 // Integration tier: it writes several real DB files per test and runs
 // `mu doctor --deep` (a full rebuild) over them.
@@ -27,7 +27,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { runImporter, UsageError } from "../scripts/migrate-to-1.0.js";
+import { runImporter, UsageError } from "../scripts/migrate.js";
 import { rmFixtureDir } from "./_fs.js";
 import { runCli } from "./_runCli.js";
 
@@ -90,6 +90,19 @@ CREATE TABLE archived_tasks (
   original_created_at TEXT NOT NULL, original_updated_at TEXT NOT NULL);
 `;
 
+const V9_SCHEMA = `
+CREATE TABLE schema_version (id INTEGER PRIMARY KEY CHECK (id = 1), version INTEGER NOT NULL);
+CREATE TABLE machine_identity (id INTEGER PRIMARY KEY CHECK (id = 1), machine_id TEXT NOT NULL, hostname TEXT, created_at TEXT NOT NULL, last_wall INTEGER NOT NULL DEFAULT 0, last_counter INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE workstreams (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL, created_at TEXT NOT NULL);
+CREATE TABLE agents (id INTEGER PRIMARY KEY AUTOINCREMENT, workstream_id INTEGER NOT NULL REFERENCES workstreams(id) ON DELETE CASCADE, name TEXT NOT NULL, cli TEXT NOT NULL, pane_id TEXT NOT NULL, status TEXT NOT NULL, role TEXT NOT NULL, tab TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, UNIQUE(workstream_id, name));
+CREATE TABLE tasks (id INTEGER PRIMARY KEY AUTOINCREMENT, workstream_id INTEGER NOT NULL REFERENCES workstreams(id) ON DELETE CASCADE, local_id TEXT NOT NULL, title TEXT NOT NULL, status TEXT NOT NULL, impact INTEGER NOT NULL, effort_days REAL NOT NULL, owner_id INTEGER REFERENCES agents(id) ON DELETE SET NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, UNIQUE(workstream_id, local_id));
+CREATE TABLE task_edges (from_task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE, to_task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE, created_at TEXT NOT NULL, PRIMARY KEY(from_task_id, to_task_id));
+CREATE TABLE task_notes (id INTEGER PRIMARY KEY AUTOINCREMENT, task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE, author TEXT, content TEXT NOT NULL, created_at TEXT NOT NULL);
+CREATE TABLE ops (seq INTEGER PRIMARY KEY AUTOINCREMENT, hlc TEXT NOT NULL, machine_id TEXT NOT NULL, group_id TEXT NOT NULL, actor TEXT, intent TEXT, entity TEXT NOT NULL, key TEXT NOT NULL, op TEXT NOT NULL, payload TEXT NOT NULL, created_at TEXT NOT NULL, UNIQUE(machine_id, hlc));
+CREATE TABLE sync_peers (machine_id TEXT PRIMARY KEY, last_applied_seq INTEGER NOT NULL DEFAULT 0, last_seen_at TEXT);
+CREATE TABLE vcs_workspaces (id INTEGER PRIMARY KEY AUTOINCREMENT, agent_id INTEGER NOT NULL UNIQUE REFERENCES agents(id) ON DELETE CASCADE, workstream_id INTEGER NOT NULL REFERENCES workstreams(id) ON DELETE CASCADE, backend TEXT NOT NULL, path TEXT NOT NULL UNIQUE, parent_ref TEXT, created_at TEXT NOT NULL);
+`;
+
 const T = (minutes: number): string => new Date(Date.UTC(2026, 0, 1, 0, minutes)).toISOString();
 
 interface Fixture {
@@ -134,7 +147,7 @@ function makeV8Db(path: string, opts: { archives?: boolean } = {}): Fixture {
     ws: 1,
     localId: "alpha",
     title: "Alpha task",
-    status: "CLOSED",
+    status: "REJECTED",
     impact: 80,
     effort: 1.5,
     owner: null,
@@ -196,6 +209,111 @@ function makeV8Db(path: string, opts: { archives?: boolean } = {}): Fixture {
   return { path, sha: sha256(path) };
 }
 
+function makeV9Db(path: string): Fixture {
+  const db = new Database(path);
+  db.pragma("foreign_keys = ON");
+  db.exec(V9_SCHEMA);
+  db.prepare("INSERT INTO schema_version VALUES (1, 9)").run();
+  db.prepare(
+    "INSERT INTO machine_identity VALUES (1, 'v9-machine', 'box', ?, 2000000000000, 7)",
+  ).run(T(0));
+  db.prepare("INSERT INTO workstreams VALUES (1, 'demo', ?)").run(T(0));
+  db.prepare(
+    "INSERT INTO agents VALUES (1, 1, 'worker-1', 'pi', '%17', 'free', 'full-access', NULL, ?, ?)",
+  ).run(T(1), T(1));
+  const task = db.prepare("INSERT INTO tasks VALUES (?, 1, ?, ?, ?, 50, 1, ?, ?, ?)");
+  task.run(1, "rejected", "Rejected task", "REJECTED", 1, T(2), T(4));
+  task.run(2, "deferred", "Deferred task", "DEFERRED", null, T(3), T(5));
+  db.prepare("INSERT INTO task_edges VALUES (1, 2, ?)").run(T(6));
+  db.prepare("INSERT INTO task_notes VALUES (1, 1, 'worker-1', 'existing note', ?)").run(T(7));
+  db.prepare("INSERT INTO sync_peers VALUES ('peer-machine', 12, ?)").run(T(8));
+  db.prepare(
+    "INSERT INTO vcs_workspaces VALUES (1, 1, 1, 'git', '/tmp/ws-worker-1', 'main', ?)",
+  ).run(T(9));
+
+  const op = db.prepare(
+    `INSERT INTO ops (hlc, machine_id, group_id, actor, intent, entity, key, op, payload, created_at)
+     VALUES (?, 'v9-machine', ?, 'worker-1', ?, ?, ?, 'put', ?, ?)`,
+  );
+  const rows = [
+    [
+      "0001767225600000.000000.v9-machine",
+      "g1",
+      "workstream.init",
+      "workstream",
+      "demo",
+      JSON.stringify({ name: "demo", created_at: T(0) }),
+      T(0),
+    ],
+    [
+      "0001767225660000.000000.v9-machine",
+      "g2",
+      "task.add",
+      "task",
+      "demo/rejected",
+      JSON.stringify({
+        local_id: "rejected",
+        title: "Rejected task",
+        status: "REJECTED",
+        impact: 50,
+        effort_days: 1,
+        created_at: T(2),
+        updated_at: T(4),
+      }),
+      T(2),
+    ],
+    [
+      "0001767225720000.000000.v9-machine",
+      "g3",
+      "task.add",
+      "task",
+      "demo/deferred",
+      JSON.stringify({
+        local_id: "deferred",
+        title: "Deferred task",
+        status: "DEFERRED",
+        impact: 50,
+        effort_days: 1,
+        created_at: T(3),
+        updated_at: T(5),
+      }),
+      T(3),
+    ],
+    [
+      "0001767225780000.000000.v9-machine",
+      "g4",
+      "task.block",
+      "edge",
+      "demo/rejected->demo/deferred",
+      JSON.stringify({ created_at: T(6) }),
+      T(6),
+    ],
+    [
+      "0001767225840000.000000.v9-machine",
+      "g5",
+      "task.note",
+      "note",
+      "demo/rejected#1",
+      JSON.stringify({ author: "worker-1", content: "existing note", created_at: T(7) }),
+      T(7),
+    ],
+    // Real v9 databases can contain historical tombstones while their
+    // live projection has since been restored outside the retained op
+    // set. Migration must preserve both the history and current rows.
+  ] as const;
+  for (const row of rows) op.run(...row);
+  // Real v9 databases can contain historical tombstones while their
+  // live projection has since been restored outside the retained op
+  // set. Migration must preserve both the history and current rows.
+  db.prepare(
+    `INSERT INTO ops (hlc, machine_id, group_id, actor, intent, entity, key, op, payload, created_at)
+     VALUES ('0001767225900000.000000.v9-machine', 'v9-machine', 'g6', 'worker-1',
+             'workstream.destroy', 'workstream', 'demo', 'del', '{}', ?)`,
+  ).run(T(8));
+  db.close();
+  return { path, sha: sha256(path) };
+}
+
 function sha256(path: string): string {
   return createHash("sha256").update(readFileSync(path)).digest("hex");
 }
@@ -220,19 +338,89 @@ function runScript(args: readonly string[]): Run {
   }
 }
 
-describe("scripts/migrate-to-1.0.ts (the 0.4.x → 1.0 escape hatch)", () => {
+describe("scripts/migrate.ts", () => {
   let dir: string;
   let source: Fixture;
   let out: string;
 
   beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), "mu-migrate-to-1.0-"));
+    dir = mkdtempSync(join(tmpdir(), "mu-migrate-"));
     source = makeV8Db(join(dir, "old.db"));
     out = join(dir, "new.db");
   });
 
   afterEach(() => {
     rmFixtureDir(dir);
+  });
+
+  it("migrates v9 history, legacy statuses, relationships, and valid machine-local rows", async () => {
+    const v9 = makeV9Db(join(dir, "v9.db"));
+    const target = join(dir, "v10.db");
+    const run = runScript([v9.path, "--out", target]);
+    expect(run.exitCode).toBe(0);
+    expect(sha256(v9.path)).toBe(v9.sha);
+
+    const sourceDb = new Database(v9.path, { readonly: true });
+    const sourceOps = sourceDb
+      .prepare(
+        "SELECT hlc, machine_id, group_id, actor, intent, entity, key, op, payload, created_at FROM ops ORDER BY seq",
+      )
+      .all();
+    sourceDb.close();
+
+    const db = new Database(target, { readonly: true });
+    try {
+      expect(db.prepare("SELECT local_id, status, owner_id FROM tasks ORDER BY id").all()).toEqual([
+        { local_id: "rejected", status: "OPEN", owner_id: 1 },
+        { local_id: "deferred", status: "OPEN", owner_id: null },
+      ]);
+      expect(
+        db
+          .prepare(
+            `SELECT t.local_id, n.content FROM task_notes n
+             JOIN tasks t ON t.id = n.task_id ORDER BY t.local_id, n.content`,
+          )
+          .all(),
+      ).toEqual([
+        { local_id: "deferred", content: "MIGRATION: previous status was DEFERRED" },
+        { local_id: "rejected", content: "MIGRATION: previous status was REJECTED" },
+        { local_id: "rejected", content: "existing note" },
+      ]);
+      expect((db.prepare("SELECT COUNT(*) AS n FROM task_edges").get() as { n: number }).n).toBe(1);
+      expect(db.prepare("SELECT name, pane_id FROM agents").all()).toEqual([
+        { name: "worker-1", pane_id: "%17" },
+      ]);
+      expect(db.prepare("SELECT path FROM vcs_workspaces").all()).toEqual([
+        { path: "/tmp/ws-worker-1" },
+      ]);
+      expect(
+        db
+          .prepare("SELECT last_applied_seq FROM sync_peers WHERE machine_id = 'peer-machine'")
+          .get(),
+      ).toEqual({ last_applied_seq: 12 });
+      expect(db.prepare("SELECT machine_id, last_wall FROM machine_identity").get()).toEqual({
+        machine_id: "v9-machine",
+        last_wall: 2000000000000,
+      });
+      expect(
+        (db.prepare("SELECT last_counter FROM machine_identity").get() as { last_counter: number })
+          .last_counter,
+      ).toBeGreaterThanOrEqual(7);
+      expect(
+        db
+          .prepare(
+            `SELECT hlc, machine_id, group_id, actor, intent, entity, key, op, payload, created_at
+               FROM ops WHERE group_id IN ('g1','g2','g3','g4','g5','g6') ORDER BY seq`,
+          )
+          .all(),
+      ).toEqual(sourceOps);
+    } finally {
+      db.close();
+    }
+
+    const doctor = await runCli(["doctor", "--deep", "--json"], target);
+    expect(doctor.exitCode).toBeNull();
+    expect((JSON.parse(doctor.stdout) as { drift: { ok: boolean } }).drift.ok).toBe(true);
   });
 
   it("imports every portable row and leaves the source byte-identical", async () => {
@@ -258,7 +446,7 @@ describe("scripts/migrate-to-1.0.ts (the 0.4.x → 1.0 escape hatch)", () => {
         {
           key: "demo/alpha",
           title: "Alpha task",
-          status: "CLOSED",
+          status: "OPEN",
           impact: 80,
           effort: 1.5,
           created_at: T(3),
@@ -310,6 +498,11 @@ describe("scripts/migrate-to-1.0.ts (the 0.4.x → 1.0 escape hatch)", () => {
         { author: "worker-1", content: "first note", created_at: T(7) },
         { author: null, content: "anonymous note", created_at: T(8) },
         { author: "worker-1", content: "dup", created_at: T(9) },
+        {
+          author: "migration",
+          content: "MIGRATION: previous status was REJECTED",
+          created_at: T(20),
+        },
       ]);
 
       // Machine-local tables stay EMPTY. Resurrecting them would produce
@@ -326,14 +519,17 @@ describe("scripts/migrate-to-1.0.ts (the 0.4.x → 1.0 escape hatch)", () => {
     runScript([source.path, "--out", out]);
     const db = new Database(out, { readonly: true });
     try {
-      const groups = db.prepare("SELECT DISTINCT group_id AS g FROM ops").all();
+      const groups = db
+        .prepare("SELECT DISTINCT group_id AS g FROM ops WHERE intent LIKE 'migrate.v8%'")
+        .all();
       expect(groups).toHaveLength(1);
 
       const intents = db
         .prepare("SELECT intent, COUNT(*) AS n FROM ops GROUP BY intent ORDER BY intent")
         .all();
-      // Only the two import intents: nothing pretends to be a live edit.
+      // Synthetic imports never pretend to be live edits.
       expect(intents).toEqual([
+        { intent: "migrate.status", n: 1 },
         // 2 ws + 3 tasks + 1 edge + 4 notes
         { intent: "migrate.v8", n: 10 },
         { intent: "migrate.v8-log", n: 2 },
@@ -390,7 +586,7 @@ describe("scripts/migrate-to-1.0.ts (the 0.4.x → 1.0 escape hatch)", () => {
     expect(parsed.drift?.rowsCompared).toEqual({
       workstreams: 2,
       tasks: 3,
-      task_notes: 3,
+      task_notes: 4,
       task_edges: 1,
     });
   });
@@ -489,7 +685,7 @@ describe("scripts/migrate-to-1.0.ts (the 0.4.x → 1.0 escape hatch)", () => {
     expect(forced.stdout).toMatch(/archives\s+1\s+DROPPED \(--drop-archives\)/);
   });
 
-  it("refuses to write in place, over an existing target, or from a non-v8 source", async () => {
+  it("refuses to write in place, over an existing target, or from an unsupported source", async () => {
     const inPlace = runScript([source.path, "--out", source.path]);
     expect(inPlace.exitCode).toBe(2);
     expect(inPlace.stderr).toContain("same path");
@@ -502,11 +698,14 @@ describe("scripts/migrate-to-1.0.ts (the 0.4.x → 1.0 escape hatch)", () => {
     // --force is the explicit opt-in, and it works.
     expect(runScript([source.path, "--out", out, "--force"]).exitCode).toBe(0);
 
-    // A v9 DB is not a v8 DB; importing one would double every row.
-    const v9 = join(dir, "already-v9.db");
-    await runCli(["workstream", "init", "demo"], v9);
-    const wrongVersion = runScript([v9, "--out", join(dir, "nope.db")]);
+    const unsupported = join(dir, "unsupported.db");
+    const db = new Database(unsupported);
+    db.exec(
+      "CREATE TABLE schema_version (id INTEGER PRIMARY KEY, version INTEGER NOT NULL); INSERT INTO schema_version VALUES (1, 7)",
+    );
+    db.close();
+    const wrongVersion = runScript([unsupported, "--out", join(dir, "nope.db")]);
     expect(wrongVersion.exitCode).toBe(2);
-    expect(wrongVersion.stderr).toContain("only understands v8");
+    expect(wrongVersion.stderr).toContain("only understands v8 and v9");
   });
 });

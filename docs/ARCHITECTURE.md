@@ -111,8 +111,8 @@ it mu is just an agent runner.
   `ROI = impact / effort` drives prioritization.
 - **One edge type**: `blocks`. `A → B` means A must close before B can
   start. Multiple edge types create ambiguity that defeats the purpose.
-- **Status lifecycle**: `OPEN → IN_PROGRESS → CLOSED`, with
-  `REJECTED` and `DEFERRED` as terminal still-blocking outcomes.
+- **Status lifecycle**: `OPEN → IN_PROGRESS → CLOSED`. Postponed or
+  won't-do rationale belongs in notes; `CLOSED` alone satisfies blockers.
 - **Notes** are append-only per task; survive across LLM sessions and
   agent restarts. The fix for context loss at the *task* level rather
   than the agent level.
@@ -622,7 +622,7 @@ separately below.
 
 | Module                | Responsibility                                                                            |
 | --------------------- | ----------------------------------------------------------------------------------------- |
-| `src/db.ts`           | Connection (better-sqlite3, WAL), **schema v9** (10 tables + 3 views), `resolveWorkstreamId`. Installs capture on every writable open. Owns `SYNCED_ENTITIES` / `PORTABLE_TABLES` / `MACHINE_LOCAL_TABLES`. Refuses a pre-v9 DB (exit 4). |
+| `src/db.ts`           | Connection (better-sqlite3, WAL), **schema v10** (10 tables + 3 views), `resolveWorkstreamId`. Installs capture on every writable open. Owns `SYNCED_ENTITIES` / `PORTABLE_TABLES` / `MACHINE_LOCAL_TABLES`. Refuses a pre-v10 DB (exit 4). |
 | `src/hlc.ts`          | The **HLC** (VOCABULARY § HLC), serialized as sortable TEXT `<wall_ms:15>.<counter:6>.<machine_id>`. `nextHlc` / `receiveHlc` / `compareHlc` / `parseHlc` / `formatHlc`. Clock state lives in `machine_identity`. |
 | `src/capture.ts`      | **Op capture**: builds the triggers that record every write to a portable table as an op in the same transaction. |
 | `src/apply.ts`        | **The apply path** — capture's counterpart: given one op, local or from a peer, make the tables reflect it. Also owns `reprojectDeferredOps` ([§ ambient sync hook](#the-ambient-sync-hook)). |
@@ -735,7 +735,7 @@ The extension points. A new impl of each is small.
 | `VcsBackend`        | Implementing `detect / createWorkspace / freeWorkspace / isClean / commitsBehind / rebaseTo / commitsSinceBase / recentCommits / showCommit` (~80–150 LOC; jj/sl/git/none are working examples)        |
 | Per-CLI `Detector`  | Adding patterns to `detectPiStatus` (vanilla pi `to interrupt)`; pi-meta + every TUI wrapper covered by Braille spinner glyph fallback `[\u2800-\u28FF]`)                  |
 | New typed verb      | An SDK function in the relevant `src/*.ts`; a `cmd<Verb>` in the matching `src/cli/<namespace>.ts`; one commander block in `buildProgram()`, wrapped in `handle()` and routed through `printNextSteps` |
-| New schema migration| Bump `CURRENT_SCHEMA_VERSION` in `src/db.ts` and mirror the shape in `CURRENT_SCHEMA`. Recipe and the clean-break rules: [scripts/README.md](../scripts/README.md) |
+| New schema migration| Bump `CURRENT_SCHEMA_VERSION` in `src/db.ts` and mirror the shape in `CURRENT_SCHEMA`. Keep startup migration-free; extend the retained fresh-target sidecar only when an old released schema needs a bridge. Recipe: [scripts/README.md](../scripts/README.md) |
 | New syncable field  | Add the column to a portable table, extend the capture trigger's changed-column comparison, confirm the apply path writes it. The UPDATE trigger MUST emit only changed columns — a full-row payload silently regresses field merge to row-level LWW |
 | Cross-machine sync  | Nothing: every invocation already flushes local ops and ingests each peer segment from its watermark. No daemon, no network code, no membership config |
 

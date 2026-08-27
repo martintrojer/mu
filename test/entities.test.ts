@@ -60,7 +60,7 @@ describe("syncability constants", () => {
 
   // Don't trust the constant — ask the DB. A typo'd table name would
   // otherwise sail through every set-comparison above.
-  it("every portable table exists in a fresh v9 DB", () => {
+  it("every portable table exists in a fresh v10 DB", () => {
     const rows = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{
       name: string;
     }>;
@@ -70,7 +70,7 @@ describe("syncability constants", () => {
     }
   });
 
-  it("every machine-local table exists in a fresh v9 DB", () => {
+  it("every machine-local table exists in a fresh v10 DB", () => {
     const rows = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{
       name: string;
     }>;

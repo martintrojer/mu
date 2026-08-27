@@ -274,12 +274,16 @@ export class SchemaTooOldError extends Error implements HasNextSteps {
         command: `mu db backup "$HOME/mu-v${this.detectedVersion}-backup.db"`,
       },
       {
-        intent: `Move the old DB aside so mu starts a fresh v${this.requiredVersion} DB`,
+        intent: "Move the old DB aside without deleting it",
         command: `mv "\${MU_DB_PATH:-$HOME/.local/state/mu/mu.db}" "\${MU_DB_PATH:-$HOME/.local/state/mu/mu.db}.old"`,
       },
       {
-        intent: "Inspect the on-disk DB version",
-        command: `sqlite3 "$MU_DB_PATH" 'SELECT version FROM schema_version'`,
+        intent: `Migrate the preserved DB into a fresh v${this.requiredVersion} file`,
+        command: `npx tsx scripts/migrate.ts "\${MU_DB_PATH:-$HOME/.local/state/mu/mu.db}.old" --out /tmp/mu-v${this.requiredVersion}.db`,
+      },
+      {
+        intent: "Verify the fresh DB before swapping",
+        command: `MU_DB_PATH=/tmp/mu-v${this.requiredVersion}.db mu doctor --deep`,
       },
     ];
   }

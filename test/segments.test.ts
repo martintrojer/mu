@@ -10,9 +10,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type Db, openDb } from "../src/db.js";
+import { formatHlc } from "../src/hlc.js";
 import { withOpContext } from "../src/op-context.js";
 import {
   discoverPeers,
+  encodeSegmentLine,
   flushSegment,
   getWatermark,
   ingestSegment,
@@ -118,6 +120,42 @@ describe("segments", () => {
   // ─── round trip ──────────────────────────────────────────────────────
 
   describe("round trip between two machines", () => {
+    it.each(["REJECTED", "DEFERRED"])("ingests a legacy %s task op as OPEN", (status) => {
+      const machineId = "legacy-v9-peer";
+      const payload = JSON.stringify({
+        title: "Legacy task",
+        status,
+        impact: 50,
+        effort_days: 1,
+        created_at: "2026-01-01T00:00:00.000Z",
+        updated_at: "2026-01-01T00:00:00.000Z",
+      });
+      const line = encodeSegmentLine({
+        hlc: formatHlc({ wallMs: 2_000_000_000_000, counter: 0, machineId }),
+        machineId,
+        groupId: "legacy-group",
+        actor: "v9-peer",
+        intent: "task.defer",
+        entity: "task",
+        key: "demo/legacy",
+        op: "put",
+        payload,
+      });
+      const path = join(dir, `${machineId}.jsonl`);
+      writeFileSync(path, `${line}\n`);
+
+      const result = ingestSegment(b, { machineId, path, conflictCopy: false });
+      expect(result.defects).toEqual([]);
+      expect(task(b, "legacy")?.status).toBe("OPEN");
+      expect(
+        (
+          b.prepare("SELECT payload FROM ops WHERE machine_id = ?").get(machineId) as {
+            payload: string;
+          }
+        ).payload,
+      ).toBe(payload);
+    });
+
     it("A flushes, B ingests, and B's tables match A's", async () => {
       ensureWorkstream(a, "demo");
       addTask(a, { workstream: "demo", localId: "x", title: "X", impact: 60, effortDays: 1 });

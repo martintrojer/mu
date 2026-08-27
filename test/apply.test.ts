@@ -22,6 +22,7 @@ import {
 } from "../src/apply.js";
 import { type Db, openDb } from "../src/db.js";
 import { formatHlc } from "../src/hlc.js";
+import { applyIncomingOp } from "../src/segments.js";
 import { addBlockEdge } from "../src/tasks/edges.js";
 import { addNote, addTask } from "../src/tasks/edit.js";
 import { ensureWorkstream } from "../src/workstream.js";
@@ -153,6 +154,28 @@ describe("applyOp", () => {
     ensureWorkstream(db, ws);
     addTask(db, { workstream: ws, localId, title: `title ${localId}`, impact: 50, effortDays: 1 });
   };
+
+  it.each(["REJECTED", "DEFERRED"])(
+    "projects legacy %s task ops as OPEN without rewriting history",
+    (legacyStatus) => {
+      const op = makeOp({
+        hlc: peerHlc(1000),
+        entity: "task",
+        key: "demo/legacy",
+        payload: { title: "Legacy task", status: legacyStatus, impact: 40, effort_days: 1 },
+      });
+
+      expect(() => applyIncomingOp(db, op)).not.toThrow();
+      expect(task("demo/legacy")?.status).toBe("OPEN");
+      expect(
+        (
+          db
+            .prepare("SELECT payload FROM ops WHERE machine_id = ? AND hlc = ?")
+            .get(op.machineId, op.hlc) as { payload: string }
+        ).payload,
+      ).toBe(op.payload);
+    },
+  );
 
   // ─── REQUIRED: field-level convergence ───────────────────────────────
 

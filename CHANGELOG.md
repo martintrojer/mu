@@ -17,9 +17,12 @@ breaking changes are called out under "Breaking" in each entry.
   remain. `mu task reject` and `mu task defer` are deleted. Use task
   notes (`mu task note <id> "won't do: ..."`) to record rationale;
   close the task to satisfy blocked-by edges. Pre-v10 databases are
-  refused at startup with `SchemaTooOldError` (exit 4); no migration
-  ladder is provided — export before upgrading if history is needed.
-  The SDK no longer exports `rejectTask`, `deferTask`,
+  refused at startup with `SchemaTooOldError` (exit 4); no in-process
+  migration ladder is provided. The retained `scripts/migrate.ts`
+  sidecar auto-detects v8/v9 and writes a fresh v10 DB. For v9 sources,
+  current `REJECTED` / `DEFERRED` tasks project as `OPEN` with a durable
+  migration note, while original op payloads remain unchanged. The SDK
+  no longer exports `rejectTask`, `deferTask`,
   `RejectDeferOptions`, `RejectDeferResult`, or
   `TaskHasOpenDependentsError`.
 
@@ -141,8 +144,18 @@ breaking changes are called out under "Breaking" in each entry.
 
 ### Added
 
+- **One consolidated migration sidecar: `scripts/migrate.ts`.** It replaces
+  the former v8-only importer, supports direct v8 or v9 → v10, opens the
+  source read-only, writes only a fresh target by default, and verifies
+  source SHA-256 stability. The v9 path preserves the complete ops log,
+  machine identity/HLC, peer watermarks, and referentially valid local
+  agents/workspaces/owners. Legacy task statuses normalize only in the
+  shared apply path, so old segments and rebuilds also project safely.
+  See `scripts/README.md` for the exact backup/verify/swap recipe and the
+  explicit limits on validating pane ids and absolute workspace paths.
+
 - **`scripts/restore-pre1.0-archives.ts`** — carries pre-1.0 archives
-  into v9, which `scripts/migrate-to-1.0.ts` refuses to do. That
+  into v9, which `scripts/migrate.ts` refuses to do. That
   refusal rests on two true claims (a v9 archive is a marker pinning
   the ops log; v8's `workstream destroy` deleted rows rather than
   writing tombstones, so the ops to pin do not exist) and one
@@ -484,7 +497,7 @@ for.
 Carrying a migration path would have meant keeping the four dead
 mechanisms alive in code purely to read them once. The honest cost:
 the upgrade is one-way, so keep your old DB file. There is a verified
-path across — `scripts/migrate-to-1.0.ts`, read-only on the source, run
+path across — `scripts/migrate.ts`, read-only on the source, run
 against a real 857-task database with `mu doctor --deep` reporting no
 drift.
 
@@ -517,7 +530,7 @@ drift.
   the in-place forward-bump ladder (including the v6→v7 `approvals`
   DROP) is gone. Keep a copy of your old DB (a plain `cp` of the file, as
   in the recipe below) and re-import it
-  through **`scripts/migrate-to-1.0.ts`** — a sidecar you run once, by hand,
+  through **`scripts/migrate.ts`** — a sidecar you run once, by hand,
   against a copy. See [scripts/README.md](scripts/README.md) for the
   exact upgrade recipe (BACK UP FIRST) and the honest list of what does
   NOT come across.
@@ -525,7 +538,7 @@ drift.
   ```bash
   cp ~/.local/state/mu/mu.db ~/mu-pre1.0-backup.db        # keep this forever
   mv ~/.local/state/mu/mu.db ~/.local/state/mu/mu.db.old
-  npx tsx scripts/migrate-to-1.0.ts ~/.local/state/mu/mu.db.old --out /tmp/mu-new.db
+  npx tsx scripts/migrate.ts ~/.local/state/mu/mu.db.old --out /tmp/mu-new.db
   MU_DB_PATH=/tmp/mu-new.db mu doctor --deep              # must report NO drift
   mv /tmp/mu-new.db ~/.local/state/mu/mu.db
   ```
@@ -573,7 +586,7 @@ drift.
   `VACUUM INTO` one-liner for the "one file I can scp" case, which is
   the only thing `db export` was actually used for. It never
   overwrites — the copy `SchemaTooOldError` tells you to take before
-  `scripts/migrate-to-1.0.ts` is not one to clobber on a retry.
+  `scripts/migrate.ts` is not one to clobber on a retry.
 - **Destructive verbs no longer snapshot.** `workstream destroy`,
   `task delete` / `close` / `reject` / `defer` / `release`,
   `agent close`, and `workspace free` / `recreate` used to capture a
