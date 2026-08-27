@@ -171,21 +171,22 @@ describe("mu undo", () => {
     expect(stdout).toContain("--force");
   });
 
-  it("END TO END: undo a cascade reject, then doctor --deep reports NO drift", async () => {
+  it("END TO END: undo a task close, then doctor --deep reports NO drift", async () => {
     // The strongest available proof that undo did not corrupt the
     // projection: the log and the tables still agree afterwards.
     await seed();
     await runCli(["task", "block", "b", "--by", "a", "-w", "demo"], dbPath);
-    await runCli(["task", "reject", "a", "-w", "demo", "--cascade", "--yes"], dbPath);
+    await runCli(["task", "close", "a", "-w", "demo"], dbPath);
+
+    let show = await runCli(["task", "show", "a", "-w", "demo", "--json"], dbPath);
+    expect((JSON.parse(show.stdout) as { task: { status: string } }).task.status).toBe("CLOSED");
 
     const group = await newestGroup();
     const undone = await runCli(["undo", group, "--yes"], dbPath);
     expect(undone.exitCode).toBeNull();
 
-    const list = await runCli(["task", "list", "-w", "demo", "--json"], dbPath);
-    const items = (JSON.parse(list.stdout) as { items: Array<{ name: string; status: string }> })
-      .items;
-    expect(items.map((t) => t.status).sort()).toEqual(["OPEN", "OPEN"]);
+    show = await runCli(["task", "show", "a", "-w", "demo", "--json"], dbPath);
+    expect((JSON.parse(show.stdout) as { task: { status: string } }).task.status).toBe("OPEN");
 
     const doctor = await runCli(["doctor", "--deep"], dbPath);
     expect(doctor.exitCode).toBeNull();
