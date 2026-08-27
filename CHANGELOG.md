@@ -103,6 +103,13 @@ breaking changes are called out under "Breaking" in each entry.
   `ingestFromDb` now does too, folding the skip into the existing
   `skippedLocal` counter like the segment path does.
 
+- **`flushSegment` no longer regrows a corrupted own segment forever.**
+  `readSegmentTail` could not distinguish clean EOF from a defect, so
+  `flushLocked` repeatedly re-derived and appended the same tail after
+  damage. It now truncates to the last verified-good line before
+  regenerating from the canonical ops log, and reports the repair so
+  `mu sync` and ambient sync warn instead of failing silently.
+
 - **Removed commands no longer erase their historical op compatibility.**
   `workstream.export` ops used a synced `workstream` entity but carried a
   prose payload. The export command is still removed, but its intent now

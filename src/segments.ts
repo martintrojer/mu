@@ -336,6 +336,20 @@ export interface FlushResult {
   total: number;
   /** Ops skipped because their entity is machine-local. */
   skippedLocal: number;
+  /**
+   * Non-null when THIS MACHINE'S OWN segment was found defective past
+   * its last good line (bit rot, a torn write not at EOF, a bad manual
+   * edit). A segment is DERIVED and REGENERABLE from the canonical
+   * `ops` table, so the repair is to truncate the file back to its
+   * last good record and let the append below regenerate the rest —
+   * never to append after the damage, which is the defect that caused
+   * unbounded regrowth (each flush re-deriving the same ops from a
+   * watermark frozen at the corruption point and stacking them after
+   * it, forever). Surfaced here rather than printed directly: this
+   * module does no I/O beyond the filesystem, callers decide how loud
+   * to be (`mu sync`, `ambientFlush`).
+   */
+  selfRepaired: SegmentDefect | null;
 }
 
 /**
@@ -359,7 +373,8 @@ export interface FlushResult {
  * time.
  */
 export async function flushSegment(db: Db, dir: string | null = syncDir()): Promise<FlushResult> {
-  if (dir === null) return { segmentPath: null, appended: 0, total: 0, skippedLocal: 0 };
+  if (dir === null)
+    return { segmentPath: null, appended: 0, total: 0, skippedLocal: 0, selfRepaired: null };
 
   const machineId = localMachineId(db);
   mkdirSync(dir, { recursive: true });
@@ -380,6 +395,26 @@ export async function flushSegment(db: Db, dir: string | null = syncDir()): Prom
 function flushLocked(db: Db, path: string, machineId: string): FlushResult {
   const existing = readSegmentTail(path);
   const since = existing.lastHlc;
+
+  // The defect this exists to close: readSegmentTail STOPS at the first
+  // bad record either because it hit real damage or because it simply
+  // ran out of well-formed lines. Those two cases used to be
+  // indistinguishable to this function, and treating "stopped early on
+  // damage" the same as "reached clean EOF" is exactly what let a
+  // corrupted line grow the file forever: `since` never advanced past
+  // it, so every flush re-selected and re-appended the same ops after
+  // it again, unbounded. Distinguish them and heal our own segment
+  // (truncate back to the last verified-good line) before appending
+  // anything new, rather than stacking fresh data after the wound.
+  let selfRepaired: SegmentDefect | null = null;
+  if (existing.defect !== null) {
+    selfRepaired = existing.defect;
+    writeFileSync(
+      path,
+      existing.goodLines.length > 0 ? `${existing.goodLines.join("\n")}\n` : "",
+      "utf8",
+    );
+  }
 
   const rows = db
     .prepare(
@@ -439,7 +474,7 @@ function flushLocked(db: Db, path: string, machineId: string): FlushResult {
 
   const total = existing.count + lines.length;
   writeManifest(path, machineId, total, lastHlc);
-  return { segmentPath: path, appended: lines.length, total, skippedLocal };
+  return { segmentPath: path, appended: lines.length, total, skippedLocal, selfRepaired };
 }
 
 /** Number of GOOD lines in a segment (stopping at the first defect, as
@@ -449,21 +484,40 @@ export function segmentLineCount(path: string): number {
   return readSegmentTail(path).count;
 }
 
-/** Count + last hlc of an existing segment, cheaply. Uses the manifest
- *  when it agrees with the file's byte length; otherwise scans. */
-function readSegmentTail(path: string): { count: number; lastHlc: string | null } {
-  if (!existsSync(path)) return { count: 0, lastHlc: null };
+/**
+ * Count + last hlc of an existing segment, cheaply, plus (this is the
+ * part that matters) WHY it stopped: `defect` is null when every line
+ * decoded cleanly (a genuine, trustworthy EOF), and set when decoding
+ * stopped early because a line was bad. Conflating those two used to be
+ * the whole bug: a stop-on-damage looked exactly like a stop-on-EOF to
+ * `flushLocked`, so it kept appending after the damage forever.
+ * `goodLines` is the verified-good prefix, raw, so a caller that finds a
+ * defect can truncate back to it byte-for-byte rather than re-encoding.
+ */
+function readSegmentTail(path: string): {
+  count: number;
+  lastHlc: string | null;
+  goodLines: readonly string[];
+  defect: SegmentDefect | null;
+} {
+  if (!existsSync(path)) return { count: 0, lastHlc: null, goodLines: [], defect: null };
   const raw = readFileSync(path, "utf8");
   const lines = raw.split("\n").filter((l) => l.trim() !== "");
   let lastHlc: string | null = null;
   let count = 0;
-  for (const line of lines) {
+  let defect: SegmentDefect | null = null;
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index];
+    if (line === undefined) break;
     const decoded = decodeLine(line);
-    if (!decoded.ok) break; // stop at the first bad record, as ingest does
+    if (!decoded.ok) {
+      defect = { kind: decoded.kind, line: index + 1, detail: decoded.detail };
+      break;
+    }
     lastHlc = decoded.line.hlc;
     count += 1;
   }
-  return { count, lastHlc };
+  return { count, lastHlc, goodLines: lines.slice(0, count), defect };
 }
 
 /** LAYER 4: whole-file verification sidecar. */
@@ -828,7 +882,7 @@ export interface SyncPassResult {
 export async function syncPass(db: Db, dir: string | null = syncDir()): Promise<SyncPassResult> {
   if (dir === null) {
     return {
-      flushed: { segmentPath: null, appended: 0, total: 0, skippedLocal: 0 },
+      flushed: { segmentPath: null, appended: 0, total: 0, skippedLocal: 0, selfRepaired: null },
       ingested: [],
       defective: false,
     };
@@ -844,6 +898,6 @@ export async function syncPass(db: Db, dir: string | null = syncDir()): Promise<
   return {
     flushed,
     ingested,
-    defective: ingested.some((r) => r.defects.length > 0),
+    defective: flushed.selfRepaired !== null || ingested.some((r) => r.defects.length > 0),
   };
 }

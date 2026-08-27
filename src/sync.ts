@@ -311,7 +311,15 @@ export async function ambientFlush(db: Db, opts?: AmbientOptions): Promise<Flush
   const dir = syncDir();
   if (dir === null) return null;
   try {
-    return await flushSegment(db, dir);
+    const result = await flushSegment(db, dir);
+    if (result.selfRepaired !== null) {
+      const d = result.selfRepaired;
+      warn(
+        `own segment truncated back to its last good line: ${d.kind} at line ${d.line} (${d.detail}) — regenerated from the ops table`,
+        opts,
+      );
+    }
+    return result;
   } catch (err) {
     warn(err instanceof Error ? err.message : String(err), opts);
     return null;

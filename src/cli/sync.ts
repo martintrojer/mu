@@ -166,6 +166,7 @@ export async function cmdSync(db: Db, opts: SyncCmdOptions = {}): Promise<void> 
       repaired: repaired === null ? null : repaired.machineId,
       flushed: pass.flushed.appended,
       skippedLocal: pass.flushed.skippedLocal,
+      selfRepaired: pass.flushed.selfRepaired,
       ingested: pass.ingested.map((r) => ({
         machineId: r.machineId,
         applied: r.applied,
@@ -181,6 +182,14 @@ export async function cmdSync(db: Db, opts: SyncCmdOptions = {}): Promise<void> 
 
   if (repaired !== null) {
     console.log(pc.dim(`repaired ${repaired.short}: watermark reset, re-reading from zero`));
+  }
+  if (pass.flushed.selfRepaired !== null) {
+    const d = pass.flushed.selfRepaired;
+    console.log(
+      pc.yellow(
+        `  own segment was defective past line ${d.line} (${d.kind}: ${d.detail}) — truncated to the last good line and regenerated from the ops table`,
+      ),
+    );
   }
   console.log(`flushed ${pass.flushed.appended} ops · ${describeIngest(pass.ingested)}`);
   console.log(renderPeerTable(peers));

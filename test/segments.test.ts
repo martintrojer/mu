@@ -537,6 +537,74 @@ describe("segments", () => {
       expect(repaired.defects).toEqual([]);
       expect(task(b, "t3")).toBeDefined();
     });
+
+    it("a mid-file corruption in OWN segment does not regrow the file forever on repeated flushes", async () => {
+      // The regression this guards: readSegmentTail() used to report
+      // only "stopped early", with no way to tell a genuine EOF apart
+      // from a defect. flushLocked() treated both the same and kept
+      // appending fresh ops after the wound on every call, so the file
+      // grew strictly larger on EVERY subsequent flush, forever, and
+      // never healed.
+      const path = await seedFour();
+      const lines = linesOf(path);
+      const second = lines[1];
+      if (second === undefined) throw new Error("need 2 lines");
+      // Bit rot: valid JSON, bad crc, mid-file (not at EOF, unlike a
+      // torn-write truncation).
+      lines[1] = second.replace('"crc":"', '"crc":"0');
+      writeFileSync(path, `${lines.join("\n")}\n`);
+
+      // First flush after the damage: must be reported AND healed by
+      // truncating back to the one good line before re-deriving anything
+      // new from canonical `ops` (t1..t3, lost from disk, plus one new
+      // op). That re-derivation happens ONCE, on this call — it is safe
+      // regeneration from the canonical source, not the bug.
+      addTask(a, { workstream: "demo", localId: "extra-a", title: "A", impact: 50, effortDays: 1 });
+      const first = await flushSegment(a, dir);
+      expect(first.selfRepaired).not.toBeNull();
+      expect(first.selfRepaired?.kind).toBe("crc-mismatch");
+      const lineCountBeforeCorruption = 4; // seedFour: t0..t3
+      const lineCountAfterHeal = linesOf(path).length;
+      // 1 surviving good line (t0) + everything canonical after it
+      // (t1..t3, lost from disk, plus the new op) — regenerated once.
+      expect(lineCountAfterHeal).toBeGreaterThan(lineCountBeforeCorruption - 3);
+      expect(lineCountAfterHeal).toBeGreaterThanOrEqual(lineCountBeforeCorruption);
+
+      // Every flush AFTER the heal is a normal, already-healthy flush:
+      // nothing left to repair, and growth is exactly one line per new
+      // op — never a repeat of the whole tail.
+      for (let i = 0; i < 5; i++) {
+        const before = linesOf(path).length;
+        addTask(a, {
+          workstream: "demo",
+          localId: `extra-b${i}`,
+          title: `B${i}`,
+          impact: 50,
+          effortDays: 1,
+        });
+        const result = await flushSegment(a, dir);
+        expect(result.selfRepaired).toBeNull();
+        expect(linesOf(path).length).toBe(before + 1);
+      }
+
+      // Total: the healed baseline plus exactly one line per subsequent
+      // flush — bounded, linear, no repeated regrowth of the tail.
+      expect(linesOf(path).length).toBe(lineCountAfterHeal + 5);
+
+      // PEER RECOVERY: a peer discovering this segment from zero gets a
+      // clean read all the way through — not a permanent stall on line 1
+      // forever, which is what the unbounded-regrowth bug produced (a
+      // corrupted first line that never moves, blocking every later,
+      // perfectly good op behind it).
+      const peer = peersFor(b)[0];
+      if (peer === undefined) throw new Error("expected a peer");
+      const result = ingestSegment(b, peer);
+      expect(result.defects).toEqual([]);
+      expect(result.applied).toBe(lineCountAfterHeal + 5);
+      expect(task(b, "t0")).toBeDefined();
+      expect(task(b, "t3")).toBeDefined();
+      expect(task(b, "extra-b4")).toBeDefined();
+    });
   });
 
   // ─── filtering ───────────────────────────────────────────────────────
@@ -759,7 +827,13 @@ describe("segments", () => {
     it("flush, ingest and syncPass are no-ops costing nothing", async () => {
       seedTask(a, "nosync");
       const flushed = await flushSegment(a, null);
-      expect(flushed).toEqual({ segmentPath: null, appended: 0, total: 0, skippedLocal: 0 });
+      expect(flushed).toEqual({
+        segmentPath: null,
+        appended: 0,
+        total: 0,
+        skippedLocal: 0,
+        selfRepaired: null,
+      });
 
       const pass = await syncPass(a, null);
       expect(pass.flushed.segmentPath).toBeNull();
