@@ -344,7 +344,7 @@ describe("sync", () => {
           }[]
         ).map((r) => r.entity);
       for (const entity of entities(b)) {
-        expect(["workstream", "task", "edge", "note", "message", "marker"]).toContain(entity);
+        expect(["workstream", "task", "edge", "note", "message"]).toContain(entity);
       }
     });
 

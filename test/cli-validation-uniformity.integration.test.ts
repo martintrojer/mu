@@ -9,8 +9,8 @@
 //   B. UsageError thrown inside a handler — mutex flags, range checks,
 //      arity checks, anything the verb's own .action() body validates.
 //   C. Typed *Invalid* domain errors that fault on a value the operator
-//      typed AT THE CLI: WorkstreamNameInvalidError, ArchiveLabelInvalidError,
-//      PruneOptionsInvalidError, TaskIdInvalidError.
+//      typed AT THE CLI: WorkstreamNameInvalidError, PruneOptionsInvalidError,
+//      TaskIdInvalidError.
 //
 // All three must produce the same surface:
 //   - human path: red `error: <msg>`, then the failing command's

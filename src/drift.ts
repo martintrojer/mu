@@ -5,7 +5,7 @@
 // mu collapsed four independent change-recording mechanisms into ONE
 // ops log. The upside is coherence. The cost, stated plainly in
 // docs/VISION.md § 2b, is that a capture bug is no longer "sync is
-// broken" — it is undo AND archives AND sync AND history broken,
+// broken" — it is undo AND sync AND history broken,
 // simultaneously and silently, because all four are projections of the
 // same table.
 //

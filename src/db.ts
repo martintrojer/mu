@@ -16,9 +16,9 @@
 // v9 is a BREAKING, migration-free redesign. It DROPS v8's four
 // separate change-recording mechanisms — `agent_logs`, `snapshots`,
 // `workstream_sync`, and the five `archived_*` tables — and replaces
-// all of them with one **ops log**. Sync, undo, archive, and history
+// all of them with one **ops log**. Sync, undo, and history
 // are queries or replays over that log (docs/VOCABULARY.md § op,
-// ops log, marker, watermark).
+// ops log, watermark).
 //
 // The surrogate-INTEGER-PK discipline introduced in v5 is unchanged:
 // per docs/ARCHITECTURE.md § Surrogate-PK + SDK-boundary discipline,
@@ -432,7 +432,7 @@ export const EXPECTED_TABLES: readonly string[] = [
 /** Op entities that cross machines. Everything else is machine-local.
  *  Readonly tuple (not `string[]`) so `SyncedEntity` is a real union
  *  and downstream code gets compile-time checking, not raw strings. */
-export const SYNCED_ENTITIES = ["workstream", "task", "edge", "note", "message", "marker"] as const;
+export const SYNCED_ENTITIES = ["workstream", "task", "edge", "note", "message"] as const;
 
 /** One of the six op entities that sync. Derived from the tuple, so
  *  adding an entity is a one-line change with no type to keep in step. */
@@ -665,8 +665,8 @@ CREATE INDEX IF NOT EXISTS idx_task_notes_task ON task_notes (task_id);
 
 -- ─── The ops log (VISION.md § 2b, VOCABULARY.md § op / ops log) ──────
 --
--- The single append-only record of every change. Sync, undo, archive
--- and history are all queries or replays over this one table.
+-- The single append-only record of every change. Sync, undo, and
+-- history are all queries or replays over this one table.
 --
 -- Deliberately FK-free. An op must stay readable after the row (and
 -- the workstream) it records is gone — a tombstone op for a destroyed

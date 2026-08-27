@@ -300,8 +300,8 @@ describe("rebuildInto", () => {
     // to applyOp, whose JSON.parse died with "Unexpected token 'w'",
     // crashing `mu doctor --deep` on any DB whose workstream had ever
     // been exported. Since `workstream destroy` auto-exports first, every
-    // destroy produced one. Found by hand-running doctor after an archive
-    // restore; no test covered it because each task's own tests passed.
+    // destroy produced one. Found by hand-running doctor; no test covered
+    // it because each task's own tests passed.
     it("a prose-payload workstream.export op does not break a rebuild", () => {
       seedRealisticSource();
       emitEvent(db, "demo", "workstream.export", "workstream export demo (out=/tmp/x)", "system");

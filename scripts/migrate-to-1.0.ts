@@ -626,18 +626,9 @@ export function runImporter(argv: readonly string[], say: (text: string) => void
       );
     }
 
-    // ARCHIVES. v8 stored a COLUMN SUBSET of the archived rows; v9
-    // archives are MARKERS pinning a point in the ops log. A marker can
-    // only mean something when the ops it pins exist — and for the
-    // motivating v8 case, an archive of a DESTROYED workstream, they
-    // never will, because v8's destroy erased the rows rather than
-    // writing tombstones. There is no honest reconstruction:
-    //   * a marker over an import of the LIVE workstream would pin the
-    //     CURRENT state, not the state at archive time — a lie;
-    //   * restoring archived_tasks as a fresh workstream would silently
-    //     turn an archive into live work.
-    // So: refuse, name what would be lost, and make the operator opt in
-    // to losing it. Never a half-archive.
+    // ARCHIVES. v8 stored archived rows in tables the v9 schema no
+    // longer has. Refuse, name what would be lost, and make the operator
+    // explicitly opt in to dropping them.
     if (counts.archives > 0 && !args.dropArchives) {
       const labels = (
         src.prepare("SELECT label FROM archives ORDER BY label").all() as { label: string }[]
@@ -646,15 +637,12 @@ export function runImporter(argv: readonly string[], say: (text: string) => void
         [
           `REFUSING: the source has ${counts.archives} pre-1.0 archive(s): ${labels.join(", ")}`,
           "",
-          "Pre-1.0 archives cannot be faithfully carried into 1.0. v8 stored a column",
-          "SUBSET of the archived rows; a v9 archive is a MARKER pinning a point in",
-          "the ops log, and the ops an archive of a destroyed workstream would need",
-          "do not exist — v8's destroy deleted rows instead of writing tombstones.",
-          "Anything this script synthesized would pin the wrong moment.",
+          "Pre-1.0 archives cannot be carried into 1.0: the archive namespace and",
+          "its storage model were removed. The importer will not silently turn archived",
+          "rows into live work.",
           "",
           "Options:",
-          "  1. Export them from the old DB with mu 0.4.x BEFORE upgrading:",
-          "       mu archive show <label> > <label>.txt",
+          "  1. Export them from the old DB with mu 0.4.x BEFORE upgrading.",
           "  2. Re-run with --drop-archives to import tasks and drop the archives.",
           "  3. Keep the old DB (you should anyway) and read them with sqlite3.",
         ].join("\n"),

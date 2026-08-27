@@ -7,8 +7,7 @@
 //   2. --yes: both empties destroyed; non-empties untouched.
 //   3. one empty has a live tmux session; --yes kills it.
 //   4. --empty + -w → mutually exclusive (UsageError; exit 2).
-//   5. --empty + --archive → mutually exclusive (UsageError; exit 2).
-//   6. mid-sweep failure (kill-session throws on one ws) → others
+//   5. mid-sweep failure (kill-session throws on one ws) → others
 //      still run; failure surfaced in summary.
 //   7. --json shape verified for both dry-run and --yes.
 //   8. tmux-only mu-* sessions (no DB row) are surfaced + destroyed.
@@ -281,17 +280,6 @@ describe("mu workstream destroy --empty", () => {
     const remaining = (db.prepare("SELECT COUNT(*) AS n FROM workstreams").get() as { n: number })
       .n;
     expect(remaining).toBe(1);
-  });
-
-  it("--empty + --archive errors with exit 2 (mutually exclusive)", async () => {
-    setTmuxExecutor(mockTmux({ sessions: new Set(), killed: [], killShouldFail: new Set() }));
-    ensureWorkstream(db, "empty-a");
-    db.close();
-
-    const r = await runCli(["workstream", "destroy", "--empty", "--archive", "wave"], dbPath);
-    expect(r.exitCode).toBe(2);
-    expect(r.stderr).toMatch(/mutually exclusive/i);
-    expect(r.stderr).toMatch(/--archive/);
   });
 
   it("mid-sweep failure: bad kill-session on one ws does NOT abort the others", async () => {

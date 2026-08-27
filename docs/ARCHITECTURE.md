@@ -73,8 +73,6 @@ rebuilt from.
 
 - **history** — `mu log` is a typed reader over `ops`.
 - **undo** — `mu undo <group>` emits the inverse ops for one group.
-- **archive** — an archive is one marker op pinning a point in the log;
-  restore replays up to it.
 - **sync** — a machine appends its own ops to a JSONL segment in a
   shared folder and applies each peer's from a watermark.
 
@@ -85,7 +83,7 @@ their edit, with no extra bookkeeping. A full-row payload would
 silently regress this to row-level last-writer-wins.
 
 **The cost, plainly:** one mechanism means one capture bug breaks
-history, undo, archive and sync at once, silently. That is why
+history, undo and sync at once, silently. That is why
 `mu doctor --deep` rebuilds the log into a temp DB and diffs it
 field-by-field against the live tables, and why the cheap tier
 (every live row has at least one op naming it) runs by default.
@@ -628,8 +626,7 @@ separately below.
 | `src/hlc.ts`          | The **HLC** (VOCABULARY § HLC), serialized as sortable TEXT `<wall_ms:15>.<counter:6>.<machine_id>`. `nextHlc` / `receiveHlc` / `compareHlc` / `parseHlc` / `formatHlc`. Clock state lives in `machine_identity`. |
 | `src/capture.ts`      | **Op capture**: builds the triggers that record every write to a portable table as an op in the same transaction. |
 | `src/apply.ts`        | **The apply path** — capture's counterpart: given one op, local or from a peer, make the tables reflect it. Also owns `reprojectDeferredOps` ([§ ambient sync hook](#the-ambient-sync-hook)). |
-| `src/archives*.ts`    | **Archives as markers**: one `marker` op pinning a point in the log. Labels are global, append-only. `restore.ts` replays to the marker under a NEW name, re-keying every natural key; `export.ts` does the same in a scratch workstream, then rolls back. |
-| `src/exporting.ts`    | Bucket renderer shared by `mu workstream export` and `mu archive export`: per-task markdown + `manifest.json` (`bucketVersion: 2`), idempotent via per-file sha256, deleted-task preservation banner. Read-only artifacts, not a round-trip substrate. |
+| `src/exporting.ts`    | Bucket renderer for `mu workstream export`: per-task markdown + `manifest.json` (`bucketVersion: 2`), idempotent via per-file sha256, deleted-task preservation banner. Read-only artifacts, not a round-trip substrate. |
 | `src/undo.ts` + `src/cli/undo.ts` | **Undo as inverse ops**: inverses for one `group_id`, derived from log provenance, refusing a superseded group (exit 4; `--force` overrides). Bare form lists undoable groups (`-n` widens), a prefix previews, `--yes` applies. |
 | `src/parked.ts`       | Read-only "presumed parked on another machine" heuristic behind `mu workstream list`'s `parked` column and the TUI tab strip's dim marker. **Effectively dormant**: it keys on `workstream.export`, which rarely happens. |
 | `src/project-root.ts` | `detectProjectRoot` — the launch-cwd ladder bare `mu` uses to guess which workstream to focus. Pure filesystem walk; no DB. |

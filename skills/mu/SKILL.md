@@ -17,8 +17,7 @@ not in `--help` do not exist.
 Default output: textual card on stdout plus a `Next:` block. Read
 both. `--json` exists on every verb:
 - Success: one stdout object.
-- Collection reads (`task list`, `workspace commits`, `archive
-  search`, ...): `{items: T[], count: number}`.
+- Collection reads (`task list`, `workspace commits`, ...): `{items: T[], count: number}`.
 - Singletons keep named fields.
 - `mu sql --json`: bare array rows.
 - `mu log --tail`: NDJSON (one object per line).
@@ -252,9 +251,8 @@ git cherry-pick "$sha" && npm test
 
 - **Workstream:** `init`, `list`, `destroy` (dry-run by default,
   `--yes` commits; writes TOMBSTONE ops so history survives and
-  `mu undo <group> --yes` reverses the row deletions;
-  `--archive <label>` pins the graph first), `export` (read-only
-  markdown bucket for humans/git/docs).
+  `mu undo <group> --yes` reverses the row deletions), `export`
+  (read-only markdown bucket for humans/git/docs).
 - **Agents:** `spawn` (`--workspace`, `--role read-only`, `--command`),
   `send`, `read`, `show`, `list`, `close`, `free`, `kick`,
   `adopt <pane-id|title>` for orphan panes. Four worth knowing:
@@ -289,15 +287,6 @@ git cherry-pick "$sha" && npm test
   the same fields (`--force` to override, discarding that newer work).
   Rows only — killed panes and freed workspace dirs do not come back.
   There are no snapshots and no `--to`.
-- **Archives:** an archive is a named MARKER pinning a point in the ops
-  log, not a copy — so it still restores after its workstream is gone
-  (destroy writes tombstones, it does not erase history). Verbs:
-  `add <label> -w <ws>` (creates the label on first use), `list
-  [label]`, `restore <label> --as <new-ws>` (dry-run; `--yes` applies,
-  `-w` picks the source when a label covers several), `export <label>
-  --out <dir>`. `mu workstream destroy --archive <label>` pins first.
-  Labels are global. No `create`/`remove`/`delete`/`search`/`show` —
-  markers are append-only and `list <label>` is the detail view.
 - **Recovery:** `mu rebuild <file>` replays the ops log in HLC order
   into a NEW DB file and prints the `mv` command to swap it in; it
   never rebuilds in place. Agents and workspaces are NOT rebuilt (no
@@ -332,7 +321,7 @@ git cherry-pick "$sha" && npm test
 - **Health:** `mu doctor` (fast checks, exit 0) and `mu doctor --deep`,
   which rebuilds the ops log into a temp DB and diffs it field-by-field
   against the live tables. DRIFT means the log and the tables disagree,
-  and since undo / archive / sync are all derived from the log, drift
+  and since undo / sync are all derived from the log, drift
   breaks all three at once — exit 5, naming table, key and field. It is
   a capture bug, not operator error: back up first and report it, do
   NOT reflexively rebuild (if capture missed a mutation, the live rows

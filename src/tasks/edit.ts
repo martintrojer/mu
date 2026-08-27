@@ -201,8 +201,8 @@ export interface DeleteTaskOptions {
   /** When true, return the cascade preview (would-be edge / note
    *  counts) without mutating and without snapshotting. The CLI uses
    *  this to power the bare `mu task delete <id>` two-phase pattern
-   *  (mirrors `mu workstream destroy` / `mu archive delete` /
-   *  `mu snapshot prune`). Surfaced by feedback ws task
+   *  (mirrors `mu workstream destroy` / `mu snapshot prune`). Surfaced
+   *  by feedback ws task
    *  fb_task_delete_no_yes (impact=30): a dogfood report typed
    *  `mu task delete X --yes` (mirroring workstream destroy) and got
    *  'unknown option --yes' — the verb took no confirmation flag at

@@ -125,10 +125,6 @@ export class WorkstreamExistsError extends Error implements HasNextSteps {
   }
   errorNextSteps(): NextStep[] {
     return [
-      {
-        intent: "Pick a different workstream name",
-        command: "mu archive restore <label> --as <new-name>",
-      },
       { intent: "List existing workstreams", command: "mu workstream list" },
       {
         intent: "Destroy the existing workstream first",

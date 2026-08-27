@@ -169,8 +169,8 @@ export async function cmdTaskDelete(
   assertTaskInWorkstream(db, localId, opts.workstream);
   const ws = await resolveWorkstream(opts.workstream);
   // Two-phase: bare = dry-run preview; --yes commits. Mirrors
-  // `mu workstream destroy` / `mu archive delete` / `mu snapshot
-  // prune`. Surfaced by feedback ws task fb_task_delete_no_yes
+  // `mu workstream destroy` / `mu snapshot prune`. Surfaced by feedback
+  // ws task fb_task_delete_no_yes
   // (impact=30): the dogfood report typed `mu task delete X --yes`
   // (mirroring workstream destroy) and got 'unknown option --yes'
   // because the verb took no confirmation flag at all; two failed

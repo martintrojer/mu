@@ -1,5 +1,5 @@
 // Tests for src/capture.ts + src/op-context.ts — the trigger-based op
-// capture that everything downstream (undo, archive, sync, history)
+// capture that everything downstream (undo, sync, history)
 // projects from.
 //
 // Adversarial by design. The failure mode that matters most here is not

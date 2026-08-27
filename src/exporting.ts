@@ -1,10 +1,8 @@
-// mu — unified bucket renderer for workstream / archive exports.
+// mu — bucket renderer for workstream exports.
 //
-// One renderer, two entry points (`mu workstream export` and
-// `mu archive export`). Both produce the same on-disk shape: a
-// "bucket" directory whose top-level contains a bucket-wide README +
-// INDEX + manifest, and one subdirectory per source workstream that
-// holds the per-workstream README + INDEX + tasks/<id>.md files.
+// Produces a "bucket" directory whose top-level contains a bucket-wide
+// README + INDEX + manifest, and one subdirectory per source workstream
+// that holds the per-workstream README + INDEX + tasks/<id>.md files.
 //
 // The bucket layout is ADDITIVE: re-running `mu workstream export
 // -w X --out <bucket>` over an existing bucket either appends a new
@@ -70,10 +68,8 @@ export interface ExportSourceManifest {
   addedAt: string;
   /** ISO timestamp of the most recent re-export of this source. */
   lastReExportedAt: string;
-  /** `latestSeq(db)` at the most recent re-export; for live workstreams
-   *  this is the live `agent_logs.seq` cursor. For archive sources
-   *  there is no equivalent live counter — we record the seq at
-   *  archive-add time when available, else 0. */
+  /** `latestSeq(db)` at the most recent re-export. The live
+   *  `agent_logs.seq` cursor at the time of export. */
   eventsSeqAtExport: number;
   /** Per-task entries; sorted by id for stable diffs. */
   tasks: ExportTaskEntry[];
@@ -89,8 +85,8 @@ export interface ExportManifest {
   bucketVersion: 2;
   /** Manifest-payload discriminator. Always 2 when written by this codebase. */
   manifest_version: typeof EXPORT_MANIFEST_VERSION;
-  /** Operator-chosen bucket label (an archive label, or null for a
-   *  one-shot `mu workstream export`). Surfaced in README only. */
+  /** Operator-chosen bucket label (null for a bare `mu workstream export`).
+   *  Surfaced in README only. */
   bucketLabel: string | null;
   bucketCreatedAt: string;
   bucketLastUpdatedAt: string;
@@ -100,7 +96,7 @@ export interface ExportManifest {
 }
 
 /** One source's worth of input: the per-task data the renderer needs.
- *  Both entry points (workstream / archive) collapse to this shape. */
+ *  The per-task data the renderer needs from a source workstream. */
 export interface ExportSource {
   /** Source workstream name. Becomes the subdirectory name. */
   name: string;
@@ -109,14 +105,13 @@ export interface ExportSource {
   edges: Map<string, { blockers: string[]; dependents: string[] }>;
   /** Per-task notes keyed on task name. Missing keys → no notes. */
   notes: Map<string, TaskNoteRow[]>;
-  /** `agent_logs.seq` cursor at this source's snapshot moment. 0 for
-   *  archive sources (no live cursor). */
+  /** `agent_logs.seq` cursor at this source's snapshot moment. */
   eventsSeqAtExport: number;
 }
 
 export interface RenderBucketInput {
   sources: ExportSource[];
-  /** Operator-chosen archive label, or null for a workstream export. */
+  /** Operator-chosen bucket label, or null for a bare workstream export. */
   bucketLabel: string | null;
   outDir: string;
 }
@@ -281,7 +276,7 @@ export function renderBucketReadmeMarkdown(manifest: ExportManifest): string {
     lines.push("");
   }
   lines.push(
-    "_Bucket exports are additive: re-running `mu workstream export -w <ws> --out <this-dir>` appends or refreshes one source-ws subdirectory; `mu archive export <label> --out <this-dir>` (re)builds every source-ws from the named archive. See `INDEX.md` for the cross-source task table and `manifest.json` for per-task sha256s._",
+    "_Bucket exports are additive: re-running `mu workstream export -w <ws> --out <this-dir>` appends or refreshes one source-ws subdirectory. See `INDEX.md` for the cross-source task table and `manifest.json` for per-task sha256s._",
   );
   lines.push("");
   return lines.join("\n");

@@ -57,15 +57,7 @@ describe("docs name only real CLI surface", () => {
       "unknown command 'export' under 'db'",
     ],
     ["a removed subverb", "`mu snapshot list`", "unknown command 'snapshot'"],
-    ["a renamed flag", "`mu archive restore v1 --source old`", "unknown option '--source'"],
     ["a flag removed from a live verb", "`mu undo --to 12`", "unknown option '--to'"],
-    // THE case that shipped past two reviewers: the dead flag was
-    // inside markdown optional-brackets, so a naive extractor skips it.
-    [
-      "a renamed flag inside markdown optional-brackets",
-      "| Lossless un-archive | `mu archive restore <l> --as <new> [--source <orig>]` |",
-      "unknown option '--source'",
-    ],
   ])("detects %s", (_label, snippet, expected) => {
     const found = extractDocCommands("fixture.md", snippet);
     expect(found).toHaveLength(1);

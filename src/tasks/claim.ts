@@ -380,7 +380,7 @@ export async function resolveWorkerIdentity(): Promise<string | undefined> {
   const muAgent = process.env.MU_AGENT_NAME;
   if (muAgent !== undefined && muAgent !== "") return muAgent;
   // Best-effort: identity resolution must never be the thing that fails
-  // a verb. `mu archive add` on a box with no multiplexer wants an
+  // a verb. A non-interactive command on a box with no multiplexer wants an
   // attribution string, not a NoMultiplexerError — and the caller
   // already has $USER / 'orchestrator' rungs below this one.
   try {

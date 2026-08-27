@@ -4,8 +4,8 @@
 //
 // Two doc/code divergences in the 1.0 arc were caught by a human
 // running a documented command, not by any test: VOCABULARY § portable
-// omitted two tables, and `mu archive restore --source <ws>` kept
-// documenting a flag that had become `-w`. Both are the same failure
+// omitted two tables, and a removed option remained documented. Both
+// are the same failure
 // shape: prose that names a verb or flag the CLI no longer has. That is
 // mechanically checkable, so it should not need a human.
 //
@@ -46,11 +46,9 @@ export interface DocCommandProblem extends DocCommand {
   reason: string;
 }
 
-/** Docs write optional arguments in markdown-ese: `mu archive restore
- *  <label> --as <ws> [--source <orig>]`. The brackets are notation, not
- *  shell, and the flag INSIDE them is exactly the drift shape that
- *  shipped `--source` past two reviewers — so unwrap them rather than
- *  skipping the line. `[-w <ws>]` and `[--json]` unwrap the same way. */
+/** Docs write optional arguments in markdown-ese, such as
+ *  `mu task list [-w <ws>]`. The brackets are notation, not shell, so
+ *  unwrap optional flags rather than skipping the line. */
 function unwrapOptionalBrackets(text: string): string {
   return text.replace(/\[([^\]]*)\]/g, (whole, inner: string) =>
     inner.trimStart().startsWith("-") ? inner : whole,
@@ -240,9 +238,8 @@ export function checkDocCommand(root: Command, cmd: DocCommand): string | null {
     if (!takesPositional && resolved.commands.length > 0) {
       // `mu <verb> --help` is metasyntax ABOUT the CLI. Only bail here,
       // where the token stands in for a verb name — not before the flag
-      // loop, or `mu archive restore <label> --source x` would be
-      // skipped for having a placeholder positional, which is the
-      // exact drift this guard exists to catch.
+      // loop, or a command with a placeholder positional and an unknown
+      // option would be skipped, defeating the drift guard.
       if (head.startsWith("<")) return null;
       return `unknown command '${head}' under '${resolved.name()}'`;
     }

@@ -1,5 +1,5 @@
 // Tests for src/exporting.ts — the unified bucket renderer used by
-// `mu workstream export` and `mu archive export`.
+// `mu workstream export`.
 //
 // The renderer's invariants:
 //   - bucketVersion: 2 disk shape (top-level README/INDEX/manifest +

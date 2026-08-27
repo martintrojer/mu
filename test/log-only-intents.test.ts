@@ -1,38 +1,30 @@
 // Regression tests for the LOG_ONLY_INTENTS family of bugs.
 //
-// ONE root cause, three call sites. `emitEvent` derives an op's entity
+// ONE root cause, two call sites. `emitEvent` derives an op's entity
 // from its INTENT PREFIX, so `workstream.export` lands on
 // entity='workstream' — a synced, projectable entity — while carrying a
 // PROSE payload rather than a JSON object. Every consumer that reads ops
 // by entity therefore has to exclude it by intent, and each one that
 // forgot broke differently:
 //
-//   rebuild.ts        excluded it (the original fix; `mu doctor --deep`
-//                     crashed with 'Unexpected token w' before it).
-//   archives/restore  did NOT — replaying an archive whose marker sat
-//                     above a `workstream.export` op crashed the restore.
-//                     Reachable on any archive, because `workstream
-//                     destroy` auto-exports and re-pinning puts that op
-//                     BELOW the new marker.
-//   segments.ts       did NOT — and this was the worst of the three,
-//                     because `encodeSegmentLine` embeds payload as RAW
-//                     JSON, so flushing one wrote a MALFORMED line. Then
-//                     `readSegmentTail` stops at the first bad record to
-//                     recover its watermark, so the watermark reset and
-//                     every later flush re-appended the whole tail. Seen
-//                     in the wild: a 2.7MB segment grown to 102MB with
-//                     ops repeated up to 96 times.
+//   rebuild.ts   excluded it (the original fix; `mu doctor --deep`
+//                crashed with 'Unexpected token w' before it).
+//   segments.ts  did NOT — and this was the worst of the two, because
+//                `encodeSegmentLine` embeds payload as RAW JSON, so
+//                flushing one wrote a MALFORMED line. Then `readSegmentTail`
+//                stops at the first bad record to recover its watermark,
+//                so the watermark reset and every later flush re-appended
+//                the whole tail. Seen in the wild: a 2.7MB segment grown
+//                to 102MB with ops repeated up to 96 times.
 //
 // These tests pin the SHARED invariant (a log-only intent is never
-// projected, replayed, or flushed) rather than the three symptoms, so a
-// fourth consumer that forgets fails here too.
+// projected or flushed) rather than the two symptoms, so a third
+// consumer that forgets fails here too.
 
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { restoreArchive } from "../src/archives/restore.js";
-import { addArchiveMarker } from "../src/archives.js";
 import { type Db, openDb } from "../src/db.js";
 import { emitEvent } from "../src/logs.js";
 import { LOG_ONLY_INTENTS } from "../src/rebuild.js";
@@ -94,29 +86,6 @@ describe("the shape that causes the bug", () => {
     expect(row?.entity).toBe("workstream");
     expect(() => JSON.parse(row?.payload ?? "")).toThrow();
     expect(LOG_ONLY_INTENTS.has("workstream.export")).toBe(true);
-  });
-});
-
-describe("archive restore skips log-only intents", () => {
-  it("restores an archive pinned ABOVE a workstream.export op", () => {
-    addTask(db, { workstream: "proj", localId: "t1", title: "One", impact: 10, effortDays: 1 });
-    // Order is the whole point: the export op must sit BELOW the marker,
-    // which is exactly what `workstream destroy`'s pre-destroy auto-export
-    // produces when the workstream is re-pinned on the way out.
-    emitExportEvent();
-    addArchiveMarker(db, { label: "v1", workstream: "proj" });
-
-    const report = restoreArchive(db, { label: "v1", workstream: "proj", as: "recovered" });
-
-    expect(report.tasks).toBe(1);
-    const restored = db
-      .prepare(
-        `SELECT t.local_id AS id FROM tasks t
-           JOIN workstreams w ON w.id = t.workstream_id
-          WHERE w.name = ?`,
-      )
-      .all("recovered") as { id: string }[];
-    expect(restored.map((r) => r.id)).toEqual(["t1"]);
   });
 });
 

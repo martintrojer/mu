@@ -106,22 +106,14 @@ dropped silently.
 
 ### Archives: an honest refusal
 
-**Pre-1.0 archives of destroyed workstreams cannot be faithfully
-reconstructed.** v8 stored a column SUBSET of the archived rows in
-`archived_tasks` / `archived_edges` / `archived_notes`. A v9 archive is
-a MARKER pinning a point in the ops log, and the ops a marker would
-need do not exist — v8's `workstream destroy` deleted rows rather than
-writing tombstones. Anything synthesized would pin the wrong moment: a
-marker over the imported LIVE workstream pins its CURRENT state, not
-its state at archive time.
+Pre-1.0 archives are not carried into 1.0. The archive namespace and
+its storage model were removed; the importer will not silently turn
+archived rows into live work.
 
-So the script REFUSES when the source has archives, rather than
-producing a half-archive. Your options, in order of preference:
+The script REFUSES when the source has archives. Your options:
 
-1. **Before upgrading**, export them with mu 0.4.x:
-   `mu archive show <label> > <label>.txt`
-2. Re-run with `--drop-archives` to import the tasks, then carry the
-   archives across with `restore-pre1.0-archives.ts` (below).
+1. **Before upgrading**, export them with mu 0.4.x.
+2. Re-run with `--drop-archives` to import the tasks and drop the archives.
 3. Keep the old DB (you should anyway) and read them with `sqlite3`.
 
 ### Why this one is kept
@@ -136,90 +128,3 @@ machine they had not touched since. A deleted script is useless to
 someone upgrading in six months. It stays until 1.1 at the earliest,
 and is covered by `test/migrate-to-1.0.integration.test.ts` so it cannot rot
 silently.
-
----
-
-## `restore-pre1.0-archives.ts` — carrying pre-1.0 ARCHIVES across
-
-The companion to the above, for the case it refuses.
-
-### Why the blanket refusal is too strong
-
-The argument above says a v8 archive cannot be reconstructed, because a
-v9 archive is a MARKER pinning the ops log and v8's `workstream destroy`
-deleted rows instead of writing tombstones, so the ops a marker would
-pin do not exist.
-
-Both halves are true. The conclusion does not follow. v8's
-`archived_tasks` / `archived_edges` / `archived_notes` kept enough of
-each row to **synthesize** those ops: `source_workstream`,
-`original_local_id`, title, status, impact, effort, and the original
-created/updated timestamps. So the missing ops are not needed — they can
-be minted from the archive's own copy, the same ops-not-rows way
-`migrate-to-1.0.ts` mints live ones, with a marker pinned directly on
-top. The marker then pins exactly what the archive recorded, because the
-ops beneath it ARE the archive.
-
-### Where it is exact and where it is not
-
-**Exact** when the source workstream no longer exists. The minted ops
-are that workstream's whole history, the marker sits on top, and
-`mu archive export` reproduces the archived rows.
-
-**Approximate** when the source workstream is still live. A marker is a
-point in one shared log, so a marker written today pins the workstream's
-CURRENT state, not its state on the archive date. That is the original
-objection and here it is real. The script does not paper over it: it
-compares the archived rows against the live ones FIELD BY FIELD and
-refuses unless they agree. Where they agree, "current" and
-"archive-time" are the same rows and the pin is honest.
-
-### Usage
-
-First dump the v8 archives to JSON (mu 1.0 cannot read them):
-
-```bash
-# one <label>.json per archive, with archived_tasks/_edges/_notes/_events
-sqlite3 ~/.local/state/mu/mu.db.old ...   # or any JSON dump you like
-```
-
-Then, against a COPY:
-
-```bash
-npx tsx scripts/restore-pre1.0-archives.ts <dir> --db <target.db> --dry-run
-npx tsx scripts/restore-pre1.0-archives.ts <dir> --db <target.db>
-MU_DB_PATH=<target.db> mu archive list
-MU_DB_PATH=<target.db> mu doctor --deep    # must report NO drift
-```
-
-| flag | effect |
-| --- | --- |
-| `--db <path>` | target DB. Default: the default DB. |
-| `--dry-run` | plan and report, write nothing. |
-| `--label <l>` | restore only this archive. Repeatable. |
-| `--drop-events` | do not carry `archived_events` into the log. |
-| `--allow-divergent` | proceed when a live row disagrees with the archive. |
-
-### What comes across
-
-One `put` op per archived task, edge and note, plus (unless
-`--drop-events`) the archived event log, plus one marker per source
-workstream. Ops are ordered by the source timestamp with HLCs minted
-from it, so `mu log` reads like the history happened; markers are
-emitted LAST so `nextHlc`'s monotonicity puts them above everything they
-pin, even where the recorded wall clocks disagree.
-
-### What does NOT come across
-
-Task owners. `owner_name` is recorded in v8's archive, but v9 ownership
-is an FK into the machine-local `agents` table (`src/apply.ts` §
-`NEVER_APPLY`), so there is nothing on this machine for a name to point
-at. The script counts them and says so.
-
-### Status
-
-Verified end to end against a real pre-1.0 DB: 680 tasks, 551 edges and
-1376 notes across two archives, round-tripped through
-`mu archive export` with zero field mismatches and no drift. **Not yet
-covered by a test** — unlike `migrate-to-1.0.ts`, which has one
-precisely so it cannot rot. Add one before relying on it a second time.

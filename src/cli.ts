@@ -22,7 +22,6 @@ import { Command, InvalidArgumentError } from "commander";
 
 import { AgentNotInWorkstreamError, type AgentRow, getAgentByPane } from "./agents.js";
 import { wireAgentCommands, wireSelfCommands } from "./cli/agents.js";
-import { wireArchiveCommands } from "./cli/archive.js";
 import { wireDbCommands } from "./cli/db.js";
 import { wireDoctorCommand } from "./cli/doctor.js";
 import {
@@ -733,8 +732,6 @@ export function buildProgram(): Command {
     // entirely in applyExitOverride below; this comment is the load-
     // bearing explanation of why we don't reach for showHelpAfterError().
     // Sort most Commands lists (NOT the Options list) alphabetically.
-    // `mu archive --help` keeps semantic registration order so the
-    // archive lifecycle reads create/list/show → add/restore/remove/delete.
     // Commander v14 inherits configureHelp via copyInheritedSettings()
     // when subcommands are created with .command(), but we also walk the
     // tree below for certainty — future subcommand groups added via
@@ -776,7 +773,6 @@ export function buildProgram(): Command {
   wireSyncCommand(program);
   wireRebuildCommand(program);
   wireDbCommands(program);
-  wireArchiveCommands(program);
   wireUndoCommand(program);
   wireDoctorCommand(program);
   applyAlphabeticalHelpSort(program);
@@ -794,11 +790,9 @@ export function buildProgram(): Command {
 // holds regardless of how a subcommand was attached (.command() vs
 // .addCommand()) and regardless of inheritance behaviour across
 // commander versions. Preserves any other help-configuration keys
-// already set on a subcommand. Exception: archive help is lifecycle-
-// ordered so add/restore/remove/delete read as one coherent cluster.
+// already set on a subcommand.
 function applyAlphabeticalHelpSort(cmd: Command): void {
-  const keepSemanticOrder = cmd.name() === "archive";
-  cmd.configureHelp({ ...cmd.configureHelp(), sortSubcommands: !keepSemanticOrder });
+  cmd.configureHelp({ ...cmd.configureHelp(), sortSubcommands: true });
   for (const sub of cmd.commands) {
     applyAlphabeticalHelpSort(sub);
   }

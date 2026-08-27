@@ -100,7 +100,7 @@ export async function cmdSql(
       }
       // The count matched, but the run above was capture-suppressed, so
       // committing it as-is would land rows with NO ops — silent
-      // corruption of undo/archive/sync, precisely what capture exists
+      // corruption of undo/sync, precisely what capture exists
       // to make impossible. Roll that probe back and re-execute the
       // script with capture ON, inside its own transaction, so the
       // committed writes are captured normally.

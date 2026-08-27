@@ -2,7 +2,7 @@
 //
 // The ROOT `-w, --workstream <names...>` flag is VARIADIC. Subcommands
 // that call `optsWithGlobals()` (task owned-by, agent wait, agent
-// adopt, archive add/remove) inherit it, so a root-position invocation
+// adopt) inherit it, so a root-position invocation
 // like `mu -w ws task owned-by agent` previously handed them a
 // string[] (e.g. ["ws"]) where a single workstream name was expected.
 // That array leaked unchanged through resolveWorkstream into DB calls,
@@ -71,18 +71,6 @@ describe("root-position -w + optsWithGlobals subcommands (finding_optswithglobal
     const subPos = await runCli(["task", "owned-by", "worker-1", "-w", "wsa", "--json"], dbPath);
     expect(subPos.error).toBeUndefined();
     expect(subPos.stdout).toBe(rootPos.stdout);
-  });
-
-  it("archive add: root-position --workstream=ws propagates without an array-leak error", async () => {
-    // Seed an archive bucket so `archive add` has a target.
-    const mk = await runCli(["archive", "create", "bucket"], dbPath);
-    expect(mk.error).toBeUndefined();
-
-    const res = await runCli(["--workstream=wsa", "archive", "add", "bucket", "--json"], dbPath);
-    expect(res.error).toBeUndefined();
-    // What matters: it did NOT blow up on an array being passed where a
-    // single workstream name was expected.
-    expect(res.stderr).not.toMatch(/\[object|isValidWorkstreamName/);
   });
 
   it("rejects multiple workstreams at root position for a single-workstream verb", async () => {

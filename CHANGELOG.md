@@ -73,6 +73,17 @@ breaking changes are called out under "Breaking" in each entry.
   remedy as the `path` column in `mu workspace list`
   (`tables_truncate_long_cols_audit`), which this table was missed by.
 
+### Removed
+
+- **`mu archive` namespace deleted** (`add`, `list`, `restore`, `export`). The
+  marker machinery was a point-in-time snapshot concept that added complexity
+  without paying its way: destroyed-workstream recovery is `mu log
+  --intent workstream.destroy --all` then `mu undo <group> --yes`; the
+  pre-destroy safety copy is `mu db backup`. The `marker` entity is removed
+  from `SYNCED_ENTITIES`; `src/archives.ts`, `src/archives/`, and
+  `src/cli/archive.ts` are gone. `workstream destroy --archive <label>` is
+  gone. `scripts/restore-pre1.0-archives.ts` is gone.
+
 ### Added
 
 - **`scripts/restore-pre1.0-archives.ts`** — carries pre-1.0 archives

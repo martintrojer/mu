@@ -430,12 +430,6 @@ describe("error-specific structured-step assertions", () => {
     expect(mangleInit?.intent).toBe("Try a sanitized name (best guess)");
   });
 
-  it("WorkspacePreservedError includes archive restore in the preserve-before-discard path", () => {
-    const err = new WorkspacePreservedError("alice", "/path/to/ws");
-    const commands = err.errorNextSteps().map((step) => step.command);
-    expect(commands.some((command) => command.includes("mu archive restore"))).toBe(true);
-  });
-
   it("PaneNotFoundError borrows its pane-probe steps from the backend that raised it", () => {
     const err = new PaneNotFoundError("%999", tmuxBackend);
     const steps = err.errorNextSteps();

@@ -10,7 +10,6 @@
 // Extracted from src/cli.ts as part of refactor_split_large_src_files.
 
 import { join } from "node:path";
-import { addArchiveMarker } from "../archives.js";
 import {
   emitJson,
   emitJsonCollection,
@@ -21,7 +20,6 @@ import {
 import { type Db, defaultStateDir } from "../db.js";
 import { activeMux } from "../mux.js";
 import { muTable, type NextStep, pc, printNextSteps } from "../output.js";
-import { resolveActorIdentity } from "../tasks.js";
 import {
   assertWorkstreamInitable,
   destroyWorkstream,
@@ -181,9 +179,6 @@ export async function cmdDestroy(
     json?: boolean;
     export?: boolean;
     empty?: boolean;
-    /** Pin the workstream under this archive label BEFORE destroying it,
-     *  so the ops stay recoverable by name. */
-    archive?: string;
   },
 ): Promise<void> {
   if (opts.empty) {
@@ -280,36 +275,12 @@ export async function cmdDestroy(
     }
   }
 
-  // --archive <label>: pin the log BEFORE the destroy. Ordering is
-  // load-bearing only for tidiness — destroy writes TOMBSTONES rather
-  // than erasing history, so a marker added afterwards would still
-  // restore — but pinning first means the marker's hlc sits above the
-  // last real op and below the tombstones, which is exactly the point
-  // an operator means by "archive this, then destroy it".
-  let archived: { label: string; hlc: string } | undefined;
-  if (opts.archive !== undefined && opts.archive !== "") {
-    const marker = addArchiveMarker(db, {
-      label: opts.archive,
-      workstream,
-      actor: await resolveActorIdentity(),
-    });
-    archived = { label: marker.label, hlc: marker.hlc };
-    if (!opts.json) {
-      console.log(
-        pc.dim(
-          `archived ${workstream} under ${marker.label} (restore: mu archive restore ${marker.label} --as <new>)`,
-        ),
-      );
-    }
-  }
-
   const result = await destroyWorkstream(db, { workstream });
   if (opts.json) {
     emitJson({
       workstreamName: workstream,
       destroyed: true,
       ...result,
-      ...(archived === undefined ? {} : { archived }),
       autoExport: autoExport
         ? { outDir: autoExportOutDir, error: autoExportError }
         : { skipped: true },
@@ -392,7 +363,6 @@ function workstreamCreatedAt(db: Db, name: string): string {
 async function cmdDestroyEmpty(
   db: Db,
   opts: {
-    archive?: string;
     workstream?: string;
     yes?: boolean;
     json?: boolean;
@@ -405,14 +375,6 @@ async function cmdDestroyEmpty(
   if (opts.workstream !== undefined) {
     throw new UsageError(
       "--empty is mutually exclusive with a named target (positional <name> or -w/--workstream): the sweep targets every empty workstream, so naming one contradicts it",
-    );
-  }
-  // An archive LABEL pins one workstream at one point. --empty sweeps
-  // every empty workstream, so a single label cannot describe the result —
-  // and empty workstreams have nothing to archive anyway.
-  if (opts.archive !== undefined && opts.archive !== "") {
-    throw new UsageError(
-      "--empty is mutually exclusive with --archive: the sweep covers every empty workstream, so one archive label cannot describe it (and an empty workstream has nothing to pin). Archive named workstreams individually: mu archive add <label> -w <ws>",
     );
   }
   const empties = await listEmptyWorkstreams(db);
@@ -590,10 +552,6 @@ export function wireWorkstreamCommands(program: Command): void {
       "--empty",
       "sweep every empty workstream (zero tasks, agents, vcs_workspaces); mutually exclusive with -w",
     )
-    .option(
-      "--archive <label>",
-      "pin this workstream under an archive label before destroying, so it can be restored by name later",
-    )
     .option(...JSON_OPT)
     .action(function (name: string | undefined) {
       const opts = (this as Command).opts() as {
@@ -602,7 +560,6 @@ export function wireWorkstreamCommands(program: Command): void {
         json?: boolean;
         export?: boolean;
         empty?: boolean;
-        archive?: string;
       };
       return handle(
         (db) => cmdDestroy(db, withPositionalWorkstream(opts, name)),

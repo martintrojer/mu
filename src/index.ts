@@ -67,32 +67,6 @@ export {
   OpKeyMalformedError,
 } from "./apply.js";
 export {
-  type ExportArchiveOptions,
-  type ExportArchiveResult,
-  exportArchive,
-} from "./archives/export.js";
-export {
-  type RestoreArchiveOptions,
-  type RestoreArchiveReport,
-  rekey,
-  restoreArchive,
-} from "./archives/restore.js";
-export {
-  ArchiveLabelInvalidError,
-  type ArchiveMarker,
-  ArchiveNotFoundError,
-  ArchiveRestoreTargetExistsError,
-  type ArchiveSummary,
-  addArchiveMarker,
-  getArchive,
-  isValidArchiveLabel,
-  listArchives,
-  MARKER_ENTITY,
-  MARKER_INTENT,
-  markerFor,
-  pinnedHlcs,
-} from "./archives.js";
-export {
   CAPTURE_TRIGGER_DDL,
   type CaptureDb,
   installCapture,

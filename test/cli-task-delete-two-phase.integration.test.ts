@@ -6,7 +6,7 @@
 // long-named tasks lingering until noticed.
 //
 // Fix: bare `mu task delete <id>` is now a DRY-RUN preview (mirrors
-// `mu workstream destroy` / `mu archive delete` / `mu snapshot prune`);
+// `mu workstream destroy` / `mu snapshot prune`);
 // `--yes` commits.
 
 import { mkdtempSync, rmSync } from "node:fs";

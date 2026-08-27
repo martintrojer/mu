@@ -145,10 +145,9 @@ const UNREBUILDABLE_TABLES = ["agents", "vcs_workspaces"] as const;
  *  project them into, so copying the op IS applying it.
  *
  *  'message' / 'event' / 'broadcast' are log lines (src/logs.ts writes
- *  them). 'marker' is an archive pin (v2-archive-markers). All four are
- *  copied verbatim and deliberately not passed to applyOp, which would
- *  reject the log kinds as non-synced. */
-const LOG_ONLY_ENTITIES = new Set(["message", "event", "broadcast", "marker"]);
+ *  them). All three are copied verbatim and deliberately not passed to
+ *  applyOp, which would reject the log kinds as non-synced. */
+const LOG_ONLY_ENTITIES = new Set(["message", "event", "broadcast"]);
 
 /** Log-only ops whose ENTITY collides with a projectable one, so the
  *  entity alone cannot classify them. `emitEvent` derives an op's entity
@@ -168,7 +167,7 @@ export const LOG_ONLY_INTENTS = new Set(["workstream.export"]);
 
 /** Ops that `applyOp` knows how to project into a portable table. This
  *  is the intersection of "synced" and "has a table", which excludes
- *  'message' and 'marker' even though both are in SYNCED_ENTITIES. */
+ *  'message' even though it is in SYNCED_ENTITIES. */
 function isProjectable(entity: string, intent: string | null): boolean {
   if (intent !== null && LOG_ONLY_INTENTS.has(intent)) return false;
   if (LOG_ONLY_ENTITIES.has(entity)) return false;

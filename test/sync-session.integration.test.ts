@@ -6,7 +6,7 @@
 // That file has 28 good tests and they all share one shape: create,
 // diverge ONCE, sync ONCE, assert. Only two of them reach four exchange
 // points. Measured verb coverage across them was 0 hits for `task
-// claim`, 0 for `task delete`, 0 for `archive`, 0 for `undo`, 2 for
+// claim`, 0 for `task delete`, 0 for `undo`, 2 for
 // notes and 3 for edges. So the substrate was proven and a SESSION was
 // not — which is a different claim, and the one mu actually makes.
 //
@@ -366,24 +366,7 @@ describe("mu sync — a multi-round two-machine session", () => {
     }
     await record();
 
-    // ── round 7: an archive marker crosses, and restores elsewhere ────
-    const pinned = await runCli(["archive", "add", "day-3", "-w", WS], lap);
-    expect(pinned.exitCode, pinned.stderr).toBeNull();
-    await exchange(lap, dev);
-    const listed = await runCli(["archive", "list", "--json"], dev);
-    const archives = JSON.parse(listed.stdout) as { items: Array<{ label: string }> };
-    expect(archives.items.map((a) => a.label)).toContain("day-3");
-    // Restored under a NEW name on the OTHER machine, from ops the
-    // devserver only ever received over the shared folder.
-    const restored = await runCli(["archive", "restore", "day-3", "--as", "revived", "--yes"], dev);
-    expect(restored.exitCode, restored.stderr).toBeNull();
-    const revived = await runCli(["task", "list", "-w", "revived", "--json"], dev);
-    const revivedNames = (JSON.parse(revived.stdout) as { items: Array<{ name: string }> }).items;
-    expect(revivedNames.length).toBeGreaterThan(0);
-    await exchange(dev, lap);
-    await record();
-
-    // ── round 8: undo on one machine propagates to the other ──────────
+    // ── round 7: undo on one machine propagates to the other ──────────
     // Undo is itself ops (inverse ops in a new group), so it syncs by the
     // same path as the thing it undoes — no special case anywhere.
     await runCli(["task", "update", "lap-2", "--impact", "12", "-w", WS], lap);
@@ -465,14 +448,14 @@ describe("mu sync — a multi-round two-machine session", () => {
     // back) or a re-flush bug shows up as growth, and nothing else
     // guards it. Each round does a bounded amount of work, so the log
     // must grow by a bounded amount per round — linear, not quadratic.
-    expect(opsPerRound.length).toBeGreaterThanOrEqual(8);
+    expect(opsPerRound.length).toBeGreaterThanOrEqual(7);
     const deltas = opsPerRound.slice(1).map((n, i) => n - (opsPerRound[i] ?? 0));
     for (const [i, d] of deltas.entries()) {
       expect(d, `round ${i + 2} added ${d} ops: ${opsPerRound.join(",")}`).toBeLessThan(40);
     }
     const first = opsPerRound[0] ?? 0;
     const last = opsPerRound[opsPerRound.length - 1] ?? 0;
-    // Quadratic growth over 8 rounds would blow past this by an order of
+    // Quadratic growth over 7 rounds would blow past this by an order of
     // magnitude; the real numbers sit far below it.
     expect(last, `ops per round: ${opsPerRound.join(",")}`).toBeLessThan(first * 8 + 60);
 

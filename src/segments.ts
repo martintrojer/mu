@@ -418,7 +418,7 @@ function flushLocked(db: Db, path: string, machineId: string): FlushResult {
     // flushing one writes a MALFORMED line; `readSegmentTail` then stops
     // at it, resetting the watermark, and every later flush re-appends the
     // whole tail (observed: a 2.7MB segment grown to 102MB, ops repeated
-    // 96x). Same exclusion rebuild.ts and archives/restore.ts make.
+    // 96x). Same exclusion rebuild.ts makes.
     if (LOG_ONLY_INTENTS.has(row.intent ?? "")) {
       skippedLocal += 1;
       continue;

@@ -152,7 +152,7 @@ describe("logs SDK", () => {
     // The old agent_logs had an FK ON DELETE CASCADE, so destroying a
     // workstream erased its history. The ops log is deliberately
     // FK-free: an op must stay readable after the row it records is
-    // gone, which is what makes tombstones and archive markers work
+    // gone, which is what makes tombstones and undo recovery work
     // (VISION.md § 2b, VOCABULARY.md § op).
     appendLog(db, { workstream: "auth", source: "u", payload: "a" });
     appendLog(db, { workstream: "billing", source: "u", payload: "b" });

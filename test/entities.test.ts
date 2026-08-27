@@ -114,9 +114,7 @@ describe("syncability constants", () => {
   // widens to `string`), which is the point.
   it("SyncedEntity is a derived union, not string", () => {
     const task: SyncedEntity = "task";
-    const marker: SyncedEntity = "marker";
     expect(SYNCED_ENTITIES).toContain(task);
-    expect(SYNCED_ENTITIES).toContain(marker);
 
     // A total switch over the union: adding an entity to the tuple
     // without handling it here is a compile error.
@@ -132,8 +130,6 @@ describe("syncability constants", () => {
           return "a task note";
         case "message":
           return "an agent message";
-        case "marker":
-          return "an ops-log marker";
       }
     };
     expect(SYNCED_ENTITIES.map(describeEntity)).toHaveLength(SYNCED_ENTITIES.length);

@@ -47,7 +47,7 @@
 //
 //   * ONE source of truth. A side table is a denormalisation that can
 //     disagree with the log, and when it does, every downstream
-//     projection (undo, archive, sync) inherits the disagreement. There
+//     projection (undo, sync) inherits the disagreement. There
 //     is no reconciliation procedure that could fix it, because nothing
 //     would know which side was right.
 //   * Idempotence for free. Re-applying an op compares HLCs against the
@@ -673,7 +673,7 @@ function applyDel(db: Db, op: Op): ApplyResult {
       };
     }
     default:
-      // 'message' and 'marker' have no portable table to delete from.
+      // 'message' has no portable table to delete from.
       return { changed: false, appliedFields: [], skipped: "absent" };
   }
 }
@@ -720,10 +720,9 @@ export function applyOp(db: Db, op: Op): ApplyResult {
       case "edge":
         return applyEdgePut(db, op);
       case "message":
-      case "marker":
-        // Log lines and archive markers live in `ops` only; there is no
-        // portable table to project them into. Recording the op IS
-        // applying it, and that is the caller's step.
+        // Log lines live in `ops` only; there is no portable table to
+        // project them into. Recording the op IS applying it, and that
+        // is the caller's step.
         return { changed: false, appliedFields: [] };
       default:
         throw new OpEntityNotSyncedError(op.entity);

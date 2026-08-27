@@ -784,8 +784,8 @@ describe("resolveActorIdentity", () => {
   });
 
   it("degrades to $USER when NO multiplexer is reachable at all", async () => {
-    // Attribution is best-effort and must never fail a verb. `mu archive
-    // add` / `mu task note` on a box with no tmux want a name, not a
+    // Attribution is best-effort and must never fail a verb. `mu task
+    // note` on a box with no tmux wants a name, not a
     // NoMultiplexerError. Regression: routing identity through
     // activeMux() made the whole ladder throw before reaching $USER.
     setTmuxExecutor(async () => ({ stdout: "", stderr: "no server", exitCode: 1 }));

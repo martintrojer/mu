@@ -37,11 +37,6 @@ import {
   AgentSpawnStartupError,
   WorkspacePreservedError,
 } from "../agents.js";
-import {
-  ArchiveLabelInvalidError,
-  ArchiveNotFoundError,
-  ArchiveRestoreTargetExistsError,
-} from "../archives.js";
 import { type Db, openDb, SchemaTooOldError, WorkstreamNotFoundError } from "../db.js";
 import { DriftDetectedError } from "../drift.js";
 import { GroupIdAmbiguousError } from "../logs.js";
@@ -169,8 +164,8 @@ function classifyCommanderError(err: CommanderError): { label: string; exitCode:
  *       unknown command, missing argument, type-coercion failure).
  *    2. UsageError (handler-thrown mutex / arity / range checks).
  *    3. Typed *Invalid* domain errors that fault on a value the
- *       operator typed at the CLI (workstream name, archive label,
- *       task id, prune-flag combination). The verb's --help would
+ *       operator typed at the CLI (workstream name, task id, prune-flag
+ *       combination). The verb's --help would
  *       have explained the constraint; show it.
  *
  */
@@ -180,10 +175,7 @@ function isUsageClassError(err: unknown): boolean {
   if (
     err instanceof WorkstreamNameInvalidError ||
     err instanceof WorkstreamNameReservedError ||
-    err instanceof TaskIdInvalidError ||
-    // A malformed archive label is the same class as a malformed
-    // workstream name: bad input shape, exit 2.
-    err instanceof ArchiveLabelInvalidError
+    err instanceof TaskIdInvalidError
   ) {
     return true;
   }
@@ -283,10 +275,7 @@ export function classifyError(err: unknown): { label: string; exitCode: number }
     err instanceof RebuildTargetIsSourceError ||
     // An abbreviated group id matching several groups: the operator must
     // disambiguate. Guessing would be catastrophic for `mu undo`.
-    err instanceof GroupIdAmbiguousError ||
-    // Restore refuses to write onto an existing workstream: a name/state
-    // collision the operator resolves by choosing another --as.
-    err instanceof ArchiveRestoreTargetExistsError
+    err instanceof GroupIdAmbiguousError
   ) {
     return { label: "conflict", exitCode: 4 };
   }
@@ -298,9 +287,6 @@ export function classifyError(err: unknown): { label: string; exitCode: number }
     err instanceof SyncPeerNotFoundError ||
     err instanceof SyncSourceNotFoundError
   ) {
-    return { label: "not found", exitCode: 3 };
-  }
-  if (err instanceof ArchiveNotFoundError) {
     return { label: "not found", exitCode: 3 };
   }
   if (err instanceof SyncPeerRefAmbiguousError) {

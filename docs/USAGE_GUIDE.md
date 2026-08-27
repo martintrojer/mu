@@ -5,10 +5,10 @@ A practical, copy-pasteable tour of mu. Terms are canonical — see
 `mu --help`, with the gotchas in `## CLI overview` of
 [skills/mu/SKILL.md](../skills/mu/SKILL.md).
 
-> **Status:** 1.0 (pre-release). Typed verbs span 8 namespaces
-> (`workstream`, `agent`, `task`, `workspace`, `log`, `archive`, `me`,
-> `db`) plus bare top-level verbs (`state`, `doctor`, `sql`, `undo`,
-> `sync`, `rebuild`). Every verb accepts `--json`. Schema v9. See
+> **Status:** 1.0 (pre-release). Typed verbs span 7 namespaces
+> (`workstream`, `agent`, `task`, `workspace`, `log`, `me`, `db`) plus
+> bare top-level verbs (`state`, `doctor`, `sql`, `undo`, `sync`,
+> `rebuild`). Every verb accepts `--json`. Schema v9. See
 > [CHANGELOG.md](../CHANGELOG.md).
 
 **In a hurry? Start at [§ 0. Common scenarios](#0-common-scenarios).**
@@ -36,7 +36,6 @@ A practical, copy-pasteable tour of mu. Terms are canonical — see
 13. [The SQL escape hatch (`mu sql`)](#13-the-sql-escape-hatch-is-your-friend)
 14. [Recovery scenarios](#14-recovery-scenarios)
 15. [Cleanup](#15-cleanup)
-15.5. [Archives — named markers pinning the ops log](#155-archives--named-markers-pinning-the-ops-log)
 15.6. [Multi-machine sync](#156-multi-machine-sync)
 16. [One-shot demo script](#16-one-shot-demo-script)
 17. [Mental model in three sentences](#mental-model-in-three-sentences)
@@ -422,7 +421,7 @@ something you can fix before it costs you data:
 | `name-case` | **WARN** if two workstream names differ only by case. They coexist on Linux but collide on macOS (APFS) and Windows, and a workstream name IS a tmux session name and seeds workspace paths — so a Mac joining the fleet sees one session where Linux sees two. |
 
 **Ops-log drift** (the `ops log` section) — is the projection still
-faithful to the log? Undo, archives, sync and history are all
+faithful to the log? Undo, sync and history are all
 projections of the ops log, so a capture bug breaks all four at once,
 silently. Two tiers:
 
@@ -566,7 +565,7 @@ than `jq '.items | length'`. `mu workspace commits --json` adds `vcs`,
 
 Applies to: `mu task list / next / owned-by / notes`,
 `mu workstream list`, `mu workstream destroy --empty` (dry-run),
-`mu archive list / search`, `mu workspace list / orphans / commits`,
+`mu workspace list / orphans / commits`,
 `mu undo` (group list), `mu log -n N` (read).
 
 Two carve-outs:
@@ -617,7 +616,7 @@ The rule the CLI follows:
 > else — scoping, modifiers, payload — is a flag.**
 
 So `mu task close <id>`, `mu agent send <name> <text>`,
-`mu archive list <label>`, `mu workstream init <name>`. The workstream
+`mu workstream init <name>`. The workstream
 is a *scope* for most verbs (`-w`) — but for `mu workstream <verb>` it
 IS the primary entity, so it may be positional:
 
@@ -1969,16 +1968,12 @@ mu workstream destroy --workstream auth-refactor --yes    # actually does it
 # Or, from inside the workstream's tmux session:
 mu workstream destroy --yes                                # workstream auto-detected
 
-# Atomic: archive THEN destroy. Refuses if the archive label
-# doesn't already exist (run `mu archive add <label>` first).
-mu workstream destroy -w auth-refactor --archive v0-3-wave --yes
-
 # Sweep every empty workstream (zero tasks, agents, vcs_workspaces)
 # in one call. Tmux session presence and audit-only log entries do NOT
 # disqualify. Also surfaces unregistered `mu-*` tmux sessions (test
 # litter, or a partial destroy that dropped the DB row but left the
 # session). ONLY `mu-`-prefixed sessions are touched. Mutually
-# exclusive with -w and --archive. Dry-run lists what WOULD go
+# exclusive with -w. Dry-run lists what WOULD go
 # (created_at renders `—` for tmux-only entries); --yes destroys.
 mu workstream destroy --empty                  # dry-run: table of empties
 mu workstream destroy --empty --yes            # destroy them all
@@ -2025,7 +2020,7 @@ rm ~/.local/state/mu/mu.db                           # next mu invocation re-cre
 
 A workstream's task graph + notes IS the project memory.
 `mu workstream destroy` removes the live rows (the ops log keeps them,
-but only `mu undo` / `mu archive restore` read them back). For code
+but only `mu undo` reads them back). For code
 review, handoff, git-checked-in artifacts, or `grep`, render the
 workstream as markdown first.
 
@@ -2066,10 +2061,6 @@ mu workstream export -w roadmap-v0-2   --out exports/mu       # adds exports/mu/
 mu workstream export -w mufeedback-v03 --out exports/mu       # adds exports/mu/mufeedback-v03/
 ```
 
-The same renderer powers `mu archive export <label> --out <bucket>`,
-which (re)builds every source-ws subdirectory from the named
-archive in one shot — see `Archives` below.
-
 `mu workstream destroy --yes` auto-runs an export to
 `<state-dir>/exports/<workstream>-<timestamp>/` BEFORE killing the
 tmux session and dropping the rows, so the conversation survives
@@ -2089,88 +2080,17 @@ themselves.
 
 ### Bucket exports are read-only artifacts
 
-Bucket exports (`mu workstream export` and `mu archive export`) are
-**read-only** artifacts for humans / git / docs — good for grep, code
-review and handoff, but not a DB round-trip path.
+Bucket exports (`mu workstream export`) are **read-only** artifacts for
+humans / git / docs — good for grep, code review and handoff, but not a
+DB round-trip path.
 
 Use the typed surfaces for recovery and movement:
 
 | Need | Verb |
 | ---- | ---- |
-| Lossless un-archive | `mu archive restore <label> --as <new-ws> [-w <orig-ws>]` (`-w` is omittable when the label pins exactly one workstream) |
 | Laptop ↔ devserver handoff | Ambient **sync** — set `MU_SYNC_DIR` and every command carries it (§ 15.6) |
 | Peer status / a torn segment | `mu sync`, `mu sync --repair <peer>` |
 | Disaster recovery from the ops log | `mu rebuild <file>` |
-
----
-
-## 15.5 Archives — named markers pinning the ops log
-
-An **archive** is a named MARKER pinning a point in the ops log. Not a
-copy: one op per archive, and everything else is a query or a replay.
-The log already retains every change, so "the state of this workstream
-at this moment" is recorded; an archive only has to name the moment.
-
-```bash
-mu archive add v0-3 -w mufeedback          # pin it; creates the label on first use
-mu archive add v0-3 -w roadmap-v0-3        # same label, another workstream
-mu archive list                            # label | workstreams | markers | last added
-mu archive list v0-3                       # the label's markers
-mu archive restore v0-3 --as recovered     # dry run
-mu archive restore v0-3 --as recovered --yes
-mu archive export v0-3 --out exports/v0-3  # markdown bucket for humans/git
-mu workstream destroy old-ws --yes --archive v0-3   # pin, THEN destroy
-```
-
-Key properties:
-
-- **Outlives the source.** `mu workstream destroy` writes TOMBSTONE ops;
-  it does not erase history. The puts below the marker are still in the
-  log, so an archive restores fine after its workstream is gone. The
-  restore report says `sourceDestroyed: true` when that is what happened.
-- **Cross-workstream and additive.** One label accumulates markers from
-  many workstreams. Markers are append-only by construction (they are
-  ops), so `last added` is just `MAX(hlc)` — no stored column, nothing to
-  keep in sync. Adding the same workstream twice pins two moments, which
-  is usually what you want (`v0-3` before and after a fix).
-- **Lossless restore.** Replaying ops reproduces every column the capture
-  triggers recorded. Restore stops AT the marker, so work added after
-  the pin is not resurrected, and a task deleted *before* the pin stays
-  deleted.
-- **Restore never overwrites.** `--as <new-name>` is required and must
-  not exist. An archive is for inspecting beside the original, not
-  replacing it. Dry-run by default; `--yes` applies.
-- **Export reuses the renderer.** `mu archive export` produces the same
-  bucket layout as `mu workstream export`, through the same code. It
-  replays to the marker in a scratch workstream inside a transaction and
-  rolls back, so it mutates nothing — no rows, no ops, no drift.
-- **Markers pin the log.** Load-bearing invariant: **compaction must
-  NEVER discard ops at or below a pinned marker's HLC.** Nothing
-  compacts today; when something does, dropping ops under a marker
-  silently empties the archive it promised to preserve, and the failure
-  only surfaces when someone tries to restore.
-
-### Verbs that no longer exist
-
-These are consequences of the marker model, not scope cuts:
-
-| Gone | Why |
-| --- | --- |
-| `archive create` | A label with no markers pins nothing. `mu archive add` IS the create. |
-| `archive remove` / `delete` | Markers are ops: append-only. Removing one means rewriting history, which is what an append-only log exists to prevent. To stop caring about an archive, ignore the label — it costs one row. |
-| `archive show` | Folded into `mu archive list <label>`. |
-| `archive search` | `mu log --intent archive.add`, or `mu sql`. Searching archived task text is a query over ops, not a bespoke verb. |
-| `--destroy` on `add` | Inverted: `mu workstream destroy --archive <label>` pins first, then destroys. The destructive verb owns the confirmation. |
-
-### Anti-features (intentional)
-
-- **No auto-archive.** `mu workstream destroy` does not pin to a fallback
-  label. Either you named one or you did not want one.
-- **No archive→archive merge / rename.** Operator-managed via `mu sql` if
-  it ever matters.
-- **`--empty` and `--archive` are mutually exclusive** (exit 2). The
-  sweep covers every empty workstream, so one label cannot describe the
-  result — and an empty workstream has nothing to pin.
 
 ---
 
@@ -2341,8 +2261,8 @@ The importer is read-only on the source and **synthesizes ops rather
 than inserting rows**, so the result is a first-class v9 DB.
 Workstreams, tasks, edges, notes and the agent log come across; agents,
 workspaces and task ownership do not (same reasons they do not sync).
-Old archives **refuse loudly** rather than half-importing — export them
-with mu 0.4.x first, or pass `--drop-archives`.
+Old archives **refuse loudly** rather than becoming live work — export
+them with mu 0.4.x first, or pass `--drop-archives`.
 
 **Full recipe, every flag, and the rationale:
 [scripts/README.md](../scripts/README.md).**
