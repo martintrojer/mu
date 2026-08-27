@@ -61,6 +61,22 @@ describe("undo", () => {
     return group.groupId;
   };
 
+  /** The group_id of the op that created `key` (op='put', oldest for that
+   *  key). `groupFor` picks the newest group with a matching intent, which
+   *  is wrong when two tasks share an intent (e.g. seed() adds both 'a'
+   *  and 'b') and the test needs the one that touched a specific key. */
+  const creationGroupFor = (entity: string, key: string): string => {
+    const row = db
+      .prepare(
+        `SELECT group_id AS groupId FROM ops
+          WHERE entity = ? AND key = ? AND op = 'put'
+          ORDER BY hlc ASC LIMIT 1`,
+      )
+      .get(entity, key) as { groupId: string } | undefined;
+    if (row === undefined) throw new Error(`no creation op for ${entity} ${key}`);
+    return row.groupId;
+  };
+
   const seed = (): void => {
     ensureWorkstream(db, "demo");
     addTask(db, { workstream: "demo", localId: "a", title: "A", impact: 60, effortDays: 1 });
@@ -352,6 +368,46 @@ describe("undo", () => {
       const plan = planUndo(db, target);
       expect(plan.superseded).toBe(true);
       expect(() => undoGroup(db, target)).toThrow(UndoSupersededError);
+    });
+
+    it("detects supersession of a CREATE — undoing the creation would discard a later edit", () => {
+      // Group A creates task 'a'. Group B (a distinct, later group) then
+      // edits it. The inverse of A's creation is a delete of the whole
+      // row: it must be reported as superseded by B's edit, not silently
+      // allowed through a whole-row query that (before the fix) never
+      // matched any later op.
+      seed();
+      const createGroup = creationGroupFor("task", "demo/a");
+      updateTask(db, "a", { impact: 90 }, { workstream: "demo" });
+
+      const plan = planUndo(db, createGroup);
+      expect(plan.superseded).toBe(true);
+      const conflicts = plan.inverses.flatMap((i) => i.supersededBy);
+      expect(conflicts.length).toBeGreaterThan(0);
+      expect(() => undoGroup(db, createGroup)).toThrow(UndoSupersededError);
+      // Nothing changed: the row and its later edit both survive.
+      expect(task("a")?.impact).toBe(90);
+      expectNoDrift();
+    });
+
+    it("detects supersession of a DELETE-then-RECREATE — restoring the tombstone would clobber the fresh row", () => {
+      // A group deletes 'a'. A later, unrelated group recreates a task
+      // with the same natural key (a legitimate reuse of the id). The
+      // inverse of the delete (restore-from-tombstone) must be reported
+      // as superseded by the recreation, not silently allowed through.
+      seed();
+      deleteTask(db, "a", "demo");
+      const deleteGroup = groupFor("task.delete");
+      addTask(db, { workstream: "demo", localId: "a", title: "Fresh", impact: 77, effortDays: 3 });
+
+      const plan = planUndo(db, deleteGroup);
+      expect(plan.superseded).toBe(true);
+      const conflicts = plan.inverses.flatMap((i) => i.supersededBy);
+      expect(conflicts.length).toBeGreaterThan(0);
+      expect(() => undoGroup(db, deleteGroup)).toThrow(UndoSupersededError);
+      // The fresh, unrelated row is untouched.
+      expect(task("a")).toMatchObject({ title: "Fresh", impact: 77 });
+      expectNoDrift();
     });
   });
 

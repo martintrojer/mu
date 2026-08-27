@@ -299,6 +299,33 @@ function laterWriters(
   }>;
 }
 
+/** Groups that wrote ANY field of `key` AFTER `hlc`, regardless of which
+ *  field. Used for the two whole-row inverses (restore-from-tombstone,
+ *  delete-the-row-this-group-created) where the question is "did a later
+ *  group touch this key at all", not "did it set one specific field". */
+function laterRowWriters(
+  db: Db,
+  entity: string,
+  key: string,
+  hlc: string,
+  excludeGroup: string,
+): Array<{ groupId: string; intent: string | null }> {
+  return db
+    .prepare(
+      `SELECT DISTINCT group_id AS groupId, intent
+         FROM ops
+        WHERE entity   = @entity
+          AND key      = @key
+          AND op       = 'put'
+          AND hlc      > @hlc
+          AND group_id <> @excludeGroup`,
+    )
+    .all({ entity, key, hlc, excludeGroup }) as Array<{
+    groupId: string;
+    intent: string | null;
+  }>;
+}
+
 /** True iff a later group DELETED this key after `hlc`. Undoing a change
  *  to a row that has since been deleted would resurrect it. */
 function laterDeleters(
@@ -459,9 +486,11 @@ export function planUndo(db: Db, groupId: string): UndoPlan {
       // preceded the tombstone, so a partial-update history still yields
       // a complete row.
       const fields = reconstructRow(db, row.entity, row.key, row.hlc);
-      const conflicts = laterWriters(db, row.entity, row.key, row.hlc, "__none__", groupId).map(
-        (w) => ({ field: "<row>", groupId: w.groupId, intent: w.intent }),
-      );
+      const conflicts = laterRowWriters(db, row.entity, row.key, row.hlc, groupId).map((w) => ({
+        field: "<row>",
+        groupId: w.groupId,
+        intent: w.intent,
+      }));
       inverses.push({
         entity: row.entity,
         key: row.key,
@@ -485,7 +514,7 @@ export function planUndo(db: Db, groupId: string): UndoPlan {
     if (row.prior === 0 || row.priorKind === "del") {
       // Created it: the inverse is a delete. A later group that wrote
       // this key is a supersession — deleting would discard that work.
-      const later = [...laterWriters(db, row.entity, row.key, row.hlc, "__all__", groupId)];
+      const later = [...laterRowWriters(db, row.entity, row.key, row.hlc, groupId)];
       inverses.push({
         entity: row.entity,
         key: row.key,
