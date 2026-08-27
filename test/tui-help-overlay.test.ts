@@ -210,8 +210,8 @@ describe("TUI help overlay", () => {
   it("documents DAG/all-tasks status toggles and all-tasks sort/search keys", () => {
     const text = visibleText(200);
     expect(text).toContain("keys · DAG / all-tasks");
-    expect(text).toContain("o/i/c/r/d");
-    expect(text).toContain("OPEN / IN_PROGRESS / CLOSED / REJECTED / DEFERRED");
+    expect(text).toContain("o/i/c");
+    expect(text).toContain("OPEN / IN_PROGRESS / CLOSED");
     expect(text).toContain("all-tasks sort cycle");
     expect(text).toContain("roi → recency → age → id");
     expect(text).toContain("all-tasks row search");

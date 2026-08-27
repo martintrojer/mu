@@ -1,10 +1,7 @@
-// mu — task lifecycle verbs: setTaskStatus, closeTask, openTask,
-// rejectTask, deferTask + supporting types.
+// mu — task lifecycle verbs: setTaskStatus, closeTask, openTask.
 //
 // Lifecycle = "transition a task from one status to another, with
-// the right side effects (auto-snapshot before mutating, emit
-// agent_logs event, refresh pane title via the caller, validate
-// guard rails like 'reject would strand dependents')".
+// the right captured-op and evidence-note side effects".
 //
 // EvidenceOption is shared with claim/release (in tasks/claim.ts) and
 // re-exported here as the canonical home; claim.ts imports from this
@@ -16,7 +13,7 @@ import type { Db } from "../db.js";
 import { withOpContext } from "../op-context.js";
 import { getTaskEdgesWithStatus } from "./edges.js";
 import { addNote } from "./edit.js";
-import { TaskHasOpenDependentsError, TaskNotFoundError } from "./errors.js";
+import { TaskNotFoundError } from "./errors.js";
 import { getTask } from "./queries.js";
 import type { TaskStatus } from "./status.js";
 
@@ -46,11 +43,9 @@ export interface EvidenceOption {
  *
  * mu once put evidence in the prose event payload AND (for close only) in a
  * synthetic note. v2-retire-log-shim deleted the prose events, which
- * would have silently DROPPED evidence on reject/defer/open/release —
- * measured: `task close --evidence` kept it via the note, the other
- * three lost it entirely. The note is now the single home for it, which
- * is also the better one: notes are portable and sync, whereas the
- * prose event was machine-local and unparseable.
+ * would have silently dropped evidence on open/release. The note is now
+ * the single home for it: notes are portable and sync, whereas the prose
+ * event was machine-local and unparseable.
  *
  * Only fires when the verb actually changed something (an idempotent
  * re-close attests nothing new) and the evidence is a non-empty string.
@@ -87,15 +82,13 @@ export function setTaskStatus(
   status: TaskStatus,
   opts: EvidenceOption & { workstream: string },
 ): SetStatusResult {
-  // NOTE: no `group` here, so a nested call INHERITS the enclosing
-  // group. That is what makes a cascade close/reject write all N ops
-  // under one group_id for `mu undo`. A direct call with no enclosing
-  // context still gets its own group (withOpContext mints one).
+  // NOTE: no `group` here, so a nested call inherits the enclosing
+  // group. A direct call with no enclosing context still gets its own
+  // group (withOpContext mints one).
   //
-  // `intentIfUnset` (not `intent`): when reached via closeTask /
-  // rejectTask / a cascade sweep, the OUTER verb is the label the
-  // operator recognises, so it must win. Only a direct setTaskStatus
-  // call labels itself.
+  // `intentIfUnset` (not `intent`): when reached via closeTask, the
+  // outer verb is the label the operator recognises, so it must win.
+  // Only a direct setTaskStatus call labels itself.
   return withOpContext(db, { intentIfUnset: `task.set-${status.toLowerCase()}` }, () =>
     setTaskStatusImpl(db, localId, status, opts),
   );
@@ -138,10 +131,7 @@ function setTaskStatusImpl(
  *  with N blockers stayed OPEN after every blocker reached a terminal
  *  status. `--if-ready` is the cheap fix: bare `mu task close` is
  *  unchanged (closes regardless), `--if-ready` is a no-op unless every
- *  blocker is in a terminal status (CLOSED / REJECTED / DEFERRED).
- *  Reject and defer satisfy the predicate too because `--if-ready`'s
- *  job is to fire when the umbrella has nothing left to wait for, and
- *  a rejected/deferred blocker is no longer being waited on. */
+ *  blocker is CLOSED. */
 export interface CloseSkippedResult {
   /** Always 'not_ready' when set; future cause-codes can extend this
    *   without reshaping the JSON payload (the literal-union narrows
@@ -162,12 +152,11 @@ export interface CloseSkippedResult {
 
 export interface CloseTaskOptions extends EvidenceOption {
   workstream: string;
-  /** When true, no-op the close unless every blocker is in a terminal
-   *   status (CLOSED / REJECTED / DEFERRED). Returns a
-   *   `CloseSkippedResult` carrying the still-blocking ids; the CLI
-   *   renders the skip with a Next: hint pointing at `mu task wait`.
-   *   When false / omitted, behaves as bare `closeTask` (closes
-   *   regardless of blocker status). */
+  /** When true, no-op the close unless every blocker is CLOSED.
+   *   Returns a `CloseSkippedResult` carrying the still-blocking ids;
+   *   the CLI renders the skip with a Next: hint pointing at
+   *   `mu task wait`. When false / omitted, behaves as bare `closeTask`
+   *   (closes regardless of blocker status). */
   ifReady?: boolean;
   /** Optional actor identity attributed to the synthetic `CLOSE: …`
    *  note auto-inserted when `evidence` is non-empty (see closeTask
@@ -207,14 +196,11 @@ function closeTaskImpl(
   const before = getTask(db, localId, opts.workstream);
   if (opts.ifReady && before) {
     // Inspect direct blockers only — the umbrella convention is one
-    // hop (umbrella -[blocked-by]→ each wave task). Transitive depth
-    // doesn't matter: if any direct blocker is non-terminal, the
-    // umbrella isn't ready; if every direct blocker is terminal,
-    // their own ancestry was satisfied as a precondition for them
-    // closing/rejecting/deferring in the first place.
+    // hop (umbrella -[blocked-by]→ each wave task). If any direct
+    // blocker is not CLOSED, the umbrella isn't ready.
     const edges = getTaskEdgesWithStatus(db, localId, before.workstreamName);
     const blocking = edges.blockers
-      .filter((e) => e.status === "OPEN" || e.status === "IN_PROGRESS")
+      .filter((e) => e.status !== "CLOSED")
       .map((e) => e.name)
       .sort();
     if (blocking.length > 0) {
@@ -250,185 +236,4 @@ export function openTask(
     if (r.changed && before) recordEvidenceNote(db, localId, before.workstreamName, "OPEN", opts);
     return r;
   });
-}
-
-// ─── rejectTask / deferTask (terminal-but-blocking transitions) ────
-//
-// REJECTED and DEFERRED both leave the task off the active scheduler
-// (gone from `ready`, `goals`, track count) but, unlike CLOSED, do NOT
-// satisfy a `--blocked-by` edge. A REJECTED / DEFERRED task therefore
-// silently strands every OPEN/IN_PROGRESS dependent. We refuse the
-// transition unless either there are no open dependents OR the caller
-// passes `--cascade` to apply the same status to every transitive
-// dependent.
-
-export interface RejectDeferOptions extends EvidenceOption {
-  /** Workstream context for the root task. All internal task lookups
-   *  (including the dependent walk) scope to this workstream. */
-  workstream: string;
-  /** If true, walk the transitive dependent closure and (with `yes`)
-   *  apply the same status to every dependent, atomically. Without
-   *  `yes`, runs as a dry-run: returns the list of tasks that WOULD
-   *  be swept (changedIds) with `dryRun: true` and changes nothing.
-   *  Logs one event per task (via setTaskStatus) on commit. */
-  cascade?: boolean;
-  /** Required to actually commit a `cascade` operation. Without it,
-   *  cascade is dry-run only — prints the affected dependents so the
-   *  caller can verify before sweeping. Mirrors `mu workstream destroy
-   *  --yes`. Surfaced in mufeedback bug_cascade_reject_too_aggressive
-   *  when an accidentally-cascaded reject swept hud_dogfood (which had
-   *  independent merit and needed reopening). */
-  yes?: boolean;
-}
-
-export interface RejectDeferResult {
-  /** Tasks that actually changed status, in cascade order (root first). */
-  changedIds: string[];
-  /** The status now stamped on every changedId. */
-  status: TaskStatus;
-  /** True iff anything changed. False on a clean idempotent no-op
-   *  (root task already in target status, no dependents). */
-  changed: boolean;
-  /** True iff this was a `cascade` dry-run (cascade requested without
-   *  `yes`). In that case `changedIds` lists tasks that WOULD be
-   *  swept; the DB is unchanged. */
-  dryRun: boolean;
-  /** Tasks that would be touched by a cascade. Same as `changedIds`
-   *  on a dry-run; populated even on a commit so the caller can
-   *  report what was swept. */
-  affectedIds: string[];
-}
-
-/** Reject a task: terminal 'won't do' (out of scope, duplicate, wontfix).
- *  Refuses if dependents are open unless `--cascade`.
- *  (No snapshot; rollback is inverse ops via `mu undo`.) */
-export function rejectTask(db: Db, localId: string, opts: RejectDeferOptions): RejectDeferResult {
-  // group: "new" at the CASCADE ROOT — every dependent swept below
-  // inherits it, so one `mu undo <group>` reverts the whole sweep.
-  return withOpContext(db, { intent: "task.reject", group: "new" }, () =>
-    setTerminalOrParked(db, localId, "REJECTED", opts),
-  );
-}
-
-/** Defer a task: parked, may revisit. Same dependent-stranding semantics
- *  as reject (DEFERRED also doesn't satisfy a `--blocked-by` edge).
- *  (No snapshot; rollback is inverse ops via `mu undo`.) */
-export function deferTask(db: Db, localId: string, opts: RejectDeferOptions): RejectDeferResult {
-  return withOpContext(db, { intent: "task.defer", group: "new" }, () =>
-    setTerminalOrParked(db, localId, "DEFERRED", opts),
-  );
-}
-
-function setTerminalOrParked(
-  db: Db,
-  localId: string,
-  status: "REJECTED" | "DEFERRED",
-  opts: RejectDeferOptions,
-): RejectDeferResult {
-  const before = getTask(db, localId, opts.workstream);
-  if (!before) throw new TaskNotFoundError(localId);
-
-  // Find all open (OPEN or IN_PROGRESS) tasks that transitively depend
-  // on this one. Forward-edge recursive CTE from localId, scoped by
-  // the root task's workstream.
-  const openDependents = findOpenDependents(db, localId, before.workstreamName);
-
-  if (openDependents.length > 0 && !opts.cascade) {
-    const verb = status === "REJECTED" ? "reject" : "defer";
-    throw new TaskHasOpenDependentsError(localId, verb, openDependents);
-  }
-
-  const affectedIds =
-    openDependents.length > 0 && opts.cascade ? [localId, ...openDependents] : [localId];
-
-  // Cascade dry-run: cascade requested but --yes missing. Don't touch
-  // the DB; return the would-be-affected list so the CLI can render
-  // a 'about to sweep these N tasks; rerun with --yes' preview.
-  // Mirrors `mu workstream destroy` semantics. Single-task case
-  // (openDependents == 0, cascade flag irrelevant) skips the dry-run
-  // since there's nothing to preview.
-  if (opts.cascade && !opts.yes && openDependents.length > 0) {
-    return {
-      changedIds: affectedIds,
-      status,
-      changed: false,
-      dryRun: true,
-      affectedIds,
-    };
-  }
-
-  // Apply to root first, then dependents in BFS order. setTaskStatus
-  // emits one event per task and is idempotent (no-op if already in
-  // target status). Every UPDATE scopes to the root's workstream
-  // (dependents must share it — cross-ws edges are forbidden).
-  const childOpts: EvidenceOption & { workstream: string } = {
-    workstream: before.workstreamName,
-    ...(opts.evidence !== undefined ? { evidence: opts.evidence } : {}),
-  };
-  const changedIds: string[] = [];
-  const label = status === "REJECTED" ? "REJECT" : "DEFER";
-  for (const id of affectedIds) {
-    const r = setTaskStatus(db, id, status, childOpts);
-    if (r.changed) {
-      changedIds.push(id);
-      // Evidence as a note, per verb, for the same reason close does it:
-      // the prose event that used to carry it is gone.
-      recordEvidenceNote(db, id, before.workstreamName, label, opts);
-    }
-  }
-
-  return {
-    changedIds,
-    status,
-    changed: changedIds.length > 0,
-    dryRun: false,
-    affectedIds,
-  };
-}
-
-/** Open dependents that would be stranded if `taskId` were rejected /
- *  deferred. The walk PRUNES at CLOSED nodes: a CLOSED intermediate
- *  has already satisfied its blocked-by edge, so its downstream is
- *  independent of whatever happens to `taskId` and must NOT be swept.
- *  REJECTED / DEFERRED intermediates also stop the walk — their
- *  downstream is already stranded by them, not by `taskId`, and a
- *  cascade from here would (a) double-flip them or (b) overwrite a
- *  previous explicit decision.
- *
- *  Ordering: BFS-equivalent via DISTINCT + ORDER BY local_id; cascade
- *  applies one row at a time so each setTaskStatus is logged. */
-function findOpenDependents(db: Db, taskLocalId: string, workstream: string): string[] {
-  // Resolve the seed task to its surrogate id, then walk forward
-  // edges in surrogate-id space; project back to local_id at the end.
-  // Scope the seed by workstream (v5 per-workstream local_id) so a
-  // same-named task elsewhere can't seed a cascade in this workstream
-  // (bug_v5_name_clash_silent_misroute).
-  const seed = db
-    .prepare(
-      `SELECT id FROM tasks WHERE local_id = ?
-        AND workstream_id = (SELECT id FROM workstreams WHERE name = ?)`,
-    )
-    .get(taskLocalId, workstream) as { id: number } | undefined;
-  if (!seed) return [];
-  const rows = db
-    .prepare(
-      `WITH RECURSIVE forward(node) AS (
-         SELECT e.to_task_id
-           FROM task_edges e
-           JOIN tasks      t ON t.id = e.to_task_id
-          WHERE e.from_task_id = ?
-            AND t.status IN ('OPEN', 'IN_PROGRESS')
-         UNION
-         SELECT e.to_task_id
-           FROM task_edges e
-           JOIN forward    f ON f.node = e.from_task_id
-           JOIN tasks      t ON t.id = e.to_task_id
-          WHERE t.status IN ('OPEN', 'IN_PROGRESS')
-       )
-       SELECT DISTINCT t.local_id AS local_id FROM forward f
-         JOIN tasks t ON t.id = f.node
-        ORDER BY t.local_id`,
-    )
-    .all(seed.id) as { local_id: string }[];
-  return rows.map((r) => r.local_id);
 }

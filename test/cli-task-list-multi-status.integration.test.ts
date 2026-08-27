@@ -29,12 +29,8 @@ describe("mu task list --status (multi-value)", () => {
     addTask(db, { localId: "o", workstream: "auth", title: "O", impact: 10, effortDays: 1 });
     addTask(db, { localId: "ip", workstream: "auth", title: "IP", impact: 10, effortDays: 1 });
     addTask(db, { localId: "cl", workstream: "auth", title: "CL", impact: 10, effortDays: 1 });
-    addTask(db, { localId: "rj", workstream: "auth", title: "RJ", impact: 10, effortDays: 1 });
-    addTask(db, { localId: "df", workstream: "auth", title: "DF", impact: 10, effortDays: 1 });
     db.prepare("UPDATE tasks SET status='IN_PROGRESS' WHERE local_id='ip'").run();
     db.prepare("UPDATE tasks SET status='CLOSED'      WHERE local_id='cl'").run();
-    db.prepare("UPDATE tasks SET status='REJECTED'    WHERE local_id='rj'").run();
-    db.prepare("UPDATE tasks SET status='DEFERRED'    WHERE local_id='df'").run();
   });
 
   afterEach(() => {
@@ -63,13 +59,7 @@ describe("mu task list --status (multi-value)", () => {
   });
 
   it("--status missing returns ALL tasks (no auto-default to OPEN ∪ IN_PROGRESS)", async () => {
-    expect(await names(["task", "list", "-w", "auth", "--json"])).toEqual([
-      "cl",
-      "df",
-      "ip",
-      "o",
-      "rj",
-    ]);
+    expect(await names(["task", "list", "-w", "auth", "--json"])).toEqual(["cl", "ip", "o"]);
   });
 
   it("CSV form: --status OPEN,IN_PROGRESS unions both", async () => {
@@ -94,7 +84,7 @@ describe("mu task list --status (multi-value)", () => {
     ).toEqual(["cl", "o"]);
   });
 
-  it("mixed form: --status OPEN,CLOSED --status REJECTED unions all three", async () => {
+  it("mixed form: --status OPEN,CLOSED --status IN_PROGRESS unions all three", async () => {
     expect(
       await names([
         "task",
@@ -104,10 +94,10 @@ describe("mu task list --status (multi-value)", () => {
         "--status",
         "OPEN,CLOSED",
         "--status",
-        "REJECTED",
+        "IN_PROGRESS",
         "--json",
       ]),
-    ).toEqual(["cl", "o", "rj"]);
+    ).toEqual(["cl", "ip", "o"]);
   });
 
   it("dedup: --status open --status OPEN collapses to one filter", async () => {
@@ -126,10 +116,10 @@ describe("mu task list --status (multi-value)", () => {
     expect(stderr).toContain("RESOLVED");
   });
 
-  it("'show me everything terminal' (CLOSED ∪ REJECTED ∪ DEFERRED) — the motivating case", async () => {
-    expect(
-      await names(["task", "list", "-w", "auth", "--status", "CLOSED,REJECTED,DEFERRED", "--json"]),
-    ).toEqual(["cl", "df", "rj"]);
+  it("'show me everything terminal' (CLOSED) — the motivating case", async () => {
+    expect(await names(["task", "list", "-w", "auth", "--status", "CLOSED", "--json"])).toEqual([
+      "cl",
+    ]);
   });
 
   it("'show me everything actionable' (OPEN ∪ IN_PROGRESS) — the motivating case", async () => {

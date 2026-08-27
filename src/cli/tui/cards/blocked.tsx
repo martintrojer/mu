@@ -193,9 +193,7 @@ export function BlockedCard({
 export const glyphFor = (): string => GLYPH;
 
 /** Filter a list of blockers to the still-gating ones. A blocker is
- *  still-gating iff its status is not CLOSED — REJECTED and DEFERRED
- *  still block downstream work (they're terminal/parked from the
- *  perspective of "is this a goal", but only CLOSED satisfies a
+ *  still-gating iff its status is not CLOSED (only CLOSED satisfies a
  *  blocked-by edge per the BLOCKED view in src/db.ts). Returns a new
  *  array; does not mutate. */
 export function stillGating(blockers: ReadonlyArray<TaskEdgeWithStatus>): TaskEdgeWithStatus[] {

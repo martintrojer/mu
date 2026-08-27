@@ -16,16 +16,12 @@ export const STATUS_BY_KEY: Readonly<Record<string, TaskStatus>> = {
   o: "OPEN",
   i: "IN_PROGRESS",
   c: "CLOSED",
-  r: "REJECTED",
-  d: "DEFERRED",
 };
 
 const STATUS_LABELS: Readonly<Record<TaskStatus, { key: string; rest: string }>> = {
   OPEN: { key: "O", rest: "pen" },
   IN_PROGRESS: { key: "I", rest: "n_progress" },
   CLOSED: { key: "C", rest: "losed" },
-  REJECTED: { key: "R", rest: "ejected" },
-  DEFERRED: { key: "D", rest: "eferred" },
 };
 
 export function toggleStatusSet(
@@ -49,7 +45,7 @@ export function statusForToggleKey(input: string, key: KeyFlags): TaskStatus | u
 export interface StatusFilter {
   statuses: Set<TaskStatus>;
   toggle: (s: TaskStatus) => void;
-  /** Returns true when the o/i/c/r/d toggle key was consumed. */
+  /** Returns true when the o/i/c toggle key was consumed. */
   onKey: (input: string, key: KeyFlags) => boolean;
 }
 

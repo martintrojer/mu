@@ -51,8 +51,6 @@ function seedOnePerStatus(db: Db): void {
     ["open", "OPEN", 50, 1],
     ["in_progress", "IN_PROGRESS", 90, 1],
     ["closed", "CLOSED", 20, 1],
-    ["rejected", "REJECTED", 10, 1],
-    ["deferred", "DEFERRED", 30, 1],
   ] as const) {
     addTask(db, { workstream: "demo", localId: id, title: id, impact, effortDays });
     if (status !== "OPEN") setTaskStatus(db, id, status, { workstream: "demo" });
@@ -122,13 +120,7 @@ describe("AllTasksPopup", () => {
     const sorted = sortTasks(allTasks, "roi");
 
     expect(allTasks.map((t) => t.status).sort()).toEqual([...TASK_STATUSES].sort());
-    expect(sorted.map((t) => t.name)).toEqual([
-      "in_progress",
-      "open",
-      "deferred",
-      "closed",
-      "rejected",
-    ]);
+    expect(sorted.map((t) => t.name)).toEqual(["in_progress", "open", "closed"]);
   });
 
   it("falls back to listTasks(db, workstream) when snapshot.allTasks is not populated", () => {
@@ -136,10 +128,8 @@ describe("AllTasksPopup", () => {
     seedOnePerStatus(db);
     expect(allTasksFromSnapshotOrDb(null, db, "demo").map((t) => t.name)).toEqual([
       "closed",
-      "deferred",
       "in_progress",
       "open",
-      "rejected",
     ]);
   });
 
@@ -156,7 +146,7 @@ describe("AllTasksPopup", () => {
     );
 
     expect(visible.map((t) => t.name)).not.toContain("closed");
-    expect(visible.map((t) => t.name)).toEqual(["in_progress", "open", "deferred", "rejected"]);
+    expect(visible.map((t) => t.name)).toEqual(["in_progress", "open"]);
   });
 
   it("pressing s cycles sort key and the sort indicator updates", () => {

@@ -74,8 +74,6 @@ export function yankCommandForTask(
     case "IN_PROGRESS":
       return `mu task close ${t.name} -w ${ws} --evidence "..."`;
     case "CLOSED":
-    case "REJECTED":
-    case "DEFERRED":
       return `mu task open ${t.name} -w ${ws}`;
     default:
       return null;

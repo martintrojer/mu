@@ -279,7 +279,6 @@ describe("the op formatter", () => {
       waitForTasks,
     } = await import("../src/tasks.js");
     const { claimTask, releaseTask } = await import("../src/tasks/claim.js");
-    const { deferTask, rejectTask } = await import("../src/tasks/lifecycle.js");
     const { resetTmuxExecutor, setTmuxExecutor } = await import("../src/tmux.js");
     const { createWorkspace, freeWorkspace, recreateWorkspace, refreshWorkspace } = await import(
       "../src/workspace.js"
@@ -383,10 +382,6 @@ describe("the op formatter", () => {
       await captureNewEvents(() => releaseTask(db, "base", { workstream: "events" }));
       await captureNewEvents(() => openTask(db, "base", { workstream: "events" }));
       await captureNewEvents(() => closeTask(db, "base", { workstream: "events" }));
-      await captureNewEvents(() => openTask(db, "base", { workstream: "events" }));
-      await captureNewEvents(() => rejectTask(db, "base", { workstream: "events" }));
-      await captureNewEvents(() => openTask(db, "base", { workstream: "events" }));
-      await captureNewEvents(() => deferTask(db, "base", { workstream: "events" }));
       await captureNewEvents(() => openTask(db, "base", { workstream: "events" }));
       await captureNewEvents(() =>
         deleteTask(db, "blocked", "events", {

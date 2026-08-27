@@ -59,18 +59,13 @@ export function colorStatus(status: TaskRow["status"]): string {
       return pc.yellow(status);
     case "CLOSED":
       return pc.green(status);
-    case "REJECTED":
-      return pc.red(status);
-    case "DEFERRED":
-      return pc.dim(status);
   }
 }
 
 /** Ink colour equivalent of colorStatus(). The TUI must not embed
  * picocolors ANSI strings inside <Text>; rows pass this value to Ink's
- * color prop instead. DEFERRED maps to gray to mirror colorStatus()'s
- * dim treatment in the static CLI tables. */
-export type InkColor = "cyan" | "yellow" | "green" | "red" | "gray";
+ * color prop instead. */
+export type InkColor = "cyan" | "yellow" | "green";
 
 export function inkColorForStatus(status: TaskStatus): InkColor {
   switch (status) {
@@ -80,10 +75,6 @@ export function inkColorForStatus(status: TaskStatus): InkColor {
       return "yellow";
     case "CLOSED":
       return "green";
-    case "REJECTED":
-      return "red";
-    case "DEFERRED":
-      return "gray";
   }
 }
 

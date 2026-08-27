@@ -88,10 +88,9 @@ export function printNote(n: TaskNoteRow): void {
 }
 
 /** Split a list of edge neighbours into (still-gating, satisfied)
- *  buckets. CLOSED is the only status that satisfies a `blocks` edge
- *  per src/tasks/status.ts; REJECTED/DEFERRED still gate downstream
- *  work and stay in the still-gating bucket so the operator sees
- *  them. (task_show_blocked_by_renders_closed.) */
+ *  buckets. CLOSED is the only status that satisfies a `blocks` edge;
+ *  OPEN/IN_PROGRESS stay in the still-gating bucket.
+ *  (task_show_blocked_by_renders_closed.) */
 function partitionEdges(edges: readonly TaskEdgeWithStatus[]): {
   stillGating: TaskEdgeWithStatus[];
   satisfied: TaskEdgeWithStatus[];
@@ -363,9 +362,8 @@ export async function cmdTaskShow(
   // Group each side of the edge set by status so the operator can
   // tell at a glance which prerequisites still gate the task vs which
   // have already been satisfied. CLOSED is the only status that
-  // satisfies a `blocks` edge; REJECTED/DEFERRED still gate downstream
-  // work, so they stay in the still-gating bucket alongside
-  // OPEN/IN_PROGRESS. (task_show_blocked_by_renders_closed.)
+  // satisfies a `blocks` edge; OPEN/IN_PROGRESS stay in the
+  // still-gating bucket. (task_show_blocked_by_renders_closed.)
   const { stillGating: gatingBlockers, satisfied: satisfiedBlockers } = partitionEdges(
     edges.blockers,
   );

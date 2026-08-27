@@ -19,13 +19,7 @@
 //   4. Each connected component is one Track.
 
 import type { Db } from "./db.js";
-import {
-  getPrerequisites,
-  listGoals,
-  listReady,
-  STATUSES_TERMINAL_OR_PARKED,
-  type TaskRow,
-} from "./tasks.js";
+import { getPrerequisites, listGoals, listReady, type TaskRow } from "./tasks.js";
 
 export interface Track {
   /** Goal tasks (no outgoing edges) belonging to this track. */
@@ -46,12 +40,10 @@ export interface Track {
  * prerequisite subgraph is naturally workstream-internal.
  */
 export function getParallelTracks(db: Db, workstream: string): Track[] {
-  // listGoals already filters via the SQL view (NOT IN CLOSED/REJECTED/
-  // DEFERRED), but defence-in-depth: a stale db snapshot or future view
-  // tweak shouldn't let parked/terminal goals leak into track count.
-  const goals = listGoals(db, workstream).filter(
-    (g) => !STATUSES_TERMINAL_OR_PARKED.includes(g.status),
-  );
+  // listGoals already filters via the SQL view (status <> CLOSED),
+  // but defence-in-depth: a stale db snapshot or future view tweak
+  // shouldn't let closed goals leak into track count.
+  const goals = listGoals(db, workstream).filter((g) => g.status !== "CLOSED");
   if (goals.length === 0) return [];
 
   // 2. Compute prerequisite subgraph for each goal.

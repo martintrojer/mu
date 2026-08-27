@@ -39,7 +39,6 @@ import {
   TaskAlreadyOwnedError,
   TaskClaimStaleWorkspaceError,
   TaskExistsError,
-  TaskHasOpenDependentsError,
   TaskIdInvalidError,
   TaskNotFoundError,
   TaskNotInWorkstreamError,
@@ -98,11 +97,6 @@ const cases: NextStepsCase[] = [
     error: new TaskAlreadyOwnedError("foo", "alice"),
     label: "TaskAlreadyOwnedError",
     expectedTokens: ["foo", "alice"],
-  },
-  {
-    error: new TaskHasOpenDependentsError("foo", "reject", ["bar"]),
-    label: "TaskHasOpenDependentsError",
-    expectedTokens: ["foo"],
   },
   {
     error: new ClaimerNotRegisteredError("pi-mu", "%6441"),
@@ -291,9 +285,9 @@ const cases: NextStepsCase[] = [
     expectedTokens: ["scratch"],
   },
   {
-    error: new SchemaTooOldError(8, 9),
+    error: new SchemaTooOldError(9, 10),
     label: "SchemaTooOldError",
-    expectedTokens: ["mu db backup", "migrate-to-1.0.ts", "sqlite3"],
+    expectedTokens: ["mu db backup", ".old", "sqlite3"],
   },
 
   // src/cli/handle.ts

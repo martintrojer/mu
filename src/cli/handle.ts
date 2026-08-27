@@ -75,7 +75,6 @@ import {
   TaskAlreadyOwnedError,
   TaskClaimStaleWorkspaceError,
   TaskExistsError,
-  TaskHasOpenDependentsError,
   TaskIdInvalidError,
   TaskNotFoundError,
   TaskNotInWorkstreamError,
@@ -257,7 +256,6 @@ export function classifyError(err: unknown): { label: string; exitCode: number }
     err instanceof TaskNotInWorkstreamError ||
     err instanceof AgentNotInWorkstreamError ||
     err instanceof CycleError ||
-    err instanceof TaskHasOpenDependentsError ||
     err instanceof CrossWorkstreamEdgeError ||
     err instanceof WorkspaceExistsError ||
     err instanceof WorkspacePathNotEmptyError ||

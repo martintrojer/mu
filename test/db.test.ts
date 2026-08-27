@@ -31,7 +31,7 @@ describe("openDb", () => {
     // No throw = parent dirs created.
   });
 
-  it("applies exactly the 10 v9 tables (ops log substrate; the old change-recording tables gone)", () => {
+  it("applies exactly the 10 v10 tables (three-state lifecycle; REJECTED/DEFERRED removed)", () => {
     const db = openDb({ path: dbPath });
     const tables = (
       db
@@ -54,20 +54,20 @@ describe("openDb", () => {
     ]);
     expect(tables).toHaveLength(10);
     expect([...tables].sort()).toEqual(tables);
-    // schema_version stamped to current (v9).
+    // schema_version stamped to current (v10).
     const v = (
       db.prepare("SELECT version FROM schema_version WHERE id = 1").get() as { version: number }
     ).version;
-    expect(v).toBe(9);
+    expect(v).toBe(10);
     db.close();
   });
 
-  it("a fresh DB stamps version 9 and seeds machine_identity", () => {
+  it("a fresh DB stamps version 10 and seeds machine_identity", () => {
     const db = openDb({ path: dbPath });
     const v = (
       db.prepare("SELECT version FROM schema_version WHERE id = 1").get() as { version: number }
     ).version;
-    expect(v).toBe(9);
+    expect(v).toBe(10);
     const ids = db.prepare("SELECT machine_id FROM machine_identity").all() as {
       machine_id: string;
     }[];
@@ -75,7 +75,7 @@ describe("openDb", () => {
     db.close();
   });
 
-  it("ops has the v9 column set, the op CHECK, and UNIQUE (machine_id, hlc)", () => {
+  it("ops has the v10 column set, the op CHECK, and UNIQUE (machine_id, hlc)", () => {
     const db = openDb({ path: dbPath });
     const cols = (
       db.prepare("PRAGMA table_info(ops)").all() as { name: string; notnull: number }[]
@@ -198,45 +198,14 @@ describe("openDb", () => {
     db.close();
   });
 
-  it("refuses a v8-shaped DB with SchemaTooOldError (mu ships no migration)", () => {
-    // Hand-built v8 fixture: the old change-recording tables plus a
-    // schema_version stamp. No binary fixture — the shape is the point.
+  it("refuses a v9 DB with SchemaTooOldError (mu ships no migration)", () => {
+    // The version gate runs before schema application, so a minimal
+    // version-stamped fixture proves the breaking v9 → v10 boundary.
     {
       const raw = new Database(dbPath);
       raw.exec(
         `CREATE TABLE schema_version (id INTEGER PRIMARY KEY CHECK (id = 1), version INTEGER NOT NULL);
-         CREATE TABLE workstreams (
-           id          INTEGER PRIMARY KEY AUTOINCREMENT,
-           name        TEXT UNIQUE NOT NULL,
-           created_at  TEXT NOT NULL
-         );
-         CREATE TABLE agent_logs (
-           seq           INTEGER PRIMARY KEY AUTOINCREMENT,
-           workstream_id INTEGER REFERENCES workstreams (id) ON DELETE CASCADE,
-           source        TEXT NOT NULL,
-           kind          TEXT NOT NULL DEFAULT 'message',
-           payload       TEXT NOT NULL,
-           created_at    TEXT NOT NULL
-         );
-         CREATE TABLE snapshots (
-           id             INTEGER PRIMARY KEY AUTOINCREMENT,
-           workstream     TEXT,
-           label          TEXT NOT NULL,
-           db_path        TEXT NOT NULL,
-           schema_version INTEGER NOT NULL,
-           created_at     TEXT NOT NULL
-         );
-         CREATE TABLE workstream_sync (
-           workstream_id        INTEGER PRIMARY KEY REFERENCES workstreams (id) ON DELETE CASCADE,
-           last_known_peer_seqs TEXT NOT NULL DEFAULT '{}'
-         );
-         CREATE TABLE machine_identity (
-           id         INTEGER PRIMARY KEY CHECK (id = 1),
-           machine_id TEXT NOT NULL,
-           hostname   TEXT,
-           created_at TEXT NOT NULL
-         );
-         INSERT INTO schema_version (id, version) VALUES (1, 8);`,
+         INSERT INTO schema_version (id, version) VALUES (1, 9);`,
       );
       raw.close();
     }
@@ -249,18 +218,17 @@ describe("openDb", () => {
     }
     expect(thrown).toBeInstanceOf(SchemaTooOldError);
     if (!(thrown instanceof SchemaTooOldError)) throw new Error("expected SchemaTooOldError");
-    expect(thrown.detectedVersion).toBe(8);
-    expect(thrown.requiredVersion).toBe(9);
+    expect(thrown.detectedVersion).toBe(9);
+    expect(thrown.requiredVersion).toBe(10);
     // Typed-error → exit-code map: 4 (conflict).
     expect(classifyError(thrown)).toEqual({ label: "conflict", exitCode: 4 });
-    // The v8 DB is left untouched — no v9 tables were created under it.
+    // The v9 DB is left untouched — no v10 tables were created under it.
     const raw2 = new Database(dbPath);
     const names = (
       raw2.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as { name: string }[]
     ).map((r) => r.name);
     raw2.close();
-    expect(names).not.toContain("ops");
-    expect(names).toContain("agent_logs");
+    expect(names).toEqual(["schema_version"]);
   });
 
   it("still rejects ancient (pre-v5) DBs with SchemaTooOldError", () => {
@@ -273,6 +241,23 @@ describe("openDb", () => {
       raw.close();
     }
     expect(() => openDb({ path: dbPath })).toThrow(SchemaTooOldError);
+  });
+
+  it("tasks CHECK accepts only OPEN, IN_PROGRESS, and CLOSED", () => {
+    const db = openDb({ path: dbPath });
+    db.prepare("INSERT INTO workstreams (name, created_at) VALUES ('ws', '2026-01-01')").run();
+    const insert = db.prepare(
+      `INSERT INTO tasks
+         (workstream_id, local_id, title, status, impact, effort_days, created_at, updated_at)
+       VALUES ((SELECT id FROM workstreams WHERE name = 'ws'), ?, ?, ?, 50, 1, '2026-01-01', '2026-01-01')`,
+    );
+    for (const status of ["OPEN", "IN_PROGRESS", "CLOSED"]) {
+      expect(() => insert.run(status.toLowerCase(), status, status)).not.toThrow();
+    }
+    for (const status of ["REJECTED", "DEFERRED"]) {
+      expect(() => insert.run(status.toLowerCase(), status, status)).toThrow(/CHECK constraint/i);
+    }
+    db.close();
   });
 
   it("creates the ready/blocked/goals views", () => {

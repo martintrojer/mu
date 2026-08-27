@@ -90,10 +90,8 @@ export function getTaskEdges(db: Db, taskLocalId: string, workstream: string): T
  * status without an N+1 round-trip. Used by `mu task show` to split
  * "blocked by" (still-gating) from "satisfied" (already-CLOSED)
  * blockers, and the symmetric split on the dependents side
- * (task_show_blocked_by_renders_closed). The status is the neighbour's
- * full TaskStatus, not just OPEN/CLOSED — REJECTED/DEFERRED still
- * gate downstream work, so the renderer keeps them in the
- * still-gating bucket.
+ * (task_show_blocked_by_renders_closed). OPEN and IN_PROGRESS stay in
+ * the still-gating bucket; CLOSED is satisfied.
  */
 export function getTaskEdgesWithStatus(
   db: Db,

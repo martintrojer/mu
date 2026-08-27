@@ -427,9 +427,9 @@ describe("composeAgentTitle", () => {
     expect(composeAgentTitle(db, a)).toBe(`worker-a · ${STATUS_EMOJI.busy} · ⊕3 tasks`);
   });
 
-  it("excludes CLOSED / REJECTED / DEFERRED tasks from the count (live work view)", () => {
+  it("excludes CLOSED tasks from the count (live work view)", () => {
     insertAgent(db, { name: "worker-a", workstream: "ws", paneId: "%1", status: "busy" });
-    for (const id of ["live", "shipped", "wontdo"]) {
+    for (const id of ["live", "shipped"]) {
       addTask(db, { localId: id, workstream: "ws", title: id, impact: 50, effortDays: 1 });
       db.prepare(
         `UPDATE tasks SET owner_id = (SELECT id FROM agents WHERE name = 'worker-a')
@@ -437,7 +437,6 @@ describe("composeAgentTitle", () => {
       ).run(id);
     }
     db.prepare("UPDATE tasks SET status='CLOSED' WHERE local_id='shipped'").run();
-    db.prepare("UPDATE tasks SET status='REJECTED' WHERE local_id='wontdo'").run();
     const a = getAgent(db, "worker-a", "ws");
     if (!a) throw new Error();
     // Only 'live' is OPEN+owned → single-task form, not ⊕N.

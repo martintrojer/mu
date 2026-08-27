@@ -37,8 +37,8 @@ both. `--json` exists on every verb:
   `agent spawn` / `send` / `read` are not implemented yet (exit 5).
 - **task** — DAG node with mandatory `impact` (1–100) and
   `effort_days`. Status: `OPEN`, `IN_PROGRESS`, `CLOSED`
-  (satisfies `--blocked-by`), `REJECTED` (terminal won't-do; still
-  blocks), `DEFERRED` (parked; still blocks).
+  (satisfies `--blocked-by`). Record postponed/wont-do rationale as
+  task notes; close the task to satisfy blockers.
 - **claim / release** — atomic take/clear of `tasks.owner`.
 - **note** — append-only task context; survives sessions.
 - **track** — independent DAG subtree; don't spawn more agents than
@@ -243,8 +243,8 @@ git cherry-pick "$sha" && npm test
 - Qualified refs `<workstream>/<name>` skip `-w`; mismatched `-w`
   errors. Bare ambiguous names raise `NameAmbiguousError` (exit 4)
   with one-paste fixes.
-- `--evidence "text"` on task `claim` / `close` / `open` / `release`
-  (also `reject` / `defer`); recorded verbatim on the emitted op.
+- `--evidence "text"` on task `claim` / `close` / `open` / `release`;
+  recorded verbatim on the emitted op.
 - `--json` for composition; `nextSteps` survives.
 
 ## CLI overview (only gotchas; use `--help` for full syntax)
@@ -263,11 +263,10 @@ git cherry-pick "$sha" && npm test
 - **Tasks:** `add` (`--note` for initial context), `list`, `next`,
   `show`, `tree`, `notes`
   (`--tail`, `--since`, `--since-claim`), `note`, `claim`
-  (`--for | --self`), `release` (`--reopen` only for un-closing
-  terminal tasks), `close` (`--if-ready` no-ops until blockers
-  terminal), `open`, `reject`, `defer`, `block`, `unblock`,
-  `update`, `reparent`, `wait`, `delete --yes`. Edge direction:
-  `block <blocked> --by <blocker>`.
+  (`--for | --self`), `release` (`--reopen` to un-close a CLOSED task),
+  `close` (`--if-ready` no-ops until every blocker is CLOSED), `open`,
+  `block`, `unblock`, `update`, `reparent`, `wait`, `delete --yes`.
+  Edge direction: `block <blocked> --by <blocker>`.
 - **Self:** `mu me`, `mu me tasks`, `mu me next`.
 - **Workspace:** `create`, `list` (`behind`), `refresh`, `recreate`,
   `commits`, `free`, `path`, `orphans`.

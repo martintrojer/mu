@@ -3,7 +3,7 @@
 // claim   → CAS-style ownership transfer; dispatch via --for or
 //           anonymous --self (owner stays NULL, actor in agent_logs).
 // release → clears owner; auto-flips IN_PROGRESS → OPEN; --reopen
-//           forces OPEN from CLOSED/REJECTED/DEFERRED.
+//           forces OPEN from CLOSED.
 // wait    → polls until the listed tasks reach --status (default
 //           CLOSED). Exit 0 = met; exit 5 = timeout.
 //

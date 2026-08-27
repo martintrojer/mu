@@ -142,7 +142,7 @@ export function TracksPopup({
   // Resolve every task id in the focused track to a TaskRow when
   // we're in drill mode. Memoised on (track, db) so flipping
   // mode doesn't re-query SQLite needlessly. Sorted by status
-  // (READY/IN_PROGRESS first; CLOSED/REJECTED/DEFERRED last) so
+  // (IN_PROGRESS/OPEN first; CLOSED last) so
   // the "what's still actionable" view is at the top.
   const drillTasks = useMemo<TaskRow[]>(() => {
     if (mode !== "drill" || !focusedTrack) return [];
@@ -379,13 +379,9 @@ function statusRank(status: string): number {
       return 0;
     case "OPEN":
       return 1;
-    case "DEFERRED":
-      return 2;
-    case "REJECTED":
-      return 3;
     case "CLOSED":
-      return 4;
+      return 2;
     default:
-      return 5;
+      return 3;
   }
 }

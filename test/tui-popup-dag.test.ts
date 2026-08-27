@@ -53,8 +53,6 @@ function seedOnePerStatus(db: Db): void {
     ["open", "OPEN"],
     ["in_progress", "IN_PROGRESS"],
     ["closed", "CLOSED"],
-    ["rejected", "REJECTED"],
-    ["deferred", "DEFERRED"],
   ] as const) {
     addTask(db, { workstream: "demo", localId: id, title: id, impact: 50, effortDays: 1 });
     if (status !== "OPEN") setTaskStatus(db, id, status, { workstream: "demo" });
@@ -165,13 +163,11 @@ describe("DagPopup", () => {
 
     const body = buildDagBody(db, "demo", new Set(TASK_STATUSES));
 
-    expect(body.roots).toEqual(["closed", "deferred", "in_progress", "open", "rejected"]);
+    expect(body.roots).toEqual(["closed", "in_progress", "open"]);
     expect(body.body).toContain("open");
     expect(body.body).toContain("in_progress");
     expect(body.body).toContain("closed");
     expect(body.body).toContain("CLOSED");
-    expect(body.body).toContain("rejected");
-    expect(body.body).toContain("deferred");
   });
 
   it("pressing c hides CLOSED tasks from the DAG body", () => {
@@ -182,12 +178,10 @@ describe("DagPopup", () => {
 
     const body = buildDagBody(db, "demo", statuses);
 
-    expect(body.roots).toEqual(["deferred", "in_progress", "open", "rejected"]);
+    expect(body.roots).toEqual(["in_progress", "open"]);
     expect(body.body).not.toContain("closed");
     expect(body.body).toContain("open");
     expect(body.body).toContain("in_progress");
-    expect(body.body).toContain("rejected");
-    expect(body.body).toContain("deferred");
   });
 
   it("filter strip source reflects toggled status state", () => {

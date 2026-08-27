@@ -4,9 +4,8 @@
 // here. The CLI's `classifyError()` (src/cli.ts) maps them to exit codes:
 //   not found  → 3   (TaskNotFoundError)
 //   conflict   → 4   (TaskExistsError, TaskNotInWorkstreamError,
-//                     TaskAlreadyOwnedError, TaskHasOpenDependentsError,
-//                     ClaimerNotRegisteredError, CrossWorkstreamEdgeError,
-//                     TaskIdInvalidError)
+//                     TaskAlreadyOwnedError, ClaimerNotRegisteredError,
+//                     CrossWorkstreamEdgeError, TaskIdInvalidError)
 //   cycle      → 4   (CycleError — also a conflict)
 //
 // Each error implements HasNextSteps so the CLI can render a per-error
@@ -135,49 +134,6 @@ export class TaskAlreadyOwnedError extends Error implements HasNextSteps {
         command: `mu task release ${this.taskId}`,
       },
       { intent: "Show full task state", command: `mu task show ${this.taskId}` },
-    ];
-  }
-}
-
-/**
- * Thrown by `rejectTask` / `deferTask` when the target task has
- * dependents that are still OPEN or IN_PROGRESS. Rejecting or
- * deferring such a task would silently strand the dependents (they'd
- * remain blocked by a prereq that's never going to satisfy the edge),
- * so we refuse and force an explicit decision: pass `--cascade` to
- * apply the same status to every transitive dependent, drop the
- * blocking edge first with `mu task unblock`, or address the
- * dependents individually. Maps to exit code 4.
- */
-export class TaskHasOpenDependentsError extends Error implements HasNextSteps {
-  override readonly name = "TaskHasOpenDependentsError";
-  constructor(
-    public readonly taskId: string,
-    public readonly verb: "reject" | "defer",
-    public readonly dependents: readonly string[],
-  ) {
-    super(
-      `cannot ${verb} ${taskId}: ${dependents.length} open dependent(s) would be stranded (${dependents.slice(0, 5).join(", ")}${dependents.length > 5 ? ", …" : ""}). Pick one resolution and re-run.`,
-    );
-  }
-  errorNextSteps(): NextStep[] {
-    return [
-      {
-        intent: `Preview the cascade (lists dependents that would be ${this.verb}ed; --cascade alone is dry-run)`,
-        command: `mu task ${this.verb} ${this.taskId} --cascade`,
-      },
-      {
-        intent: `${this.verb.charAt(0).toUpperCase() + this.verb.slice(1)} the whole sub-tree (commit; rerun with --yes after previewing)`,
-        command: `mu task ${this.verb} ${this.taskId} --cascade --yes`,
-      },
-      {
-        intent: "Drop the blocking edge from a dependent first",
-        command: `mu task unblock <dep> --by ${this.taskId}`,
-      },
-      {
-        intent: "Address dependents individually first",
-        command: `mu task ${this.verb} <dep>`,
-      },
     ];
   }
 }

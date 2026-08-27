@@ -27,10 +27,8 @@ defined here, fix the doc. If you need a new term, add it here first.
 | **worker**            | An **agent** in its role-as-task-claimer. Synonym for the registered side of identity — a row in `agents`, owns tasks via the FK. | (when ambiguous, prefer **agent**)                 |
 | **actor**             | The party that *caused* a state change. May or may not be a registered worker. Recorded in `ops.actor` for every op. The orchestrator running mu from a top-level shell is an actor but not a worker. | "caller", "author" (only on notes)            |
 | **crew**              | *Informal* collective noun for the agents in a workstream                | (no API surface; prose only)                       |
-| **task**              | A node in the DAG. Has mandatory `impact` and `effort_days`. Status one of `OPEN`, `IN_PROGRESS`, `CLOSED`, `REJECTED`, `DEFERRED` (see **task status** below). | "issue", "ticket", "item"                          |
-| **task status**       | One of 5 states. **OPEN** = ready to be claimed; **IN_PROGRESS** = claimed and active; **CLOSED** = work completed (the only state that satisfies a `--blocked-by` edge); **REJECTED** = terminal 'won't do' (out of scope, duplicate, wontfix); **DEFERRED** = parked, may revisit. REJECTED and DEFERRED both still BLOCK downstream by design — only CLOSED unblocks. | "state"                                            |
-| **reject**            | Verb: stamp a task `REJECTED`. Refuses if open dependents would be stranded; pass `--cascade` to apply to the whole sub-tree. | "wontfix", "close as wontfix"                      |
-| **defer**             | Verb: stamp a task `DEFERRED`. Same stranded-dependent guard as reject. Reopen with `mu task open`. | "park", "snooze", "backlog"                        |
+| **task**              | A node in the DAG. Has mandatory `impact` and `effort_days`. Status one of `OPEN`, `IN_PROGRESS`, `CLOSED` (see **task status** below). | "issue", "ticket", "item"                          |
+| **task status**       | One of 3 states. **OPEN** = ready to be claimed; **IN_PROGRESS** = claimed and active; **CLOSED** = finished and the only state that satisfies a `--blocked-by` edge. Record postponed or won't-do rationale in a **note**, then close the task. | "state"                                            |
 | **task DAG** / **graph** | The directed acyclic graph of tasks. | "task list", "todo", "tree" (it's a DAG, not a tree) |
 | **edge**              | A `blocks` relationship between two tasks. The single edge type. `A blocks B` = A must close before B can start. | "dependency" (use only in prose)                   |
 | **track**             | An independent subtree of the DAG identified by parallel-track detection | "branch", "lane"                                   |
@@ -196,9 +194,9 @@ a cache; `mu agent list` reconciles on every call.
 | Verb                                  | Effect                                                |
 | ------------------------------------- | ----------------------------------------------------- |
 | `mu task add <id> ...`                | Creates a new OPEN task. `--note <text>` appends an initial note in the same transaction; `--note-author <name>` overrides the note author. |
-| `mu task close/open/reject/defer <id>` | Lifecycle transition                                 |
+| `mu task close/open <id>`             | Lifecycle transition                                 |
 | `mu task claim <task> [--for <agent>]`     | Atomic: sets `owner`, flips status to `IN_PROGRESS`   |
-| `mu task release <task>`              | Clears `owner`. Auto-flips `IN_PROGRESS` → `OPEN` (so the task re-enters the ready set); other statuses preserved. `--reopen` forces `OPEN` from `CLOSED`/`REJECTED`/`DEFERRED` |
+| `mu task release <task>`              | Clears `owner`. Auto-flips `IN_PROGRESS` → `OPEN` (so the task re-enters the ready set); `CLOSED` is preserved. `--reopen` forces `OPEN` from `CLOSED`. |
 | `mu task note <task> "..."`           | Appends to `task_notes`. Never edits prior notes.     |
 | `mu task notes <task> [--tail N \| --since <iso> \| --since-claim]` | List notes (oldest first). `--tail N` (alias `--last N`) prints last N; `--since <iso>` filters by `created_at`; `--since-claim` auto-resolves to the most recent `task claim` event timestamp. `--since` and `--since-claim` are mutually exclusive. |
 

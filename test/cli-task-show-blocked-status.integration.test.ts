@@ -5,12 +5,8 @@
 // blockers still gated the task vs which were already CLOSED (and thus
 // satisfied). The fix groups by status:
 //
-//   blocked by : <still-gating> [<COLOURED-STATUS>] (one of OPEN /
-//                IN_PROGRESS / REJECTED / DEFERRED — REJECTED and
-//                DEFERRED still gate downstream work per
-//                src/tasks/status.ts)
-//   satisfied  : <CLOSED entries> [CLOSED] (dimmed; line omitted when
-//                empty)
+//   blocked by : <still-gating> [<COLOURED-STATUS>] (OPEN / IN_PROGRESS)
+//   satisfied  : <CLOSED entries> [CLOSED] (dimmed; line omitted when empty)
 //   blocks     : <still-blocked dependents> [<STATUS>]
 //   no longer  : <CLOSED dependents> [CLOSED] (dimmed; symmetric)
 //
@@ -25,7 +21,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type Db, openDb } from "../src/db.js";
-import { addTask, closeTask, deferTask, rejectTask } from "../src/tasks.js";
+import { addTask, closeTask, setTaskStatus } from "../src/tasks.js";
 import { ensureWorkstream } from "../src/workstream.js";
 import { runCli } from "./_runCli.js";
 
@@ -97,32 +93,26 @@ describe("mu task show — blockers/dependents grouped by status", () => {
     expect(plain).toMatch(/satisfied {2}: done_a \[CLOSED\], done_b \[CLOSED\]/);
   });
 
-  it("mixed blockers: split into 'blocked by' (OPEN/REJECTED/DEFERRED) + 'satisfied' (CLOSED)", async () => {
-    // Set the four blockers' statuses BEFORE wiring `target` against
-    // them — rejectTask / deferTask refuse to terminal-park a task
-    // with open dependents, and we want a clean mixed-status seed.
+  it("mixed blockers: split into 'blocked by' (OPEN/IN_PROGRESS) + 'satisfied' (CLOSED)", async () => {
     addTask(db, { localId: "open_x", workstream: "wsx", title: "X", impact: 50, effortDays: 1 });
-    addTask(db, { localId: "rej_y", workstream: "wsx", title: "Y", impact: 50, effortDays: 1 });
-    addTask(db, { localId: "def_z", workstream: "wsx", title: "Z", impact: 50, effortDays: 1 });
+    addTask(db, { localId: "inprog_y", workstream: "wsx", title: "Y", impact: 50, effortDays: 1 });
     addTask(db, { localId: "done_w", workstream: "wsx", title: "W", impact: 50, effortDays: 1 });
     closeTask(db, "done_w", { workstream: "wsx" });
-    rejectTask(db, "rej_y", { workstream: "wsx" });
-    deferTask(db, "def_z", { workstream: "wsx" });
+    setTaskStatus(db, "inprog_y", "IN_PROGRESS", { workstream: "wsx" });
     addTask(db, {
       localId: "target",
       workstream: "wsx",
       title: "T",
       impact: 50,
       effortDays: 1,
-      blockedBy: ["open_x", "rej_y", "def_z", "done_w"],
+      blockedBy: ["open_x", "inprog_y", "done_w"],
     });
 
     const { stdout, exitCode } = await runCli(["task", "show", "target", "-w", "wsx"], dbPath);
     expect(exitCode).toBeNull();
     const plain = stripAnsi(stdout);
-    // REJECTED + DEFERRED still gate downstream work per
-    // src/tasks/status.ts; they live in 'blocked by', not 'satisfied'.
-    expect(plain).toMatch(/blocked by : def_z \[DEFERRED\], open_x \[OPEN\], rej_y \[REJECTED\]/);
+    // OPEN and IN_PROGRESS gate downstream work; only CLOSED is satisfied.
+    expect(plain).toMatch(/blocked by : inprog_y \[IN_PROGRESS\], open_x \[OPEN\]/);
     expect(plain).toMatch(/satisfied {2}: done_w \[CLOSED\]/);
   });
 

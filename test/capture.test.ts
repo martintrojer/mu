@@ -17,7 +17,7 @@ import { nextHlc, parseHlc } from "../src/hlc.js";
 import { currentOpContext, withCaptureSuppressed, withOpContext } from "../src/op-context.js";
 import { addBlockEdge, removeBlockEdge, reparentTask } from "../src/tasks/edges.js";
 import { addNote, addTask, deleteTask, updateTask } from "../src/tasks/edit.js";
-import { closeTask, openTask, rejectTask, setTaskStatus } from "../src/tasks/lifecycle.js";
+import { closeTask, openTask, setTaskStatus } from "../src/tasks/lifecycle.js";
 import { destroyWorkstream, ensureWorkstream } from "../src/workstream.js";
 import { rmFixtureDir } from "./_fs.js";
 
@@ -453,25 +453,19 @@ describe("op capture (triggers)", () => {
   // ─── grouping ───────────────────────────────────────────────────────
 
   describe("group_id", () => {
-    it("a cascade reject puts every affected task's ops under ONE group", () => {
+    it("a close puts its ops under ONE group", () => {
       ensureWorkstream(db, "demo");
       seedTask("root");
-      seedTask("mid");
-      seedTask("leaf");
-      // root <- mid <- leaf (each blocked by the previous)
-      addBlockEdge(db, "demo", "mid", "root");
-      addBlockEdge(db, "demo", "leaf", "mid");
       clearOps();
 
-      const result = rejectTask(db, "root", { workstream: "demo", cascade: true, yes: true });
-      expect(result.changedIds.length).toBeGreaterThan(1);
+      const result = closeTask(db, "root", { workstream: "demo" });
+      expect(result.changed).toBe(true);
 
       const rows = ops("task");
-      expect(rows.length).toBe(result.changedIds.length);
+      expect(rows.length).toBe(1);
       const groups = new Set(rows.map((r) => r.group_id));
       expect(groups.size).toBe(1);
-      // And the label is the operator's verb, not the inner mechanism.
-      for (const row of rows) expect(row.intent).toBe("task.reject");
+      for (const row of rows) expect(row.intent).toBe("task.close");
     });
 
     it("a workstream destroy groups the whole cascade as one unit", async () => {

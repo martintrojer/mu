@@ -257,7 +257,7 @@ describe("TASK_STATUS_LIST mirrors every TaskStatus", () => {
     // but the LIST helper isn't kept in sync, every CLI surface that
     // names statuses (--help, error messages, --status validators)
     // will silently lie. Guard rail against that.
-    expect(TASK_STATUS_LIST).toBe("OPEN | IN_PROGRESS | CLOSED | REJECTED | DEFERRED");
+    expect(TASK_STATUS_LIST).toBe("OPEN | IN_PROGRESS | CLOSED");
   });
 });
 
@@ -268,8 +268,6 @@ describe("inkColorForStatus", () => {
     expect(inkColorForStatus("OPEN")).toBe("cyan");
     expect(inkColorForStatus("IN_PROGRESS")).toBe("yellow");
     expect(inkColorForStatus("CLOSED")).toBe("green");
-    expect(inkColorForStatus("REJECTED")).toBe("red");
-    expect(inkColorForStatus("DEFERRED")).toBe("gray");
   });
 });
 

@@ -36,7 +36,7 @@ describe("useStatusFilter helpers", () => {
 
   it("default status set is all-on", () => {
     const statuses = new Set(TASK_STATUSES);
-    expect([...statuses]).toEqual(["OPEN", "IN_PROGRESS", "CLOSED", "REJECTED", "DEFERRED"]);
+    expect([...statuses]).toEqual(["OPEN", "IN_PROGRESS", "CLOSED"]);
   });
 
   it("toggle removes an enabled status then adds it back", () => {
@@ -60,8 +60,6 @@ describe("useStatusFilter helpers", () => {
       o: "OPEN",
       i: "IN_PROGRESS",
       c: "CLOSED",
-      r: "REJECTED",
-      d: "DEFERRED",
     });
     expect(statusForToggleKey("o", {})).toBe("OPEN");
     expect(statusForToggleKey("O", {})).toBe("OPEN");
@@ -77,19 +75,15 @@ describe("StatusFilterStrip", () => {
     expect(text).toContain("[O]pen ●");
     expect(text).toContain("[I]n_progress ●");
     expect(text).toContain("[C]losed ●");
-    expect(text).toContain("[R]ejected ●");
-    expect(text).toContain("[D]eferred ●");
   });
 
   it("renders disabled statuses with open-circle indicators", () => {
     const statuses = new Set(TASK_STATUSES);
     statuses.delete("CLOSED");
-    statuses.delete("REJECTED");
 
     const text = stripAnsi(renderToString(StatusFilterStrip({ statuses })));
 
     expect(text).toContain("[C]losed ○");
-    expect(text).toContain("[R]ejected ○");
     expect(text).toContain("[O]pen ●");
   });
 

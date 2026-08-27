@@ -215,17 +215,15 @@ describe("BlockedCard pure helpers", () => {
     expect(glyphFor.length).toBe(0);
   });
 
-  it("stillGating: drops CLOSED blockers; keeps OPEN/IN_PROGRESS/REJECTED/DEFERRED", () => {
+  it("stillGating: drops CLOSED blockers; keeps OPEN/IN_PROGRESS", () => {
     const blockers: TaskEdgeWithStatus[] = [
       { name: "a", status: "CLOSED" },
       { name: "b", status: "OPEN" },
       { name: "c", status: "IN_PROGRESS" },
-      { name: "d", status: "REJECTED" },
-      { name: "e", status: "DEFERRED" },
       { name: "f", status: "CLOSED" },
     ];
     const out = stillGating(blockers);
-    expect(out.map((b) => b.name)).toEqual(["b", "c", "d", "e"]);
+    expect(out.map((b) => b.name)).toEqual(["b", "c"]);
   });
 
   it("stillGating: empty input → empty output (no crash)", () => {

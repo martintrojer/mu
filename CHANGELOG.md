@@ -10,6 +10,19 @@ breaking changes are called out under "Breaking" in each entry.
 
 ## [Unreleased]
 
+### Breaking
+
+- **Three-state task lifecycle (schema v10).** `REJECTED` and `DEFERRED`
+  task statuses are removed. Only `OPEN`, `IN_PROGRESS`, and `CLOSED`
+  remain. `mu task reject` and `mu task defer` are deleted. Use task
+  notes (`mu task note <id> "won't do: ..."`) to record rationale;
+  close the task to satisfy blocked-by edges. Pre-v10 databases are
+  refused at startup with `SchemaTooOldError` (exit 4); no migration
+  ladder is provided — export before upgrading if history is needed.
+  The SDK no longer exports `rejectTask`, `deferTask`,
+  `RejectDeferOptions`, `RejectDeferResult`, or
+  `TaskHasOpenDependentsError`.
+
 ### Changed
 
 - **`mu agent ensure`, `poll`, `reap-idle`, `free`, and `attach` removed

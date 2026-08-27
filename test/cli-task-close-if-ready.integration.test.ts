@@ -1,11 +1,11 @@
 // CLI tests for `mu task close --if-ready` (fb_umbrella_no_auto_close).
 //
 // The dogfood report: built a wave umbrella with 18 blockers; after
-// every blocker reached CLOSED/DEFERRED, the umbrella stayed OPEN
-// (had to remember to close manually). `--if-ready` is the cheap
-// fix: bare `mu task close` is unchanged, `--if-ready` no-ops unless
-// every direct blocker is in a terminal status (CLOSED / REJECTED /
-// DEFERRED) and lists the still-blocking ids when it skips.
+// every blocker reached CLOSED, the umbrella stayed OPEN (had to
+// remember to close manually). `--if-ready` is the cheap fix: bare
+// `mu task close` is unchanged, `--if-ready` no-ops unless every
+// direct blocker is CLOSED and lists the still-blocking ids when it
+// skips.
 //
 // We exercise the wired CLI via runCli (real SQLite + buildProgram)
 // so the assertions cover the JSON shape the orchestrator depends on
@@ -16,7 +16,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { openDb } from "../src/db.js";
-import { addTask, closeTask, getTask, setTaskStatus } from "../src/tasks.js";
+import { addTask, closeTask, getTask } from "../src/tasks.js";
 import { ensureWorkstream } from "../src/workstream.js";
 import { runCli } from "./_runCli.js";
 
@@ -66,7 +66,7 @@ describe("mu task close --if-ready", () => {
     check.close();
   });
 
-  it("closes when every blocker is in a terminal status (CLOSED / REJECTED / DEFERRED)", async () => {
+  it("closes when every blocker is CLOSED", async () => {
     const seed = openDb({ path: dbPath });
     for (const id of ["a", "b", "c"]) {
       addTask(seed, {
@@ -85,14 +85,9 @@ describe("mu task close --if-ready", () => {
       effortDays: 1,
       blockedBy: ["a", "b", "c"],
     });
-    // a CLOSED, b REJECTED, c DEFERRED: every terminal status counts.
-    // setTaskStatus is the no-guards path — it skips the
-    // open-dependent check that rejectTask / deferTask enforce. We
-    // exercise that guard separately; here we just want the umbrella
-    // to face three different terminal blocker statuses.
     closeTask(seed, "a", { workstream: "test" });
-    setTaskStatus(seed, "b", "REJECTED", { workstream: "test" });
-    setTaskStatus(seed, "c", "DEFERRED", { workstream: "test" });
+    closeTask(seed, "b", { workstream: "test" });
+    closeTask(seed, "c", { workstream: "test" });
     seed.close();
 
     const r = await runCli(

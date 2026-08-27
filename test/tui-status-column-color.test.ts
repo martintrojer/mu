@@ -85,7 +85,5 @@ describe("TUI status column colours", () => {
     expect(inkColorForStatus("OPEN")).toBe("cyan");
     expect(inkColorForStatus("IN_PROGRESS")).toBe("yellow");
     expect(inkColorForStatus("CLOSED")).toBe("green");
-    expect(inkColorForStatus("REJECTED")).toBe("red");
-    expect(inkColorForStatus("DEFERRED")).toBe("gray");
   });
 });

@@ -1,10 +1,7 @@
 // mu — `mu task` lifecycle verbs (status transitions).
 //
-// close / open / reject / defer + the cascade preview helper. Each
-// snapshots the DB before mutating (via the SDK closeTask / openTask
-// / etc.); --cascade is dry-run by default and requires --yes to
-// commit (the deliberate friction; surfaced live by
-// bug_cascade_reject_too_aggressive).
+// close / open. Each delegates to the SDK; changes are captured as ops
+// and optionally reported as evidence notes.
 //
 // Extracted from src/cli/tasks.ts as part of refactor_split_large_src_files.
 
@@ -14,18 +11,10 @@ import {
   emitJson,
   resolveEntityRef,
   resolveWorkstream,
-  UsageError,
 } from "../../cli.js";
 import type { Db } from "../../db.js";
 import { type NextStep, pc, printNextSteps } from "../../output.js";
-import {
-  closeTask,
-  deferTask,
-  getTask,
-  openTask,
-  rejectTask,
-  resolveActorIdentity,
-} from "../../tasks.js";
+import { closeTask, getTask, openTask, resolveActorIdentity } from "../../tasks.js";
 import { backendByName } from "../../vcs.js";
 import { getWorkspaceForAgent } from "../../workspace.js";
 
@@ -172,138 +161,5 @@ export async function cmdTaskOpen(
   const ev = opts.evidence ? pc.dim(`  evidence: ${opts.evidence}`) : "";
   console.log(`Reopened ${pc.bold(localId)} ${pc.dim(`(${r.previousStatus} → ${r.status})`)}`);
   if (ev) console.log(ev);
-  printNextSteps(nextSteps);
-}
-
-// ─── reject / defer (terminal-but-blocking transitions) ────────────────
-
-interface RejectDeferOpts {
-  evidence?: string;
-  cascade?: boolean;
-  yes?: boolean;
-  workstream?: string;
-  json?: boolean;
-}
-
-export async function cmdTaskReject(
-  db: Db,
-  localId: string,
-  opts: RejectDeferOpts = {},
-): Promise<void> {
-  return cmdTaskRejectOrDefer(db, localId, "reject", opts);
-}
-
-export async function cmdTaskDefer(
-  db: Db,
-  localId: string,
-  opts: RejectDeferOpts = {},
-): Promise<void> {
-  return cmdTaskRejectOrDefer(db, localId, "defer", opts);
-}
-
-export async function cmdTaskRejectOrDefer(
-  db: Db,
-  rawId: string,
-  verb: "reject" | "defer",
-  opts: RejectDeferOpts,
-): Promise<void> {
-  const { name: localId } = await resolveEntityRef(db, rawId, opts, "task");
-  assertTaskInWorkstream(db, localId, opts.workstream);
-  const ws = await resolveWorkstream(opts.workstream);
-  if (opts.yes && !opts.cascade) {
-    throw new UsageError(
-      `--yes requires --cascade (--yes only meaningful when committing a cascade preview; for single-task ${verb}, --yes is a no-op)`,
-    );
-  }
-  const sdkOpts: { evidence?: string; cascade?: boolean; yes?: boolean; workstream: string } = {
-    workstream: ws,
-  };
-  if (opts.evidence !== undefined) sdkOpts.evidence = opts.evidence;
-  if (opts.cascade) sdkOpts.cascade = true;
-  if (opts.yes) sdkOpts.yes = true;
-  const r = verb === "reject" ? rejectTask(db, localId, sdkOpts) : deferTask(db, localId, sdkOpts);
-  // Title push for every affected task's owner (the verb compresses
-  // potentially-multi-task work; refresh each owner once). Skipped
-  // on dry-run since nothing changed.
-  if (r.changed) {
-    const owners = new Set<string>();
-    for (const id of r.changedIds) {
-      const t = getTask(db, id, ws);
-      if (t?.ownerName) owners.add(t.ownerName);
-    }
-    for (const owner of owners) await refreshAgentTitle(db, owner, ws);
-  }
-  const past = verb === "reject" ? "Rejected" : "Deferred";
-  const status = verb === "reject" ? "REJECTED" : "DEFERRED";
-
-  // Cascade dry-run: render the affected list with each task's
-  // current status + title so the operator can spot 'wait, that
-  // dependent has independent merit, I want to keep it'. Surfaced
-  // in mufeedback bug_cascade_reject_too_aggressive.
-  if (r.dryRun) {
-    if (opts.json) {
-      emitJson({
-        taskName: localId,
-        ...r,
-        nextSteps: [
-          {
-            intent: "Commit the cascade after reviewing the list",
-            command: `mu task ${verb} ${localId} --cascade --yes -w ${ws}`,
-          },
-          {
-            intent: "Address one dependent first, then re-preview",
-            command: `mu task ${verb} <dep> -w ${ws}`,
-          },
-        ],
-      });
-      return;
-    }
-    console.log(
-      `${past === "Rejected" ? "Reject" : "Defer"} ${pc.bold(localId)} would sweep ${r.affectedIds.length} task(s) (root + ${r.affectedIds.length - 1} dependent(s)):`,
-    );
-    for (const id of r.affectedIds) {
-      const t = getTask(db, id, ws);
-      const title = t ? (t.title.length > 50 ? `${t.title.slice(0, 49)}…` : t.title) : "?";
-      const marker = id === localId ? pc.bold("  *") : "   ";
-      console.log(`${marker} ${pc.bold(id)}  ${pc.dim(title)}`);
-    }
-    console.log("");
-    console.log(pc.dim("(dry-run; rerun with --yes to actually sweep)"));
-    printNextSteps([
-      {
-        intent: "Commit the cascade after reviewing the list",
-        command: `mu task ${verb} ${localId} --cascade --yes -w ${ws}`,
-      },
-      {
-        intent: "Address one dependent first, then re-preview",
-        command: `mu task ${verb} <dep> -w ${ws}`,
-      },
-    ]);
-    return;
-  }
-
-  const nextSteps: NextStep[] = [
-    { intent: "Reopen if reconsidered", command: `mu task open ${localId} -w ${ws}` },
-    { intent: "See full state", command: `mu state -w ${ws}` },
-  ];
-  if (opts.json) {
-    emitJson({ taskName: localId, ...r, nextSteps });
-    return;
-  }
-  if (!r.changed) {
-    console.log(pc.dim(`${localId} already ${status} (no-op)`));
-    printNextSteps(nextSteps);
-    return;
-  }
-  console.log(`${past} ${pc.bold(localId)} ${pc.dim(`(→ ${status})`)}`);
-  if (opts.evidence) console.log(pc.dim(`  evidence: ${opts.evidence}`));
-  if (r.changedIds.length > 1) {
-    const cascaded = r.changedIds.slice(1);
-    console.log(
-      pc.dim(
-        `  cascaded to ${cascaded.length} dependent(s): ${cascaded.slice(0, 8).join(", ")}${cascaded.length > 8 ? ", …" : ""}`,
-      ),
-    );
-  }
   printNextSteps(nextSteps);
 }

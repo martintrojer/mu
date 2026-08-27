@@ -1,7 +1,7 @@
 // All-tasks popup (`t`). Keybind-only; no dashboard card slot.
 //
 // Read-only list/sort complement to the DAG popup: every task in the
-// active workstream, filtered by task status (o/i/c/r/d), sorted by
+// active workstream, filtered by task status (o/i/c), sorted by
 // `s` through the same sort keys as `mu task list --sort`, Enter drills
 // into TaskDetailDrill, and `y` yanks `mu task show <id>`.
 

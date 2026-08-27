@@ -100,8 +100,6 @@ describe("loadFullDag status filter", () => {
       ["open", "OPEN"],
       ["in_progress", "IN_PROGRESS"],
       ["closed", "CLOSED"],
-      ["rejected", "REJECTED"],
-      ["deferred", "DEFERRED"],
     ] as const) {
       addTaskWithStatus(db, id, status);
     }

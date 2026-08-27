@@ -15,7 +15,7 @@ import { type Db, openDb } from "../src/db.js";
 import { checkDrift } from "../src/drift.js";
 import { addBlockEdge } from "../src/tasks/edges.js";
 import { addNote, addTask, deleteTask, updateTask } from "../src/tasks/edit.js";
-import { closeTask, rejectTask } from "../src/tasks/lifecycle.js";
+import { closeTask } from "../src/tasks/lifecycle.js";
 import {
   listRecentGroups,
   mostRecentGroup,
@@ -130,27 +130,6 @@ describe("undo", () => {
   // ─── the group cases ─────────────────────────────────────────────────
 
   describe("undoing a multi-row group", () => {
-    it("reopens EVERY task in a cascade reject, as one unit", () => {
-      ensureWorkstream(db, "demo");
-      for (const id of ["root", "mid", "leaf"]) {
-        addTask(db, { workstream: "demo", localId: id, title: id, impact: 50, effortDays: 1 });
-      }
-      addBlockEdge(db, "demo", "mid", "root");
-      addBlockEdge(db, "demo", "leaf", "mid");
-      const swept = rejectTask(db, "root", { workstream: "demo", cascade: true, yes: true });
-      expect(swept.changedIds.length).toBeGreaterThan(1);
-      for (const id of ["root", "mid", "leaf"]) {
-        expect(task(id)?.status).toBe("REJECTED");
-      }
-
-      const result = undoGroup(db, groupFor("task.reject"));
-      expect(result.applied).toBe(3);
-      for (const id of ["root", "mid", "leaf"]) {
-        expect(task(id)?.status, `${id} should be reopened`).toBe("OPEN");
-      }
-      expectNoDrift();
-    });
-
     it("undoes a cascade close", () => {
       seed();
       addBlockEdge(db, "demo", "b", "a");
@@ -423,7 +402,7 @@ describe("undo", () => {
       for (const id of ["x", "y", "z"]) {
         addTask(db, { workstream: "demo", localId: id, title: id, impact: 50, effortDays: 1 });
       }
-      rejectTask(db, "x", { workstream: "demo" });
+      closeTask(db, "x", { workstream: "demo" });
       const group = listRecentGroups(db, 1)[0];
       expect(group?.ops).toBe(1);
     });

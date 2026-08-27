@@ -32,7 +32,6 @@ import {
   addTask,
   claimTask,
   closeTask,
-  deferTask,
   deleteTask,
   getTask,
   getTaskEdges,
@@ -41,7 +40,6 @@ import {
   listTasksByOwner,
   listTasksByOwnerCrossWorkstream,
   openTask,
-  rejectTask,
   releaseTask,
   setTaskStatus,
   updateTask,
@@ -178,16 +176,10 @@ describe("v5 name-clash regression: lifecycle verbs scope correctly", () => {
     expect(getTask(db, "design", "wsb")?.status).toBe("OPEN");
   });
 
-  it("rejectTask({ workstream }) scopes correctly", () => {
-    rejectTask(db, "design", { workstream: "wsa" });
-    expect(getTask(db, "design", "wsa")?.status).toBe("REJECTED");
+  it("closeTask({ workstream }) scopes correctly", () => {
+    closeTask(db, "design", { workstream: "wsa" });
+    expect(getTask(db, "design", "wsa")?.status).toBe("CLOSED");
     expect(getTask(db, "design", "wsb")?.status).toBe("OPEN");
-  });
-
-  it("deferTask({ workstream }) scopes correctly", () => {
-    deferTask(db, "design", { workstream: "wsb" });
-    expect(getTask(db, "design", "wsa")?.status).toBe("OPEN");
-    expect(getTask(db, "design", "wsb")?.status).toBe("DEFERRED");
   });
 });
 

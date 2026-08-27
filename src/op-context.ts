@@ -49,10 +49,9 @@ export interface OpContext {
    * For shared internals that several public verbs funnel through.
    * `setTaskStatus` is the motivating case: called directly it is the
    * operator's action and should label itself, but called from
-   * `closeTask` / `rejectTask` / a cascade sweep the OUTER verb is the
-   * operator-meaningful label and must win. Without this, the inner
-   * call would relabel every cascaded op `task.closed` and `mu log`
-   * would report the mechanism instead of the intent.
+   * `closeTask` the OUTER verb is the operator-meaningful label and
+   * must win. Without this, the inner call would report the mechanism
+   * instead of the intent.
    *
    * Ignored when `intent` is also provided.
    */

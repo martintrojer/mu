@@ -189,7 +189,7 @@ describe("StatusBar", () => {
     expect(text).toContain("drill");
     expect(text).toContain("j/k");
     expect(text).toContain("scroll");
-    expect(text).toContain("o/i/c/r/d");
+    expect(text).toContain("o/i/c");
     expect(text).toContain("filter");
     expect(text).toContain("y");
     expect(text).toContain("yank");
@@ -212,7 +212,7 @@ describe("StatusBar", () => {
     expect(text).toContain("All tasks");
     expect(text).toContain("j/k");
     expect(text).toContain("nav");
-    expect(text).toContain("o/i/c/r/d");
+    expect(text).toContain("o/i/c");
     expect(text).toContain("filter");
     expect(text).toContain("s");
     expect(text).toContain("sort");

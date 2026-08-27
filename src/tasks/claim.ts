@@ -41,9 +41,9 @@ export interface ReleaseTaskOptions extends EvidenceOption {
   /** Force `status = OPEN` regardless of the current status. Without
    *  this flag, `IN_PROGRESS` is also flipped to `OPEN` automatically
    *  (so a released task isn't left structurally stranded with
-   *  `owner=NULL, status=IN_PROGRESS`); CLOSED / REJECTED / DEFERRED
-   *  are preserved. `--reopen` is the override for the rarer "un-
-   *  close and hand back to the pool" workflow. */
+   *  `owner=NULL, status=IN_PROGRESS`); CLOSED is preserved.
+   *  `--reopen` is the override for the rarer "un-close and hand
+   *  back to the pool" workflow. */
   reopen?: boolean;
 }
 
@@ -54,7 +54,7 @@ export interface ReleaseTaskOptions extends EvidenceOption {
  *   - IN_PROGRESS → OPEN automatically (without it, the task is
  *     stranded: no owner to drive it forward, but `mu task next`
  *     skips it because it's not OPEN).
- *   - OPEN / CLOSED / REJECTED / DEFERRED preserved.
+ *   - OPEN / CLOSED preserved.
  *   - `--reopen` forces OPEN regardless of current status — the
  *     escape hatch for un-closing a CLOSED owned task in one verb.
  *
@@ -74,7 +74,7 @@ function releaseTaskImpl(db: Db, localId: string, opts: ReleaseTaskOptions): Rel
 
   // Default: auto-flip IN_PROGRESS → OPEN so the released task isn't
   // left in the structurally weird owner=NULL/IN_PROGRESS limbo.
-  // --reopen still wins for any status (CLOSED / REJECTED / DEFERRED).
+  // --reopen still wins for any status (including CLOSED).
   const newStatus: TaskStatus = opts.reopen
     ? "OPEN"
     : before.status === "IN_PROGRESS"

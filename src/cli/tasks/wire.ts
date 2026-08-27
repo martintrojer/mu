@@ -30,7 +30,7 @@ import {
   cmdTaskUpdate,
   resolveNoteText,
 } from "./edit.js";
-import { cmdTaskClose, cmdTaskDefer, cmdTaskOpen, cmdTaskReject } from "./lifecycle.js";
+import { cmdTaskClose, cmdTaskOpen } from "./lifecycle.js";
 import { cmdTaskList, cmdTaskNext, cmdTaskOwnedBy } from "./queries.js";
 import { cmdTaskTree } from "./tree.js";
 
@@ -263,11 +263,11 @@ export function wireTaskCommands(program: Command): void {
   task
     .command("close <id>")
     .description(
-      "Mark a task CLOSED (idempotent). --if-ready no-ops unless every blocker is in a terminal status (CLOSED / REJECTED / DEFERRED) — the umbrella-on-wave-done pattern.",
+      "Mark a task CLOSED (idempotent). --if-ready no-ops unless every blocker is CLOSED — the umbrella-on-wave-done pattern.",
     )
     .option(
       "--if-ready",
-      "only close when every blocker is terminal (CLOSED / REJECTED / DEFERRED); otherwise no-op + list the still-blocking ids",
+      "only close when every blocker is CLOSED; otherwise no-op + list the still-blocking ids",
     )
     .option(...WORKSTREAM_OPT)
     .option(...EVIDENCE_OPT)
@@ -298,57 +298,9 @@ export function wireTaskCommands(program: Command): void {
     });
 
   task
-    .command("reject <id>")
-    .description(
-      "Mark a task REJECTED — terminal 'won't do' (out of scope, duplicate, wontfix). Refuses if open dependents would be stranded; --cascade previews the sub-tree (dry-run by default), --cascade --yes commits.",
-    )
-    .option(
-      "--cascade",
-      "include every transitive open/in-progress dependent (dry-run; pass --yes to commit)",
-    )
-    .option("-y, --yes", "actually sweep the cascade preview (no-op without --cascade)")
-    .option(...WORKSTREAM_OPT)
-    .option(...EVIDENCE_OPT)
-    .option(...JSON_OPT)
-    .action(function (id: string) {
-      const opts = (this as Command).opts() as {
-        cascade?: boolean;
-        yes?: boolean;
-        evidence?: string;
-        workstream?: string;
-        json?: boolean;
-      };
-      return handle((db) => cmdTaskReject(db, id, opts), this as Command)();
-    });
-
-  task
-    .command("defer <id>")
-    .description(
-      "Mark a task DEFERRED — parked, may revisit. Like reject, doesn't satisfy a blocked-by edge; refuses if open dependents would be stranded; --cascade previews the sub-tree (dry-run by default), --cascade --yes commits.",
-    )
-    .option(
-      "--cascade",
-      "include every transitive open/in-progress dependent (dry-run; pass --yes to commit)",
-    )
-    .option("-y, --yes", "actually sweep the cascade preview (no-op without --cascade)")
-    .option(...WORKSTREAM_OPT)
-    .option(...EVIDENCE_OPT)
-    .option(...JSON_OPT)
-    .action(function (id: string) {
-      const opts = (this as Command).opts() as {
-        cascade?: boolean;
-        yes?: boolean;
-        evidence?: string;
-        workstream?: string;
-        json?: boolean;
-      };
-      return handle((db) => cmdTaskDefer(db, id, opts), this as Command)();
-    });
-
-  task
     .command("release <id>")
     .description(
-      "Clear a task's owner. IN_PROGRESS auto-flips to OPEN so the task re-enters the ready set; other statuses preserved. Use --reopen to force OPEN from CLOSED/REJECTED/DEFERRED. Idempotent.",
+      "Clear a task's owner. IN_PROGRESS auto-flips to OPEN so the task re-enters the ready set; other statuses preserved. Use --reopen to force OPEN from CLOSED. Idempotent.",
     )
     .option(
       "--reopen",

@@ -26,16 +26,6 @@ describe("Tasks popup yank matrix", () => {
       expected: "mu task open task_closed -w tui-impl",
     },
     {
-      label: "REJECTED → open",
-      task: { name: "task_rejected", status: "REJECTED", ownerName: "worker-1" },
-      expected: "mu task open task_rejected -w tui-impl",
-    },
-    {
-      label: "DEFERRED → open",
-      task: { name: "task_deferred", status: "DEFERRED", ownerName: null },
-      expected: "mu task open task_deferred -w tui-impl",
-    },
-    {
       label: "unknown → null",
       task: { name: "task_unknown", status: "SOMETHING_ELSE", ownerName: null },
       expected: null,

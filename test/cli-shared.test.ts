@@ -127,11 +127,11 @@ describe("parseStatusesOption", () => {
     expect(parseStatusesOption(["OPEN", "CLOSED"])).toEqual(["OPEN", "CLOSED"]);
   });
 
-  it("mixed form: ['OPEN,CLOSED','REJECTED'] → ['OPEN','CLOSED','REJECTED']", () => {
-    expect(parseStatusesOption(["OPEN,CLOSED", "REJECTED"])).toEqual([
-      "OPEN",
+  it("mixed form: ['IN_PROGRESS,CLOSED','OPEN'] → ['IN_PROGRESS','CLOSED','OPEN']", () => {
+    expect(parseStatusesOption(["IN_PROGRESS,CLOSED", "OPEN"])).toEqual([
+      "IN_PROGRESS",
       "CLOSED",
-      "REJECTED",
+      "OPEN",
     ]);
   });
 

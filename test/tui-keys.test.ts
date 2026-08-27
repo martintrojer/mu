@@ -336,8 +336,6 @@ describe("DAG popup status-toggle key classifier", () => {
     ["o", "OPEN"],
     ["i", "IN_PROGRESS"],
     ["c", "CLOSED"],
-    ["r", "REJECTED"],
-    ["d", "DEFERRED"],
   ] as const)("%s toggles %s", (input, status) => {
     expect(statusForToggleKey(input, NO_KEY)).toBe(status);
   });

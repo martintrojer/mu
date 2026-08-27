@@ -68,7 +68,6 @@ export {
   TaskAlreadyOwnedError,
   TaskClaimStaleWorkspaceError,
   TaskExistsError,
-  TaskHasOpenDependentsError,
   TaskIdInvalidError,
   TaskNotFoundError,
   TaskNotInWorkstreamError,
@@ -87,13 +86,9 @@ export {
   type CloseSkippedResult,
   type CloseTaskOptions,
   closeTask,
-  deferTask,
   type EvidenceOption,
   evidenceSuffix,
   openTask,
-  type RejectDeferOptions,
-  type RejectDeferResult,
-  rejectTask,
   type SetStatusResult,
   setTaskStatus,
 } from "./tasks/lifecycle.js";
@@ -116,7 +111,6 @@ export {
 } from "./tasks/queries.js";
 export {
   isTaskStatus,
-  STATUSES_TERMINAL_OR_PARKED,
   TASK_STATUS_LIST,
   TASK_STATUSES,
   type TaskStatus,

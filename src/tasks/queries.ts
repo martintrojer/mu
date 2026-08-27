@@ -262,13 +262,11 @@ export function listTasksByOwner(
   owner: string,
   opts: { includeClosed?: boolean } = {},
 ): TaskRow[] {
-  // 'Live work' = not in any terminal-or-parked state. CLOSED is the
-  // obvious one; REJECTED and DEFERRED are also off the agent's plate
-  // (the user has decided 'won't do' or 'not now'). includeClosed
-  // re-includes ALL of those so historical attribution is recoverable.
+  // 'Live work' = not CLOSED. includeClosed re-includes CLOSED tasks
+  // so historical attribution is recoverable.
   // Filter on the joined ag.name so the operator-facing owner string
   // still drives the lookup; FK is now via owner_id.
-  const filter = opts.includeClosed ? "" : "AND t.status NOT IN ('CLOSED', 'REJECTED', 'DEFERRED')";
+  const filter = opts.includeClosed ? "" : "AND t.status <> 'CLOSED'";
   const wsId = tryResolveWorkstreamId(db, workstream);
   if (wsId === null) return [];
   const sql = `SELECT ${SELECT_TASK_COLS} ${TASK_FROM_JOIN}
@@ -290,7 +288,7 @@ export function listTasksByOwnerCrossWorkstream(
   owner: string,
   opts: { includeClosed?: boolean } = {},
 ): TaskRow[] {
-  const filter = opts.includeClosed ? "" : "AND t.status NOT IN ('CLOSED', 'REJECTED', 'DEFERRED')";
+  const filter = opts.includeClosed ? "" : "AND t.status <> 'CLOSED'";
   const sql = `SELECT ${SELECT_TASK_COLS} ${TASK_FROM_JOIN}
                WHERE ag.name = ? ${filter}
                ORDER BY ws.name, t.local_id`;

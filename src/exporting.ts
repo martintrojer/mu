@@ -228,8 +228,6 @@ export function renderSourceReadmeMarkdown(
     OPEN: 0,
     IN_PROGRESS: 0,
     CLOSED: 0,
-    REJECTED: 0,
-    DEFERRED: 0,
   };
   for (const t of tasks) counts[t.status] = (counts[t.status] ?? 0) + 1;
   const lines: string[] = [];
@@ -238,7 +236,7 @@ export function renderSourceReadmeMarkdown(
   lines.push(`Exported at: ${exportedAt}`);
   lines.push("");
   lines.push(`- Tasks: ${tasks.length}`);
-  for (const status of ["OPEN", "IN_PROGRESS", "CLOSED", "REJECTED", "DEFERRED"] as const) {
+  for (const status of ["OPEN", "IN_PROGRESS", "CLOSED"] as const) {
     lines.push(`  - ${status}: ${counts[status] ?? 0}`);
   }
   lines.push("");

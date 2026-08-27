@@ -2,8 +2,6 @@
 // setTaskStatus / closeTask / openTask, releaseTask, evidence
 // threading on lifecycle verbs, resolveActorIdentity.
 //
-// rejectTask / deferTask (terminal-but-blocking, --cascade
-// dry-run/--yes) live in test/tasks-reject-defer.test.ts.
 // Split out of test/tasks.test.ts under
 // testreview_test_files_past_800loc — see test/tasks-crud.integration.test.ts
 // for the full split rationale.
@@ -594,8 +592,7 @@ describe("evidence on lifecycle verbs", () => {
    *  mu once put `evidence="..."` in a prose event payload (and, for close
    *  only, also in a synthetic note). v2-retire-log-shim deleted those
    *  prose events, which would have silently DROPPED evidence on
-   *  reject / defer / open / release / claim \u2014 measured: only close
-   *  survived. `recordEvidenceNote` now handles every evidence-bearing
+   *  open / release / claim \u2014 measured: only close survived. `recordEvidenceNote` now handles every evidence-bearing
    *  verb, so the note timeline is the single home for it.
    *
    *  Asserting on notes rather than on log payloads is also the more
