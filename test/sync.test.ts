@@ -21,6 +21,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type Db, openDb } from "../src/db.js";
+import { formatHlc } from "../src/hlc.js";
 import { flushSegment, localMachineId, segmentPath, syncPass } from "../src/segments.js";
 import {
   ambientFlush,
@@ -360,6 +361,24 @@ describe("sync", () => {
 
     it("is a typed not-found for a path that does not exist", () => {
       expect(() => ingestFromDb(b, join(tempDir, "nope.db"))).toThrow(SyncSourceNotFoundError);
+    });
+
+    it("skips a historical prose workstream.export op instead of throwing", () => {
+      const machineId = localMachineId(a);
+      a.prepare(
+        `INSERT INTO ops
+           (hlc, machine_id, group_id, actor, intent, entity, key, op, payload, created_at)
+         VALUES (?, ?, 'legacy-export', 'system', 'workstream.export', 'workstream',
+                 'demo', 'put', 'workstream export demo (out=/tmp/x)', ?)`,
+      ).run(
+        formatHlc({ wallMs: 2_000_000_000_000, counter: 0, machineId }),
+        machineId,
+        new Date().toISOString(),
+      );
+
+      const result = ingestFromDb(b, join(tempDir, "a.db"));
+      expect(result.changed).toBe(0);
+      expect(result.skippedLocal).toBe(1);
     });
 
     it("converges two machines that diverged on different fields", async () => {

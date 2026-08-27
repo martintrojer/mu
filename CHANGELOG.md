@@ -74,6 +74,17 @@ breaking changes are called out under "Breaking" in each entry.
 
 ### Fixed
 
+- **`mu sync --from <peer.db>` crashed on the same legacy
+  `workstream.export` op the two sibling readers already skip.**
+  `ingestFromDb()` filtered rows by `SYNCED_ENTITIES` only, so a
+  peer DB carrying a pre-1.0 `workstream.export` op (prose payload,
+  synced `workstream` entity) reached `applyIncomingOp` and threw
+  `SyntaxError` from `JSON.parse`, aborting the whole `--from` read
+  in one transaction. `flushSegment` and `rebuild.ts`'s
+  `isProjectable` already call `isLegacyLogOnlyIntent`;
+  `ingestFromDb` now does too, folding the skip into the existing
+  `skippedLocal` counter like the segment path does.
+
 - **Removed commands no longer erase their historical op compatibility.**
   `workstream.export` ops used a synced `workstream` entity but carried a
   prose payload. The export command is still removed, but its intent now
