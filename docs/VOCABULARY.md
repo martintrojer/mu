@@ -288,7 +288,7 @@ ingests from a USB stick using the existing env-var idiom.
 `mu workstream init <name>`. The
 workstream is a *scope* for most verbs, hence `-w`; but under the
 `mu workstream` namespace the workstream IS the primary entity, so
-`destroy` and `export` accept it positionally as an alias for `-w`
+`destroy` accepts it positionally as an alias for `-w`
 (`init` always did). Passing both and having them disagree is a
 usage error (exit 2), never a silent pick-one.
 

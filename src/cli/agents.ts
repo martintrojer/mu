@@ -682,7 +682,7 @@ export function wireAgentCommands(program: Command): void {
 
   agent
     .command("spawn <name>")
-    .description("Spawn a new agent in a tmux pane")
+    .description("Spawn a new agent in a mux pane")
     .option(
       "--cli <cli>",
       "agent CLI key (default: pi); also used as the lookup key for $MU_<UPPER_CLI>_COMMAND, e.g. --cli pi_big resolves $MU_PI_BIG_COMMAND",
@@ -692,7 +692,7 @@ export function wireAgentCommands(program: Command): void {
       "--command <cmd>",
       "executable to run in the pane (defaults to $MU_<CLI>_COMMAND or the cli value)",
     )
-    .option("--tab <tab>", "tmux window name to group under (defaults to agent name)")
+    .option("--tab <tab>", "mux window/tab name to group under (defaults to agent name)")
     .option("--role <role>", "full-access | read-only", "full-access")
     .option("--cwd <cwd>", "initial working directory (ignored when --workspace is set)")
     .option("--workspace", "auto-create a VCS workspace for this agent and use its path as cwd")
@@ -729,7 +729,7 @@ export function wireAgentCommands(program: Command): void {
 
   agent
     .command("send <name> <text>")
-    .description("Send text to an agent's pane (bracketed-paste protocol)")
+    .description("Send text to an agent's pane (atomic on herdr; bracketed-paste on tmux)")
     .option(
       "--strict-staleness",
       "refuse send when the target agent's workspace is stale (default: warn and proceed)",
@@ -762,7 +762,7 @@ export function wireAgentCommands(program: Command): void {
 
   agent
     .command("list")
-    .description("List agents in the current workstream (reconciled with tmux)")
+    .description("List agents in the current workstream (reconciled with the active mux)")
     .option(...WORKSTREAM_OPT)
     .option(...JSON_OPT)
     .action(function () {
@@ -864,13 +864,13 @@ export function wireAgentCommands(program: Command): void {
       )();
     });
 
-  // `mu agent adopt` — register an existing tmux pane as a managed agent.
+  // `mu agent adopt` — register an existing mux pane as a managed agent.
   // Lives under `mu agent` like every other agent-lifecycle verb
   // (mu_adopt_should_be_mu_agent_adopt_for).
   agent
     .command("adopt <pane-or-title>")
     .description(
-      "Register an existing tmux pane as a managed mu agent (the inverse of `mu agent list`'s 'orphan' state). Pane id form '%15' or pane title form 'worker-2'.",
+      "Register an existing mux pane as a managed mu agent (the inverse of `mu agent list`'s 'orphan' state). Pane id form '%15' or pane title form 'worker-2'.",
     )
     .option("--name <name>", "agent name (defaults to the pane's current title)")
     .option("--cli <cli>", "agent CLI key (default: pi)")

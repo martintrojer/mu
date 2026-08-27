@@ -643,10 +643,10 @@ separately below.
 | `src/tmux.ts`         | Re-export of the tmux backend, kept for genuinely tmux-only concerns: the `MU_TMUX_SOCKET` test seam and the shared `sleep` / `setSleepForTests` poll seam. Everything else imports `src/mux.ts` and goes through `activeMux()`. |
 | `src/detect.ts`       | Pi status detector (`busy` / `needs_input` / `needs_permission`) + Braille-spinner fallback. Used when the mux cannot classify panes itself — i.e. always on tmux, never on herdr. |
 | `src/reconcile.ts`    | Ghost prune + status detect + orphan surface; "reality wins"                              |
-| `src/agents.ts`       | Hub: CRUD + send / read / list / close / free + liveness + reaper. Re-exports `src/agents/*`; pane-title composition (`composeAgentTitle`) lives here. |
+| `src/agents.ts`       | Hub: CRUD + send / read / list / close + liveness + reaper. Re-exports `src/agents/*`; pane-title composition (`composeAgentTitle`) lives here. |
 | `src/agents/*.ts`     | Agent-lifecycle internals: `spawn.ts` (spawn, CLI resolution, liveness wait *or* backend `startAgentInPane`, pane create-or-reuse, rollback), `spawn-lock.ts` (per-session lock around topology+finalize), `wait.ts`, `adopt.ts`, `kick.ts` (signal a wedged pane's pgid), `errors.ts`. |
 | `src/dag.ts`          | Shared DAG read/render helpers: `loadFullDag` plus pure `renderForest` / `renderTaskTree`, reused by `mu task tree` and the TUI DAG popup. |
-| `src/tasks/*.ts`      | Task-graph internals: `core.ts` (row shapes, id resolution), `id.ts`, `queries.ts` (reads), `edit.ts`, `edges.ts` (+ cycle check), `status.ts` (TaskStatus), `sort.ts`, `claim.ts` (atomic CAS), `lifecycle.ts` (+ cascade), `wait.ts`, `errors.ts`. |
+| `src/tasks/*.ts`      | Task-graph internals: `core.ts` (row shapes, id resolution), `id.ts`, `queries.ts` (reads), `edit.ts` (+ delete cascade preview), `edges.ts` (+ cycle check), `status.ts` (TaskStatus), `sort.ts`, `claim.ts` (atomic CAS), `lifecycle.ts` (close/open), `wait.ts`, `errors.ts`. |
 | `src/tracks.ts`       | Parallel-tracks union-find with diamond merge                                             |
 | `src/staleness.ts`    | `WORKSPACE_STALE_THRESHOLD = 10` and the pure `isWorkspaceStale` predicate, shared by static state, the TUI Workspaces card, and dispatch-time checks. |
 | `src/workstream.ts`   | ensureWorkstream / list / summarize / destroy |
@@ -661,7 +661,7 @@ separately below.
 | `src/cli.ts`          | commander entry; `buildProgram()` (re-exports `format`/`handle` symbols for back-compat with existing import sites). |
 | `src/cli/*.ts`        | One file per verb-namespace; thin wrappers over the SDK; `--json` on every read verb. Two non-verb cluster-mates: `format.ts` (table renderers, status colourers) and `handle.ts` (typed-error → exit-code map). |
 | `src/cli/tui/*.tsx`   | The interactive ink TUI, lazy-imported by `src/cli/state.ts`. **The only place ink/react are imported** — a ROADMAP pledge. Per-file roles: [§ TUI architecture](#tui-architecture). |
-| `src/cli/tasks/*.ts`  | Sub-cluster of the `mu task` namespace: `queries.ts` (list/next/owned-by + `mu me tasks` / `mu me next`), `lifecycle.ts` (+ cascade preview), `edit.ts`, `edges.ts`, `claim.ts`, `tree.ts`, `wire.ts` (Commander glue). |
+| `src/cli/tasks/*.ts`  | Sub-cluster of the `mu task` namespace: `queries.ts` (list/next/owned-by + `mu me tasks` / `mu me next`), `lifecycle.ts` (close/open), `edit.ts`, `edges.ts` (+ delete cascade preview), `claim.ts`, `tree.ts`, `wire.ts` (Commander glue). |
 | `src/index.ts`        | SDK entrypoint (re-exports)                                                               |
 | `skills/mu/SKILL.md`  | Bundled skill teaching the LLM the model + verb list + jq pipelines                       |
 

@@ -839,15 +839,17 @@ mu task add migrate_to_use_action -w gchatui-node \
 
 When the upstream lands, `mu task close upstream_react_19_lands
 --evidence "shipped 2026-08-12"` — the dependent flips from blocked
-to ready in the same render. If the upstream gets cancelled, `mu task
-reject upstream_react_19_lands --cascade --yes` propagates REJECTED
-through every dependent so you re-think the cascade explicitly.
+to ready in the same render. If the upstream gets cancelled, close the
+placeholder anyway (`mu task close upstream_react_19_lands --evidence
+"cancelled, won't ship"`) and note the reason on each dependent, or
+`mu task delete` the placeholder and its dependents' edges if the work
+is truly abandoned.
 
 Why this beats a `BLOCKED` status: the placeholder's notes are the
-audit trail, one placeholder blocks N downstream tasks, reject cascade
-just works, and the placeholder's own status carries the detail
-(`OPEN` = someone external is on it, `DEFERRED` = parked,
-`IN_PROGRESS` = you're chasing it).
+audit trail, one placeholder blocks N downstream tasks, and the
+placeholder's own status carries the detail (`OPEN` = someone external
+is on it, a note records a parked reason, `IN_PROGRESS` = you're
+chasing it).
 
 ---
 
@@ -1023,10 +1025,9 @@ blob is per-popup — agent name/status/cli/role; track head id + title;
 task name/title/status/owner; log verb/payload/source — and dies with
 the popup.
 
-Task-list popups add **per-status toggles** (`o` / `i` / `c` / `r` /
-`d` for OPEN / IN_PROGRESS / CLOSED / REJECTED / DEFERRED; default
-all-on). The All-tasks popup adds **sort cycle** on `s`: `roi` →
-`recency` → `age` → `id`.
+Task-list popups add **per-status toggles** (`o` / `i` / `c` for OPEN /
+IN_PROGRESS / CLOSED; default all-on). The All-tasks popup adds **sort
+cycle** on `s`: `roi` → `recency` → `age` → `id`.
 
 ### Mouse
 
@@ -1048,7 +1049,7 @@ exits. The operator drives another TUI tool; mu still performs no
 mutation.
 
 Status cells colour-code as in the static CLI tables: OPEN cyan,
-IN_PROGRESS yellow, CLOSED green, REJECTED red, DEFERRED dim/gray.
+IN_PROGRESS yellow, CLOSED green.
 
 ### Polling tiers
 
@@ -1077,6 +1078,7 @@ for the newly active workstream.
 | dashboard | `Tab` / `Shift-Tab`          | cycle workstream tabs (N≥2)                                   |
 | dashboard | `+` / `-` / `=` / `0`        | adjust fast tick rate (faster / slower / default / pause)      |
 | dashboard | `r` / `F5`                   | force refresh both tiers                                       |
+| dashboard | `c`                          | clear footer (last yank)                                       |
 | dashboard | `?` / `F1`                   | open help overlay                                              |
 | any       | `q` / `Ctrl-C`               | quit (or back out of popup; quits at dashboard)                |
 | popup     | `j` / `k`                    | move cursor / scroll                                           |
@@ -1087,10 +1089,13 @@ for the newly active workstream.
 | popup     | `Esc` / `q`                  | back out one level                                             |
 | popup     | `y`                          | yank canonical `mu` command for focused row                    |
 | popup     | `/`                          | enter filter mode                                              |
+| popup     | `a`                          | attach to focused agent's mux pane (Agents popup only)         |
+| popup     | `l`                          | launch lazygit in the project root (Commits popup only)        |
 | filter    | (printable) / `Backspace`    | edit query                                                     |
 | filter    | `Esc`                        | cancel (clear query)                                           |
 | filter    | `Enter`                      | commit (keep filter, return to nav)                            |
-| task popup| `o` / `i` / `c` / `r` / `d`  | toggle OPEN / IN_PROGRESS / CLOSED / REJECTED / DEFERRED       |
+| task popup| `o` / `i` / `c`              | toggle OPEN / IN_PROGRESS / CLOSED                              |
+| All-tasks | `b`                          | blocked filter cycle (all → only → hide)                      |
 | All-tasks | `s`                          | cycle sort key (roi → recency → age → id)                       |
 | git-show  | `t`                          | launch `tuicr -r <sha>` (alt-screen handoff)                   |
 
@@ -1496,8 +1501,7 @@ enforce these — they're for the agents reading them.
 ```bash
 mu task close design                # OPEN/IN_PROGRESS → CLOSED
 mu task close umbrella --if-ready   # close ONLY if every blocker
-                                    # is terminal (CLOSED / REJECTED
-                                    # / DEFERRED); else no-op + list
+                                    # is CLOSED; else no-op + list
                                     # the still-blocking ids
 mu task open design                 # CLOSED → OPEN (e.g. closed by mistake)
 ```
@@ -1506,7 +1510,7 @@ Both are idempotent (closing an already-CLOSED task prints a no-op and
 exits 0). Owner is left intact — use `mu task release <id>` to clear
 ownership when an agent bails mid-flight. `IN_PROGRESS` flips back to
 `OPEN` so the task re-enters the ready set. `--reopen` forces `OPEN`
-from `CLOSED` / `REJECTED` / `DEFERRED`.
+from `CLOSED`.
 
 When the closing actor has a per-agent workspace and that workspace
 has uncommitted edits, a successful close adds one extra `Next:` hint
@@ -1524,13 +1528,13 @@ backend, or a failed VCS dirty check simply omit it. The same
 `mu task close <umbrella> --if-ready` after each wave-task finishes.
 It's a no-op while any blocker is OPEN / IN_PROGRESS, printing the
 still-blocking ids + a `mu task wait` hint; once the last blocker is
-terminal, the same command closes the umbrella. JSON on the no-op path:
+CLOSED, the same command closes the umbrella. JSON on the no-op path:
 `{ skipped: "not_ready", changed: false, blockingIds: ["..."], ... }`.
 Exit 0 either way — the no-op is success.
 
 ```bash
 mu task release design              # clear owner; IN_PROGRESS → OPEN
-                                    # (CLOSED / REJECTED / DEFERRED preserved)
+                                    # (CLOSED preserved)
 mu task release design --reopen     # clear owner AND force status to OPEN
                                     # (un-close + release in one verb)
 ```

@@ -79,7 +79,7 @@ SQLite triggers inside the same transaction as the mutation they
 record. Same file, same transaction — so capture cannot be forgotten
 and cannot drift from the data, even on power loss.
 
-**Sync, undo, archive, and history are all queries or replays over
+**Sync, undo, rebuild, and history are all queries or replays over
 that one log.**
 
 The tables stay canonical for **reads** — this is not an event-sourced
@@ -89,7 +89,7 @@ lockstep. `mu doctor` rebuilds into a temp DB and diffs, so the
 lockstep is verified rather than assumed.
 
 The cost: a capture bug is not "sync is broken", it is "undo and
-archives are also broken". The drift check is load-bearing.
+rebuild are also broken". The drift check is load-bearing.
 
 ### 2c. Local-first, transport-agnostic
 
@@ -202,8 +202,8 @@ The product surface is:
 - **Read views** (the `ready` / `blocked` / `goals` SQL views; `mu
   state` as the curated state card) for inspection.
 - **Typed verbs** that map cleanly to resource transitions for action
-  (`task add`, `task claim`, `task close`, `agent spawn`, `workspace
-  create`, `workstream init`, `archive add --destroy`, ...).
+  (`task add`, `task claim`, `task close`, `agent spawn --workspace`,
+  `workstream init`, `workstream destroy`, ...).
 - **`--json` on every read verb** so scripts pipe through `jq`
   instead of parsing tables.
 - **`mu sql`** as the explicit escape hatch underneath.

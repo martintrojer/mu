@@ -58,7 +58,7 @@ mu/
 ├── src/                   # all source (root files: SDK + shared infra; one
 │                          # level of subdirs OK for cohesive clusters — see
 │                          # `src/cli/`, `src/agents/`, `src/tasks/`, `src/mux/`)
-│   ├── db.ts              # SQLite schema + openDb (single CREATE-IF-NOT-EXISTS block; v9)
+│   ├── db.ts              # SQLite schema + openDb (single CREATE-IF-NOT-EXISTS block; v10)
 │   │                      # also owns SYNCED_ENTITIES / PORTABLE_TABLES / MACHINE_LOCAL_TABLES
 │   ├── mux.ts             # multiplexer backend hub (re-exports src/mux/*)
 │   ├── mux/               # cohesive cluster: one file per multiplexer
@@ -70,7 +70,7 @@ mu/
 │   ├── detect.ts          # pi status detector + Braille-spinner fallback; used only when
 │   │                      # the backend has no paneStatus() of its own (i.e. tmux)
 │   ├── reconcile.ts       # ghost prune + status detect + orphan surface
-│   ├── agents.ts          # CRUD + send/read/list/close/free + liveness + reaper hub (re-exports src/agents/*)
+│   ├── agents.ts          # CRUD + send/read/list/close + liveness + reaper hub (re-exports src/agents/*)
 │   ├── agents/            # cohesive cluster of agent-lifecycle internals
 │   │   ├── spawn.ts       # spawnAgent + resolveCliCommand / awaitSpawnLiveness / pane create-or-reuse / prestage / rollback
 │   │   ├── kick.ts        # reaper events + cleanup of dead agent rows
@@ -90,9 +90,7 @@ mu/
 │   │   ├── sort.ts        # sortTasks (roi / recency / age / id)
 │   │   └── errors.ts      # typed task error classes (TaskAlreadyOwnedError, CycleError, …)
 │   ├── tracks.ts          # parallel-tracks union-find with diamond merge
-│   ├── workstream.ts      # ensureWorkstream / list / summarize / destroy / export
-│   ├── archives.ts        # archives as append-only MARKERS pinning the ops log (re-exports src/archives/*)
-│   ├── exporting.ts       # unified bucket renderer (workstream + archive export; read-only buckets)
+│   ├── workstream.ts      # ensureWorkstream / list / summarize / destroy
 │   ├── hlc.ts             # hybrid logical clock: the monotonic ordering key on every op
 │   ├── capture.ts         # SQLite triggers recording every portable mutation as an op, in-transaction
 │   ├── op-context.ts      # withOpContext (intent/actor/group) + withCaptureSuppressed echo guard
@@ -118,8 +116,8 @@ mu/
 │   ├── output.ts          # NextStep type + printNextSteps / errorNextSteps
 │   ├── cli.ts             # commander wiring (buildProgram); re-exports format/handle for back-compat
 │   ├── cli/               # one file per verb-namespace; thin wrappers over the SDK
-│   │   ├── workstream.ts  # workstream init / list / destroy / export
-│   │   ├── agents.ts      # agent spawn / send / read / list / show / close / free / adopt / attach
+│   │   ├── workstream.ts  # workstream init / list / destroy
+│   │   ├── agents.ts      # agent spawn / send / read / list / show / close / kick / wait / adopt
 │   │   ├── tasks.ts       # `mu task` hub (re-exports wireTaskCommands / cmdMyNext / cmdMyTasks / unescapeNoteText)
 │   │   ├── tasks/         # sub-cluster of the `mu task` namespace
 │   │   │   ├── queries.ts    # list / next / owned-by + cmdMyTasks / cmdMyNext (back `mu me tasks` / `mu me next`)
@@ -129,9 +127,8 @@ mu/
 │   │   │   ├── claim.ts      # claim / release / wait
 │   │   │   ├── tree.ts       # tree rendering
 │   │   │   └── wire.ts       # Commander glue
-│   │   ├── workspace.ts   # workspace create / list / free / path / orphans / refresh / commits
+│   │   ├── workspace.ts   # workspace list / free / path / orphans / refresh / commits
 │   │   ├── log.ts         # log read / write / tail
-│   │   ├── archive.ts     # archive add / list / restore / export
 │   │   ├── undo.ts        # mu undo [group] (list / preview / --yes apply)
 │   │   ├── sync.ts        # mu sync (peer status; --from / --repair)
 │   │   ├── rebuild.ts     # mu rebuild <file>
@@ -432,10 +429,10 @@ proves itself.
 
 ### "Update the schema"
 
-1. Current schema version is **v9** (`CURRENT_SCHEMA_VERSION` in
+1. Current schema version is **v10** (`CURRENT_SCHEMA_VERSION` in
    `src/db.ts`): 10 tables + 3 views. The schema is the
    `applySchema(db)` block — idempotent CREATE-IF-NOT-EXISTS plus
-   targeted `DROP TABLE IF EXISTS`. `openDb` REFUSES any pre-v9 DB
+   targeted `DROP TABLE IF EXISTS`. `openDb` REFUSES any pre-v10 DB
    with `SchemaTooOldError` (exit 4); there is no in-process
    migration ladder.
 2. Bump `CURRENT_SCHEMA_VERSION` in `src/db.ts` and mirror the new

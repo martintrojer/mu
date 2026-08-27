@@ -28,7 +28,8 @@ breaking changes are called out under "Breaking" in each entry.
   scripts consuming the old JSON field names must update. `mu agent
   spawn` / `mu agent adopt` / `mu state`'s unrelated `tmuxSession`
   session-override option (a different interface, orthogonal to this
-  rename) is unchanged.
+  rename) is unchanged. `mu workstream init --json`'s own `sessionName`
+  field is likewise renamed to `muxSession` for the same consistency.
 
 - **Three-state task lifecycle (schema v10).** `REJECTED` and `DEFERRED`
   task statuses are removed. Only `OPEN`, `IN_PROGRESS`, and `CLOSED`
@@ -89,6 +90,38 @@ breaking changes are called out under "Breaking" in each entry.
   consumers still get the JS API. The two bins do not collide (`tsc`
   vs `tsc6`). Revertible to a single dependency once 7.1 ships its API
   and `rollup-plugin-dts` adopts it.
+
+### Changed (docs / help)
+
+- **Docs and `--help` text realigned to the reduced surface
+  (`align-small-cli-contract`).** AGENTS.md's schema-version note and
+  module-layout comments now say v10 (was v9) and drop the removed
+  `archives.ts` / `exporting.ts` / `cli/archive.ts` rows and the
+  `workspace create`/`recreate` and `agent free`/`attach` verbs from
+  the file-tree annotations. `src/cli.ts`'s header comments no longer
+  hardcode a verb/namespace count that drifts every time a namespace
+  is added or removed. `src/cli/agents.ts`'s `spawn` / `send` / `list`
+  / `adopt` help text is backend-neutral ("mux pane" / "the active
+  mux") instead of naming tmux specifically, matching the
+  `activeMux()` seam those verbs already go through; `send`'s
+  description now names herdr's atomic `agent prompt` alongside
+  tmux's bracketed-paste. `docs/USAGE_GUIDE.md`'s three-state task
+  lifecycle: the "placeholder task" cancellation example no longer
+  references the deleted `mu task reject --cascade`, the TUI keymap
+  table and per-status-toggle prose drop `r` / `d` (REJECTED /
+  DEFERRED), the status colour line drops the two dead colours, and
+  `--if-ready` / `--reopen` / `release` prose drop the two dead
+  terminal statuses. The keymap reference table also gains the four
+  real keys it was missing (`a` attach, `l` lazygit, `b` blocked-filter
+  cycle, `c` clear footer) so `?`/`docs` and the actual dashboard
+  agree. `src/tasks/lifecycle.ts`'s capture-trigger comment no longer
+  lists `task.reject` / `task.defer` as live intents this file can
+  still produce (they only appear in historical pre-v10 ops, rendered
+  by `src/log-render.ts`, which is unchanged and correct). Finally,
+  `mu workstream init --json`'s `sessionName` field is renamed to
+  `muxSession`, matching `mu workstream list` / `destroy`'s naming
+  from the mux-neutral-fields rename above — the one JSON field that
+  rename missed.
 
 ### Fixed
 

@@ -77,7 +77,7 @@ export async function cmdInit(db: Db, name: string, opts: { json?: boolean } = {
   if (opts.json) {
     emitJson({
       workstreamName: name,
-      sessionName,
+      muxSession: sessionName,
       created,
       muxSessionAlreadyExisted: sessionAlready,
       dbRowAlreadyExisted: !dbCreated,

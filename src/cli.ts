@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 // mu — command-line interface.
 //
-// 10 verbs + a TTY-aware human entrypoint, each registered via commander as a thin
-// wrapper around the corresponding programmatic function in src/. The
-// real work happens in agents.ts, tasks.ts, tracks.ts, db.ts, tmux.ts;
-// this file is just argument parsing, output formatting, and error-to-
-// exit-code translation.
+// One namespace/command per verb group (see `mu --help` for the current
+// list), each registered via commander as a thin wrapper around the
+// corresponding programmatic function in src/. The real work happens in
+// agents.ts, tasks.ts, tracks.ts, db.ts, mux.ts; this file is just
+// argument parsing, output formatting, and error-to-exit-code
+// translation.
 //
 // Layout: cli.ts is the wiring root. Pure rendering helpers live in
 // `src/cli/format.ts`; typed-error → exit-code mapping + the `handle`
@@ -518,8 +519,10 @@ export function parseNonNegativeInt(value: string): number {
 
 // ─── Program definition ───────────────────────────────────────────────
 //
-// Three namespaces (`workstream`, `agent`, `task`) plus three top-level
-// utilities (`sql`, `doctor`, and the bare `mu` TTY-aware default).
+// See the `wire*Commands` calls below for the full namespace/utility
+// list (`workstream`, `agent`, `task`, `workspace`, `log`, `state`,
+// `sql`, `sync`, `rebuild`, `db`, `undo`, `doctor`, plus the bare `mu`
+// TTY-aware default) rather than a count here, which drifts.
 //
 // Every flag is declared on the subcommand that consumes it — there is
 // NO root --workstream that subcommands inherit via optsWithGlobals(),

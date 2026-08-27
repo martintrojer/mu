@@ -114,10 +114,9 @@ function setTaskStatusImpl(
         AND workstream_id = (SELECT id FROM workstreams WHERE name = ?)`,
   ).run(status, new Date().toISOString(), localId, before.workstreamName);
   // No emitEvent: the UPDATE fired the capture trigger, whose intent is
-  // the specific verb (task.close / task.open / task.reject / task.defer,
-  // or task.set-<status> for a bare status set) and whose payload names
-  // the new status. Evidence, when passed, lands as a task note — itself
-  // a captured op.
+  // the specific verb (task.close / task.open, or task.set-<status> for
+  // a bare status set) and whose payload names the new status. Evidence,
+  // when passed, lands as a task note — itself a captured op.
   return { previousStatus: before.status, status, changed: true };
 }
 
