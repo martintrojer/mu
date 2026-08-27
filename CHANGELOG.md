@@ -92,6 +92,13 @@ breaking changes are called out under "Breaking" in each entry.
 
 ### Fixed
 
+- **Removed the dead `suppressSnapshot` field from
+  `DestroyWorkstreamOptions`** (`reviewfind_dead_suppresssnapshot_field`).
+  It was already a documented no-op since v9 dropped the `snapshots`
+  table, and no caller in the codebase ever set it — a pure
+  speculative-flexibility leftover the code-reviewer's Speculative
+  Generality smell flags. No behaviour change.
+
 - **`mu sync --from <peer.db>` crashed on the same legacy
   `workstream.export` op the two sibling readers already skip.**
   `ingestFromDb()` filtered rows by `SYNCED_ENTITIES` only, so a

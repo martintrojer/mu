@@ -309,12 +309,7 @@ export interface WorkstreamOptions {
   resolveBackend?: (name: VcsBackendName) => VcsBackend;
 }
 
-export interface DestroyWorkstreamOptions extends WorkstreamOptions {
-  /** Retained for call-site compatibility; a no-op since v9 dropped
-   *  the `snapshots` table. v2-undo replaces the safety net with
-   *  inverse ops over the ops log. */
-  suppressSnapshot?: boolean;
-}
+export interface DestroyWorkstreamOptions extends WorkstreamOptions {}
 
 /**
  * Discover every workstream visible on this machine. The union of:
