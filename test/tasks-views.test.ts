@@ -1,7 +1,7 @@
 // Read-side query tests for src/tasks.ts: ready / blocked / goals
-// views, searchTasks (title + notes scopes), listTasksByOwner +
-// listTasksByOwnerCrossWorkstream, listTasks --status filter
-// (single + array form, with workstream scoping).
+// views, listTasksByOwner + listTasksByOwnerCrossWorkstream,
+// listTasks --status filter (single + array form, with workstream
+// scoping).
 //
 // Split out of test/tasks.test.ts under
 // testreview_test_files_past_800loc — see test/tasks-crud.integration.test.ts
@@ -15,7 +15,6 @@ import { insertAgent } from "../src/agents.js";
 import { type Db, openDb } from "../src/db.js";
 import { listLogs } from "../src/logs.js";
 import {
-  addNote,
   addTask,
   claimTask,
   closeTask,
@@ -27,7 +26,6 @@ import {
   listTasks,
   listTasksByOwner,
   listTasksByOwnerCrossWorkstream,
-  searchTasks,
   setTaskStatus,
 } from "../src/tasks.js";
 import { resetTmuxExecutor } from "../src/tmux.js";
@@ -258,87 +256,6 @@ describe("listTasksByOwner", () => {
       .map((t) => t.name)
       .sort();
     expect(allOwned).toEqual(["done", "live"]);
-  });
-});
-
-// ─── searchTasks ───────────────────────────────────────────────────────────
-
-describe("searchTasks", () => {
-  beforeEach(() => {
-    addTask(db, {
-      localId: "design_auth",
-      workstream: "auth",
-      title: "Design the JWT auth flow",
-      impact: 80,
-      effortDays: 2,
-    });
-    addTask(db, {
-      localId: "build_auth",
-      workstream: "auth",
-      title: "Implement",
-      impact: 80,
-      effortDays: 5,
-    });
-    addTask(db, {
-      localId: "design_billing",
-      workstream: "billing",
-      title: "Design invoice schema",
-      impact: 50,
-      effortDays: 1,
-    });
-    addNote(db, "build_auth", "DECISION: chose JWT; refresh via cookie", { workstream: "auth" });
-    addNote(db, "design_billing", "FILES: src/billing/invoice.rs", { workstream: "billing" });
-  });
-
-  it("matches title substring (case-insensitive), scoped to a workstream", () => {
-    expect(searchTasks(db, "jwt", { workstream: "auth" }).map((t) => t.name)).toEqual([
-      "design_auth",
-    ]);
-    expect(searchTasks(db, "DESIGN", { workstream: "auth" }).map((t) => t.name)).toEqual([
-      "design_auth",
-    ]);
-  });
-
-  it("matches local_id substring", () => {
-    expect(
-      searchTasks(db, "_auth", { workstream: "auth" })
-        .map((t) => t.name)
-        .sort(),
-    ).toEqual(["build_auth", "design_auth"]);
-  });
-
-  it("with no workstream, spans every workstream", () => {
-    expect(
-      searchTasks(db, "design")
-        .map((t) => t.name)
-        .sort(),
-    ).toEqual(["design_auth", "design_billing"]);
-  });
-
-  it("--in-notes also matches note content", () => {
-    // 'jwt' appears in design_auth's title AND build_auth's note.
-    const ids = searchTasks(db, "jwt", { workstream: "auth", includeNotes: true }).map(
-      (t) => t.name,
-    );
-    expect(ids.sort()).toEqual(["build_auth", "design_auth"]);
-
-    // Without --in-notes, only design_auth matches (notes ignored).
-    expect(searchTasks(db, "jwt", { workstream: "auth" }).map((t) => t.name)).toEqual([
-      "design_auth",
-    ]);
-  });
-
-  it("DISTINCTs the result when a task has multiple matching notes", () => {
-    addNote(db, "build_auth", "DECISION: also JWT for refresh", { workstream: "auth" });
-    addNote(db, "build_auth", "VERIFIED: jwt expiry tests pass", { workstream: "auth" });
-    const ids = searchTasks(db, "jwt", { workstream: "auth", includeNotes: true }).map(
-      (t) => t.name,
-    );
-    expect(ids.sort()).toEqual(["build_auth", "design_auth"]); // build_auth appears once despite 3 notes
-  });
-
-  it("empty result on no match", () => {
-    expect(searchTasks(db, "nothing-matches-this", { workstream: "auth" })).toEqual([]);
   });
 });
 

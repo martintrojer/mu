@@ -213,6 +213,15 @@ breaking changes are called out under "Breaking" in each entry.
   `src/cli/archive.ts` are gone. `workstream destroy --archive <label>` is
   gone. `scripts/restore-pre1.0-archives.ts` is gone.
 
+- **`searchTasks` SDK export deleted (`reviewfind_searchtasks_dead_sdk_export`).**
+  Zero production call sites (`mu state` uses `listBlocked`,
+  `mu tracks` uses `listGoals`, but nothing consumed `searchTasks`
+  despite the comment in `src/cli/tasks/queries.ts` claiming it did).
+  `mu sql` already covers ad-hoc title/note search. `searchTasks`,
+  `SearchTasksOptions`, their re-exports from `src/tasks.ts` /
+  `src/index.ts`, and the stale comment claiming internal reuse are
+  removed, along with the function's sole unit test.
+
 ### Added
 
 - **One consolidated migration sidecar: `scripts/migrate.ts`.** It replaces

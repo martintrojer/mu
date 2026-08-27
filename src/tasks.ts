@@ -106,8 +106,6 @@ export {
   listTasks,
   listTasksByOwner,
   listTasksByOwnerCrossWorkstream,
-  type SearchTasksOptions,
-  searchTasks,
 } from "./tasks/queries.js";
 export {
   isTaskStatus,

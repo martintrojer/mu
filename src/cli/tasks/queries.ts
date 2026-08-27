@@ -10,11 +10,9 @@
 // Removed in audit_cleanups_post_schema_v5_wave: `task blocked`,
 // `task goals`, `task search`, `task ready` (the latter merged into
 // `task next -n 0`, which now means "all ready, unlimited"). The
-// underlying SDK helpers (`listBlocked`, `listGoals`, `searchTasks`)
-// survive — `mu state` / `mu tracks` consume them, and `searchTasks`
-// keeps its unit-test coverage as reusable surface. The audit's SQL
-// recipes for the removed verbs live in docs/USAGE_GUIDE.md
-// "What's NOT in mu".
+// underlying SDK helpers `listBlocked` and `listGoals` survive —
+// `mu state` / `mu tracks` consume them. The audit's SQL recipes for
+// the removed verbs live in docs/USAGE_GUIDE.md "What's NOT in mu".
 
 import {
   byRoiDesc,
