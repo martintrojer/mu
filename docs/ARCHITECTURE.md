@@ -406,7 +406,7 @@ src/cli/tui/
 ├── tab-strip-layout.ts         # pure window-around-active layout helper
 ├── help.tsx                    # ?/F1 keymap overlay (scrollable on short panes)
 ├── use-popup-filter.tsx        # shared '/' substring filter hook + applyFilter + FilterPrompt
-├── use-status-filter.tsx       # task-status toggles (o/i/c/r/d) for task-list popups
+├── use-status-filter.tsx       # task-status toggles (o/i/c) for task-list popups
 ├── use-notes-drill.ts          # shared notes-drill memo (5 task popups consume it)
 ├── use-popup-action-queue.ts   # consume mouse PopupAction queue once per render
 ├── cards/                      # 10 dashboard glance cards (one slot each)

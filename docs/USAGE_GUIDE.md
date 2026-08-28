@@ -64,12 +64,12 @@ mu task tree build -w auth
 ```
 
 ```
-Created workstream auth (tmux session mu-auth)
+Created workstream auth (mux session mu-auth)
 Next:
-  Attach the tmux session : tmux a -t mu-auth
-  Plan tasks              : mu task add -w auth --title "..." --impact 50 --effort-days 1
-  Spawn an agent          : mu agent spawn <name> -w auth
-  See state               : mu state -w auth
+  Attach the session : tmux attach -t mu-auth
+  Plan tasks         : mu task add -w auth --title "..." --impact 50 --effort-days 1
+  Spawn an agent     : mu agent spawn <name> -w auth
+  See state          : mu state -w auth
 
 Added task design (workstream=auth, impact=80, effort=2)
 
@@ -243,7 +243,7 @@ environment
 db
   path             : /tmp/mu-play.db
   schema           : ok (10 tables)
-  schema_version   : 9
+  schema_version   : 10
   journal_mode     : wal
   foreign_keys     : on
 
@@ -654,12 +654,12 @@ mu workstream init auth-refactor
 ```
 
 ```
-Created workstream auth-refactor (tmux session mu-auth-refactor)
+Created workstream auth-refactor (mux session mu-auth-refactor)
 Next:
-  Attach the tmux session : tmux a -t mu-auth-refactor
-  Plan tasks              : mu task add -w auth-refactor --title "..." --impact 50 --effort-days 1
-  Spawn an agent          : mu agent spawn <name> -w auth-refactor
-  See state               : mu state -w auth-refactor
+  Attach the session : tmux attach -t mu-auth-refactor
+  Plan tasks         : mu task add -w auth-refactor --title "..." --impact 50 --effort-days 1
+  Spawn an agent     : mu agent spawn <name> -w auth-refactor
+  See state          : mu state -w auth-refactor
 ```
 
 Behind the scenes: `tmux new-session -d -s mu-auth-refactor` plus a
@@ -698,7 +698,7 @@ Resolution order, first match wins:
 3. **Current tmux session name** (mu reads `tmux display-message -p '#S'` and strips the `mu-` prefix)
 4. Error if none of the above
 
-The third option is the most ergonomic. Once you `tmux a -t
+The third option is the most ergonomic. Once you `tmux attach -t
 mu-auth-refactor`, every command "just works" without flags.
 
 ### Off-the-cuff agents: the `scratch` workstream
@@ -1989,7 +1989,6 @@ Workstream auth-refactor (mux session mu-auth-refactor)
   workspaces   : 0
 
 Destroyed auth-refactor: killed mux=true, agents=1, tasks=1, edges=0, notes=0, workspaces=0/0
-Pre-destroy export: ~/.local/state/mu/exports/auth-refactor-2026-08-02T06-00-05-869Z
 ```
 
 Idempotent on every leg: a missing tmux session is fine, zero DB rows

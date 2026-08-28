@@ -62,6 +62,7 @@ mu/
 │   │                      # also owns SYNCED_ENTITIES / PORTABLE_TABLES / MACHINE_LOCAL_TABLES
 │   ├── mux.ts             # multiplexer backend hub (re-exports src/mux/*)
 │   ├── mux/               # cohesive cluster: one file per multiplexer
+│   │   ├── index.ts       # re-export hub consumed by src/mux.ts
 │   │   ├── types.ts       # MuxBackend interface + MuxError / PaneNotFoundError / NoMultiplexerError
 │   │   ├── detect.ts      # MU_MUX → HERDR_ENV → $TMUX → availability ladder; activeMux()
 │   │   ├── tmux.ts        # tmux impl: wrapper, 6-step send protocol, pane validation
@@ -73,8 +74,10 @@ mu/
 │   ├── agents.ts          # CRUD + send/read/list/close + liveness + reaper hub (re-exports src/agents/*)
 │   ├── agents/            # cohesive cluster of agent-lifecycle internals
 │   │   ├── spawn.ts       # spawnAgent + resolveCliCommand / awaitSpawnLiveness / pane create-or-reuse / prestage / rollback
+│   │   ├── spawn-lock.ts  # cross-process advisory lock around a spawn's topology critical section
 │   │   ├── kick.ts        # reaper events + cleanup of dead agent rows
 │   │   ├── adopt.ts       # adoptAgent: register an existing pane as a managed agent
+│   │   ├── wait.ts        # waitForAgents: block on task-less agents finishing (busy → any other state)
 │   │   └── errors.ts      # typed agent error classes (AgentNotFoundError, AgentDiedOnSpawnError, …)
 │   ├── tasks.ts           # task SDK hub (re-exports src/tasks/*)
 │   ├── tasks/             # cohesive cluster of task-graph internals
@@ -85,7 +88,7 @@ mu/
 │   │   ├── edit.ts        # addTask / setTaskTitle / etc (no edges)
 │   │   ├── edges.ts       # block / unblock / reparent / delete + dedupe
 │   │   ├── claim.ts       # claim / release + resolveActorIdentity (atomic CAS)
-│   │   ├── lifecycle.ts   # setTaskStatus / closeTask / openTask / rejectTask / deferTask + cascade
+│   │   ├── lifecycle.ts   # setTaskStatus / closeTask / openTask + cascade
 │   │   ├── wait.ts        # waitForTasks: block until tasks reach a target status
 │   │   ├── sort.ts        # sortTasks (roi / recency / age / id)
 │   │   └── errors.ts      # typed task error classes (TaskAlreadyOwnedError, CycleError, …)
@@ -104,7 +107,6 @@ mu/
 │   ├── file-lock.ts       # generic cross-process advisory lock via atomic fs.mkdir
 │   ├── logs.ts            # typed READER over `ops` + appendLog / emitEvent (the one write path triggers can't cover)
 │   ├── log-render.ts      # the ONE op → prose formatter (renderOp); shared by CLI + TUI
-│   ├── parked.ts          # 'presumed parked elsewhere' heuristic (dormant; awaits re-grounding on watermarks)
 │   ├── vcs.ts             # VcsBackend hub (re-exports src/vcs/*: jj/sl/git/none impls)
 │   ├── workspace.ts       # per-agent VCS workspaces hub (re-exports src/workspace/*)
 │   ├── shell-quote.ts     # POSIX single-quote helper for copy-pasteable Next: hints
@@ -121,7 +123,7 @@ mu/
 │   │   ├── tasks.ts       # `mu task` hub (re-exports wireTaskCommands / cmdMyNext / cmdMyTasks / unescapeNoteText)
 │   │   ├── tasks/         # sub-cluster of the `mu task` namespace
 │   │   │   ├── queries.ts    # list / next / owned-by + cmdMyTasks / cmdMyNext (back `mu me tasks` / `mu me next`)
-│   │   │   ├── lifecycle.ts  # close / open / reject / defer + cascade preview
+│   │   │   ├── lifecycle.ts  # close / open + cascade preview
 │   │   │   ├── edit.ts       # add / show / notes / note / update + helpers
 │   │   │   ├── edges.ts      # block / unblock / reparent / delete
 │   │   │   ├── claim.ts      # claim / release / wait
@@ -159,9 +161,13 @@ mu/
 │   │   │   ├── tab-strip-layout.ts # pure window-around-active layout helper for the tab strip
 │   │   │   ├── tuicr.ts            # `t` shortcut: alt-screen handoff to tuicr -r <sha>
 │   │   │   ├── use-popup-filter.tsx       # shared '/' substring filter hook + applyFilter + FilterPrompt
-│   │   │   ├── use-status-filter.tsx      # task-status toggles for task-list popups (o/i/c/r/d)
+│   │   │   ├── use-status-filter.tsx      # task-status toggles for task-list popups (o/i/c)
 │   │   │   ├── use-notes-drill.ts         # shared notes-drill memo (5 task popups consume it)
 │   │   │   ├── use-popup-action-queue.ts  # consume mouse PopupAction queue once per render
+│   │   │   ├── use-terminal-size.ts       # shared reactive terminal-size hook (ink doesn't re-render on resize)
+│   │   │   ├── agent-display.ts           # shared agent-row display helpers for cards/popups
+│   │   │   ├── lazygit.ts                 # `l` in the Commits popup: alt-screen handoff to lazygit
+│   │   │   ├── tmux-attach.ts             # `a` in the Agents popup: alt-screen handoff to the agent's mux pane
 │   │   │   ├── cards/{agents,tracks,ready,log,workspaces,inprogress,blocked,recent,commits,doctor}.tsx + _placeholder.tsx
 │   │   │   └── popups/{agents,tracks,ready,log,workspaces,inprogress,blocked,recent,commits,doctor,dag,all-tasks}.tsx
 │   │   │                          # plus drill.tsx (DrillScrollView), task-detail.tsx (TaskDetailDrill),
@@ -173,7 +179,7 @@ mu/
 │   │   ├── format.ts      # pure rendering helpers (table renderers, status colourers, truncate/relTime)
 │   │   └── handle.ts      # typed-error → exit-code map + handle() wrapper
 │   └── index.ts           # SDK entrypoint (re-exports)
-├── test/                  # ~165 *.test.ts files / ~2000 it()/test() calls; many use real tmux/git/jj/sl
+├── test/                  # ~200 *.test.ts files / ~2900 tests (`npm run test`); many use real tmux/git/jj/sl
 ├── skills/mu/SKILL.md     # what the LLM running inside an agent pane sees
 ├── package.json           # bin: { mu: ./dist/cli.js }, type: module
 ├── tsconfig.json          # strict + noUncheckedIndexedAccess + verbatimModuleSyntax

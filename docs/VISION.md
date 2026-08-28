@@ -181,9 +181,10 @@ The choice earns its keep on four axes:
 - **`better-sqlite3` fits the shape.** Synchronous
   request/response matches the CLI invocation model; WAL correct out
   of the box; `db.transaction()` is the right shape.
-- **Iteration speed.** ~60 typed verbs / 10 tables / ~2800 tests in
-  ~30k LOC src+tests, with multiple substantive changes per day.
-  That cadence in an equivalent Rust codebase would be 2–3× slower.
+- **Iteration speed.** ~60 typed verbs / 10 tables / ~2900 tests
+  (`npm run test`) in ~95k LOC src+tests (`wc -l` over `src/` and
+  `test/`), with multiple substantive changes per day. That cadence
+  in an equivalent Rust codebase would be 2–3× slower.
 
 **Where it's weak: cold start.** Node's V8 init is ~30–50ms even
 after tsup bundles (Rust ~5ms, Go ~10–15ms). That would matter if
@@ -479,7 +480,7 @@ The critique cuts mu too:
   its exit could deepen this; not built yet.
 - **No idempotency keys on mutations.** Most ops are idempotent by
   happenstance; not declared as part of the API contract.
-- **No dry-run on most mutations.** Only `workstream destroy` has it.
+- **No dry-run on most mutations.** `workstream destroy`, `task delete`, and `undo` have it; most other mutating verbs apply immediately.
 - **No capability model.** The `role` field is stored on agent rows
   but unused. No "reviewer-1 cannot delete tasks" enforcement.
 

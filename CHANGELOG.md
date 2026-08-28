@@ -123,6 +123,47 @@ breaking changes are called out under "Breaking" in each entry.
   from the mux-neutral-fields rename above — the one JSON field that
   rename missed.
 
+- **Final documentation sweep against the built CLI
+  (`final-doc-sweep`, surface-audit).** Docs still described
+  behavior removed by the second cleanup round or never matched
+  the shipped binary. `docs/USAGE_GUIDE.md`'s worked examples now
+  read "mux session" / `Attach the session : tmux attach -t
+  mu-<name>` instead of the pre-mux-rename "tmux session" /
+  `tmux a -t mu-<name>` wording (verified against a live `mu
+  workstream init`); the `mu doctor` sample output now shows
+  `schema_version : 10`; `mu workstream destroy`'s sample output
+  drops the `Pre-destroy export:` line left over from the removed
+  auto-export. `docs/ARCHITECTURE.md` and `AGENTS.md`'s TUI
+  module-tree comments drop the removed `r`/`d` (REJECTED/DEFERRED)
+  toggle keys from the `use-status-filter.tsx` annotation (now
+  `o/i/c`) and `AGENTS.md`'s `src/agents/` and `src/mux/` listings
+  gain the `spawn-lock.ts`, `wait.ts`, and `index.ts` rows that
+  existed in source but not in the tree; the TUI cluster listing
+  gains `use-terminal-size.ts`, `agent-display.ts`, `lazygit.ts`,
+  and `tmux-attach.ts`. `AGENTS.md`'s `tasks/lifecycle.ts` and
+  `cli/tasks/lifecycle.ts` comments drop `rejectTask`/`deferTask`
+  and `reject`/`defer`, which the three-state-lifecycle removal
+  already deleted from those files. `skills/mu/SKILL.md` no longer
+  claims herdr `agent spawn`/`send`/`read` are unimplemented (they
+  shipped) and drops `free` from its agent-verb list (`mu agent
+  free` was removed with the other secondary agent verbs); its
+  vocabulary entry now points at `mu agent kick`'s Linux-only gap
+  instead. `docs/VISION.md`'s "no dry-run on most mutations" gap
+  now names `task delete` and `undo`, which gained two-phase
+  dry-run/`--yes` after that line was written, and its iteration-
+  speed LOC/test counts are corrected from a stale ~30k LOC /
+  ~2800 tests to the current ~95k LOC / ~2900 tests (`wc -l` over
+  `src/` + `test/`; `npm run test`). `docs/ROADMAP.md`'s rejected-
+  substrates table drops "and archives" from a capture-bug
+  consequence list — the archive namespace no longer exists to
+  corrupt. Historical CHANGELOG entries, the v8/v9 migration recipe
+  in `scripts/README.md`, and legacy task-status compatibility text
+  are left untouched — they describe what shipped, not current
+  behavior. Verification: `mu --help` / relevant `mu <verb> --help`
+  cross-checked against every corrected claim, `npm run
+  typecheck && npm run lint && npm run test:fast && npm run test &&
+  npm run build` all green.
+
 ### Fixed
 
 - **Removed the dead `suppressSnapshot` field from

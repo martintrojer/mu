@@ -33,8 +33,8 @@ both. `--json` exists on every verb:
 - **agent** — named worker in a pane (you may be one).
 - **mux** — the multiplexer mu drives: tmux, or herdr. One per
   invocation. `mu doctor` names the active one; `MU_MUX` forces it.
-  Only relevant to you if a verb fails with a mux error — on herdr,
-  `agent spawn` / `send` / `read` are not implemented yet (exit 5).
+  Spawn, send, read, and status detection work on both; `mu agent
+  kick` is herdr's remaining gap (Linux-only there).
 - **task** — DAG node with mandatory `impact` (1–100) and
   `effort_days`. Status: `OPEN`, `IN_PROGRESS`, `CLOSED`
   (satisfies `--blocked-by`). Record postponed/wont-do rationale as
@@ -254,7 +254,7 @@ git cherry-pick "$sha" && npm test
   `--yes` commits; writes TOMBSTONE ops so history survives and
   `mu undo <group> --yes` reverses the row deletions).
 - **Agents:** `spawn` (`--workspace`, `--role read-only`, `--command`),
-  `send`, `read`, `show`, `list`, `close`, `free`, `kick`,
+  `send`, `read`, `show`, `list`, `close`, `kick`,
   `adopt <pane-id|title>` for orphan panes. Four worth knowing:
   - `wait <names...> --first` — blocks until an agent finishes (busy →
     anything else). The task-less counterpart to `mu task wait`, for
