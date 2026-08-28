@@ -189,9 +189,6 @@ export function BlockedCard({
 
 // ─── pure helpers (exported for unit tests) ────────────────────────
 
-/** @deprecated Use GLYPH. Kept for existing popup/test consumers. */
-export const glyphFor = (): string => GLYPH;
-
 /** Filter a list of blockers to the still-gating ones. A blocker is
  *  still-gating iff its status is not CLOSED (only CLOSED satisfies a
  *  blocked-by edge per the BLOCKED view in src/db.ts). Returns a new

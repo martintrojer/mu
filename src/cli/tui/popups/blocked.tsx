@@ -30,7 +30,7 @@ import { type ReactElement, useMemo } from "react";
 import { roiBucket, type WorkstreamSnapshot } from "../../../state.js";
 import { getTaskEdgesWithStatus } from "../../../tasks.js";
 import { inkColorForStatus } from "../../format.js";
-import { glyphFor, stillGating } from "../cards/blocked.js";
+import { GLYPH, stillGating } from "../cards/blocked.js";
 import type { ColumnSpec } from "../columns.js";
 import { colorForBucket, formatRoi } from "../format-helpers.js";
 import {
@@ -90,7 +90,7 @@ export function BlockedPopup(props: PopupProps): ReactElement {
           const bucket = roiBucket(t.impact, t.effortDays);
           return {
             cells: [
-              glyphFor(),
+              GLYPH,
               t.name,
               t.status,
               String(blockers.length),

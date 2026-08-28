@@ -3,14 +3,13 @@
 
 import { describe, expect, it } from "vitest";
 import {
-  ageMs,
-  formatSinceClaim,
   formatSubtitle,
-  glyphFor,
+  GLYPH,
   InProgressCard,
   isStale,
   STALE_CLAIM_THRESHOLD_MS,
 } from "../src/cli/tui/cards/inprogress.js";
+import { ageMs, formatSinceClaim } from "../src/cli/tui/format-helpers.js";
 import type { WorkstreamSnapshot } from "../src/state.js";
 import type { TaskRow } from "../src/tasks.js";
 import { expectTextAbsent, expectTextOnce, renderCardToText } from "./_card-render.js";
@@ -122,21 +121,13 @@ describe("InProgressCard pure helpers", () => {
     expect(STALE_CLAIM_THRESHOLD_MS).toBe(300_000);
   });
 
-  it("glyphFor: every IN_PROGRESS row gets the cog glyph", () => {
-    // Argumentless per review_dead_code_glyph_for_unused: the glyph
-    // never depended on the row, so the previous TaskRow parameter
-    // was an anticipatory abstraction (AGENTS.md ban).
-    const g = glyphFor();
+  it("GLYPH: every IN_PROGRESS row gets the cog glyph", () => {
     // The cog is a single visible character; we don't pin the exact
     // codepoint because STATUS_EMOJI may evolve, but it must be a
     // non-empty short string (≤ 4 bytes / 1-2 columns).
-    expect(typeof g).toBe("string");
-    expect(g.length).toBeGreaterThan(0);
-    expect(g.length).toBeLessThanOrEqual(4);
-  });
-
-  it("glyphFor: takes no arguments (review_dead_code_glyph_for_unused)", () => {
-    expect(glyphFor.length).toBe(0);
+    expect(typeof GLYPH).toBe("string");
+    expect(GLYPH.length).toBeGreaterThan(0);
+    expect(GLYPH.length).toBeLessThanOrEqual(4);
   });
 
   it("ageMs: returns the delta against `now`, never negative", () => {

@@ -38,11 +38,6 @@ import { useTerminalSize } from "../use-terminal-size.js";
 import { wrapAndPadAnsiLines } from "../wrap-ansi.js";
 import { applyScroll, clampScrollTop, isNavAction } from "./scroll.js";
 
-// Re-export so existing `import { clampScrollTop } from "./drill.js"`
-// callers stay valid until they migrate to the centralised
-// applyCursor / applyScroll helpers in popups/scroll.ts.
-export { clampScrollTop } from "./scroll.js";
-
 export interface DrillKeymapOptions {
   /** Already-rendered text — split on \n for scroll clamping. */
   body: string;
@@ -57,12 +52,11 @@ export interface DrillKeymapOptions {
   /** Called after keyboard navigation computes and stores a new scroll top. */
   onScrollChange?: (newTop: number) => void;
   /**
-   * Identity signal for scroll resets. Callers should pass the focused
-   * row / entity identity so auto-refreshes of the SAME drill preserve
+   * Identity signal for scroll resets. Callers pass the focused row /
+   * entity identity so auto-refreshes of the SAME drill preserve
    * scroll, while navigating to a DIFFERENT drill resets to the top.
-   * Omit to keep the legacy behaviour: reset whenever body changes.
    */
-  resetKey?: string | number;
+  resetKey: string | number;
 }
 
 export interface WrappedDrillBody {
@@ -126,12 +120,10 @@ export function useDrillKeymap({
   const wrappedBody = useWrappedBody(body, wrapWidth);
   const { totalLines } = wrappedBody;
 
-  const resetSignal = resetKey ?? body;
-
-  // biome-ignore lint/correctness/useExhaustiveDependencies: resetSignal intentionally preserves legacy body-based resets when resetKey is omitted, and identity-based resets when resetKey is supplied.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: resetKey is intentionally the reset trigger even though its value isn't read in the body.
   useEffect(() => {
     updateScrollTop(0);
-  }, [resetSignal, updateScrollTop]);
+  }, [resetKey, updateScrollTop]);
 
   useEffect(() => {
     updateScrollTop((s) => clampScrollTop(s, totalLines, viewport));

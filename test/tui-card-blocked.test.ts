@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   BlockedCard,
   formatSubtitle,
-  glyphFor,
+  GLYPH,
   pickTopBlocker,
   stillGating,
 } from "../src/cli/tui/cards/blocked.js";
@@ -196,19 +196,11 @@ describe("BlockedCard", () => {
 });
 
 describe("BlockedCard pure helpers", () => {
-  it("glyphFor: every blocked row gets the chain-link glyph", () => {
-    // Argumentless per review_dead_code_glyph_for_unused: the glyph
-    // never depended on the row, so the previous TaskRow parameter
-    // was an anticipatory abstraction (AGENTS.md ban).
-    const g = glyphFor();
-    expect(typeof g).toBe("string");
-    expect(g.length).toBeGreaterThan(0);
-    expect(g.length).toBeLessThanOrEqual(4);
-    expect(g).toBe("⛓");
-  });
-
-  it("glyphFor: takes no arguments (review_dead_code_glyph_for_unused)", () => {
-    expect(glyphFor.length).toBe(0);
+  it("GLYPH: every blocked row gets the chain-link glyph", () => {
+    expect(typeof GLYPH).toBe("string");
+    expect(GLYPH.length).toBeGreaterThan(0);
+    expect(GLYPH.length).toBeLessThanOrEqual(4);
+    expect(GLYPH).toBe("⛓");
   });
 
   it("stillGating: drops CLOSED blockers; keeps OPEN/IN_PROGRESS", () => {

@@ -13,11 +13,8 @@ import { join } from "node:path";
 import { render } from "ink";
 import { createElement } from "react";
 import { afterEach, describe, expect, it } from "vitest";
-import {
-  formatRoi,
-  InProgressPopup,
-  yankCommandForTask,
-} from "../src/cli/tui/popups/inprogress.js";
+import { formatRoi } from "../src/cli/tui/format-helpers.js";
+import { InProgressPopup, yankCommandForTask } from "../src/cli/tui/popups/inprogress.js";
 import { type Db, openDb } from "../src/db.js";
 import type { WorkstreamSnapshot } from "../src/state.js";
 import { addNote, addTask, claimTask, listInProgress, type TaskRow } from "../src/tasks.js";

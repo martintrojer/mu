@@ -23,7 +23,7 @@
 import type { ReactElement } from "react";
 import { inkColorForStatus } from "../../format.js";
 import { agentByName, formatAgentRefDisplayName } from "../agent-display.js";
-import { glyphFor, isStale } from "../cards/inprogress.js";
+import { GLYPH, isStale } from "../cards/inprogress.js";
 import type { ColumnSpec } from "../columns.js";
 import { ageMs, formatRoi, formatSinceClaim } from "../format-helpers.js";
 import {
@@ -32,11 +32,6 @@ import {
   TaskListPopup,
   type TaskListPopupConfig,
 } from "./task-list-popup.js";
-
-// Re-exported for test back-compat (test/tui-popup-inprogress.test.ts
-// imports `formatRoi` from this module). Single source of truth lives
-// in ../format-helpers.ts.
-export { formatRoi };
 
 const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
   { kind: "protect" }, // glyph
@@ -65,7 +60,7 @@ const config: TaskListPopupConfig = {
       const stale = isStale(age);
       return {
         cells: [
-          glyphFor(),
+          GLYPH,
           t.name,
           t.status,
           formatAgentRefDisplayName(t.ownerName, agentLookup),

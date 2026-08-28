@@ -45,8 +45,7 @@ describe("useDrillKeymap", () => {
     expect(DRILL_SRC).toMatch(/case "yank":/);
     expect(DRILL_SRC).toMatch(/case "verb":/);
     expect(DRILL_SRC).toMatch(/action\.key === "t"/);
-    expect(DRILL_SRC).toContain("resetKey?: string | number");
-    expect(DRILL_SRC).toContain("const resetSignal = resetKey ?? body");
+    expect(DRILL_SRC).toContain("resetKey: string | number");
     expect(DRILL_SRC).toMatch(/clampScrollTop\(s, totalLines, viewport\)/);
     expect(DRILL_SRC).toContain("wrappedBody: WrappedDrillBody");
     expect(DRILL_SRC).toContain("wrappedLines: wrappedBody.lines");

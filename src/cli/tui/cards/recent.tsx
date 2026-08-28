@@ -66,11 +66,6 @@ import { ListRow } from "../list-row.js";
 import { TitledBox } from "../titled-box.js";
 import { CardPlaceholder } from "./_placeholder.js";
 
-// Re-exported for back-compat with consumers that previously imported
-// these helpers from this card (popups/recent, tests). The single
-// source of truth lives in ../format-helpers.ts.
-export { ageMs, formatWhen };
-
 export interface RecentCardProps {
   snapshot: WorkstreamSnapshot | null;
   rowBudget?: number;
@@ -153,9 +148,6 @@ export function RecentCard({ snapshot, rowBudget, cols }: RecentCardProps): Reac
 }
 
 // ─── pure helpers (exported for unit tests) ────────────────────────
-
-/** @deprecated Use GLYPH. Kept for existing popup/test consumers. */
-export const glyphFor = (): string => GLYPH;
 
 /** Build the subtitle: total · last <when>. Suppresses the "last"
  *  leg when `mostRecentMs` is null (defensive — populated path

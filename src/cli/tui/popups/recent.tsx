@@ -23,7 +23,7 @@
 
 import type { ReactElement } from "react";
 import { inkColorForStatus } from "../../format.js";
-import { glyphFor } from "../cards/recent.js";
+import { GLYPH } from "../cards/recent.js";
 import type { ColumnSpec } from "../columns.js";
 import { ageMs, formatRoi, formatWhen } from "../format-helpers.js";
 import {
@@ -32,11 +32,6 @@ import {
   TaskListPopup,
   type TaskListPopupConfig,
 } from "./task-list-popup.js";
-
-// Re-exported for test back-compat (test/tui-popup-recent.test.ts
-// imports `formatRoi` from this module). Single source of truth lives
-// in ../format-helpers.ts.
-export { formatRoi };
 
 const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
   { kind: "protect" }, // glyph
@@ -62,7 +57,7 @@ const config: TaskListPopupConfig = {
     const now = Date.now();
     return visible.map((t) => ({
       cells: [
-        glyphFor(),
+        GLYPH,
         t.name,
         t.status,
         formatWhen(ageMs(t, now)),

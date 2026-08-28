@@ -2,13 +2,8 @@
 // workstream `tui-impl`).
 
 import { describe, expect, it } from "vitest";
-import {
-  ageMs,
-  formatSubtitle,
-  formatWhen,
-  glyphFor,
-  RecentCard,
-} from "../src/cli/tui/cards/recent.js";
+import { formatSubtitle, GLYPH, RecentCard } from "../src/cli/tui/cards/recent.js";
+import { ageMs, formatWhen } from "../src/cli/tui/format-helpers.js";
 import type { WorkstreamSnapshot } from "../src/state.js";
 import type { TaskRow } from "../src/tasks.js";
 import { expectTextAbsent, expectTextOnce, renderCardToText } from "./_card-render.js";
@@ -116,19 +111,11 @@ describe("RecentCard", () => {
 });
 
 describe("RecentCard pure helpers", () => {
-  it("glyphFor: every recently-closed row gets the heavy check glyph", () => {
-    // Argumentless per review_dead_code_glyph_for_unused: the glyph
-    // never depended on the row, so the previous TaskRow parameter
-    // was an anticipatory abstraction (AGENTS.md ban).
-    const g = glyphFor();
-    expect(typeof g).toBe("string");
-    expect(g.length).toBeGreaterThan(0);
-    expect(g.length).toBeLessThanOrEqual(4);
-    expect(g).toBe("✓");
-  });
-
-  it("glyphFor: takes no arguments (review_dead_code_glyph_for_unused)", () => {
-    expect(glyphFor.length).toBe(0);
+  it("GLYPH: every recently-closed row gets the heavy check glyph", () => {
+    expect(typeof GLYPH).toBe("string");
+    expect(GLYPH.length).toBeGreaterThan(0);
+    expect(GLYPH.length).toBeLessThanOrEqual(4);
+    expect(GLYPH).toBe("✓");
   });
 
   it("ageMs: returns the delta against `now`, never negative", () => {

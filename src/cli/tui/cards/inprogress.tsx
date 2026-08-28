@@ -64,11 +64,6 @@ import { ListRow } from "../list-row.js";
 import { TitledBox } from "../titled-box.js";
 import { CardPlaceholder } from "./_placeholder.js";
 
-// Re-exported for back-compat with consumers that previously imported
-// these helpers from this card (popups/inprogress, tests). The single
-// source of truth lives in ../format-helpers.ts.
-export { ageMs, formatSinceClaim };
-
 export interface InProgressCardProps {
   snapshot: WorkstreamSnapshot | null;
   rowBudget?: number;
@@ -170,9 +165,6 @@ export function InProgressCard({ snapshot, rowBudget, cols }: InProgressCardProp
 }
 
 // ─── pure helpers (exported for unit tests) ────────────────────────
-
-/** @deprecated Use GLYPH. Kept for existing popup/test consumers. */
-export const glyphFor = (): string => GLYPH;
 
 /** True when `ms` is at or above the stale-claim threshold (5min).
  *  null / undefined → false (we never paint "stale" without data). */
