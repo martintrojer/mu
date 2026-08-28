@@ -419,11 +419,7 @@ export {
 } from "./undo.js";
 export {
   backendByName,
-  type CreateWorkspaceOptions as VcsCreateWorkspaceOptions,
-  type CreateWorkspaceResult as VcsCreateWorkspaceResult,
   detectBackend,
-  type FreeWorkspaceOptions as VcsFreeWorkspaceOptions,
-  type FreeWorkspaceResult as VcsFreeWorkspaceResult,
   gitBackend,
   jjBackend,
   noneBackend,
@@ -432,12 +428,9 @@ export {
   type VcsBackendName,
 } from "./vcs.js";
 export {
-  type CreateWorkspaceOptions as WorkspaceCreateOptions,
   createWorkspace,
   decorateWithDirty,
   decorateWithStaleness,
-  type FreeWorkspaceOptions as WorkspaceFreeOptions,
-  type FreeWorkspaceResult as WorkspaceFreeResult,
   freeWorkspace,
   getWorkspaceForAgent,
   getWorkspaceStaleness,
