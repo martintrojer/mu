@@ -10,6 +10,8 @@ breaking changes are called out under "Breaking" in each entry.
 
 ## [Unreleased]
 
+## [1.1.0] — 2026-08-28
+
 ### Breaking
 
 - **`mu workstream` fields renamed to backend-neutral mux naming**
