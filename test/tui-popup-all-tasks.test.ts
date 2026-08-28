@@ -108,10 +108,6 @@ async function renderAllTasksAfterMovingToCursor(opts: {
 }
 
 describe("AllTasksPopup", () => {
-  it("is exported as a function", () => {
-    expect(typeof AllTasksPopup).toBe("function");
-  });
-
   it("initial data contains every task across statuses and sorts by ROI desc", () => {
     const db = fixtureDb();
     seedOnePerStatus(db);

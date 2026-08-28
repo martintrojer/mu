@@ -138,12 +138,6 @@ function mount(opts: MountOpts) {
   return { stdin, stdout, instance };
 }
 
-describe("ReadyPopup (Tasks popup) — export shape", () => {
-  it("is exported as a function", () => {
-    expect(typeof ReadyPopup).toBe("function");
-  });
-});
-
 describe("ReadyPopup — rendered list + yank matrix", () => {
   it("renders OPEN and IN_PROGRESS rows from the snapshot", async () => {
     const db = fixtureDb();

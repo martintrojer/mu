@@ -40,10 +40,6 @@ function logRow(seq: number, payload: string): LogRow {
 }
 
 describe("LogCard", () => {
-  it("is exported as a function", () => {
-    expect(typeof LogCard).toBe("function");
-  });
-
   it("renders the loading title row", () => {
     const text = renderCardToText(LogCard({ snapshot: null }));
     expect(text).toContain("Activity log");

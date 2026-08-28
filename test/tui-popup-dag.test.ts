@@ -6,12 +6,7 @@ import { createElement, type ReactElement, useEffect, useRef } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import { cellWidth } from "../src/cli/tui/columns.js";
 import type { PopupAction } from "../src/cli/tui/keys.js";
-import {
-  buildDagBody,
-  DagPopup,
-  dagYankCommand,
-  truncateDagBody,
-} from "../src/cli/tui/popups/dag.js";
+import { buildDagBody, dagYankCommand, truncateDagBody } from "../src/cli/tui/popups/dag.js";
 import { useDrillKeymap } from "../src/cli/tui/popups/drill.js";
 import { loadFullDag, renderForest } from "../src/dag.js";
 import { type Db, openDb } from "../src/db.js";
@@ -88,10 +83,6 @@ describe("renderForest", () => {
 });
 
 describe("DagPopup", () => {
-  it("is exported as a function", () => {
-    expect(typeof DagPopup).toBe("function");
-  });
-
   it("loads every root and edge for the current workstream", () => {
     const db = fixtureDb();
     for (const id of ["root_a", "root_b", "root_c", "child_a", "child_b"] as const) {

@@ -53,10 +53,6 @@ function task(over: Partial<TaskRow> = {}): TaskRow {
 }
 
 describe("InProgressCard", () => {
-  it("is exported as a function", () => {
-    expect(typeof InProgressCard).toBe("function");
-  });
-
   it("renders the loading title row", () => {
     const text = renderCardToText(InProgressCard({ snapshot: null }));
     expect(text).toContain("In-progress");

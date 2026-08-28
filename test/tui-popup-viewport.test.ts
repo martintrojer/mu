@@ -82,21 +82,6 @@ describe("popupViewport", () => {
   });
 });
 
-describe("no popup file still hardcodes `const VIEWPORT = 20`", () => {
-  // Cheap regex catches the regression. After the fix, every popup
-  // computes `viewport` per-render from useStdout().rows via
-  // popupViewport(); the literal module-scope constant is forbidden.
-  for (const name of POPUP_FILES) {
-    it(`${name} contains no module-scope \`const VIEWPORT = 20\``, () => {
-      const src = readFileSync(join(POPUPS_DIR, name), "utf8");
-      // The constant lived at module scope (not indented) — match
-      // ^ to keep the regex tight. Comments mentioning VIEWPORT are
-      // fine; they're either in /comments/ or indented.
-      expect(src).not.toMatch(/^const VIEWPORT = 20/m);
-    });
-  }
-});
-
 describe("each popup uses the centralised usePopupViewport() hook", () => {
   // Companion check: every popup must call usePopupViewport() so
   // live terminal-resize events actually re-flow the body. The

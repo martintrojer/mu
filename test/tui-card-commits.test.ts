@@ -45,10 +45,6 @@ function commit(over: Partial<CommitSummary> = {}): CommitSummary {
 }
 
 describe("CommitsCard", () => {
-  it("is exported as a function", () => {
-    expect(typeof CommitsCard).toBe("function");
-  });
-
   it("renders loading and empty states", () => {
     expect(renderCardToText(CommitsCard({ snapshot: null }))).toContain("loading…");
     const empty = renderCardToText(CommitsCard({ snapshot: EMPTY_SNAPSHOT }));

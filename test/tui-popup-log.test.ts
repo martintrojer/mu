@@ -130,12 +130,6 @@ function mountLogPopup(opts: MountOpts): {
   return { stdin, stdout, unmount: () => instance.unmount() };
 }
 
-describe("LogPopup (export contract)", () => {
-  it("is exported as a function", () => {
-    expect(typeof LogPopup).toBe("function");
-  });
-});
-
 describe("LogPopup behaviour (mount + simulateInput)", () => {
   it("renders the empty-snapshot placeholder when snapshot.recent is empty", async () => {
     const db = fixtureDb();

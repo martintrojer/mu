@@ -50,10 +50,6 @@ function track(rootNames: readonly string[], over: Partial<Track> = {}): Track {
 }
 
 describe("TracksCard", () => {
-  it("is exported as a function", () => {
-    expect(typeof TracksCard).toBe("function");
-  });
-
   it("renders the loading title row", () => {
     const text = renderCardToText(TracksCard({ snapshot: null }));
     expect(text).toContain("Tracks");

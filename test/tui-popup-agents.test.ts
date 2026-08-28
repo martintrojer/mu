@@ -139,12 +139,6 @@ function mountAgentsPopup(opts: MountOpts): {
   return { stdin, stdout, unmount: () => instance.unmount() };
 }
 
-describe("AgentsPopup (export contract)", () => {
-  it("is exported as a function", () => {
-    expect(typeof AgentsPopup).toBe("function");
-  });
-});
-
 describe("AgentsPopup behaviour (mount + simulateInput)", () => {
   it("renders one row per agent in snapshot.view.agents (name + status visible)", async () => {
     const db = fixtureDb();

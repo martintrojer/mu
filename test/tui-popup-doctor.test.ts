@@ -167,10 +167,6 @@ async function clearFilter(stdin: ReturnType<typeof createInkInputStream>): Prom
 }
 
 describe("DoctorPopup: export contract", () => {
-  it("is exported as a function", () => {
-    expect(typeof DoctorPopup).toBe("function");
-  });
-
   it("re-uses Card 9's pure helpers (no duplication)", () => {
     // Mirrors Card 9; the popup imports glyphFor / colorForStatus
     // rather than re-derive them.

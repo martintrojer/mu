@@ -10,7 +10,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { readSpawnLockMeta, withSpawnLock } from "../src/agents/spawn-lock.js";
+import { lockPathForSession, withSpawnLock } from "../src/agents/spawn-lock.js";
+import { readFileLockMeta } from "../src/file-lock.js";
 
 describe("withSpawnLock", () => {
   let dir: string;
@@ -81,13 +82,13 @@ describe("withSpawnLock", () => {
 
   it("records holder metadata while the section runs", async () => {
     await withSpawnLock("mu-scratch", async () => {
-      const meta = await readSpawnLockMeta("mu-scratch");
+      const meta = await readFileLockMeta(lockPathForSession("mu-scratch"));
       expect(meta?.pid).toBe(process.pid);
-      expect(meta?.session).toBe("mu-scratch");
+      expect(meta?.label).toBe("mu-scratch");
       expect(typeof meta?.acquiredAt).toBe("string");
     });
     // After release the meta is gone.
-    expect(await readSpawnLockMeta("mu-scratch")).toBeNull();
+    expect(await readFileLockMeta(lockPathForSession("mu-scratch"))).toBeNull();
   });
 
   it("breaks a stale lock from a dead process (staleLockMs=0)", async () => {

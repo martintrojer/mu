@@ -28,12 +28,13 @@
 // acquisition time for stale-lock diagnostics and breaking.
 
 import { join } from "node:path";
-import { type FileLockOptions, locksDir, readFileLockMeta, withFileLock } from "../file-lock.js";
+import { type FileLockOptions, locksDir, withFileLock } from "../file-lock.js";
 
 /** Lock directory path for a given tmux session name. The session name
  *  is already validated ([a-z0-9_-] plus the `mu-` prefix), so it is a
- *  safe path segment. */
-function lockPathForSession(session: string): string {
+ *  safe path segment. Exported for tests that need to read the lock's
+ *  metadata directly via readFileLockMeta. */
+export function lockPathForSession(session: string): string {
   return join(locksDir(), `spawn-${session}.lock`);
 }
 
@@ -71,15 +72,4 @@ export async function withSpawnLock<T>(
     timeoutEnvVar: "MU_SPAWN_LOCK_TIMEOUT_MS",
   };
   return withFileLock(lockPathForSession(session), session, fn, lockOpts);
-}
-
-/** Exposed for tests: read a held lock's metadata, or null if unparsable
- *  / absent. The `session` field is preserved for back-compat with the
- *  existing test's expectations. */
-export async function readSpawnLockMeta(
-  session: string,
-): Promise<{ pid: number; session: string; acquiredAt: string } | null> {
-  const meta = await readFileLockMeta(lockPathForSession(session));
-  if (meta === null) return null;
-  return { pid: meta.pid, session: meta.label, acquiredAt: meta.acquiredAt };
 }

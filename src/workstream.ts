@@ -53,9 +53,6 @@ export const RESERVED_WORKSTREAM_PREFIX = "mu-";
  *  See docs/VOCABULARY.md "scratch workstream". */
 export const RESERVED_WORKSTREAM_NAMES = new Set(["scratch"]);
 
-/** The canonical off-the-cuff workstream name. */
-export const SCRATCH_WORKSTREAM = "scratch";
-
 // ─── Best-effort mux reads ─────────────────────────────────────────
 //
 // Every workstream READ decorates DB truth with mux liveness. The DB

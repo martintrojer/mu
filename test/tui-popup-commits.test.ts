@@ -11,7 +11,7 @@ import {
   shortSha,
   showCommandForBackend,
 } from "../src/cli/tui/popups/commits.js";
-import { wrapAnsiLines } from "../src/cli/tui/wrap-ansi.js";
+import { wrapAndPadAnsiLines } from "../src/cli/tui/wrap-ansi.js";
 import type { Db } from "../src/db.js";
 import type { WorkstreamSnapshot } from "../src/state.js";
 import type { CommitSummary } from "../src/vcs.js";
@@ -185,10 +185,6 @@ async function typeFilter(
 }
 
 describe("CommitsPopup export + pure helpers", () => {
-  it("is exported as a function", () => {
-    expect(typeof CommitsPopup).toBe("function");
-  });
-
   it("shortSha returns seven characters", () => {
     expect(shortSha("abcdef0123456789")).toBe("abcdef0");
   });
@@ -216,20 +212,20 @@ describe("CommitsPopup export + pure helpers", () => {
 describe("CommitsPopup ANSI wrapping", () => {
   it("wraps ANSI show output without splitting escape sequences or leaking active SGR", () => {
     const body = `${RED}-${"a".repeat(12)}${RESET}\n${GREEN}+${"b".repeat(12)}${RESET}`;
-    const wrapped = wrapAnsiLines(body, 5).split("\n");
+    const wrapped = wrapAndPadAnsiLines(body, 5).split("\n");
 
     expect(wrapped.map((line) => line.replace(ANSI_RE, ""))).toEqual([
       "-aaaa",
       "aaaaa",
-      "aaa",
+      "aaa  ",
       "+bbbb",
       "bbbbb",
-      "bbb",
+      "bbb  ",
     ]);
     for (const line of wrapped) {
       expect(line).not.toMatch(PARTIAL_ANSI_RE);
       expect(line.match(ANSI_RE)?.join("") ?? "").not.toContain("\n");
-      expect(line.endsWith(RESET)).toBe(true);
+      expect(line.replace(/ +$/, "").endsWith(RESET)).toBe(true);
     }
   });
 });

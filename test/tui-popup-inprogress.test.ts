@@ -106,12 +106,6 @@ function mount(opts: MountOpts) {
   return { stdin, stdout, instance };
 }
 
-describe("InProgressPopup — export contract", () => {
-  it("is exported as a function", () => {
-    expect(typeof InProgressPopup).toBe("function");
-  });
-});
-
 describe("yankCommandForTask (pure)", () => {
   it('yanks `mu task close <id> -w <ws> --evidence "..."`', () => {
     expect(yankCommandForTask("design_x", "tui-impl")).toBe(

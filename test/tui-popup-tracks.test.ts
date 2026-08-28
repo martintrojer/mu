@@ -124,12 +124,6 @@ function mount(opts: MountOpts) {
   return { stdin, stdout, instance };
 }
 
-describe("TracksPopup — export shape", () => {
-  it("is exported as a function", () => {
-    expect(typeof TracksPopup).toBe("function");
-  });
-});
-
 describe("TracksPopup — list view", () => {
   it("renders the merged track and its goal names", async () => {
     const db = fixtureDb();

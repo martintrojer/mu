@@ -49,10 +49,6 @@ function row(over: Partial<WorkspaceRow> = {}): WorkspaceRow {
 }
 
 describe("WorkspacesCard", () => {
-  it("is exported as a function", () => {
-    expect(typeof WorkspacesCard).toBe("function");
-  });
-
   it("renders the loading title row", () => {
     const text = renderCardToText(WorkspacesCard({ snapshot: null }));
     expect(text).toContain("Workspaces");

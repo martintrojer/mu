@@ -2,12 +2,7 @@ import { Box, render, Text } from "ink";
 import { createElement } from "react";
 import stringWidth from "string-width";
 import { afterEach, describe, expect, it } from "vitest";
-import {
-  padAnsiLine,
-  wrapAndPadAnsiLines,
-  wrapAnsi,
-  wrapAnsiLines,
-} from "../src/cli/tui/wrap-ansi.js";
+import { padAnsiLine, wrapAndPadAnsiLines, wrapAnsi } from "../src/cli/tui/wrap-ansi.js";
 import { CaptureStream, collectRenderedLines, createInkCaptureStream } from "./_ink-render.js";
 
 const ESC = "\u001B";
@@ -64,12 +59,6 @@ describe("wrapAnsi", () => {
   it("passes through empty and whitespace-only lines that do not exceed width", () => {
     expect(wrapAnsi("", 4)).toEqual([""]);
     expect(wrapAnsi("   ", 4)).toEqual(["   "]);
-  });
-
-  it("wrapAnsiLines preserves existing line boundaries", () => {
-    expect(wrapAnsiLines(`abcdef\n${GREEN}ghij${RESET}`, 3)).toBe(
-      `abc\ndef\n${GREEN}ghi${RESET}\n${GREEN}j${RESET}`,
-    );
   });
 
   it("padAnsiLine pads a short ANSI line to visible width with plain spaces", () => {

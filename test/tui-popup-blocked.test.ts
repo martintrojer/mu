@@ -119,12 +119,6 @@ function mount(opts: MountOpts) {
   return { stdin, stdout, instance };
 }
 
-describe("BlockedPopup — export contract", () => {
-  it("is exported as a function", () => {
-    expect(typeof BlockedPopup).toBe("function");
-  });
-});
-
 describe("BlockedPopup — rendered list + yank", () => {
   it("renders blocked tasks from snapshot.blocked with blocker columns", async () => {
     const db = fixtureDb();

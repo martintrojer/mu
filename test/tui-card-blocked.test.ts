@@ -97,10 +97,6 @@ function addBlockedFixture(db: Db): void {
 }
 
 describe("BlockedCard", () => {
-  it("is exported as a function", () => {
-    expect(typeof BlockedCard).toBe("function");
-  });
-
   it("renders the loading title row", () => {
     const text = renderCardToText(
       BlockedCard({ snapshot: null, db: fixtureDb(), workstream: "demo" }),

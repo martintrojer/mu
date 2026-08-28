@@ -65,10 +65,6 @@ function snap(doctor: DoctorSummary | null): WorkstreamSnapshot {
 }
 
 describe("DoctorCard", () => {
-  it("is exported as a function", () => {
-    expect(typeof DoctorCard).toBe("function");
-  });
-
   it("renders the loading title row for null snapshot and missing doctor summary", () => {
     for (const snapshot of [null, snap(null)] as const) {
       const text = renderCardToText(DoctorCard({ snapshot }));

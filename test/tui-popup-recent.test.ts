@@ -154,12 +154,6 @@ function snapshotFor(db: Db): WorkstreamSnapshot {
   };
 }
 
-describe("RecentPopup (export contract)", () => {
-  it("is exported as a function", () => {
-    expect(typeof RecentPopup).toBe("function");
-  });
-});
-
 describe("yankCommandForTask", () => {
   it("yanks `mu task open <id> -w <ws>`", () => {
     expect(yankCommandForTask("design_x", "tui-impl")).toBe("mu task open design_x -w tui-impl");

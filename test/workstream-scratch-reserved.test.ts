@@ -17,7 +17,6 @@ import {
   isScratchWorkstream,
   isValidWorkstreamName,
   RESERVED_WORKSTREAM_NAMES,
-  SCRATCH_WORKSTREAM,
   WorkstreamNameReservedError,
 } from "../src/workstream.js";
 
@@ -38,7 +37,7 @@ describe("scratch reserved workstream", () => {
   });
 
   it("scratch is in the reserved set and recognised as scratch", () => {
-    expect(RESERVED_WORKSTREAM_NAMES.has(SCRATCH_WORKSTREAM)).toBe(true);
+    expect(RESERVED_WORKSTREAM_NAMES.has("scratch")).toBe(true);
     expect(isScratchWorkstream("scratch")).toBe(true);
     expect(isScratchWorkstream("realws")).toBe(false);
   });

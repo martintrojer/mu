@@ -266,10 +266,6 @@ async function typeFilter(
 }
 
 describe("WorkspacesPopup: export contract", () => {
-  it("is exported as a function", () => {
-    expect(typeof WorkspacesPopup).toBe("function");
-  });
-
   it("re-uses card 5's pure colour/glyph helpers (no duplication)", () => {
     // Mirrors Card 5; the popup MUST import the four helpers rather
     // than re-derive them. Keeps the popup ↔ card visually in sync.

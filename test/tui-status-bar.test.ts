@@ -33,10 +33,6 @@ function renderToString(node: unknown): string {
 }
 
 describe("StatusBar", () => {
-  it("is exported as a function", () => {
-    expect(typeof StatusBar).toBe("function");
-  });
-
   it.each<StatusMode>(["dashboard", "popup", "popup-filter", "help"])(
     "renders without crashing in %s mode",
     (mode) => {

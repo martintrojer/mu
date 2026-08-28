@@ -51,10 +51,6 @@ function task(over: Partial<TaskRow> = {}): TaskRow {
 }
 
 describe("RecentCard", () => {
-  it("is exported as a function", () => {
-    expect(typeof RecentCard).toBe("function");
-  });
-
   it("renders the loading title row", () => {
     const text = renderCardToText(RecentCard({ snapshot: null }));
     expect(text).toContain("Recent");

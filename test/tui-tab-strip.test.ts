@@ -31,10 +31,6 @@ function renderToString(node: unknown): string {
 }
 
 describe("TabStrip", () => {
-  it("is exported as a function", () => {
-    expect(typeof TabStrip).toBe("function");
-  });
-
   it("renders nothing when only one workstream is loaded (N=1 = single-ws TUI)", () => {
     // The single-ws case must render null so the frame is identical
     // to the pre-multi-ws build. Any visual change there would

@@ -12,7 +12,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { renderNotes, TaskDetailDrill } from "../src/cli/tui/popups/task-detail.js";
+import { renderNotes } from "../src/cli/tui/popups/task-detail.js";
 import { type Db, openDb } from "../src/db.js";
 import { addNote, addTask } from "../src/tasks.js";
 import { ensureWorkstream } from "../src/workstream.js";
@@ -37,10 +37,6 @@ afterEach(() => {
 describe("TaskDetailDrill", () => {
   const ansiBoldCyan = "\x1b[1;36m";
   const ansiReset = "\x1b[0m";
-
-  it("is exported as a function", () => {
-    expect(typeof TaskDetailDrill).toBe("function");
-  });
 
   it("renderNotes returns '' when there are no notes (empty-state)", () => {
     addTask(db, { localId: "t1", title: "T1", impact: 50, effortDays: 0.1, workstream: "demo" });
