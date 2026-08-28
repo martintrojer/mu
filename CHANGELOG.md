@@ -197,6 +197,23 @@ breaking changes are called out under "Breaking" in each entry.
 
 ### Removed
 
+- **`src/parked.ts` and the "presumed parked" heuristic deleted
+  (`audit2find_dormant_parked_heuristic`, surface-audit).**
+  `parkedStatus` never fired in production: it keyed on the most
+  recent op having intent `workstream.export`, but nothing in-tree has
+  emitted that intent since `mu workstream export` was removed (see
+  below), so it returned `{ parked: false }` unconditionally. The
+  module's own header called this out as a deletion candidate if the
+  peer-watermark re-grounding never happened; it never did. Deleted
+  with it: `mu workstream list`'s dead `parked` column (always
+  rendered `—`), the TUI tab strip's unreachable `~` marker and its
+  precedence-over-scratch logic, `WorkstreamSummary.parked`, and the
+  SDK exports `parkedStatus`, `ParkedStatus`, and
+  `WORKSTREAM_PARKED_THRESHOLD_DAYS`. The legacy `workstream.export`
+  intent stays recognized by `src/legacy-ops.ts` for reading ops
+  written by older versions (rebuild / segments / sync compatibility)
+  — only the dead `parkedStatus` consumer surface is gone.
+
 - **`mu workstream export` deleted, along with the markdown bucket
   renderer (surface-audit).** The read-only markdown artifact was a
   second, lossy way to get data out of mu, and it paid for itself in

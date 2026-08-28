@@ -199,11 +199,6 @@ export {
   withOpContext,
 } from "./op-context.js";
 export {
-  type ParkedStatus,
-  parkedStatus,
-  WORKSTREAM_PARKED_THRESHOLD_DAYS,
-} from "./parked.js";
-export {
   type MachineLocalLoss,
   type RebuildOptions,
   type RebuildReport,

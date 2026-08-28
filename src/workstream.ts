@@ -20,7 +20,6 @@ import { type Db, defaultStateDir } from "./db.js";
 import { activeMux } from "./mux.js";
 import { withOpContext } from "./op-context.js";
 import type { HasNextSteps, NextStep } from "./output.js";
-import { parkedStatus } from "./parked.js";
 import { backendByName, type VcsBackend, type VcsBackendName } from "./vcs.js";
 import { listWorkspaces } from "./workspace.js";
 
@@ -250,14 +249,6 @@ export interface WorkstreamSummary {
    *  otherwise such rows are orphaned forever (the previous
    *  `nothingToDo` heuristic short-circuited on them). */
   registered: boolean;
-  /** "Presumed parked on another machine" derived signal. Present
-   *  iff `parkedStatus(db, name)` reports `parked: true` (most recent
-   *  op is an export marker, no alive agents, no
-   *  IN_PROGRESS tasks, threshold elapsed). Dormant in practice — see
-   *  src/parked.ts for why nothing emits that marker. Consumed by
-   *  `mu workstream list` and the TUI tab strip / workstreams card.
-   *  See src/parked.ts. */
-  parked?: { sinceDays: number };
 }
 
 export interface DestroyResult {
@@ -429,7 +420,6 @@ export async function summarizeWorkstream(
   opts: WorkstreamOptions,
 ): Promise<WorkstreamSummary> {
   const muxSession = opts.muxSession ?? `mu-${opts.workstream}`;
-  const parked = parkedStatus(db, opts.workstream);
   return {
     name: opts.workstream,
     muxSession,
@@ -440,7 +430,6 @@ export async function summarizeWorkstream(
     edgeCount: countEdges(db, opts.workstream),
     workspaceCount: listWorkspaces(db, opts.workstream).length,
     registered: isRegistered(db, opts.workstream),
-    ...(parked.parked ? { parked: { sinceDays: parked.sinceDays ?? 0 } } : {}),
   };
 }
 

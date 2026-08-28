@@ -673,13 +673,13 @@ mu workstream list
 ```
 
 ```
-┌────────────────────────────────────────┬───────┬────────┬───────┬───────┬───────┬────────┐
-│ name                                   │ tmux  │ agents │ tasks │ edges │ notes │ parked │
-├────────────────────────────────────────┼───────┼────────┼───────┼───────┼───────┼────────┤
-│ auth                                   │ —     │ 0      │ 2     │ 1     │ 0     │ —      │
-├────────────────────────────────────────┼───────┼────────┼───────┼───────┼───────┼────────┤
-│ mu                                     │ alive │ 0      │ 0     │ 0     │ 0     │ —      │
-└────────────────────────────────────────┴───────┴────────┴───────┴───────┴───────┴────────┘
+┌────────────────────────────────────────┬───────┬────────┬───────┬───────┬───────┐
+│ name                                   │ tmux  │ agents │ tasks │ edges │ notes │
+├────────────────────────────────────────┼───────┼────────┼───────┼───────┼───────┤
+│ auth                                   │ —     │ 0      │ 2     │ 1     │ 0     │
+├────────────────────────────────────────┼───────┼────────┼───────┼───────┼───────┤
+│ mu                                     │ alive │ 0      │ 0     │ 0     │ 0     │
+└────────────────────────────────────────┴───────┴────────┴───────┴───────┴───────┘
 ```
 
 The list is the **union** of three sources: distinct workstreams in
@@ -978,8 +978,7 @@ workstreams: ▸ auth-refactor · ui-rewrite · demo   (Tab / Shift-Tab)
   column. For N=1 the strip renders nothing.
 - Wider than the terminal: the strip windows around the active tab and
   shows `‹N` / `›N` counters for hidden workstreams.
-- `*` prefix (e.g. `*scratch`) marks the ephemeral `scratch` bucket;
-  `~` marks a workstream presumed parked on another machine. `~` wins.
+- `*` prefix (e.g. `*scratch`) marks the ephemeral `scratch` bucket.
 
 ### Popup drills
 

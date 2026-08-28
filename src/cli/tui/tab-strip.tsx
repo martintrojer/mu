@@ -27,32 +27,19 @@ export interface TabStripProps {
    *  hook-free (and therefore safe to call from outside an ink
    *  render tree, e.g. unit tests). */
   terminalColumns: number;
-  /** Set of workstream names presumed parked on another machine
-   *  (`parkedStatus(db, ws).parked === true`). Tabs in this set
-   *  render with a `~` prefix to nudge the user away from
-   *  destroying them; the canonical fix is to re-import from the
-   *  other side. Optional so existing callers / tests stay valid. */
-  parked?: ReadonlySet<string>;
 }
 
 export function TabStrip({
   workstreams,
   active,
   terminalColumns,
-  parked,
 }: TabStripProps): ReactElement | null {
   if (workstreams.length <= 1) return null;
   const layout = layoutTabStrip(workstreams, active, terminalColumns);
   if (layout === null) return null;
-  const isParked = (name: string): boolean => parked?.has(name) ?? false;
-  // Marker precedence: parked (`~`) wins over scratch (`*`) when both
-  // somehow apply, since parked is the more actionable nudge. Scratch
-  // is the reserved off-the-cuff bucket; the `*` cue signals
-  // "ephemeral, not a durable crew" so the operator doesn't mistake it
-  // for a real workstream. Mirrors the parked post-layout decorate
-  // (1-col imprecision tolerated, same as `~`).
-  const decorate = (name: string): string =>
-    isParked(name) ? `~${name}` : isScratchWorkstream(name) ? `*${name}` : name;
+  // The `*` cue signals "ephemeral, not a durable crew" so the
+  // operator doesn't mistake a scratch workstream for a real one.
+  const decorate = (name: string): string => (isScratchWorkstream(name) ? `*${name}` : name);
   const tabs: ReactElement[] = [];
   for (let i = 0; i < layout.visible.length; i++) {
     const tab = layout.visible[i];
