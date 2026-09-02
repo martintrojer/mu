@@ -214,6 +214,35 @@ breaking changes are called out under "Breaking" in each entry.
 
 ### Fixed
 
+- **`mu undo` of a workstream destroy silently failed to restore notes
+  whose rowid had shifted** (drift-641). A note's op key embeds its
+  rowid (`<ws>/<task>#<id>`), which is not portable: a rebuild, a v8/v9
+  reprojection, or any path that reinserts a note assigns a fresh one.
+  The historical `put` then sat under the OLD key while the `del`
+  emitted at destroy time used the CURRENT one, so nothing joined them.
+
+  `planUndo` reconstructs a tombstoned row by folding the puts for that
+  exact key, so such a note folded to `{}` and `restoreRow` skipped the
+  insert and reported no change. Undoing a destroy therefore brought
+  back every task and edge but only the notes whose rowid happened to
+  be unchanged — on the box this was found, 73 of 714 — and the 641
+  orphaned rows then showed up as `mu doctor --deep` drift ("present in
+  live tables but the log cannot explain it"), which breaks undo, sync
+  and rebuild together since all three derive from the log.
+
+  Note tombstones are now **self-describing**: the `task_notes` BEFORE
+  DELETE trigger records `OLD.author/content/created_at` instead of
+  `'{}'` (new `fullOldPayload` in `src/capture.ts`), and `planUndo`
+  falls back to the tombstone's own payload when the fold comes back
+  empty (new `payloadFields` in `src/undo.ts`, sharing
+  `NEVER_RESTORE` and the scalar guard so a fallback can never
+  reintroduce a surrogate id or FK). The inverse no longer depends on
+  finding a matching put. Other tombstones stay empty — the key plus
+  the preceding puts already describe them, and notes are the only
+  entity whose key is not stable. Costs ~2 bytes per existing note
+  tombstone in the log and needs no schema change; old empty-payload
+  tombstones keep working through the fold path.
+
 - **Removed the dead `suppressSnapshot` field from
   `DestroyWorkstreamOptions`** (`reviewfind_dead_suppresssnapshot_field`).
   It was already a documented no-op since v9 dropped the `snapshots`

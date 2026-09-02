@@ -678,6 +678,18 @@ separately below.
   A tombstone is an ordinary op carrying an HLC, so out-of-order
   arrival is a comparison and resurrection falls out. Never
   `json_patch` — RFC 7396 reads a null member as delete-the-key.
+- **Note tombstones are the one SELF-DESCRIBING tombstone.** Every
+  other `del` carries `'{}'`, because its key plus the puts before it
+  describe the row. A note's key embeds its rowid
+  (`<ws>/<task>#<id>`), which is NOT stable — a rebuild or
+  reprojection reassigns it, leaving the puts under the old key and a
+  later `del` under the new one. Undo folds the puts for a key to
+  reconstruct a tombstoned row, so such a note folded to nothing and
+  was silently never restored (drift-641). The `task_notes` delete
+  trigger therefore records `OLD.*`, and `planUndo` falls back to the
+  tombstone's payload when the fold is empty. This is also why
+  `src/drift.ts` matches notes on the task-key PREFIX rather than the
+  exact key.
 - **Undo and restore write through the tables**, so neither can be the
   write path capture misses. `restore` records then applies under the
   SAME HLC: `applyOp` excludes an op's own HLC from provenance, so a

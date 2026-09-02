@@ -240,6 +240,33 @@ function fullPayload(cols: readonly string[]): string {
   return `json_object(${pairs})`;
 }
 
+/** Whole-row payload for a DELETE, from `OLD.*`.
+ *
+ *  Tombstones are normally EMPTY (`'{}'`): the key identifies the row
+ *  and the puts before it describe it, so carrying the body again would
+ *  just bloat the log. Notes are the exception, and the reason is their
+ *  key.
+ *
+ *  A note's key embeds its rowid (`<ws>/<task>#<id>`), which is NOT
+ *  portable — a rebuild, a v8/v9 reprojection, or any path that
+ *  reinserts a note assigns a fresh one (see src/drift.ts, which
+ *  deliberately matches notes on the task-key PREFIX for exactly this
+ *  reason). When that happens the historical `put` stays under the old
+ *  key while a later `del` is emitted under the current one, and
+ *  nothing joins the two.
+ *
+ *  Undo folds the puts for a key to reconstruct a tombstoned row, so a
+ *  note in that state reconstructed to `{}` and was silently never
+ *  restored (drift-641: `mu undo` of a workstream destroy brought back
+ *  every task and edge but only the notes whose rowid happened to be
+ *  unchanged). A self-describing note tombstone closes that hole: the
+ *  op that removed the row also carries what the row WAS, so the
+ *  inverse never depends on finding a matching put. */
+function fullOldPayload(cols: readonly string[]): string {
+  const pairs = cols.map((c) => `'${c}', OLD.${c}`).join(", ");
+  return `json_object(${pairs})`;
+}
+
 /** `WHEN` clause restricting an UPDATE trigger to real changes. A
  *  no-op UPDATE (SET x = x, or rewriting identical values) produces NO
  *  op at all, which keeps the log free of churn that would otherwise
@@ -411,7 +438,7 @@ END;
 CREATE TEMP TRIGGER IF NOT EXISTS _cap_task_notes_del
 BEFORE DELETE ON task_notes WHEN ${NOT_APPLYING}
 BEGIN
-  ${emitOp("note", "del", `${taskKey("OLD.task_id")} || '#' || OLD.id`, "'{}'")}
+  ${emitOp("note", "del", `${taskKey("OLD.task_id")} || '#' || OLD.id`, fullOldPayload(noteCols))}
 END;
 
 -- ─── task_edges ─────────────────────────────────────────────────────

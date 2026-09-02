@@ -485,7 +485,15 @@ export function planUndo(db: Db, groupId: string): UndoPlan {
       // it had. Reconstruct it by replaying every put for the key that
       // preceded the tombstone, so a partial-update history still yields
       // a complete row.
-      const fields = reconstructRow(db, row.entity, row.key, row.hlc);
+      //
+      // When that fold comes back empty, fall back to the tombstone's
+      // OWN payload. Note tombstones are self-describing (see
+      // fullOldPayload in src/capture.ts) precisely because a note's key
+      // embeds a non-portable rowid: after a reprojection the puts sit
+      // under the old key and the fold finds nothing, which used to make
+      // the restore a silent no-op (drift-641).
+      let fields = reconstructRow(db, row.entity, row.key, row.hlc);
+      if (Object.keys(fields).length === 0) fields = payloadFields(row.payload);
       const conflicts = laterRowWriters(db, row.entity, row.key, row.hlc, groupId).map((w) => ({
         field: "<row>",
         groupId: w.groupId,
@@ -606,6 +614,23 @@ function groupWhen(db: Db, groupId: string): string {
  * correct reconstruction, and it is the same fold the rebuild path does —
  * just bounded to one key and one point in time.
  */
+/** The restorable fields carried by one op's payload.
+ *
+ *  Shares `NEVER_RESTORE` and the scalar-only guard with
+ *  `reconstructRow`, so a fallback can never reintroduce a surrogate id
+ *  or an FK the fold would have dropped. */
+function payloadFields(payload: string): Record<string, string | number | null> {
+  const fields: Record<string, string | number | null> = {};
+  const parsed = JSON.parse(payload) as Record<string, unknown>;
+  for (const [field, value] of Object.entries(parsed)) {
+    if (NEVER_RESTORE.has(field)) continue;
+    if (value === null || typeof value === "string" || typeof value === "number") {
+      fields[field] = value;
+    }
+  }
+  return fields;
+}
+
 function reconstructRow(
   db: Db,
   entity: string,

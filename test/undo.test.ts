@@ -196,6 +196,41 @@ describe("undo", () => {
       expectNoDrift();
     });
 
+    it("restores notes whose creating put op is under a STALE key (rowid shifted)", async () => {
+      // REGRESSION (drift-641). A note's op key embeds its rowid
+      // (`<ws>/<task>#<id>`), which is NOT portable: a rebuild, a v8/v9
+      // migration reprojection, or any path that reinserts a note gives
+      // it a new rowid. The historical `put` then lives under an OLD key
+      // while the `del` emitted at destroy time uses the CURRENT one, so
+      // the two never meet.
+      //
+      // planUndo reconstructs a tombstoned row by folding the puts for
+      // THAT EXACT key, so with no matching put it folded to {} and
+      // restoreRow skipped the insert and returned false. The note row
+      // was silently NOT restored while tasks and edges came back fine,
+      // and the drift check then reported a live row the log could not
+      // explain.
+      ensureWorkstream(db, "demo");
+      addTask(db, { workstream: "demo", localId: "a", title: "A", impact: 60, effortDays: 1 });
+      addNote(db, "a", "survives a rowid shift", { workstream: "demo", author: "worker-1" });
+
+      // Simulate the rowid shift: rewrite the note's op keys to a rowid
+      // that no longer exists, exactly as a reprojection would leave them.
+      db.prepare(
+        "UPDATE ops SET key = 'demo/a#9999' WHERE entity = 'note' AND key LIKE 'demo/a#%'",
+      ).run();
+
+      await destroyWorkstream(db, { workstream: "demo", muxSession: "mu-absent-for-test" });
+      undoGroup(db, groupFor("workstream.destroy"));
+
+      const notes = db.prepare("SELECT author, content FROM task_notes").all() as Array<{
+        author: string | null;
+        content: string;
+      }>;
+      expect(notes).toEqual([{ author: "worker-1", content: "survives a rowid shift" }]);
+      expectNoDrift();
+    });
+
     it("restores a deleted task's notes and edges too", () => {
       seed();
       addBlockEdge(db, "demo", "b", "a");
