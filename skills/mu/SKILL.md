@@ -318,6 +318,17 @@ git cherry-pick "$sha" && npm test
 - **Backup:** `mu db backup <file>` — `VACUUM INTO` copy of the whole
   DB, never overwrites. The "one file I can scp" convenience; real
   recovery is `mu rebuild`.
+- **Disk vs DB:** `mu doctor`'s `disk` section reconciles
+  `<state-dir>` against the database in both directions — `ws-rows` is a
+  workspace row whose directory is gone (no other surface reports it;
+  the next send fails inside the VCS backend instead), `ws-dirs` is a
+  directory with no row (blocks the next `--workspace` spawn), and
+  `db-copies` / `exports` / `locks` are bytes nothing references.
+  **Report-only** — each finding prints the cleanup command and mu runs
+  none of them, because an orphan dir may hold the only copy of
+  uncommitted work. You are expected to read the remediation and act.
+  `mu doctor --disk` adds per-checkout byte usage (walks every checkout,
+  so not in the default tier).
 - **Health:** `mu doctor` (fast checks, exit 0) and `mu doctor --deep`,
   which rebuilds the ops log into a temp DB and diffs it field-by-field
   against the live tables. DRIFT means the log and the tables disagree,

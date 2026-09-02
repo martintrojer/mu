@@ -229,6 +229,7 @@ freed workspace dirs do not come back. See
 ```bash
 mu doctor           # exit 0 healthy, 5 on drift
 mu doctor --deep    # full rebuild + field diff; slower
+mu doctor --disk    # + per-workspace byte usage (walks every checkout)
 ```
 
 ```
@@ -262,9 +263,53 @@ fleet
   db-filesystem    : ok DB is on local (0x1021994)
   name-case        : ok no case-colliding workstream names
 
+disk
+  ws-rows          : ok every workspace row has its dir
+  ws-dirs          : ok no orphan workspace dirs
+  ws-empty         : ok no empty workstream dirs
+  db-copies        : WARN 7 stray DB file(s), 49M — nothing reads these
+  exports          : ok no leftover export dirs
+  locks            : ok no stale lock dirs
+  (run `mu doctor --disk` for per-workspace byte usage — walks every checkout)
+
 ops log
   drift (shallow)  : ok every live row has ops (1ms) — run `mu doctor --deep` for the full rebuild diff
 ```
+
+The `disk` section is the only one that reads the filesystem, and it
+reconciles **both directions** — the two can disagree either way:
+
+| Row | Means | Why it matters |
+| --- | --- | --- |
+| `ws-rows` | a `vcs_workspaces` row whose path is gone | every read surface reports it as healthy; the next send fails inside the VCS backend instead of at the row that lied. Usually a hand-run `rm -rf` where `mu workspace free` was wanted |
+| `ws-dirs` | a workspace dir with no row (**workspace orphan**) | blocks the next `--workspace` spawn for that agent name. `stranded` = the workstream row is gone too, so no workstream-scoped verb can reach it |
+| `ws-empty` | a per-workstream dir holding no checkouts | `ok` severity — `workspace free` leaves the parent behind. Reported, not faulted |
+| `db-copies` | `mu.db*` files that aren't the live WAL triple | hand-made copies and pre-upgrade saves. Nothing reads them, nothing prunes them, and they are usually the largest dead-byte category |
+| `exports` | leftovers from the removed `mu workstream export` <!-- doc-cli-drift:skip --> | 1.0 deleted the verb, not its output directory |
+| `locks` | advisory-lock dirs older than 1h | not a deadlock (`withFileLock` steals at 30s) but evidence of a spawn or flush that died mid-critical-section |
+
+**Report-only, always.** Every row names its own cleanup command in the
+remediation block and mu runs none of them. An orphan or stranded dir
+may hold the only copy of uncommitted work, so the decision is yours (or
+your agent's) — a diagnostic that deleted checkouts because a readdir
+raced a spawn would be a worse bug than the residue.
+
+`--disk` adds recursive byte accounting per checkout, with the orphan
+share called out as reclaimable:
+
+```
+  workspace bytes  : 758M across 4 checkout(s) — 212M in orphan dirs
+        212M  auth-peers/worker-2
+        212M  auth-peers/worker-1
+        167M  leanhl-runner/worker-1
+        167M  leanhl-runner/worker-2
+```
+
+It is a separate flag because its cost scales with the size of your
+checkouts rather than with mu's own state (~2s for 758M here), and
+`mu doctor` has to stay cheap enough to run reflexively. The
+reconciliation rows above always run: they are `readdir` + `stat` only,
+depth 2, ~1ms.
 
 **On drift**, `--deep` names the exact table, key and field:
 
@@ -408,7 +453,7 @@ MU_NO_TUI=1 mu             # force the non-TTY/help path even in a terminal
 ```
 
 Run `mu doctor` to check tmux + DB health — full annotated output in
-[§ 0.5 Something looks wrong](#05-something-looks-wrong). Two families
+[§ 0.5 Something looks wrong](#05-something-looks-wrong). Three families
 of checks are the ones to know.
 
 **Mixed-fleet hazards** (the `fleet` section) — cheap, and every one is
@@ -419,6 +464,15 @@ something you can fix before it costs you data:
 | `db-vs-sync` | **FAIL** if `MU_DB_PATH` is inside `MU_SYNC_DIR`. Never do this: a live WAL-mode SQLite DB is three files (`mu.db`, `-wal`, `-shm`) whose mutual consistency IS its durability, and a file-syncer copying them out of order — or resurrecting a peer's stale `-wal` — silently corrupts the database. mu syncs append-only per-machine **segments** so the DB file never has to travel. |
 | `db-filesystem` | **WARN** if the DB is on NFS/SMB/sshfs. WAL needs working advisory locks and a shared-memory file; network mounts provide neither reliably. Symptom is `database is locked` with no contention, or corruption with it. |
 | `name-case` | **WARN** if two workstream names differ only by case. They coexist on Linux but collide on macOS (APFS) and Windows, and a workstream name IS a tmux session name and seeds workspace paths — so a Mac joining the fleet sees one session where Linux sees two. |
+
+**Disk↔DB reconciliation** (the `disk` section) — the state dir and the
+database can disagree in both directions, and mu had no surface for
+either before. Row-by-row table in
+[§ 0.5](#05-something-looks-wrong); the short version is `ws-rows` for a
+row whose directory is gone, `ws-dirs` for a directory with no row, and
+`db-copies` / `exports` / `locks` for bytes nothing references. Always
+report-only — the remediation block names the command, you or your agent
+run it. `--disk` adds per-checkout byte usage.
 
 **Ops-log drift** (the `ops log` section) — is the projection still
 faithful to the log? Undo, sync and history are all
@@ -1849,6 +1903,7 @@ invocation is a short-lived process that re-reads from
 ```bash
 mu doctor                                   # quick health check (exit 5 = drift)
 mu doctor --deep                            # rebuild + field-level diff
+mu doctor --disk                            # + per-workspace byte usage
 sqlite3 ~/.local/state/mu/mu.db .schema     # inspect
 rm ~/.local/state/mu/mu.db                  # nuke (last resort; loses task graph and registry)
 ```

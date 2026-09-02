@@ -10,6 +10,52 @@ breaking changes are called out under "Breaking" in each entry.
 
 ## [Unreleased]
 
+### Added
+
+- **`mu doctor` reconciles the state dir against the DB, in both
+  directions** (new `disk` section; `src/disk-recon.ts`). Every other
+  doctor check reads the database; nothing looked at
+  `<state-dir>` and compared the two, so both kinds of disagreement
+  were invisible:
+  - `ws-rows` — a `vcs_workspaces` row whose path is gone. This had **no
+    surface at all** before: `mu workspace list` printed such a row as
+    healthy, and the next send or refresh against it failed deep inside
+    the VCS backend rather than at the row that lied. Usually a hand-run
+    `rm -rf` where `mu workspace free` was wanted.
+  - `ws-dirs` — a workspace dir with no row, counting `stranded` ones
+    separately. `listAllOrphanWorkspaces` already existed but was
+    reachable only from `mu workspace orphans` and the TUI card, so
+    running `mu doctor` to answer "is anything wrong" said nothing about
+    dirs that will fail their next spawn.
+  - `db-copies` — stray `mu.db*` files that are not the live WAL triple
+    (49M on the box this was written against). Hand-made copies and
+    pre-upgrade saves: nothing reads them and nothing prunes them.
+  - `exports` — leftovers from `mu workstream export`, which 1.0 removed
+    without removing its output directory. The one finding here that is
+    a defect rather than housekeeping: mu deleted the producer and left
+    the output unreferenced.
+  - `ws-empty` / `locks` — empty per-workstream dirs (`ok` severity;
+    `workspace free` leaves the parent behind) and advisory-lock dirs
+    older than an hour, which are not a deadlock but are evidence of a
+    spawn or flush that died mid-critical-section.
+
+  **Report-only by construction.** Each finding carries its own cleanup
+  command in the remediation block and mu runs none of them — an orphan
+  or stranded dir may hold the only copy of uncommitted work, and a
+  diagnostic that deleted checkouts because a `readdir` raced a spawn
+  would be a worse bug than the residue it removed.
+
+  Findings are `FleetHazard`-shaped, so doctor's row renderer, `--json`
+  (new `disk` key, with remediation lines included) and the TUI Doctor
+  card need no new shape. The default tier is `readdir` + `stat` at depth
+  2 (~1ms).
+
+- **`mu doctor --disk`** adds recursive per-checkout byte accounting with
+  the orphan share called out as reclaimable (758M across 4 checkouts,
+  ~2s, on the box above). Separate flag because its cost scales with the
+  size of your checkouts rather than with mu's state, and `mu doctor`
+  has to stay cheap enough to run reflexively.
+
 ## [1.1.0] — 2026-08-28
 
 ### Breaking

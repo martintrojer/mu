@@ -5,6 +5,7 @@
 //   - db: schema integrity, schema_version, journal_mode, foreign_keys
 //   - workstream: auto-detected current workstream
 //   - state: per-workstream agent / task / log counts + reconcile drift
+//   - disk: state-dir vs DB reconciliation (both directions) + residue
 //
 // Read-only (the reconcile pass uses mode: "report-only" so polling doesn't
 // race in-flight spawns; see bug_agent_spawn_workspace_fk_failure).
@@ -14,6 +15,7 @@
 import { listLiveAgents } from "../agents.js";
 import { emitJson, resolveWorkstream } from "../cli.js";
 import { CURRENT_SCHEMA_VERSION, type Db, defaultDbPath, EXPECTED_TABLES } from "../db.js";
+import { checkDiskRecon, formatBytes, measureWorkspaceUsage } from "../disk-recon.js";
 import {
   checkCheapDriftInvariant,
   checkDrift,
@@ -21,7 +23,7 @@ import {
   driftRemediation,
   formatDriftRecord,
 } from "../drift.js";
-import { checkFleetHazards } from "../fleet-hazards.js";
+import { checkFleetHazards, type FleetHazard } from "../fleet-hazards.js";
 import { activeMux, type MuxHealth } from "../mux.js";
 import { pc } from "../output.js";
 import { summarizeWorkstream } from "../workstream.js";
@@ -45,9 +47,29 @@ async function muxHealth(): Promise<MuxHealth | undefined> {
   }
 }
 
+/** Render a hazard list as doctor rows plus a remediation block per
+ *  non-ok finding. Shared by the fleet and disk sections, which differ
+ *  only in what they check. Returns true iff anything needs attention. */
+function printHazards(hazards: readonly FleetHazard[]): boolean {
+  let sawProblem = false;
+  for (const hazard of hazards) {
+    const colour =
+      hazard.severity === "fail" ? pc.red : hazard.severity === "warn" ? pc.yellow : pc.green;
+    const label = hazard.severity === "ok" ? "ok" : hazard.severity.toUpperCase();
+    console.log(`  ${hazard.name.padEnd(16)} : ${colour(label)} ${pc.dim(hazard.detail)}`);
+    if (hazard.severity !== "ok") sawProblem = true;
+  }
+  for (const hazard of hazards) {
+    if (hazard.severity === "ok" || hazard.remediation === undefined) continue;
+    console.log("");
+    for (const line of hazard.remediation) console.log(`  ${line}`);
+  }
+  return sawProblem;
+}
+
 export async function cmdDoctor(
   db: Db,
-  opts: { json?: boolean; deep?: boolean } = {},
+  opts: { json?: boolean; deep?: boolean; disk?: boolean } = {},
 ): Promise<void> {
   if (opts.json) {
     return cmdDoctorJson(db, opts);
@@ -195,19 +217,34 @@ export async function cmdDoctor(
   // PREVENTABLE — each one is a condition the operator can fix before it
   // costs them data, unlike drift which is a bug report.
   console.log(pc.bold("\nfleet"));
-  const hazards = checkFleetHazards(db, { dbPath: defaultDbPath() });
-  let sawHazard = false;
-  for (const hazard of hazards) {
-    const colour =
-      hazard.severity === "fail" ? pc.red : hazard.severity === "warn" ? pc.yellow : pc.green;
-    const label = hazard.severity === "ok" ? "ok" : hazard.severity.toUpperCase();
-    console.log(`  ${hazard.name.padEnd(16)} : ${colour(label)} ${pc.dim(hazard.detail)}`);
-    if (hazard.severity !== "ok") sawHazard = true;
-  }
-  for (const hazard of hazards) {
-    if (hazard.severity === "ok" || hazard.remediation === undefined) continue;
-    console.log("");
-    for (const line of hazard.remediation) console.log(`  ${line}`);
+  let sawHazard = printHazards(checkFleetHazards(db, { dbPath: defaultDbPath() }));
+
+  // ─ Disk ↔ DB reconciliation
+  //
+  // The only section that reads the filesystem. Default tier is readdir
+  // + stat (~1ms); recursive byte accounting is --disk, because its cost
+  // scales with the checkouts rather than with mu's state.
+  console.log(pc.bold("\ndisk"));
+  if (printHazards(checkDiskRecon(db))) sawHazard = true;
+  if (opts.disk === true) {
+    const usage = measureWorkspaceUsage(db);
+    const total = usage.reduce((n, u) => n + u.bytes, 0);
+    const reclaimable = usage.filter((u) => u.orphan).reduce((n, u) => n + u.bytes, 0);
+    console.log(
+      `\n  ${"workspace bytes".padEnd(16)} : ${formatBytes(total)} across ${usage.length} checkout(s)${
+        reclaimable > 0 ? pc.yellow(` — ${formatBytes(reclaimable)} in orphan dirs`) : ""
+      }`,
+    );
+    for (const u of usage) {
+      const tag = u.orphan ? pc.yellow(" orphan") : "";
+      console.log(
+        `      ${formatBytes(u.bytes).padStart(6)}  ${u.workstreamName}/${u.agentName}${tag}`,
+      );
+    }
+  } else {
+    console.log(
+      pc.dim("  (run `mu doctor --disk` for per-workspace byte usage — walks every checkout)"),
+    );
   }
 
   // ─ Ops-log drift
@@ -260,7 +297,9 @@ export async function cmdDoctor(
     }
   }
   if (sawHazard) {
-    console.log(pc.dim("\nSee the fleet section above: at least one hazard needs attention."));
+    console.log(
+      pc.dim("\nSee the fleet / disk sections above: at least one finding needs attention."),
+    );
   }
 }
 
@@ -269,7 +308,10 @@ export async function cmdDoctor(
  * into a single structured record for piping. Surfaces 'ok' / 'warn' /
  * 'fail' for each subsystem so callers can match on a single field.
  */
-export async function cmdDoctorJson(db: Db, opts: { deep?: boolean } = {}): Promise<void> {
+export async function cmdDoctorJson(
+  db: Db,
+  opts: { deep?: boolean; disk?: boolean } = {},
+): Promise<void> {
   // environment
   const health = await muxHealth();
   const env = {
@@ -369,6 +411,17 @@ export async function cmdDoctorJson(db: Db, opts: { deep?: boolean } = {}): Prom
     detail: h.detail,
   }));
 
+  // Disk ↔ DB: same checks as the human path. Remediation lines ride
+  // along here (unlike `fleet`, which drops them) because the whole
+  // point of the section is that an agent reading --json can act on it.
+  const disk = checkDiskRecon(db).map((h) => ({
+    name: h.name,
+    severity: h.severity,
+    detail: h.detail,
+    remediation: h.remediation ?? [],
+  }));
+  const workspaceUsage = opts.disk === true ? measureWorkspaceUsage(db) : null;
+
   // Drift: shallow by default, full rebuild diff under --deep. Same
   // tiering as the human path, for the same measured reason.
   let drift: Record<string, unknown>;
@@ -403,6 +456,8 @@ export async function cmdDoctorJson(db: Db, opts: { deep?: boolean } = {}): Prom
     workstream: { currentName: currentWorkstream },
     state: workstreamStats,
     fleet: hazards,
+    disk,
+    workspaceUsage,
     drift,
     remediation: drift.ok === true ? [] : driftRemediation(),
   });
@@ -477,8 +532,12 @@ export function wireDoctorCommand(program: Command): void {
       "--deep",
       "also rebuild the ops log into a temp DB and diff it against the live tables (slower: ~0.6ms per op)",
     )
+    .option(
+      "--disk",
+      "also measure per-workspace disk usage (walks every checkout; the disk↔DB reconciliation itself always runs)",
+    )
     .action(function () {
-      const opts = (this as Command).opts() as { json?: boolean; deep?: boolean };
+      const opts = (this as Command).opts() as { json?: boolean; deep?: boolean; disk?: boolean };
       return handle((db) => cmdDoctor(db, opts), this as Command)();
     });
 }
