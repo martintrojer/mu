@@ -152,6 +152,76 @@ Listed so we don't pretend they're settled.
 
 ---
 
+## murmur, and remote agents (noted 2026-08-28, revised 2026-09-02)
+
+[murmur](https://github.com/martintrojer/murmur) is a sibling tool at
+`~/hacking/murmur`, on npm as `@martintrojer/murmur`: every coding
+agent on every machine in one attention-sorted list you can jump
+from. It is **built and in daily use** — the original note here
+described it as four design documents, and two of its conclusions
+moved since:
+
+- **Current state only, not an event log.** Each node publishes one
+  complete snapshot; a peer's answer is replaced in one write and
+  absence means absence. No history, watermarks or HLC. murmur's own
+  architecture says a generic `put`/`del` op-log "would simply *be*
+  `mu`" — so the two differ in substrate now, not just scope.
+- **No control channel, ever.** murmur observes and jumps; "not a
+  remote terminal" is a stated non-goal. The phase-2 prompt/abort
+  surface this note once counted on will not come from there.
+
+**What it would give mu**, both prerequisites for `mu spawn --on
+<host>`: **global agent addressing** (`agents.pane_id` is
+machine-local; murmur's `(host_id, agent_id)` is not, and identity is
+kept separate from `session/window/pane` so it survives a move), and
+**remote observation** (read the fold, get agents on other machines
+for free — including ones mu never spawned). It would not give mu the
+control channel; remote *driving* is unbuilt in both tools.
+
+**The cheap seam already works.** murmur's pi extension reads
+`MU_MANAGED_AGENT` / `MU_AGENT_NAME` / `MU_WORKSTREAM` / `MU_ROLE`
+off the pane and marks such agents `orchestrated` — "crew" — hidden
+unless `blocked` or `crashed`, since a supervisor consumes anything
+else. mu already exports those and did nothing. Zero lines: the
+baseline any tighter coupling has to beat.
+
+**No conflict with the sync design.** § Rejected sync substrates and
+§ Explicitly rejected both stand: murmur is a **separate binary**
+owning the ssh egress, and if mu ever consumes it, it does so by
+reading a local store, never by growing a network stack. A merge must
+keep the mu half transport-free. murmur independently reached mu's
+two conclusions from mu's own code: ambient rather than daemon (a
+collect rides ordinary invocations, rate-limited with jitter so the
+status bar cannot drive an ssh fan-out) and sync must never fail a
+command (every peer error caught and categorised).
+
+**Why not merge now.** Remote observation is the easy half and is now
+shipped; orchestration is the hard half and murmur removes none of
+it. Repos and credentials must exist on the target, worktree setup is
+a local filesystem operation, cherry-pick handoff assumes artifacts
+move between machines, and "which node runs this task" is a scheduler
+question mu does not have.
+
+**The step that tests it** is now available, not scheduled: make mu a
+*client* — drop its own status tracking and read murmur's snapshot.
+Small change, real experiment. But `paneStatus()` / `src/detect.ts`
+is not hurting, and trading a working local detector for a
+cross-machine dependency needs a reason from real use (promotion
+criterion 1), not the mere existence of the alternative. Keep the
+*observe* vs *orchestrate* seam in mind even then — it is what lets
+murmur watch agents mu never spawned, and a merge should say why it
+beats that.
+
+**Doors already open**, free: same language and runtime (TypeScript
+on npm, since pi is an npm package), `(host_id, agent_id)` addressing
+mu would need anyway, and the `MU_*` env contract.
+
+**Do not** start the merge, add ssh to mu, or fold murmur's schema
+into `mu.db` on the strength of this note. It records an intention
+and its preconditions.
+
+---
+
 ## Pi extension and the three rules
 
 If a pi extension lands (typed `mu_*` tools, HUD widget, wakeups)
