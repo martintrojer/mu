@@ -174,18 +174,27 @@ Most sshd allow 10 sessions per connection (`MaxSessions`, default
 consumes the only session channel, and every other ssh to that host —
 including your `git fetch` — is refused.
 
-The error is actively misleading. With `ControlMaster no` (the correct
-setting for such a host, so callers fail honestly), ssh falls back to
-a fresh connection and 2FA fails:
+The error is actively misleading. The refused channel makes ssh fall
+back to a fresh connection, which hits the host's 2FA and dies there:
 
 ```
+mux_client_request_session: session request failed: Session open refused by peer
 Permission denied (keyboard-interactive)
 ```
 
-Nothing mentions sessions. **Diagnostic:** if `mu agent read` works
-fine while a plain `ssh <host> true` fails, it is session exhaustion,
-not credentials. Confirm with `ps aux | grep 'ssh <host>'` — you will
-see your own agent holding the connection.
+The second line is the one that scrolls past, and nothing in it
+mentions sessions.
+
+`ControlMaster no` is still the right setting for such a host — it
+stops ssh spawning masters you did not ask for — but do **not** expect
+it to make callers fail honestly. It only governs master *creation*;
+a refused channel falls back regardless. Measured with `no` set: three
+of four concurrent calls still produced the misleading 2FA error.
+
+**Diagnostic:** if `mu agent read` works fine while a plain `ssh
+<host> true` fails, it is session exhaustion, not credentials.
+Confirm with `ps aux | grep 'ssh <host>'` — you will see your own
+agent holding the connection.
 
 ### Fix: detached remote tmux
 
@@ -226,3 +235,27 @@ reattach preserves full LLM context.
 
 Use this shape only where you need it. On an ordinary host it is
 pointless indirection.
+
+### For your own interactive work, use ET instead
+
+The recipe above is for mu agents, which need a pane whose process mu
+controls. Your own shell on the host has an easier answer: **Eternal
+Terminal holds no ssh session at all.** It bootstraps over ssh and then
+hands off to `etserver` on its own transport, so `MaxSessions` never
+counts it.
+
+```bash
+et dev        # or your site's wrapper, e.g. `x2ssh -et dev`
+```
+
+Verified on a `MaxSessions 1` devvm: an interactive `ssh dev` starved
+every other ssh for as long as it stayed open, while an ET session on
+the same host left `ssh dev true` succeeding throughout.
+
+So the clean split on a capped host is ET for you, one `ssh -MNf <host>`
+master for tooling, and detached tmux for mu agents. The three do not
+compete.
+
+Note ET cannot serve murmur or `git fetch` — it exposes no multiplexing
+socket to attach to. That is exactly why it pairs well: it takes none of
+the capped slots those tools need.
