@@ -198,7 +198,7 @@ function makeV8Db(path: string, opts: { archives?: boolean } = {}): Fixture {
     "INSERT INTO agent_logs (workstream_id, source, kind, payload, created_at) VALUES (?, ?, ?, ?, ?)",
   );
   log.run(1, "system", "event", "task add alpha (impact=80, effort=1.5)", T(11));
-  log.run(null, "system", "event", "workstream destroy gone", T(12));
+  log.run(null, "system", "event", "workstream teardown gone", T(12));
 
   if (opts.archives === true) {
     db.prepare(

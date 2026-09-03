@@ -21,6 +21,33 @@ export function isLegacyLogOnlyIntent(intent: string | null): boolean {
  * interpolated into prepared SQL; every member is a fixed identifier in
  * this file, never operator input.
  */
+/**
+ * Intents renamed after ops carrying the old name were already on
+ * disk. Key = current name, value = every historical spelling.
+ *
+ * The op log is append-only, so a rename cannot rewrite history: the
+ * old string stays on the rows it was written to, forever. Everything
+ * that READS by intent therefore has to accept both, or a rename
+ * silently truncates the user's history at the release boundary —
+ * `mu log --intent <new>` would miss every pre-rename op and
+ * `mu undo` would not find those groups.
+ *
+ * `workstream.destroy` became `workstream.teardown` in 1.1.2 because
+ * "destroy" claims irreversibility that is not true (tombstones are
+ * written; `mu undo` restores the rows) and operators were hoarding
+ * pre-flight DB copies because of it. ~5k ops carry the old name.
+ */
+export const LEGACY_INTENT_SYNONYMS: ReadonlyMap<string, readonly string[]> = new Map([
+  ["workstream.teardown", ["workstream.destroy"]],
+]);
+
+/** Every spelling of `intent`, current first. A single-element list for
+ *  the common case of an intent that was never renamed. */
+export function intentSpellings(intent: string): readonly string[] {
+  const legacy = LEGACY_INTENT_SYNONYMS.get(intent);
+  return legacy === undefined ? [intent] : [intent, ...legacy];
+}
+
 export const LEGACY_LOG_ONLY_SQL_EXCLUSION: string = `(intent IS NULL OR intent NOT IN (${[
   ...LEGACY_LOG_ONLY_INTENTS,
 ]

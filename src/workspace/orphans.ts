@@ -25,7 +25,7 @@ export interface WorkspaceOrphan {
  */
 export interface StrandedWorkspaceOrphan extends WorkspaceOrphan {
   /** True iff the parent workstream has no DB row (the dir was left
-   *  behind by a `mu workstream destroy` or a manual DELETE). */
+   *  behind by a `mu workstream teardown` or a manual DELETE). */
   stranded: boolean;
 }
 

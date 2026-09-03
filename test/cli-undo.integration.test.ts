@@ -193,11 +193,11 @@ describe("mu undo", () => {
     expect(doctor.stdout).toContain("rebuild matches live tables");
   });
 
-  it("END TO END: undo a workstream destroy, then doctor --deep is clean", async () => {
+  it("END TO END: undo a workstream teardown, then doctor --deep is clean", async () => {
     await seed();
     await runCli(["task", "block", "b", "--by", "a", "-w", "demo"], dbPath);
     await runCli(["task", "note", "a", "context", "-w", "demo"], dbPath);
-    await runCli(["workstream", "destroy", "demo", "--yes"], dbPath);
+    await runCli(["workstream", "teardown", "demo", "--yes"], dbPath);
 
     const group = await newestGroup();
     const undone = await runCli(["undo", group, "--yes"], dbPath);

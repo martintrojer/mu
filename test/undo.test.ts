@@ -27,7 +27,7 @@ import {
   UndoSupersededError,
   undoGroup,
 } from "../src/undo.js";
-import { destroyWorkstream, ensureWorkstream } from "../src/workstream.js";
+import { ensureWorkstream, teardownWorkstream } from "../src/workstream.js";
 import { rmFixtureDir } from "./_fs.js";
 
 describe("undo", () => {
@@ -162,7 +162,7 @@ describe("undo", () => {
       expectNoDrift();
     });
 
-    it("restores the WHOLE TREE of a workstream destroy, in FK-safe order", async () => {
+    it("restores the WHOLE TREE of a workstream teardown, in FK-safe order", async () => {
       // The FK ordering case: restoring a task before its workstream, or
       // a note before its task, violates the constraint.
       ensureWorkstream(db, "demo");
@@ -171,12 +171,12 @@ describe("undo", () => {
       addBlockEdge(db, "demo", "b", "a");
       addNote(db, "a", "context", { workstream: "demo", author: "worker-1" });
 
-      await destroyWorkstream(db, { workstream: "demo", muxSession: "mu-absent-for-test" });
+      await teardownWorkstream(db, { workstream: "demo", muxSession: "mu-absent-for-test" });
       expect((db.prepare("SELECT COUNT(*) AS n FROM workstreams").get() as { n: number }).n).toBe(
         0,
       );
 
-      const plan = planUndo(db, groupFor("workstream.destroy"));
+      const plan = planUndo(db, groupFor("workstream.teardown"));
       // Parents first: the workstream must precede its tasks, and tasks
       // must precede notes/edges.
       const order = plan.inverses.map((i) => i.entity);
@@ -184,7 +184,7 @@ describe("undo", () => {
       expect(order.indexOf("task")).toBeLessThan(order.indexOf("note"));
       expect(order.indexOf("task")).toBeLessThan(order.indexOf("edge"));
 
-      undoGroup(db, groupFor("workstream.destroy"));
+      undoGroup(db, groupFor("workstream.teardown"));
 
       expect((db.prepare("SELECT COUNT(*) AS n FROM workstreams").get() as { n: number }).n).toBe(
         1,
@@ -196,8 +196,8 @@ describe("undo", () => {
       expectNoDrift();
     });
 
-    it("undoes a PRE-v10 destroy: legacy prose ops, retired statuses, bare tombstones", async () => {
-      // REGRESSION. Undoing an old `workstream destroy` hit three
+    it("undoes a PRE-v10 teardown: legacy prose ops, retired statuses, bare tombstones", async () => {
+      // REGRESSION. Undoing an old `workstream teardown` hit three
       // independent walls, each fatal on its own. Reproduced together
       // because that is how real history presents them.
       ensureWorkstream(db, "demo");
@@ -227,13 +227,13 @@ describe("undo", () => {
       // pre-fix destroy left behind once a reprojection had shifted the
       // rowids (drift-641), so neither the per-key fold nor the
       // tombstone payload can resolve them.
-      await destroyWorkstream(db, { workstream: "demo", muxSession: "mu-absent-for-test" });
+      await teardownWorkstream(db, { workstream: "demo", muxSession: "mu-absent-for-test" });
       db.prepare(
         `UPDATE ops SET payload = '{}', key = key || '9'
           WHERE entity = 'note' AND op = 'del'`,
       ).run();
 
-      undoGroup(db, groupFor("workstream.destroy"));
+      undoGroup(db, groupFor("workstream.teardown"));
 
       expect(task("a")).toMatchObject({ title: "A", impact: 60, status: "OPEN" });
       const notes = db.prepare("SELECT content FROM task_notes ORDER BY content").all() as Array<{
@@ -267,8 +267,8 @@ describe("undo", () => {
         "UPDATE ops SET key = 'demo/a#9999' WHERE entity = 'note' AND key LIKE 'demo/a#%'",
       ).run();
 
-      await destroyWorkstream(db, { workstream: "demo", muxSession: "mu-absent-for-test" });
-      undoGroup(db, groupFor("workstream.destroy"));
+      await teardownWorkstream(db, { workstream: "demo", muxSession: "mu-absent-for-test" });
+      undoGroup(db, groupFor("workstream.teardown"));
 
       const notes = db.prepare("SELECT author, content FROM task_notes").all() as Array<{
         author: string | null;

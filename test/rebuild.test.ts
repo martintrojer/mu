@@ -218,7 +218,7 @@ describe("rebuildInto", () => {
 
     it("a destroyed workstream's whole subtree stays gone", () => {
       seedRealisticSource();
-      // Delete through the FK cascade, as `workstream destroy` does.
+      // Delete through the FK cascade, as `workstream teardown` does.
       db.prepare("DELETE FROM workstreams WHERE name = 'demo'").run();
       const path = targetPath();
       const report = rebuildInto(db, { targetPath: path });

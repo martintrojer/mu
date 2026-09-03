@@ -271,7 +271,7 @@ git cherry-pick "$sha" && npm test
 
 ## CLI overview (only gotchas; use `--help` for full syntax)
 
-- **Workstream:** `init`, `list`, `destroy` (dry-run by default,
+- **Workstream:** `init`, `list`, `teardown` (dry-run by default,
   `--yes` commits; writes TOMBSTONE ops so history survives and
   `mu undo <group> --yes` reverses the row deletions).
 - **Agents:** `spawn` (`--workspace`, `--role read-only`, `--command`),
@@ -465,7 +465,7 @@ DON'T:
 - Anthropomorphize agent names.
 - Poll `mu agent read` in tight loops.
 - Add cross-workstream edges; model as one workstream.
-- `mu workstream destroy --yes` without dry-run.
+- `mu workstream teardown --yes` without dry-run.
 - Use the reserved `mu_` task-id prefix.
 - Message agents directly; use task notes and the activity log.
 - Prompt workers to run filesystem-wide `find`, broad `grep -r /`,

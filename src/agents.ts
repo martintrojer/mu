@@ -496,7 +496,7 @@ export function deleteAgent(db: Db, name: string, workstream: string): boolean {
   // Wrap the whole reaper sequence (snapshot stuck tasks → DELETE
   // agent → per-task UPDATE + addNote + emitEvent) in a single
   // synchronous better-sqlite3 transaction. Without this, a throw
-  // mid-loop (FK race after workstream destroy, addNote/emitEvent
+  // mid-loop (FK race after workstream teardown, addNote/emitEvent
   // regression, OOM, …) would leave the agent row deleted (FK
   // CASCADE already SET NULL on tasks.owner_id) but only PART of
   // the reaper trail written: leftover IN_PROGRESS tasks with no

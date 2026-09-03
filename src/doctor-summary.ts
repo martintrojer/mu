@@ -414,7 +414,7 @@ export function remediationParagraph(check: DoctorCheck): readonly string[] {
         "workstream name IS a tmux session name and seeds workspace paths.",
         "A Mac in the fleet would see one session where Linux sees two.",
         "Rename one side before adding a Mac: export, re-init under a new",
-        "name, destroy the old one.",
+        "name, tear down the old one.",
       ];
     case "schema":
       return [

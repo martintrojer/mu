@@ -7,7 +7,7 @@
 // emits inverse ops for ONE group.
 //
 // Shaped to the repo's established conventions:
-//   * DRY RUN BY DEFAULT, `--yes` to apply — same as `workstream destroy`.
+//   * DRY RUN BY DEFAULT, `--yes` to apply — same as `workstream teardown`.
 //   * No argument means "tell me what you WOULD undo", never "guess and
 //     do it". It lists recent groups so the ids are discoverable without
 //     needing `mu log` (whose group surface is v2-log-verb's).
@@ -158,7 +158,7 @@ export async function cmdUndo(
 
   const groupId = resolveGroupId(db, groupRef);
 
-  // Dry run by default (the `workstream destroy` / `db import` pattern).
+  // Dry run by default (the `workstream teardown` / `db import` pattern).
   if (opts.yes !== true) {
     const plan = planUndo(db, groupId);
     if (opts.json === true) {

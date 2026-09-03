@@ -20,11 +20,11 @@ import {
 } from "../src/tmux.js";
 import { noneBackend, type VcsBackend } from "../src/vcs.js";
 import {
-  destroyWorkstream,
   ensureWorkstream,
   isValidWorkstreamName,
   listWorkstreams,
   summarizeWorkstream,
+  teardownWorkstream,
   WorkstreamNameInvalidError,
 } from "../src/workstream.js";
 
@@ -337,15 +337,15 @@ describe("listWorkstreams", () => {
   });
 });
 
-// ─── destroyWorkstream ─────────────────────────────────────────────────
+// ─── teardownWorkstream ─────────────────────────────────────────────────
 
-describe("destroyWorkstream", () => {
+describe("teardownWorkstream", () => {
   it("kills tmux session and removes every DB row tagged with the workstream", async () => {
     state.sessions.add("mu-auth");
     setTmuxExecutor(mockTmux(state).executor);
     seedAuth();
 
-    const result = await destroyWorkstream(db, { workstream: "auth" });
+    const result = await teardownWorkstream(db, { workstream: "auth" });
     expect(result).toEqual({
       killedMux: true,
       deletedAgents: 2,
@@ -382,7 +382,7 @@ describe("destroyWorkstream", () => {
     });
     addNote(db, "invoice", "FILES: src/billing.rs", { workstream: "billing" });
 
-    await destroyWorkstream(db, { workstream: "auth" });
+    await teardownWorkstream(db, { workstream: "auth" });
 
     // Billing intact.
     expect(state.sessions.has("mu-billing")).toBe(true);
@@ -400,7 +400,7 @@ describe("destroyWorkstream", () => {
 
   it("is idempotent: destroying an unknown workstream is a no-op", async () => {
     setTmuxExecutor(mockTmux(state).executor);
-    const result = await destroyWorkstream(db, { workstream: "nope" });
+    const result = await teardownWorkstream(db, { workstream: "nope" });
     expect(result).toEqual({
       killedMux: false,
       deletedAgents: 0,
@@ -417,7 +417,7 @@ describe("destroyWorkstream", () => {
     setTmuxExecutor(mockTmux(state).executor);
     seedAuth(); // no tmux session for it
 
-    const result = await destroyWorkstream(db, { workstream: "auth" });
+    const result = await teardownWorkstream(db, { workstream: "auth" });
     expect(result.killedMux).toBe(false);
     expect(result.deletedAgents).toBe(2);
     expect(result.deletedTasks).toBe(3);
@@ -428,7 +428,7 @@ describe("destroyWorkstream", () => {
     state.sessions.add("mu-empty");
     setTmuxExecutor(mockTmux(state).executor);
 
-    const result = await destroyWorkstream(db, { workstream: "empty" });
+    const result = await teardownWorkstream(db, { workstream: "empty" });
     expect(result).toEqual({
       killedMux: true,
       deletedAgents: 0,
@@ -447,8 +447,8 @@ describe("destroyWorkstream", () => {
     setTmuxExecutor(mockTmux(state).executor);
     seedAuth();
 
-    await destroyWorkstream(db, { workstream: "auth" });
-    const second = await destroyWorkstream(db, { workstream: "auth" });
+    await teardownWorkstream(db, { workstream: "auth" });
+    const second = await teardownWorkstream(db, { workstream: "auth" });
     expect(second).toEqual({
       killedMux: false,
       deletedAgents: 0,
@@ -467,7 +467,7 @@ describe("destroyWorkstream", () => {
     // because the cli's nothingToDo short-circuit ignored the
     // workstreams row itself. summarizeWorkstream now returns
     // `registered: true` so the cli can factor it in. At the SDK
-    // layer this test pins down that destroyWorkstream itself does
+    // layer this test pins down that teardownWorkstream itself does
     // delete the bare row.
     setTmuxExecutor(mockTmux(state).executor);
     ensureWorkstream(db, "orphan");
@@ -479,7 +479,7 @@ describe("destroyWorkstream", () => {
       ).n,
     ).toBe(1);
 
-    await destroyWorkstream(db, { workstream: "orphan" });
+    await teardownWorkstream(db, { workstream: "orphan" });
     expect(
       (
         db.prepare("SELECT COUNT(*) AS n FROM workstreams WHERE name='orphan'").get() as {
@@ -544,7 +544,7 @@ describe("destroyWorkstream", () => {
       createdAt: now,
     });
 
-    const result = await destroyWorkstream(db, { workstream: "split" });
+    const result = await teardownWorkstream(db, { workstream: "split" });
 
     expect(result.freedWorkspaces).toBe(1);
     expect(result.alreadyGoneWorkspaces).toBe(1);
@@ -554,7 +554,7 @@ describe("destroyWorkstream", () => {
   });
 
   // Regression for review_test_destroy_failed_workspaces_uncovered:
-  // every prior destroyWorkstream test asserted `failedWorkspaces: []`,
+  // every prior teardownWorkstream test asserted `failedWorkspaces: []`,
   // so the failure-accumulation path (the try/catch around
   // backend.freeWorkspace in src/workstream.ts) had zero coverage. A
   // future refactor that dropped the try/catch — turning a single bad
@@ -588,7 +588,7 @@ describe("destroyWorkstream", () => {
         throw new Error("git worktree remove --force refused: uncommitted changes");
       },
     };
-    const result = await destroyWorkstream(db, {
+    const result = await teardownWorkstream(db, {
       workstream: "fail",
       resolveBackend: () => explodingBackend,
     });
@@ -663,7 +663,7 @@ describe("destroyWorkstream", () => {
         return noneBackend.freeWorkspace(opts);
       },
     };
-    const result = await destroyWorkstream(db, {
+    const result = await teardownWorkstream(db, {
       workstream: "mixed",
       resolveBackend: () => partitioningBackend,
     });

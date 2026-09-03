@@ -215,7 +215,7 @@ mu log --tail
 
 # Cleanup. Dry-run without --yes; writes tombstone ops rather than
 # erasing history, so `mu undo <group> --yes` still reverses it.
-mu workstream destroy --yes
+mu workstream teardown --yes
 ```
 
 Worked end-to-end scenarios (first 5 minutes, the dispatch loop,

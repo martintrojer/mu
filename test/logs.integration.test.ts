@@ -146,7 +146,7 @@ describe("logs SDK", () => {
     expect(latestSeq(db)).toBe(r2.seq);
   });
 
-  // ─── FK CASCADE on workstream destroy ───────────────────────────────
+  // ─── FK CASCADE on workstream teardown ───────────────────────────────
 
   it("ops OUTLIVE their workstream (no FK cascade — v9 behaviour change)", () => {
     // The old agent_logs had an FK ON DELETE CASCADE, so destroying a
@@ -161,7 +161,7 @@ describe("logs SDK", () => {
     // fires the capture trigger, appending a workstream TOMBSTONE op —
     // and since v2-retire-log-shim `mu log` no longer filters captured
     // ops out, it is visible here too. (No intent: this DELETE bypasses
-    // the SDK's withOpContext. Via `mu workstream destroy` it would
+    // the SDK's withOpContext. Via `mu workstream teardown` it would
     // carry intent='workstream.destroy'.)
     expect(listLogs(db).map((r) => r.payload)).toContain("a");
     expect(listLogs(db).map((r) => r.payload)).toContain("b");

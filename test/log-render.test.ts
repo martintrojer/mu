@@ -71,6 +71,8 @@ describe("renderOp covers every known intent", () => {
 
   it("KNOWN_INTENTS covers both capture and local intents", () => {
     expect(KNOWN_INTENTS).toContain("task.close");
+    expect(KNOWN_INTENTS).toContain("workstream.teardown");
+    // The pre-1.1.2 spelling must stay renderable: ~5k ops carry it.
     expect(KNOWN_INTENTS).toContain("workstream.destroy");
     expect(KNOWN_INTENTS).toContain("agent.spawn");
     expect(KNOWN_INTENTS).toContain("workspace.refresh");

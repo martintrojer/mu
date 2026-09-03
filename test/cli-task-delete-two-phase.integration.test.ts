@@ -1,12 +1,12 @@
 // CLI tests for the two-phase `mu task delete` (fb_task_delete_no_yes).
 //
 // Dogfood report: typed `mu task delete X --yes` (mirroring
-// `mu workstream destroy --yes`). Got 'unknown option --yes' — the
+// `mu workstream teardown --yes`). Got 'unknown option --yes' — the
 // verb took no confirmation flag at all. Two failed deletes left
 // long-named tasks lingering until noticed.
 //
 // Fix: bare `mu task delete <id>` is now a DRY-RUN preview (mirrors
-// `mu workstream destroy` / `mu snapshot prune`);
+// `mu workstream teardown` / `mu snapshot prune`);
 // `--yes` commits.
 
 import { mkdtempSync, rmSync } from "node:fs";

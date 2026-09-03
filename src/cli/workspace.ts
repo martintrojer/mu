@@ -206,7 +206,7 @@ export async function cmdWorkspaceOrphans(
     for (const [wsName, list] of grouped) {
       const sampleEntry = list[0];
       const strandedTag =
-        sampleEntry?.stranded === true ? pc.red(" (stranded: workstream destroyed)") : "";
+        sampleEntry?.stranded === true ? pc.red(" (stranded: workstream teardowned)") : "";
       console.log(`  ${pc.bold(wsName)}${strandedTag}`);
       for (const o of list) {
         console.log(`    ${pc.bold(o.agentName)}  ${pc.dim(o.path)}`);
@@ -351,7 +351,7 @@ export function wireWorkspaceCommands(program: Command): void {
   workspace
     .command("orphans")
     .description(
-      "List on-disk workspace dirs in <state-dir>/workspaces/<workstream>/ that have no DB row. These block subsequent `--workspace` spawns; surfaced by bug_workspace_orphan_not_in_state. With --all, scans every workstream subdir under <state-dir>/workspaces/ INCLUDING workstreams whose row is gone (those rows are tagged `stranded: workstream destroyed`); --all overrides -w. With -w <unknown>, errors via WorkstreamNotFoundError (exit 3) instead of silently printing 'no orphans'. Cleanup recipe shown in Next: hints.",
+      "List on-disk workspace dirs in <state-dir>/workspaces/<workstream>/ that have no DB row. These block subsequent `--workspace` spawns; surfaced by bug_workspace_orphan_not_in_state. With --all, scans every workstream subdir under <state-dir>/workspaces/ INCLUDING workstreams whose row is gone (those rows are tagged `stranded: workstream teardowned`); --all overrides -w. With -w <unknown>, errors via WorkstreamNotFoundError (exit 3) instead of silently printing 'no orphans'. Cleanup recipe shown in Next: hints.",
     )
     .option(
       "--all",

@@ -257,7 +257,7 @@ function fullPayload(cols: readonly string[]): string {
  *
  *  Undo folds the puts for a key to reconstruct a tombstoned row, so a
  *  note in that state reconstructed to `{}` and was silently never
- *  restored (drift-641: `mu undo` of a workstream destroy brought back
+ *  restored (drift-641: `mu undo` of a workstream teardown brought back
  *  every task and edge but only the notes whose rowid happened to be
  *  unchanged). A self-describing note tombstone closes that hole: the
  *  op that removed the row also carries what the row WAS, so the

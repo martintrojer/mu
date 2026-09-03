@@ -283,7 +283,7 @@ describe("the op formatter", () => {
     const { createWorkspace, freeWorkspace, refreshWorkspace } = await import(
       "../src/workspace.js"
     );
-    const { destroyWorkstream, ensureWorkstream } = await import("../src/workstream.js");
+    const { teardownWorkstream, ensureWorkstream } = await import("../src/workstream.js");
     const { freshMockState, mockTmux } = await import("./_verbs-mock.js");
 
     const tempDir = mkdtempSync(join(tmpdir(), "mu-state-render-events-"));
@@ -485,7 +485,7 @@ describe("the op formatter", () => {
           if (args[0] === "has-session") return { stdout: "", stderr: "missing", exitCode: 1 };
           return { stdout: "", stderr: "unexpected tmux call", exitCode: 1 };
         });
-        await destroyWorkstream(db, { workstream: "doomed" });
+        await teardownWorkstream(db, { workstream: "doomed" });
       });
       resetTmuxExecutor();
 

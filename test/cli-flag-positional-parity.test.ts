@@ -10,7 +10,7 @@
 //                            fallback` silently proceeds.
 //   dogfood-block-multi      `mu task block --by` now accepts the same
 //                            repeat/comma forms `--blocked-by` does.
-//   dogfood-destroy-w-flag   `mu workstream destroy <name>` accepts the
+//   dogfood-destroy-w-flag   `mu workstream teardown <name>` accepts the
 //                            positional as an alias for -w, matching
 //                            `workstream init <name>`.
 //   dogfood-note-arg-shape   `mu task note <id> --text "..."` is an
@@ -185,9 +185,9 @@ describe("flag-vs-positional parity sweep (dogfood-*)", () => {
   // ─── dogfood-destroy-w-flag ───────────────────────────────────────
 
   describe("dogfood-destroy-w-flag: positional target aliases -w", () => {
-    it("`workstream destroy ws` targets ws (was: too many arguments + help)", async () => {
+    it("`workstream teardown ws` targets ws (was: too many arguments + help)", async () => {
       await seedTasks("a");
-      const r = await runCli(["workstream", "destroy", "ws", "--json"], dbPath);
+      const r = await runCli(["workstream", "teardown", "ws", "--json"], dbPath);
       expect(r.error).toBeUndefined();
       expect(r.exitCode).toBeNull();
       const payload = JSON.parse(r.stdout.trim()) as { workstreamName: string; dryRun?: boolean };
@@ -196,22 +196,22 @@ describe("flag-vs-positional parity sweep (dogfood-*)", () => {
       expect(payload.dryRun).toBe(true);
     });
 
-    it("`workstream destroy -w ws` (the pre-existing form) still works", async () => {
+    it("`workstream teardown -w ws` (the pre-existing form) still works", async () => {
       await seedTasks("a");
-      const r = await runCli(["workstream", "destroy", "-w", "ws", "--json"], dbPath);
+      const r = await runCli(["workstream", "teardown", "-w", "ws", "--json"], dbPath);
       expect(r.exitCode).toBeNull();
       const payload = JSON.parse(r.stdout.trim()) as { workstreamName: string };
       expect(payload.workstreamName).toBe("ws");
     });
 
     it("positional + a DISAGREEING -w is a usage error, not a silent pick-one", async () => {
-      const r = await runCli(["workstream", "destroy", "ws", "-w", "other"], dbPath);
+      const r = await runCli(["workstream", "teardown", "ws", "-w", "other"], dbPath);
       expect(r.exitCode).toBe(2);
       expect(r.stderr).toMatch(/workstream given twice/);
     });
 
     it("--empty still refuses a named target, now naming the positional too", async () => {
-      const r = await runCli(["workstream", "destroy", "ws", "--empty"], dbPath);
+      const r = await runCli(["workstream", "teardown", "ws", "--empty"], dbPath);
       expect(r.exitCode).toBe(2);
       expect(r.stderr).toMatch(/mutually exclusive/);
     });

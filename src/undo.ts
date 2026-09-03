@@ -74,7 +74,7 @@
 // FK ORDERING
 // -----------
 // A group can span entities: a cascade close writes N task ops, and a
-// workstream destroy writes tombstones for the whole tree. Restoring a
+// workstream teardown writes tombstones for the whole tree. Restoring a
 // task before its workstream violates the FK, so inverses are applied in
 // DEPENDENCY ORDER (workstream -> task -> note/edge), not merely in
 // reverse emission order. See ENTITY_RESTORE_ORDER.
@@ -214,7 +214,7 @@ export class UndoSupersededError extends Error implements HasNextSteps {
  * tasks, and a task before its notes and edges, or the FK rejects the
  * insert.
  *
- * Not simply "reverse of emission order": a destroy emits the workstream
+ * Not simply "reverse of emission order": a teardown emits the workstream
  * tombstone FIRST (it is the row the operator deleted; the rest are FK
  * cascade victims), so reversing would try to restore notes before their
  * task. Sorting by entity depth is correct regardless of how the group
@@ -538,7 +538,7 @@ export function planUndo(db: Db, groupId: string): UndoPlan {
       // History predating v10 carries retired lifecycle values that the
       // schema CHECK clause now rejects, so a restore has to fold them
       // onto a live status exactly as the apply path does. Without this,
-      // undoing a pre-v10 `workstream destroy` aborted the whole
+      // undoing a pre-v10 `workstream teardown` aborted the whole
       // transaction on the first DEFERRED task.
       const status = fields.status;
       if (typeof status === "string") fields.status = normalizeTaskStatus(status);

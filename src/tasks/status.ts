@@ -33,9 +33,9 @@ const RETIRED_STATUSES: ReadonlySet<string> = new Set(["REJECTED", "DEFERRED"]);
  *
  * Shared by the two replay paths that can meet a v8/v9 payload: the
  * apply path (`applyTaskPut`, for peer ops and rebuilds) and the undo
- * path (`restoreRow`, for reverting an old destroy). Both used to be
+ * path (`restoreRow`, for reverting an old teardown). Both used to be
  * responsible for knowing the retired set; undo did not, so undoing a
- * pre-v10 `workstream destroy` died on the CHECK constraint.
+ * pre-v10 `workstream teardown` died on the CHECK constraint.
  */
 export function normalizeTaskStatus(value: string): string {
   return RETIRED_STATUSES.has(value) ? "OPEN" : value;

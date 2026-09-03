@@ -2,7 +2,7 @@
 // the reaper sequence inside `deleteAgent` (snapshot stuck tasks → DELETE
 // agent row → per-task UPDATE + addNote + emitEvent) MUST run inside a
 // single SQLite transaction. If a throw escapes mid-loop (e.g. addNote
-// hits a NOT NULL regression, FK race after workstream destroy, OOM),
+// hits a NOT NULL regression, FK race after workstream teardown, OOM),
 // the whole sequence MUST roll back — agent row still present, every
 // stuck task still claimed by it, no `task reap` event leaked. Without
 // the transaction wrapper, the agent row would already be DELETEd (FK

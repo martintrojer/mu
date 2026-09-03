@@ -18,7 +18,7 @@ import { currentOpContext, withCaptureSuppressed, withOpContext } from "../src/o
 import { addBlockEdge, removeBlockEdge, reparentTask } from "../src/tasks/edges.js";
 import { addNote, addTask, deleteTask, updateTask } from "../src/tasks/edit.js";
 import { closeTask, openTask, setTaskStatus } from "../src/tasks/lifecycle.js";
-import { destroyWorkstream, ensureWorkstream } from "../src/workstream.js";
+import { ensureWorkstream, teardownWorkstream } from "../src/workstream.js";
 import { rmFixtureDir } from "./_fs.js";
 
 interface OpRow {
@@ -468,7 +468,7 @@ describe("op capture (triggers)", () => {
       for (const row of rows) expect(row.intent).toBe("task.close");
     });
 
-    it("a workstream destroy groups the whole cascade as one unit", async () => {
+    it("a workstream teardown groups the whole cascade as one unit", async () => {
       ensureWorkstream(db, "demo");
       seedTask("a");
       seedTask("b");
@@ -476,12 +476,12 @@ describe("op capture (triggers)", () => {
       addNote(db, "a", "note text", { workstream: "demo" });
       clearOps();
 
-      await destroyWorkstream(db, { workstream: "demo", muxSession: "mu-capture-test-absent" });
+      await teardownWorkstream(db, { workstream: "demo", muxSession: "mu-capture-test-absent" });
 
       const rows = ops();
       expect(rows.length).toBeGreaterThan(0);
       expect(new Set(rows.map((r) => r.group_id)).size).toBe(1);
-      for (const row of rows) expect(row.intent).toBe("workstream.destroy");
+      for (const row of rows) expect(row.intent).toBe("workstream.teardown");
     });
 
     it("two separate operator actions get DIFFERENT groups", () => {
@@ -520,7 +520,7 @@ describe("op capture (triggers)", () => {
       addNote(db, "a", "keep me", { workstream: "demo" });
       clearOps();
 
-      await destroyWorkstream(db, { workstream: "demo", muxSession: "mu-capture-test-absent" });
+      await teardownWorkstream(db, { workstream: "demo", muxSession: "mu-capture-test-absent" });
 
       const byEntity = (e: string) => ops(e).filter((r) => r.op === "del");
       // One tombstone per row, at every level of the cascade.

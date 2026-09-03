@@ -618,7 +618,7 @@ than `jq '.items | length'`. `mu workspace commits --json` adds `vcs`,
 `baseRef`, and `workspacePath` siblings.
 
 Applies to: `mu task list / next / owned-by / notes`,
-`mu workstream list`, `mu workstream destroy --empty` (dry-run),
+`mu workstream list`, `mu workstream teardown --empty` (dry-run),
 `mu workspace list / orphans / commits`,
 `mu undo` (group list), `mu log -n N` (read).
 
@@ -676,8 +676,8 @@ IS the primary entity, so it may be positional:
 
 ```bash
 mu workstream init  v2                 # positional
-mu workstream destroy v2 --yes         # positional (aliases -w)
-mu workstream destroy -w v2 --yes      # -w still works
+mu workstream teardown v2 --yes         # positional (aliases -w)
+mu workstream teardown -w v2 --yes      # -w still works
 ```
 
 Passing both a positional and a disagreeing `-w` is a usage error
@@ -740,7 +740,7 @@ The list is the **union** of three sources: distinct workstreams in
 `agents`, in `tasks`, and tmux sessions matching `mu-*`. A freshly
 `init`'d workstream with no tasks shows up via its session; one whose
 session was killed externally shows up via its surviving DB rows, so
-you can still `mu workstream destroy` it.
+you can still `mu workstream teardown` it.
 
 ### How mu finds your active workstream
 
@@ -772,7 +772,7 @@ mu agent close helper -w scratch          # done
 spawn, tasks are optional, and idle scratch agents get a staleness
 nudge in `mu state` and the TUI so they don't pile up. The name is
 **reserved** — `mu workstream init scratch` is rejected;
-`mu workstream destroy scratch` works normally.
+`mu workstream teardown scratch` works normally.
 
 ```
 $ mu workstream init scratch
@@ -2008,32 +2008,32 @@ If the agent has a workspace:
 
 ### Tear down the whole workstream
 
-`mu workstream destroy` is the counterpart of `mu workstream init`: it
+`mu workstream teardown` is the counterpart of `mu workstream init`: it
 kills the workstream's tmux session AND deletes every DB row tagged
 with the workstream name (edges and notes go via FK cascade on tasks).
 The workstream resolves as everywhere else: `--workstream <name>` >
 `$MU_SESSION` > current tmux session (`mu-` prefix stripped).
 
-Two-phase by default: a bare `mu workstream destroy` prints a dry-run
+Two-phase by default: a bare `mu workstream teardown` prints a dry-run
 summary and exits without touching anything. Pass `-y` / `--yes` to
-destroy.
+tear it down.
 
 ```bash
-mu workstream destroy --workstream auth-refactor          # dry-run: shows counts, exits
-mu workstream destroy --workstream auth-refactor --yes    # actually does it
+mu workstream teardown --workstream auth-refactor          # dry-run: shows counts, exits
+mu workstream teardown --workstream auth-refactor --yes    # actually does it
 
 # Or, from inside the workstream's tmux session:
-mu workstream destroy --yes                                # workstream auto-detected
+mu workstream teardown --yes                                # workstream auto-detected
 
 # Sweep every empty workstream (zero tasks, agents, vcs_workspaces)
 # in one call. Tmux session presence and audit-only log entries do NOT
 # disqualify. Also surfaces unregistered `mu-*` tmux sessions (test
-# litter, or a partial destroy that dropped the DB row but left the
+# litter, or a partial teardown that dropped the DB row but left the
 # session). ONLY `mu-`-prefixed sessions are touched. Mutually
 # exclusive with -w. Dry-run lists what WOULD go
-# (created_at renders `—` for mux-only entries); --yes destroys.
-mu workstream destroy --empty                  # dry-run: table of empties
-mu workstream destroy --empty --yes            # destroy them all
+# (created_at renders `—` for mux-only entries); --yes tears them down.
+mu workstream teardown --empty                  # dry-run: table of empties
+mu workstream teardown --empty --yes            # tear them all down
 ```
 
 ```
@@ -2047,7 +2047,7 @@ Destroyed auth-refactor: killed mux=true, agents=1, tasks=1, edges=0, notes=0, w
 ```
 
 Idempotent on every leg: a missing tmux session is fine, zero DB rows
-is fine, and a repeat destroy prints "nothing to destroy" and exits 0.
+is fine, and a repeat teardown prints "nothing to tear down" and exits 0.
 
 Destroy writes TOMBSTONE ops rather than erasing history, so the work
 stays in the ops log. `mu undo <group> --yes` reverses the row
@@ -2072,10 +2072,10 @@ Or nuke the entire DB:
 rm ~/.local/state/mu/mu.db                           # next mu invocation re-creates an empty schema
 ```
 
-### Before destroying a workstream
+### Before tearing down a workstream
 
 A workstream's task graph + notes IS the project memory.
-`mu workstream destroy` removes the live rows; the ops log keeps them,
+`mu workstream teardown` removes the live rows; the ops log keeps them,
 and `mu undo <group> --yes` reverses the row deletions.
 
 There is no markdown export. Use the typed surfaces instead:
@@ -2083,7 +2083,7 @@ There is no markdown export. Use the typed surfaces instead:
 | Need | Verb |
 | ---- | ---- |
 | A safety copy before a destructive change | `mu db backup <file>` (`VACUUM INTO`; never overwrites) |
-| Reverse a destroy you regret | `mu undo <group> --yes` |
+| Reverse a teardown you regret | `mu undo <group> --yes` |
 | Laptop ↔ devserver handoff | Ambient **sync** — set `MU_SYNC_DIR` and every command carries it (§ 15.6) |
 | Peer status / a torn segment | `mu sync`, `mu sync --repair <peer>` |
 | Disaster recovery from the ops log | `mu rebuild <file>` |
@@ -2300,7 +2300,7 @@ mu state -w demo
 tmux attach -t mu-demo
 
 # Cleanup
-mu workstream destroy --workstream demo --yes
+mu workstream teardown --workstream demo --yes
 rm -f /tmp/mu-demo.db
 ```
 

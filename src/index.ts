@@ -446,12 +446,12 @@ export {
   workspacesRoot,
 } from "./workspace.js";
 export {
-  type DestroyResult,
-  destroyWorkstream,
   ensureWorkstream,
   isValidWorkstreamName,
   listWorkstreams,
   summarizeWorkstream,
+  type TeardownResult,
+  teardownWorkstream,
   type WorkspaceFailure,
   WorkstreamExistsError,
   WorkstreamNameInvalidError,

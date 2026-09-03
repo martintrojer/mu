@@ -1,9 +1,9 @@
-// mu — `mu workstream` verbs (init / list / destroy).
+// mu — `mu workstream` verbs (init / list / teardown).
 //
 // A workstream = one mux session (`mu-<name>`) + every DB row tagged
 // with that name (agents / tasks / edges / notes / workspaces / logs).
 // `init` creates the session + DB row pair; `list` shows
-// every workstream on the machine; `destroy` is the symmetric inverse,
+// every workstream on the machine; `teardown` is the symmetric inverse,
 // two-phase by default (dry-run; `--yes` commits).
 //
 // Extracted from src/cli.ts as part of refactor_split_large_src_files.
@@ -20,11 +20,11 @@ import { activeMux } from "../mux.js";
 import { muTable, type NextStep, pc, printNextSteps } from "../output.js";
 import {
   assertWorkstreamInitable,
-  destroyWorkstream,
   ensureWorkstream,
   listEmptyWorkstreams,
   listWorkstreams,
   summarizeWorkstream,
+  teardownWorkstream,
 } from "../workstream.js";
 
 export async function cmdInit(db: Db, name: string, opts: { json?: boolean } = {}): Promise<void> {
@@ -113,7 +113,7 @@ export async function cmdWorkstreamList(db: Db, opts: { json?: boolean } = {}): 
   console.log(formatWorkstreamsTable(summaries));
 }
 
-export async function cmdDestroy(
+export async function cmdTeardown(
   db: Db,
   opts: {
     workstream?: string;
@@ -123,13 +123,13 @@ export async function cmdDestroy(
   },
 ): Promise<void> {
   if (opts.empty) {
-    await cmdDestroyEmpty(db, opts);
+    await cmdTeardownEmpty(db, opts);
     return;
   }
   const workstream = await resolveWorkstream(opts.workstream);
   const summary = await summarizeWorkstream(db, { workstream });
   // Empty-but-registered workstreams (a row in `workstreams` with no
-  // agents/tasks/etc.) ARE worth destroying — otherwise the bare
+  // agents/tasks/etc.) ARE worth tearing down — otherwise the bare
   // registry row is orphaned forever. nothingToDo is the strict
   // intersection: nothing on disk, in mux, OR in the DB.
   const nothingToDo =
@@ -144,14 +144,14 @@ export async function cmdDestroy(
     if (opts.json) {
       emitJson({
         workstreamName: workstream,
-        destroyed: false,
-        reason: "nothing to destroy",
+        tornDown: false,
+        reason: "nothing to tear down",
         summary,
       });
       return;
     }
     console.log(
-      pc.dim(`workstream "${workstream}" has no mux session and no DB rows; nothing to destroy`),
+      pc.dim(`workstream "${workstream}" has no mux session and no DB rows; nothing to tear down`),
     );
     return;
   }
@@ -159,14 +159,14 @@ export async function cmdDestroy(
   if (!opts.yes) {
     const dryRunNextSteps: NextStep[] = [
       {
-        intent: "Confirm and actually destroy",
-        command: `mu workstream destroy -w ${workstream} --yes`,
+        intent: "Confirm and actually tear down",
+        command: `mu workstream teardown -w ${workstream} --yes`,
       },
     ];
     if (opts.json) {
       emitJson({
         workstreamName: workstream,
-        destroyed: false,
+        tornDown: false,
         dryRun: true,
         summary,
         nextSteps: dryRunNextSteps,
@@ -185,16 +185,16 @@ export async function cmdDestroy(
       `  workspaces   : ${summary.workspaceCount}${summary.workspaceCount > 0 ? pc.dim(" (will be cleaned via per-backend remove)") : ""}`,
     );
     console.log("");
-    console.log(pc.dim("(dry-run; rerun with --yes to actually destroy)"));
+    console.log(pc.dim("(dry-run; rerun with --yes to actually tear down)"));
     printNextSteps(dryRunNextSteps);
     return;
   }
 
-  const result = await destroyWorkstream(db, { workstream });
+  const result = await teardownWorkstream(db, { workstream });
   if (opts.json) {
     emitJson({
       workstreamName: workstream,
-      destroyed: true,
+      tornDown: true,
       ...result,
     });
     return;
@@ -234,15 +234,15 @@ export async function cmdDestroy(
   }
 }
 
-// ─── cmdDestroyEmpty ─────────────────────────────────────────────────
+// ─── cmdTeardownEmpty ─────────────────────────────────────────────────
 //
-// `mu workstream destroy --empty` sweeps every workstream with no
+// `mu workstream teardown --empty` sweeps every workstream with no
 // user-meaningful state (zero tasks, agents, vcs_workspaces).
-// One snapshot covers the whole sweep; per-workstream destroy errors
+// One snapshot covers the whole sweep; per-workstream teardown errors
 // are accumulated into a `failed` array so a single bad pane doesn't
 // abort the rest of the cleanup. See workstream_destroy_empty_sweep.
 
-interface EmptyDestroyResult {
+interface EmptyTeardownResult {
   workstreamName: string;
   killedMux: boolean;
   deletedAgents: number;
@@ -269,7 +269,7 @@ function workstreamCreatedAt(db: Db, name: string): string {
   return row?.created_at ?? "";
 }
 
-async function cmdDestroyEmpty(
+async function cmdTeardownEmpty(
   db: Db,
   opts: {
     workstream?: string;
@@ -313,13 +313,13 @@ async function cmdDestroyEmpty(
     console.log("");
     console.log(
       pc.dim(
-        `${empties.length} empty workstream${empties.length === 1 ? "" : "s"} would be destroyed (dry-run; rerun with --yes to actually destroy).`,
+        `${empties.length} empty workstream${empties.length === 1 ? "" : "s"} would be torn down (dry-run; rerun with --yes to actually tear down).`,
       ),
     );
     printNextSteps([
       {
-        intent: "Confirm and actually destroy every empty workstream",
-        command: "mu workstream destroy --empty --yes",
+        intent: "Confirm and actually tear down every empty workstream",
+        command: "mu workstream teardown --empty --yes",
       },
     ]);
     return;
@@ -328,18 +328,18 @@ async function cmdDestroyEmpty(
   // --yes path. No-op early if there's nothing to do.
   if (empties.length === 0) {
     if (opts.json) {
-      emitJson({ destroyed: 0, results: [], failed: [] });
+      emitJson({ tornDown: 0, results: [], failed: [] });
       return;
     }
-    console.log(pc.dim("no empty workstreams found; nothing to destroy"));
+    console.log(pc.dim("no empty workstreams found; nothing to tear down"));
     return;
   }
 
-  const results: EmptyDestroyResult[] = [];
+  const results: EmptyTeardownResult[] = [];
   const failed: EmptyDestroyFailure[] = [];
   for (const ws of empties) {
     try {
-      const result = await destroyWorkstream(db, { workstream: ws.name });
+      const result = await teardownWorkstream(db, { workstream: ws.name });
       results.push({
         workstreamName: ws.name,
         killedMux: result.killedMux,
@@ -362,7 +362,7 @@ async function cmdDestroyEmpty(
   }
 
   if (opts.json) {
-    emitJson({ destroyed: results.length, results, failed });
+    emitJson({ tornDown: results.length, results, failed });
     return;
   }
   for (const r of results) {
@@ -376,7 +376,7 @@ async function cmdDestroyEmpty(
     console.log("");
     console.log(
       pc.yellow(
-        `WARNING: ${failed.length} workstream${failed.length === 1 ? "" : "s"} could not be destroyed cleanly:`,
+        `WARNING: ${failed.length} workstream${failed.length === 1 ? "" : "s"} could not be torn down cleanly:`,
       ),
     );
     for (const f of failed) {
@@ -384,7 +384,7 @@ async function cmdDestroyEmpty(
     }
   }
   console.log("");
-  console.log(pc.dim(`Sweep complete: destroyed=${results.length}, failed=${failed.length}.`));
+  console.log(pc.dim(`Sweep complete: tornDown=${results.length}, failed=${failed.length}.`));
   if (failed.length === 0) {
     printNextSteps([
       {
@@ -406,9 +406,9 @@ import { handle, JSON_OPT, WORKSTREAM_OPT } from "../cli.js";
 /** Fold an optional positional workstream name into the opts bag.
  *
  *  dogfood-destroy-w-flag: `workstream init` takes its target
- *  POSITIONALLY while `destroy` only took `-w`, so
- *  `mu workstream destroy v2 --yes` printed help ("too many
- *  arguments") instead of destroying. The positional is now an
+ *  POSITIONALLY while `teardown` only took `-w`, so
+ *  `mu workstream teardown v2 --yes` printed help ("too many
+ *  arguments") instead of tearing down. The positional is now an
  *  additive ALIAS for -w on both verbs; -w keeps working unchanged.
  *  Supplying both is a usage error rather than a silent pick-one.
  *
@@ -450,12 +450,12 @@ export function wireWorkstreamCommands(program: Command): void {
     });
 
   workstream
-    .command("destroy [name]")
+    .command("teardown [name]")
     .description(
-      "Tear down a workstream: kill its mux session and cascade-delete every DB row tagged with its name. The target may be given positionally (matching `workstream init <name>`) or via -w. Pass --yes to actually destroy; otherwise prints a dry-run summary. With --empty, sweeps every empty workstream (zero tasks/agents/workspaces) in one call.",
+      "Tear down a workstream: kill its mux session and cascade-delete every DB row tagged with its name. Reversible — tombstone ops are written, so `mu undo <group>` restores the rows. The target may be given positionally (matching `workstream init <name>`) or via -w. Pass --yes to actually tear down; otherwise prints a dry-run summary. With --empty, sweeps every empty workstream (zero tasks/agents/workspaces) in one call.",
     )
     .option(...WORKSTREAM_OPT)
-    .option("-y, --yes", "actually destroy (without this flag, prints a dry-run summary)")
+    .option("-y, --yes", "actually tear down (without this flag, prints a dry-run summary)")
     .option(
       "--empty",
       "sweep every empty workstream (zero tasks, agents, vcs_workspaces); mutually exclusive with -w",
@@ -469,7 +469,7 @@ export function wireWorkstreamCommands(program: Command): void {
         empty?: boolean;
       };
       return handle(
-        (db) => cmdDestroy(db, withPositionalWorkstream(opts, name)),
+        (db) => cmdTeardown(db, withPositionalWorkstream(opts, name)),
         this as Command,
       )();
     });

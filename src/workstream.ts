@@ -2,15 +2,15 @@
 //
 // One workstream = one mux session + N agents + M tasks (and their
 // edges/notes) all sharing the workstream column. 0.1.0 ships `mu init`
-// (create the mux session) and `mu destroy` (this module: nuke the
+// (create the mux session) and `mu workstream teardown` (this module: nuke the
 // mux session and every DB row tagged with the workstream name).
 //
-// `destroyWorkstream` is idempotent on every leg:
+// `teardownWorkstream` is idempotent on every leg:
 //   - mux session already gone         → killSession swallows the error
 //   - no agents/tasks for this name    → DELETE returns zero changes
 //   - workstream never existed at all  → returns all-zero counts
 //
-// Both summarize and destroy take an optional `muxSession` override so
+// Both summarize and teardown take an optional `muxSession` override so
 // tests (and the rare workstream whose mux session was created with a
 // non-default name) work without env-var gymnastics.
 
@@ -116,8 +116,8 @@ export class WorkstreamExistsError extends Error implements HasNextSteps {
     return [
       { intent: "List existing workstreams", command: "mu workstream list" },
       {
-        intent: "Destroy the existing workstream first",
-        command: `mu workstream destroy -w ${this.workstream} --yes`,
+        intent: "Tear down the existing workstream first",
+        command: `mu workstream teardown -w ${this.workstream} --yes`,
       },
     ];
   }
@@ -236,19 +236,19 @@ export interface WorkstreamSummary {
   /** Rows in `task_edges` whose `from_task` is in this workstream. */
   edgeCount: number;
   /** Rows in `vcs_workspaces` for this workstream. Surfaced so the
-   *  destroy dry-run can warn about per-agent worktrees that need
+   *  teardown dry-run can warn about per-agent worktrees that need
    *  cleanup before the FK cascade silently nukes their rows. */
   workspaceCount: number;
   /** True iff a row exists in the `workstreams` table itself. False
    *  for tmux-only `mu-*` sessions that mu never observed via
-   *  `mu workstream init`. Surfaced so destroy can clean up bare
+   *  `mu workstream init`. Surfaced so teardown can clean up bare
    *  registry rows (workstream row exists, no agents/tasks/etc.) —
    *  otherwise such rows are orphaned forever (the previous
    *  `nothingToDo` heuristic short-circuited on them). */
   registered: boolean;
 }
 
-export interface DestroyResult {
+export interface TeardownResult {
   /** True iff killing the mux session actually killed something. */
   killedMux: boolean;
   /** Number of `agents` rows deleted. */
@@ -260,14 +260,14 @@ export interface DestroyResult {
   /** Number of `task_edges` deleted by the cascade — informational. */
   deletedEdges: number;
   /** Number of vcs_workspaces whose on-disk path was actually
-   *  removed by the backend on this destroy. Excludes
+   *  removed by the backend on this teardown. Excludes
    *  `alreadyGoneWorkspaces` (those were no-ops on disk). */
   freedWorkspaces: number;
   /** Number of vcs_workspaces whose registry row existed but
    *  whose on-disk path was already gone (manual rm -rf or a prior
-   *  interrupted destroy). The DB row was cascade-deleted; the
+   *  interrupted teardown). The DB row was cascade-deleted; the
    *  backend did no filesystem work. Tracked separately so the
-   *  destroy report doesn't lie about how much cleanup it actually
+   *  teardown report doesn't lie about how much cleanup it actually
    *  performed. */
   alreadyGoneWorkspaces: number;
   /** Workspaces whose backend cleanup failed (e.g. `git worktree
@@ -297,7 +297,7 @@ export interface WorkstreamOptions {
   resolveBackend?: (name: VcsBackendName) => VcsBackend;
 }
 
-export interface DestroyWorkstreamOptions extends WorkstreamOptions {}
+export interface TeardownWorkstreamOptions extends WorkstreamOptions {}
 
 /**
  * Discover every workstream visible on this machine. The union of:
@@ -341,7 +341,7 @@ export async function listWorkstreams(db: Db): Promise<WorkstreamSummary[]> {
  *
  *   2. MUX-only: a mux session named `mu-*` with no row in the
  *      `workstreams` table. Catches test litter and remnants of a
- *      partial destroy where the DB row was wiped but the mux
+ *      partial teardown where the DB row was wiped but the mux
  *      session survived (or sessions created out-of-band via
  *      `tmux new-session -s mu-foo`). The synthetic summary has
  *      `registered=false`, all counts 0, and `muxAlive=true` (it
@@ -352,7 +352,7 @@ export async function listWorkstreams(db: Db): Promise<WorkstreamSummary[]> {
  * operator created for unrelated work are NEVER matched — mu only
  * owns its own namespace.
  *
- * Used by `mu workstream destroy --empty` to sweep test-litter
+ * Used by `mu workstream teardown --empty` to sweep test-litter
  * workstreams in one command (instead of the per-name jq incantation
  * over `mu workstream list --json`).
  *
@@ -446,14 +446,14 @@ function isRegistered(db: Db, workstream: string): boolean {
  * to call repeatedly. Returns counts so the caller can print a useful
  * summary.
  */
-export async function destroyWorkstream(
+export async function teardownWorkstream(
   db: Db,
-  opts: DestroyWorkstreamOptions,
-): Promise<DestroyResult> {
+  opts: TeardownWorkstreamOptions,
+): Promise<TeardownResult> {
   const muxSession = opts.muxSession ?? `mu-${opts.workstream}`;
 
-  // Destroy does not snapshot. v9 dropped the `snapshots` table; the
-  // destroy writes tombstone ops instead and `mu undo` replays the
+  // Teardown does not snapshot. v9 dropped the `snapshots` table; the
+  // teardown writes tombstone ops instead and `mu undo` replays the
   // inverses (VISION.md § 2b).
 
   // Pre-count the cascade victims so we can report them — SQLite's
@@ -468,7 +468,7 @@ export async function destroyWorkstream(
   // Mux session first: if killSession throws we don't want the DB rows
   // already gone with no way to recover. (killSession is itself
   // idempotent on missing sessions — a real throw here is an
-  // unexpected mux error.) Load-bearing: destroy must actually kill
+  // unexpected mux error.) Load-bearing: teardown must actually kill
   // the session, not silently report success while leaving panes
   // running.
   const mux = await activeMux();
@@ -483,7 +483,7 @@ export async function destroyWorkstream(
   // mufeedback note #195. Per backend, the right cleanup is
   // 'git worktree remove --force' / 'jj workspace forget' / etc.,
   // not 'rm -rf'. We surface failures so the user can recover; we
-  // do NOT abort the destroy on workspace failure (the workstream
+  // do NOT abort the teardown on workspace failure (the workstream
   // semantics are 'tear it all down', not 'partial cleanup').
   let freedWorkspaces = 0;
   let alreadyGoneWorkspaces = 0;
@@ -498,11 +498,11 @@ export async function destroyWorkstream(
       });
       if (result.removed) {
         // Backend actually removed the on-disk path. This is the
-        // only case that counts as 'work done by destroy'.
+        // only case that counts as 'work done by teardown'.
         freedWorkspaces += 1;
       } else {
         // Path was already gone (manual rm -rf or interrupted prior
-        // destroy). The DB row is cascade-deleted below either way,
+        // teardown). The DB row is cascade-deleted below either way,
         // but we don't claim to have freed anything on disk — it was
         // already in the desired state. Tracked separately so the
         // user can spot stale registry rows from past mishaps.
@@ -541,16 +541,16 @@ export async function destroyWorkstream(
   // (e.g. an orphan mux session that mu never observed),
   // changes() = 0 and we still report the killed mux session
   // honestly.
-  // One group for the entire destroy: the DELETE cascades to tasks,
+  // One group for the entire teardown: the DELETE cascades to tasks,
   // edges and notes, and each cascaded row gets its own tombstone op
   // (SQLite FK CASCADE DOES fire triggers — verified empirically, see
   // src/capture.ts). They all share this group so the whole teardown is
   // one unit for `mu undo`.
-  withOpContext(db, { intent: "workstream.destroy", group: "new" }, () =>
+  withOpContext(db, { intent: "workstream.teardown", group: "new" }, () =>
     db.prepare("DELETE FROM workstreams WHERE name = ?").run(opts.workstream),
   );
   // No emitEvent: the DELETE cascade fired the capture triggers, which
-  // wrote tombstone ops (op='del', intent='workstream.destroy') for the
+  // wrote tombstone ops (op='del', intent='workstream.teardown') for the
   // workstream AND for every task/edge/note that cascaded with it —
   // strictly more information than the prose counts, and it survives the
   // cascade because ops is FK-free.

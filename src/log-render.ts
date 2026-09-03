@@ -43,6 +43,10 @@ export type CaptureIntent =
   | "task.unblock"
   | "task.reparent"
   | "workstream.init"
+  | "workstream.teardown"
+  // Pre-1.1.2 name for workstream.teardown. Read-only: nothing emits it
+  // any more, but ~5k ops in existing logs carry it and must keep
+  // rendering. See LEGACY_INTENT_SYNONYMS in src/legacy-ops.ts.
   | "workstream.destroy";
 
 export type KnownIntent = CaptureIntent | LocalIntent;
@@ -166,7 +170,8 @@ const VERBS: Record<KnownIntent, string> = {
   "task.unblock": "task unblock",
   "task.reparent": "task reparent",
   "workstream.init": "workstream init",
-  "workstream.destroy": "workstream destroy",
+  "workstream.teardown": "workstream teardown",
+  "workstream.destroy": "workstream teardown",
   "agent.spawn": "agent spawn",
   "agent.close": "agent close",
   "agent.adopt": "agent adopt",
@@ -324,6 +329,7 @@ function renderKnown(row: RenderableOp, intent: KnownIntent): RenderedOp {
     }
     case "workstream.init":
       return { verb: VERBS[intent], subject, detail: "" };
+    case "workstream.teardown":
     case "workstream.destroy":
       return {
         verb: VERBS[intent],

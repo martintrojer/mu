@@ -31,6 +31,7 @@
 import { randomUUID } from "node:crypto";
 import type { Db } from "./db.js";
 import { nextHlc } from "./hlc.js";
+import { intentSpellings } from "./legacy-ops.js";
 import type { HasNextSteps, NextStep } from "./output.js";
 
 export type LogKind = "message" | "event" | "broadcast" | string;
@@ -377,8 +378,11 @@ export function listLogs(db: Db, opts: ListLogsOptions = {}): LogRow[] {
     params.push(opts.kind);
   }
   if (opts.intent !== undefined) {
-    conditions.push("l.intent = ?");
-    params.push(opts.intent);
+    // Accept every historical spelling, so a renamed intent does not
+    // truncate the user's history at the release boundary.
+    const spellings = intentSpellings(opts.intent);
+    conditions.push(`l.intent IN (${spellings.map(() => "?").join(", ")})`);
+    params.push(...spellings);
   }
   if (opts.group !== undefined) {
     conditions.push("l.group_id = ?");

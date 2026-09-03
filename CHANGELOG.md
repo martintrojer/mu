@@ -10,6 +10,33 @@ breaking changes are called out under "Breaking" in each entry.
 
 ## [Unreleased]
 
+### Changed
+
+- **`mu workstream destroy` is now `mu workstream teardown`, with no
+  alias.** "Destroy" claimed irreversibility that was never true: the
+  verb writes **tombstone** ops, so `mu undo <group>` restores every row
+  it removed. The wrong word had a measurable cost — it drove
+  defensive pre-flight `mu db backup` runs, 12 of them (270M) in one
+  operator's home directory, named `mu-pre-destroy-*` and friends. The
+  `--yes` two-phase dry-run is unchanged; only the noun was wrong.
+
+  The old verb is GONE, not aliased: a half-renamed verb is worse than
+  either end state. `mu workstream destroy` now exits with commander's
+  unknown-command error.
+
+  History is unaffected. New ops carry `intent='workstream.teardown'`,
+  and the ~5k existing ops spelled `workstream.destroy` stay readable:
+  `mu log` renders both as "workstream teardown" (it already did), and
+  `mu log --intent workstream.teardown` matches both spellings via a new
+  `LEGACY_INTENT_SYNONYMS` map in `src/legacy-ops.ts`. Without that, a
+  rename would silently truncate history at the release boundary and
+  `mu undo` would stop finding pre-rename groups — verified it still
+  reverses a 1057-op teardown from 2026-08-26.
+
+  `--json` field renamed with it: `destroyed` → `tornDown` on
+  `mu workstream teardown --empty`. SDK: `destroyWorkstream` →
+  `teardownWorkstream`, `DestroyResult` → `TeardownResult`.
+
 ### Fixed
 
 - **`mu undo` of a pre-v10 `workstream destroy` could not run at all.**
