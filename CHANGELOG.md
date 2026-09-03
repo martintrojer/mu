@@ -8,7 +8,7 @@ breaking changes are called out under "Breaking" in each entry.
 
 ---
 
-## [Unreleased]
+## [1.1.1] — 2026-09-03
 
 ### Added
 
@@ -55,6 +55,76 @@ breaking changes are called out under "Breaking" in each entry.
   ~2s, on the box above). Separate flag because its cost scales with the
   size of your checkouts rather than with mu's state, and `mu doctor`
   has to stay cheap enough to run reflexively.
+
+### Documentation
+
+- **[skills/mu/REMOTE_WORKERS.md](skills/mu/REMOTE_WORKERS.md)** — running
+  agents on another machine. This already worked with no mu changes (the
+  pane is local, the process is remote, so send/read/status/reaper are
+  unaffected), but nothing said so and the failure modes are not
+  guessable. Written from a mixed local+remote crew run against a real
+  devserver: cherry-pick handoff needs no shared remote, since
+  `git fetch ssh://host/path HEAD` reads a remote worktree directly; the
+  local `$MU_PI_COMMAND` wrapper is not what a bare `pi` gives you on the
+  host, which yields a healthy-looking pane with no models; a dropped
+  connection reaps the task but strands the commit, so the remote path
+  belongs in a task note; and a host with `MaxSessions 1` lets the
+  agent's own ssh block the orchestrator's `git fetch` behind a
+  misleading `Permission denied (keyboard-interactive)`. A separate file
+  rather than more `SKILL.md`, which is loaded every session — the skill
+  keeps a short stub and links out.
+
+### Fixed
+
+- **A throwaway `MU_DB_PATH` leaked phantom peers into the user's real
+  sync dir.** Overriding the DB does not contain a test or a smoke
+  run: sync is ambient, so the first flush stamps the fresh DB's new
+  `machine_id` onto a segment in whatever `MU_SYNC_DIR` names. Nothing
+  prunes segments — absence of one is the only way a peer disappears —
+  so `mu sync` then lists a machine that never existed, forever. Eight
+  had accumulated in one `~/mu`, each holding a single op from a
+  disposable `workstream init` (`smoke`, `smoketest`, `doccheck`, ...),
+  all traceable to the documented
+  `MU_DB_PATH=/tmp/mu-smoke.db mu <verb>` recipe.
+
+  `syncDir()` now refuses a sync dir outside `tmpdir()` when running
+  under a test runner — the exact sibling of the `openDb` guard that
+  refuses the user's real DB (`refuseUserDbDuringTests`), and for the
+  same reason: the failure was silent, permanent, and invisible until
+  someone read the folder. Tests that exercise sync legitimately
+  already use a per-test `mkdtemp` dir and are unaffected. Production
+  never sets `VITEST`, so the shipped CLI is untouched. AGENTS.md's
+  smoke-test recipe now blanks `MU_SYNC_DIR` too, since a hand-run
+  `node dist/cli.js` is not under vitest and the guard cannot help it.
+
+- **`mu undo` of a workstream destroy silently failed to restore notes
+  whose rowid had shifted** (drift-641). A note's op key embeds its
+  rowid (`<ws>/<task>#<id>`), which is not portable: a rebuild, a v8/v9
+  reprojection, or any path that reinserts a note assigns a fresh one.
+  The historical `put` then sat under the OLD key while the `del`
+  emitted at destroy time used the CURRENT one, so nothing joined them.
+
+  `planUndo` reconstructs a tombstoned row by folding the puts for that
+  exact key, so such a note folded to `{}` and `restoreRow` skipped the
+  insert and reported no change. Undoing a destroy therefore brought
+  back every task and edge but only the notes whose rowid happened to
+  be unchanged — on the box this was found, 73 of 714 — and the 641
+  orphaned rows then showed up as `mu doctor --deep` drift ("present in
+  live tables but the log cannot explain it"), which breaks undo, sync
+  and rebuild together since all three derive from the log.
+
+  Note tombstones are now **self-describing**: the `task_notes` BEFORE
+  DELETE trigger records `OLD.author/content/created_at` instead of
+  `'{}'` (new `fullOldPayload` in `src/capture.ts`), and `planUndo`
+  falls back to the tombstone's own payload when the fold comes back
+  empty (new `payloadFields` in `src/undo.ts`, sharing
+  `NEVER_RESTORE` and the scalar guard so a fallback can never
+  reintroduce a surrogate id or FK). The inverse no longer depends on
+  finding a matching put. Other tombstones stay empty — the key plus
+  the preceding puts already describe them, and notes are the only
+  entity whose key is not stable. Costs ~2 bytes per existing note
+  tombstone in the log and needs no schema change; old empty-payload
+  tombstones keep working through the fold path.
 
 ## [1.1.0] — 2026-08-28
 
@@ -213,56 +283,6 @@ breaking changes are called out under "Breaking" in each entry.
   npm run build` all green.
 
 ### Fixed
-
-- **A throwaway `MU_DB_PATH` leaked phantom peers into the user's real
-  sync dir.** Overriding the DB does not contain a test or a smoke
-  run: sync is ambient, so the first flush stamps the fresh DB's new
-  `machine_id` onto a segment in whatever `MU_SYNC_DIR` names. Nothing
-  prunes segments — absence of one is the only way a peer disappears —
-  so `mu sync` then lists a machine that never existed, forever. Eight
-  had accumulated in one `~/mu`, each holding a single op from a
-  disposable `workstream init` (`smoke`, `smoketest`, `doccheck`, ...),
-  all traceable to the documented
-  `MU_DB_PATH=/tmp/mu-smoke.db mu <verb>` recipe.
-
-  `syncDir()` now refuses a sync dir outside `tmpdir()` when running
-  under a test runner — the exact sibling of the `openDb` guard that
-  refuses the user's real DB (`refuseUserDbDuringTests`), and for the
-  same reason: the failure was silent, permanent, and invisible until
-  someone read the folder. Tests that exercise sync legitimately
-  already use a per-test `mkdtemp` dir and are unaffected. Production
-  never sets `VITEST`, so the shipped CLI is untouched. AGENTS.md's
-  smoke-test recipe now blanks `MU_SYNC_DIR` too, since a hand-run
-  `node dist/cli.js` is not under vitest and the guard cannot help it.
-
-- **`mu undo` of a workstream destroy silently failed to restore notes
-  whose rowid had shifted** (drift-641). A note's op key embeds its
-  rowid (`<ws>/<task>#<id>`), which is not portable: a rebuild, a v8/v9
-  reprojection, or any path that reinserts a note assigns a fresh one.
-  The historical `put` then sat under the OLD key while the `del`
-  emitted at destroy time used the CURRENT one, so nothing joined them.
-
-  `planUndo` reconstructs a tombstoned row by folding the puts for that
-  exact key, so such a note folded to `{}` and `restoreRow` skipped the
-  insert and reported no change. Undoing a destroy therefore brought
-  back every task and edge but only the notes whose rowid happened to
-  be unchanged — on the box this was found, 73 of 714 — and the 641
-  orphaned rows then showed up as `mu doctor --deep` drift ("present in
-  live tables but the log cannot explain it"), which breaks undo, sync
-  and rebuild together since all three derive from the log.
-
-  Note tombstones are now **self-describing**: the `task_notes` BEFORE
-  DELETE trigger records `OLD.author/content/created_at` instead of
-  `'{}'` (new `fullOldPayload` in `src/capture.ts`), and `planUndo`
-  falls back to the tombstone's own payload when the fold comes back
-  empty (new `payloadFields` in `src/undo.ts`, sharing
-  `NEVER_RESTORE` and the scalar guard so a fallback can never
-  reintroduce a surrogate id or FK). The inverse no longer depends on
-  finding a matching put. Other tombstones stay empty — the key plus
-  the preceding puts already describe them, and notes are the only
-  entity whose key is not stable. Costs ~2 bytes per existing note
-  tombstone in the log and needs no schema change; old empty-payload
-  tombstones keep working through the fold path.
 
 - **Removed the dead `suppressSnapshot` field from
   `DestroyWorkstreamOptions`** (`reviewfind_dead_suppresssnapshot_field`).

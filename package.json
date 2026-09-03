@@ -1,6 +1,6 @@
 {
   "name": "@martintrojer/mu",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "A persistent, observable crew of pi agents running in one tmux or herdr session per workstream, coordinated through a built-in task DAG.",
   "publishConfig": {
     "access": "public"
