@@ -134,6 +134,27 @@ Between waves:
 Claim/send warn when a target workspace is ≥10 commits behind main;
 refresh first or pass `--strict-staleness` in scripts.
 
+### Remote agents
+
+Agents can run on another machine: the PANE is local, the PROCESS is
+remote (`--command 'ssh <host> -t "..."'`), so `send`, `read`, status
+detection and the reaper all keep working unchanged. **One
+orchestrator DB; panes may be remote** — never run a second mu on the
+host, since `tasks.owner_id` is an FK into the machine-local `agents`
+table and a remote mu could not claim your tasks anyway.
+
+You create the remote workspace yourself (`--workspace` is local-only)
+and collect with
+`git fetch "ssh://<host>/<path>" HEAD && git cherry-pick FETCH_HEAD`.
+
+**Read [REMOTE_WORKERS.md](REMOTE_WORKERS.md) before spawning your
+first remote agent.** It is the full recipe plus the traps that cost
+real debugging time: which CLI command the host actually needs, why
+the worker must be told mu is absent, what a dropped connection reaps
+(and what it does not), and the `MaxSessions 1` case where your own
+agent blocks your `git fetch` behind a misleading
+`Permission denied`.
+
 ### Agent names
 
 Use roles: `worker-1`, `worker-2`, `reviewer-1`, `scout-1`,

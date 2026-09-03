@@ -113,6 +113,31 @@ npx skills add martintrojer/mu          # auto-detects pi / claude-code / codex 
 - pi (the agent CLI mu orchestrates)
 - For `--workspace`: jj, sl, or git on PATH (or `--backend none`)
 
+**Optional — [murmur](https://github.com/martintrojer/murmur), for
+more than one machine.** Every coding agent on every machine in one
+attention-sorted list. mu deliberately does not track hosts or watch
+other machines; murmur does both, as a separate binary that owns the
+ssh egress.
+
+```bash
+# on every node that runs agents
+npm install -g @martintrojer/murmur
+murmur init          # this node's identity
+murmur link pi       # the agent-side extension that reports state
+
+# then, on whichever machine you watch from
+murmur peer add dev  # an ssh target; identity is discovered
+murmur peer list     # which hosts are reachable, and when last seen
+```
+
+Nothing to configure on mu's side: mu already exports
+`MU_MANAGED_AGENT` / `MU_AGENT_NAME` / `MU_WORKSTREAM`
+into every pane it spawns, so murmur marks those agents
+`orchestrated` — "crew" — and hides them unless they are blocked or
+crashed, since a supervisor consumes anything else. Useful for
+picking a host before spawning a remote worker, and for spotting a
+blocked agent on a machine you are not looking at.
+
 **Update:** `npm install -g @martintrojer/mu@latest` for the CLI;
 `npx skills update mu` for the skill.
 
@@ -233,6 +258,26 @@ For a safety copy before anything destructive, `mu db backup <file>`
 writes a `VACUUM INTO` copy of the whole DB. To read the graph out for
 review or grep, every verb takes `--json`.
 
+### Remote workers
+
+An agent can run on another machine with no mu changes and no remote
+backend: the pane is local, the process is remote.
+
+```bash
+ssh dev 'git -C ~/repo worktree add ~/ws/worker-1'
+mu agent spawn worker-1 -w big --command \
+  'ssh dev -t "cd ~/ws/worker-1 && pi --approve"'
+# ... claim and send exactly as for a local agent, then collect:
+git fetch "ssh://dev/~/ws/worker-1" HEAD && git cherry-pick FETCH_HEAD
+```
+
+Local and remote agents mix freely in one workstream. You create the
+remote workspace yourself (`--workspace` is local-only) and mu keeps
+no record of it, so read
+[skills/mu/REMOTE_WORKERS.md](skills/mu/REMOTE_WORKERS.md) first — it
+covers the traps, including the one where your own agent blocks your
+`git fetch` behind a misleading `Permission denied`.
+
 ---
 
 ## vs `pi-subagents`
@@ -260,6 +305,9 @@ DAG. See [docs/USAGE_GUIDE.md](docs/USAGE_GUIDE.md).
 - **[skills/mu/SKILL.md](skills/mu/SKILL.md)** — what an LLM
   running inside an agent pane sees: the in-pane working loop,
   subscribe-vs-poll pattern.
+- **[skills/mu/REMOTE_WORKERS.md](skills/mu/REMOTE_WORKERS.md)** —
+  running agents on another machine over ssh: the recipe, and the
+  traps that cost real debugging time.
 - **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** — module map,
   reconciliation algorithm, schema seam (surrogate INTEGER PKs +
   the SDK boundary discipline).

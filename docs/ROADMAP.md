@@ -182,8 +182,11 @@ control channel; remote *driving* is unbuilt in both tools.
 `MU_MANAGED_AGENT` / `MU_AGENT_NAME` / `MU_WORKSTREAM` / `MU_ROLE`
 off the pane and marks such agents `orchestrated` — "crew" — hidden
 unless `blocked` or `crashed`, since a supervisor consumes anything
-else. mu already exports those and did nothing. Zero lines: the
-baseline any tighter coupling has to beat.
+else. mu already exports the first three (`src/agents/spawn.ts`,
+`paneEnv`) and did nothing. Zero lines: the baseline any tighter
+coupling has to beat. `MU_ROLE` is the one murmur reads and mu does
+NOT set, so a crew row's role column is always null — a one-line fix
+if that column ever proves useful, not a reason to couple further.
 
 **No conflict with the sync design.** § Rejected sync substrates and
 § Explicitly rejected both stand: murmur is a **separate binary**
