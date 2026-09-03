@@ -196,6 +196,53 @@ describe("undo", () => {
       expectNoDrift();
     });
 
+    it("undoes a PRE-v10 destroy: legacy prose ops, retired statuses, bare tombstones", async () => {
+      // REGRESSION. Undoing an old `workstream destroy` hit three
+      // independent walls, each fatal on its own. Reproduced together
+      // because that is how real history presents them.
+      ensureWorkstream(db, "demo");
+      addTask(db, { workstream: "demo", localId: "a", title: "A", impact: 60, effortDays: 1 });
+      addNote(db, "a", "first", { workstream: "demo", author: "worker-1" });
+      addNote(db, "a", "second", { workstream: "demo", author: "worker-1" });
+
+      // (1) A legacy `workstream.export` op: entity='workstream' with a
+      // PROSE payload. SQLite's json_type() raises 'malformed JSON'
+      // while stepping, so a query that merely evaluated a json
+      // function over it failed before any row reached JS — planUndo
+      // died with "Unexpected token 'w'". Must be excluded in SQL, not
+      // just filtered in JS.
+      db.prepare(
+        `INSERT INTO ops (hlc, machine_id, group_id, actor, intent, entity, key, op, payload, created_at)
+         VALUES ('001700000000000.000000.legacy', 'legacy', 'legacy-export', NULL,
+                 'workstream.export', 'workstream', 'demo', 'put',
+                 'workstream export demo (out=/tmp/x)', '2026-01-01T00:00:00.000Z')`,
+      ).run();
+
+      // (2) A retired lifecycle value the v10 CHECK clause rejects.
+      db.prepare(
+        "UPDATE ops SET payload = json_set(payload, '$.status', 'DEFERRED') WHERE entity = 'task' AND op = 'put'",
+      ).run();
+
+      // (3) Bare '{}' note tombstones under keys no put shares — what a
+      // pre-fix destroy left behind once a reprojection had shifted the
+      // rowids (drift-641), so neither the per-key fold nor the
+      // tombstone payload can resolve them.
+      await destroyWorkstream(db, { workstream: "demo", muxSession: "mu-absent-for-test" });
+      db.prepare(
+        `UPDATE ops SET payload = '{}', key = key || '9'
+          WHERE entity = 'note' AND op = 'del'`,
+      ).run();
+
+      undoGroup(db, groupFor("workstream.destroy"));
+
+      expect(task("a")).toMatchObject({ title: "A", impact: 60, status: "OPEN" });
+      const notes = db.prepare("SELECT content FROM task_notes ORDER BY content").all() as Array<{
+        content: string;
+      }>;
+      expect(notes.map((n) => n.content)).toEqual(["first", "second"]);
+      expectNoDrift();
+    });
+
     it("restores notes whose creating put op is under a STALE key (rowid shifted)", async () => {
       // REGRESSION (drift-641). A note's op key embeds its rowid
       // (`<ws>/<task>#<id>`), which is NOT portable: a rebuild, a v8/v9

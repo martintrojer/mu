@@ -18,6 +18,29 @@ export function isTaskStatus(s: string): s is TaskStatus {
   return (TASK_STATUSES as readonly string[]).includes(s);
 }
 
+/** Lifecycle values v10 removed. History and v9 peers still carry
+ *  them, and the schema CHECK clause rejects them, so any path that
+ *  REPLAYS a stored status has to fold them onto a live one. */
+const RETIRED_STATUSES: ReadonlySet<string> = new Set(["REJECTED", "DEFERRED"]);
+
+/**
+ * Coerce a possibly-historical status onto one the schema accepts.
+ *
+ * Both retired values meant "not being worked on and not finished",
+ * which is `OPEN`. Only the decoded projection is normalized — callers
+ * record the original payload unchanged, so the historical evidence
+ * survives in the ops log.
+ *
+ * Shared by the two replay paths that can meet a v8/v9 payload: the
+ * apply path (`applyTaskPut`, for peer ops and rebuilds) and the undo
+ * path (`restoreRow`, for reverting an old destroy). Both used to be
+ * responsible for knowing the retired set; undo did not, so undoing a
+ * pre-v10 `workstream destroy` died on the CHECK constraint.
+ */
+export function normalizeTaskStatus(value: string): string {
+  return RETIRED_STATUSES.has(value) ? "OPEN" : value;
+}
+
 /** Pipe-separated list of every legal status, e.g.
  *  'OPEN | IN_PROGRESS | CLOSED'. Single source of truth for
  *  --help text and error messages so adding a new status doesn't

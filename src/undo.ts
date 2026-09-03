@@ -80,9 +80,11 @@
 // reverse emission order. See ENTITY_RESTORE_ORDER.
 
 import { type Db, resolveWorkstreamId } from "./db.js";
+import { LEGACY_LOG_ONLY_SQL_EXCLUSION } from "./legacy-ops.js";
 import { groupIdFromPrefix } from "./logs.js";
 import { withOpContext } from "./op-context.js";
 import type { HasNextSteps, NextStep } from "./output.js";
+import { normalizeTaskStatus } from "./tasks/status.js";
 
 /** One op as stored, with the provenance we need to invert it. */
 interface GroupOpRow {
@@ -263,6 +265,7 @@ export function priorFieldValue(
           AND key    = @key
           AND op     = 'put'
           AND hlc    < @hlc
+          AND ${LEGACY_LOG_ONLY_SQL_EXCLUSION}
           AND json_type(payload, '$.' || @field) IS NOT NULL
         ORDER BY hlc DESC
         LIMIT 1`,
@@ -291,6 +294,7 @@ function laterWriters(
           AND op       = 'put'
           AND hlc      > @hlc
           AND group_id <> @excludeGroup
+          AND ${LEGACY_LOG_ONLY_SQL_EXCLUSION}
           AND json_type(payload, '$.' || @field) IS NOT NULL`,
     )
     .all({ entity, key, hlc, field, excludeGroup }) as Array<{
@@ -318,7 +322,8 @@ function laterRowWriters(
           AND key      = @key
           AND op       = 'put'
           AND hlc      > @hlc
-          AND group_id <> @excludeGroup`,
+          AND group_id <> @excludeGroup
+          AND ${LEGACY_LOG_ONLY_SQL_EXCLUSION}`,
     )
     .all({ entity, key, hlc, excludeGroup }) as Array<{
     groupId: string;
@@ -478,6 +483,9 @@ export function planUndo(db: Db, groupId: string): UndoPlan {
 
   const inverses: InverseOp[] = [];
   let skipped = 0;
+  /** Task keys already handled by the legacy-note recovery below, which
+   *  works per TASK rather than per tombstone (see there). */
+  const seenLegacyNoteTasks = new Set<string>();
 
   for (const row of rows) {
     if (row.op === "del") {
@@ -494,6 +502,46 @@ export function planUndo(db: Db, groupId: string): UndoPlan {
       // the restore a silent no-op (drift-641).
       let fields = reconstructRow(db, row.entity, row.key, row.hlc);
       if (Object.keys(fields).length === 0) fields = payloadFields(row.payload);
+      // Third tier, for LEGACY note tombstones only. A note key embeds a
+      // non-portable rowid, so after a reprojection the puts sit under a
+      // different key than the later del (drift-641). Tombstones written
+      // since that fix carry the row, so tier 2 resolves them — but ones
+      // written BEFORE it carry '{}', and then both tiers come back
+      // empty and the note is silently not restored. Recover from the
+      // puts for the same TASK instead of the same key.
+      //
+      // Ordinal position cannot be used to pair them: notes are a
+      // grow-only SET keyed on (task, content), so identical prose
+      // collapses to one row. Observed 5 puts against 3 dels for one
+      // task, the surplus being repeated '[reaper]' notes — the Nth put
+      // is therefore not the Nth del. So this restores the DISTINCT
+      // contents the log holds for the task and lets the set semantics
+      // settle the count, which reaches the same end state the dedupe
+      // produced. Consequence: the notes come back, but which tombstone
+      // restored which note is not reconstructible, so this runs once
+      // per task rather than once per tombstone.
+      if (Object.keys(fields).length === 0 && row.entity === "note") {
+        const recovered = recoverLegacyNoteContents(db, row.key, row.hlc, seenLegacyNoteTasks);
+        for (const legacy of recovered) {
+          inverses.push({
+            entity: "note",
+            key: legacy.key,
+            op: "put",
+            fields: legacy.fields,
+            summary: `note ${legacy.key} (recovered from legacy history)`,
+            supersededBy: [],
+          });
+        }
+        skipped += 1;
+        continue;
+      }
+      // History predating v10 carries retired lifecycle values that the
+      // schema CHECK clause now rejects, so a restore has to fold them
+      // onto a live status exactly as the apply path does. Without this,
+      // undoing a pre-v10 `workstream destroy` aborted the whole
+      // transaction on the first DEFERRED task.
+      const status = fields.status;
+      if (typeof status === "string") fields.status = normalizeTaskStatus(status);
       const conflicts = laterRowWriters(db, row.entity, row.key, row.hlc, groupId).map((w) => ({
         field: "<row>",
         groupId: w.groupId,
@@ -614,6 +662,54 @@ function groupWhen(db: Db, groupId: string): string {
  * correct reconstruction, and it is the same fold the rebuild path does —
  * just bounded to one key and one point in time.
  */
+/**
+ * Note contents the log holds for a task, for tombstones no other tier
+ * can resolve (see the call site for why this is per-task).
+ *
+ * Returns one entry per DISTINCT content, skipping any whose content is
+ * already live, and returns nothing at all the second time it is asked
+ * about a task — `seen` makes the per-task work happen once even though
+ * the caller iterates per tombstone.
+ */
+function recoverLegacyNoteContents(
+  db: Db,
+  tombstoneKey: string,
+  beforeHlc: string,
+  seen: Set<string>,
+): Array<{ key: string; fields: Record<string, string | number | null> }> {
+  const parsed = parseNoteKey(tombstoneKey);
+  if (parsed === null) return [];
+  if (seen.has(parsed.taskKey)) return [];
+  seen.add(parsed.taskKey);
+
+  const rows = db
+    .prepare(
+      `SELECT key, payload FROM ops
+        WHERE entity = 'note'
+          AND op = 'put'
+          AND hlc < @hlc
+          AND key LIKE @prefix
+          AND ${LEGACY_LOG_ONLY_SQL_EXCLUSION}
+        ORDER BY hlc`,
+    )
+    .all({ hlc: beforeHlc, prefix: `${parsed.taskKey}#%` }) as Array<{
+    key: string;
+    payload: string;
+  }>;
+
+  const out: Array<{ key: string; fields: Record<string, string | number | null> }> = [];
+  const contents = new Set<string>();
+  for (const row of rows) {
+    const fields = payloadFields(row.payload);
+    const content = fields.content;
+    if (typeof content !== "string" || content === "") continue;
+    if (contents.has(content)) continue;
+    contents.add(content);
+    out.push({ key: row.key, fields });
+  }
+  return out;
+}
+
 /** The restorable fields carried by one op's payload.
  *
  *  Shares `NEVER_RESTORE` and the scalar-only guard with
@@ -641,6 +737,7 @@ function reconstructRow(
     .prepare(
       `SELECT payload FROM ops
         WHERE entity = @entity AND key = @key AND op = 'put' AND hlc < @hlc
+          AND ${LEGACY_LOG_ONLY_SQL_EXCLUSION}
         ORDER BY hlc`,
     )
     .all({ entity, key, hlc: beforeHlc }) as { payload: string }[];
@@ -744,6 +841,7 @@ function deleteRow(db: Db, inverse: InverseOp): boolean {
         .prepare(
           `SELECT json_extract(payload, '$.content') AS content FROM ops
             WHERE entity = 'note' AND key = ? AND op = 'put'
+              AND ${LEGACY_LOG_ONLY_SQL_EXCLUSION}
             ORDER BY hlc DESC LIMIT 1`,
         )
         .get(inverse.key) as { content: string | null } | undefined;

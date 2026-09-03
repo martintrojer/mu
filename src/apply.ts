@@ -90,7 +90,9 @@
 
 import { type Db, SYNCED_ENTITIES, type SyncedEntity } from "./db.js";
 import { compareHlc } from "./hlc.js";
+import { LEGACY_LOG_ONLY_SQL_EXCLUSION } from "./legacy-ops.js";
 import { withCaptureSuppressed } from "./op-context.js";
+import { normalizeTaskStatus } from "./tasks/status.js";
 
 /** An op as applied. Mirrors the `ops` row shape, minus the local-only
  *  `seq` (meaningless on a peer) and the advisory `created_at`. */
@@ -185,6 +187,7 @@ function fieldHlc(db: Db, op: Op, field: string): string | null {
           AND key    = @key
           AND op     = 'put'
           AND hlc   <> @self
+          AND ${LEGACY_LOG_ONLY_SQL_EXCLUSION}
           AND json_type(payload, '$.' || @field) IS NOT NULL`,
     )
     .get({ entity: op.entity, key: op.key, self: op.hlc, field }) as
@@ -443,8 +446,8 @@ function applyTaskPut(db: Db, op: Op): ApplyResult {
   // values. Normalize only the decoded projection: callers record the
   // original payload unchanged, preserving the historical evidence.
   const entries = filterAppliable("tasks", decodePayload(op.payload)).map(([field, value]) =>
-    field === "status" && (value === "REJECTED" || value === "DEFERRED")
-      ? ([field, "OPEN"] as const)
+    field === "status" && typeof value === "string"
+      ? ([field, normalizeTaskStatus(value)] as const)
       : ([field, value] as const),
   );
 

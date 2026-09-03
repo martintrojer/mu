@@ -8,6 +8,47 @@ breaking changes are called out under "Breaking" in each entry.
 
 ---
 
+## [Unreleased]
+
+### Fixed
+
+- **`mu undo` of a pre-v10 `workstream destroy` could not run at all.**
+  Three independent walls, each fatal on its own, all of which real
+  history presents together:
+
+  1. Legacy `workstream.export` ops are `entity='workstream'` carrying a
+     PROSE payload. SQLite raises `malformed JSON` while STEPPING a
+     `json_type()`, so the query failed before any row reached JS and
+     `mu undo <group>` died with `Unexpected token 'w', "workstream"...
+     is not valid JSON`. `src/legacy-ops.ts` existed for exactly this
+     shape and `rebuild` / `segments` / `sync` already skipped it — the
+     undo and apply paths never got the check. Now a shared SQL
+     predicate (`LEGACY_LOG_ONLY_SQL_EXCLUSION`) excludes them in the
+     WHERE clause, which a JS-side filter cannot do.
+  2. Restores replayed `DEFERRED` / `REJECTED`, retired in 1.1.0, and
+     the schema CHECK clause aborted the whole transaction on the first
+     one. The apply path already normalized these to `OPEN`; that logic
+     now lives in `normalizeTaskStatus` and both paths share it.
+  3. Note tombstones written before 1.1.1 carry `'{}'`, and a note's key
+     embeds a rowid that reprojection reassigns, so neither the per-key
+     fold nor the (new) self-describing tombstone could resolve them and
+     notes were silently not restored — 255 tasks and 266 edges came
+     back with 0 of 535 notes. A third tier now recovers content from
+     the puts for the same TASK. Ordinal pairing is deliberately NOT
+     used: notes are a grow-only set keyed on (task, content), so
+     identical prose collapses, and one task had 5 puts against 3
+     tombstones. Restoring the distinct contents reaches the same end
+     state the dedupe produced.
+
+  Verified against a real 27k-op log: undoing a 1057-op destroy from
+  2026-08-26 now restores 255 tasks, 535 notes and 266 edges, and the
+  notes are byte-identical to an independent pre-destroy backup.
+  `mu doctor --deep` clean afterwards.
+
+  Consequence worth stating: a destroy has always been fully recoverable
+  from the ops log — this bug meant the recovery PATH was broken, not
+  that data was gone.
+
 ## [1.1.1] — 2026-09-03
 
 ### Added
