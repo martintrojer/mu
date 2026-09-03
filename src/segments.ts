@@ -63,7 +63,8 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { join, resolve, sep } from "node:path";
 import { crc32 } from "node:zlib";
 import { applyOp, type Op, OpEntityNotSyncedError, reprojectDeferredOps } from "./apply.js";
 import { type Db, SYNCED_ENTITIES } from "./db.js";
@@ -136,7 +137,45 @@ export interface SegmentDefect {
 export function syncDir(): string | null {
   const dir = process.env.MU_SYNC_DIR;
   if (dir === undefined || dir.trim() === "") return null;
+  refuseUserSyncDirDuringTests(dir);
   return dir;
+}
+
+/**
+ * The sibling of `refuseUserDbDuringTests` in src/db.ts, for the OTHER
+ * piece of real state a stray test can reach.
+ *
+ * Pointing MU_DB_PATH at a temp file is not enough to contain a test:
+ * sync is ambient, so the first flush stamps the temp DB's fresh
+ * `machine_id` onto a segment in whatever MU_SYNC_DIR names. On a dev
+ * box that is the user's REAL sync folder, and the result is a
+ * permanent phantom peer — `mu sync` lists a machine that never
+ * existed, forever, because absence of a segment is the only way a
+ * peer disappears and nothing prunes them.
+ *
+ * Observed: eight such phantoms in ~/mu, each holding one op from a
+ * throwaway `workstream init`. They came from the documented
+ * smoke-test recipe (`MU_DB_PATH=/tmp/mu-smoke.db mu <verb>`), which
+ * overrides the DB and says nothing about the sync dir.
+ *
+ * So: under a test runner, refuse a sync dir that is not clearly
+ * disposable. Tests that exercise sync legitimately already point at a
+ * per-test temp dir (mkdtemp under $TMPDIR), which is allowed; the
+ * refusal only fires for a path outside it, which is by definition
+ * somebody's real folder. Production never sets VITEST, so this is a
+ * no-op for the shipped CLI.
+ */
+function refuseUserSyncDirDuringTests(dir: string): void {
+  const inTest = process.env.VITEST !== undefined || process.env.NODE_ENV === "test";
+  if (!inTest) return;
+  const resolved = resolve(dir);
+  const temp = resolve(tmpdir());
+  if (resolved === temp || resolved.startsWith(temp + sep)) return;
+  throw new Error(
+    `syncDir refused: tests must NEVER flush ops into a real sync dir (MU_SYNC_DIR=${resolved}). ` +
+      `Doing so writes a segment named after this run's machine_id and leaves a permanent phantom peer. ` +
+      `Point MU_SYNC_DIR at a mkdtemp() path under ${temp}, or leave it unset (test/_setup.ts clears it by default).`,
+  );
 }
 
 /** This machine's id — the identity every op it writes is stamped with. */

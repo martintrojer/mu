@@ -6,7 +6,7 @@
 // so most tests here open two temp DBs.
 
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type Db, openDb } from "../src/db.js";
@@ -847,6 +847,24 @@ describe("segments", () => {
       expect(syncDir()).toBeNull();
       process.env[key] = "   ";
       expect(syncDir()).toBeNull();
+      process.env[key] = dir;
+      expect(syncDir()).toBe(dir);
+      delete process.env[key];
+    });
+
+    it("syncDir() REFUSES a non-temp dir under a test runner", () => {
+      // Sibling of the openDb user-DB guard. Pointing MU_DB_PATH at a
+      // temp file does not contain a test: sync is ambient, so the
+      // first flush stamps that DB's fresh machine_id onto a segment
+      // in whatever MU_SYNC_DIR names — on a dev box, the user's real
+      // folder, leaving a phantom peer nothing ever prunes. Eight such
+      // phantoms were found in ~/mu, all from the documented
+      // `MU_DB_PATH=/tmp/mu-smoke.db mu <verb>` recipe, which
+      // overrides the DB and says nothing about the sync dir.
+      const key = "MU_SYNC_DIR";
+      process.env[key] = join(homedir(), "mu");
+      expect(() => syncDir()).toThrow(/syncDir refused/);
+      // A per-test temp dir is the supported shape and stays allowed.
       process.env[key] = dir;
       expect(syncDir()).toBe(dir);
       delete process.env[key];

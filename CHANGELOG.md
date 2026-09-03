@@ -214,6 +214,27 @@ breaking changes are called out under "Breaking" in each entry.
 
 ### Fixed
 
+- **A throwaway `MU_DB_PATH` leaked phantom peers into the user's real
+  sync dir.** Overriding the DB does not contain a test or a smoke
+  run: sync is ambient, so the first flush stamps the fresh DB's new
+  `machine_id` onto a segment in whatever `MU_SYNC_DIR` names. Nothing
+  prunes segments — absence of one is the only way a peer disappears —
+  so `mu sync` then lists a machine that never existed, forever. Eight
+  had accumulated in one `~/mu`, each holding a single op from a
+  disposable `workstream init` (`smoke`, `smoketest`, `doccheck`, ...),
+  all traceable to the documented
+  `MU_DB_PATH=/tmp/mu-smoke.db mu <verb>` recipe.
+
+  `syncDir()` now refuses a sync dir outside `tmpdir()` when running
+  under a test runner — the exact sibling of the `openDb` guard that
+  refuses the user's real DB (`refuseUserDbDuringTests`), and for the
+  same reason: the failure was silent, permanent, and invisible until
+  someone read the folder. Tests that exercise sync legitimately
+  already use a per-test `mkdtemp` dir and are unaffected. Production
+  never sets `VITEST`, so the shipped CLI is untouched. AGENTS.md's
+  smoke-test recipe now blanks `MU_SYNC_DIR` too, since a hand-run
+  `node dist/cli.js` is not under vitest and the guard cannot help it.
+
 - **`mu undo` of a workstream destroy silently failed to restore notes
   whose rowid had shifted** (drift-641). A note's op key embeds its
   rowid (`<ws>/<task>#<id>`), which is not portable: a rebuild, a v8/v9

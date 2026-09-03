@@ -428,10 +428,21 @@ proves itself.
 6. Update [CHANGELOG.md](CHANGELOG.md) under the upcoming version.
 7. If this verb promotes a `mu sql` workaround, remove the
    workaround entry from the `docs/USAGE_GUIDE.md` gaps table.
-8. Smoke-test: `MU_DB_PATH=/tmp/mu-smoke.db node dist/cli.js <verb>
-   ...` to verify it works against real tmux. If the verb touches the
-   agent layer, smoke it on herdr too — `MU_MUX=herdr` plus a private
-   `MU_HERDR_SESSION` (never the default session).
+8. Smoke-test: `MU_SYNC_DIR= MU_DB_PATH=/tmp/mu-smoke.db node
+   dist/cli.js <verb> ...` to verify it works against real tmux. If
+   the verb touches the agent layer, smoke it on herdr too —
+   `MU_MUX=herdr` plus a private `MU_HERDR_SESSION` (never the default
+   session).
+
+   **Blank `MU_SYNC_DIR` as well as `MU_DB_PATH`.** Overriding the DB
+   alone does not contain a smoke test: sync is ambient, so the first
+   flush stamps the throwaway DB's fresh `machine_id` onto a segment
+   in your REAL sync folder. Nothing prunes it, and absence of a
+   segment is the only way a peer disappears, so `mu sync` then lists
+   a phantom machine forever. Eight of them accumulated in `~/mu`
+   before anyone noticed. `src/segments.ts` now refuses a non-temp
+   sync dir under vitest, but a hand-run `node dist/cli.js` is not
+   under vitest — blank the var yourself.
 
 ### "Update the schema"
 
