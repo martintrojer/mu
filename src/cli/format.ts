@@ -20,7 +20,7 @@ import type { TaskStatus } from "../tasks/status.js";
 import type { TaskRow } from "../tasks.js";
 import type { Track } from "../tracks.js";
 import type { WorkspaceRow } from "../workspace.js";
-import type { WorkstreamSummary } from "../workstream.js";
+import type { TornDownWorkstream, WorkstreamSummary } from "../workstream.js";
 
 // ─── Status colours / icons ────────────────────────────────────────────
 
@@ -345,6 +345,34 @@ export function formatWorkstreamsTable(rows: WorkstreamSummary[]): string {
       String(r.taskCount),
       String(r.edgeCount),
       String(r.noteCount),
+    ]);
+  }
+  return table.toString();
+}
+
+/**
+ * Past teardowns, newest first.
+ *
+ * `group` leads after the name because it is the only ACTIONABLE
+ * column — the whole point of the list is to feed `mu undo <group>` —
+ * and it is shown short (8 chars), which is what `mu undo` accepts.
+ */
+export function formatTornDownWorkstreamsTable(rows: readonly TornDownWorkstream[]): string {
+  const table = muTable({
+    head: ["name", "group", "torn down", "tasks", "edges", "notes", ""].map((h) => pc.bold(h)),
+    colWidths: [32, null, null, null, null, null, null],
+  });
+  for (const r of rows) {
+    // relTimeAgo takes an ELAPSED duration, not a timestamp.
+    const at = Date.parse(r.at);
+    table.push([
+      r.name,
+      r.group.slice(0, 8),
+      Number.isNaN(at) ? pc.dim("—") : relTimeAgo(Date.now() - at),
+      String(r.tasks),
+      String(r.edges),
+      String(r.notes),
+      r.recreated ? pc.dim("← recreated since") : "",
     ]);
   }
   return table.toString();

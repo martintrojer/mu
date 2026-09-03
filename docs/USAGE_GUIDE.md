@@ -2076,13 +2076,36 @@ rm ~/.local/state/mu/mu.db                           # next mu invocation re-cre
 
 A workstream's task graph + notes IS the project memory.
 `mu workstream teardown` removes the live rows; the ops log keeps them,
-and `mu undo <group> --yes` reverses the row deletions.
+and `mu undo <group> --yes` reverses the row deletions. **A pre-flight
+`mu db backup` is not warranted for a teardown** — the log already is
+the backup.
+
+Finding the group id later is what `--torn-down` is for:
+
+```bash
+mu workstream list --torn-down
+#   name          group     torn down  tasks  edges  notes
+#   gchatui-node  7a40e6cc  52m ago    220    103    714
+#   surface-audit 98007873  3d ago     51     51     201   ← recreated since
+
+mu undo 7a40e6cc          # preview
+mu undo 7a40e6cc --yes    # restore the rows
+```
+
+One entry per teardown, newest first, read straight from the ops log —
+so a name torn down twice lists twice (the group is the identity, not
+the name) and teardowns from before the 1.1.2 rename are included.
+`← recreated since` means a later op put that name back, so undoing it
+would be a no-op; the printed `Next:` hint always names the newest
+entry that is still restorable. What does NOT come back is what was
+never in the DB: killed panes and freed workspace dirs.
 
 There is no markdown export. Use the typed surfaces instead:
 
 | Need | Verb |
 | ---- | ---- |
 | A safety copy before a destructive change | `mu db backup <file>` (`VACUUM INTO`; never overwrites) |
+| Find a past teardown's group id | `mu workstream list --torn-down` |
 | Reverse a teardown you regret | `mu undo <group> --yes` |
 | Laptop ↔ devserver handoff | Ambient **sync** — set `MU_SYNC_DIR` and every command carries it (§ 15.6) |
 | Peer status / a torn segment | `mu sync`, `mu sync --repair <peer>` |

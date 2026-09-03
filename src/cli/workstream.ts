@@ -11,6 +11,7 @@
 import {
   emitJson,
   emitJsonCollection,
+  formatTornDownWorkstreamsTable,
   formatWorkstreamsTable,
   resolveWorkstream,
   UsageError,
@@ -22,6 +23,7 @@ import {
   assertWorkstreamInitable,
   ensureWorkstream,
   listEmptyWorkstreams,
+  listTornDownWorkstreams,
   listWorkstreams,
   summarizeWorkstream,
   teardownWorkstream,
@@ -100,7 +102,47 @@ export async function cmdInit(db: Db, name: string, opts: { json?: boolean } = {
   printNextSteps(nextSteps);
 }
 
-export async function cmdWorkstreamList(db: Db, opts: { json?: boolean } = {}): Promise<void> {
+export async function cmdWorkstreamList(
+  db: Db,
+  opts: { json?: boolean; tornDown?: boolean } = {},
+): Promise<void> {
+  // `--torn-down` answers a DIFFERENT question ("what did I remove, and
+  // how do I get it back") from the ops log rather than the live
+  // tables, so it replaces the listing instead of adding rows to it.
+  // Mixing the two would need a status column on every row to say which
+  // half each came from.
+  if (opts.tornDown === true) {
+    const gone = listTornDownWorkstreams(db);
+    if (opts.json) {
+      emitJsonCollection(gone);
+      return;
+    }
+    if (gone.length === 0) {
+      console.log(pc.dim("no teardowns in the ops log"));
+      return;
+    }
+    console.log(formatTornDownWorkstreamsTable(gone));
+    // Suggest the newest teardown that has NOT been recreated since:
+    // offering a group whose rows are already back would be a no-op the
+    // operator then has to reason about.
+    const first = gone.find((g) => !g.recreated);
+    printNextSteps([
+      ...(first === undefined
+        ? []
+        : [
+            {
+              intent: `Preview restoring ${first.name}`,
+              command: `mu undo ${first.group.slice(0, 8)}`,
+            },
+            {
+              intent: "Apply it (restores rows; not panes or workspaces)",
+              command: `mu undo ${first.group.slice(0, 8)} --yes`,
+            },
+          ]),
+      { intent: "Inspect what one teardown removed", command: "mu log --group <group>" },
+    ]);
+    return;
+  }
   const summaries = await listWorkstreams(db);
   if (opts.json) {
     emitJsonCollection(summaries);
@@ -443,9 +485,13 @@ export function wireWorkstreamCommands(program: Command): void {
   workstream
     .command("list")
     .description("List every workstream on this machine (DB rows + mu-* mux sessions)")
+    .option(
+      "--torn-down",
+      "instead list past teardowns from the ops log, with the group id to pass to `mu undo`",
+    )
     .option(...JSON_OPT)
     .action(function () {
-      const opts = (this as Command).opts() as { json?: boolean };
+      const opts = (this as Command).opts() as { json?: boolean; tornDown?: boolean };
       return handle((db) => cmdWorkstreamList(db, opts), this as Command)();
     });
 

@@ -271,9 +271,12 @@ git cherry-pick "$sha" && npm test
 
 ## CLI overview (only gotchas; use `--help` for full syntax)
 
-- **Workstream:** `init`, `list`, `teardown` (dry-run by default,
-  `--yes` commits; writes TOMBSTONE ops so history survives and
-  `mu undo <group> --yes` reverses the row deletions).
+- **Workstream:** `init`, `list` (`--torn-down` lists past teardowns
+  from the ops log with the group id to undo, newest first; one entry
+  per teardown, `← recreated since` marks ones already back),
+  `teardown` (dry-run by default, `--yes` commits; writes TOMBSTONE ops
+  so history survives and `mu undo <group> --yes` reverses the row
+  deletions — do NOT `mu db backup` first, the log is the backup).
 - **Agents:** `spawn` (`--workspace`, `--role read-only`, `--command`),
   `send`, `read`, `show`, `list`, `close`, `kick`,
   `adopt <pane-id|title>` for orphan panes. Four worth knowing:

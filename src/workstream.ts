@@ -17,6 +17,7 @@
 import { existsSync, readdirSync, rmdirSync } from "node:fs";
 import { join } from "node:path";
 import { type Db, defaultStateDir } from "./db.js";
+import { intentSpellings } from "./legacy-ops.js";
 import { activeMux } from "./mux.js";
 import { withOpContext } from "./op-context.js";
 import type { HasNextSteps, NextStep } from "./output.js";
@@ -311,6 +312,75 @@ export interface TeardownWorkstreamOptions extends WorkstreamOptions {}
  * Useful as a pre-flight before `mu init` ("is this name taken?") and
  * for `mu doctor`-style diagnostics.
  */
+/** One past **teardown**, reconstructed from the ops log. */
+export interface TornDownWorkstream {
+  /** The workstream's name. Not unique across the list: a name can be
+   *  torn down, recreated and torn down again, and each is its own
+   *  entry (the group id is the identity). */
+  name: string;
+  /** The op group to pass to `mu undo`. */
+  group: string;
+  /** ISO timestamp of the teardown. */
+  at: string;
+  /** Rows the teardown removed, so the entry conveys what is at stake
+   *  without a second query per row. */
+  tasks: number;
+  notes: number;
+  edges: number;
+  /** True when a LATER put recreated this workstream, i.e. the
+   *  teardown was already undone or the name was reused. Kept in the
+   *  list rather than filtered out: "I tore this down, then undid it"
+   *  is history the operator may be looking for, and silently hiding
+   *  it would make the list disagree with `mu log`. */
+  recreated: boolean;
+}
+
+/**
+ * Every **teardown** the ops log remembers, newest first.
+ *
+ * The list exists because a teardown is REVERSIBLE and that is useless
+ * if the group id cannot be found: `mu undo` lists only recent groups,
+ * so a teardown from last month was effectively unreachable without
+ * hand-written SQL over `ops`.
+ *
+ * Read straight from the log rather than from a side table — the log
+ * already holds it, and a projection would be one more thing that can
+ * disagree with the log (see the `provenance` reasoning in
+ * docs/VOCABULARY.md).
+ *
+ * Accepts both intent spellings, so teardowns predating the 1.1.2
+ * rename are included.
+ */
+export function listTornDownWorkstreams(db: Db): TornDownWorkstream[] {
+  const spellings = intentSpellings("workstream.teardown");
+  const placeholders = spellings.map(() => "?").join(", ");
+  return db
+    .prepare(
+      `SELECT o.key                AS name,
+              o.group_id           AS "group",
+              o.created_at         AS at,
+              (SELECT COUNT(*) FROM ops t
+                WHERE t.group_id = o.group_id AND t.entity = 'task'  AND t.op = 'del') AS tasks,
+              (SELECT COUNT(*) FROM ops n
+                WHERE n.group_id = o.group_id AND n.entity = 'note'  AND n.op = 'del') AS notes,
+              (SELECT COUNT(*) FROM ops e
+                WHERE e.group_id = o.group_id AND e.entity = 'edge'  AND e.op = 'del') AS edges,
+              EXISTS (SELECT 1 FROM ops p
+                       WHERE p.entity = 'workstream' AND p.key = o.key
+                         AND p.op = 'put' AND p.hlc > o.hlc)                           AS recreated
+         FROM ops o
+        WHERE o.entity = 'workstream'
+          AND o.op     = 'del'
+          AND o.intent IN (${placeholders})
+        ORDER BY o.created_at DESC, o.hlc DESC`,
+    )
+    .all(...spellings)
+    .map((r) => {
+      const row = r as Omit<TornDownWorkstream, "recreated"> & { recreated: number };
+      return { ...row, recreated: row.recreated === 1 };
+    });
+}
+
 export async function listWorkstreams(db: Db): Promise<WorkstreamSummary[]> {
   const dbNames = new Set<string>(
     (db.prepare("SELECT name FROM workstreams").all() as { name: string }[]).map((r) => r.name),

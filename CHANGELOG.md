@@ -10,6 +10,29 @@ breaking changes are called out under "Breaking" in each entry.
 
 ## [Unreleased]
 
+### Added
+
+- **`mu workstream list --torn-down`** — past teardowns, read from the
+  ops log, with the **group** id to pass to `mu undo`. A teardown is
+  reversible, which is useless if the group cannot be found: bare
+  `mu undo` lists only recent groups, so a teardown from last month
+  needed hand-written SQL over `ops` to recover. Columns are name,
+  group (short, the form `mu undo` accepts), relative time, and the
+  task / edge / note counts the teardown removed, so a row says what is
+  at stake without a second query. The `Next:` block prints the ready-to-run
+  `mu undo <group>` / `--yes` pair.
+
+  Read straight from the log rather than a projection — the log already
+  holds it, and a side table would be one more thing that can disagree
+  with it. Consequences that fall out of that: one entry per teardown
+  rather than per name (a name torn down twice lists twice; the group is
+  the identity), teardowns predating the 1.1.2 intent rename are
+  included, and an entry a later op put back is marked
+  `← recreated since` instead of being hidden, since "I tore this down,
+  then undid it" is history worth seeing. The suggested undo always
+  names the newest entry that is still restorable, so the printed
+  command is never a no-op.
+
 ### Changed
 
 - **`mu workstream destroy` is now `mu workstream teardown`, with no

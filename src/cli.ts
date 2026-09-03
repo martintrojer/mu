@@ -64,6 +64,7 @@ export {
   formatAgentsTable,
   formatReadyTable,
   formatTaskListTable,
+  formatTornDownWorkstreamsTable,
   formatTracks,
   formatWorkspacesTable,
   formatWorkstreamsTable,
