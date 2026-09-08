@@ -5,6 +5,11 @@
 // mutest-topo`. Hardcoding the recordings is what keeps herdr tests in
 // the FAST tier: no subprocess, no server, no sleeps.
 //
+// The `herdr status` payloads below are 0.9.0 (protocol 22, endpoint
+// generation 1), which renamed the single `compatible:` line into
+// `endpoint_compatible:` + `private_protocol_compatible:`. The JSON
+// bodies were unchanged by that release.
+//
 // Why a shared module rather than a const block per test file: the
 // recordings are a contract with an external binary. When herdr changes
 // a payload shape, exactly one file should need re-recording — and
@@ -143,7 +148,50 @@ export const OK = JSON.stringify({ id: "cli:pane:close", result: { type: "ok" } 
 
 // ─── `herdr status` (the one non-JSON command) ─────────────────────────
 
+/** herdr 0.9.0's shape: `compatible:` split into `endpoint_compatible:`
+ *  (load-bearing) and `private_protocol_compatible:` (advisory). */
 export const STATUS_RUNNING = [
+  "client:",
+  "  version: 0.9.0",
+  "  channel: stable",
+  "  protocol: 22",
+  "  endpoint_protocol_generation: 1",
+  "",
+  "server:",
+  "  status: running",
+  "  version: 0.9.0",
+  "  endpoint_compatible: yes",
+  "  private_protocol: 22",
+  "  private_protocol_compatible: yes",
+  "  socket: /home/u/.config/herdr/herdr.sock",
+].join("\n");
+
+export const STATUS_STOPPED = [
+  "client:",
+  "  version: 0.9.0",
+  "  protocol: 22",
+  "",
+  "server:",
+  "  status: not running",
+  "  socket: /home/u/.config/herdr/herdr.sock",
+].join("\n");
+
+/** Server predates endpoint generation 1: no verb works until upgraded. */
+export const STATUS_INCOMPATIBLE = STATUS_RUNNING.replace(
+  "endpoint_compatible: yes",
+  "endpoint_compatible: no",
+);
+
+/** Private-protocol skew only. Since 0.9.0 this disables individual
+ *  actions rather than the connection, so mu must still treat the
+ *  backend as available. */
+export const STATUS_PRIVATE_PROTOCOL_SKEW = STATUS_RUNNING.replace(
+  "private_protocol_compatible: yes",
+  "private_protocol_compatible: no",
+);
+
+/** herdr ≤0.8.x, whose single `compatible:` line mu still honours. */
+export const STATUS_LEGACY_INCOMPATIBLE = [
   "client:",
   "  version: 0.8.0",
   "  protocol: 19",
@@ -151,16 +199,16 @@ export const STATUS_RUNNING = [
   "server:",
   "  status: running",
   "  protocol: 19",
-  "  compatible: yes",
+  "  compatible: no",
 ].join("\n");
 
-export const STATUS_STOPPED = [
-  "client:",
-  "  version: 0.8.0",
-  "",
-  "server:",
-  "  status: not running",
-  "  socket: /home/u/.config/herdr/herdr.sock",
-].join("\n");
-
-export const STATUS_INCOMPATIBLE = STATUS_RUNNING.replace("compatible: yes", "compatible: no");
+/** herdr 0.9.0's refusal to close a workspace that has linked worktree
+ *  workspaces without explicit group intent. */
+export const WORKSPACE_GROUP_CLOSE_REQUIRED = JSON.stringify({
+  error: {
+    code: "workspace_group_close_required",
+    message:
+      "workspace has linked worktree workspaces; use --group (close_group=true in the API) to close the group",
+  },
+  id: "cli:workspace:close",
+});

@@ -7,7 +7,9 @@ export {
   HerdrNotImplementedError,
   HerdrSyntaxError,
   HerdrUnsupportedCliError,
+  HerdrWorkspaceGroupCloseError,
   herdrBackend,
+  isHerdrStatusUsable,
   resetHerdrExecutor,
   setHerdrExecutor,
 } from "./herdr.js";

@@ -2495,7 +2495,7 @@ With no herdr server running, `mu doctor` still prints a full report
 and herdr's own message plus remediation steps:
 
 ```bash
-MU_MUX=herdr mu doctor              # exit 0; `herdr: ok (0.8.0)` from the client
+MU_MUX=herdr mu doctor              # exit 0; `herdr: ok (0.9.0)` from the client
 MU_MUX=herdr mu agent list -w foo   # exit 5: no herdr server is running at ...
 MU_MUX=herdr mu task claim t1 -w foo --self   # exit 0 — identity is best-effort
 ```

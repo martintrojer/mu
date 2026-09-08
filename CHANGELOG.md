@@ -62,6 +62,36 @@ breaking changes are called out under "Breaking" in each entry.
 
 ### Fixed
 
+- **An incompatible herdr server looked available on herdr 0.9.0.**
+  0.9.0 split `herdr status`'s single `compatible: yes|no` line into
+  `endpoint_compatible:` (the stable public API generation) and
+  `private_protocol_compatible:` (the internal protocol). mu's
+  availability gate matched `^\s*compatible:\s*no$`, which the new
+  prefixed keys can never satisfy — so a server predating endpoint
+  generation 1 passed the check, `activeMux()` picked herdr, and the
+  failure surfaced on the first real verb instead of degrading to tmux.
+  The two lines are now read for what they mean: `endpoint_compatible:
+  no` is fatal, private-protocol skew is not (since 0.9.0 it disables
+  individual actions and leaves running agents alone, so a client one
+  release ahead of its server still drives panes). herdr ≤0.8.x's bare
+  `compatible:` line is still honoured. The predicate is now one
+  exported `isHerdrStatusUsable()` that `test/_mux.ts`'s
+  integration-tier gate also calls — it had its own hand-rolled copy,
+  which is precisely why the rename went unnoticed on both sides.
+
+- **`mu workstream teardown` now refuses a herdr workspace group
+  instead of failing with a bare mux error.** herdr 0.9.0 rejects
+  `workspace close` with `workspace_group_close_required` when worktree
+  workspaces are linked to the target. mu does **not** retry with
+  `--group`: those siblings were created by `herdr worktree`, host panes
+  mu never spawned, and closing them to satisfy a teardown would destroy
+  unsaved work with no undo. The new `HerdrWorkspaceGroupCloseError`
+  exits 2 (the operator-decision lane, beside the other herdr refusals)
+  and prints the `herdr worktree remove` / `herdr workspace close
+  --group` commands. Teardown kills the mux session before touching the
+  DB, so the workstream is left intact and the command is safe to
+  re-run.
+
 - **`mu undo` of a pre-v10 `workstream destroy` could not run at all.**
   Three independent walls, each fatal on its own, all of which real
   history presents together:

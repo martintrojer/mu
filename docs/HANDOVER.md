@@ -52,7 +52,7 @@ session named `mu-<name>` — a tmux session, or a herdr workspace with
 that label — that's it. Otherwise ask.
 
 The first row of `mu doctor`'s environment block is the resolved
-multiplexer — `tmux : ok (3.7b)` or `herdr : ok (0.8.0)` — followed by
+multiplexer — `tmux : ok (3.7b)` or `herdr : ok (0.9.0)` — followed by
 that backend's ambient vars. If you are driving a crew you are almost
 certainly on tmux; herdr supports the same verbs, but `mu agent kick`
 is Linux-only there.

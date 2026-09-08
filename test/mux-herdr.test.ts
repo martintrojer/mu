@@ -7,11 +7,14 @@
 // has to know that "testing herdr" means calling two setters.
 
 import { afterEach, describe, expect, it } from "vitest";
+import { classifyError } from "../src/cli/handle.js";
 import {
   HerdrError,
   HerdrNotImplementedError,
   HerdrSyntaxError,
+  HerdrWorkspaceGroupCloseError,
   herdrBackend,
+  isHerdrStatusUsable,
   isValidPaneId,
   listPanesInSession,
   listSessions,
@@ -32,11 +35,14 @@ import {
   PANE_NOT_FOUND,
   PANE_SPLIT,
   STATUS_INCOMPATIBLE,
+  STATUS_LEGACY_INCOMPATIBLE,
+  STATUS_PRIVATE_PROTOCOL_SKEW,
   STATUS_RUNNING,
   STATUS_STOPPED,
   TAB_CREATED,
   TAB_LIST,
   WORKSPACE_CREATED,
+  WORKSPACE_GROUP_CLOSE_REQUIRED,
   WORKSPACE_LIST,
   WORKSPACE_LIST_EMPTY,
   WORKSPACE_NOT_FOUND,
@@ -238,6 +244,43 @@ describe("herdr sessions (= workspaces, addressed by label)", () => {
       ["workspace close", serverError(WORKSPACE_NOT_FOUND)],
     ]);
     await expect(herdrBackend.killSession("mu-topotest")).resolves.toBeUndefined();
+  });
+
+  // herdr 0.9.0: closing a workspace that has linked worktree
+  // workspaces needs explicit group intent. Those siblings are not
+  // mu's, so mu refuses instead of retrying with --group.
+  it("killSession refuses a group close rather than retrying with --group", async () => {
+    const calls = mockHerdr([
+      ["workspace list", WORKSPACE_LIST],
+      ["workspace close", serverError(WORKSPACE_GROUP_CLOSE_REQUIRED)],
+    ]);
+    await expect(herdrBackend.killSession("mu-topotest")).rejects.toBeInstanceOf(
+      HerdrWorkspaceGroupCloseError,
+    );
+    // Exactly two calls: the list and the ONE refused close. No retry.
+    expect(calls.calls.length).toBe(2);
+    expect(calls.argsOf(1)).toEqual(["workspace", "close", "w1"]);
+  });
+
+  it("the group-close refusal names the workspace and offers next steps", async () => {
+    mockHerdr([
+      ["workspace list", WORKSPACE_LIST],
+      ["workspace close", serverError(WORKSPACE_GROUP_CLOSE_REQUIRED)],
+    ]);
+    const err = await herdrBackend.killSession("mu-topotest").catch((e: unknown) => e);
+    if (!(err instanceof HerdrWorkspaceGroupCloseError)) throw new Error("expected the refusal");
+    expect(err.workspaceId).toBe("w1");
+    expect(err.session).toBe("mu-topotest");
+    const commands = err.errorNextSteps().map((s) => s.command);
+    expect(commands.some((c) => c.includes("workspace close w1 --group"))).toBe(true);
+  });
+
+  it("the group-close refusal exits 2 (usage), not 5 (mux down)", () => {
+    // The substrate is healthy and answered precisely; only the
+    // operator can decide whether the sibling workspaces may die.
+    expect(
+      classifyError(new HerdrWorkspaceGroupCloseError("mu-alpha", "w1", "linked")).exitCode,
+    ).toBe(2);
   });
 });
 
@@ -476,7 +519,7 @@ describe("herdrBackend.available", () => {
     expect(await herdrBackend.available()).toBe(false);
   });
 
-  it("is false when the server speaks an incompatible protocol", async () => {
+  it("is false when the server predates the stable endpoint generation", async () => {
     mockHerdr([
       [
         "status",
@@ -488,6 +531,33 @@ describe("herdrBackend.available", () => {
       ],
     ]);
     expect(await herdrBackend.available()).toBe(false);
+  });
+
+  // herdr ≤0.8.x printed one `compatible:` line. Still honoured, so an
+  // old incompatible server does not become "available" by omission.
+  it("is false for a pre-0.9 server reporting compatible: no", async () => {
+    mockHerdr([["status", { stdout: STATUS_LEGACY_INCOMPATIBLE, stderr: "", exitCode: 0 }]]);
+    expect(await herdrBackend.available()).toBe(false);
+  });
+
+  // Since 0.9.0 private-protocol skew disables individual ACTIONS and
+  // leaves running agents alone, so it must not gate the backend: a
+  // client one release ahead of its server still drives panes.
+  it("is true when only the private protocol is incompatible", async () => {
+    mockHerdr([["status", { stdout: STATUS_PRIVATE_PROTOCOL_SKEW, stderr: "", exitCode: 0 }]]);
+    expect(await herdrBackend.available()).toBe(true);
+  });
+
+  it("isHerdrStatusUsable ignores the client block's own compatibility lines", () => {
+    // The client block has no compatibility lines at all, and the
+    // `endpoint_` / `private_protocol_` prefixes must not be mistaken
+    // for the legacy bare `compatible:` key.
+    expect(isHerdrStatusUsable(STATUS_RUNNING)).toBe(true);
+    expect(isHerdrStatusUsable(STATUS_STOPPED)).toBe(false);
+    expect(isHerdrStatusUsable("")).toBe(false);
+    // A running server that reports no compatibility at all is fine:
+    // absence of evidence is not incompatibility.
+    expect(isHerdrStatusUsable("server:\n  status: running")).toBe(true);
   });
 
   it("is false when the binary is not installed", async () => {

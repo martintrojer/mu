@@ -25,6 +25,7 @@
 
 import { execa } from "execa";
 import {
+  isHerdrStatusUsable,
   type MuxBackend,
   type MuxBackendName,
   muxByName,
@@ -293,13 +294,16 @@ export async function herdrTestExec(args: readonly string[]): Promise<MuxExecRes
  * is "does this box run herdr at all", which is a property of the
  * install, not of our test session. It is a read-only `status` call —
  * the one herdr command that is safe to point anywhere.
+ *
+ * Reuses the BACKEND's parser rather than re-implementing the regexes.
+ * The hand-rolled copy that used to live here silently stopped matching
+ * when herdr 0.9.0 renamed `compatible:` to `endpoint_compatible:`,
+ * which is exactly the drift one shared function prevents.
  */
 export async function herdrIntegrationAvailable(): Promise<boolean> {
   const result = await execa("herdr", ["status"], { reject: false }).catch(() => undefined);
   if (result === undefined || result.exitCode !== 0) return false;
-  const stdout = result.stdout ?? "";
-  if (!/^\s*status:\s*running\s*$/m.test(stdout)) return false;
-  return !/^\s*compatible:\s*no\s*$/m.test(stdout);
+  return isHerdrStatusUsable(result.stdout ?? "");
 }
 
 /**

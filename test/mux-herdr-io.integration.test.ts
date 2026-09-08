@@ -12,7 +12,12 @@
 
 import { execa } from "execa";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { capturePane, resetHerdrExecutor, sendToPane } from "../src/mux/herdr.js";
+import {
+  capturePane,
+  isHerdrStatusUsable,
+  resetHerdrExecutor,
+  sendToPane,
+} from "../src/mux/herdr.js";
 
 const SESSION = process.env.MU_HERDR_SESSION;
 /** Refuse the default session outright — a stray create/close there
@@ -43,8 +48,7 @@ beforeAll(async () => {
   if (CANDIDATE === undefined) return;
   const status = await herdrCli(["status"]);
   if (!status.ok) return;
-  if (!/^\s*status:\s*running\s*$/m.test(status.stdout)) return;
-  if (/^\s*compatible:\s*no\s*$/m.test(status.stdout)) return;
+  if (!isHerdrStatusUsable(status.stdout)) return;
   ready = true;
 
   const label = `mu-iotest-${process.pid}-${Date.now()}`;

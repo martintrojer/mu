@@ -43,6 +43,7 @@ import { GroupIdAmbiguousError } from "../logs.js";
 import {
   HerdrCommandOverrideError,
   HerdrUnsupportedCliError,
+  HerdrWorkspaceGroupCloseError,
   MuxError,
   NoMultiplexerError,
   PaneNotFoundError,
@@ -229,7 +230,11 @@ export function classifyError(err: unknown): { label: string; exitCode: number }
     // lane, not the exit-5 "mux is down" lane. Both refuse BEFORE any
     // side effect.
     err instanceof HerdrUnsupportedCliError ||
-    err instanceof HerdrCommandOverrideError
+    err instanceof HerdrCommandOverrideError ||
+    // herdr refused to close a workspace with linked worktree
+    // workspaces. Same lane: the substrate answered precisely and only
+    // the operator can decide whether those siblings may die.
+    err instanceof HerdrWorkspaceGroupCloseError
   ) {
     return { label: "error", exitCode: 2 };
   }

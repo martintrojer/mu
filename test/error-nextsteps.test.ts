@@ -27,6 +27,7 @@ import {
   HerdrCommandOverrideError,
   HerdrError,
   HerdrUnsupportedCliError,
+  HerdrWorkspaceGroupCloseError,
 } from "../src/mux/herdr.js";
 import { MuxError, NoMultiplexerError, tmuxBackend } from "../src/mux.js";
 import { hasNextSteps } from "../src/output.js";
@@ -222,6 +223,14 @@ const cases: NextStepsCase[] = [
     label: "HerdrCommandOverrideError",
     // Names the variable to unset — the whole point of refusing loudly.
     expectedTokens: ["MU_PI_COMMAND", "MU_MUX=tmux"],
+  },
+  {
+    // mu will not close worktree workspaces it did not create, so the
+    // steps must hand the operator BOTH the inspect verb and the
+    // explicit group close, addressed to the actual workspace id.
+    error: new HerdrWorkspaceGroupCloseError("mu-alpha", "w1", "linked worktree workspaces"),
+    label: "HerdrWorkspaceGroupCloseError",
+    expectedTokens: ["workspace list", "w1 --group"],
   },
 
   // src/workspace/core.ts

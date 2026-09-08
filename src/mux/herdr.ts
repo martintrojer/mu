@@ -187,8 +187,9 @@ export class HerdrUnsupportedCliError extends Error {
  * `herdr agent start --kind <k>` resolves the canonical executable
  * ITSELF; there is no "use this binary instead" flag. Args after `--`
  * are passed to the agent, NOT used to choose it (verified against
- * 0.8.0: `agent start x --kind pi -- --model m` reports
- * `argv:["pi"]`), so forwarding an override there would append a binary
+ * 0.8.0: `agent start x --kind pi -- --model m` reports `argv:["pi"]`;
+ * 0.9.0 still exposes no override flag), so forwarding an override
+ * there would append a binary
  * NAME as an argument and start the wrong thing while reporting success.
  *
  * Accepting the override and not honouring it is the one outcome ruled
@@ -229,6 +230,58 @@ export class HerdrCommandOverrideError extends Error {
       {
         intent: "Or spawn under tmux, which runs the command you name",
         command: `MU_MUX=tmux mu agent spawn <name> --cli ${this.cli}`,
+      },
+    ];
+  }
+}
+
+/** herdr's refusal (0.9.0+) to close a workspace that has linked
+ *  worktree workspaces without explicit group intent. */
+const GROUP_CLOSE_REQUIRED_CODE = "workspace_group_close_required";
+
+/**
+ * `mu workstream destroy` asked herdr to close the workstream's
+ * workspace, and herdr refused because worktree workspaces are linked
+ * to it (herdr 0.9.0+).
+ *
+ * mu does NOT retry with `--group`. Those sibling workspaces are not
+ * mu's: they were created by `herdr worktree`, they host panes mu never
+ * spawned, and mu has no way to know whether the user still wants them.
+ * Closing them to satisfy a teardown would destroy unsaved work with no
+ * undo, which is the one outcome ruled out.
+ *
+ * Not a `MuxError`: the substrate is healthy and answered precisely.
+ * This is a decision only the operator can make, so it lands in the
+ * usage lane (exit 2) beside the other herdr refusals. Thrown BEFORE
+ * any DB rows are deleted — `teardownWorkstream` kills the mux session
+ * first for exactly this reason — so the workstream is left intact and
+ * the command is safe to re-run.
+ */
+export class HerdrWorkspaceGroupCloseError extends Error {
+  override readonly name = "HerdrWorkspaceGroupCloseError";
+  constructor(
+    public readonly session: string,
+    public readonly workspaceId: string,
+    public readonly detail: string,
+  ) {
+    super(
+      `herdr refused to close workspace ${workspaceId} (${session}): it has linked worktree workspaces, ` +
+        `which mu did not create and will not close on your behalf. herdr said: ${detail}`,
+    );
+  }
+  errorNextSteps(): NextStep[] {
+    return [
+      {
+        intent: "See which workspaces are linked as a group",
+        command: "herdr workspace list",
+      },
+      {
+        intent: "Remove the worktree workspaces you no longer want",
+        command: "herdr worktree remove <workspace-id>",
+      },
+      {
+        intent: "Or close the whole group yourself, then re-run the teardown",
+        command: `herdr workspace close ${this.workspaceId} --group`,
       },
     ];
   }
@@ -566,11 +619,27 @@ export async function newSessionWithPane(
   return readCreatedPaneId(result, "root_pane", args);
 }
 
-/** Idempotent: succeeds even if the workspace is already gone. */
+/**
+ * Idempotent: succeeds even if the workspace is already gone.
+ *
+ * REFUSES, and does not retry with `--group`, when herdr reports
+ * `workspace_group_close_required` (0.9.0+): the workspace has linked
+ * worktree workspaces mu did not create, and closing the whole group
+ * would take down panes outside this workstream. herdr's own skill doc
+ * calls adding `--group` to bypass that error out by name. The operator
+ * decides; mu names the command.
+ */
 export async function killSession(name: string): Promise<void> {
   const id = await resolveWorkspaceId(name);
   if (id === undefined) return;
-  await herdrTolerating(["workspace", "close", id], ["workspace_not_found"]);
+  try {
+    await herdrTolerating(["workspace", "close", id], ["workspace_not_found"]);
+  } catch (err) {
+    if (err instanceof HerdrError && err.code === GROUP_CLOSE_REQUIRED_CODE) {
+      throw new HerdrWorkspaceGroupCloseError(name, id, err.message);
+    }
+    throw err;
+  }
 }
 
 // ─── Tabs (= mu windows) ───────────────────────────────────────────────
@@ -1189,10 +1258,48 @@ function readCreatedPaneId(
 // ─── Backend record ────────────────────────────────────────────────────
 
 /**
+ * True iff a `herdr status` payload describes a server mu can drive.
+ *
+ * Pure, and EXPORTED because test/_mux.ts gates the real-herdr
+ * integration tier on the same question — one parser, not two that
+ * drift (they already had, across the 0.8 → 0.9 rename below).
+ *
+ * WHICH COMPATIBILITY LINE. herdr 0.9.0 split the old single
+ * `compatible: yes|no` into two, and they do NOT mean the same thing:
+ *
+ *   endpoint_compatible          — the stable public API generation.
+ *                                  `no` means the server predates
+ *                                  endpoint generation 1 and needs a
+ *                                  one-time upgrade before ANY verb
+ *                                  works. Load-bearing.
+ *   private_protocol_compatible  — the internal client↔server protocol.
+ *                                  Since 0.9.0 a mismatch here only
+ *                                  disables the affected action and
+ *                                  leaves running agents untouched, so
+ *                                  it must NOT gate availability: a
+ *                                  client one release ahead of its
+ *                                  server still drives panes fine.
+ *
+ * The bare `compatible:` line is herdr ≤0.8.x and is still honoured, so
+ * mu does not silently start trusting an old incompatible server. It
+ * cannot collide with the two 0.9 lines: `^\s*` will not consume the
+ * `endpoint_` / `private_protocol_` prefixes.
+ *
+ * A MISSING line is fine in every case — absence of evidence is not
+ * incompatibility, and herdr omits these entirely when no server runs
+ * (which the `status: running` check has already rejected).
+ */
+export function isHerdrStatusUsable(stdout: string): boolean {
+  if (!/^\s*status:\s*running\s*$/m.test(stdout)) return false;
+  if (/^\s*endpoint_compatible:\s*no\s*$/m.test(stdout)) return false;
+  return !/^\s*compatible:\s*no\s*$/m.test(stdout);
+}
+
+/**
  * True iff herdr can be reached right now. `herdr status` rather than a
  * PATH probe, and it must report a RUNNING, COMPATIBLE server: a herdr
- * binary whose server is down (or speaks a different protocol version)
- * cannot drive a single pane, so it is not an available backend.
+ * binary whose server is down cannot drive a single pane, so it is not
+ * an available backend.
  *
  * Note `herdr status` is plain text, not JSON — the one exception to the
  * "everything is JSON" rule, so it is parsed here rather than through
@@ -1201,10 +1308,7 @@ function readCreatedPaneId(
 async function herdrAvailable(): Promise<boolean> {
   const result = await currentExecutor(["status"]).catch(() => undefined);
   if (result === undefined || result.exitCode !== 0) return false;
-  if (!/^\s*status:\s*running\s*$/m.test(result.stdout)) return false;
-  // `compatible:` is only printed when a server is running; treat an
-  // explicit "no" as unavailable and a missing line as fine.
-  return !/^\s*compatible:\s*no\s*$/m.test(result.stdout);
+  return isHerdrStatusUsable(result.stdout);
 }
 
 // ─── Attach ─────────────────────────────────────────────────────────────

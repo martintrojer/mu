@@ -37,7 +37,7 @@ function makeHerdrUnavailable(): void {
 /** Make `herdr status` report a running, compatible server. */
 function makeHerdrAvailable(): void {
   setHerdrExecutor(async () => ({
-    stdout: "server:\n  status: running\n  compatible: yes",
+    stdout: "server:\n  status: running\n  endpoint_compatible: yes",
     stderr: "",
     exitCode: 0,
   }));
