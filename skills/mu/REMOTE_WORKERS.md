@@ -108,9 +108,44 @@ mu agent send worker-1 -w big '...'
 git fetch "ssh://dev/~/ws/worker-1" HEAD && git cherry-pick FETCH_HEAD
 ```
 
-Local and remote agents mix freely in one workstream. `mu task wait`,
-`mu state`, tracks and the DAG do not care where a pane's process
-runs.
+Local and remote agents mix freely in one workstream. The DAG, tracks,
+`mu state` and `mu task wait` do not care where a pane's process runs
+— task status is a row in YOUR database, written by you, so a wait on
+it is exact.
+
+**Agent STATUS is different, and this is the one place "nothing
+changes" is false.** `busy` / `needs_input` / `idle` come from reading
+the local pane's scrollback, which for a remote worker is a nested tmux
+rendered over ssh. What you get is redraw lag and quiet periods that
+look like idleness, so anything derived from status is unreliable here:
+
+| waiting on | remote? |
+| --- | --- |
+| `mu task wait` (task status) | exact — a DB poll |
+| exit 6, the reaper | fires, but see below |
+| `--on-stall exit` (exit 7) | **do not rely on it** |
+| `mu agent wait --first` | same, it is status-based |
+
+Measured both directions in one session: a stall fired at 300s against
+a worker that was visibly mid-turn, and `mu agent list` showed
+`needs_input` for another that was working. So on a remote worker, drop
+`--on-stall exit` and give the wait a generous `--timeout`.
+
+The reaper is right for a DIRECT spawn — the connection dying really
+does kill that agent — and wrong for a detached-tmux one, where the
+agent outlives the ssh but mu reaps the task anyway. See § A dropped
+connection reaps the task but NOT the commit.
+
+**If you need trustworthy remote status, ask murmur, not mu.** Its
+extension runs inside pi ON THE HOST and pushes state, so nothing is
+scraped and no ssh hop distorts it:
+
+```bash
+murmur collect && murmur status --json   # activity is host-reported
+```
+
+That is the division worth remembering: mu owns the work, murmur owns
+what the agent is doing.
 
 ### On step 2 — the note is load-bearing
 

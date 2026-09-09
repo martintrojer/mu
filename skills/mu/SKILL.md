@@ -219,7 +219,10 @@ Every turn:
 - **Use `--on-stall exit` in non-interactive flows.** Default wait
   warns on stalled alive workers and keeps polling. Exit 7 =
   `STALL_DETECTED`; exit 6 = `REAPER_DETECTED` (dead pane) and wins
-  if both happen.
+  if both happen. **Not for remote workers** — stall detection reads
+  pane scrollback, which over ssh gives false positives both ways. Use
+  a generous `--timeout` instead; see
+  [REMOTE_WORKERS.md](REMOTE_WORKERS.md).
 - **Cherry-pick worker commits onto main; don't merge.** Stale
   branches can drag re-reverts.
 - **Cherry-pick only new shas.** `workspace commits` lists since
@@ -398,7 +401,10 @@ IN_PROGRESS tasks revert to OPEN with a `[reaper]` note and `task
 reap` op. No manual release after crashes.
 
 Status detection is heuristic and can lag behind custom `--command`
-wrappers. For high-stakes decisions:
+wrappers. It is weakest for a remote worker, where the scrollback is a
+nested tmux rendered over ssh — `murmur status` is authoritative there,
+since murmur's extension pushes state from inside the agent on the
+host. For high-stakes decisions:
 
 ```bash
 mu agent read worker-1 -n 100
