@@ -23,6 +23,31 @@ is machine-local by construction — `tasks.owner_id` is an FK into the
 `agents` table, which never syncs — so a remote mu could not claim
 tasks in your DAG. Two half-views, no benefit.
 
+**murmur sees the REMOTE pane** — the opposite of the line above. Its
+extension runs inside the agent's process, so it claims the pane on the
+HOST; mu's local pane holds an ssh client and reports nothing. Two
+addresses, one worker.
+
+murmur ties them back together by reading the local pane's own command
+line for `MU_AGENT_NAME` and `MU_WORKSTREAM` and matching them against
+what the host reports. When it matches, the remote row shows
+`attached here %N` and enter focuses your existing pane instead of
+opening a second connection — which matters on a capped host, where the
+second one fails.
+
+**So the direct recipe below gets the back-reference and the detached
+one does not:**
+
+| local pane command | back-reference |
+| --- | --- |
+| `ssh dev -t "cd … && MU_AGENT_NAME=worker-1 MU_WORKSTREAM=big pi"` | yes |
+| `ssh dev -t "tmux attach -t mu-worker-1"` | **no** |
+
+The detached shape hides the env vars inside the remote tmux session,
+so the local command line carries nothing to match on. Both still
+appear as one row — the host's pane is the only one reporting either
+way — you just lose the attachment hint.
+
 What mu does NOT know about a remote agent: the workspace. There is no
 `vcs_workspaces` row, so no `mu workspace list / refresh / commits /
 free`, no `behind` column, no staleness warning on claim, and no
@@ -163,6 +188,24 @@ the fleet is doing. `murmur collect` is a deliberate dial and prints
 one line per host it could not reach — that is the one to run when you
 need "can I reach this host *right now*".
 
+### Reaching a host is two different questions
+
+A peer carries `target` (for a COMMAND — always ssh, used by the
+collector) and a jump command (for a HUMAN — need not be ssh):
+
+```bash
+murmur peer set <name> --jump-command '<command with {pane}>'
+```
+
+Opaque template: murmur substitutes `{pane}` and runs the rest
+unparsed. The default reproduces `ssh -t <target> tmux attach`, so an
+unconfigured peer behaves as before.
+
+On a session-capped host this is the difference between holding the one
+slot for your whole visit and holding nothing (see the ET section).
+Don't hardcode `et` — a site wrapper may add VPN selection and its own
+binary resolution, which is why the value is opaque.
+
 ---
 
 ## When the host limits concurrent sessions
@@ -230,6 +273,22 @@ Two consequences, both counterintuitive:
   accumulate orphaned remote sessions mu cannot see; `ssh dev 'tmux
   ls'` is the only inventory.
 
+This adds a THIRD address: local pane → ssh → remote tmux session →
+agent pane. `kick` reaches only the first, `ssh dev 'tmux ls'` is the
+only view of the third. Keep the session name equal to the agent name
+— mu records neither, so it is the only handle tying them together.
+
+It also costs the murmur back-reference (see § The model): the env vars
+live inside the remote session, so the local pane's command line has
+nothing to match. If you want `attached here %N` on a capped host,
+repeat them in the attach command — they are inert to `tmux attach` and
+exist only to be read:
+
+```bash
+mu agent spawn worker-1 -w big --command \
+  'MU_AGENT_NAME=worker-1 MU_WORKSTREAM=big ssh dev -t "tmux attach -t mu-worker-1"'
+```
+
 The upside beyond unblocking `git fetch`: a dropped connection no
 longer reaps the task, since the agent outlives the ssh session, and a
 reattach preserves full LLM context.
@@ -260,3 +319,10 @@ compete.
 Note ET cannot serve murmur or `git fetch` — it exposes no multiplexing
 socket to attach to. That is exactly why it pairs well: it takes none of
 the capped slots those tools need.
+
+Measured 2026-09-08, extending that from a plain ET shell to one
+running tmux: with `<wrapper> -et dev -c 'tmux attach -t <pane>'` open
+and the nested tmux live, `ssh -O check dev && ssh dev true` succeeded
+and a concurrent `murmur collect` reached the host. So an ET attach
+costs the capped slot nothing, which is what makes it usable as a jump
+command; `ssh -t` holds the slot for the whole visit.
