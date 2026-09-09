@@ -394,6 +394,21 @@ Convention: `pi_mini` / `pi` / `pi_big`. Use mini for probing,
 modest for build/edit/refactor, big for design/review/incidents.
 Discover model strings with `pi --list-models [fuzzy-search]`.
 
+## murmur, if it is installed
+
+[murmur](https://github.com/martintrojer/murmur) is optional and
+strictly additive: **mu owns the work, murmur owns what an agent is
+doing.** Nothing here needs it. With it, `murmur status` answers "what
+is every agent doing, on every machine" — pushed from inside pi rather
+than scraped, so it is authoritative where mu's status detection is a
+heuristic.
+
+The seam is the env vars `mu agent spawn` already injects
+(`MU_MANAGED_AGENT`, `MU_AGENT_NAME`, `MU_WORKSTREAM`): murmur reads
+them to mark a pane as crew, so orchestrated agents stay out of the
+human's status bar unless blocked or crashed. See
+[REMOTE_WORKERS.md](REMOTE_WORKERS.md) § mu and murmur.
+
 ## Reaper and status limits
 
 If an agent pane dies, or `mu agent close` kills it mid-task, owned

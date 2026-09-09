@@ -256,6 +256,43 @@ respawn.
 
 ---
 
+## mu and murmur, and what you lose without it
+
+[murmur](https://github.com/martintrojer/murmur) is optional and
+**strictly additive**. Nothing in mu needs it: the DAG, claim/close/
+wait, workspaces, spawn/send/read, the reaper, `mu state`, this whole
+remote recipe and `git fetch` collection all work with murmur absent.
+What you lose is the *view* — cross-machine agent state, the tmux
+status pills, `prefix+a`, the attachment hint, and `murmur peer list`
+for host reachability. Guard on it (`if it is installed`) rather than
+assuming it.
+
+The division: **mu owns the work, murmur owns what an agent is doing.**
+murmur never places work.
+
+| question | ask |
+| --- | --- |
+| what should happen next | mu — the DAG |
+| who owns this task | mu — `claim` / `close` |
+| is the task done | mu — `task wait`, a DB poll |
+| what is this agent doing right now | murmur — pushed from inside pi |
+| is anything blocked on me, anywhere | murmur |
+| which host can I reach | murmur — `peer list` |
+
+**The seam is three env vars, and it is load-bearing.** `mu agent
+spawn` injects `MU_MANAGED_AGENT=1`, `MU_AGENT_NAME` and
+`MU_WORKSTREAM`; pi inherits them and murmur's extension reads them.
+That one mechanism gives you:
+
+1. `driver=orchestrated`, so crew stays out of the human's status bar
+   unless it is blocked or crashed — true for local and remote alike
+2. the workstream and agent name on the row, for grouping
+3. the attachment back-reference for a remote worker
+
+For a remote worker they go **inside** the ssh command (tmux `-e` stops
+at the hop). Miss them and the agent reports `driver=human`: it appears
+in your own counts as if it were yours.
+
 ## Picking a host
 
 mu does not track hosts and should not; that is
