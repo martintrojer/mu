@@ -226,6 +226,27 @@ function computeCrc(line: Omit<SegmentLine, "crc">, payloadText: string): string
   return crc32(canonicalBytes(line, payloadText)).toString(16).padStart(8, "0");
 }
 
+/**
+ * `ops.payload` is TEXT that is *usually* JSON but is not guaranteed to
+ * be: `appendLog` has always accepted a bare prose payload (entity
+ * 'message' via `mu log "text"`), and pre-1.0 rows carry plenty of it.
+ * Embedding such text raw produced `"payload":Added 5 tasks, ...` — a
+ * line that is not JSON at all, which every later read then reported as
+ * a torn write, on every single mu invocation, forever (the segment is
+ * regenerated from `ops`, so the repair re-emitted the same bad bytes).
+ *
+ * So: pass valid JSON through verbatim (byte-preserving, which is what
+ * the crc contract needs), and encode anything else as a JSON string.
+ */
+function payloadTextFor(payload: string): string {
+  try {
+    JSON.parse(payload);
+    return payload;
+  } catch {
+    return JSON.stringify(payload);
+  }
+}
+
 /** Serialize one op row to a segment line (without its trailing newline). */
 export function encodeSegmentLine(op: {
   hlc: string;
@@ -250,7 +271,8 @@ export function encodeSegmentLine(op: {
     op: op.op,
     payload: null, // replaced below; kept out of the crc input shape
   };
-  const crc = computeCrc(base, op.payload);
+  const payloadText = payloadTextFor(op.payload);
+  const crc = computeCrc(base, payloadText);
   // Assemble by hand so `payload` is embedded as raw JSON rather than
   // being re-encoded, keeping the bytes the crc covered.
   return `{"v":${base.v},"hlc":${JSON.stringify(base.hlc)},"machine":${JSON.stringify(
@@ -259,9 +281,9 @@ export function encodeSegmentLine(op: {
     base.intent,
   )},"actor":${JSON.stringify(base.actor)},"entity":${JSON.stringify(
     base.entity,
-  )},"key":${JSON.stringify(base.key)},"op":${JSON.stringify(base.op)},"payload":${
-    op.payload
-  },"crc":${JSON.stringify(crc)}}`;
+  )},"key":${JSON.stringify(base.key)},"op":${JSON.stringify(
+    base.op,
+  )},"payload":${payloadText},"crc":${JSON.stringify(crc)}}`;
 }
 
 /** Outcome of decoding one line. */
@@ -283,11 +305,16 @@ function decodeLine(raw: string): DecodeResult {
     parsed = JSON.parse(raw);
   } catch (err) {
     // LAYER 1: torn write. The dominant failure mode, and free.
-    return {
-      ok: false,
-      kind: "torn-write",
-      detail: err instanceof Error ? err.message : String(err),
-    };
+    //
+    // But only call it TORN when the line actually looks cut off. A
+    // complete line that does not parse has a different cause (a writer
+    // bug, or a hand edit) and a different remediation, and mislabelling
+    // it sends the reader hunting for a crash-during-write that never
+    // happened.
+    const detail = err instanceof Error ? err.message : String(err);
+    return looksComplete(raw)
+      ? { ok: false, kind: "malformed-shape", detail: `complete line is not valid JSON: ${detail}` }
+      : { ok: false, kind: "torn-write", detail };
   }
   if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
     return { ok: false, kind: "malformed-shape", detail: "line is not a JSON object" };
@@ -350,7 +377,35 @@ function decodeLine(raw: string): DecodeResult {
       detail: `crc ${line.crc} != computed ${expected} (bit rot?)`,
     };
   }
-  return { ok: true, line, payloadText };
+  return { ok: true, line, payloadText: storedPayloadFor(line, payloadText) };
+}
+
+/**
+ * The text to store back into `ops.payload`, undoing the wrapping
+ * `payloadTextFor` applied on the way out, so a peer's ops table holds
+ * the bytes the origin's does and `mu log` renders a prose message as
+ * prose rather than as a quoted string.
+ *
+ * The inverse is exact because the wrap rule is: wrap iff the stored
+ * text is NOT valid JSON. So unwrap iff the line's payload is a JSON
+ * string whose contents are NOT valid JSON — anything else was passed
+ * through verbatim and must stay that way.
+ */
+function storedPayloadFor(line: SegmentLine, payloadText: string): string {
+  if (typeof line.payload !== "string") return payloadText;
+  try {
+    JSON.parse(line.payload);
+    return payloadText;
+  } catch {
+    return line.payload;
+  }
+}
+
+/** Whether a line carries the trailing framing `encodeSegmentLine`
+ *  always writes. A transfer caught in flight cannot: it stops wherever
+ *  the bytes stopped. */
+function looksComplete(raw: string): boolean {
+  return raw.trimEnd().endsWith("}") && raw.includes(',"crc":"');
 }
 
 /** Slice out the raw `"payload":<json>` text, between its key and the

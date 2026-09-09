@@ -699,9 +699,15 @@ separately below.
   its own, so nothing is contended and any folder-syncer is adequate
   transport. Regenerable, so no fsync. Four layers stop at the first
   bad record and advance the watermark only that far: `JSON.parse`
-  (torn write), crc32 per line (bit rot), monotonic HLC (reorder,
-  duplicate, truncation), a `.manifest` sidecar (truncation exactly on
-  a line boundary). Only `SYNCED_ENTITIES` and only THIS machine's ops
+  (torn write when the line lacks its trailing `,"crc"…}` framing,
+  malformed-shape when it has it — the same failure, but a transfer cut
+  short and a writer bug have different remediations), crc32 per line
+  (bit rot), monotonic HLC (reorder, duplicate, truncation), a
+  `.manifest` sidecar (truncation exactly on a line boundary).
+  `ops.payload` is TEXT that is usually but not always JSON (`mu log
+  "text"` writes prose), so the encoder passes valid JSON through
+  verbatim — the crc covers those exact bytes — and JSON-encodes
+  anything else, unwrapping on ingest. Only `SYNCED_ENTITIES` and only THIS machine's ops
   are flushed, so pane ids and absolute paths never leave and peers
   never echo each other's history.
 - **Sync never fails a command**: a truncated segment, a garbage

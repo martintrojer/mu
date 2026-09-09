@@ -11,6 +11,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type Db, openDb } from "../src/db.js";
 import { formatHlc } from "../src/hlc.js";
+import { appendLog } from "../src/logs.js";
 import { withOpContext } from "../src/op-context.js";
 import {
   discoverPeers,
@@ -604,6 +605,75 @@ describe("segments", () => {
       expect(task(b, "t0")).toBeDefined();
       expect(task(b, "t3")).toBeDefined();
       expect(task(b, "extra-b4")).toBeDefined();
+    });
+
+    // ─── bare-prose payloads ────────────────────────────────────────
+
+    /** A `mu log "text"` line: entity 'message', payload is prose, not
+     *  JSON. `appendLog` has always allowed this. */
+    const seedProseMessage = (db: Db, text: string): void => {
+      ensureWorkstream(db, "demo");
+      appendLog(db, { workstream: "demo", source: "user", payload: text });
+    };
+
+    it("a bare-prose payload is encoded, not interpolated raw", async () => {
+      // The regression: `encodeSegmentLine` concatenated ops.payload
+      // straight into the JSON, so prose containing a comma or a quote
+      // produced `"payload":Added 5 tasks, ...` — a line that is not
+      // JSON. Every later read then flagged it, the self-repair
+      // regenerated the SAME bad bytes from `ops`, and mu printed a
+      // torn-write warning on EVERY invocation, forever.
+      seedProseMessage(a, 'Added 5 tasks, one "quoted", and a }brace{');
+      await flushSegment(a, dir);
+
+      const lines = linesOf(segFor(a));
+      expect(lines.length).toBe(2); // workstream put + the message
+      for (const line of lines) expect(() => JSON.parse(line)).not.toThrow();
+    });
+
+    it("a bare-prose payload round-trips to a peer byte-for-byte", async () => {
+      const prose = 'Added 5 tasks, one "quoted", and a }brace{';
+      seedProseMessage(a, prose);
+      await flushSegment(a, dir);
+
+      const peer = peersFor(b)[0];
+      if (peer === undefined) throw new Error("expected a peer");
+      const result = ingestSegment(b, peer);
+      expect(result.defects).toEqual([]);
+
+      const row = b.prepare("SELECT payload FROM ops WHERE entity = 'message'").get() as
+        | { payload: string }
+        | undefined;
+      expect(row?.payload).toBe(prose);
+    });
+
+    it("a prose payload does not put the segment in a permanent warning loop", async () => {
+      seedProseMessage(a, "Added 5 tasks, see notes");
+      const first = await flushSegment(a, dir);
+      expect(first.selfRepaired).toBeNull();
+      // The loop showed up on the SECOND flush: the first wrote the bad
+      // line, the next re-read it and "repaired" it into itself.
+      const second = await flushSegment(a, dir);
+      expect(second.selfRepaired).toBeNull();
+      expect(second.appended).toBe(0);
+    });
+
+    it("a COMPLETE line that will not parse is malformed-shape, not torn-write", async () => {
+      // Cause and remediation differ: a torn write means a transfer was
+      // caught in flight (refetch the tail), a malformed complete line
+      // means a writer bug or a hand edit (go read the writer).
+      const path = await seedFour();
+      const lines = linesOf(path);
+      const second = lines[1];
+      if (second === undefined) throw new Error("need 2 lines");
+      lines[1] = second.replace('"payload":{', '"payload":oops{');
+      writeFileSync(path, `${lines.join("\n")}\n`);
+
+      const peer = peersFor(b)[0];
+      if (peer === undefined) throw new Error("expected a peer");
+      const result = ingestSegment(b, peer);
+      expect(result.defects.map((d) => d.kind)).toContain("malformed-shape");
+      expect(result.defects.map((d) => d.kind)).not.toContain("torn-write");
     });
   });
 

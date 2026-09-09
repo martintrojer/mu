@@ -62,6 +62,33 @@ breaking changes are called out under "Breaking" in each entry.
 
 ### Fixed
 
+- **A prose log line poisoned the sync segment, and mu blamed a torn
+  write for it on every invocation.** `encodeSegmentLine` interpolated
+  `ops.payload` into the JSON line raw, on the assumption that the
+  column always holds JSON. It does not: `mu log "text"` writes an
+  entity-`message` op whose payload is bare prose, and prose containing
+  a comma or a quote produced `"payload":Added 5 tasks, ...` — a line
+  that is not JSON at all. Payloads are now passed through verbatim
+  when they parse as JSON and encoded as a JSON string when they do
+  not, with the wrapping undone on ingest so a peer's `ops` table holds
+  the origin's bytes.
+
+  The damage was noise, not loss — the `ops` table stayed canonical and
+  `mu doctor` was clean throughout — but it was **permanent** noise. The
+  segment self-repair regenerates from `ops`, and regeneration re-emitted
+  the same unencodable payload, so the warning fired on every single mu
+  command, forever. That is the real cost: it trains you to ignore sync
+  warnings, and a genuine torn write then reads as background noise.
+
+- **A complete-but-unparsable segment line is no longer reported as a
+  torn write.** Layer 1 called every `JSON.parse` failure `torn-write`,
+  which sent the reader hunting for a crash-during-write that never
+  happened; the line above was 765 complete bytes ending in a valid
+  `crc`. A line carrying its trailing `,"crc":"…"}` framing cannot have
+  been cut off in flight, so it is now reported as `malformed-shape`.
+  Different cause, different remediation: refetch the tail versus go
+  read the writer.
+
 - **An incompatible herdr server looked available on herdr 0.9.0.**
   0.9.0 split `herdr status`'s single `compatible: yes|no` line into
   `endpoint_compatible:` (the stable public API generation) and
