@@ -217,6 +217,30 @@ of where. Before re-dispatching, fetch from the path in the task note
 and look: re-running the task blind duplicates work that already
 exists. This is the strongest argument for step 2.
 
+### A crashed remote worker disappears rather than reporting `crashed`
+
+murmur records `crashed` only when a **pane outlives the process** in
+it: that is how an unreported death leaves a trace. Locally it holds —
+a pi exits inside a shell pane and the pane stays. It does not hold
+here, because the agent is the remote session's only process, so tmux
+reaps the session with it and the row is simply gone at the next
+collect.
+
+Measured: SIGKILL a remote agent and murmur reports **zero rows and
+zero crashed**, not a crash. Nothing distinguishes "it died" from "it
+finished and I closed it". A second consequence of the same rule: the
+crash path only fires for an agent killed **mid-turn**, since an idle
+agent is already `stopped` and a stopped owner dying reads as a normal
+finish.
+
+So do not wait for a crash signal on a remote worker. The durable
+traces are the ones mu already gives you:
+
+- the reaper flipping the task back to `OPEN` with a `[reaper]` note
+- the `REMOTE:` task note, which is where the commit is
+
+`ssh <host> 'tmux ls'` confirms whether the session is really gone.
+
 ### Cleaning up
 
 mu will not remove a remote worktree, because it does not know it
