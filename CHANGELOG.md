@@ -12,6 +12,13 @@ breaking changes are called out under "Breaking" in each entry.
 
 ### Added
 
+- **`mu state` now inventories remote workers from task notes.** An exact
+  `REMOTE: <host>:<path>` line appears in a `Remote workers` section and in
+  the JSON snapshot's `remoteWorkers` array, preserving the only durable
+  record of a remote workspace after its agent row disappears. Prose that
+  merely mentions `REMOTE:` and malformed lines are ignored; no empty text
+  section is rendered.
+
 - **`mu workstream list --torn-down`** — past teardowns, read from the
   ops log, with the **group** id to pass to `mu undo`. A teardown is
   reversible, which is useless if the group cannot be found: bare

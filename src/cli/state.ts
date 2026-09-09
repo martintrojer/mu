@@ -49,7 +49,7 @@ import {
   withRoiAll,
 } from "../cli.js";
 import { type Db, tryResolveWorkstreamId, WorkstreamNotFoundError } from "../db.js";
-import { pc } from "../output.js";
+import { muTable, pc } from "../output.js";
 import {
   isLingeringScratchAgent,
   isWorkspaceStale,
@@ -66,7 +66,47 @@ import { resolveInitialTab } from "./tui-launch-focus.js";
 // seam (WorkstreamSnapshot + loadWorkstreamSnapshot) so the new ink
 // TUI can consume them too. We keep `PerWsData` as a local alias to
 // avoid touching every renderer downstream.
-type PerWsData = WorkstreamSnapshot;
+type RemoteWorker = {
+  taskName: string;
+  host: string;
+  path: string;
+};
+
+type PerWsData = WorkstreamSnapshot & { remoteWorkers: RemoteWorker[] };
+
+function listRemoteWorkers(db: Db, workstream: string): RemoteWorker[] {
+  const rows = db
+    .prepare(
+      `SELECT t.local_id AS task_name, n.content AS content
+       FROM task_notes n
+       JOIN tasks t ON t.id = n.task_id
+       JOIN workstreams ws ON ws.id = t.workstream_id
+       WHERE ws.name = ? AND n.content LIKE '%REMOTE: %'
+       ORDER BY n.id`,
+    )
+    .all(workstream) as Array<{ task_name: string; content: string }>;
+
+  const remoteWorkers: RemoteWorker[] = [];
+  for (const row of rows) {
+    for (const line of row.content.split(/\r?\n/)) {
+      const match = /^REMOTE:\s+([^:\s]+):(\S+)\s*$/.exec(line);
+      if (match === null) continue;
+      const host = match[1];
+      const path = match[2];
+      if (host === undefined || path === undefined) continue;
+      remoteWorkers.push({ taskName: row.task_name, host, path });
+    }
+  }
+  return remoteWorkers;
+}
+
+function formatRemoteWorkersTable(rows: readonly RemoteWorker[]): string {
+  const table = muTable({
+    head: ["task", "host", "path"].map((heading) => pc.bold(heading)),
+  });
+  for (const row of rows) table.push([row.taskName, row.host, row.path]);
+  return table.toString();
+}
 
 // ─── Workstream-set resolution ─────────────────────────────────────
 //
@@ -137,6 +177,7 @@ function fullJsonShape(d: PerWsData): Record<string, unknown> {
     blocked: withRoiAll(d.blocked),
     recentClosed: withRoiAll(d.recentClosed),
     workspaces: d.workspaces,
+    remoteWorkers: d.remoteWorkers,
     workspaceOrphans: d.workspaceOrphans,
     recent: d.recent,
     recentCommits: d.recentCommits,
@@ -217,7 +258,10 @@ export async function cmdState(db: Db, opts: StateOpts): Promise<void> {
   const eventLimit = opts.events ?? 20;
   const perWs: PerWsData[] = [];
   for (const ws of workstreams) {
-    perWs.push(await loadWorkstreamSnapshot(db, ws, { eventLimit }));
+    perWs.push({
+      ...(await loadWorkstreamSnapshot(db, ws, { eventLimit })),
+      remoteWorkers: listRemoteWorkers(db, ws),
+    });
   }
   const multi = workstreams.length > 1;
 
@@ -311,6 +355,11 @@ function renderFullCard(d: PerWsData): void {
       ),
     );
   }
+  if (d.remoteWorkers.length > 0) {
+    console.log("");
+    console.log(pc.bold(`Remote workers (${d.remoteWorkers.length})`));
+    console.log(formatRemoteWorkersTable(d.remoteWorkers));
+  }
   if (d.workspaceOrphans.length > 0) {
     console.log("");
     console.log(
@@ -349,7 +398,7 @@ export function wireStateCommands(program: Command): void {
   program
     .command("state")
     .description(
-      "Canonical state card: agents + orphans + tracks + ready/in-progress/blocked/recent-closed tasks + workspaces + recent events. The agent/API-facing static state surface. Default prints the static card; pass --tui to enter the interactive ink-based dashboard. -w accepts repeat or comma-separate (or both); --all is sugar for every workstream on this machine. N≥2 stacks per-workstream cards.",
+      "Canonical state card: agents + orphans + tracks + ready/in-progress/blocked/recent-closed tasks + workspaces + remote workers + recent events. The agent/API-facing static state surface. Default prints the static card; pass --tui to enter the interactive ink-based dashboard. -w accepts repeat or comma-separate (or both); --all is sugar for every workstream on this machine. N≥2 stacks per-workstream cards.",
     )
     .option(
       "-w, --workstream <names...>",

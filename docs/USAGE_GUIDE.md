@@ -934,12 +934,14 @@ mu state --all --json              # every workstream on this machine
 
 The static card carries every section the TUI cards summarize: agents +
 orphans + tracks + ready / in-progress / blocked / recent-closed tasks
-+ workspaces + recent events.
++ workspaces + recent events. It also lists **remote workers** recorded by
+exact `REMOTE: <host>:<path>` task-note lines; malformed lines and prose that
+merely mentions `REMOTE:` are ignored.
 
 **JSON shapes**
 
 - single-ws: flat `{ workstreamName, agents, orphans, tracks, ready,
-  blocked, inProgress, recentClosed, workspaces, recent }`.
+  blocked, inProgress, recentClosed, workspaces, remoteWorkers, recent }`.
 - multi-ws: wrapped `{ workstreams: [{...}, ...] }`.
 - bare `mu --json` prints `--help`; use `mu state --json`.
 - `--tui` is render-only and incompatible with `--json`.

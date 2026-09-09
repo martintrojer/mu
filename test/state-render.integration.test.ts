@@ -74,6 +74,7 @@ describe("mu state — default (full) mode", () => {
     expect(stdout).toContain("Blocked (");
     expect(stdout).toContain("Recent closed (");
     expect(stdout).toContain("Workspaces (");
+    expect(stdout).not.toContain("Remote workers (");
     // v2-log-verb renamed the heading: it is no longer "of kind=event"
     // (that entity is retired), it is the last N ops.
     expect(stdout).toContain("Recent activity");
@@ -107,6 +108,7 @@ describe("mu state — default (full) mode", () => {
     expect(parsed.inProgress).toEqual([]);
     expect(parsed.recentClosed).toEqual([]);
     expect(parsed.workspaces).toEqual([]);
+    expect(parsed.remoteWorkers).toEqual([]);
     expect(parsed.recentCommits).toEqual([]);
     expect(parsed.commitsBackend).toBeNull();
     // v2-retire-log-shim: `recent` shows captured ops. Both task adds
@@ -125,6 +127,41 @@ describe("mu state — default (full) mode", () => {
         }),
       ]),
     );
+  });
+
+  it("lists well-formed REMOTE notes as remote workers", async () => {
+    await runCli(["task", "note", "alpha", "-w", "ws", "REMOTE: dev:~/ws/worker-1"], dbPath);
+
+    const { stdout, exitCode } = await runCli(["state", "-w", "ws"], dbPath);
+
+    expect(exitCode).toBeNull();
+    expect(stdout).toContain("Remote workers (1)");
+    expect(stdout).toContain("alpha");
+    expect(stdout).toContain("dev");
+    expect(stdout).toContain("~/ws/worker-1");
+  });
+
+  it("ignores prose that merely mentions REMOTE", async () => {
+    await runCli(
+      ["task", "note", "alpha", "-w", "ws", "The REMOTE: marker records a workspace."],
+      dbPath,
+    );
+
+    const { stdout, exitCode } = await runCli(["state", "-w", "ws"], dbPath);
+
+    expect(exitCode).toBeNull();
+    expect(stdout).not.toContain("Remote workers (");
+  });
+
+  it("includes remote workers in the JSON state shape", async () => {
+    await runCli(["task", "note", "alpha", "-w", "ws", "REMOTE: dev:~/ws/worker-1"], dbPath);
+
+    const { stdout, exitCode } = await runCli(["state", "-w", "ws", "--json"], dbPath);
+
+    expect(exitCode).toBeNull();
+    expect(JSON.parse(stdout).remoteWorkers).toEqual([
+      { taskName: "alpha", host: "dev", path: "~/ws/worker-1" },
+    ]);
   });
 
   it("multi-ws --json wraps per-ws shapes in { workstreams: [...] }", async () => {

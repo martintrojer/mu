@@ -60,7 +60,8 @@ runs.
 mu keeps no record of the remote path, and the agent row that held the
 command string disappears when the agent dies. The task note is the
 only thing that survives. Keep it in the literal `REMOTE: <host>:<path>`
-shape and the recovery command is mechanical:
+shape: `mu state` lists those lines as its remote-worker inventory, and
+the recovery command is mechanical:
 
 ```bash
 git fetch "ssh://<host>/<path>" HEAD && git cherry-pick FETCH_HEAD
