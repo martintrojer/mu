@@ -74,6 +74,32 @@ detaches without stopping a detached-tmux agent, so closing costs you
 nothing. Poll with `murmur collect` + `murmur status`, never by sitting
 in the pane.
 
+### Attach with the peer's jump command, not a bare ssh
+
+If murmur knows the host, ask it how to reach it interactively:
+
+```bash
+JUMP=$(murmur peer list --json | jq -r '.[]|select(.name=="dev").jump_command')
+mu agent spawn worker-1 -w big --command "${JUMP//\{pane\}/mu-worker-1}"
+```
+
+On a capped host that command may name a transport taking **no** ssh
+session at all, which removes the contention entirely rather than
+managing it.
+
+**A spawn that lands on an auth prompt looks exactly like a healthy
+one.** Measured: with the slot already busy, `ssh dev -t "tmux attach"`
+fell back to a fresh connection and stopped at `Enter a passcode:`. The
+spawn succeeded, the registry row appeared, `mu agent list` showed
+`needs_input` — and `mu agent send` then pasted the entire prompt into
+the passcode field and reported success. The agent received nothing and
+sat at 0% context.
+
+So after spawning remotely, confirm the agent actually got the work
+before trusting it: `mu agent read <name> -n 20`, or check the context
+percentage in its pane. A prompt containing anything sensitive should
+never be sent to an unconfirmed pane.
+
 This was walked into twice in one session by the person who wrote this
 section, so do not assume knowing it is enough. If a collect fails and
 you are not sure why:
