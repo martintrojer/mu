@@ -207,8 +207,8 @@ Every turn:
    ```
 
 6. `mu task wait ... --first --any --json --on-stall exit`.
-7. Cherry-pick the closed worker's **new** commit(s), verify, return
-   control. Do not barrier or loop in shell.
+7. Cherry-pick the closed worker's **new** commit(s), verify the MERGE
+   (see below), return control. Do not barrier or loop in shell.
 8. Repeat from `mu state`.
 
 ## Dispatch rules that prevent real failures
@@ -225,6 +225,27 @@ Every turn:
   [REMOTE_WORKERS.md](REMOTE_WORKERS.md).
 - **Cherry-pick worker commits onto main; don't merge.** Stale
   branches can drag re-reverts.
+- **Verify the MERGE, never re-run the worker's own suite.** The worker
+  already ran it and reported green; running the same commits again on
+  the orchestrator proves nothing and is the single most expensive habit
+  in this loop. What is genuinely unverified is the COMBINATION: the
+  worker validated its change against the base it forked from, and main
+  has moved since. Measured on one real session: re-running a worker's
+  own commit never once found anything, while the merge broke tests in
+  files no worker had touched three separate times.
+
+  So verify, but verify the right thing, and prefer to verify it where
+  the compute is. If workers run on a remote host, push the merged head
+  and run the gate THERE — it already has a checkout and warm
+  dependencies, and the orchestrator's job becomes `cherry-pick` plus
+  `push`, which is IO rather than CPU. A 500s suite times thirty
+  integrations is four hours of laptop that bought nothing.
+
+  Two things still belong local: a **platform-sensitive** subset, because
+  a remote green does not prove a local green when the bug is
+  platform-shaped (a real one: macOS `ps` omits the environment that
+  Linux `ps` appends, so the remote suite could not have caught it), and
+  the **final** gate before the push that matters.
 - **Cherry-pick only new shas.** `workspace commits` lists since
   fork; track what you've already integrated. Don't replay the whole
   worker range each time.

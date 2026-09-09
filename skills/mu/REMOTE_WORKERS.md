@@ -198,6 +198,39 @@ is the part people expect to be hard and it is not.
 - Two workers editing one file still conflict on cherry-pick, exactly
   as locally. Bucket work by file cluster, not by machine.
 
+### Run the merged suite where the workers are
+
+The reason to send work to a big machine is to stop paying for it on a
+small one. Cherry-picking remote work and then running the whole suite
+locally gives that back — and it is the default thing to do, so say the
+other thing explicitly.
+
+**Do not re-run what the worker ran.** Its green on its own tree is the
+evidence you asked for. What is unverified is the MERGE: the worker
+forked from a base that has since moved, so the only new information is
+in the combination.
+
+So cherry-pick locally (it is a few seconds of IO), then push the merged
+head to the same host and run the gate there:
+
+```bash
+git cherry-pick <sha>
+git push -q "ssh://dev/~/hacking/<repo>.git" HEAD:refs/heads/main
+ssh dev 'cd ~/hacking/<checkout> && git fetch -q origin \
+  && git reset -q --hard origin/main && npm run check'
+```
+
+That host already has a checkout and warm dependencies — the same ones
+the worker used — so the marginal cost is near zero, while the same run
+on a laptop is minutes of CPU per integration.
+
+**Keep two things local.** A **platform-sensitive** subset, because a
+remote green does not prove a local green when the bug is
+platform-shaped: macOS `ps` returns argv where Linux `ps -e` appends the
+environment, and a real bug lived in exactly that gap. And the **final**
+gate before the push that matters, since that one is about your tree
+rather than the worker's.
+
 ---
 
 ## Traps
