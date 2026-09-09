@@ -28,25 +28,22 @@ extension runs inside the agent's process, so it claims the pane on the
 HOST; mu's local pane holds an ssh client and reports nothing. Two
 addresses, one worker.
 
-murmur ties them back together by reading the local pane's own command
-line for `MU_AGENT_NAME` and `MU_WORKSTREAM` and matching them against
-what the host reports. When it matches, the remote row shows
+murmur ties them back together by looking for the AGENT NAME in your
+local pane's command line. When it matches, the remote row shows
 `attached here %N` and enter focuses your existing pane instead of
 opening a second connection — which matters on a capped host, where the
 second one fails.
 
-**So the direct recipe below gets the back-reference and the detached
-one does not:**
+Both recipes below work, for the same reason: the agent name is in the
+argv either way. A direct spawn carries it in the remote command; the
+detached shape carries it in the session name, because you named the
+session after the agent. **Keep doing that** — `-s mu-<agent>` is what
+makes the attachment findable, and a session named anything else costs
+you the hint.
 
-| local pane command | back-reference |
-| --- | --- |
-| `ssh dev -t "cd … && MU_AGENT_NAME=worker-1 MU_WORKSTREAM=big pi"` | yes |
-| `ssh dev -t "tmux attach -t mu-worker-1"` | **no** |
-
-The detached shape hides the env vars inside the remote tmux session,
-so the local command line carries nothing to match on. Both still
-appear as one row — the host's pane is the only one reporting either
-way — you just lose the attachment hint.
+Do not bother putting `MU_AGENT_NAME=` in front of the attach command
+to help it along. An environment prefix is consumed by your shell and
+never reaches the process arguments, which is all `ps` reports on macOS.
 
 What mu does NOT know about a remote agent: the workspace. There is no
 `vcs_workspaces` row, so no `mu workspace list / refresh / commits /
@@ -278,16 +275,11 @@ agent pane. `kick` reaches only the first, `ssh dev 'tmux ls'` is the
 only view of the third. Keep the session name equal to the agent name
 — mu records neither, so it is the only handle tying them together.
 
-It also costs the murmur back-reference (see § The model): the env vars
-live inside the remote session, so the local pane's command line has
-nothing to match. If you want `attached here %N` on a capped host,
-repeat them in the attach command — they are inert to `tmux attach` and
-exist only to be read:
-
-```bash
-mu agent spawn worker-1 -w big --command \
-  'MU_AGENT_NAME=worker-1 MU_WORKSTREAM=big ssh dev -t "tmux attach -t mu-worker-1"'
-```
+The session name is load-bearing beyond readability: murmur finds your
+attachment by spotting the agent name in the local pane's argv, and
+with this shape the session name is the only place it appears. `-s
+mu-worker-1` for agent `worker-1` gives you `attached here %N` on the
+remote row; `-s scratch` silently does not.
 
 The upside beyond unblocking `git fetch`: a dropped connection no
 longer reaps the task, since the agent outlives the ssh session, and a
