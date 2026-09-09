@@ -415,21 +415,6 @@ Convention: `pi_mini` / `pi` / `pi_big`. Use mini for probing,
 modest for build/edit/refactor, big for design/review/incidents.
 Discover model strings with `pi --list-models [fuzzy-search]`.
 
-## murmur, if it is installed
-
-[murmur](https://github.com/martintrojer/murmur) is optional and
-strictly additive: **mu owns the work, murmur owns what an agent is
-doing.** Nothing here needs it. With it, `murmur status` answers "what
-is every agent doing, on every machine" — pushed from inside pi rather
-than scraped, so it is authoritative where mu's status detection is a
-heuristic.
-
-The seam is the env vars `mu agent spawn` already injects
-(`MU_MANAGED_AGENT`, `MU_AGENT_NAME`, `MU_WORKSTREAM`): murmur reads
-them to mark a pane as crew, so orchestrated agents stay out of the
-human's status bar unless blocked or crashed. See
-[REMOTE_WORKERS.md](REMOTE_WORKERS.md) § mu and murmur.
-
 ## Reaper and status limits
 
 If an agent pane dies, or `mu agent close` kills it mid-task, owned
@@ -438,9 +423,18 @@ reap` op. No manual release after crashes.
 
 Status detection is heuristic and can lag behind custom `--command`
 wrappers. It is weakest for a remote worker, where the scrollback is a
-nested tmux rendered over ssh — `murmur status` is authoritative there,
-since murmur's extension pushes state from inside the agent on the
-host. For high-stakes decisions:
+nested tmux rendered over ssh.
+
+**[murmur](https://github.com/martintrojer/murmur), if installed, is
+authoritative there** — its extension pushes state from inside the agent
+on the host rather than scraping a pane, and it answers across machines.
+Optional and strictly additive: nothing here needs it, and the seam is
+the env vars `mu agent spawn` already injects (`MU_MANAGED_AGENT`,
+`MU_AGENT_NAME`, `MU_WORKSTREAM`), which murmur reads to mark a pane as
+crew. **mu owns the work; murmur owns what an agent is doing.** See
+[REMOTE_WORKERS.md](REMOTE_WORKERS.md) § mu and murmur.
+
+For high-stakes decisions:
 
 ```bash
 mu agent read worker-1 -n 100

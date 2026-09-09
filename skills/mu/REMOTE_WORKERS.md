@@ -70,46 +70,43 @@ The error names none of this. You get `Permission denied
 `git push` can report success while having pushed nothing.
 
 **Attach to look, then close immediately.** `mu agent close <name>`
-detaches without stopping a detached-tmux agent, so closing costs you
+detaches without stopping a detached-tmux agent, so closing costs
 nothing. Poll with `murmur collect` + `murmur status`, never by sitting
 in the pane.
 
-### Attach with the peer's jump command, not a bare ssh
+Walked into twice in one session by the person who wrote this section,
+so do not assume knowing it is enough. When a collect fails and you are
+not sure why, current murmur names the culprit for you — `dev: ssh
+session limit reached -- pane %210 is your own attachment to this peer`
+— and failing that:
 
-If murmur knows the host, ask it how to reach it interactively:
+```bash
+ps -o pid=,command= -ax | grep "[s]sh <host>"   # who holds the channel
+```
+
+### Better: attach with the peer's jump command
+
+If murmur knows the host, ask it how to reach the host interactively
+rather than hardcoding ssh:
 
 ```bash
 JUMP=$(murmur peer list --json | jq -r '.[]|select(.name=="dev").jump_command')
 mu agent spawn worker-1 -w big --command "${JUMP//\{pane\}/mu-worker-1}"
 ```
 
-On a capped host that command may name a transport taking **no** ssh
-session at all, which removes the contention entirely rather than
-managing it.
+That command may name a transport taking **no** ssh session at all,
+which removes the contention rather than managing it.
 
 **A spawn that lands on an auth prompt looks exactly like a healthy
-one.** Measured: with the slot already busy, `ssh dev -t "tmux attach"`
-fell back to a fresh connection and stopped at `Enter a passcode:`. The
-spawn succeeded, the registry row appeared, `mu agent list` showed
-`needs_input` — and `mu agent send` then pasted the entire prompt into
-the passcode field and reported success. The agent received nothing and
-sat at 0% context.
+one.** Measured: with the slot busy, `ssh dev -t "tmux attach"` fell
+back to a fresh connection and stopped at `Enter a passcode:`. The spawn
+succeeded, the row appeared, `mu agent list` showed `needs_input` — and
+`mu agent send` pasted the whole prompt into the passcode field and
+reported success. The agent received nothing.
 
-So after spawning remotely, confirm the agent actually got the work
-before trusting it: `mu agent read <name> -n 20`, or check the context
-percentage in its pane. A prompt containing anything sensitive should
-never be sent to an unconfirmed pane.
-
-This was walked into twice in one session by the person who wrote this
-section, so do not assume knowing it is enough. If a collect fails and
-you are not sure why:
-
-```bash
-ps -o pid=,command= -ax | grep "[s]sh <host>"   # who holds the channel
-```
-
-Current murmur says it for you: `dev: ssh session limit reached -- pane
-%210 is your own attachment to this peer. Close it, then collect.`
+So confirm a remote agent actually got the work before trusting it
+(`mu agent read <name> -n 20`, or its context percentage), and never
+send anything sensitive to an unconfirmed pane.
 
 ---
 
@@ -354,8 +351,7 @@ in your own counts as if it were yours.
 
 ## Picking a host
 
-mu does not track hosts and should not; that is
-[murmur](https://github.com/martintrojer/murmur)'s job. If it is
+mu does not track hosts and should not; that is murmur's job. If it is
 installed:
 
 ```bash
@@ -371,9 +367,9 @@ Read it correctly, because it is **best-effort by design**:
 - So branch on `.error`, never on presence in the list.
 
 `murmur status` and `pick` are polling paths and stay silent whatever
-the fleet is doing. `murmur collect` is a deliberate dial and prints
-one line per host it could not reach — that is the one to run when you
-need "can I reach this host *right now*".
+the fleet is doing. `murmur collect` is the deliberate dial: it prints
+one line per host it could not reach, so it is the one to run for "can I
+reach this host *right now*".
 
 ### Reaching a host is two different questions
 
@@ -399,22 +395,12 @@ binary resolution, which is why the value is opaque.
 
 Rare, but it presents as a credentials bug, so learn to recognise it.
 
-Most sshd allow 10 sessions per connection (`MaxSessions`, default
-10), and the recipe above is all you need. A hardened host may set
-**`MaxSessions 1`**. Then the long-lived ssh holding your AGENT
-consumes the only session channel, and every other ssh to that host —
-including your `git fetch` — is refused.
-
-The error is actively misleading. The refused channel makes ssh fall
-back to a fresh connection, which hits the host's 2FA and dies there:
-
-```
-mux_client_request_session: session request failed: Session open refused by peer
-Permission denied (keyboard-interactive)
-```
-
-The second line is the one that scrolls past, and nothing in it
-mentions sessions.
+Most sshd allow 10 sessions per connection (`MaxSessions`, default 10)
+and the recipe above is all you need. A hardened host may set
+**`MaxSessions 1`**: then the long-lived ssh holding your AGENT consumes
+the only channel, and every other ssh — including `git fetch` — is
+refused with the misleading 2FA error described in § Never leave an
+attach pane open.
 
 `ControlMaster no` is still the right setting for such a host — it
 stops ssh spawning masters you did not ask for — but do **not** expect
@@ -424,8 +410,6 @@ of four concurrent calls still produced the misleading 2FA error.
 
 **Diagnostic:** if `mu agent read` works fine while a plain `ssh
 <host> true` fails, it is session exhaustion, not credentials.
-Confirm with `ps aux | grep 'ssh <host>'` — you will see your own
-agent holding the connection.
 
 ### Fix: detached remote tmux
 
@@ -490,9 +474,13 @@ counts it.
 et dev        # or your site's wrapper, e.g. `x2ssh -et dev`
 ```
 
-Verified on a `MaxSessions 1` devvm: an interactive `ssh dev` starved
-every other ssh for as long as it stayed open, while an ET session on
-the same host left `ssh dev true` succeeding throughout.
+Verified on a `MaxSessions 1` host, twice: an interactive `ssh dev`
+starved every other ssh for as long as it stayed open, while an ET
+session left `ssh dev true` succeeding throughout — and the same held
+with a nested `tmux attach` live inside it, with a concurrent `murmur
+collect` reaching the host. So ET costs the capped slot nothing even
+while you are sitting in a remote agent, which is what makes it usable
+as a murmur jump command.
 
 So the clean split on a capped host is ET for you, one `ssh -MNf <host>`
 master for tooling, and detached tmux for mu agents. The three do not
@@ -501,10 +489,3 @@ compete.
 Note ET cannot serve murmur or `git fetch` — it exposes no multiplexing
 socket to attach to. That is exactly why it pairs well: it takes none of
 the capped slots those tools need.
-
-Measured 2026-09-08, extending that from a plain ET shell to one
-running tmux: with `<wrapper> -et dev -c 'tmux attach -t <pane>'` open
-and the nested tmux live, `ssh -O check dev && ssh dev true` succeeded
-and a concurrent `murmur collect` reached the host. So an ET attach
-costs the capped slot nothing, which is what makes it usable as a jump
-command; `ssh -t` holds the slot for the whole visit.
