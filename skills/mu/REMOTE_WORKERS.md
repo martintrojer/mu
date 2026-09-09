@@ -144,7 +144,7 @@ look like idleness, so anything derived from status is unreliable here:
 
 | waiting on | remote? |
 | --- | --- |
-| `mu task wait` (task status) | exact — a DB poll |
+| `mu task wait` (task status) | exact — a DB poll, once something closes the task |
 | exit 6, the reaper | fires, but see below |
 | `--on-stall exit` (exit 7) | **do not rely on it** |
 | `mu agent wait --first` | same, it is status-based |
@@ -169,6 +169,29 @@ murmur collect && murmur status --json   # activity is host-reported
 
 That is the division worth remembering: mu owns the work, murmur owns
 what the agent is doing.
+
+### Do not wait on status. Wait on the commit, then close the task.
+
+murmur's `activity` is trustworthy and still the wrong thing to wait on:
+
+- **It flickers.** `stopped` means "not mid-turn", true between every
+  turn. Not edge-triggered, so a loop reading it needs a long sleep.
+- **A crew agent never raises `done`.** murmur suppresses it for
+  anything mu spawned, so `attention` is `[]` by construction.
+
+The exact signal is the commit. `rev-parse` moves no objects, so it is
+cheap enough to run between other work:
+
+```bash
+BASE=$(ssh dev 'git -C ~/ws/worker-2 rev-parse HEAD')   # at dispatch
+[ "$(ssh dev 'git -C ~/ws/worker-2 rev-parse HEAD')" != "$BASE" ]  # per turn
+```
+
+**Then `mu task close <id> --evidence "<sha>"`.** The sha tells you; the
+DAG still says IN_PROGRESS and anything blocked on it waits forever.
+That is also what makes `mu task wait` work remotely — it is exact, and
+"never fires" only means nothing was closing the task. Feed it, do not
+replace it.
 
 ### On step 2 — the note is load-bearing
 
