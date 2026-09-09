@@ -84,6 +84,12 @@ session limit reached -- pane %210 is your own attachment to this peer`
 ps -o pid=,command= -ax | grep "[s]sh <host>"   # who holds the channel
 ```
 
+This whole hazard is about the DEFAULT connection. Commands run through
+coop use a separate ControlPath and are unaffected either way: your
+attach pane cannot starve them, and they cannot starve your collect.
+On a capped host, that is the reason to route orchestrator commands
+through it rather than remembering this section.
+
 ### Better: attach with the peer's jump command
 
 If murmur knows the host, ask it how to reach the host interactively
@@ -239,6 +245,20 @@ git push -q "ssh://dev/~/hacking/<repo>.git" HEAD:refs/heads/main
 ssh dev 'cd ~/hacking/<checkout> && git fetch -q origin \
   && git reset -q --hard origin/main && npm run check'
 ```
+
+**On a session-capped host, run that gate through coop instead.** The
+last line holds the channel for the whole suite — minutes — which is
+precisely when your other tooling starts failing with a credentials
+error that has nothing to do with credentials:
+
+```bash
+coop run --cwd ~/hacking/<checkout> --wait \
+  'git fetch -q origin && git reset -q --hard origin/main && npm run check'
+```
+
+Same work, dispatched detached on coop's own connection, and `--wait`
+exits with the suite's own code. See § When the host limits concurrent
+sessions.
 
 That host already has a checkout and warm dependencies — the same ones
 the worker used — so the marginal cost is near zero, while the same run
@@ -425,16 +445,64 @@ the only channel, and every other ssh — including `git fetch` — is
 refused with the misleading 2FA error described in § Never leave an
 attach pane open.
 
-`ControlMaster no` is still the right setting for such a host — it
-stops ssh spawning masters you did not ask for — but do **not** expect
-it to make callers fail honestly. It only governs master *creation*;
-a refused channel falls back regardless. Measured with `no` set: three
-of four concurrent calls still produced the misleading 2FA error.
-
 **Diagnostic:** if `mu agent read` works fine while a plain `ssh
 <host> true` fails, it is session exhaustion, not credentials.
 
-### Fix: detached remote tmux
+`ControlMaster no` looks like it should help and does not. It governs
+master *creation* only; a refused channel falls back regardless.
+Measured with `no` set: three of four concurrent calls still produced
+the misleading 2FA error. There is no client-side fix — `MaxSessions`
+exists only in `sshd_config`, and the client discovers the cap only by
+being refused.
+
+### Fix: run commands through coop
+
+[coop](https://github.com/martintrojer/coop) exists for this case. It
+opens its own ssh ControlPath, so it cannot contend with `git fetch`,
+`rsync` or your attach pane, and it dispatches every job DETACHED under
+a private tmux server — the connection is released before the command
+starts running.
+
+Measured on a `MaxSessions 1` host: five concurrent calls, **1 of 5**
+succeeded ungated, **5 of 5** through coop.
+
+```bash
+coop run --cwd ~/ws/worker-1 'npm run check'   # prints a job id
+coop wait <id>                                  # exits with the job's code
+coop tail <id>                                  # the output
+```
+
+Use it for the ORCHESTRATOR's remote commands — the merged-suite gate,
+`rev-parse` polling, worktree setup, cleanup. Those are what previously
+had to queue behind your agent's channel.
+
+**It does not replace the agent spawn.** A mu agent needs a pane whose
+process mu controls, and coop deliberately holds no connection, so the
+detached-tmux recipe below is still how the agent itself runs. The split
+is: coop for commands, detached tmux for the agent, ET for you.
+
+#### coop exit 3 means STOP AND ASK
+
+coop refuses to open its own ssh master, because doing so can require a
+human to touch a hardware key and `ssh -MNf` cannot prompt without a
+terminal. When the master is missing, every coop verb exits **3** and
+prints the command that fixes it.
+
+**Treat exit 3 as a handback, not an error to route around.** Ask the
+operator to run the printed line, then continue. Do not:
+
+- retry or sleep-and-retry — the master will not appear on its own, so
+  the wait is unbounded
+- run `ssh -MNf` yourself — it fails opaquely from a background call
+- fall back to `ssh <host> <command>` — that holds the capped channel
+  for the whole job and breaks everything else on the host, which is
+  the entire problem coop was brought in to solve
+
+One tap unblocks every subsequent job for the life of the
+`ControlPersist` window. Improvising turns a ten-second interruption
+into a wedged host, and you will not be the one who notices.
+
+### Fix: detached remote tmux (for the agent itself)
 
 Run the agent in its own tmux session on the host, and attach to
 *that*. The agent's lifetime is then decoupled from the connection, so
@@ -460,7 +528,8 @@ Two consequences, both counterintuitive:
 
 - **An attached pane blocks concurrent ssh just as much as a direct
   one.** Nesting does not make the host concurrent; it makes detaching
-  cheap and non-destructive. You must close the pane BEFORE fetching.
+  cheap and non-destructive. You must close the pane BEFORE fetching —
+  or use coop, which is on its own channel and does not care.
 - **`mu agent close` detaches, it does not stop the agent** — the
   inverse of local semantics, and the whole point. To actually stop
   one: `ssh dev 'tmux kill-session -t mu-worker-1'`. Skip that and you
