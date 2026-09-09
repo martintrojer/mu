@@ -1,3 +1,4 @@
+import { cpus } from "node:os";
 import { mergeConfig } from "vitest/config";
 import baseConfig from "./vitest.config.js";
 
@@ -19,14 +20,18 @@ import baseConfig from "./vitest.config.js";
  * the 255 -- it was module loading serialised behind a one-worker cap. A slow
  * gate is a gate people skip, and this one is run before every commit.
  *
- * `maxWorkers` is deliberately left to vitest's default (CPU-derived) rather
- * than pinned to 8: 8 was the measurement, not a tuned optimum, and hard-coding
- * a worker count is how a config stops matching the machine it runs on.
+ * Derived from the machine rather than pinned: 8 was the measurement, not a
+ * tuned optimum, and a hard-coded worker count is how a config stops matching
+ * the box it runs on. Setting these to `undefined` does NOT work -- mergeConfig
+ * keeps the inherited value, so the cap survived and the suite still took 188s.
+ * The override has to be a real number.
  */
+const workers = Math.max(2, Math.min(8, Math.floor((cpus().length || 4) / 2)));
+
 export default mergeConfig(baseConfig, {
   test: {
     exclude: ["**/*.integration.test.ts", "**/*.smoke.test.ts"],
-    maxWorkers: undefined,
-    minWorkers: undefined,
+    maxWorkers: workers,
+    minWorkers: workers,
   },
 });
