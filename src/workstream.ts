@@ -348,7 +348,7 @@ export interface TornDownWorkstream {
  * disagree with the log (see the `provenance` reasoning in
  * docs/VOCABULARY.md).
  *
- * Accepts both intent spellings, so teardowns predating the 1.1.2
+ * Accepts both intent spellings, so teardowns predating the 1.2.0
  * rename are included.
  */
 export function listTornDownWorkstreams(db: Db): TornDownWorkstream[] {

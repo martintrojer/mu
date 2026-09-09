@@ -2101,7 +2101,7 @@ mu undo 7a40e6cc --yes    # restore the rows
 
 One entry per teardown, newest first, read straight from the ops log —
 so a name torn down twice lists twice (the group is the identity, not
-the name) and teardowns from before the 1.1.2 rename are included.
+the name) and teardowns from before the 1.2.0 rename are included.
 `← recreated since` means a later op put that name back, so undoing it
 would be a no-op; the printed `Next:` hint always names the newest
 entry that is still restorable. What does NOT come back is what was

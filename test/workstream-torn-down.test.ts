@@ -124,7 +124,7 @@ describe("listTornDownWorkstreams", () => {
     expect(newest.recreated).toBe(false);
   });
 
-  it("includes teardowns recorded under the pre-1.1.2 intent spelling", async () => {
+  it("includes teardowns recorded under the pre-1.2.0 intent spelling", async () => {
     // ~5k ops in real logs say 'workstream.destroy'. The rename must not
     // truncate the list at the release boundary.
     seed("demo");

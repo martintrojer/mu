@@ -32,7 +32,7 @@ export function isLegacyLogOnlyIntent(intent: string | null): boolean {
  * `mu log --intent <new>` would miss every pre-rename op and
  * `mu undo` would not find those groups.
  *
- * `workstream.destroy` became `workstream.teardown` in 1.1.2 because
+ * `workstream.destroy` became `workstream.teardown` in 1.2.0 because
  * "destroy" claims irreversibility that is not true (tombstones are
  * written; `mu undo` restores the rows) and operators were hoarding
  * pre-flight DB copies because of it. ~5k ops carry the old name.

@@ -44,7 +44,7 @@ export type CaptureIntent =
   | "task.reparent"
   | "workstream.init"
   | "workstream.teardown"
-  // Pre-1.1.2 name for workstream.teardown. Read-only: nothing emits it
+  // Pre-1.2.0 name for workstream.teardown. Read-only: nothing emits it
   // any more, but ~5k ops in existing logs carry it and must keep
   // rendering. See LEGACY_INTENT_SYNONYMS in src/legacy-ops.ts.
   | "workstream.destroy";
