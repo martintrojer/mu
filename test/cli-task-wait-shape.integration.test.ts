@@ -90,4 +90,50 @@ describe("mu task wait — --any vs --first output shape", () => {
     expect(firstPayload.firing?.qualifiedId).toBe("test/a");
     expect(anyPayload.firing).toBeNull();
   });
+
+  // wait-json-firing-null-exit0: filed as "--first can exit 0 with
+  // firing:null". It cannot — see the two tests below. What CAN do
+  // that is --any, on a perfectly successful wait, which is what the
+  // docs described as "--first / --any" and what a consumer doing
+  // `.firing.name` crashes on. Pinning both halves so neither the
+  // real shape nor the invariant can drift back.
+
+  it("--any exits 0 with firing:null on SUCCESS (the null is not a failure signal)", async () => {
+    const any = await runCli(["task", "wait", "a", "b", "--any", "--json", "-w", "test"], dbPath);
+
+    expect(any.error).toBeUndefined();
+    const payload = JSON.parse(any.stdout) as WaitJsonPayload;
+    // The wait genuinely succeeded: `a` reached CLOSED and is in `all`,
+    // and nothing is outstanding — yet `firing` is null. Exit 0 plus
+    // firing:null therefore means "success, ref unidentified", never
+    // "something went wrong".
+    expect(payload.firing).toBeNull();
+    expect(payload.all.map((t) => t.qualifiedId)).toEqual(["test/a"]);
+    expect(payload.timedOut).toEqual([]);
+  });
+
+  it("--first never exits 0 with firing:null: a clean exit always names the ref", async () => {
+    // The invariant behind the unreachable `?? null` in claim.ts:
+    // --first implies any:true, and both non-timeout returns in
+    // waitForTasks are guarded by isDone(), which for any:true means
+    // >=1 ref reachedTarget. So a zero exit must carry a firing ref.
+    const success = await runCli(
+      ["task", "wait", "a", "b", "--first", "--json", "-w", "test"],
+      dbPath,
+    );
+    expect(success.error).toBeUndefined();
+    expect((JSON.parse(success.stdout) as WaitJsonPayload).firing).not.toBeNull();
+
+    // The complement: when nothing reaches the target, firing is null
+    // — but the exit is 5 (timeout), never 0. `b` is the only ref and
+    // it stays OPEN.
+    const timedOut = await runCli(
+      ["task", "wait", "b", "--first", "--json", "-w", "test", "--timeout", "1"],
+      dbPath,
+    );
+    expect(timedOut.exitCode).toBe(5);
+    const payload = JSON.parse(timedOut.stdout) as WaitJsonPayload;
+    expect(payload.firing).toBeNull();
+    expect(payload.timedOut).toHaveLength(1);
+  });
 });

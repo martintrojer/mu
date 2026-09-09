@@ -1680,7 +1680,8 @@ mu task wait cli_audit roadmap-v0-3/archive_phase2 -w mufeedback-v03
 ```
 
 `--first` is an alias for `--any` that ALSO prints the firing ref's
-qualified id to stdout (and adds a `firing` field to `--json`). Use
+qualified id to stdout (and populates the `firing` field in `--json`,
+which `--any` leaves null). Use
 it to drive a single-shot dispatch loop — one wait, one cherry-pick,
 one verify, one workspace recycle:
 
@@ -1732,8 +1733,12 @@ The `--json` shape on success is `{ firing, all, timedOut, nextSteps,
 ... }`:
 
 * `firing`   — `{ workstreamName, name, qualifiedId, status, owner }`
-  on `--first` / `--any` success; `null` on `--all` success or on
-  timeout.
+  on **`--first`** success. `null` in every other case: on `--any`
+  success, on `--all` success, and on timeout. `--any` exits `0` with
+  `firing: null`, so a script that reads `.firing.qualifiedId` after
+  `--any` dereferences null on a **successful** wait. Pass `--first`
+  when you need to know WHICH ref fired; `--any` only tells you that
+  one did.
 * `all`      — array of refs that REACHED the target (with
   `qualifiedId` + `reachedAt`).
 * `timedOut` — array of refs that did NOT reach the target. Empty on

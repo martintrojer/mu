@@ -435,9 +435,22 @@ export async function cmdTaskWait(
 
   // ─── WHICH-result shaping ────────────────────────────────────────
   // "firing" = the first ref that reached the target on the closing
-  // snapshot, for --first / --any. NULL on --all (every ref reached;
-  // no "first" to single out) and on timeout (nothing reached).
-  // The order matches the input refs order; tie-breaks by argv.
+  // snapshot. Set ONLY for --first. NULL for --any (which reports that
+  // one ref fired, not which), for --all (every ref reached; no "first"
+  // to single out), and on timeout (nothing reached).
+  //
+  // The --any case is the one that reads like a bug and is not: it
+  // exits 0 with firing:null, so a consumer doing `.firing.name` after
+  // --any crashes on a SUCCESSFUL wait. It was documented as "--first /
+  // --any" for a while, which is what made that look supported. Use
+  // --first when you need to know which.
+  //
+  // The `?? null` is unreachable, not defensive-for-a-real-case: both
+  // of waitForTasks' non-timeout returns are guarded by isDone(), and
+  // --first implies any:true, so isDone means at least one ref has
+  // reachedTarget and find() cannot miss. Kept because the types
+  // cannot express that, and null is the honest fallback if the
+  // invariant ever breaks.
   const firingRef: TaskWaitTaskState | null =
     wantFirstShape && !result.timedOut ? (result.refs.find((t) => t.reachedTarget) ?? null) : null;
   const reachedRefs = result.refs.filter((t) => t.reachedTarget);

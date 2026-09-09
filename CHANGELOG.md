@@ -69,6 +69,22 @@ breaking changes are called out under "Breaking" in each entry.
 
 ### Fixed
 
+- **The `mu task wait --json` docs promised a `firing` field that
+  `--any` never sets.** `docs/USAGE_GUIDE.md`, the `--first` help text
+  and the comment in `src/cli/tasks/claim.ts` all said `firing` is
+  populated "on `--first` / `--any` success". Only `--first` sets it.
+  `--any` exits **0** with `firing: null` on a perfectly successful
+  wait, so a documented consumer reading `.firing.qualifiedId` after
+  `--any` dereferences null exactly when the wait worked. Corrected in
+  all four places, including `skills/mu/SKILL.md`, and pinned by tests.
+
+  Reported as "`--first` can exit 0 with `firing: null`", which it
+  cannot: `--first` implies `any: true`, and both non-timeout returns
+  in `waitForTasks` are guarded by `isDone()`, which for `any: true`
+  means at least one ref reached the target — so the `?? null` fallback
+  is unreachable, and a clean `--first` exit always names a ref. No
+  exit code changed; the false documentation was the whole defect.
+
 - **A prose log line poisoned the sync segment, and mu blamed a torn
   write for it on every invocation.** `encodeSegmentLine` interpolated
   `ops.payload` into the JSON line raw, on the assumption that the

@@ -464,10 +464,13 @@ export function wireTaskCommands(program: Command): void {
       "--status <status>",
       `target status (${TASK_STATUS_LIST}, case-insensitive); default CLOSED`,
     )
-    .option("--any", "succeed as soon as ONE listed task reaches the target (default: all must)")
+    .option(
+      "--any",
+      "succeed as soon as ONE listed task reaches the target (default: all must). Reports THAT one fired, not which: --json leaves `firing` null even on success, so use --first if you need to identify the ref.",
+    )
     .option(
       "--first",
-      "alias for --any that ALSO prints the firing ref's qualified id to stdout (--json adds a `firing` field). Use to drive a single-shot dispatch loop: `closed=$(mu task wait a b --first --json | jq -r .firing.qualifiedId)`.",
+      "alias for --any that ALSO prints the firing ref's qualified id to stdout and populates `firing` in --json (which --any leaves null). Use to drive a single-shot dispatch loop: `closed=$(mu task wait a b --first --json | jq -r .firing.qualifiedId)`.",
     )
     .option("--timeout <seconds>", "max seconds to wait (0 = forever, default 600)", parseLines)
     .option(

@@ -365,7 +365,9 @@ git cherry-pick "$sha" && npm test
 
 ## `mu task wait` exits
 
-Default target: CLOSED. `--first` = `--any` plus firing id/object.
+Default target: CLOSED. `--first` = `--any` plus the firing id/object.
+**`firing` is `--first`-only.** `--any` exits 0 with `firing: null`, so
+`.firing.owner` after `--any` crashes on a successful wait.
 
 | Code | Meaning |
 |------|---------|
