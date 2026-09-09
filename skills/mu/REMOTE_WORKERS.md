@@ -7,6 +7,11 @@ none.
 Read this before spawning your first remote agent. The recipe is short;
 the traps below it are the part that costs time.
 
+**If you read one thing:** on a session-capped host, never leave an
+attach pane open — it holds the only ssh channel and silently breaks
+`git fetch`, `murmur collect` and every other ssh. Attach to look, then
+`mu agent close`. See § Never leave an attach pane open.
+
 ---
 
 ## The model
@@ -49,6 +54,36 @@ What mu does NOT know about a remote agent: the workspace. There is no
 `vcs_workspaces` row, so no `mu workspace list / refresh / commits /
 free`, no `behind` column, no staleness warning on claim, and no
 auto-free on close. You own that bookkeeping.
+
+---
+
+## Never leave an attach pane open
+
+On a host that caps sessions per connection, **your attach pane holds
+the only ssh channel**. While it is open, every other ssh to that host
+fails — `git fetch`, `git push`, `murmur collect`, `rsync`, a plain
+`ssh <host> true`. So the pane you opened to watch the agent is the
+thing preventing you from seeing it.
+
+The error names none of this. You get `Permission denied
+(keyboard-interactive)`, which reads as a credentials problem, and
+`git push` can report success while having pushed nothing.
+
+**Attach to look, then close immediately.** `mu agent close <name>`
+detaches without stopping a detached-tmux agent, so closing costs you
+nothing. Poll with `murmur collect` + `murmur status`, never by sitting
+in the pane.
+
+This was walked into twice in one session by the person who wrote this
+section, so do not assume knowing it is enough. If a collect fails and
+you are not sure why:
+
+```bash
+ps -o pid=,command= -ax | grep "[s]sh <host>"   # who holds the channel
+```
+
+Current murmur says it for you: `dev: ssh session limit reached -- pane
+%210 is your own attachment to this peer. Close it, then collect.`
 
 ---
 
