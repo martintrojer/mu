@@ -457,36 +457,21 @@ stderr naming the pane; exit 0 with no warning means submitted.
 Budget is `MU_SEND_READINESS_MS` (default 15000; 0 = fire-and-forget).
 Sending to a BUSY agent is not delayed — that input queues normally.
 
-## DO / DON'T
+## DON'T
 
-DO:
-- `mu state -w <ws>` before actions.
-- Add a task before assigning work.
-- Claim before sending; read notes before claiming.
-- Pass `--evidence` on claim and close.
-- Drop task notes using the note contract.
-- Set `impact` and `effort_days` honestly.
-- Use `--workspace` whenever an agent may edit/build/test.
-- Send `/new` before unrelated follow-on work (no `sleep` needed).
-- Use `mu task wait --first --json`, never shell polling.
-- Use `mu doctor` when state looks wrong.
+The DO list lived here as a second copy of the Orchestrator loop and Dispatch
+rules; those sections are the source of truth. What follows appears nowhere
+else:
 
-DON'T:
-- Barrier on a wave umbrella or loop until "everything is done".
-- Fire-and-forget after `mu agent send`.
-- Trust status emoji alone.
-- Double-quote `$VAR`-laden prompts.
+- Trust status emoji alone — task ownership is durable, status is scraped.
+- Double-quote `$VAR`-laden prompts; single-quote or use a quoted heredoc.
 - Bypass mu with `sqlite3`; use `mu sql`.
-- Spawn into a named crew workstream without `mu workstream init`
-  first (the exception is `-w scratch`, which auto-creates).
-- Anthropomorphize agent names.
-- Poll `mu agent read` in tight loops.
-- Add cross-workstream edges; model as one workstream.
-- `mu workstream teardown --yes` without dry-run.
+- Anthropomorphize agent names — roles, not humans.
+- Add cross-workstream edges; model the work as one workstream.
 - Use the reserved `mu_` task-id prefix.
-- Message agents directly; use task notes and the activity log.
-- Prompt workers to run filesystem-wide `find`, broad `grep -r /`,
-  or unbounded loops. Pass paths; if wedged, `mu agent kick`.
+- Message agents directly to coordinate; use task notes and the activity log.
+- Prompt workers to run filesystem-wide `find` or broad `grep -r /`, or
+  unbounded loops. Pass paths; if one wedges, `mu agent kick`.
 
 ## What mu is NOT
 
