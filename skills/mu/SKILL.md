@@ -170,6 +170,31 @@ other tool, not by you, so judge it by how long you will break
 `git fetch`, not by whether the overhead feels worth it. coop also does
 not replace the agent spawn, which needs a pane mu controls.
 
+**Waiting is the part to get right.** Poll **once per turn** — one
+sub-second `ssh dev 'git -C <path> rev-parse HEAD'` between other work —
+and bound anything you dispatch with `coop run --max-secs N`. The
+threshold above measures the COMMAND, so a 40-iteration `rev-parse` loop
+reads as "long" while still being forty harmless sub-second calls;
+routing it through coop and then blocking on `coop wait` rebuilds the
+stall you routed around. Observed twice.
+
+**The sleep is the bug, not the ssh.** `sleep N && ssh dev ...` in one
+tool call wedged a host three times in one session: the abort lands
+mid-flight and leaves the client wedged, so the connection takes the
+blame. Keep sleeps out of tool calls and the same ssh is harmless.
+
+An aborted tool call leaves remote work running either way — a trap for
+a foreground ssh, which keeps holding the channel, and the point of coop,
+whose job is detached and recoverable by id (`coop kill <id>` ends one).
+
+Branch on **4 vs 5**: exit 4 means your wait timed out and the job runs
+on, so wait again; exit 5 means orphaned, so no result is ever coming.
+Run `coop rm --all` between waves, since job state is durable by design.
+
+For the full recipe — and the dead-ssh-agent misdiagnosis that cost an
+hour — read [REMOTE_WORKERS.md](REMOTE_WORKERS.md) § When the host limits
+concurrent sessions.
+
 **`coop` exit 3 is a HANDBACK.** It means no ssh control master, and
 opening one can need a human to touch a hardware key — `ssh -MNf`
 cannot prompt without a terminal. Stop, print the command coop gives

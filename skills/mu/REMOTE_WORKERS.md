@@ -448,6 +448,25 @@ attach pane open.
 **Diagnostic:** if `mu agent read` works fine while a plain `ssh
 <host> true` fails, it is session exhaustion, not credentials.
 
+**But do not stop there — that test is necessary, not sufficient.** The
+same `Permission denied (keyboard-interactive)` is also what a **dead
+ssh agent** produces: `SSH_AUTH_SOCK` points at a socket that no longer
+exists, key auth cannot be attempted, and sshd falls back to 2FA and
+sits on a passcode prompt you cannot see. One session cost an hour to
+this, diagnosed as session exhaustion throughout.
+
+Check both, in this order — the second is local and instant:
+
+```bash
+ssh-add -l                 # "Error connecting to agent" => dead agent, NOT the cap
+ssh <host> true            # fails while `mu agent read` works => the cap
+```
+
+And note the prompt is **invisible unless the ssh runs inside a pane you
+can capture**. That is what finally exposed it: the refusal looks like a
+silent failure because the question is being asked somewhere with no
+terminal attached.
+
 `ControlMaster no` looks like it should help and does not. It governs
 master *creation* only; a refused channel falls back regardless.
 Measured with `no` set: three of four concurrent calls still produced
@@ -467,10 +486,25 @@ Measured on a `MaxSessions 1` host: five concurrent calls, **1 of 5**
 succeeded ungated, **5 of 5** through coop.
 
 ```bash
-coop run --cwd ~/ws/worker-1 'npm run check'   # prints a job id
+# The PATH export is not decoration -- see below.
+coop run --cwd '~/ws/worker-1' 'export PATH=$HOME/.elan/bin:$PATH; npm run check'
 coop wait <id>                                  # exits with the job's code
 coop tail <id>                                  # the output
 ```
+
+A coop job gets a non-login shell, so a version manager's `activate` has
+not run: `which lake` fails though `~/.elan/bin/lake` exists. What makes
+it expensive is where it surfaces — as the *suite's* own error,
+`adapter_crash: lake not found on PATH`, which reads like a code
+regression and sends you to the wrong repo. Export PATH inside every
+job command.
+
+Measured on the same capped host: with a multi-minute `runner/check`
+running as a coop job, a concurrent plain `ssh dev` **succeeded** — the
+scenario that had wedged the host three times earlier that session. The
+5-of-5 number above proves fairness among coop's own calls; this proves
+coexistence with the tools you did *not* route through coop, which is
+what you actually depend on.
 
 Use it for the ORCHESTRATOR's LONG remote commands — the merged-suite
 gate, a remote build, a long remote script. Those are what previously had to
@@ -489,6 +523,57 @@ call is not paid by you — it is paid by every other tool needing the
 channel while you hold it. So the test is not "is 125ms of dispatch
 worth it to me" but "how long am I willing to break `git fetch` for".
 One second is already a long outage.
+
+**Do not wrap a POLL LOOP in coop either, and this is the trap the
+"roughly one second" rule invites.** The threshold is about how long the
+COMMAND runs, not about how long you are willing to wait. A 40-iteration
+`rev-parse` loop technically takes ten minutes, so it reads as "long" —
+and it is still forty sub-second calls, each of which was already
+harmless. Observed, and the agent's own verdict:
+
+> "A busy-wait dispatched to coop is still a busy-wait. My first attempt
+> was a 40-iteration rev-parse loop sent to coop — and then I blocked on
+> `coop wait` for it locally. Same stall, more moving parts."
+
+The compound mistake is the second half: dispatching the loop remotely
+and then blocking on `coop wait` rebuilds the exact stall you routed
+around. Once the local block was dropped, the same loop was fine: the
+waiting then happened on the host, and nothing local was holding.
+
+**If you dispatch anything that could loop, bound it at dispatch:**
+
+```bash
+coop run --max-secs 600 '<command>'   # killed at the cap, records rc 124
+```
+
+Without it, a `while true` waiting for something that never happens runs
+until the host reboots, holding a tmux session and a growing log that
+prune deliberately never reaps (a *running* job is never pruned). Note
+`--max-secs` kills the job; `wait --timeout` only stops *you* waiting
+and exits 4 with the job still running. Two different bounds — use both.
+
+**The sleep is the bug, not the ssh.** Three wedged hosts in one session,
+every one this shape:
+
+```bash
+sleep 30 && ssh dev 'git -C ~/ws/worker-1 rev-parse HEAD'   # WRONG
+```
+
+A bare `ssh dev 'rev-parse'` is sub-second and harmless. Gluing a
+`sleep` in front makes it a long-running **tool call**, which then gets
+aborted mid-flight and leaves the ssh client wedged. The connection gets
+blamed; the connection was never the problem. Poll **once per turn**,
+between other work, and never sleep inside a tool call.
+
+**Aborting a tool call does not kill remote work — and that cuts both
+ways.** An aborted `ssh dev ./runner/check` kept running on the host and
+held the capped channel for its full duration; killing the local client
+changed nothing. For a foreground ssh that is the trap. For coop it is
+the *feature*: the job is detached, so an aborted `coop wait` costs
+nothing, the work continues, and it stays recoverable by id. `coop kill
+<id>` is how you actually end one (confirmed: the job reports rc 137).
+That difference is the strongest argument for routing long work through
+coop.
 
 **A job must also be entirely remote.** It runs on the host with no
 route back to you, so `git fetch`/`push` and any rsync with a local
@@ -522,6 +607,22 @@ operator to run the printed line, then continue. Do not:
 One tap unblocks every subsequent job for the life of the
 `ControlPersist` window. Improvising turns a ten-second interruption
 into a wedged host, and you will not be the one who notices.
+
+#### Exit 4 is "not yet"; exit 5 is "never"
+
+`coop --help` carries the full exit table. The one distinction it cannot
+make for you is which codes mean *keep waiting*: 4 (your wait timed out,
+the job runs on) and 6 (connection dropped, the job runs on) both say
+poll again, while 5 (orphaned) means no `rc` will ever arrive and waiting
+is infinite. An orchestrator that conflates 4 and 5 makes exactly the
+mistake the orphan state exists to expose. None of the three means the
+work failed.
+
+Job state is durable — it outlives the tmux server, the connection and a
+reboot, which is what makes "fire it and collect later" work at all. It
+is also not reaped inside `keep_days` (14), so a long-lived crew
+accumulates it: run `coop rm --all` between waves. `coop ls` doubles as
+the audit surface; one session used it to confirm 12 of 13 jobs clean.
 
 ### Fix: detached remote tmux (for the agent itself)
 
@@ -586,6 +687,10 @@ counts it.
 ```bash
 et dev        # or your site's wrapper, e.g. `x2ssh -et dev`
 ```
+
+**An aborted ET or `x2ssh` leaves local processes behind.** Both survive
+the abort of the tool call that started them and go on holding state, so
+a retry stacks a second one on top. `pkill -f x2ssh` before retrying.
 
 Verified on a `MaxSessions 1` host, twice: an interactive `ssh dev`
 starved every other ssh for as long as it stayed open, while an ET
