@@ -472,9 +472,19 @@ coop wait <id>                                  # exits with the job's code
 coop tail <id>                                  # the output
 ```
 
-Use it for the ORCHESTRATOR's remote commands — the merged-suite gate,
-`rev-parse` polling, worktree setup, cleanup. Those are what previously
-had to queue behind your agent's channel.
+Use it for the ORCHESTRATOR's LONG remote commands — the merged-suite
+gate, a remote build, a big rsync. Those are what previously had to
+queue behind your agent's channel, and they are the ones that hold it
+for minutes.
+
+**Do not route short commands through it.** Dispatch costs ~125ms
+against ~33ms for a bare ssh over an existing master, so `rev-parse`
+polling, worktree setup and a `murmur collect` pay the tax and gain
+nothing: they are already sub-second, so there is no long hold to
+remove. A refused channel on a cheap idempotent command is better
+retried than routed around — which is what murmur already does.
+
+Threshold: **under a second do not bother, over ten seconds do.**
 
 **It does not replace the agent spawn.** A mu agent needs a pane whose
 process mu controls, and coop deliberately holds no connection, so the

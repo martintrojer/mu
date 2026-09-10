@@ -155,13 +155,18 @@ the worker must be told mu is absent, what a dropped connection reaps
 agent blocks your `git fetch` behind a misleading
 `Permission denied`.
 
-**On a session-capped host, run orchestrator commands through
+**On a session-capped host, run LONG orchestrator commands through
 [coop](https://github.com/martintrojer/coop)** — the merged-suite gate,
-`rev-parse` polling, worktree setup. It uses its own ssh ControlPath and
-dispatches detached, so it cannot contend with `git fetch` or your
-attach pane. Measured: 1 of 5 concurrent calls succeeded ungated, 5 of 5
-through coop. It does not replace the agent spawn, which still needs a
-pane mu controls.
+a remote build. It uses its own ssh ControlPath and dispatches detached,
+so it cannot contend with `git fetch` or your attach pane. Measured: 1
+of 5 concurrent calls succeeded ungated, 5 of 5 through coop.
+
+**Not for short ones.** Dispatch costs ~125ms against ~33ms for a bare
+ssh over an existing master, so `rev-parse` polling and a state collect
+pay the tax and gain nothing — they are already sub-second, and a
+refused channel is cheaper to retry than to route around. Threshold:
+under a second do not bother, over ten seconds do. coop also does not
+replace the agent spawn, which needs a pane mu controls.
 
 **`coop` exit 3 is a HANDBACK.** It means no ssh control master, and
 opening one can need a human to touch a hardware key — `ssh -MNf`
