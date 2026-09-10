@@ -138,70 +138,29 @@ refresh first or pass `--strict-staleness` in scripts.
 
 Agents can run on another machine: the PANE is local, the PROCESS is
 remote (`--command 'ssh <host> -t "..."'`), so `send`, `read`, status
-detection and the reaper all keep working unchanged. **One
-orchestrator DB; panes may be remote** — never run a second mu on the
-host, since `tasks.owner_id` is an FK into the machine-local `agents`
-table and a remote mu could not claim your tasks anyway.
-
-You create the remote workspace yourself (`--workspace` is local-only)
-and collect with
+detection and the reaper all keep working unchanged. **One orchestrator
+DB; panes may be remote** — never run a second mu on the host, since
+`tasks.owner_id` is an FK into the machine-local `agents` table and a
+remote mu could not claim your tasks anyway. You create the remote
+workspace yourself (`--workspace` is local-only) and collect with
 `git fetch "ssh://<host>/<path>" HEAD && git cherry-pick FETCH_HEAD`.
 
-**Read [REMOTE_WORKERS.md](REMOTE_WORKERS.md) before spawning your
-first remote agent.** It is the full recipe plus the traps that cost
-real debugging time: which CLI command the host actually needs, why
-the worker must be told mu is absent, what a dropped connection reaps
-(and what it does not), and the `MaxSessions 1` case where your own
-agent blocks your `git fetch` behind a misleading
-`Permission denied`.
+**Read [REMOTE_WORKERS.md](REMOTE_WORKERS.md) before spawning your first
+remote agent, and again before waiting on one.** Everything below is in
+it; these are the four that cost real time when learned late:
 
-**On a session-capped host, run LONG orchestrator commands through
-[coop](https://github.com/martintrojer/coop)** — the merged-suite gate,
-a remote build. It uses its own ssh ControlPath and dispatches detached,
-so it cannot contend with `git fetch` or your attach pane. Measured: 1
-of 5 concurrent calls succeeded ungated, 5 of 5 through coop.
-
-**Not for short ones.** Dispatch costs ~125ms against ~33ms for a bare
-ssh over an existing master, so `rev-parse` polling and a state collect
-pay the tax and gain nothing — they are already sub-second, and a
-refused channel is cheaper to retry than to route around. Threshold:
-**roughly one second** — on a capped host the hold is paid by every
-other tool, not by you, so judge it by how long you will break
-`git fetch`, not by whether the overhead feels worth it. coop also does
-not replace the agent spawn, which needs a pane mu controls.
-
-**Waiting is the part to get right.** Poll **once per turn** — one
-sub-second `ssh dev 'git -C <path> rev-parse HEAD'` between other work —
-and bound anything you dispatch with `coop run --max-secs N`. The
-threshold above measures the COMMAND, so a 40-iteration `rev-parse` loop
-reads as "long" while still being forty harmless sub-second calls;
-routing it through coop and then blocking on `coop wait` rebuilds the
-stall you routed around. Observed twice.
-
-**The sleep is the bug, not the ssh.** `sleep N && ssh dev ...` in one
-tool call wedged a host three times in one session: the abort lands
-mid-flight and leaves the client wedged, so the connection takes the
-blame. Keep sleeps out of tool calls and the same ssh is harmless.
-
-An aborted tool call leaves remote work running either way — a trap for
-a foreground ssh, which keeps holding the channel, and the point of coop,
-whose job is detached and recoverable by id (`coop kill <id>` ends one).
-
-Branch on **4 vs 5**: exit 4 means your wait timed out and the job runs
-on, so wait again; exit 5 means orphaned, so no result is ever coming.
-Run `coop rm --all` between waves, since job state is durable by design.
-
-For the full recipe — and the dead-ssh-agent misdiagnosis that cost an
-hour — read [REMOTE_WORKERS.md](REMOTE_WORKERS.md) § When the host limits
-concurrent sessions.
-
-**`coop` exit 3 is a HANDBACK.** It means no ssh control master, and
-opening one can need a human to touch a hardware key — `ssh -MNf`
-cannot prompt without a terminal. Stop, print the command coop gives
-you, and ask the operator. Never retry it, never run `ssh -MNf`
-yourself, and never fall back to `ssh <host> <cmd>`: that holds the
-capped channel for the whole job and breaks every other tool on the
-host.
+- **Never block, and never sleep inside a tool call.** `sleep N && ssh
+  dev ...` wedged a host three times in one session. Poll once per turn.
+- **On a session-capped host, route LONG commands through
+  [coop](https://github.com/martintrojer/coop)** — measured 1 of 5
+  concurrent calls succeeded ungated, 5 of 5 through coop. Threshold is
+  roughly one second of COMMAND time, so a poll loop does not qualify
+  however long it runs. Bound dispatches with `--max-secs`.
+- **`coop` exit 3 is a HANDBACK** — no ssh master, and opening one can
+  need a human to touch a hardware key. Ask the operator; never retry,
+  never run `ssh -MNf` yourself, never fall back to `ssh <host> <cmd>`.
+- **Exit 4 and 6 mean wait again; 5 means never.** Neither says the work
+  failed.
 
 ### Agent names
 
