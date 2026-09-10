@@ -473,7 +473,7 @@ coop tail <id>                                  # the output
 ```
 
 Use it for the ORCHESTRATOR's LONG remote commands — the merged-suite
-gate, a remote build, a big rsync. Those are what previously had to
+gate, a remote build, a long remote script. Those are what previously had to
 queue behind your agent's channel, and they are the ones that hold it
 for minutes.
 
@@ -484,7 +484,18 @@ nothing: they are already sub-second, so there is no long hold to
 remove. A refused channel on a cheap idempotent command is better
 retried than routed around — which is what murmur already does.
 
-Threshold: **under a second do not bother, over ten seconds do.**
+Threshold: **roughly one second.** On a capped host the cost of a long
+call is not paid by you — it is paid by every other tool needing the
+channel while you hold it. So the test is not "is 125ms of dispatch
+worth it to me" but "how long am I willing to break `git fetch` for".
+One second is already a long outage.
+
+**A job must also be entirely remote.** It runs on the host with no
+route back to you, so `git fetch`/`push` and any rsync with a local
+endpoint cannot be coop jobs — that is the same orchestrator-PULL rule
+as § Everything is orchestrator-PULL. A transfer between the host and a
+THIRD machine is fine; one aimed at your laptop is not. Collect with
+`git fetch` on the default connection as ever.
 
 **It does not replace the agent spawn.** A mu agent needs a pane whose
 process mu controls, and coop deliberately holds no connection, so the

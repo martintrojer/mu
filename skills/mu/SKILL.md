@@ -165,8 +165,10 @@ of 5 concurrent calls succeeded ungated, 5 of 5 through coop.
 ssh over an existing master, so `rev-parse` polling and a state collect
 pay the tax and gain nothing — they are already sub-second, and a
 refused channel is cheaper to retry than to route around. Threshold:
-under a second do not bother, over ten seconds do. coop also does not
-replace the agent spawn, which needs a pane mu controls.
+**roughly one second** — on a capped host the hold is paid by every
+other tool, not by you, so judge it by how long you will break
+`git fetch`, not by whether the overhead feels worth it. coop also does
+not replace the agent spawn, which needs a pane mu controls.
 
 **`coop` exit 3 is a HANDBACK.** It means no ssh control master, and
 opening one can need a human to touch a hardware key — `ssh -MNf`
