@@ -300,99 +300,68 @@ git cherry-pick "$sha" && npm test
   recorded verbatim on the emitted op.
 - `--json` for composition; `nextSteps` survives.
 
-## CLI overview (only gotchas; use `--help` for full syntax)
+## CLI overview (gotchas only — `--help` is the verb list)
 
-- **Workstream:** `init`, `list` (`--torn-down` lists past teardowns
-  from the ops log with the group id to undo, newest first; one entry
-  per teardown, `← recreated since` marks ones already back),
-  `teardown` (dry-run by default, `--yes` commits; writes TOMBSTONE ops
-  so history survives and `mu undo <group> --yes` reverses the row
-  deletions — do NOT `mu db backup` first, the log is the backup).
-- **Agents:** `spawn` (`--workspace`, `--role read-only`, `--command`),
-  `send`, `read`, `show`, `list`, `close`, `kick`,
-  `adopt <pane-id|title>` for orphan panes. Four worth knowing:
-  - `wait <names...> --first` — blocks until an agent finishes (busy →
-    anything else). The task-less counterpart to `mu task wait`, for
-    helpers that own no task. Exit 0 met, 5 timeout, 6 pane died. Use
-    it instead of `sleep` loops.
-- **Tasks:** `add` (`--note` for initial context), `list`, `next`,
-  `show`, `tree`, `notes`
-  (`--tail`, `--since`, `--since-claim`), `note`, `claim`
-  (`--for | --self`), `release` (`--reopen` to un-close a CLOSED task),
-  `close` (`--if-ready` no-ops until every blocker is CLOSED), `open`,
-  `block`, `unblock`, `update`, `reparent`, `wait`, `delete --yes`.
-  Edge direction: `block <blocked> --by <blocker>`.
-- **Self:** `mu me`, `mu me tasks`, `mu me next`.
-- **Workspace:** `list` (`behind`), `refresh`, `commits`, `free`,
-  `path`, `orphans`. Creation is not a verb — it happens inside
-  `mu agent spawn --workspace`.
-- **Log:** `mu log "text"`, `mu log -n N`, `mu log --tail`. Reads render
-  every op as prose ("task close a → CLOSED"), from the op's structured
-  intent. Filters: `--intent task.close` (what mu recorded),
-  `--kind <tag>` (your own channel tag — the log-ledger pattern),
-  `--group <id>` (every op of one action, for undo). `--json` adds a
-  `rendered` field so scripts never parse payloads. Use `task wait`, not
-  `log --tail`, for waits.
-- **Undo:** `mu undo` (no args) lists recent undoable actions with
-  their group ids; `mu undo <group>` previews; `mu undo <group> --yes`
-  applies. It emits INVERSE OPS for that one group, so it touches only
-  that action's rows — not your other workstreams. The undo is itself
-  an op in its own group, so REDO is just `mu undo <that group> --yes`
-  and it syncs to peers. Refuses with exit 4 if a later action changed
-  the same fields (`--force` to override, discarding that newer work).
-  Rows only — killed panes and freed workspace dirs do not come back.
-  There are no snapshots and no `--to`.
-- **Recovery:** `mu rebuild <file>` replays the ops log in HLC order
-  into a NEW DB file and prints the `mv` command to swap it in; it
-  never rebuilds in place. Agents and workspaces are NOT rebuilt (no
-  capture triggers, so no ops) and the summary says so — re-spawn
-  agents after swapping.
-- **State/TUI:** bare `mu` opens the all-workstream TUI on a TTY;
-  agents/scripts use `mu state --json`. `mu state --tui` is
-  read-only, yanks commands, `?` shows keys, `/` filters popups,
-  `Esc`/`q` back, `q`/`Ctrl-C` quits. Non-TTY bare `mu` (or
-  `MU_NO_TUI=1`) prints help.
-- **Sync (laptop <-> devserver):** `export MU_SYNC_DIR=$HOME/Sync/mu`
-  on each machine, pointing at a shared folder (Syncthing recommended).
-  Every mu command then flushes your ops and ingests peers' — ambient,
-  no daemon, so a bare `mu task list` on the other box already shows
-  what you added here. Merge is per-FIELD, so two machines editing
-  different fields of one task both keep their edit.
-  `mu sync` bare = peer status (machine, last seen, ops behind), plus a
-  copy-pasteable rsync line when a peer is stale; mu never runs
-  ssh/scp/rsync itself. `--from <peer-mu.db>` reads a peer's ops table
-  directly (sshfs or a copy); `--repair <peer>` re-reads a segment from
-  zero and is always safe (ingest is idempotent). One-off directory
-  needs no flag: `MU_SYNC_DIR=/media/usb mu state`.
-  NEVER put `MU_DB_PATH` inside `MU_SYNC_DIR` — it corrupts the DB and
+Every verb and flag is in `mu <verb> --help`, which cannot go stale. What
+follows is only what `--help` does not say.
+
+- **`workstream teardown`** is dry-run by default; `--yes` commits. It writes
+  TOMBSTONE ops, so history survives and `mu undo <group> --yes` reverses the
+  deletions — do NOT `mu db backup` first, the log IS the backup.
+  `workstream list --torn-down` replays past teardowns with the group id to
+  undo, newest first, marking ones already recreated.
+- **`agent wait <names...> --first`** blocks until an agent stops working
+  (busy → anything else) — the task-less counterpart to `mu task wait`, for
+  helpers that own no task. Use it instead of a `sleep` loop. Exit 0 met,
+  5 timeout, 6 pane died.
+- **`agent adopt <pane-id|title>`** claims an orphan pane mu did not spawn.
+- **`task close --if-ready`** no-ops until every blocker is CLOSED.
+  **`task release --reopen`** un-closes; bare `release` reopens IN_PROGRESS.
+  Edge direction is `task block <blocked> --by <blocker>`.
+- **`task notes`** takes `--tail`, `--since` and `--since-claim` — the last is
+  how a worker re-reads only what arrived after it claimed.
+- **Workspace creation is not a verb.** It happens inside
+  `mu agent spawn --workspace`; `mu workspace free` then `spawn` again to
+  reallocate. `list` shows `behind` (stale-parent risk).
+- **`mu log` filters:** `--intent task.close` (what mu recorded), `--kind <tag>`
+  (your own channel — the log-ledger pattern), `--group <id>` (every op of one
+  action, for undo). `--json` adds a `rendered` field so scripts never parse
+  payloads. For waits use `task wait`, not `log --tail`.
+- **`mu undo`** bare lists undoable actions with group ids; `<group>` previews;
+  `<group> --yes` applies. It emits INVERSE ops for that one group, so it
+  touches nothing else, and the undo is itself an op — REDO is
+  `mu undo <that group> --yes`. Refuses with exit 4 if a later action changed
+  the same fields (`--force` discards that newer work). Rows only: killed panes
+  and freed workspace dirs do not come back. No snapshots, no `--to`.
+- **`mu rebuild <file>`** replays the ops log into a NEW DB and prints the `mv`
+  to swap it in; never in place. Agents and workspaces are NOT rebuilt (no
+  capture triggers, so no ops) — re-spawn after swapping.
+- **`mu sql`** is the escape hatch for a missing verb, and the ONE verb that
+  does not ambient-sync (its no-surprise-mutations guarantee is load-bearing).
+- **`mu db backup <file>`** is a `VACUUM INTO` copy that never overwrites — the
+  "one file I can scp" convenience. Real recovery is `mu rebuild`.
+- **Sync (laptop ↔ devserver):** `export MU_SYNC_DIR=$HOME/Sync/mu` on each
+  machine pointing at a shared folder (Syncthing recommended). Every command
+  then flushes your ops and ingests peers' — ambient, no daemon — so a bare
+  `mu task list` on the other box already shows what you added here. Merge is
+  per-FIELD, so two machines editing different fields of one task both keep
+  their edit. `mu sync` bare reports peer status plus a copy-pasteable rsync
+  line; mu never runs ssh/scp/rsync itself. `--from <peer-mu.db>` reads a
+  peer's ops directly; `--repair <peer>` re-reads from zero and is always safe
+  (ingest is idempotent).
+  **NEVER put `MU_DB_PATH` inside `MU_SYNC_DIR`** — it corrupts the DB and
   `mu doctor` hard-fails. Agent/workspace state and task OWNERSHIP are
   machine-local and never travel.
-- **Escape hatch:** `mu sql "<query>"` for missing typed verbs. Note
-  this is the ONE verb that does not ambient-sync (its no-surprise-
-  mutations guarantee is load-bearing).
-- **Backup:** `mu db backup <file>` — `VACUUM INTO` copy of the whole
-  DB, never overwrites. The "one file I can scp" convenience; real
-  recovery is `mu rebuild`.
-- **Disk vs DB:** `mu doctor`'s `disk` section reconciles
-  `<state-dir>` against the database in both directions — `ws-rows` is a
-  workspace row whose directory is gone (no other surface reports it;
-  the next send fails inside the VCS backend instead), `ws-dirs` is a
-  directory with no row (blocks the next `--workspace` spawn), and
-  `db-copies` / `exports` / `locks` are bytes nothing references.
-  **Report-only** — each finding prints the cleanup command and mu runs
-  none of them, because an orphan dir may hold the only copy of
-  uncommitted work. You are expected to read the remediation and act.
-  `mu doctor --disk` adds per-checkout byte usage (walks every checkout,
-  so not in the default tier).
-- **Health:** `mu doctor` (fast checks, exit 0) and `mu doctor --deep`,
-  which rebuilds the ops log into a temp DB and diffs it field-by-field
-  against the live tables. DRIFT means the log and the tables disagree,
-  and since undo / sync are all derived from the log, drift
-  breaks all three at once — exit 5, naming table, key and field. It is
-  a capture bug, not operator error: back up first and report it, do
-  NOT reflexively rebuild (if capture missed a mutation, the live rows
-  hold the real work). Run it after anything unusual; ~0.6ms per op, so
-  it stays off the default `mu doctor` path.
+- **`mu doctor`** runs fast checks; `--deep` rebuilds the log into a temp DB and
+  diffs it field-by-field. DRIFT means the log and the tables disagree, which
+  breaks undo and sync at once (exit 5, naming table, key and field). It is a
+  capture bug, not operator error: back up and report it, do NOT reflexively
+  rebuild — if capture missed a mutation, the live rows hold the real work.
+  The `disk` section reconciles state-dir against DB both ways and is
+  **report-only**: `ws-rows` is a row whose directory is gone (nothing else
+  reports it), `ws-dirs` blocks the next `--workspace` spawn, and an orphan dir
+  may hold the only copy of uncommitted work — which is why mu prints the
+  cleanup command and runs none of them. `--disk` adds per-checkout byte usage.
 
 ## `mu task wait` exits
 
