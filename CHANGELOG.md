@@ -71,6 +71,8 @@ breaking changes are called out under "Breaking" in each entry.
 
 ### Fixed
 
+- **The bundled mu skill is 1,042 words smaller.** Removed CLI-reference caches that `mu <verb> --help` already answers, consolidated dispatch and scratch guidance, and moved remote-only stall handling to `REMOTE_WORKERS.md`. Measured failure history, recovery traps, exit semantics absent from help, and the remote-worker pointer remain.
+
 - **The `mu task wait --json` docs promised a `firing` field that
   `--any` never sets.** `docs/USAGE_GUIDE.md`, the `--first` help text
   and the comment in `src/cli/tasks/claim.ts` all said `firing` is

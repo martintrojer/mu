@@ -23,8 +23,7 @@ both. `--json` exists on every verb:
 - `mu log --tail`: NDJSON (one object per line).
 - Errors: `{error,message,nextSteps,exitCode}` on stderr.
 - Validation errors also include structured `usage`.
-- **`nextSteps` survives in JSON**. `mu task wait --first --json`
-  puts the cherry-pick command in `.nextSteps[0].command`.
+- **`nextSteps` survives in JSON.**
 
 ## Vocabulary
 
@@ -48,67 +47,37 @@ both. `--json` exists on every verb:
 
 ## When to use mu
 
-Use mu for multi-phase work, review-gated work (`implement → review
-→ address → ship`), parallel audits, implementation/reviewer splits,
-and anything that must survive context compaction via task notes.
+Use mu for persistent helpers, parallel work, dependencies, gated review, or
+work that must survive context compaction. Use `pi-subagents` for one focused
+answer and no follow-up; stay in one context for tiny edits or inspection.
 
-Don't use mu for tiny one-file edits, one-off inspection, or
-single-context work where durable coordination adds ceremony.
+### Off-the-cuff helpers (`scratch`)
 
-### Off-the-cuff helpers (the `scratch` workstream)
+Use the reserved `scratch` workstream for a helper you will keep driving but
+that needs no task DAG. It auto-creates on spawn.
 
-Want a sub-agent you'll **keep talking to** without a crew or task
-DAG? Spawn into the reserved `scratch` workstream. No `mu workstream
-init`; it auto-creates and is task-less by design.
+- For task-less work, `mu agent wait <name> --first` waits for busy → idle;
+  exit 0 means met, 5 timeout, 6 pane died.
+- For a watcher, persist last-seen state in a log ledger: write `mu log -w
+  scratch --kind pr-state 'pr=1234 sha=abc ci=red'`, then read `mu log -w
+  scratch --kind pr-state -n 1 --json`. Act only on change; chat context is not
+  durable.
+- Use one agent per independent unit and `--workspace` for any helper that may
+  edit, build, or test the shared repo.
 
-```bash
-mu agent spawn helper-1 -w scratch     # auto-creates mu-scratch
-mu agent send helper-1 'Investigate X. Report findings.'
-mu agent read helper-1 -n 50           # check at a natural pause, not in a loop
-mu agent close helper-1 -w scratch     # done
-```
+A helper stuck at `needs_input` immediately after spawn likely hit pi's project
+trust prompt. Add `--approve` to the existing `MU_<CLI>_COMMAND`; use
+`--command` only to replace that configured command deliberately.
 
-- **Background watcher:** send the task, then `mu agent wait <name>
-  --first` to block until it finishes (busy → idle) instead of a
-  `sleep` loop; re-nudge with another `send` (e.g. `'run again'`).
-- **Watcher dedupe/memory (log ledger):** a watcher reacting to
-  changing external state must remember what it last saw. Chat
-  context dies on compaction; use a custom `--kind` tag as a durable
-  SQLite ledger instead. Each tick records last-seen state with `mu
-  log -w scratch --kind pr-state 'pr=1234 sha=abc ci=red -> spawned
-  fixer-1'`; the next tick reads it back with `mu log -w scratch
-  --kind pr-state -n 1 --json` (latest wins; `--since <seq>` replays
-  missed history). Act only when the new observation differs.
-- **Fan-out, one per unit:** loop `mu agent spawn dep-$pkg -w scratch
-  --workspace`, then `mu agent wait dep-core dep-cli dep-web` (all) or
-  `--any` to react to whichever finishes first. Add `--workspace`
-  whenever a helper will edit/build/test a shared repo (see
-  "Workspaces prevent trampling"); skip it for read-only helpers.
-  `mu state -w scratch` watches them all.
-
-If a helper wedges at `needs_input` right after spawn, it's likely
-pi's project-trust prompt; add `--approve` to the existing
-`MU_<CLI>_COMMAND`, or pass `--command 'pi --approve'` only when you
-intend to override the env-configured command.
-
-**Escalate off `scratch`** the moment helpers have dependencies
-(B needs A) or you want gated review → `mu workstream init` + task
-DAG. One focused answer, no follow-up → `pi-subagents`. `scratch` is
-the middle: "fire, but keep the channel open."
+Move off `scratch` when work gains dependencies or review gates.
 
 ## Mental model
 
 ### Workstreams, DAGs, tracks
 
-One workstream = one mux session named `mu-<workstream>`. Every
-agent is a pane in that session. DB rows are partitioned by
-`workstream`.
-
-One edge type: `blocks`. `mu task block A --by B` means **B blocks
-A**. `--by` takes multiple blockers (`--by B,C` or `--by B --by C`),
-same shape as `mu task add --blocked-by`. Built-in views: `ready`, `blocked`, `goals`. Bare `mu` shows
-parallel tracks with automatic diamond-merge: goals sharing a
-prerequisite collapse into one track.
+One workstream is one mux session and DB partition. Its task DAG has one edge:
+`mu task block A --by B` means **B blocks A**. Parallel tracks sharing a
+prerequisite collapse, preventing two agents from taking the same dependency.
 
 ### Workspaces prevent trampling
 
@@ -122,17 +91,9 @@ and no commits since fork. Non-clean close fails with
 `WorkspacePreservedError`; then use `mu workspace free <agent>` or
 `mu agent close <agent> --discard-workspace` (lossy).
 
-Between waves:
-- `mu workspace refresh <agent>` rebases onto fresh main without
-  killing LLM context.
-- `mu workspace free <agent>` throws the workspace away for good; a
-  later `mu agent spawn --workspace` allocates a fresh one. There is
-  no standalone create verb.
-- `mu workspace commits <agent>` lists since-fork commits for
-  cherry-picking.
-
-Claim/send warn when a target workspace is ≥10 commits behind main;
-refresh first or pass `--strict-staleness` in scripts.
+Between waves, `mu workspace refresh <agent>` rebases onto fresh main without
+killing LLM context. Claim/send warn at ≥10 commits behind; scripts can make
+that a refusal with `--strict-staleness`.
 
 ### Remote agents
 
@@ -142,8 +103,7 @@ detection and the reaper all keep working unchanged. **One orchestrator
 DB; panes may be remote** — never run a second mu on the host, since
 `tasks.owner_id` is an FK into the machine-local `agents` table and a
 remote mu could not claim your tasks anyway. You create the remote
-workspace yourself (`--workspace` is local-only) and collect with
-`git fetch "ssh://<host>/<path>" HEAD && git cherry-pick FETCH_HEAD`.
+workspace yourself (`--workspace` is local-only).
 
 **Read [REMOTE_WORKERS.md](REMOTE_WORKERS.md) before spawning your first
 remote agent, and again before waiting on one; poll once per turn and run
@@ -210,97 +170,36 @@ Every turn:
    mu task close <id> -w <ws> --evidence '...'
    ```
 
-6. `mu task wait ... --first --any --json --on-stall exit`.
+6. `mu task wait ... --first --json` (choose stall handling from `--help`).
 7. Cherry-pick the closed worker's **new** commit(s), verify the MERGE
    (see below), return control. Do not barrier or loop in shell.
 8. Repeat from `mu state`.
 
 ## Dispatch rules that prevent real failures
 
-- **Pipeline cherry-picks; don't barrier.** One wait, one
-  cherry-pick, one verify, return control. Do not wait on an
-  umbrella task for the whole wave; that hides partial progress.
-- **Use `--on-stall exit` in non-interactive flows.** Default wait
-  warns on stalled alive workers and keeps polling. Exit 7 =
-  `STALL_DETECTED`; exit 6 = `REAPER_DETECTED` (dead pane) and wins
-  if both happen. **Not for remote workers** — stall detection reads
-  pane scrollback, which over ssh gives false positives both ways. Use
-  a generous `--timeout` instead; see
-  [REMOTE_WORKERS.md](REMOTE_WORKERS.md).
-- **Cherry-pick worker commits onto main; don't merge.** Stale
-  branches can drag re-reverts.
-- **Verify the MERGE, never re-run the worker's own suite.** The worker
-  already ran it and reported green; running the same commits again on
-  the orchestrator proves nothing and is the single most expensive habit
-  in this loop. What is genuinely unverified is the COMBINATION: the
-  worker validated its change against the base it forked from, and main
-  has moved since. Measured on one real session: re-running a worker's
-  own commit never once found anything, while the merge broke tests in
-  files no worker had touched three separate times.
+- **Pipeline; don't barrier.** Wait for one task, cherry-pick only its new
+  commits onto main, verify the combined tree, then return control. Waiting on an
+  umbrella task hides partial progress; merging stale branches can restore
+  reverted code.
+- **Verify the merge, not the worker's rerun.** The worker tested against its
+  fork point; only the combination with moved main is new. This found three
+  integration breaks where rerunning worker suites found none. For remote work,
+  run the merged gate on the host with warm dependencies: 500s × 30 integrations
+  is four laptop-hours. Keep platform-sensitive checks and the final release gate
+  local; macOS `ps` once exposed a bug Linux could not.
+- Bucket waves by file cluster, not severity; two agents editing one file
+  conflict. Refresh workspaces between waves.
+- Cross-workstream wait/claim uses qualified refs. The owner stays in its own
+  workstream; only task ownership crosses.
+- For an idle worker, inspect scrollback, then send a retry or release its task.
+  `MU_IDLE_THRESHOLD_MS` defaults to 5m.
+- `mu agent kick` targets a wedged foreground subprocess. It refuses to signal
+  the wrapping CLI; close the agent if that is what must stop.
+- Use `mu agent send`, not raw mux input: mu preserves literal text and confirms
+  submission. Single-quote prompts containing shell expansions, or use a quoted
+  heredoc.
 
-  So verify, but verify the right thing, and prefer to verify it where
-  the compute is. If workers run on a remote host, push the merged head
-  and run the gate THERE — it already has a checkout and warm
-  dependencies, and the orchestrator's job becomes `cherry-pick` plus
-  `push`, which is IO rather than CPU. A 500s suite times thirty
-  integrations is four hours of laptop that bought nothing.
-
-  Two things still belong local: a **platform-sensitive** subset, because
-  a remote green does not prove a local green when the bug is
-  platform-shaped (a real one: macOS `ps` omits the environment that
-  Linux `ps` appends, so the remote suite could not have caught it), and
-  the **final** gate before the push that matters.
-- **Cherry-pick only new shas.** `workspace commits` lists since
-  fork; track what you've already integrated. Don't replay the whole
-  worker range each time.
-- **Bucket fix waves by file cluster, not severity.** Two workers
-  editing one file create merge conflicts.
-- **Refresh workspaces between waves.** The `behind` column
-  in `mu workspace list` shows stale-parent risk.
-- **Cross-workstream wait/claim:** pass qualified refs
-  `<workstream>/<name>`. For `claim --for A/worker-1` on a task in
-  B, the agent stays in A; only task ownership crosses.
-- **Recover idle agents:** `mu agent show <name> -n N`; then send a
-  retry or `mu task release <id>` (bare release reopens
-  IN_PROGRESS). Idle threshold: `MU_IDLE_THRESHOLD_MS`, default 5m.
-- **Recover wedged tool subprocesses:** `mu agent kick <name>` sends
-  SIGINT to the pane TTY foreground process group. Escalate with
-  `--signal SIGTERM` / `SIGKILL`. It refuses when the foreground is
-  the wrapping CLI; use `mu agent close` then.
-- **Use `mu agent send`; never raw `tmux send-keys <text>` or
-  `herdr pane send-text`.** mu delivers text atomically — bracketed
-  paste on tmux, `agent prompt` on herdr — so `/`, `?`, `f`, etc.
-  arrive as text instead of agent-TUI keybindings, and the Enter
-  cannot be swallowed by a modal.
-- **Prompt quoting:** single-quote prompts containing `$VAR`,
-  `$(...)`, backticks, or `!history`, or use a quoted heredoc.
-
-Example wait/cherry-pick skeleton:
-
-```bash
-res=$(mu task wait t1 t2 t3 -w ws --any --first --json \
-        --timeout 600 --on-stall exit)
-worker=$(jq -r .firing.owner <<<"$res")
-sha=$(mu workspace commits "$worker" -w ws --json | jq -r '.items[0].sha')
-git cherry-pick "$sha" && npm test
-```
-
-## Universal flags
-
-- `-w, --workstream <name>` resolves explicit > `$MU_SESSION` >
-  current mux session minus `mu-` > error. For entity verbs it is a
-  scope check; for pickers it selects which workstream.
-- Qualified refs `<workstream>/<name>` skip `-w`; mismatched `-w`
-  errors. Bare ambiguous names raise `NameAmbiguousError` (exit 4)
-  with one-paste fixes.
-- `--evidence "text"` on task `claim` / `close` / `open` / `release`;
-  recorded verbatim on the emitted op.
-- `--json` for composition; `nextSteps` survives.
-
-## CLI overview (gotchas only — `--help` is the verb list)
-
-Every verb and flag is in `mu <verb> --help`, which cannot go stale. What
-follows is only what `--help` does not say.
+## CLI gotchas
 
 - **`workstream teardown`** is dry-run by default; `--yes` commits. It writes
   TOMBSTONE ops, so history survives and `mu undo <group> --yes` reverses the
@@ -311,32 +210,20 @@ follows is only what `--help` does not say.
   (busy → anything else) — the task-less counterpart to `mu task wait`, for
   helpers that own no task. Use it instead of a `sleep` loop. Exit 0 met,
   5 timeout, 6 pane died.
-- **`agent adopt <pane-id|title>`** claims an orphan pane mu did not spawn.
-- **`task close --if-ready`** no-ops until every blocker is CLOSED.
-  **`task release --reopen`** un-closes; bare `release` reopens IN_PROGRESS.
-  Edge direction is `task block <blocked> --by <blocker>`.
-- **`task notes`** takes `--tail`, `--since` and `--since-claim` — the last is
-  how a worker re-reads only what arrived after it claimed.
-- **Workspace creation is not a verb.** It happens inside
-  `mu agent spawn --workspace`; `mu workspace free` then `spawn` again to
-  reallocate. `list` shows `behind` (stale-parent risk).
-- **`mu log` filters:** `--intent task.close` (what mu recorded), `--kind <tag>`
-  (your own channel — the log-ledger pattern), `--group <id>` (every op of one
-  action, for undo). `--json` adds a `rendered` field so scripts never parse
-  payloads. For waits use `task wait`, not `log --tail`.
+- **`task close --if-ready`** no-ops until every blocker is CLOSED; bare
+  `task release` reopens IN_PROGRESS.
+- **For waits use `task wait`, not `log --tail`.** `--kind` is the operator's
+  log-ledger channel; `--intent` is what mu recorded.
 - **`mu undo`** bare lists undoable actions with group ids; `<group>` previews;
   `<group> --yes` applies. It emits INVERSE ops for that one group, so it
   touches nothing else, and the undo is itself an op — REDO is
   `mu undo <that group> --yes`. Refuses with exit 4 if a later action changed
   the same fields (`--force` discards that newer work). Rows only: killed panes
   and freed workspace dirs do not come back. No snapshots, no `--to`.
-- **`mu rebuild <file>`** replays the ops log into a NEW DB and prints the `mv`
-  to swap it in; never in place. Agents and workspaces are NOT rebuilt (no
-  capture triggers, so no ops) — re-spawn after swapping.
-- **`mu sql`** is the escape hatch for a missing verb, and the ONE verb that
-  does not ambient-sync (its no-surprise-mutations guarantee is load-bearing).
-- **`mu db backup <file>`** is a `VACUUM INTO` copy that never overwrites — the
-  "one file I can scp" convenience. Real recovery is `mu rebuild`.
+- **`mu rebuild <file>`** writes a NEW DB from the ops log. Agents and
+  workspaces are absent because they have no captured ops; re-spawn after swap.
+- **`mu sql`** alone skips ambient sync, preserving no-surprise mutations.
+- **`mu db backup`** is a convenient copy; real recovery is `mu rebuild`.
 - **Sync (laptop ↔ devserver):** `export MU_SYNC_DIR=$HOME/Sync/mu` on each
   machine pointing at a shared folder (Syncthing recommended). Every command
   then flushes your ops and ingests peers' — ambient, no daemon — so a bare
@@ -360,19 +247,12 @@ follows is only what `--help` does not say.
   may hold the only copy of uncommitted work — which is why mu prints the
   cleanup command and runs none of them. `--disk` adds per-checkout byte usage.
 
-## `mu task wait` exits
+## `mu task wait`
 
-Default target: CLOSED. `--first` = `--any` plus the firing id/object.
-**`firing` is `--first`-only.** `--any` exits 0 with `firing: null`, so
-`.firing.owner` after `--any` crashes on a successful wait.
-
-| Code | Meaning |
-|------|---------|
-| 0 | All targets met, or `--any` and one met |
-| 3 | Missing task id |
-| 5 | Timeout |
-| 6 | Reaper flipped watched task back to OPEN (target=CLOSED only) |
-| 7 | Stall with `--on-stall exit` |
+Use `--first` when the next step needs the firing task: unlike `--any`, it
+populates `.firing`. Exit 6 means a dead pane; exit 7 means stall. For remote
+workers, see [REMOTE_WORKERS.md](REMOTE_WORKERS.md) before choosing timeout or
+stall handling.
 
 ## Models and thinking effort
 
@@ -454,28 +334,12 @@ stderr naming the pane; exit 0 with no warning means submitted.
 Budget is `MU_SEND_READINESS_MS` (default 15000; 0 = fire-and-forget).
 Sending to a BUSY agent is not delayed — that input queues normally.
 
-## DON'T
+## Guardrails
 
-The DO list lived here as a second copy of the Orchestrator loop and Dispatch
-rules; those sections are the source of truth. What follows appears nowhere
-else:
-
-- Trust status emoji alone — task ownership is durable, status is scraped.
-- Double-quote `$VAR`-laden prompts; single-quote or use a quoted heredoc.
-- Bypass mu with `sqlite3`; use `mu sql`.
-- Anthropomorphize agent names — roles, not humans.
-- Add cross-workstream edges; model the work as one workstream.
-- Use the reserved `mu_` task-id prefix.
-- Message agents directly to coordinate; use task notes and the activity log.
-- Prompt workers to run filesystem-wide `find` or broad `grep -r /`, or
-  unbounded loops. Pass paths; if one wedges, `mu agent kick`.
-
-## What mu is NOT
-
-- Not a build tool, deploy tool, or chat protocol.
-- Not a replacement for `pi-subagents`; mu is for long-lived crews.
-- Not a place to add config files, daemons, wrapper layers, codegen,
-  template discovery, or a render layer beyond current deps.
+Task ownership outranks scraped status. Coordinate through task notes and the
+activity log. Keep edges within one workstream, role-name agents, and reserve
+the `mu_` task-id prefix. Give workers bounded paths and commands; use `mu
+agent kick` if a subprocess wedges.
 
 ## See also
 

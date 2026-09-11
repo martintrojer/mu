@@ -161,14 +161,14 @@ look like idleness, so anything derived from status is unreliable here:
 | waiting on | remote? |
 | --- | --- |
 | `mu task wait` (task status) | exact — a DB poll, once something closes the task |
-| exit 6, the reaper | fires, but see below |
-| `--on-stall exit` (exit 7) | **do not rely on it** |
+| the reaper | fires, but see below |
+| stall detection | unreliable |
 | `mu agent wait --first` | same, it is status-based |
 
 Measured both directions in one session: a stall fired at 300s against
 a worker that was visibly mid-turn, and `mu agent list` showed
-`needs_input` for another that was working. So on a remote worker, drop
-`--on-stall exit` and give the wait a generous `--timeout`.
+`needs_input` for another that was working. Give remote waits a generous
+`--timeout`; see `mu task wait --help` for stall controls.
 
 The reaper is right for a DIRECT spawn — the connection dying really
 does kill that agent — and wrong for a detached-tmux one, where the
