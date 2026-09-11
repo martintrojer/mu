@@ -131,6 +131,41 @@ describe("mu task claim --for: cross-workstream qualified ref", () => {
     expect(getTask(db, "foo", "wsa")?.ownerName).toBe("worker-2");
   });
 
+  it("prints a one-shot poll-and-close step for a recorded remote worker", async () => {
+    await runCli(
+      [
+        "task",
+        "note",
+        "foo",
+        "-w",
+        "wsa",
+        "REMOTE: dev:~/ws/worker-1\\nREMOTE_BASE: worker-1:24481fe24481fe24481fe24481fe24481fe2448",
+      ],
+      dbPath,
+    );
+
+    const { exitCode, stdout, stderr, error } = await runCli(
+      ["task", "claim", "foo", "-w", "wsa", "--for", "wsb/worker-1", "--json"],
+      dbPath,
+    );
+
+    expect(error).toBeUndefined();
+    expect(stderr).toBe("");
+    expect(exitCode).toBeNull();
+    const out = JSON.parse(stdout) as { nextSteps: { intent: string; command: string }[] };
+    const step = out.nextSteps.find((candidate) => candidate.intent.includes("remote commit"));
+    expect(step?.command).toContain("coop run --host 'dev' --max-secs 30");
+    expect(step?.command).toContain("cd ~/ws/worker-1 && git rev-parse HEAD");
+    expect(step?.command).toContain("*[!0-9a-fA-F]*");
+    expect(step?.command).toContain('wc -c)" -eq 40');
+    expect(step?.command).toContain("'24481fe24481fe24481fe24481fe24481fe2448'");
+    expect(step?.command).toContain("worker-1 committed $sha");
+    expect(step?.command).toContain("mu task close 'foo'");
+    expect(step?.command).toContain("-w 'wsa'");
+    expect(step?.command).not.toMatch(/<host>|<path>|<id>|<agent>/);
+    expect(step?.command).not.toMatch(/ssh|while|sleep/);
+  });
+
   it("--for <ws>/<name> with non-existent agent in named ws → AgentNotFoundError, nothing committed", async () => {
     const { exitCode, stderr, error } = await runCli(
       ["task", "claim", "foo", "-w", "wsa", "--for", "wsb/ghost"],

@@ -25,6 +25,8 @@ import {
 import { type Db, tryResolveWorkstreamId, WorkstreamNotFoundError } from "../../db.js";
 import { type NextStep, pc, printNextSteps } from "../../output.js";
 import { reconcile } from "../../reconcile.js";
+import { shellQuote } from "../../shell-quote.js";
+import { findRemoteDispatch } from "../../state.js";
 import {
   claimTask,
   getTask,
@@ -160,7 +162,24 @@ export async function cmdClaim(
   if (result.ownerName) {
     await refreshAgentTitle(db, result.ownerName, forWorkstream ?? ws);
   }
-  const nextSteps: NextStep[] = [
+  const nextSteps: NextStep[] = [];
+  if (result.ownerName !== null) {
+    const remote = findRemoteDispatch(db, ws, localId, result.ownerName);
+    if (remote !== undefined) {
+      const host = shellQuote(remote.host);
+      const remoteCommand = shellQuote(
+        `cd ${remote.path} && git rev-parse HEAD 2>/dev/null || echo unreadable`,
+      );
+      const base = shellQuote(remote.baseSha);
+      const task = shellQuote(localId);
+      const workstream = shellQuote(ws);
+      nextSteps.push({
+        intent: `Poll ${result.ownerName}'s remote commit once this turn`,
+        command: `job=$(coop run --host ${host} --max-secs 30 ${remoteCommand}) && coop wait "$job" >/dev/null && sha=$(coop tail "$job") && { case "$sha" in (*[!0-9a-fA-F]*|'') :;; (*) [ "$(printf %s "$sha" | wc -c)" -eq 40 ] && { [ "$sha" = ${base} ] || mu task close ${task} --evidence "${result.ownerName} committed $sha" -w ${workstream}; };; esac; }`,
+      });
+    }
+  }
+  nextSteps.push(
     {
       // Single-quoted example: shell metachars (`...`, $VAR, $(...))
       // inside a double-quoted string expand in YOUR shell before mu
@@ -174,7 +193,7 @@ export async function cmdClaim(
       command: `mu task close ${localId} --evidence "..." -w ${ws}`,
     },
     { intent: "Release if blocked", command: `mu task release ${localId} -w ${ws}` },
-  ];
+  );
   if (stalenessCheck.warned && stalenessCheck.nextStep !== null) {
     nextSteps.push(stalenessCheck.nextStep);
   }

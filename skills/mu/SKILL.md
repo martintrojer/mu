@@ -146,16 +146,13 @@ workspace yourself (`--workspace` is local-only) and collect with
 `git fetch "ssh://<host>/<path>" HEAD && git cherry-pick FETCH_HEAD`.
 
 **Read [REMOTE_WORKERS.md](REMOTE_WORKERS.md) before spawning your first
-remote agent, and again before waiting on one.** Everything below is in
-it; these are the four that cost real time when learned late:
-
-- **Never block, and never sleep inside a tool call.** `sleep N && ssh
-  dev ...` wedged a host three times in one session. Poll once per turn.
-- **On a session-capped host, route LONG commands through
-  [coop](https://github.com/martintrojer/coop)** — measured 1 of 5
-  concurrent calls succeeded ungated, 5 of 5 through coop. Threshold is
-  roughly one second of COMMAND time, so a poll loop does not qualify
-  however long it runs. Bound dispatches with `--max-secs`.
+remote agent, and again before waiting on one; poll once per turn and run
+the claim's one-shot `Next:` command.** These are the other three traps
+that cost real time when learned late:
+- **On a session-capped host, route long commands and silent-failure
+  polls through [coop](https://github.com/martintrojer/coop).** A refused
+  bare `rev-parse` can return an empty sha that looks like progress;
+  batch all workers in one `--max-secs`-bounded coop job.
 - **`coop` exit 3 is a HANDBACK** — no ssh master, and opening one can
   need a human to touch a hardware key. Ask the operator; never retry,
   never run `ssh -MNf` yourself, never fall back to `ssh <host> <cmd>`.

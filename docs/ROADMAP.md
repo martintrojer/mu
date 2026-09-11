@@ -269,6 +269,7 @@ Listed so we don't rediscover them.
   (mu reads and writes files; the user moves them). Rejected
   storage/replication substrates are in
   [§ Rejected sync substrates](#rejected-sync-substrates).
+- **Network-opening remote verbs (`mu remote check`, `mu sync --push/--pull`)** <!-- doc-cli-drift:skip --> — mu manages panes and a task graph on one machine; every network hop is an operator-owned command, either passed through `agent spawn --command` for the mux to run or printed as a copy-pasteable next step. Keeping mu's own process ssh-free avoids an ssh config/auth/host/error model. Spawn does not violate this boundary: the mux, not mu, runs the operator's string.
 - **HTTP API on top of SQLite** — write your own RPC if you need
   one.
 - **A "hosted" mu** — your machine is the deployment.

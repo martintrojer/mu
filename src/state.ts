@@ -32,6 +32,17 @@ import {
 
 // ─── WorkstreamSnapshot ───────────────────────────────────────────
 
+export interface RemoteWorker {
+  taskName: string;
+  host: string;
+  path: string;
+}
+
+export interface RemoteDispatch extends RemoteWorker {
+  agentName: string;
+  baseSha: string;
+}
+
 export interface WorkstreamSnapshot {
   workstreamName: string;
   view: LiveAgentsView;
@@ -100,6 +111,69 @@ export interface WorkstreamSnapshotSlowFields {
  * fields are intentionally empty placeholders so callers can merge the last
  * slow-tier values without blocking a 1s render tick on tmux or VCS probes.
  */
+function remoteNoteRows(
+  db: Db,
+  workstream: string,
+  taskName?: string,
+): Array<{ task_name: string; content: string }> {
+  const filter = taskName === undefined ? "" : " AND t.local_id = ?";
+  const params: string[] = taskName === undefined ? [workstream] : [workstream, taskName];
+  return db
+    .prepare(
+      `SELECT t.local_id AS task_name, n.content AS content
+       FROM task_notes n
+       JOIN tasks t ON t.id = n.task_id
+       JOIN workstreams ws ON ws.id = t.workstream_id
+       WHERE ws.name = ?${filter}
+         AND (n.content LIKE '%REMOTE: %' OR n.content LIKE '%REMOTE_BASE: %')
+       ORDER BY n.id`,
+    )
+    .all(...params) as Array<{
+    task_name: string;
+    content: string;
+  }>;
+}
+
+export function listRemoteWorkers(db: Db, workstream: string): RemoteWorker[] {
+  const remoteWorkers: RemoteWorker[] = [];
+  for (const row of remoteNoteRows(db, workstream)) {
+    for (const line of row.content.split(/\r?\n/)) {
+      const match = /^REMOTE:\s+([^:\s]+):(\S+)\s*$/.exec(line);
+      const host = match?.[1];
+      const path = match?.[2];
+      if (host !== undefined && path !== undefined) {
+        remoteWorkers.push({ taskName: row.task_name, host, path });
+      }
+    }
+  }
+  return remoteWorkers;
+}
+
+export function findRemoteDispatch(
+  db: Db,
+  workstream: string,
+  taskName: string,
+  agentName: string,
+): RemoteDispatch | undefined {
+  let dispatch: RemoteDispatch | undefined;
+  for (const row of remoteNoteRows(db, workstream, taskName)) {
+    let location: RemoteWorker | undefined;
+    let baseSha: string | undefined;
+    for (const line of row.content.split(/\r?\n/)) {
+      const remote = /^REMOTE:\s+([^:\s]+):(\S+)\s*$/.exec(line);
+      if (remote?.[1] !== undefined && remote[2] !== undefined) {
+        location = { taskName, host: remote[1], path: remote[2] };
+      }
+      const base = /^REMOTE_BASE:\s+([^:\s]+):(\S+)\s*$/.exec(line);
+      if (base?.[1] === agentName && base[2] !== undefined) baseSha = base[2];
+    }
+    if (location !== undefined && baseSha !== undefined) {
+      dispatch = { ...location, agentName, baseSha };
+    }
+  }
+  return dispatch;
+}
+
 export async function loadWorkstreamSnapshotFast(
   db: Db,
   workstream: string,

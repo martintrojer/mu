@@ -55,7 +55,12 @@ import {
   isWorkspaceStale,
   WORKSPACE_STALE_THRESHOLD,
 } from "../staleness.js";
-import { loadWorkstreamSnapshot, type WorkstreamSnapshot } from "../state.js";
+import {
+  listRemoteWorkers,
+  loadWorkstreamSnapshot,
+  type RemoteWorker,
+  type WorkstreamSnapshot,
+} from "../state.js";
 import { isScratchWorkstream, listWorkstreams } from "../workstream.js";
 import { resolveInitialTab } from "./tui-launch-focus.js";
 
@@ -66,39 +71,7 @@ import { resolveInitialTab } from "./tui-launch-focus.js";
 // seam (WorkstreamSnapshot + loadWorkstreamSnapshot) so the new ink
 // TUI can consume them too. We keep `PerWsData` as a local alias to
 // avoid touching every renderer downstream.
-type RemoteWorker = {
-  taskName: string;
-  host: string;
-  path: string;
-};
-
 type PerWsData = WorkstreamSnapshot & { remoteWorkers: RemoteWorker[] };
-
-function listRemoteWorkers(db: Db, workstream: string): RemoteWorker[] {
-  const rows = db
-    .prepare(
-      `SELECT t.local_id AS task_name, n.content AS content
-       FROM task_notes n
-       JOIN tasks t ON t.id = n.task_id
-       JOIN workstreams ws ON ws.id = t.workstream_id
-       WHERE ws.name = ? AND n.content LIKE '%REMOTE: %'
-       ORDER BY n.id`,
-    )
-    .all(workstream) as Array<{ task_name: string; content: string }>;
-
-  const remoteWorkers: RemoteWorker[] = [];
-  for (const row of rows) {
-    for (const line of row.content.split(/\r?\n/)) {
-      const match = /^REMOTE:\s+([^:\s]+):(\S+)\s*$/.exec(line);
-      if (match === null) continue;
-      const host = match[1];
-      const path = match[2];
-      if (host === undefined || path === undefined) continue;
-      remoteWorkers.push({ taskName: row.task_name, host, path });
-    }
-  }
-  return remoteWorkers;
-}
 
 function formatRemoteWorkersTable(rows: readonly RemoteWorker[]): string {
   const table = muTable({

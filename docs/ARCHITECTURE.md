@@ -656,7 +656,7 @@ separately below.
 | `src/workspace/*.ts`  | Per-agent VCS workspaces, a registry on top of `vcs.ts`: `core.ts` (row shapes, paths, errors), `crud.ts`, `decorate.ts` (staleness + dirty), `orphans.ts`. |
 | `src/output.ts`       | NextStep type + `printNextSteps` + `errorNextSteps` plumbing for self-documenting output |
 | `src/shell-quote.ts`  | `shellQuote` — POSIX single-quoting for tokens interpolated into copy-pasteable next-step hints. |
-| `src/state.ts`        | SDK seam for `mu state`: `loadWorkstreamSnapshotFast` (pure SQL, TUI 1s tick), `loadWorkstreamSnapshotSlow` (subprocesses), `mergeSnapshotFastSlow`, `loadWorkstreamSnapshot`. Opt-in: `withDirty`, `withDoctor`, `withRecentCommits`, `withAllTasks`. |
+| `src/state.ts`        | SDK seam for `mu state`: `loadWorkstreamSnapshotFast` (pure SQL, TUI 1s tick), `loadWorkstreamSnapshotSlow` (subprocesses), `mergeSnapshotFastSlow`, `loadWorkstreamSnapshot`. Also parses exact `REMOTE:` task-note inventory and `REMOTE_BASE:` dispatch metadata. Opt-in: `withDirty`, `withDoctor`, `withRecentCommits`, `withAllTasks`. |
 | `src/doctor-summary.ts` | The dashboard's doctor seam: `loadDoctorSummary` (pragmas and COUNT-shape selects only — cheap enough for the poll loop), `loadDoctorChecks` for the popup, plus `yankCommandForCheck` / `remediationParagraph`. |
 | `src/cli.ts`          | commander entry; `buildProgram()` (re-exports `format`/`handle` symbols for back-compat with existing import sites). |
 | `src/cli/*.ts`        | One file per verb-namespace; thin wrappers over the SDK; `--json` on every read verb. Two non-verb cluster-mates: `format.ts` (table renderers, status colourers) and `handle.ts` (typed-error → exit-code map). |

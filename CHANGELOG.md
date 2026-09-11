@@ -39,6 +39,8 @@ breaking changes are called out under "Breaking" in each entry.
 
 ### Added
 
+- **Remote dispatches now print a bounded, one-shot wait command.** Record the remote workspace and per-worker baseline in a task note (`REMOTE: <host>:<path>` plus `REMOTE_BASE: <agent>:<sha>`); `mu task claim --for <agent>` then adds a `Next:` step with the real host, path, task id, agent name, and baseline substituted. The command dispatches a 30-second-bounded coop probe, validates the returned sha, and closes the task with it as evidence. mu remains transport-free: it prints the operator-owned network command but never opens the connection itself.
+
 - **`mu state` now inventories remote workers from task notes.** An exact
   `REMOTE: <host>:<path>` line appears in a `Remote workers` section and in
   the JSON snapshot's `remoteWorkers` array, preserving the only durable

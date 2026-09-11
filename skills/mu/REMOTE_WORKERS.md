@@ -122,8 +122,9 @@ send anything sensitive to an unconfirmed pane.
 # 1. WORKSPACE — you create it; --workspace does NOT work remotely
 ssh dev 'git -C ~/repo worktree add ~/ws/worker-1'
 
-# 2. RECORD — the note is the only durable record of where work went
-mu task note t1 -w big 'REMOTE: dev:~/ws/worker-1'
+# 2. RECORD — persist location and per-worker baseline together
+mu task note t1 -w big "REMOTE: dev:~/ws/worker-1
+REMOTE_BASE: worker-1:$(ssh dev 'cd ~/ws/worker-1 && git rev-parse HEAD')"
 
 # 3. SPAWN — env vars go INSIDE the command (tmux -e stops at the hop)
 mu agent spawn worker-1 -w big --command \
@@ -133,7 +134,16 @@ mu agent spawn worker-1 -w big --command \
 mu task claim t1 -w big --for worker-1 --evidence 'remote on dev'
 mu agent send worker-1 -w big '...'
 
-# 5. COLLECT — fetch straight from the remote worktree
+# 5. WAIT — run the claim's one-shot Next: command once per turn
+# Set a deadline; at expiry read the pane, then release or re-dispatch.
+job=$(coop run --host dev --max-secs 30 \
+  'cd ~/ws/worker-1 && git rev-parse HEAD 2>/dev/null || echo unreadable')
+coop wait "$job" >/dev/null && sha=$(coop tail "$job")
+case "$sha" in (*[!0-9a-fA-F]*|'') :;; (*) [ "${#sha}" -eq 40 ] && \
+  { [ "$sha" = 24481fe24481fe24481fe24481fe24481fe2448 ] || \
+    mu task close t1 -w big --evidence "worker-1 committed $sha"; };; esac
+
+# 6. COLLECT — fetch straight from the remote worktree
 git fetch "ssh://dev/~/ws/worker-1" HEAD && git cherry-pick FETCH_HEAD
 ```
 
@@ -176,42 +186,48 @@ murmur collect && murmur status --json   # activity is host-reported
 That is the division worth remembering: mu owns the work, murmur owns
 what the agent is doing.
 
-### Do not wait on status. Wait on the commit, then close the task.
-
-murmur's `activity` is trustworthy and still the wrong thing to wait on:
-
-- **It flickers.** `stopped` means "not mid-turn", true between every
-  turn. Not edge-triggered, so a loop reading it needs a long sleep.
-- **A crew agent never raises `done`.** murmur suppresses it for
-  anything mu spawned, so `attention` is `[]` by construction.
-
-The exact signal is the commit. `rev-parse` moves no objects, so it is
-cheap enough to run between other work:
-
-```bash
-BASE=$(ssh dev 'git -C ~/ws/worker-2 rev-parse HEAD')   # at dispatch
-[ "$(ssh dev 'git -C ~/ws/worker-2 rev-parse HEAD')" != "$BASE" ]  # per turn
-```
-
-**Then `mu task close <id> --evidence "<sha>"`.** The sha tells you; the
-DAG still says IN_PROGRESS and anything blocked on it waits forever.
-That is also what makes `mu task wait` work remotely — it is exact, and
-"never fires" only means nothing was closing the task. Feed it, do not
-replace it.
-
 ### On step 2 — the note is load-bearing
 
-mu keeps no record of the remote path, and the agent row that held the
-command string disappears when the agent dies. The task note is the
-only thing that survives. Keep it in the literal `REMOTE: <host>:<path>`
-shape: `mu state` lists those lines as its remote-worker inventory, and
-the recovery command is mechanical:
+The task note survives connection loss and context compaction. Keep the
+location as `REMOTE: <host>:<path>` and each baseline as
+`REMOTE_BASE: <agent>:<sha>`. `mu task claim --for <agent>` uses both to
+print a complete one-shot poll-and-close command. For a crew, record one
+baseline per worker and use one bounded coop job for every path:
+
+```bash
+coop run --max-secs 30 'for d in ~/ws/*/; do printf "%s %s\\n" \
+  "$(basename $d)" "$(cd $d && git rev-parse HEAD 2>/dev/null || echo unreadable)"; done'
+coop wait <job>; coop tail <job>
+```
+
+Each line names the worker and sha. Accept only 40 hex characters;
+`unreadable` or an empty field means retry next turn, never progress.
+
+### On step 5 — wait on commits
+
+**Poll once per turn, never sleep in a tool call.** A `while true` loop
+with `sleep` holds the call; aborting it can leave remote work and a
+capped ssh channel running. Set a wall-clock deadline before dispatch.
+At expiry, read the pane, then release or re-dispatch instead of extending
+the wait silently.
+
+On a session-capped host, run the claim's `Next:` command through coop
+between other work. Bare ssh polls can be refused with an empty sha,
+which looks like progress. The command captures the new sha and closes
+the task with that sha as evidence. The commit tells you;
+the DAG stays IN_PROGRESS until the orchestrator closes it. This feeds
+`mu task wait` so blocked tasks advance; it does not replace it.
+
+### Recovering the location
+
+`mu state` lists exact `REMOTE:` lines as its remote-worker inventory,
+and the recovery command is mechanical:
 
 ```bash
 git fetch "ssh://<host>/<path>" HEAD && git cherry-pick FETCH_HEAD
 ```
 
-### On step 5 — fetching from a worktree
+### On step 6 — fetching from a worktree
 
 `git fetch "ssh://<host>/<path>" HEAD` reads a remote worktree
 **directly**. No shared remote, no push, no bare repo in between. This
@@ -511,34 +527,12 @@ gate, a remote build, a long remote script. Those are what previously had to
 queue behind your agent's channel, and they are the ones that hold it
 for minutes.
 
-**Do not route short commands through it.** Dispatch costs ~125ms
-against ~33ms for a bare ssh over an existing master, so `rev-parse`
-polling, worktree setup and a `murmur collect` pay the tax and gain
-nothing: they are already sub-second, so there is no long hold to
-remove. A refused channel on a cheap idempotent command is better
-retried than routed around — which is what murmur already does.
-
-Threshold: **roughly one second.** On a capped host the cost of a long
-call is not paid by you — it is paid by every other tool needing the
-channel while you hold it. So the test is not "is 125ms of dispatch
-worth it to me" but "how long am I willing to break `git fetch` for".
-One second is already a long outage.
-
-**Do not wrap a POLL LOOP in coop either, and this is the trap the
-"roughly one second" rule invites.** The threshold is about how long the
-COMMAND runs, not about how long you are willing to wait. A 40-iteration
-`rev-parse` loop technically takes ten minutes, so it reads as "long" —
-and it is still forty sub-second calls, each of which was already
-harmless. Observed, and the agent's own verdict:
-
-> "A busy-wait dispatched to coop is still a busy-wait. My first attempt
-> was a 40-iteration rev-parse loop sent to coop — and then I blocked on
-> `coop wait` for it locally. Same stall, more moving parts."
-
-The compound mistake is the second half: dispatching the loop remotely
-and then blocking on `coop wait` rebuilds the exact stall you routed
-around. Once the local block was dropped, the same loop was fine: the
-waiting then happened on the host, and nothing local was holding.
+Route long commands and any command whose refusal could look like
+success through coop. Eight concurrent bare `rev-parse` polls produced
+one sha and seven empty results; coop dispatched all eight. One coop job
+covering every worker cost 1487ms versus 337ms for one uncontended ssh
+poll. Worktree setup and `murmur collect` still fail loudly, so keep
+those bare.
 
 **If you dispatch anything that could loop, bound it at dispatch:**
 
@@ -551,19 +545,6 @@ until the host reboots, holding a tmux session and a growing log that
 prune deliberately never reaps (a *running* job is never pruned). Note
 `--max-secs` kills the job; `wait --timeout` only stops *you* waiting
 and exits 4 with the job still running. Two different bounds — use both.
-
-**The sleep is the bug, not the ssh.** Three wedged hosts in one session,
-every one this shape:
-
-```bash
-sleep 30 && ssh dev 'git -C ~/ws/worker-1 rev-parse HEAD'   # WRONG
-```
-
-A bare `ssh dev 'rev-parse'` is sub-second and harmless. Gluing a
-`sleep` in front makes it a long-running **tool call**, which then gets
-aborted mid-flight and leaves the ssh client wedged. The connection gets
-blamed; the connection was never the problem. Poll **once per turn**,
-between other work, and never sleep inside a tool call.
 
 **Aborting a tool call does not kill remote work — and that cuts both
 ways.** An aborted `ssh dev ./runner/check` kept running on the host and
