@@ -71,6 +71,8 @@ breaking changes are called out under "Breaking" in each entry.
 
 ### Fixed
 
+- **The remote-worker guide is 806 words smaller.** The coop section now keeps mu-specific routing guidance and measured failure evidence while delegating coop's flags, warnings, and exit table to `coop --help`. The attach-pane rule is consolidated with the session-cap diagnosis and detached-tmux fix instead of explaining the same contention twice.
+
 - **The bundled mu skill is 1,042 words smaller.** Removed CLI-reference caches that `mu <verb> --help` already answers, consolidated dispatch and scratch guidance, and moved remote-only stall handling to `REMOTE_WORKERS.md`. Measured failure history, recovery traps, exit semantics absent from help, and the remote-worker pointer remain.
 
 - **The `mu task wait --json` docs promised a `firing` field that

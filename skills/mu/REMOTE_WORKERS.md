@@ -60,35 +60,23 @@ auto-free on close. You own that bookkeeping.
 ## Never leave an attach pane open
 
 On a host that caps sessions per connection, **your attach pane holds
-the only ssh channel**. While it is open, every other ssh to that host
-fails — `git fetch`, `git push`, `murmur collect`, `rsync`, a plain
-`ssh <host> true`. So the pane you opened to watch the agent is the
-thing preventing you from seeing it.
-
-The error names none of this. You get `Permission denied
-(keyboard-interactive)`, which reads as a credentials problem, and
-`git push` can report success while having pushed nothing.
+the only ssh channel**. While it is open, `git fetch`, `git push`,
+`murmur collect`, `rsync`, and plain ssh can fail with the misleading
+`Permission denied (keyboard-interactive)` error.
 
 **Attach to look, then close immediately.** `mu agent close <name>`
-detaches without stopping a detached-tmux agent, so closing costs
-nothing. Poll with `murmur collect` + `murmur status`, never by sitting
-in the pane.
+detaches without stopping a detached-tmux agent. Poll with `murmur
+collect` + `murmur status`; use coop for orchestrator commands because
+its separate ControlPath cannot contend with the attach pane. See
+§ When the host limits concurrent sessions for diagnosis and the
+remote-agent setup.
 
-Walked into twice in one session by the person who wrote this section,
-so do not assume knowing it is enough. When a collect fails and you are
-not sure why, current murmur names the culprit for you — `dev: ssh
-session limit reached -- pane %210 is your own attachment to this peer`
-— and failing that:
+When a collect fails, current murmur names an attachment that holds the
+channel. Otherwise inspect it directly:
 
 ```bash
-ps -o pid=,command= -ax | grep "[s]sh <host>"   # who holds the channel
+ps -o pid=,command= -ax | grep "[s]sh <host>"
 ```
-
-This whole hazard is about the DEFAULT connection. Commands run through
-coop use a separate ControlPath and are unaffected either way: your
-attach pane cannot starve them, and they cannot starve your collect.
-On a capped host, that is the reason to route orchestrator commands
-through it rather than remembering this section.
 
 ### Better: attach with the peer's jump command
 
@@ -492,118 +480,40 @@ being refused.
 
 ### Fix: run commands through coop
 
-[coop](https://github.com/martintrojer/coop) exists for this case. It
-opens its own ssh ControlPath, so it cannot contend with `git fetch`,
-`rsync` or your attach pane, and it dispatches every job DETACHED under
-a private tmux server — the connection is released before the command
-starts running.
+[coop](https://github.com/martintrojer/coop) opens a separate ssh
+ControlPath and dispatches detached jobs. On a `MaxSessions 1` host,
+five concurrent bare calls produced **1 of 5** successes; coop produced
+**5 of 5**. A multi-minute coop job also left a concurrent plain ssh
+working.
 
-Measured on a `MaxSessions 1` host: five concurrent calls, **1 of 5**
-succeeded ungated, **5 of 5** through coop.
+Route commands by failure mode, not duration. Use coop for long work
+and whenever refusal could look like success. Eight concurrent bare
+`rev-parse` polls returned one sha and seven empty results; coop
+dispatched all eight. Keep worktree setup and `murmur collect` bare
+because they fail loudly. See `coop --help` and the relevant subcommand
+help for flags, job control, warnings, and exit codes.
 
-```bash
-# The PATH export is not decoration -- see below.
-coop run --cwd '~/ws/worker-1' 'export PATH=$HOME/.elan/bin:$PATH; npm run check'
-coop wait <id>                                  # exits with the job's code
-coop tail <id>                                  # the output
-```
+**A coop job must be entirely remote.** The host has no route back to
+your laptop, so a local-endpoint `git fetch`, `git push`, or rsync
+cannot run inside the job. Collect from the orchestrator as described
+in § Everything is orchestrator-PULL.
 
-A coop job gets a non-login shell, so a version manager's `activate` has
-not run: `which lake` fails though `~/.elan/bin/lake` exists. What makes
-it expensive is where it surfaces — as the *suite's* own error,
-`adapter_crash: lake not found on PATH`, which reads like a code
-regression and sends you to the wrong repo. Export PATH inside every
-job command.
+**coop does not replace the agent spawn.** A mu agent needs a pane whose
+process mu controls. Use coop for orchestrator commands, detached tmux
+for the agent, and the peer's jump command for interactive access.
 
-Measured on the same capped host: with a multi-minute `runner/check`
-running as a coop job, a concurrent plain `ssh dev` **succeeded** — the
-scenario that had wedged the host three times earlier that session. The
-5-of-5 number above proves fairness among coop's own calls; this proves
-coexistence with the tools you did *not* route through coop, which is
-what you actually depend on.
+#### coop exit 3 is a handback
 
-Use it for the ORCHESTRATOR's LONG remote commands — the merged-suite
-gate, a remote build, a long remote script. Those are what previously had to
-queue behind your agent's channel, and they are the ones that hold it
-for minutes.
-
-Route long commands and any command whose refusal could look like
-success through coop. Eight concurrent bare `rev-parse` polls produced
-one sha and seven empty results; coop dispatched all eight. One coop job
-covering every worker cost 1487ms versus 337ms for one uncontended ssh
-poll. Worktree setup and `murmur collect` still fail loudly, so keep
-those bare.
-
-**If you dispatch anything that could loop, bound it at dispatch:**
-
-```bash
-coop run --max-secs 600 '<command>'   # killed at the cap, records rc 124
-```
-
-Without it, a `while true` waiting for something that never happens runs
-until the host reboots, holding a tmux session and a growing log that
-prune deliberately never reaps (a *running* job is never pruned). Note
-`--max-secs` kills the job; `wait --timeout` only stops *you* waiting
-and exits 4 with the job still running. Two different bounds — use both.
-
-**Aborting a tool call does not kill remote work — and that cuts both
-ways.** An aborted `ssh dev ./runner/check` kept running on the host and
-held the capped channel for its full duration; killing the local client
-changed nothing. For a foreground ssh that is the trap. For coop it is
-the *feature*: the job is detached, so an aborted `coop wait` costs
-nothing, the work continues, and it stays recoverable by id. `coop kill
-<id>` is how you actually end one (confirmed: the job reports rc 137).
-That difference is the strongest argument for routing long work through
-coop.
-
-**A job must also be entirely remote.** It runs on the host with no
-route back to you, so `git fetch`/`push` and any rsync with a local
-endpoint cannot be coop jobs — that is the same orchestrator-PULL rule
-as § Everything is orchestrator-PULL. A transfer between the host and a
-THIRD machine is fine; one aimed at your laptop is not. Collect with
-`git fetch` on the default connection as ever.
-
-**It does not replace the agent spawn.** A mu agent needs a pane whose
-process mu controls, and coop deliberately holds no connection, so the
-detached-tmux recipe below is still how the agent itself runs. The split
-is: coop for commands, detached tmux for the agent, ET for you.
-
-#### coop exit 3 means STOP AND ASK
-
-coop refuses to open its own ssh master, because doing so can require a
-human to touch a hardware key and `ssh -MNf` cannot prompt without a
-terminal. When the master is missing, every coop verb exits **3** and
-prints the command that fixes it.
-
-**Treat exit 3 as a handback, not an error to route around.** Ask the
-operator to run the printed line, then continue. Do not:
-
-- retry or sleep-and-retry — the master will not appear on its own, so
-  the wait is unbounded
-- run `ssh -MNf` yourself — it fails opaquely from a background call
-- fall back to `ssh <host> <command>` — that holds the capped channel
-  for the whole job and breaks everything else on the host, which is
-  the entire problem coop was brought in to solve
-
-One tap unblocks every subsequent job for the life of the
-`ControlPersist` window. Improvising turns a ten-second interruption
-into a wedged host, and you will not be the one who notices.
+A missing ssh master can require a human to touch a hardware key. Ask
+the operator to run the command coop prints. Do not retry, run
+`ssh -MNf` yourself, or fall back to `ssh <host> <command>`; each avoids
+the required handback or recreates the capped-channel failure.
 
 #### Exit 4 is "not yet"; exit 5 is "never"
 
-`coop --help` carries the full exit table. The one distinction it cannot
-make for you is which codes mean *keep waiting*: 4 (your wait timed out,
-the job runs on) and 6 (connection dropped, the job runs on) both say
-poll again, while 5 (orphaned) means no `rc` will ever arrive and waiting
-is infinite. An orchestrator that conflates 4 and 5 makes exactly the
-mistake the orphan state exists to expose. None of the three means the
-work failed.
-
-Job state is durable — it outlives the tmux server, the connection and a
-reboot, which is what makes "fire it and collect later" work at all. It
-is also not reaped inside `keep_days` (14), so a long-lived crew
-accumulates it: run `coop rm --all` between waves. `coop ls` doubles as
-the audit surface; one session used it to confirm 12 of 13 jobs clean.
+Exit 4 and 6 mean poll again because the job may still complete. Exit 5
+means no result will arrive. None means the work itself failed. Read the
+full table in `coop --help`.
 
 ### Fix: detached remote tmux (for the agent itself)
 
