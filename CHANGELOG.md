@@ -8,6 +8,47 @@ breaking changes are called out under "Breaking" in each entry.
 
 ---
 
+## [1.3.0] — 2026-09-11
+
+### Added
+
+- **Remote dispatches now print a bounded, one-shot wait command.** `mu task
+  wait` cannot fire for a remote worker, because nothing on the host can close
+  the task — so every orchestrator invented its own poll loop, and the observed
+  ones were unbounded `while true` with a hardcoded baseline. Record the
+  workspace and per-worker baseline in a task note (`REMOTE: <host>:<path>`
+  plus `REMOTE_BASE: <agent>:<sha>`); `mu task claim --for <agent>` then adds a
+  `Next:` step with the real host, path, task id, agent name and baseline
+  substituted. It dispatches a 30-second-bounded coop probe, validates the
+  returned sha, and closes the task with it as evidence — which is what makes
+  `mu task wait` usable again. **mu stays transport-free:** it prints the
+  operator-owned network command and never opens the connection itself.
+
+### Changed
+
+- **The skill files are 25% smaller, with nothing non-recoverable lost.**
+  `SKILL.md` 3537 → 2461 words and `REMOTE_WORKERS.md` 5343 → 4334, because
+  both had grown into caches of `mu --help` and `coop --help` — verb lists,
+  flag tables and an exit table that one command answers and that go stale
+  silently. SKILL.md loads on every invocation, so this is context returned to
+  the user's actual work. The coop reference material moved back to coop, whose
+  `--help` now carries it and which warns at dispatch about the traps the skill
+  used to teach.
+
+  `AGENTS.md` gained a section explaining why these files are context rather
+  than documentation, and the "adding a verb" checklist no longer instructs
+  contributors to grow `SKILL.md` by default.
+
+- **Remote-worker guidance corrected on two measured points.** Polling a capped
+  host with bare ssh is not merely slow, it is wrong: eight concurrent
+  `rev-parse` polls returned one sha and seven *empty* results, and an empty
+  result compares unequal to the baseline, so a naive wait fires on a refusal.
+  Route by whether a refusal could look like success, not by duration. Also
+  `git -C <path> rev-parse` fails over ssh where `cd <path> && git rev-parse`
+  works — the previous fragment used the broken form.
+
+---
+
 ## [1.2.0] — 2026-09-09
 
 ### Breaking
@@ -38,8 +79,6 @@ breaking changes are called out under "Breaking" in each entry.
   `teardownWorkstream`, `DestroyResult` → `TeardownResult`.
 
 ### Added
-
-- **Remote dispatches now print a bounded, one-shot wait command.** Record the remote workspace and per-worker baseline in a task note (`REMOTE: <host>:<path>` plus `REMOTE_BASE: <agent>:<sha>`); `mu task claim --for <agent>` then adds a `Next:` step with the real host, path, task id, agent name, and baseline substituted. The command dispatches a 30-second-bounded coop probe, validates the returned sha, and closes the task with it as evidence. mu remains transport-free: it prints the operator-owned network command but never opens the connection itself.
 
 - **`mu state` now inventories remote workers from task notes.** An exact
   `REMOTE: <host>:<path>` line appears in a `Remote workers` section and in
