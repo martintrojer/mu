@@ -424,7 +424,9 @@ proves itself.
    verb in the right section.
 4. Update [docs/VOCABULARY.md](docs/VOCABULARY.md) operations
    table.
-5. Update [skills/mu/SKILL.md](skills/mu/SKILL.md) verb list.
+5. Update [skills/mu/SKILL.md](skills/mu/SKILL.md) **only if the verb has a
+   gotcha `--help` cannot state.** The skill is not a verb list — see
+   § Skill files are context, not documentation, below.
 6. Update [CHANGELOG.md](CHANGELOG.md) under the upcoming version.
 7. If this verb promotes a `mu sql` workaround, remove the
    workaround entry from the `docs/USAGE_GUIDE.md` gaps table.
@@ -517,8 +519,50 @@ processes need time to settle. Use:
 
 ---
 
+## Skill files are context, not documentation
+
+`skills/mu/SKILL.md` and `skills/mu/REMOTE_WORKERS.md` are loaded into an
+orchestrator's context window, SKILL.md on every invocation, where every word
+competes with the user's actual work for attention. **Keep them ruthlessly
+terse.**
+
+Read the `writing-for-agents` skill before editing either one. Work its levers
+in this order:
+
+- **Cache test.** `mu <verb> --help` is a one-command lookup that cannot go
+  stale. A skill that restates it is a cache that rots. Verb lists, flag
+  enumerations and option tables belong in `--help`; the skill carries only
+  what `--help` cannot say — the gotcha, the reason, the trap.
+- **Single source of truth.** One meaning, one place. Scattered advice does not
+  get assembled by the reader: it gets missed. Prefer a consolidating edit that
+  deletes as much as it adds.
+- **Progressive disclosure.** SKILL.md gets the trigger and the rule.
+  REMOTE_WORKERS.md gets the detail. Anything only some branches need goes
+  behind the pointer, never in the always-loaded file.
+- **No-op hunt.** Delete any sentence the model already obeys by default. The
+  test is behavioural: does it change what an agent does?
+- **Positive instruction.** State the target behaviour. A prohibition drags the
+  banned shape into context and makes it more available, so name an
+  anti-pattern only where a reader needs to recognise their own instinct.
+
+Measure before and after. An edit that grows SKILL.md needs a reason in the
+commit message, and "the new verb needed documenting" is not one.
+
+Two failures already paid for this rule. A 910-word section titled "CLI
+overview (only gotchas; use `--help` for full syntax)" was half verb list, and
+a DO/DON'T section was the orchestrator loop written twice — 675 words removed
+with nothing lost. And a warning about wedging a host existed in the file while
+the agent that wedged the host never saw it, because it sat 350 lines from the
+section it applied to. **A skill that sprawls stops being read**, which makes
+sprawl a correctness problem, not a tidiness one.
+
+---
+
 ## What NOT to do
 
+- **Don't pad the skill files.** They are context, not docs, and
+  `--help` is the verb list. See § Skill files are context, not
+  documentation.
 - **Don't add a config file.** mu is CLI flags + env vars.
 - **Don't add a daemon, watcher, or background process.** Every
   invocation is short-lived.
