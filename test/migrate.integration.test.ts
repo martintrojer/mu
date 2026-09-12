@@ -18,7 +18,8 @@
 //   * ops, not rows: `mu doctor --deep` reports NO drift,
 //   * every task/edge/note field survives,
 //   * duplicate notes merge (grow-only note identity) and are REPORTED,
-//   * archives refuse loudly rather than half-importing,
+//   * archives restore as live workstreams (ops, not rows); --drop-archives opts out,
+//   * v7 archive-only DBs are accepted,
 //   * idempotent.
 
 import { createHash } from "node:crypto";
@@ -88,7 +89,38 @@ CREATE TABLE archived_tasks (
   status TEXT NOT NULL, impact INTEGER NOT NULL, effort_days REAL NOT NULL,
   owner_name TEXT, archived_at_status TEXT NOT NULL, archived_at TEXT NOT NULL,
   original_created_at TEXT NOT NULL, original_updated_at TEXT NOT NULL);
+CREATE TABLE archived_edges (
+  archive_id INTEGER NOT NULL REFERENCES archives (id) ON DELETE CASCADE,
+  from_archived_id INTEGER NOT NULL REFERENCES archived_tasks (id) ON DELETE CASCADE,
+  to_archived_id INTEGER NOT NULL REFERENCES archived_tasks (id) ON DELETE CASCADE,
+  PRIMARY KEY (archive_id, from_archived_id, to_archived_id));
+CREATE TABLE archived_notes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  archive_id INTEGER NOT NULL REFERENCES archives (id) ON DELETE CASCADE,
+  archived_task_id INTEGER NOT NULL REFERENCES archived_tasks (id) ON DELETE CASCADE,
+  author TEXT, content TEXT NOT NULL, created_at TEXT NOT NULL);
+CREATE TABLE archived_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  archive_id INTEGER NOT NULL REFERENCES archives (id) ON DELETE CASCADE,
+  source_workstream TEXT NOT NULL, seq INTEGER NOT NULL, source TEXT NOT NULL,
+  payload TEXT NOT NULL, created_at TEXT NOT NULL);
 `;
+
+/** v7 is the same portable shape as v8 for the tables this importer reads,
+ *  minus machine_identity / workstream_sync (which arrived later). */
+const V7_SCHEMA = V8_SCHEMA.replace(
+  `CREATE TABLE machine_identity (
+  id INTEGER PRIMARY KEY CHECK (id = 1), machine_id TEXT NOT NULL,
+  hostname TEXT, created_at TEXT NOT NULL);
+`,
+  "",
+).replace(
+  `CREATE TABLE workstream_sync (
+  workstream_id INTEGER PRIMARY KEY REFERENCES workstreams (id) ON DELETE CASCADE,
+  last_known_peer_seqs TEXT NOT NULL DEFAULT '{}');
+`,
+  "",
+);
 
 const V9_SCHEMA = `
 CREATE TABLE schema_version (id INTEGER PRIMARY KEY CHECK (id = 1), version INTEGER NOT NULL);
@@ -201,10 +233,116 @@ function makeV8Db(path: string, opts: { archives?: boolean } = {}): Fixture {
   log.run(null, "system", "event", "workstream teardown gone", T(12));
 
   if (opts.archives === true) {
-    db.prepare(
-      "INSERT INTO archives (label, description, created_at, last_added_at) VALUES ('v0-3', null, ?, ?)",
-    ).run(T(13), T(13));
+    seedArchive(db, {
+      label: "v0-3",
+      workstream: "oldws",
+      at: T(13),
+      // Deliberately distinct from live demo/alpha so restore can coexist.
+      localId: "archived_alpha",
+      title: "Archived alpha",
+      status: "DEFERRED",
+      note: "from archive",
+      event: "archive add v0-3 -w oldws",
+    });
   }
+  db.close();
+  return { path, sha: sha256(path) };
+}
+
+/** Populate one archive with a single task + note + event (+ optional edge). */
+function seedArchive(
+  db: Database.Database,
+  opts: {
+    label: string;
+    workstream: string;
+    at: string;
+    localId: string;
+    title: string;
+    status: string;
+    note: string;
+    event: string;
+    edgeToLocalId?: string;
+  },
+): void {
+  const archiveId = Number(
+    db
+      .prepare(
+        "INSERT INTO archives (label, description, created_at, last_added_at) VALUES (?, null, ?, ?)",
+      )
+      .run(opts.label, opts.at, opts.at).lastInsertRowid,
+  );
+  const taskId = Number(
+    db
+      .prepare(
+        `INSERT INTO archived_tasks (
+           archive_id, source_workstream, original_local_id, title, status,
+           impact, effort_days, owner_name, archived_at_status, archived_at,
+           original_created_at, original_updated_at)
+         VALUES (?, ?, ?, ?, ?, 40, 1, null, ?, ?, ?, ?)`,
+      )
+      .run(
+        archiveId,
+        opts.workstream,
+        opts.localId,
+        opts.title,
+        opts.status,
+        opts.status,
+        opts.at,
+        opts.at,
+        opts.at,
+      ).lastInsertRowid,
+  );
+  db.prepare(
+    "INSERT INTO archived_notes (archive_id, archived_task_id, author, content, created_at) VALUES (?, ?, ?, ?, ?)",
+  ).run(archiveId, taskId, "archiver", opts.note, opts.at);
+  db.prepare(
+    `INSERT INTO archived_events (archive_id, source_workstream, seq, source, payload, created_at)
+     VALUES (?, ?, 1, 'system', ?, ?)`,
+  ).run(archiveId, opts.workstream, opts.event, opts.at);
+  if (opts.edgeToLocalId !== undefined) {
+    const toId = Number(
+      db
+        .prepare(
+          `INSERT INTO archived_tasks (
+             archive_id, source_workstream, original_local_id, title, status,
+             impact, effort_days, owner_name, archived_at_status, archived_at,
+             original_created_at, original_updated_at)
+           VALUES (?, ?, ?, ?, 'CLOSED', 30, 1, null, 'CLOSED', ?, ?, ?)`,
+        )
+        .run(
+          archiveId,
+          opts.workstream,
+          opts.edgeToLocalId,
+          `${opts.edgeToLocalId} title`,
+          opts.at,
+          opts.at,
+          opts.at,
+        ).lastInsertRowid,
+    );
+    db.prepare(
+      "INSERT INTO archived_edges (archive_id, from_archived_id, to_archived_id) VALUES (?, ?, ?)",
+    ).run(archiveId, taskId, toId);
+  }
+}
+
+/** Archive-only v7 DB — the common upgrade case where live tables were
+ *  emptied by `workstream destroy` and the real history sits in archives. */
+function makeV7ArchiveDb(path: string): Fixture {
+  const db = new Database(path);
+  db.pragma("foreign_keys = ON");
+  db.exec(V7_SCHEMA);
+  db.prepare("INSERT INTO schema_version (id, version) VALUES (1, 7)").run();
+  seedArchive(db, {
+    label: "feedback",
+    workstream: "review",
+    at: T(20),
+    localId: "finding_1",
+    title: "Finding one",
+    status: "CLOSED",
+    note: "fixed",
+    event: "workstream init review",
+    edgeToLocalId: "finding_2",
+  });
   db.close();
   return { path, sha: sha256(path) };
 }
@@ -669,20 +807,119 @@ describe("scripts/migrate.ts", () => {
     }
   });
 
-  it("refuses pre-1.0 archives loudly rather than producing a half-archive", async () => {
+  it("restores pre-1.0 archives as live workstreams (ops, not rows)", async () => {
     const archived = makeV8Db(join(dir, "arch.db"), { archives: true });
     const target = join(dir, "arch-out.db");
     const run = runScript([archived.path, "--out", target]);
-    expect(run.exitCode).toBe(2);
-    expect(run.stderr).toContain("REFUSING");
-    expect(run.stderr).toContain("v0-3");
-    expect(run.stderr).toContain("--drop-archives");
-    // Nothing written: a refusal must not leave a partial DB behind.
-    expect(existsSync(target)).toBe(false);
+    expect(run.exitCode).toBe(0);
+    expect(run.stdout).toMatch(/archives\s+1\s+RESTORED/);
 
-    const forced = runScript([archived.path, "--out", target, "--drop-archives"]);
+    const db = new Database(target, { readonly: true });
+    try {
+      expect(
+        (db.prepare("SELECT name FROM workstreams WHERE name = 'oldws'").get() as { name: string })
+          .name,
+      ).toBe("oldws");
+      const task = db
+        .prepare(
+          `SELECT t.title AS title, t.status AS status
+             FROM tasks t JOIN workstreams w ON w.id = t.workstream_id
+            WHERE w.name = 'oldws' AND t.local_id = 'archived_alpha'`,
+        )
+        .get() as { title: string; status: string };
+      // DEFERRED projects as OPEN; migration note records the original.
+      expect(task.title).toBe("Archived alpha");
+      expect(task.status).toBe("OPEN");
+      expect(
+        (
+          db
+            .prepare(
+              `SELECT COUNT(*) AS n FROM task_notes n
+                 JOIN tasks t ON t.id = n.task_id
+                 JOIN workstreams w ON w.id = t.workstream_id
+                WHERE w.name = 'oldws' AND n.content LIKE 'MIGRATION:%DEFERRED%'`,
+            )
+            .get() as { n: number }
+        ).n,
+      ).toBe(1);
+      expect(
+        (
+          db.prepare("SELECT COUNT(*) AS n FROM ops WHERE intent = 'migrate.archive'").get() as {
+            n: number;
+          }
+        ).n,
+      ).toBeGreaterThan(0);
+    } finally {
+      db.close();
+    }
+
+    const doctor = await runCli(["doctor", "--deep", "--json"], target);
+    expect(doctor.exitCode).toBeNull();
+    const parsed = JSON.parse(doctor.stdout) as { drift?: { ok: boolean; mode: string } };
+    expect(parsed.drift?.mode).toBe("deep");
+    expect(parsed.drift?.ok).toBe(true);
+
+    // --drop-archives still opts out of the restore.
+    const droppedTarget = join(dir, "arch-dropped.db");
+    const forced = runScript([archived.path, "--out", droppedTarget, "--drop-archives"]);
     expect(forced.exitCode).toBe(0);
     expect(forced.stdout).toMatch(/archives\s+1\s+DROPPED \(--drop-archives\)/);
+    const dropped = new Database(droppedTarget, { readonly: true });
+    try {
+      expect(
+        (
+          dropped.prepare("SELECT COUNT(*) AS n FROM workstreams WHERE name = 'oldws'").get() as {
+            n: number;
+          }
+        ).n,
+      ).toBe(0);
+    } finally {
+      dropped.close();
+    }
+  });
+
+  it("imports a v7 archive-only DB into a drift-free v10 target", async () => {
+    const source = makeV7ArchiveDb(join(dir, "v7.db"));
+    const target = join(dir, "v7-out.db");
+    const run = runScript([source.path, "--out", target]);
+    expect(run.exitCode).toBe(0);
+    expect(sha256(source.path)).toBe(source.sha);
+    expect(run.stdout).toContain("v7");
+    expect(run.stdout).toMatch(/archives\s+1\s+RESTORED/);
+
+    const db = new Database(target, { readonly: true });
+    try {
+      expect(
+        (
+          db.prepare("SELECT COUNT(*) AS n FROM workstreams WHERE name = 'review'").get() as {
+            n: number;
+          }
+        ).n,
+      ).toBe(1);
+      expect(
+        (
+          db
+            .prepare(
+              `SELECT COUNT(*) AS n FROM tasks t
+                 JOIN workstreams w ON w.id = t.workstream_id
+                WHERE w.name = 'review'`,
+            )
+            .get() as { n: number }
+        ).n,
+      ).toBe(2);
+      expect((db.prepare("SELECT COUNT(*) AS n FROM task_edges").get() as { n: number }).n).toBe(1);
+      expect(
+        (db.prepare("SELECT COUNT(*) AS n FROM task_notes").get() as { n: number }).n,
+      ).toBeGreaterThanOrEqual(1);
+    } finally {
+      db.close();
+    }
+
+    const doctor = await runCli(["doctor", "--deep", "--json"], target);
+    expect(doctor.exitCode).toBeNull();
+    const parsed = JSON.parse(doctor.stdout) as { drift?: { ok: boolean; mode: string } };
+    expect(parsed.drift?.mode).toBe("deep");
+    expect(parsed.drift?.ok).toBe(true);
   });
 
   it("refuses to write in place, over an existing target, or from an unsupported source", async () => {
@@ -701,11 +938,11 @@ describe("scripts/migrate.ts", () => {
     const unsupported = join(dir, "unsupported.db");
     const db = new Database(unsupported);
     db.exec(
-      "CREATE TABLE schema_version (id INTEGER PRIMARY KEY, version INTEGER NOT NULL); INSERT INTO schema_version VALUES (1, 7)",
+      "CREATE TABLE schema_version (id INTEGER PRIMARY KEY, version INTEGER NOT NULL); INSERT INTO schema_version VALUES (1, 6)",
     );
     db.close();
     const wrongVersion = runScript([unsupported, "--out", join(dir, "nope.db")]);
     expect(wrongVersion.exitCode).toBe(2);
-    expect(wrongVersion.stderr).toContain("only understands v8 and v9");
+    expect(wrongVersion.stderr).toContain("only understands v7, v8 and v9");
   });
 });

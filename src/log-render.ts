@@ -222,10 +222,10 @@ export function renderOp(row: RenderableOp): RenderedOp | null {
   if (!isKnownIntent(intent)) {
     // Forward-compatible: an intent written by a NEWER mu (ingested from
     // a peer's segment) — or by the one-shot scripts/migrate.ts
-    // importer, whose 'migrate.v8' / 'migrate.v8-log' ops deliberately
-    // do NOT claim to be typed verbs — still renders legibly
-    // instead of vanishing. Deliberately not a throw: sync must never
-    // be blocked by a rendering gap.
+    // importer, whose 'migrate.v8' / 'migrate.archive' / 'migrate.status'
+    // ops deliberately do NOT claim to be typed verbs — still renders
+    // legibly instead of vanishing. Deliberately not a throw: sync must
+    // never be blocked by a rendering gap.
     //
     // A PROSE payload is shown as the detail, because for an unknown
     // intent the prose is the only information the line carries and

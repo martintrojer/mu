@@ -336,9 +336,11 @@ table/key/field is the reproduction. See
 
 `mu` refuses to open a pre-v10 DB (`SchemaTooOldError`, exit 4) and
 leaves the file alone. The retained `scripts/migrate.ts` sidecar
-auto-detects v8 or v9 and writes a fresh v10 DB. It never migrates in
-place. Legacy v9 `REJECTED` / `DEFERRED` tasks become `OPEN` with a
+auto-detects v7, v8, or v9 and writes a fresh v10 DB. It never migrates
+in place. Legacy `REJECTED` / `DEFERRED` tasks become `OPEN` with a
 migration note while their original op payloads remain unchanged.
+Pre-1.0 archives restore as live workstreams under their original
+`source_workstream` names unless you pass `--drop-archives`.
 
 Full backup, migration, verification, and swap recipe:
 [scripts/README.md](../scripts/README.md).
@@ -2275,7 +2277,7 @@ winner, and the newer HLC takes it.
 
 ---
 
-## 15.7 Upgrading a v8 or v9 DB
+## 15.7 Upgrading a v7, v8, or v9 DB
 
 `mu` refuses to write a pre-v10 DB and leaves it untouched. Use the
 single retained sidecar against a backup:
@@ -2290,14 +2292,16 @@ mv "$DB" "${DB}.old-kept" && mv "${DB}.v10" "$DB"
 mu doctor
 ```
 
-The script auto-detects v8 or v9, opens it read-only, compares its
+The script auto-detects v7, v8, or v9, opens it read-only, compares its
 SHA-256 before and after, and never overwrites a target unless `--force`
 is explicit. v9 history is retained unchanged; legacy statuses normalize
 only while projecting into v10, with one durable migration note per
 currently affected task. Valid v9 agents, workspaces, owners, peer
 watermarks, and machine identity carry across, but pane ids and absolute
 workspace paths cannot be proven live until `mu doctor` reconciles them.
-The v8 path keeps the older conservative omissions.
+The v7/v8 path keeps the older conservative omissions for agents and
+workspaces, and restores pre-1.0 `archived_*` rows as live workstreams
+by default (`--drop-archives` to skip).
 
 **Full recipe, every flag, and the precise carry/omit rules:
 [scripts/README.md](../scripts/README.md).**

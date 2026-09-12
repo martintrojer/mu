@@ -1,9 +1,9 @@
 #!/usr/bin/env -S npx tsx
-// scripts/migrate.ts — retained v8/v9 → v10 migration sidecar.
+// scripts/migrate.ts — retained v7/v8/v9 → v10 migration sidecar.
 //
-// mu 1.0 is a CLEAN BREAK: `openDb` refuses every pre-v9 DB with
+// mu 1.0 is a CLEAN BREAK: `openDb` refuses every pre-v10 DB with
 // `SchemaTooOldError` (exit 4), there is no in-process migration ladder,
-// and `CURRENT_SCHEMA` carries no v8 knowledge. That decision stands.
+// and `CURRENT_SCHEMA` carries no pre-v10 knowledge. That decision stands.
 // This is not a migration path — it is a SIDECAR the operator runs ONCE,
 // by hand, against a COPY, to carry pre-1.0 task data into a fresh v10 DB.
 //
@@ -12,7 +12,7 @@
 //   npx tsx scripts/migrate.ts <old.db> --out <new.db>
 //   npx tsx scripts/migrate.ts <old.db> --force          # overwrite target
 //   npx tsx scripts/migrate.ts <old.db> --drop-logs      # skip agent_logs
-//   npx tsx scripts/migrate.ts <old.db> --drop-archives  # proceed past archives
+//   npx tsx scripts/migrate.ts <old.db> --drop-archives  # skip archived_* restore
 //
 // See scripts/README.md for the full upgrade recipe (BACK UP FIRST).
 //
@@ -47,10 +47,13 @@
 //              nextHlc's counter, so an out-of-order source timestamp
 //              costs precision, never correctness.
 //
-// Every op shares ONE synthetic `group_id` with intent `migrate.v8`
-// (`migrate.v8-log` for carried log lines), because it WAS one operator
-// action. `mu log` therefore renders the import as an import, and
-// `mu undo <group>` addresses it as one thing.
+// Live rows share ONE synthetic `group_id` with intent `migrate.v8`
+// (`migrate.v8-log` for carried log lines). Pre-1.0 `archived_*` rows
+// restore as live workstreams under intent `migrate.archive` (and
+// `migrate.archive-log` for archived_events), still in that one group,
+// because the whole run is one operator action. `mu log` therefore
+// renders the import as an import, and `mu undo <group>` addresses it
+// as one thing.
 
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, statSync, unlinkSync } from "node:fs";
@@ -64,13 +67,19 @@ import { rebuildInto } from "../src/rebuild.js";
 
 // ─── what the import carries, and what it cannot ──────────────────────
 
-/** Intent stamped on every entity op. Not a `CaptureIntent`: these ops
- *  did not come from a live edit and must not pretend to have. */
+/** Intent stamped on every live-table entity op. Not a `CaptureIntent`:
+ *  these ops did not come from a live edit and must not pretend to have. */
 const IMPORT_INTENT = "migrate.v8";
 /** Intent stamped on carried pre-1.0 `agent_logs` rows. */
 const LOG_INTENT = "migrate.v8-log";
+/** Intent stamped on restored `archived_*` entity ops. */
+const ARCHIVE_INTENT = "migrate.archive";
+/** Intent stamped on carried `archived_events` rows. */
+const ARCHIVE_LOG_INTENT = "migrate.archive-log";
 /** Actor for rows with no human author of their own. */
 const IMPORT_ACTOR = "v8-import";
+/** Actor for archive-restore breadcrumb events. */
+const ARCHIVE_ACTOR = "archive-import";
 
 /** Entity used for carried log lines.
  *
@@ -81,10 +90,10 @@ const IMPORT_ACTOR = "v8-import";
  *  status of a pre-1.0 log line. */
 const LOG_ENTITY = "event";
 
-/** The only source schema version this script understands. v8 is the
- *  final pre-1.0 schema; anything older predates `machine_identity`
- *  and the surrogate-PK substrate and is not something we can claim to
- *  have tested. */
+/** Source schema versions this script understands. v7 and v8 share the
+ *  pre-ops live-table shape (v7 may lack machine_identity /
+ *  workstream_sync); v9 is the ops-log substrate. Anything older is
+ *  refused. */
 
 interface Args {
   source: string;
@@ -97,12 +106,11 @@ interface Args {
 const USAGE = `usage: npx tsx scripts/migrate.ts <old.db> [--out <new.db>] [--force]
                                       [--drop-logs] [--drop-archives]
 
-  <old.db>          a v8 or v9 source DB. Opened READ-ONLY; never modified.
+  <old.db>          a v7, v8, or v9 source DB. Opened READ-ONLY; never modified.
   --out <new.db>    target path (default: <old.db> with '.v10.db' suffix).
   --force           overwrite an existing target.
   --drop-logs       do not carry agent_logs into the ops log.
-  --drop-archives   proceed even though the source has pre-1.0 archives,
-                    which cannot be faithfully reconstructed.`;
+  --drop-archives   do not restore pre-1.0 archived_* rows as live workstreams.`;
 
 /** Every refusal in this script. THROWN, not `process.exit`-ed, so the
  *  whole importer stays callable IN-PROCESS from
@@ -373,6 +381,205 @@ function planOps(src: Db, dropLogs: boolean): Planned[] {
   return planned;
 }
 
+/**
+ * Restore pre-1.0 `archived_*` rows as ordinary live workstreams.
+ *
+ * The archive *namespace* is gone in v10, but `archived_tasks` /
+ * `archived_edges` / `archived_notes` / `archived_events` retained enough
+ * per row to synthesize the same ops the live-table path emits. Workstream
+ * names come from `source_workstream` (the name at archive time), not the
+ * archive label — that is the identity the tasks already carried.
+ */
+function planArchiveOps(src: Db): Planned[] {
+  if (!tableExists(src, "archived_tasks")) return [];
+
+  const planned: Planned[] = [];
+
+  const workstreams = src
+    .prepare(
+      `SELECT t.source_workstream AS name,
+              MIN(t.original_created_at) AS created_at,
+              a.label AS archive_label
+         FROM archived_tasks t
+         JOIN archives a ON a.id = t.archive_id
+        GROUP BY t.source_workstream
+        ORDER BY MIN(t.original_created_at)`,
+    )
+    .all() as { name: string; created_at: string; archive_label: string }[];
+
+  for (const [i, ws] of workstreams.entries()) {
+    planned.push({
+      entity: "workstream",
+      key: ws.name,
+      payload: JSON.stringify({ name: ws.name, created_at: ws.created_at }),
+      actor: ARCHIVE_ACTOR,
+      intent: ARCHIVE_INTENT,
+      createdAt: ws.created_at,
+      rank: RANK.workstream,
+      seq: i,
+    });
+    planned.push({
+      entity: LOG_ENTITY,
+      key: ws.name,
+      payload: `restored from pre-1.0 archive '${ws.archive_label}'`,
+      actor: ARCHIVE_ACTOR,
+      intent: ARCHIVE_LOG_INTENT,
+      createdAt: ws.created_at,
+      rank: RANK.log,
+      seq: i,
+    });
+  }
+
+  const tasks = src
+    .prepare(
+      `SELECT id, source_workstream, original_local_id, title, status,
+              impact, effort_days, original_created_at, original_updated_at
+         FROM archived_tasks
+        ORDER BY original_created_at, id`,
+    )
+    .all() as {
+    id: number;
+    source_workstream: string;
+    original_local_id: string;
+    title: string;
+    status: string;
+    impact: number;
+    effort_days: number;
+    original_created_at: string;
+    original_updated_at: string;
+  }[];
+
+  for (const task of tasks) {
+    planned.push({
+      entity: "task",
+      key: `${task.source_workstream}/${task.original_local_id}`,
+      payload: JSON.stringify({
+        local_id: task.original_local_id,
+        title: task.title,
+        status: task.status,
+        impact: task.impact,
+        effort_days: task.effort_days,
+        created_at: task.original_created_at,
+        updated_at: task.original_updated_at,
+      }),
+      actor: ARCHIVE_ACTOR,
+      intent: ARCHIVE_INTENT,
+      createdAt: task.original_created_at,
+      rank: RANK.task,
+      seq: task.id,
+    });
+  }
+
+  if (tableExists(src, "archived_edges")) {
+    const edges = src
+      .prepare(
+        `SELECT e.rowid AS rowid,
+                f.source_workstream || '/' || f.original_local_id AS from_key,
+                t.source_workstream || '/' || t.original_local_id AS to_key,
+                CASE
+                  WHEN f.original_created_at >= t.original_created_at
+                  THEN f.original_created_at ELSE t.original_created_at
+                END AS created_at
+           FROM archived_edges e
+           JOIN archived_tasks f ON f.id = e.from_archived_id
+           JOIN archived_tasks t ON t.id = e.to_archived_id
+          ORDER BY created_at, e.rowid`,
+      )
+      .all() as { rowid: number; from_key: string; to_key: string; created_at: string }[];
+    for (const edge of edges) {
+      planned.push({
+        entity: "edge",
+        key: `${edge.from_key}->${edge.to_key}`,
+        payload: JSON.stringify({ created_at: edge.created_at }),
+        actor: ARCHIVE_ACTOR,
+        intent: ARCHIVE_INTENT,
+        createdAt: edge.created_at,
+        rank: RANK.edge,
+        seq: edge.rowid,
+      });
+    }
+  }
+
+  if (tableExists(src, "archived_notes")) {
+    const notes = src
+      .prepare(
+        `SELECT n.id AS id,
+                t.source_workstream || '/' || t.original_local_id AS task_key,
+                n.author, n.content, n.created_at
+           FROM archived_notes n
+           JOIN archived_tasks t ON t.id = n.archived_task_id
+          ORDER BY n.created_at, n.id`,
+      )
+      .all() as {
+      id: number;
+      task_key: string;
+      author: string | null;
+      content: string;
+      created_at: string;
+    }[];
+    for (const note of notes) {
+      planned.push({
+        entity: "note",
+        key: `${note.task_key}#arch-${note.id}`,
+        payload: JSON.stringify({
+          author: note.author,
+          content: note.content,
+          created_at: note.created_at,
+        }),
+        actor: note.author,
+        intent: ARCHIVE_INTENT,
+        createdAt: note.created_at,
+        rank: RANK.note,
+        seq: note.id,
+      });
+    }
+  }
+
+  if (tableExists(src, "archived_events")) {
+    const events = src
+      .prepare(
+        `SELECT id, source_workstream, source, payload, created_at
+           FROM archived_events
+          ORDER BY created_at, id`,
+      )
+      .all() as {
+      id: number;
+      source_workstream: string;
+      source: string;
+      payload: string;
+      created_at: string;
+    }[];
+    for (const ev of events) {
+      planned.push({
+        entity: LOG_ENTITY,
+        key: ev.source_workstream,
+        payload: ev.payload,
+        actor: ev.source,
+        intent: ARCHIVE_LOG_INTENT,
+        createdAt: ev.created_at,
+        rank: RANK.log,
+        seq: ev.id,
+      });
+    }
+  }
+
+  planned.sort((a, b) => {
+    if (a.createdAt !== b.createdAt) return a.createdAt < b.createdAt ? -1 : 1;
+    if (a.rank !== b.rank) return a.rank - b.rank;
+    return a.seq - b.seq;
+  });
+  return planned;
+}
+
+function sortPlanned(planned: Planned[]): Planned[] {
+  planned.sort((a, b) => {
+    if (a.createdAt !== b.createdAt) return a.createdAt < b.createdAt ? -1 : 1;
+    if (a.rank !== b.rank) return a.rank - b.rank;
+    return a.seq - b.seq;
+  });
+  return planned;
+}
+
 // ─── preflight ────────────────────────────────────────────────────────
 
 interface SourceCounts {
@@ -385,24 +592,49 @@ interface SourceCounts {
   vcs_workspaces: number;
   snapshots: number;
   archives: number;
+  archived_tasks: number;
+  archived_edges: number;
+  archived_notes: number;
+  archived_events: number;
   workstream_sync: number;
   ownedTasks: number;
 }
 
+function tableExists(src: Db, name: string): boolean {
+  return (
+    src.prepare("SELECT 1 AS ok FROM sqlite_master WHERE type = 'table' AND name = ?").get(name) !==
+    undefined
+  );
+}
+
+function tableCount(src: Db, name: string): number {
+  if (!tableExists(src, name)) return 0;
+  return (src.prepare(`SELECT COUNT(*) AS n FROM ${name}`).get() as { n: number }).n;
+}
+
 function countSource(src: Db): SourceCounts {
-  const one = (sql: string): number => (src.prepare(sql).get() as { n: number }).n;
   return {
-    workstreams: one("SELECT COUNT(*) AS n FROM workstreams"),
-    tasks: one("SELECT COUNT(*) AS n FROM tasks"),
-    task_edges: one("SELECT COUNT(*) AS n FROM task_edges"),
-    task_notes: one("SELECT COUNT(*) AS n FROM task_notes"),
-    agent_logs: one("SELECT COUNT(*) AS n FROM agent_logs"),
-    agents: one("SELECT COUNT(*) AS n FROM agents"),
-    vcs_workspaces: one("SELECT COUNT(*) AS n FROM vcs_workspaces"),
-    snapshots: one("SELECT COUNT(*) AS n FROM snapshots"),
-    archives: one("SELECT COUNT(*) AS n FROM archives"),
-    workstream_sync: one("SELECT COUNT(*) AS n FROM workstream_sync"),
-    ownedTasks: one("SELECT COUNT(*) AS n FROM tasks WHERE owner_id IS NOT NULL"),
+    workstreams: tableCount(src, "workstreams"),
+    tasks: tableCount(src, "tasks"),
+    task_edges: tableCount(src, "task_edges"),
+    task_notes: tableCount(src, "task_notes"),
+    agent_logs: tableCount(src, "agent_logs"),
+    agents: tableCount(src, "agents"),
+    vcs_workspaces: tableCount(src, "vcs_workspaces"),
+    snapshots: tableCount(src, "snapshots"),
+    archives: tableCount(src, "archives"),
+    archived_tasks: tableCount(src, "archived_tasks"),
+    archived_edges: tableCount(src, "archived_edges"),
+    archived_notes: tableCount(src, "archived_notes"),
+    archived_events: tableCount(src, "archived_events"),
+    workstream_sync: tableCount(src, "workstream_sync"),
+    ownedTasks: tableExists(src, "tasks")
+      ? (
+          src.prepare("SELECT COUNT(*) AS n FROM tasks WHERE owner_id IS NOT NULL").get() as {
+            n: number;
+          }
+        ).n
+      : 0,
   };
 }
 
@@ -415,6 +647,7 @@ function countSource(src: Db): SourceCounts {
  *  check exists because "zero on one DB" is not "zero on every DB". */
 function causalityViolations(src: Db): string[] {
   const problems: string[] = [];
+  if (!tableExists(src, "tasks") || !tableExists(src, "workstreams")) return problems;
   const probe = (label: string, sql: string): void => {
     const n = (src.prepare(sql).get() as { n: number }).n;
     if (n > 0) problems.push(`${n} ${label}`);
@@ -424,18 +657,30 @@ function causalityViolations(src: Db): string[] {
     `SELECT COUNT(*) AS n FROM tasks t JOIN workstreams w ON w.id = t.workstream_id
       WHERE t.created_at < w.created_at`,
   );
-  probe(
-    "note(s) created before their task",
-    `SELECT COUNT(*) AS n FROM task_notes n JOIN tasks t ON t.id = n.task_id
-      WHERE n.created_at < t.created_at`,
-  );
-  probe(
-    "edge(s) created before an endpoint task",
-    `SELECT COUNT(*) AS n FROM task_edges e
-       JOIN tasks f ON f.id = e.from_task_id
-       JOIN tasks t ON t.id = e.to_task_id
-      WHERE e.created_at < MAX(f.created_at, t.created_at)`,
-  );
+  if (tableExists(src, "task_notes")) {
+    probe(
+      "note(s) created before their task",
+      `SELECT COUNT(*) AS n FROM task_notes n JOIN tasks t ON t.id = n.task_id
+        WHERE n.created_at < t.created_at`,
+    );
+  }
+  if (tableExists(src, "task_edges")) {
+    probe(
+      "edge(s) created before an endpoint task",
+      `SELECT COUNT(*) AS n FROM task_edges e
+         JOIN tasks f ON f.id = e.from_task_id
+         JOIN tasks t ON t.id = e.to_task_id
+        WHERE e.created_at < MAX(f.created_at, t.created_at)`,
+    );
+  }
+  if (tableExists(src, "archived_notes") && tableExists(src, "archived_tasks")) {
+    probe(
+      "archived note(s) created before their archived task",
+      `SELECT COUNT(*) AS n FROM archived_notes n
+         JOIN archived_tasks t ON t.id = n.archived_task_id
+        WHERE n.created_at < t.original_created_at`,
+    );
+  }
   return problems;
 }
 
@@ -448,6 +693,7 @@ function causalityViolations(src: Db): string[] {
  *  merge into one row. That is the merge rule doing its job, not a bug
  *  in the import, but it changes a row count and must be REPORTED. */
 function duplicateNotes(src: Db): number {
+  if (!tableExists(src, "task_notes")) return 0;
   const row = src
     .prepare(
       `SELECT COUNT(*) - COUNT(DISTINCT task_id || char(31) || COALESCE(author,'')
@@ -456,6 +702,37 @@ function duplicateNotes(src: Db): number {
     )
     .get() as { n: number };
   return row.n;
+}
+
+function duplicateArchivedNotes(src: Db): number {
+  if (!tableExists(src, "archived_notes")) return 0;
+  const row = src
+    .prepare(
+      `SELECT COUNT(*) - COUNT(DISTINCT archived_task_id || char(31) || COALESCE(author,'')
+                                       || char(31) || content) AS n
+         FROM archived_notes`,
+    )
+    .get() as { n: number };
+  return row.n;
+}
+
+/** Live task keys that also appear in archived_tasks — restoring would
+ *  project two histories onto one natural key. Refuse rather than merge
+ *  silently; `--drop-archives` is the explicit escape. */
+function archiveLiveCollisions(src: Db): string[] {
+  if (!tableExists(src, "archived_tasks") || !tableExists(src, "tasks")) return [];
+  return (
+    src
+      .prepare(
+        `SELECT w.name || '/' || t.local_id AS key
+           FROM tasks t
+           JOIN workstreams w ON w.id = t.workstream_id
+           JOIN archived_tasks a
+             ON a.source_workstream = w.name AND a.original_local_id = t.local_id
+          ORDER BY key`,
+      )
+      .all() as { key: string }[]
+  ).map((r) => r.key);
 }
 
 // ─── the import ───────────────────────────────────────────────────────
@@ -557,15 +834,28 @@ interface LegacyTask {
   updated_at: string;
 }
 
-function legacyTasks(src: Db): LegacyTask[] {
-  return src
+function legacyTasks(src: Db, includeArchives: boolean): LegacyTask[] {
+  const live = tableExists(src, "tasks")
+    ? (src
+        .prepare(
+          `SELECT w.name AS workstream, t.local_id, t.status, t.updated_at
+             FROM tasks t JOIN workstreams w ON w.id = t.workstream_id
+            WHERE t.status IN ('REJECTED', 'DEFERRED')
+            ORDER BY w.name, t.local_id`,
+        )
+        .all() as LegacyTask[])
+    : [];
+  if (!includeArchives || !tableExists(src, "archived_tasks")) return live;
+  const archived = src
     .prepare(
-      `SELECT w.name AS workstream, t.local_id, t.status, t.updated_at
-         FROM tasks t JOIN workstreams w ON w.id = t.workstream_id
-        WHERE t.status IN ('REJECTED', 'DEFERRED')
-        ORDER BY w.name, t.local_id`,
+      `SELECT source_workstream AS workstream, original_local_id AS local_id,
+              status, original_updated_at AS updated_at
+         FROM archived_tasks
+        WHERE status IN ('REJECTED', 'DEFERRED')
+        ORDER BY source_workstream, original_local_id`,
     )
     .all() as LegacyTask[];
+  return [...live, ...archived];
 }
 
 function appendLegacyNotes(target: Db, tasks: readonly LegacyTask[]): void {
@@ -614,7 +904,7 @@ interface V9MigrationResult {
 }
 
 function migrateV9(src: Db, targetPath: string): V9MigrationResult {
-  const legacy = legacyTasks(src);
+  const legacy = legacyTasks(src, false);
 
   const rebuilt = rebuildInto(src, { targetPath });
   const target = openDb({ path: targetPath });
@@ -768,12 +1058,12 @@ export function runImporter(argv: readonly string[], say: (text: string) => void
         | { v: number }
         | undefined
     )?.v;
-    if (version !== 8 && version !== 9) {
-      usage(`source schema is v${version ?? "?"}; this importer only understands v8 and v9`);
+    if (version !== 7 && version !== 8 && version !== 9) {
+      usage(`source schema is v${version ?? "?"}; this importer only understands v7, v8 and v9`);
     }
     if (version === 9) {
       if (args.dropLogs || args.dropArchives) {
-        usage("--drop-logs and --drop-archives apply only to v8 sources");
+        usage("--drop-logs and --drop-archives apply only to v7/v8 sources");
       }
       let result: V9MigrationResult;
       try {
@@ -814,31 +1104,36 @@ export function runImporter(argv: readonly string[], say: (text: string) => void
       );
     }
 
-    // ARCHIVES. v8 stored archived rows in tables the v9 schema no
-    // longer has. Refuse, name what would be lost, and make the operator
-    // explicitly opt in to dropping them.
-    if (counts.archives > 0 && !args.dropArchives) {
-      const labels = (
-        src.prepare("SELECT label FROM archives ORDER BY label").all() as { label: string }[]
-      ).map((r) => r.label);
-      usage(
-        [
-          `REFUSING: the source has ${counts.archives} pre-1.0 archive(s): ${labels.join(", ")}`,
-          "",
-          "Pre-1.0 archives cannot be carried into 1.0: the archive namespace and",
-          "its storage model were removed. The importer will not silently turn archived",
-          "rows into live work.",
-          "",
-          "Options:",
-          "  1. Export them from the old DB with mu 0.4.x BEFORE upgrading.",
-          "  2. Re-run with --drop-archives to import tasks and drop the archives.",
-          "  3. Keep the old DB (you should anyway) and read them with sqlite3.",
-        ].join("\n"),
-      );
+    // ARCHIVES. Pre-1.0 archived_* rows are restored as live workstreams
+    // under their original source_workstream names (ops, not rows). The
+    // archive *namespace* is gone; the task data is not. --drop-archives
+    // opts out. A live/archive key collision refuses rather than merging.
+    const restoreArchives = counts.archives > 0 && !args.dropArchives;
+    if (restoreArchives) {
+      const collisions = archiveLiveCollisions(src);
+      if (collisions.length > 0) {
+        usage(
+          [
+            `REFUSING: ${collisions.length} archived task key(s) collide with live tasks:`,
+            ...collisions.slice(0, 10).map((k) => `  ${k}`),
+            collisions.length > 10 ? `  …and ${collisions.length - 10} more` : "",
+            "",
+            "Restoring would project two histories onto one natural key.",
+            "Re-run with --drop-archives to keep the live rows and skip archives,",
+            "or resolve the overlap in the source DB first.",
+          ]
+            .filter((line) => line !== "")
+            .join("\n"),
+        );
+      }
     }
 
     const dupNotes = duplicateNotes(src);
-    const planned = planOps(src, args.dropLogs);
+    const dupArchivedNotes = restoreArchives ? duplicateArchivedNotes(src) : 0;
+    const planned = sortPlanned([
+      ...planOps(src, args.dropLogs),
+      ...(restoreArchives ? planArchiveOps(src) : []),
+    ]);
 
     say("mu 0.4.x → 1.0 import");
     say(
@@ -851,18 +1146,45 @@ export function runImporter(argv: readonly string[], say: (text: string) => void
     const target = openDb({ path: args.out });
     let result: ImportResult;
     try {
-      result = runImport(target, planned, `migrate-v8-${sourceDigestBefore.slice(0, 16)}`);
-      appendLegacyNotes(target, legacyTasks(src));
+      result = runImport(target, planned, `migrate-v${version}-${sourceDigestBefore.slice(0, 16)}`);
+      appendLegacyNotes(target, legacyTasks(src, restoreArchives));
+      // Re-count after legacy notes land so the report matches the file.
+      result = {
+        ...result,
+        targetRows: {
+          ...result.targetRows,
+          task_notes: (
+            target.prepare("SELECT COUNT(*) AS n FROM task_notes").get() as { n: number }
+          ).n,
+          ops: (target.prepare("SELECT COUNT(*) AS n FROM ops").get() as { n: number }).n,
+        },
+      };
     } finally {
       target.close();
     }
 
     const sourceDigestAfter = sha256(args.source);
 
+    const archiveRow = restoreArchives
+      ? ([
+          "  archives",
+          String(counts.archives),
+          `RESTORED → ${counts.archived_tasks} tasks / ${counts.archived_edges} edges / ${counts.archived_notes} notes${
+            dupArchivedNotes > 0
+              ? ` (${dupArchivedNotes} byte-identical duplicate note(s) merged)`
+              : ""
+          }`,
+        ] as const)
+      : ([
+          "  archives",
+          String(counts.archives),
+          counts.archives > 0 ? "DROPPED (--drop-archives)" : "none in source",
+        ] as const);
+
     say("CARRIED ACROSS");
     say(
       table([
-        ["  what", "v8 rows", "v10 result"],
+        ["  what", "source rows", "v10 result"],
         ["  workstreams", String(counts.workstreams), String(result.targetRows.workstreams ?? 0)],
         ["  tasks", String(counts.tasks), String(result.targetRows.tasks ?? 0)],
         ["  task_edges", String(counts.task_edges), String(result.targetRows.task_edges ?? 0)],
@@ -880,13 +1202,14 @@ export function runImporter(argv: readonly string[], say: (text: string) => void
             ? "DROPPED (--drop-logs)"
             : `${counts.agent_logs} log-only ops (intent=${LOG_INTENT})`,
         ],
+        archiveRow,
       ]),
     );
     say("");
     say("NOT CARRIED ACROSS — these do not survive a machine, a schema, or both");
     say(
       table([
-        ["  what", "v8 rows", "why"],
+        ["  what", "source rows", "why"],
         ["  agents", String(counts.agents), "pane_id names a tmux pane that no longer exists"],
         ["  vcs_workspaces", String(counts.vcs_workspaces), "absolute paths; re-create per agent"],
         [
@@ -896,11 +1219,6 @@ export function runImporter(argv: readonly string[], say: (text: string) => void
         ],
         ["  workstream_sync", String(counts.workstream_sync), "superseded by sync_peers"],
         ["  task owners", String(counts.ownedTasks), "owner_id FKs into machine-local agents"],
-        [
-          "  archives",
-          String(counts.archives),
-          counts.archives > 0 ? "DROPPED (--drop-archives)" : "none in source",
-        ],
       ]),
     );
     say("");

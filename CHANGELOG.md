@@ -8,6 +8,23 @@ breaking changes are called out under "Breaking" in each entry.
 
 ---
 
+## [Unreleased]
+
+### Changed
+
+- **`scripts/migrate.ts` accepts v7 and restores pre-1.0 archives.** The
+  sidecar already covered v8/v9 → v10. Real upgrade DBs are often still
+  on v7 with empty live tables and the useful history only in
+  `archived_*` — which the importer used to refuse unless
+  `--drop-archives` threw that history away. It now auto-detects v7,
+  synthesizes ops from `archived_tasks` / edges / notes / events into
+  live workstreams named after each row's `source_workstream`, and keeps
+  `--drop-archives` as the explicit skip. A live/archive task-key
+  collision still refuses rather than merging two histories onto one
+  key. See `scripts/README.md`.
+
+---
+
 ## [1.3.0] — 2026-09-11
 
 ### Added
