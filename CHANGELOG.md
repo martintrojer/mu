@@ -8,7 +8,7 @@ breaking changes are called out under "Breaking" in each entry.
 
 ---
 
-## [Unreleased]
+## [1.3.1] — 2026-09-13
 
 ### Changed
 
