@@ -514,6 +514,18 @@ export async function cmdTaskWait(
     });
   }
   for (const t of unmetRefs) {
+    // A task whose owner needs attention (`stuck`) is the one case
+    // where `mu task show` is the wrong first step: the task row looks
+    // healthy and IN_PROGRESS, while the reason it is not progressing
+    // — a question, a prompt, or a finished-but-unclosed worker — is
+    // only visible in the pane. Point at the pane instead.
+    if (t.stuck && t.owner !== null) {
+      nextSteps.push({
+        intent: `Read ${t.owner}'s pane — ${qualifiedId(t)} is IN_PROGRESS but its owner needs attention`,
+        command: `mu agent read ${t.owner} -w ${t.workstreamName} --lines 60`,
+      });
+      continue;
+    }
     nextSteps.push({
       intent: `Investigate ${qualifiedId(t)} (status=${t.status})`,
       command: `mu task show ${t.name} -w ${t.workstreamName}`,

@@ -8,6 +8,58 @@ breaking changes are called out under "Breaking" in each entry.
 
 ---
 
+## [Unreleased]
+
+### Changed
+
+- **The `needs_input` stall warning states the observation instead of guessing
+  a cause** (`agent_attention_required`, renamed from
+  `agent_close_discipline_gap`). The warning asserted "Worker likely committed
+  but skipped `mu task close <id>`", but the predicate behind it only knows
+  "owner has been in `needs_input` for >= N". That covers at least three
+  situations needing opposite responses: a worker that finished without
+  closing, one waiting on an answer, and one sitting at an approval prompt.
+  Naming the first misdirected an operator into hunting for a commit to merge
+  while the worker was waiting on a design decision. The text now reports what
+  was measured and points at `mu agent read <owner>`, which is the next move in
+  all three cases — the evidence is in the pane, not the task row. The pattern
+  rename follows: a worker stopping to ask a question is desirable behaviour,
+  and the old name presumed negligence.
+
+- **The warning reports the worker's real age, not the threshold.** It
+  interpolated `--stuck-after`, so `--stuck-after 1` said "(>= 1000ms since
+  last status change)" about a worker that had been waiting five minutes.
+  `StallDetectedDuringWaitError.ageSecs` was wrong the same way. Both now carry
+  the measured age, formatted as `45s` / `5m` / `2h`.
+
+- **A stuck ref's `nextSteps` reads the owner's pane.** On timeout every unmet
+  ref got `mu task show <id>`, which for this case shows a healthy-looking
+  IN_PROGRESS row and none of the reason it stopped. `stuck` refs with a known
+  owner now get `mu agent read <owner> --lines 60` instead; ownerless refs keep
+  `mu task show`. `StallDetectedDuringWaitError`'s steps were reordered to lead
+  with `agent read` for the same reason — they led with "poke the worker",
+  which is right for one of the three causes and actively wrong for a worker
+  waiting on an answer, since a poke with no answer in it just restates the
+  question.
+
+### Fixed
+
+- **`mu task wait --stuck-after --help` no longer hides `--on-stall`.** Its
+  description ended "Wait keeps polling — the warning is observation-only",
+  which was written when `--stuck-after` was the only flag and has been false
+  since 0.3.0 added `--on-stall exit`. Read in order it was a dead end, and a
+  reporter filed a request for a flag that had existed for ten releases after
+  stopping at that sentence. The text now names itself as the TRIGGER and ends
+  by pointing at the ACTION.
+
+- **`mu agent wait --help` explains when NOT to use it.** It fires on
+  `busy → needs_input`, so it looks like the answer for catching a worker that
+  asked a question — but it keys on agents, so a task-DAG orchestrator would
+  have to track the task→agent mapping itself and run two waits concurrently.
+  The description now says so and points at `mu task wait --stuck-after`.
+
+---
+
 ## [1.3.1] — 2026-09-13
 
 ### Changed

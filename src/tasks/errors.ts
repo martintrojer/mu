@@ -308,28 +308,37 @@ export class StallDetectedDuringWaitError extends Error implements HasNextSteps 
   ) {
     const ownerBit = owner !== null ? owner : "<unknown>";
     super(
-      `task ${taskName} owned by ${ownerBit} has been needs_input for ${ageSecs}s; exiting per --on-stall exit. Re-dispatch a worker or send a poke (mu agent send ${ownerBit} "...") and re-run wait.`,
+      `task ${taskName} owned by ${ownerBit} has been needs_input for ${ageSecs}s; exiting per --on-stall exit. Read the pane to see which it is — finished without closing, waiting on an answer, or sitting at a prompt.`,
     );
   }
+  /**
+   * Diagnose before acting. `mu agent read` comes FIRST because the
+   * predicate that threw cannot tell the three causes of needs_input
+   * apart, and the evidence is in the pane rather than the task row.
+   * The earlier order led with "poke the worker", which is the right
+   * move for only one of the three and actively wrong for a worker
+   * waiting on an answer — a poke with no answer in it just restates
+   * the question.
+   */
   errorNextSteps(): NextStep[] {
     const ws = this.workstream;
     const ownerBit = this.owner !== null ? this.owner : "<owner>";
     return [
       {
-        intent: "Poke the worker (often unblocks a transient stall)",
-        command: `mu agent send ${ownerBit} '<retry-instruction>' -w ${ws}`,
+        intent: "Read the worker's pane to see what it is waiting on",
+        command: `mu agent read ${ownerBit} -w ${ws} --lines 60`,
       },
       {
-        intent: "Inspect the worker's recent scrollback",
-        command: `mu agent show ${ownerBit} -w ${ws} -n 60`,
+        intent: "Answer a question, or poke a worker that stalled mid-step",
+        command: `mu agent send ${ownerBit} '<answer-or-retry-instruction>' -w ${ws}`,
+      },
+      {
+        intent: "Close the task if the worker finished but skipped it",
+        command: `mu task close ${this.taskName} -w ${ws}`,
       },
       {
         intent: "Release the task back to OPEN (declare the stall terminal)",
         command: `mu task release ${this.taskName} --reopen -w ${ws}`,
-      },
-      {
-        intent: "Inspect the task's current state",
-        command: `mu task show ${this.taskName} -w ${ws}`,
       },
     ];
   }

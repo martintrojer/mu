@@ -834,7 +834,9 @@ export function wireAgentCommands(program: Command): void {
   // off-the-cuff helpers that own no task to wait on.
   agent
     .command("wait <names...>")
-    .description("Block until agents finish working (busy → any other state)")
+    .description(
+      "Block until agents finish working (busy → any other state). Keys on AGENTS, so it fires on needs_input too — a worker that stopped to ask a question satisfies it. For task-driven work prefer `mu task wait`, which keys on the task reaching CLOSED and has `--stuck-after` / `--on-stall` for the needs_input case; reach for this verb when the agent owns no task to wait on.",
+    )
     .option("--any", "succeed as soon as ONE listed agent finishes (default: all)")
     .option("--first", "alias for --any that also prints the firing agent's ref")
     .option(

@@ -193,7 +193,7 @@ describe("mu task wait --on-stall warn|exit", () => {
     expect(exitCode).toBe(5); // timed out, NOT exit 7
     // Stderr STILL got the warning — the SDK still emits + persists
     // when --on-stall is downgraded to warn-only.
-    expect(stderr).toMatch(/stuck/i);
+    expect(stderr).toMatch(/needs attention/i);
   });
 
   it("--stuck-after 0 disables both warn and exit (--on-stall exit no-ops)", async () => {
@@ -217,7 +217,8 @@ describe("mu task wait --on-stall warn|exit", () => {
     );
 
     expect(exitCode).toBe(5); // timed out, never fired stall
-    expect(stderr).not.toMatch(/stuck/i);
+    expect(stderr).not.toMatch(/needs attention/i);
+    expect(stderr).not.toMatch(/mu agent read/);
   });
 
   it("multi-ref --on-stall exit fires on the FIRST stalled task (argv order)", async () => {
@@ -260,9 +261,11 @@ describe("mu task wait --on-stall warn|exit", () => {
     );
 
     expect(exitCode).toBe(5); // timed out, NOT exit 7
-    expect(stderr).toMatch(/stuck/i);
+    expect(stderr).toMatch(/needs attention/i);
     expect(stderr).toContain("ship");
     expect(stderr).toContain("dave");
+    // The remedy line names the owner's pane, not the task row.
+    expect(stderr).toContain("mu agent read dave");
   });
 
   it("--on-stall warn (explicit): same as default warn", async () => {
@@ -286,7 +289,50 @@ describe("mu task wait --on-stall warn|exit", () => {
     );
 
     expect(exitCode).toBe(5); // timed out, warn-only
-    expect(stderr).toMatch(/stuck/i);
+    expect(stderr).toMatch(/needs attention/i);
+  });
+
+  // agent_attention_required defect 3: on a timeout, nextSteps used to
+  // offer `mu task show <id>` for every unmet ref. For a stuck ref that
+  // is the wrong first move — the task row looks healthy and
+  // IN_PROGRESS, while the reason it is not progressing (a question, a
+  // prompt, a finished-but-unclosed worker) is only in the pane.
+  it("--json timeout: a stuck ref's nextStep reads the owner's pane, not the task row", async () => {
+    setupStalledWorker("grace", "stalled_task");
+    // A second unmet ref with NO owner: still gets the task-show step,
+    // proving the redirect is scoped to the stuck case.
+    addTask(db, { localId: "plain_task", workstream, title: "P", impact: 50, effortDays: 1 });
+
+    const { exitCode, stdout } = await runCli(
+      [
+        "task",
+        "wait",
+        "stalled_task",
+        "plain_task",
+        "-w",
+        workstream,
+        "--stuck-after",
+        "1",
+        "--timeout",
+        "1",
+        "--json",
+      ],
+      dbPath,
+    );
+
+    expect(exitCode).toBe(5);
+    const payload = JSON.parse(stdout) as {
+      timedOut: Array<{ name: string; stuck: boolean }>;
+      nextSteps: Array<{ intent: string; command: string }>;
+    };
+    expect(payload.timedOut.find((t) => t.name === "stalled_task")?.stuck).toBe(true);
+
+    const commands = payload.nextSteps.map((s) => s.command);
+    expect(commands).toContain(`mu agent read grace -w ${workstream} --lines 60`);
+    // The stuck ref must NOT also get the misleading task-show step…
+    expect(commands).not.toContain(`mu task show stalled_task -w ${workstream}`);
+    // …while the ownerless unmet ref keeps it.
+    expect(commands).toContain(`mu task show plain_task -w ${workstream}`);
   });
 
   it("--on-stall <bad>: usage error", async () => {

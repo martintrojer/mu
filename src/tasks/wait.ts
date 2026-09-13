@@ -39,11 +39,12 @@ import type { TaskStatus } from "./status.js";
 // pollMs past the deadline when pollMs > timeoutMs — see test/tasks.test.ts
 // 'waitForTasks' regression cases).
 //
-// The stuck-warn writer is the second seam: agent_close_discipline_gap
-// added a per-poll "this task is IN_PROGRESS but owner is needs_input
-// for too long" warning emitted to stderr; tests intercept it via
-// setWaitStuckWarnForTests so they can assert exactly-once dedupe
-// without scraping process.stderr.
+// The stuck-warn writer is the second seam: agent_attention_required
+// (named agent_close_discipline_gap until it was found to presume one
+// of three causes) added a per-poll "this task is IN_PROGRESS but its
+// owner is needs_input for too long" warning emitted to stderr; tests
+// intercept it via setWaitStuckWarnForTests so they can assert
+// exactly-once dedupe without scraping process.stderr.
 
 let currentWaitSleep: (ms: number) => Promise<void> = (ms) =>
   new Promise((resolve) => setTimeout(resolve, ms));
@@ -79,6 +80,27 @@ export function getWaitPollCount(): number {
 
 export function resetWaitPollCount(): void {
   pollCount = 0;
+}
+
+/**
+ * Human-readable age for the attention warning: `45s`, `5m`, `2h`.
+ *
+ * Deliberately NOT `relTime` from src/cli/format.ts — that module
+ * pulls picocolors and cli-table3, and this one stays dep-free so the
+ * SDK can be imported without the CLI's render layer. The duplication
+ * is three lines of arithmetic against a shared import that would
+ * invert the layering.
+ *
+ * Raw milliseconds were the old wording and read badly: a worker five
+ * minutes into a question got "(>= 1000ms ...)" because the message
+ * quoted the THRESHOLD, not the age.
+ */
+export function formatStallAge(ms: number): string {
+  const sec = Math.max(0, Math.round(ms / 1000));
+  if (sec < 60) return `${sec}s`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m`;
+  return `${Math.floor(min / 60)}h`;
 }
 
 /** A single task ref the wait verb is watching. Cross-workstream
@@ -117,12 +139,13 @@ export interface TaskWaitOptions {
    *  least this many milliseconds since the agent row's last update.
    *  Default 300_000 (5 min). Pass 0 to disable.
    *
-   *  Surfaced by agent_close_discipline_gap in mufeedback: workers
-   *  occasionally finish + commit + go idle without running
-   *  `mu task close <id>`, leaving wait blocked indefinitely. The
-   *  warning is observation-only — wait keeps polling so the operator
-   *  (or a wrapping policy) decides whether to force-close, re-prompt,
-   *  or escalate. */
+   *  Surfaced by agent_attention_required: a worker sitting in
+   *  needs_input leaves wait blocked indefinitely. The cause may be a
+   *  finish-without-close, a question awaiting an answer, or a prompt
+   *  — the predicate cannot tell them apart, so the warning reports
+   *  the observation and points at `mu agent read`. Default action is
+   *  observation-only (wait keeps polling); `onStall: 'exit'` makes it
+   *  terminal. */
   stuckAfterMs?: number;
   /** What to do when the `--stuck-after` predicate fires on a watched
    *  task. `'warn'` (default) = today's behaviour: yellow STUCK line
@@ -170,9 +193,11 @@ export interface TaskWaitTaskState {
   reachedTarget: boolean;
   /** True when the task is IN_PROGRESS, owned by a registered agent
    *  whose detected status is `needs_input` for >= `stuckAfterMs`.
-   *  Surfaces the agent_close_discipline_gap pattern: worker finished +
-   *  committed but skipped `mu task close <id>`. Backwards-compatible
-   *  signal — callers ignoring it see no behaviour change. */
+   *  Surfaces agent_attention_required: the worker may have finished
+   *  without closing, be waiting on an answer, or be sitting at a
+   *  prompt — this flag does not distinguish them, so a consumer
+   *  should read the pane. Backwards-compatible signal — callers
+   *  ignoring it see no behaviour change. */
   stuck: boolean;
 }
 
@@ -244,16 +269,26 @@ export async function waitForTasks(
   const refKey = (ref: TaskWaitRef): string => `${ref.workstreamName}/${ref.name}`;
 
   /**
-   * Detect the agent_close_discipline_gap pattern for one task:
-   * IN_PROGRESS in the DB, owned by a registered agent whose status
-   * is `needs_input` and whose `updated_at` is older than
-   * `stuckAfterMs`. We query agents directly (not via getAgent) to
-   * avoid an import cycle (src/agents.ts already imports from
-   * src/tasks.ts).
+   * Age of the attention-needed condition for one task, or null when
+   * it does not apply: IN_PROGRESS in the DB, owned by a registered
+   * agent whose status is `needs_input` and whose `updated_at` is
+   * older than `stuckAfterMs`. We query agents directly (not via
+   * getAgent) to avoid an import cycle (src/agents.ts already imports
+   * from src/tasks.ts).
+   *
+   * Returns the AGE rather than a boolean so the warning can report
+   * how long the worker has actually been waiting. The old message
+   * quoted `stuckAfterMs` instead, which reads as the worker having
+   * been idle for exactly the threshold — at `--stuck-after 1` it
+   * said "1000ms" about a worker that had been waiting five minutes.
    */
-  const isStuck = (status: TaskStatus, owner: string | null, workstream: string): boolean => {
-    if (stuckAfterMs <= 0) return false;
-    if (status !== "IN_PROGRESS" || !owner) return false;
+  const stuckAgeMs = (
+    status: TaskStatus,
+    owner: string | null,
+    workstream: string,
+  ): number | null => {
+    if (stuckAfterMs <= 0) return null;
+    if (status !== "IN_PROGRESS" || !owner) return null;
     // owner is the operator-facing agent name; agents.name is
     // per-workstream unique in v5. Scope the lookup by workstream so
     // a same-named worker elsewhere doesn't spuriously mark this task
@@ -270,9 +305,9 @@ export async function waitForTasks(
     // `row?.status !== ...` reads the same but leaves `row` possibly-undefined,
     // so the next line stops compiling under strict.
     // biome-ignore lint/complexity/useOptionalChain: narrowing, see above
-    if (!row || row.status !== "needs_input") return false;
+    if (!row || row.status !== "needs_input") return null;
     const ageMs = Date.now() - new Date(row.updated_at).getTime();
-    return ageMs >= stuckAfterMs;
+    return ageMs >= stuckAfterMs ? ageMs : null;
   };
 
   /** Read current state of all tasks; returns the result shape. */
@@ -285,26 +320,43 @@ export async function waitForTasks(
       // state change.)
       const status = (row?.status ?? "OPEN") as TaskStatus;
       const owner = row?.ownerName ?? null;
-      const stuck = isStuck(status, owner, ref.workstreamName);
+      const ageMs = stuckAgeMs(status, owner, ref.workstreamName);
+      const stuck = ageMs !== null;
       const key = refKey(ref);
-      if (stuck && !stuckWarned.has(key)) {
+      if (ageMs !== null && !stuckWarned.has(key)) {
         stuckWarned.add(key);
+        const ageSecs = Math.round(ageMs / 1000);
+        // State the OBSERVATION, not a cause. The predicate above only
+        // knows "needs_input for >= N" — it cannot tell a worker that
+        // finished without closing from one waiting on an answer from
+        // one sitting at a prompt, and those need opposite responses.
+        // The old text asserted the first ("likely committed but
+        // skipped mu task close"), which sent at least one operator
+        // hunting for a commit to merge while the worker was waiting
+        // on a design decision. Workers asking questions is DESIRABLE;
+        // the tooling must not frame it as negligence.
+        //
+        // Second line is the remedy, indented so the pair reads as one
+        // block: `mu agent read` is the next move in all three cases,
+        // because the question (or its absence) is in the pane, not in
+        // the task row.
+        //
         // Yellow ANSI escape inline (no picocolors import — keeps the
         // SDK module dep-free; the CLI layer already pulls picocolors).
-        // The message is one line, prefixed with `mu task wait:` so
-        // log greppers can target it. Cross-ws waits include the
-        // qualified `<ws>/<name>` so the operator sees which.
+        // Prefixed `mu task wait:` so log greppers can target it, and
+        // cross-ws waits carry the qualified `<ws>/<name>`.
+        const ownerBit = owner ?? "<none>";
         currentStuckWarn(
-          `\x1b[33mmu task wait: ${key} stuck — owner=${owner ?? "<none>"} in needs_input ` +
-            `(>= ${stuckAfterMs}ms since last status change). ` +
-            `Worker likely committed but skipped \`mu task close ${ref.name}\`.\x1b[0m\n`,
+          `\x1b[33mmu task wait: ${key} needs attention — owner=${ownerBit} has been in ` +
+            `needs_input for ${formatStallAge(ageMs)}. It may have finished without closing, ` +
+            `be waiting on an answer, or be sitting at a prompt.\x1b[0m\n` +
+            `  mu agent read ${ownerBit} -w ${ref.workstreamName} --lines 60\n`,
         );
         // Persist a corroborating kind='event' row so other consumers
         // (mu state, mu log --kind event, dashboards) see the same
         // signal that the new derived `idle` flag surfaces in the
         // agents table. The stderr warning stays — observation-only,
         // operator decides recovery. See idle_assigned_agent_detection.
-        const ageSecs = Math.round(stuckAfterMs / 1000);
         // Pure OBSERVATION: nothing is mutated, so no trigger could
         // ever see this. The emit is the only record.
         emitEvent(

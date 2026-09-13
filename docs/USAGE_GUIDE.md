@@ -1663,6 +1663,14 @@ ref; `--json` carries `nextSteps`; refs may be qualified
 agent's pane died. Status detection is pi-only (a non-pi pane always
 reads `needs_input`, so it never goes busy and the wait times out).
 
+**Don't reach for this verb to catch a worker that asked a question.**
+It fires on `busy → needs_input`, so it does detect the case — but it
+keys on **agents**, which means a task-DAG orchestrator would have to
+track the task→agent mapping itself and run two waits concurrently to
+catch both "task closed" and "worker asked something". `mu task wait
+--stuck-after` / `--on-stall` covers that from the task side; see
+[attention detection](#mu-task-wait-attention-detection---stuck-after----on-stall).
+
 ### `mu task wait`: cross-workstream refs + `--first` returns WHICH
 
 Each `<ref>` is either a bare task name (resolves via `-w` /
@@ -1746,7 +1754,9 @@ The `--json` shape on success is `{ firing, all, timedOut, nextSteps,
 * `timedOut` — array of refs that did NOT reach the target. Empty on
   clean success; populated on partial-progress timeout.
 * `nextSteps`— the same hint list printed to stdout (cherry-pick,
-  verify, refresh, or `mu task show` for unmet refs).
+  verify, refresh, or `mu task show` for unmet refs — except a
+  `stuck` ref, which gets `mu agent read <owner>` because its pane,
+  not its task row, holds the reason it stopped).
 
 ### Wait exit codes (`mu task wait`)
 
@@ -1759,7 +1769,7 @@ and exits with one of:
 | `0`  | The wait condition was met (`--all` reached, or `--any` / `--first` saw at least one). |
 | `5`  | `--timeout` expired before the condition was met. `--json` payload still includes `all` (refs that did reach) and `timedOut` (refs that didn't). |
 | `6`  | **REAPER_DETECTED.** A WATCHED task transitioned `IN_PROGRESS → OPEN` between polls because the reconciler detected the owning pane was dead and the reaper flipped the task back. Scoped to the wait set: a reaper-flip in some other workstream (or some other task in the same workstream) does NOT trigger exit 6. Fires only when the wait target is `CLOSED` (the default) — with `--status OPEN` a reaper-flip TO open IS the success and the wait returns `0`. Re-dispatch a worker (`mu agent spawn ... && mu task claim --for ...`) and re-run the wait. (`task_wait_reconcile_dead_panes` + `task_wait_cross_workstream`) |
-| `7`  | **STALL_DETECTED.** Only with `--on-stall exit`. The existing `--stuck-after` predicate fired on a watched task (IN_PROGRESS, owner alive but in `needs_input` for `>= --stuck-after` seconds) and the wait threw instead of polling forward. Same target=CLOSED carve-out as exit 6 (with `--status OPEN`/etc the worker reaching `needs_input` might BE the success path; `--on-stall exit` is downgraded to warn-only). Stderr names the task + owner + age. Exit 7 is the **ambiguous** sibling of exit 6: dead pane (6) is unambiguous (re-dispatch); idle agent (7) might be transient (operator decides poke vs release). If both fire in the same poll, exit 6 wins (reaper-flip moves status off `IN_PROGRESS`, so the stuck-check's predicate naturally fails). (`task_wait_stall_action_flag`) |
+| `7`  | **STALL_DETECTED.** Only with `--on-stall exit`. The existing `--stuck-after` predicate fired on a watched task (IN_PROGRESS, owner alive but in `needs_input` for `>= --stuck-after` seconds) and the wait threw instead of polling forward. Same target=CLOSED carve-out as exit 6 (with `--status OPEN`/etc the worker reaching `needs_input` might BE the success path; `--on-stall exit` is downgraded to warn-only). Stderr names the task + owner + age. Exit 7 is the **ambiguous** sibling of exit 6: dead pane (6) is unambiguous (re-dispatch); idle agent (7) might be transient, or be waiting on an answer — read the pane before deciding. If both fire in the same poll, exit 6 wins (reaper-flip moves status off `IN_PROGRESS`, so the stuck-check's predicate naturally fails). (`task_wait_stall_action_flag`) |
 
 The per-poll reconcile means a worker pane that died **before** you
 ran `mu task wait` is also reaped on the first tick — you'll see exit
@@ -1768,20 +1778,40 @@ For cross-workstream waits the reconcile loops over every workstream
 in the wait set (so a dead pane in workstream B is reaped while you
 wait on its task there too).
 
-### `mu task wait`: stall detection (`--stuck-after` + `--on-stall`)
+### `mu task wait`: attention detection (`--stuck-after` + `--on-stall`)
 
-Two orthogonal flags govern the stall behaviour:
+Two orthogonal flags govern the behaviour:
 
 * `--stuck-after <seconds>` — the **trigger**. An IN_PROGRESS task
   whose owner has been in `needs_input` for `>= N` seconds is marked
-  stuck. Default `300` (5 min); pass `0` to disable detection
-  entirely (no warn AND no exit).
+  as needing attention. Default `300` (5 min); pass `0` to disable
+  detection entirely (no warn AND no exit).
 * `--on-stall <action>` — the **action** when the trigger fires.
   Two values:
-  * `warn` (default) — yellow `STUCK` warning to stderr (deduped per
+  * `warn` (default) — yellow attention warning to stderr (deduped per
     task per wait call), corroborating `agent stalled <name> owns
     <task> for <secs>s` event in the ops log, and `wait` keeps
     polling.
+
+**`needs_input` has at least three causes, and the trigger cannot tell
+them apart:**
+
+| Cause | Response |
+| --- | --- |
+| Worker finished and committed, skipped `mu task close` | close it, merge the work |
+| Worker asked a question and is waiting on an answer | read the pane, answer it |
+| Worker hit an approval prompt or a wedged tool call | intervene or `mu agent kick` |
+
+So the warning states the observation and points at `mu agent read
+<owner>`, which is the next move in all three cases — the evidence is
+in the pane, not in the task row. `--json` carries `"stuck": true` per
+task, and a stuck ref's `nextSteps` entry reads the owner's pane
+instead of offering `mu task show`.
+
+A worker stopping to ask is **desirable behaviour**, not negligence:
+the questions that get asked are usually the ones that prevent
+rework. Treat an attention warning as "go look", not "the worker
+misbehaved".
   * `exit` — same emit + persist, then **exit 7**
     (`STALL_DETECTED`). The unattended-orchestrator escape: a
     wrapping policy can branch on 7 (idle, ambiguous — poke vs

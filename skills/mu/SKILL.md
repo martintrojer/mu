@@ -250,9 +250,12 @@ Every turn:
 ## `mu task wait`
 
 Use `--first` when the next step needs the firing task: unlike `--any`, it
-populates `.firing`. Exit 6 means a dead pane; exit 7 means stall. For remote
-workers, see [REMOTE_WORKERS.md](REMOTE_WORKERS.md) before choosing timeout or
-stall handling.
+populates `.firing`. Exit 6 means a dead pane; exit 7 means the owner sat in
+`needs_input`. Read that pane (`mu agent read <owner>`) before acting: the
+worker may be waiting on an answer from you, not merely forgetting to close.
+Answer it — questions are cheaper than rework. For remote workers, see
+[REMOTE_WORKERS.md](REMOTE_WORKERS.md) before choosing timeout or stall
+handling.
 
 ## Models and thinking effort
 

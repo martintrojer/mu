@@ -261,13 +261,13 @@ describe("waitForTasks", () => {
     }
   });
 
-  // Regression for agent_close_discipline_gap: a worker that
-  // committed + reported done in chat-style but skipped
-  // `mu task close <id>` leaves the task IN_PROGRESS while the agent
-  // sits in `needs_input`. mu task wait should keep polling but emit
-  // exactly ONE yellow STUCK warning per stuck task per wait call —
-  // not one per poll cycle (operators don't want stderr spam).
-  it("emits exactly one STUCK warning per stuck task per wait call (agent_close_discipline_gap)", async () => {
+  // Regression for agent_attention_required: a worker sitting in
+  // `needs_input` leaves its task IN_PROGRESS indefinitely — it may
+  // have committed without closing, be waiting on an answer, or be at
+  // a prompt. mu task wait should keep polling but emit exactly ONE
+  // attention warning per task per wait call, not one per poll cycle
+  // (operators don't want stderr spam).
+  it("emits exactly one attention warning per stuck task per wait call (agent_attention_required)", async () => {
     // Set up: a registered worker owns task 'a' which is IN_PROGRESS,
     // and the worker's status is `needs_input` with an `updated_at`
     // timestamp deep in the past so the staleness check fires on the
@@ -315,9 +315,17 @@ describe("waitForTasks", () => {
       // Multiple poll cycles ran (the timeout/poll math gives ~8) but
       // only ONE warning was emitted — dedupe is the point.
       expect(warnings).toHaveLength(1);
-      expect(warnings[0]).toContain("a stuck");
+      expect(warnings[0]).toContain("a needs attention");
       expect(warnings[0]).toContain("worker-stuck");
-      expect(warnings[0]).toContain("mu task close a");
+      // The remedy line is the highest-value part of the warning: the
+      // cause is only visible in the pane, so `agent read` is the next
+      // move whichever of the three it turns out to be.
+      expect(warnings[0]).toContain("mu agent read worker-stuck");
+      // ...and the message must NOT assert one presumed cause. The old
+      // text claimed "likely committed but skipped mu task close",
+      // which misdirected an operator into hunting for a commit while
+      // the worker was waiting on a design decision.
+      expect(warnings[0]).not.toContain("likely committed");
       // idle_assigned_agent_detection: the stderr warn is one-shot
       // and dies with the wait process; the kind='event' row is the
       // durable corroborating signal that mu state, mu log, and
@@ -429,7 +437,11 @@ describe("waitForTasks", () => {
       expect(e.taskName).toBe("a");
       expect(e.owner).toBe("w-fields");
       expect(e.workstream).toBe("test");
-      expect(e.ageSecs).toBe(2); // round(stuckAfterMs / 1000)
+      // ageSecs is the worker's ACTUAL age in needs_input (600s here),
+      // not the --stuck-after threshold (2s). Reporting the threshold
+      // was the bug: at `--stuck-after 1` the warning said "1000ms"
+      // about a worker that had been waiting five minutes.
+      expect(e.ageSecs).toBe(600);
       // HasNextSteps surface: poke + release + show.
       const steps = e.errorNextSteps();
       expect(steps.some((s) => s.command.includes("mu agent send w-fields"))).toBe(true);
