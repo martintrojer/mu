@@ -12,7 +12,8 @@
 // renderer. cli.ts re-exports every symbol for back-compat with the
 // existing import surface (tests + cli/* importers).
 
-import { type AgentRow, type AgentStatus, agentStatusGlyph } from "../agents.js";
+import type { AgentRow, AgentStatus } from "../agents.js";
+import { agentStatusGlyph, GLYPH } from "../glyphs.js";
 import { parseOpKey, renderOp } from "../log-render.js";
 import type { LogRow } from "../logs.js";
 import { muTable, pc } from "../output.js";
@@ -25,7 +26,7 @@ import type { TornDownWorkstream, WorkstreamSummary } from "../workstream.js";
 // ─── Status colours / icons ────────────────────────────────────────────
 
 /** Per-status colour for the table view. The glyph itself comes from
- *  agentStatusGlyph in src/agents.ts — single source of truth so the
+ *  agentStatusGlyph in src/glyphs.ts — single source of truth so the
  *  table view and the pane-border / composeAgentTitle never drift
  *  (review_code_status_emoji_two_sources caught a 2-of-7 disagreement). */
 const STATUS_COLORS: Record<AgentStatus, (s: string) => string> = {
@@ -44,12 +45,11 @@ export function statusIcon(status: AgentStatus): string {
 
 /**
  * Glyph used to flag the derived 'idle but assigned' state
- * (`AgentRow.idle === true`; idle_assigned_agent_detection). Plain
- * Unicode warning sign so it renders the same in cli-table3 cells
- * AND in single-line prose without needing a Nerd Font (the agent's
- * primary status glyph still uses Nerd Font via agentStatusGlyph).
+ * (`AgentRow.idle === true`; idle_assigned_agent_detection). Same
+ * warning glyph the doctor card paints for a `warn` check — one
+ * symbol, one meaning, from src/glyphs.ts.
  */
-export const IDLE_GLYPH = "⚠";
+export const IDLE_GLYPH = GLYPH.warn;
 
 export function colorStatus(status: TaskRow["status"]): string {
   switch (status) {

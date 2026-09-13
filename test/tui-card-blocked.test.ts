@@ -13,6 +13,7 @@ import {
   stillGating,
 } from "../src/cli/tui/cards/blocked.js";
 import { type Db, openDb } from "../src/db.js";
+import { GLYPH as SHARED_GLYPH } from "../src/glyphs.js";
 import type { WorkstreamSnapshot } from "../src/state.js";
 import { addBlockEdge, addTask, type TaskEdgeWithStatus, type TaskRow } from "../src/tasks.js";
 import { expectTextAbsent, expectTextOnce, renderCardToText } from "./_card-render.js";
@@ -136,7 +137,7 @@ describe("BlockedCard", () => {
       expectTextOnce(text, title);
       expectTextOnce(text, roi);
     }
-    expect(text.split("⛓").length - 1).toBe(3);
+    expect(text.split(SHARED_GLYPH.blocked).length - 1).toBe(3);
   });
 
   it("colours the status cell per row", () => {
@@ -200,7 +201,7 @@ describe("BlockedCard pure helpers", () => {
     expect(typeof GLYPH).toBe("string");
     expect(GLYPH.length).toBeGreaterThan(0);
     expect(GLYPH.length).toBeLessThanOrEqual(4);
-    expect(GLYPH).toBe("⛓");
+    expect(GLYPH).toBe(SHARED_GLYPH.blocked);
   });
 
   it("stillGating: drops CLOSED blockers; keeps OPEN/IN_PROGRESS", () => {

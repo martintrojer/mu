@@ -15,6 +15,7 @@
 
 import { type Db, resolveWorkstreamId, tryResolveWorkstreamId } from "./db.js";
 import type { AgentStatus } from "./detect.js";
+import { AGENT_STATUS_GLYPH, agentStatusGlyph, GLYPH } from "./glyphs.js";
 import { emitEvent } from "./logs.js";
 import { withOpContext } from "./op-context.js";
 import { type ReconcileMode, type ReconcileReport, reconcile } from "./reconcile.js";
@@ -346,58 +347,33 @@ export function shouldOverwriteAgentStatus(current: AgentStatus, detected: Agent
 //
 // The pane border (set by enableMuPaneBorders) renders
 // `[mu] #{pane_title}` as tmux chrome. mu owns the pane title and uses
-// it to carry interpreted state at a glance. The status glyph in each
-// example below is whatever STATUS_EMOJI resolves to today (see the
-// table 30 lines down) — do NOT duplicate the codepoints in this
-// comment, they have drifted from production once already.
+// it to carry interpreted state at a glance. The glyphs below are
+// named, not spelled out: they resolve through src/glyphs.ts, and
+// codepoints duplicated into a comment have drifted from production
+// once already.
 //
 //   worker-a                                    (no claim, status not
 //                                                 worth surfacing yet)
-//   worker-a · <STATUS_EMOJI.busy>              (busy, no claim)
-//   worker-a · <STATUS_EMOJI.busy> · build_x     (busy, owns one task)
-//   worker-a · <STATUS_EMOJI.needs_input> · build_x
-//   worker-a · <STATUS_EMOJI.needs_permission> · build_x
-//   worker-a · <STATUS_EMOJI.free>              (free, no claim)
-//   worker-a · <STATUS_EMOJI.busy> · ⊕2 tasks    (multi-claim case)
+//   worker-a · <glyph busy>                     (busy, no claim)
+//   worker-a · <glyph busy> · build_x           (busy, owns one task)
+//   worker-a · <glyph needs_input> · build_x
+//   worker-a · <glyph needs_permission> · build_x
+//   worker-a · <glyph free>                     (free, no claim)
+//   worker-a · <glyph busy> · <glyph multi>2 tasks   (multi-claim case)
 //
 // The agent name MUST remain the first ' · '-separated token so the
 // claim protocol's pane-title-as-identity fallback (currentPaneTitle
 // in src/tmux.ts) keeps working. Adopted panes that haven't been
 // re-titled by mu just have the name (one token) — still parses.
 
-/** Plain-text emoji map for the agent status. Mirrors statusIcon in
- *  cli.ts but without picocolors (tmux pane titles don't render ANSI
- *  colour). 'spawning' is omitted on purpose — the title gets the
- *  initial render before status detection runs, and 'spawning' is a
- *  transient state. */
-// Single-codepoint, single-cell-width Nerd Font glyphs (nf-fa family).
-// Picked over Unicode emoji so cli-table3's column widths line up:
-// Unicode emoji like a gear-with-variation-selector are TWO
-// codepoints, which cli-table3 counts as length-2 and uses to size
-// columns; but terminals render them as ONE cell wide, so adjacent
-// rows that mix 1-codepoint and 2-codepoint emoji misalign. Nerd Font
-// glyphs are private-use codepoints, all length-1 and all 1-cell-wide.
-//
-// Requires a Nerd Font on the operator's terminal (mu's substrate is
-// pi, which assumes Nerd Fonts; the rest of mu's TUI uses Nerd Font
-// glyphs already in cli-table3 box-drawing). Without one, every
-// glyph below renders as a placeholder box — the columns still align
-// (which was the bug we were fixing).
-export const STATUS_EMOJI: Record<AgentStatus, string> = {
-  spawning: "\uf251", // nf-fa-hourglass_start
-  busy: "\uf013", // nf-fa-cog
-  needs_input: "\uf186", // nf-fa-moon_o
-  needs_permission: "\uf023", // nf-fa-lock
-  free: "\uf058", // nf-fa-check_circle
-  unreachable: "\uf059", // nf-fa-question_circle
-  terminated: "\uf057", // nf-fa-times_circle
-};
+/** Back-compat alias for the agent status glyph map, which now lives
+ *  with every other state glyph in src/glyphs.ts. New code should
+ *  import AGENT_STATUS_GLYPH (or the agentStatusGlyph helper) from
+ *  there; this name is kept because it is part of the SDK surface via
+ *  src/index.ts. */
+export const STATUS_EMOJI = AGENT_STATUS_GLYPH;
 
-/** Single rendering helper for agent status glyphs. Keep callers off
- *  STATUS_EMOJI indexing so glyph fallback policy stays centralised. */
-export function agentStatusGlyph(status: AgentStatus): string {
-  return STATUS_EMOJI[status] ?? "?";
-}
+export { agentStatusGlyph };
 
 /** Maximum total length for a composed pane title. tmux truncates
  *  silently in some chrome positions; we truncate the task id
@@ -452,7 +428,7 @@ export function composeAgentTitle(db: Db, agent: AgentRow): string {
   if (tasks.length === 1) {
     title += ` · ${tasks[0]?.name}`;
   } else if (tasks.length > 1) {
-    title += ` · ⊕${tasks.length} tasks`;
+    title += ` · ${GLYPH.multi}${tasks.length} tasks`;
   }
   if (title.length > MAX_TITLE_LEN) {
     // Truncate from the END (preserves agent name + status prefix).

@@ -12,6 +12,27 @@ breaking changes are called out under "Breaking" in each entry.
 
 ### Changed
 
+- **All state glyphs now come from one file, `src/glyphs.ts`, and one font
+  family.** Symbols were inlined at each render site — three separate `"✓"`
+  literals (Recent card, Workspaces card, doctor card), `"⚠"` in two CLI
+  formatters, `"⛓"` / `"⋈"` / `"★"` / `"ⓘ"` / `"●"` each at their call site —
+  which is one place per literal for the next drift to start. `AGENT_STATUS_GLYPH`
+  (was `STATUS_EMOJI`, kept as an alias) and the new `GLYPH` record are keyed by
+  MEANING (`GLYPH.stale`, not a clock), so re-pointing a symbol is a one-line
+  edit. The TUI's `superscriptDigit` folded in from `src/cli/tui/glyphs.ts`;
+  two files called `glyphs.ts` was its own trap.
+
+  Every glyph is now a classic Nerd Font `nf-fa-*` codepoint. Mixed families
+  were the original bug: a Unicode emoji like ⚙️ is two codepoints that
+  `cli-table3` sizes as width 2 but the terminal draws one cell wide, so rows
+  mixing families misalign. `nf-md-*` slots move between font releases and
+  render as the wrong icon.
+
+- **`busy` agent glyph is `nf-fa-play` instead of `nf-fa-cog`.** murmur's dash
+  paints a running pane with the play glyph, and mu drives the same panes. A
+  gear reads as "settings" in every other TUI the operator uses; play reads as
+  "this is running" with no lookup.
+
 - **`scripts/migrate.ts` accepts v7 and restores pre-1.0 archives.** The
   sidecar already covered v8/v9 → v10. Real upgrade DBs are often still
   on v7 with empty live tables and the useful history only in

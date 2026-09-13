@@ -23,6 +23,7 @@ import {
   UsageError,
 } from "../../cli.js";
 import { type Db, tryResolveWorkstreamId, WorkstreamNotFoundError } from "../../db.js";
+import { GLYPH } from "../../glyphs.js";
 import { type NextStep, pc, printNextSteps } from "../../output.js";
 import { reconcile } from "../../reconcile.js";
 import { shellQuote } from "../../shell-quote.js";
@@ -585,7 +586,7 @@ export async function cmdTaskWait(
       );
   console.log(summary);
   for (const t of result.refs) {
-    const marker = t.reachedTarget ? pc.green("✓") : pc.dim("•");
+    const marker = t.reachedTarget ? pc.green(GLYPH.ok) : pc.dim("•");
     // Cross-ws: show the qualified id so a mixed list is unambiguous.
     // Single-ws (workstreamSet.size === 1) keeps today's bare-name
     // output to avoid noise.

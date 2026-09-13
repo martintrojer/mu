@@ -7,6 +7,7 @@ import {
   toggleStatusSet,
   useStatusFilter,
 } from "../src/cli/tui/use-status-filter.js";
+import { GLYPH } from "../src/glyphs.js";
 import { TASK_STATUSES } from "../src/tasks/status.js";
 
 const ANSI_RE = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
@@ -72,9 +73,9 @@ describe("StatusFilterStrip", () => {
     const text = stripAnsi(renderToString(StatusFilterStrip({ statuses: new Set(TASK_STATUSES) })));
 
     expect(text).toContain("filters: ");
-    expect(text).toContain("[O]pen ●");
-    expect(text).toContain("[I]n_progress ●");
-    expect(text).toContain("[C]losed ●");
+    expect(text).toContain(`[O]pen ${GLYPH.on}`);
+    expect(text).toContain(`[I]n_progress ${GLYPH.on}`);
+    expect(text).toContain(`[C]losed ${GLYPH.on}`);
   });
 
   it("renders disabled statuses with open-circle indicators", () => {
@@ -83,8 +84,8 @@ describe("StatusFilterStrip", () => {
 
     const text = stripAnsi(renderToString(StatusFilterStrip({ statuses })));
 
-    expect(text).toContain("[C]losed ○");
-    expect(text).toContain("[O]pen ●");
+    expect(text).toContain(`[C]losed ${GLYPH.off}`);
+    expect(text).toContain(`[O]pen ${GLYPH.on}`);
   });
 
   it("uses colorStatus for status letters", () => {

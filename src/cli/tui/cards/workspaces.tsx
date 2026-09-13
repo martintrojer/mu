@@ -33,6 +33,7 @@
 
 import { Text } from "ink";
 import type { ReactElement } from "react";
+import { GLYPH } from "../../../glyphs.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
 import {
   isWorkspaceStale,
@@ -169,18 +170,18 @@ export function colorForBehind(n: number | null | undefined): string | undefined
   return "red";
 }
 
-/** Per-row status glyph. Priority order:
- *    1. dirty  → ★ (uncommitted edits — most actionable)
- *    2. stale  → ⓘ (commits-behind ≥10 — needs `mu workspace refresh`)
- *    3. clean  → ✓
+/** Per-row status glyph (from src/glyphs.ts). Priority order:
+ *    1. dirty  → GLYPH.dirty (uncommitted edits — most actionable)
+ *    2. stale  → GLYPH.stale (commits-behind ≥10 — needs `mu workspace refresh`)
+ *    3. clean  → GLYPH.ok
  *  When dirty is unknown (null / undefined) we fall through to the
  *  staleness check; we never paint a row as clean when its dirty
  *  state is unknown.
  */
 export function glyphFor(w: WorkspaceRow): string {
-  if (w.dirty === true) return "★";
-  if (isStale(w.commitsBehindMain)) return "ⓘ";
-  return "✓";
+  if (w.dirty === true) return GLYPH.dirty;
+  if (isStale(w.commitsBehindMain)) return GLYPH.stale;
+  return GLYPH.ok;
 }
 
 /** Glyph colour: red when dirty (most urgent), yellow when stale,

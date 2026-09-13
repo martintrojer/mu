@@ -49,6 +49,7 @@ import {
   withRoiAll,
 } from "../cli.js";
 import { type Db, tryResolveWorkstreamId, WorkstreamNotFoundError } from "../db.js";
+import { GLYPH } from "../glyphs.js";
 import { muTable, pc } from "../output.js";
 import {
   isLingeringScratchAgent,
@@ -312,7 +313,7 @@ function renderFullCard(d: PerWsData): void {
   // commits behind main. Per bug_workspace_stale_parent_silent_drift.
   const workspacesHeader =
     staleWorkspaces.length > 0
-      ? `${pc.bold(`Workspaces (${d.workspaces.length})`)} ${pc.yellow(`⚠ (${staleWorkspaces.length} stale ≥${WORKSPACE_STALE_THRESHOLD} commits behind):`)}`
+      ? `${pc.bold(`Workspaces (${d.workspaces.length})`)} ${pc.yellow(`${GLYPH.warn} (${staleWorkspaces.length} stale ≥${WORKSPACE_STALE_THRESHOLD} commits behind):`)}`
       : pc.bold(`Workspaces (${d.workspaces.length})`);
   console.log(workspacesHeader);
   if (d.workspaces.length === 0) {
@@ -324,7 +325,7 @@ function renderFullCard(d: PerWsData): void {
     const example = staleWorkspaces[0]?.agentName ?? "<agent>";
     console.log(
       pc.yellow(
-        `⚠ Tip: Refresh stale workspaces to land patches against current main: mu workspace refresh ${example}`,
+        `${GLYPH.warn} Tip: Refresh stale workspaces to land patches against current main: mu workspace refresh ${example}`,
       ),
     );
   }

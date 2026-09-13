@@ -11,6 +11,7 @@ import {
   isStale,
   WorkspacesCard,
 } from "../src/cli/tui/cards/workspaces.js";
+import { GLYPH } from "../src/glyphs.js";
 import type { WorkstreamSnapshot } from "../src/state.js";
 import type { WorkspaceRow } from "../src/workspace.js";
 import { expectTextAbsent, expectTextOnce, renderCardToText } from "./_card-render.js";
@@ -77,9 +78,9 @@ describe("WorkspacesCard", () => {
       expectTextOnce(text, agent);
     }
     expect(text).toContain("12");
-    expectTextOnce(text, "★");
-    expectTextOnce(text, "ⓘ");
-    expectTextOnce(text, "✓");
+    expectTextOnce(text, GLYPH.dirty);
+    expectTextOnce(text, GLYPH.stale);
+    expectTextOnce(text, GLYPH.ok);
   });
 
   it("truncates at the default row budget with the bottomLabel '+N more · Shift+5'", () => {
@@ -127,12 +128,12 @@ describe("WorkspacesCard pure helpers", () => {
   });
 
   it("glyphFor: dirty wins over stale wins over clean", () => {
-    expect(glyphFor(row({ dirty: true, commitsBehindMain: 50 }))).toBe("★");
-    expect(glyphFor(row({ dirty: true, commitsBehindMain: 0 }))).toBe("★");
-    expect(glyphFor(row({ dirty: false, commitsBehindMain: 12 }))).toBe("ⓘ");
-    expect(glyphFor(row({ dirty: false, commitsBehindMain: 0 }))).toBe("✓");
-    expect(glyphFor(row({ dirty: undefined, commitsBehindMain: 0 }))).toBe("✓");
-    expect(glyphFor(row({ dirty: null, commitsBehindMain: 50 }))).toBe("ⓘ");
+    expect(glyphFor(row({ dirty: true, commitsBehindMain: 50 }))).toBe(GLYPH.dirty);
+    expect(glyphFor(row({ dirty: true, commitsBehindMain: 0 }))).toBe(GLYPH.dirty);
+    expect(glyphFor(row({ dirty: false, commitsBehindMain: 12 }))).toBe(GLYPH.stale);
+    expect(glyphFor(row({ dirty: false, commitsBehindMain: 0 }))).toBe(GLYPH.ok);
+    expect(glyphFor(row({ dirty: undefined, commitsBehindMain: 0 }))).toBe(GLYPH.ok);
+    expect(glyphFor(row({ dirty: null, commitsBehindMain: 50 }))).toBe(GLYPH.stale);
   });
 
   it("colorForGlyph: dirty=red, stale=yellow, clean=green", () => {

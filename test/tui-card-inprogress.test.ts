@@ -10,6 +10,7 @@ import {
   STALE_CLAIM_THRESHOLD_MS,
 } from "../src/cli/tui/cards/inprogress.js";
 import { ageMs, formatSinceClaim } from "../src/cli/tui/format-helpers.js";
+import { agentStatusGlyph } from "../src/glyphs.js";
 import type { WorkstreamSnapshot } from "../src/state.js";
 import type { TaskRow } from "../src/tasks.js";
 import { expectTextAbsent, expectTextOnce, renderCardToText } from "./_card-render.js";
@@ -86,7 +87,7 @@ describe("InProgressCard", () => {
       expectTextOnce(text, owner);
       expectTextOnce(text, title);
     }
-    expect(text.split("").length - 1).toBe(3);
+    expect(text.split(GLYPH).length - 1).toBe(3);
   });
 
   it("colours the status cell per row", () => {
@@ -121,10 +122,10 @@ describe("InProgressCard pure helpers", () => {
     expect(STALE_CLAIM_THRESHOLD_MS).toBe(300_000);
   });
 
-  it("GLYPH: every IN_PROGRESS row gets the cog glyph", () => {
-    // The cog is a single visible character; we don't pin the exact
-    // codepoint because STATUS_EMOJI may evolve, but it must be a
-    // non-empty short string (≤ 4 bytes / 1-2 columns).
+  it("GLYPH: every IN_PROGRESS row gets the shared busy glyph", () => {
+    // Pinned to the shared vocabulary rather than a literal codepoint,
+    // so re-pointing a glyph in src/glyphs.ts is a one-line change.
+    expect(GLYPH).toBe(agentStatusGlyph("busy"));
     expect(typeof GLYPH).toBe("string");
     expect(GLYPH.length).toBeGreaterThan(0);
     expect(GLYPH.length).toBeLessThanOrEqual(4);

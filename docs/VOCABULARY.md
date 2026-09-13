@@ -167,16 +167,28 @@ window.
 
 ### Agent status enum (persisted in `agents.status`)
 
-| Value             | Icon | Meaning                                             |
-| ----------------- | ---- | --------------------------------------------------- |
-| `spawning`        | ⏳   | Pane created, agent process booting                 |
-| `busy`            | ⚙️    | Actively working (detector saw busy marker)         |
-| `needs_input`     | 💤   | Idle prompt visible, waiting for input              |
-| `needs_permission`| 🔐   | Permission prompt visible (e.g., "Allow once")      |
-| `free`            | ✓    | Available; retained for persisted/runtime status compatibility |
-| `managed`         | 🤝   | Under external orchestration; mu observes only      |
-| `unreachable`     | ❓   | Transport down, status uncertain                    |
-| `terminated`      | ✕    | Process gone, awaiting reaping                      |
+Glyphs are named, not spelled out: the codepoints live in
+`src/glyphs.ts` (`AGENT_STATUS_GLYPH`) and a table that duplicates
+them has drifted from production once already.
+
+| Value             | Glyph slot            | Meaning                                        |
+| ----------------- | --------------------- | ---------------------------------------------- |
+| `spawning`        | nf-fa-hourglass_start | Pane created, agent process booting            |
+| `busy`            | nf-fa-play            | Actively working (detector saw busy marker)    |
+| `needs_input`     | nf-fa-moon_o          | Idle prompt visible, waiting for input         |
+| `needs_permission`| nf-fa-lock            | Permission prompt visible (e.g., "Allow once") |
+| `free`            | nf-fa-check_circle    | Available; retained for persisted/runtime status compatibility |
+| `managed`         | —                     | Under external orchestration; mu observes only |
+| `unreachable`     | nf-fa-question_circle | Transport down, status uncertain               |
+| `terminated`      | nf-fa-times_circle    | Process gone, awaiting reaping                 |
+
+All of them are classic Nerd Font `nf-fa-*` (Font Awesome 4)
+codepoints, single-codepoint and one cell wide, so `cli-table3`
+columns line up. `busy` is deliberately the same glyph murmur's dash
+paints for a `running` pane — they drive the same panes, so one symbol
+means one thing on both surfaces. Non-agent state glyphs (blocked,
+dirty, stale, ok/warn/fail, filter toggles) come from the `GLYPH`
+record in the same file.
 
 **Source of truth:** the substrate — the **mux backend**, plus the
 **detector** when that backend cannot classify panes itself. The DB is

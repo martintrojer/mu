@@ -8,6 +8,7 @@
 import { Box, Text, useInput } from "ink";
 import { type ReactElement, useMemo, useState } from "react";
 import type { Db } from "../../../db.js";
+import { GLYPH } from "../../../glyphs.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
 import {
   relTimeBasisForSort,
@@ -381,7 +382,7 @@ function BlockedFilterStrip({ mode }: { mode: BlockedFilterMode }): ReactElement
     <Box>
       <Text dimColor>
         [<Text bold>b</Text>]locked: {BLOCKED_FILTER_LABELS[mode]}
-        {mode === "all" ? "" : " ●"}
+        {mode === "all" ? "" : ` ${GLYPH.on}`}
       </Text>
     </Box>
   );

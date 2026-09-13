@@ -4,7 +4,7 @@
 //
 //   ╭─ ¹ Agents · 3 free ───────────────────────╮
 //   │  ✓ worker-1   free   build_x   —          │
-//   │  ⚙ worker-2   busy   review_x  —          │
+//   │  ▶ worker-2   busy   review_x  —          │
 //   ╰───────────────────────────────────────────╯
 //
 // IMPLEMENTATION
@@ -53,7 +53,7 @@
 import { Box, Text } from "ink";
 import type { ReactElement, ReactNode } from "react";
 import stringWidth from "string-width";
-import { superscriptDigit } from "./glyphs.js";
+import { superscriptDigit } from "../../glyphs.js";
 import { useTerminalSize } from "./use-terminal-size.js";
 
 const ROUND = {

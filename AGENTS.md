@@ -109,6 +109,7 @@ mu/
 │   ├── log-render.ts      # the ONE op → prose formatter (renderOp); shared by CLI + TUI
 │   ├── vcs.ts             # VcsBackend hub (re-exports src/vcs/*: jj/sl/git/none impls)
 │   ├── workspace.ts       # per-agent VCS workspaces hub (re-exports src/workspace/*)
+│   ├── glyphs.ts          # THE glyph vocabulary: agent status + state glyphs + card digits
 │   ├── shell-quote.ts     # POSIX single-quote helper for copy-pasteable Next: hints
 │   ├── dag.ts             # full-DAG forest builder (loadFullDag for `mu task tree` + DAG popup)
 │   ├── state.ts           # SDK seam for `mu state` (fast SQL tier + slow subprocess tier + merge)
@@ -149,7 +150,6 @@ mu/
 │   │   │   ├── layout.ts           # responsive multi-column dashboard + per-card row budgets
 │   │   │   ├── columns.ts          # column-aligned row layout with protect/clip clipping
 │   │   │   ├── wrap-ansi.ts        # ANSI-aware visual-width line wrapper + SGR close-on-end
-│   │   │   ├── glyphs.ts           # superscript digit + status glyphs
 │   │   │   ├── format-helpers.ts   # shared TUI formatters (relTime, sinceClaim, ROI, etc.)
 │   │   │   ├── titled-box.tsx      # rounded border with section header inset into top border + bottomLabel
 │   │   │   ├── popup-shell.tsx     # popup outer chrome (cyan TitledBox)

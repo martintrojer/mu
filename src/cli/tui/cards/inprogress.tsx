@@ -13,10 +13,10 @@
 //
 // CARD LAYOUT
 //   glyph  id          owner       since-claim   title
-//   ⚙      design_x    worker-1    3m            Design X
-//   ⚙      review_x    reviewer-1  12m           Review X
+//   ▶      design_x    worker-1    3m            Design X
+//   ▶      review_x    reviewer-1  12m           Review X
 //
-// Glyph ⚙ matches agent-display's busy status glyph used in the Agents
+// Glyph ▶ matches agent-display's busy status glyph used in the Agents
 // card — the operator already reads it as "this thing is running".
 // Consistency over novelty.
 //

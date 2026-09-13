@@ -9,6 +9,7 @@ import {
   glyphFor,
 } from "../src/cli/tui/cards/doctor.js";
 import type { DoctorCheck, DoctorSummary } from "../src/doctor-summary.js";
+import { GLYPH } from "../src/glyphs.js";
 import type { WorkstreamSnapshot } from "../src/state.js";
 import { expectTextAbsent, expectTextOnce, renderCardToText } from "./_card-render.js";
 
@@ -77,7 +78,7 @@ describe("DoctorCard", () => {
     const text = renderCardToText(DoctorCard({ snapshot: snap(HEALTHY_DOCTOR) }));
     expect(text).toContain("Doctor");
     expect(text).toContain("all healthy");
-    expect(text).toContain("✓");
+    expect(text).toContain(GLYPH.ok);
     expect(text).toContain("4 checks");
   });
 
@@ -95,8 +96,8 @@ describe("DoctorCard", () => {
     }
     expect(text.split("warn").length - 1).toBe(2);
     expectTextOnce(text, "fail");
-    expectTextOnce(text, "✗");
-    expect(text.split("⚠").length - 1).toBe(2);
+    expectTextOnce(text, GLYPH.fail);
+    expect(text.split(GLYPH.warn).length - 1).toBe(2);
     expectTextAbsent(text, "schema_version");
     expectTextAbsent(text, "foreign_keys");
   });
@@ -118,9 +119,9 @@ describe("DoctorCard", () => {
 
 describe("DoctorCard pure helpers", () => {
   it.each([
-    ["fail", "✗"],
-    ["warn", "⚠"],
-    ["ok", "✓"],
+    ["fail", GLYPH.fail],
+    ["warn", GLYPH.warn],
+    ["ok", GLYPH.ok],
   ] as const)("glyphFor(%s) → %s", (status, glyph) => {
     expect(glyphFor({ status })).toBe(glyph);
   });

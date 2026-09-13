@@ -20,6 +20,7 @@ import {
   summarizeOwnedTasks,
   type WorkstreamSnapshot,
 } from "../../../state.js";
+import { IDLE_GLYPH } from "../../format.js";
 import { agentStatusGlyph } from "../agent-display.js";
 import {
   type ColumnSpec,
@@ -86,7 +87,7 @@ export function AgentsCard({ snapshot, rowBudget, cols }: AgentsCardProps): Reac
   const rows = shown.map((a) => {
     const owned = snapshot.inProgress.filter((t) => t.ownerName === a.name);
     const taskBit = summarizeOwnedTasks(owned).bit;
-    const idle = a.idle ? "⚠ idle" : "";
+    const idle = a.idle ? `${IDLE_GLYPH} idle` : "";
     return [agentStatusGlyph(a.status), a.name, taskBit, idle];
   });
   const widths = layoutColumns(rows, COLUMN_SPECS, contentWidth);

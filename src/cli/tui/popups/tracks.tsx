@@ -30,6 +30,7 @@
 import { Box, Text, useInput } from "ink";
 import { type ReactElement, useEffect, useMemo, useState } from "react";
 import type { Db } from "../../../db.js";
+import { GLYPH } from "../../../glyphs.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
 import { getTask, type TaskRow } from "../../../tasks.js";
 import { type ColumnSpec, contentWidthFromCols, layoutColumns, renderRow } from "../columns.js";
@@ -339,7 +340,7 @@ export function TracksPopup({
   const rows = visible.map((t, i) => {
     const absoluteIndex = start + i;
     const goalNames = t.roots.map((r) => r.name).join(", ");
-    const diamond = t.roots.length > 1 ? "⋈" : " ";
+    const diamond = t.roots.length > 1 ? GLYPH.merge : " ";
     const counts = `(${t.taskIds.size} tasks · ${t.readyCount} ready)`;
     return [`Track ${absoluteIndex + 1}`, diamond, goalNames, counts];
   });

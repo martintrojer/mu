@@ -15,6 +15,7 @@ import {
   updateAgentStatus,
 } from "../src/agents.js";
 import { type Db, openDb } from "../src/db.js";
+import { GLYPH } from "../src/glyphs.js";
 import { listLogs } from "../src/logs.js";
 import { addTask, claimTask, getTask, listNotes } from "../src/tasks.js";
 
@@ -413,7 +414,7 @@ describe("composeAgentTitle", () => {
     expect(composeAgentTitle(db, a)).toBe(`worker-a · ${STATUS_EMOJI.busy} · build_x`);
   });
 
-  it("compresses to '⊕N tasks' when agent owns multiple tasks", () => {
+  it("compresses to '<multi>N tasks' when agent owns multiple tasks", () => {
     insertAgent(db, { name: "worker-a", workstream: "ws", paneId: "%1", status: "busy" });
     for (const id of ["t_a", "t_b", "t_c"]) {
       addTask(db, { localId: id, workstream: "ws", title: id, impact: 50, effortDays: 1 });
@@ -424,7 +425,9 @@ describe("composeAgentTitle", () => {
     }
     const a = getAgent(db, "worker-a", "ws");
     if (!a) throw new Error();
-    expect(composeAgentTitle(db, a)).toBe(`worker-a · ${STATUS_EMOJI.busy} · ⊕3 tasks`);
+    expect(composeAgentTitle(db, a)).toBe(
+      `worker-a · ${STATUS_EMOJI.busy} · ${GLYPH.multi}3 tasks`,
+    );
   });
 
   it("excludes CLOSED tasks from the count (live work view)", () => {
@@ -439,7 +442,7 @@ describe("composeAgentTitle", () => {
     db.prepare("UPDATE tasks SET status='CLOSED' WHERE local_id='shipped'").run();
     const a = getAgent(db, "worker-a", "ws");
     if (!a) throw new Error();
-    // Only 'live' is OPEN+owned → single-task form, not ⊕N.
+    // Only 'live' is OPEN+owned → single-task form, not the multi glyph.
     expect(composeAgentTitle(db, a)).toBe(`worker-a · ${STATUS_EMOJI.busy} · live`);
   });
 

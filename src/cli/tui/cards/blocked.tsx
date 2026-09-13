@@ -14,11 +14,11 @@
 //
 // CARD LAYOUT
 //   glyph  id           STATUS   #blocks   ROI    title
-//   ⛓      review_x     OPEN     2          75    Review X
-//   ⛓      cherry_x     OPEN     1          60    Cherry-pick X
+//   <⛓>    review_x     OPEN     2          75    Review X
+//   <⛓>    cherry_x     OPEN     1          60    Cherry-pick X
 //
-// Glyph ⛓ (chain link, U+26D3) reads as "this is blocked / chained
-// to something". Coloured dim — the operator's eye is meant to land
+// The glyph is GLYPH.blocked from src/glyphs.ts (a chain link) and
+// reads as "this is blocked / chained to something". Coloured dim — the operator's eye is meant to land
 // on the #blockers / top-blocker subtitle, not the row glyph.
 // STATUS column is a stable "OPEN" string (the BLOCKED view filters
 // to OPEN by definition — see src/db.ts BLOCKED_VIEW_SQL); kept in
@@ -62,6 +62,7 @@
 
 import type { ReactElement } from "react";
 import type { Db } from "../../../db.js";
+import { GLYPH as SHARED_GLYPH } from "../../../glyphs.js";
 import { roiBucket, type WorkstreamSnapshot } from "../../../state.js";
 import { getTaskEdgesWithStatus, type TaskEdgeWithStatus } from "../../../tasks.js";
 import { inkColorForStatus } from "../../format.js";
@@ -88,8 +89,8 @@ export interface BlockedCardProps {
 
 export const cardConfig = CARD_CONFIGS[7];
 
-/** Glyph for every blocked row. Always the chain-link (⛓). */
-export const GLYPH = "⛓";
+/** Glyph for every blocked row. Always the chain-link. */
+export const GLYPH = SHARED_GLYPH.blocked;
 
 const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
   { kind: "protect" }, // glyph

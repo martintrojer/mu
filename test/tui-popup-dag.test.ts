@@ -178,7 +178,7 @@ describe("DagPopup", () => {
   it("filter strip source reflects toggled status state", () => {
     const src = readFileSync("./src/cli/tui/use-status-filter.tsx", "utf8");
     expect(src).toContain("filters: ");
-    expect(src).toContain('enabled ? "●" : "○"');
+    expect(src).toContain("enabled ? GLYPH.on : GLYPH.off");
     expect(src).toContain('CLOSED: { key: "C", rest: "losed" }');
   });
 

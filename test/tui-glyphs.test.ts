@@ -3,7 +3,7 @@
 // keymap row.
 
 import { describe, expect, it } from "vitest";
-import { superscriptDigit } from "../src/cli/tui/glyphs.js";
+import { superscriptDigit } from "../src/glyphs.js";
 
 describe("superscriptDigit", () => {
   it("returns the canonical Unicode glyph for 0..9", () => {

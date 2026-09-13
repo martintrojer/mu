@@ -51,6 +51,7 @@
 //   popup slot 8 now point at the same task-recent view again.
 
 import type { ReactElement } from "react";
+import { GLYPH as SHARED_GLYPH } from "../../../glyphs.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
 import { inkColorForStatus } from "../../format.js";
 import {
@@ -74,8 +75,8 @@ export interface RecentCardProps {
 
 export const cardConfig = CARD_CONFIGS[8];
 
-/** Glyph for every recently-closed row. Always the heavy check (✓). */
-export const GLYPH = "✓";
+/** Glyph for every recently-closed row. Always the ok check. */
+export const GLYPH = SHARED_GLYPH.ok;
 
 const COLUMN_SPECS: ReadonlyArray<ColumnSpec> = [
   { kind: "protect" }, // glyph

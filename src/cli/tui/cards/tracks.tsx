@@ -13,6 +13,7 @@
 
 import { Text } from "ink";
 import type { ReactElement } from "react";
+import { GLYPH } from "../../../glyphs.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
 import {
   type ColumnSpec,
@@ -80,7 +81,7 @@ export function TracksCard({ snapshot, rowBudget, cols }: TracksCardProps): Reac
       .slice(0, 2)
       .map((r) => r.name)
       .join(", ");
-    const diamond = t.roots.length > 1 ? "⋈" : " ";
+    const diamond = t.roots.length > 1 ? GLYPH.merge : " ";
     const taskNoun = t.taskIds.size === 1 ? "task" : "tasks";
     const counts = `(${t.taskIds.size} ${taskNoun} · ${t.readyCount} ready)`;
     return [`Track ${i + 1}`, diamond, goalNames, counts];

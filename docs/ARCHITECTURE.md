@@ -395,7 +395,6 @@ src/cli/tui/
 ├── layout.ts                   # responsive multi-column dashboard + per-card row budgets
 ├── columns.ts                  # column-aligned row layout with protect/clip clipping
 ├── wrap-ansi.ts                # ANSI-aware visual-width line wrapper + SGR close-on-end
-├── glyphs.ts                   # superscript digit + status glyphs
 ├── format-helpers.ts           # shared TUI formatters (relTime, sinceClaim, ROI)
 ├── titled-box.tsx              # rounded border with section-header / bottomLabel inset
 ├── popup-shell.tsx             # popup outer chrome (cyan TitledBox)
@@ -654,6 +653,7 @@ separately below.
 | `src/log-render.ts`   | **The ONE op → prose formatter.** `renderOp` maps an intent (+ key + payload fields) to `{verb, subject, detail}`; plus `renderOpLine`, `opSubject`, `parseOpKey`. Pure and colour-free, so CLI and TUI share one phrasing. |
 | `src/vcs/*.ts`        | One backend per file (`git.ts`, `jj.ts`, `sl.ts`, `none.ts`) plus `types.ts` (the `VcsBackend` interface), `helpers.ts`, and `index.ts` (detection precedence `jj` → `sl` → `git` → none; `backendByName`). |
 | `src/workspace/*.ts`  | Per-agent VCS workspaces, a registry on top of `vcs.ts`: `core.ts` (row shapes, paths, errors), `crud.ts`, `decorate.ts` (staleness + dirty), `orphans.ts`. |
+| `src/glyphs.ts`       | **The ONE glyph vocabulary.** `AGENT_STATUS_GLYPH` + `agentStatusGlyph()` for agent status, the `GLYPH` record for every other state symbol (blocked, dirty, stale, ok/warn/fail, filter toggles), and `superscriptDigit` for TUI card-header keys. All classic Nerd Font `nf-fa-*` — single-codepoint and one cell wide, so `cli-table3` columns line up. Keyed by MEANING, so re-pointing a symbol is a one-line edit. `busy` matches murmur's dash `running`: same panes, same symbol. |
 | `src/output.ts`       | NextStep type + `printNextSteps` + `errorNextSteps` plumbing for self-documenting output |
 | `src/shell-quote.ts`  | `shellQuote` — POSIX single-quoting for tokens interpolated into copy-pasteable next-step hints. |
 | `src/state.ts`        | SDK seam for `mu state`: `loadWorkstreamSnapshotFast` (pure SQL, TUI 1s tick), `loadWorkstreamSnapshotSlow` (subprocesses), `mergeSnapshotFastSlow`, `loadWorkstreamSnapshot`. Also parses exact `REMOTE:` task-note inventory and `REMOTE_BASE:` dispatch metadata. Opt-in: `withDirty`, `withDoctor`, `withRecentCommits`, `withAllTasks`. |

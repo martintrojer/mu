@@ -8,6 +8,7 @@
 
 import { Box, Text } from "ink";
 import { type ReactElement, useCallback, useState } from "react";
+import { GLYPH } from "../../glyphs.js";
 import { TASK_STATUSES, type TaskStatus } from "../../tasks/status.js";
 import { colorStatus } from "../format.js";
 import type { KeyFlags } from "./keys.js";
@@ -84,7 +85,7 @@ export function StatusFilterStrip({ statuses }: { statuses: Set<TaskStatus> }): 
             <Text>{"]"}</Text>
             <Text>{label.rest}</Text>
             <Text> </Text>
-            <Text color={enabled ? "green" : "gray"}>{enabled ? "●" : "○"}</Text>
+            <Text color={enabled ? "green" : "gray"}>{enabled ? GLYPH.on : GLYPH.off}</Text>
           </Text>
         );
       })}

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AgentRow } from "../src/agents.js";
+import { IDLE_GLYPH } from "../src/cli/format.js";
 import { AgentsCard } from "../src/cli/tui/cards/agents.js";
 import type { WorkstreamSnapshot } from "../src/state.js";
 import type { TaskRow } from "../src/tasks.js";
@@ -92,7 +93,7 @@ describe("AgentsCard", () => {
     expectTextOnce(text, "reviewer-1");
     expectTextOnce(text, "build_x");
     expectTextOnce(text, "review_x");
-    expectTextOnce(text, "⚠ idle");
+    expectTextOnce(text, `${IDLE_GLYPH} idle`);
   });
 
   it("no '—' idle placeholder — exception-only render per nit_tui_agents_card_drop_idle_placeholder", () => {
@@ -101,7 +102,7 @@ describe("AgentsCard", () => {
       view: { ...EMPTY_SNAPSHOT.view, agents: [agent()] },
     };
     const text = renderCardToText(AgentsCard({ snapshot }));
-    expect(text).not.toContain("⚠ idle");
+    expect(text).not.toContain(`${IDLE_GLYPH} idle`);
     // The owned-task summary legitimately renders "—" when the agent
     // owns no tasks; the idle column itself should render no glyph.
     expect(text.endsWith("—")).toBe(true);

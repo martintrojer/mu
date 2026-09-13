@@ -142,6 +142,7 @@ export {
   isPathInside,
   probeFilesystem,
 } from "./fleet-hazards.js";
+export { AGENT_STATUS_GLYPH, GLYPH } from "./glyphs.js";
 export {
   compareHlc,
   formatHlc,

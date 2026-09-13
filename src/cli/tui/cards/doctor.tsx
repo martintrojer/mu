@@ -47,6 +47,7 @@
 import { Text } from "ink";
 import type { ReactElement } from "react";
 import type { DoctorCheck } from "../../../doctor-summary.js";
+import { GLYPH } from "../../../glyphs.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
 import {
   type ColumnSpec,
@@ -103,7 +104,7 @@ export function DoctorCard({ snapshot, rowBudget, cols }: DoctorCardProps): Reac
       subtitle,
       children: (
         <Text dimColor>
-          <Text color="green">✓</Text> {checks.length} check
+          <Text color="green">{GLYPH.ok}</Text> {checks.length} check
           {checks.length === 1 ? "" : "s"}
         </Text>
       ),
@@ -145,18 +146,17 @@ export function DoctorCard({ snapshot, rowBudget, cols }: DoctorCardProps): Reac
 
 // ─── pure helpers (exported for unit tests) ────────────────────────
 
-/** Per-row glyph driven by the check's status. fail → ✗ (heavy
- *  ballot X, U+2717), warn → ⚠ (warning sign, U+26A0), ok → ✓
- *  (heavy check, U+2713). Same family as the Workspaces card's
- *  status glyphs; consistency over novelty. */
+/** Per-row glyph driven by the check's status, from src/glyphs.ts —
+ *  the same constants the Workspaces card and the agent status map
+ *  use, so one symbol means one thing everywhere. */
 export function glyphFor(c: Pick<DoctorCheck, "status">): string {
   switch (c.status) {
     case "fail":
-      return "✗";
+      return GLYPH.fail;
     case "warn":
-      return "⚠";
+      return GLYPH.warn;
     case "ok":
-      return "✓";
+      return GLYPH.ok;
   }
 }
 

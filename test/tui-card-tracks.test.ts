@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { TracksCard } from "../src/cli/tui/cards/tracks.js";
+import { GLYPH } from "../src/glyphs.js";
 import type { WorkstreamSnapshot } from "../src/state.js";
 import type { TaskRow } from "../src/tasks.js";
 import type { Track } from "../src/tracks.js";
@@ -83,7 +84,7 @@ describe("TracksCard", () => {
     expectTextOnce(text, "goal_gamma");
     expectTextOnce(text, "(1 task · 1 ready)");
     expectTextOnce(text, "(3 tasks · 0 ready)");
-    expectTextOnce(text, "⋈");
+    expectTextOnce(text, GLYPH.merge);
   });
 
   it("truncates at the default row budget with the bottomLabel '+N more · Shift+2'", () => {
