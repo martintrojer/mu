@@ -90,7 +90,7 @@ export const GLYPH = {
   blocked: "\uf0c1", // nf-fa-link (chain)
   /** Track whose roots merged (diamond dependency). */
   merge: "\uf074", // nf-fa-random
-  /** Agent owns more than one task (pane-title `⊕N` slot). */
+  /** Agent owns more than one task (pane-title multi-count slot). */
   multi: "\uf055", // nf-fa-plus_circle
   /** Filter toggle: enabled / disabled. */
   on: "\uf111", // nf-fa-circle

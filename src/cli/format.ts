@@ -165,9 +165,9 @@ export function formatAgentsTable(agents: readonly AgentRow[]): string {
   });
   for (const a of agents) {
     // Idle (alive + assigned + no recent progress): supplement the
-    // status glyph with a yellow ⚠ prefix, and yellow the agent
-    // name itself so the row is visually obvious. The status column
-    // stays the truth ('needs_input') — the ⚠ is the supplement.
+    // status glyph with the yellow shared warning glyph, and yellow the
+    // agent name itself so the row is visually obvious. The status column
+    // stays the truth ('needs_input'); GLYPH.warn is the supplement.
     const idle = a.idle === true;
     const glyphCell = idle
       ? `${pc.yellow(IDLE_GLYPH)} ${statusIcon(a.status)}`

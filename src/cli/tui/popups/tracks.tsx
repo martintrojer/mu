@@ -24,7 +24,7 @@
 // TaskDetailDrill which SELECTs notes via listNotes. Never executes.
 //
 // Rows are column-aligned via src/cli/tui/columns.ts. Per
-// feat_column_aligned_lists clipping policy: track number, ⋈ glyph,
+// feat_column_aligned_lists clipping policy: track number, merge glyph,
 // counts are PROTECTED; the goal-name list is CLIPPABLE.
 
 import { Box, Text, useInput } from "ink";

@@ -7,7 +7,7 @@
 // Aesthetic: section header inset into the top border (TitledBox).
 //
 // Rows are column-aligned via src/cli/tui/columns.ts. Per
-// feat_column_aligned_lists clipping policy: track number, ⋈ glyph,
+// feat_column_aligned_lists clipping policy: track number, merge glyph,
 // task counts are PROTECTED (identity / numeric); the goal-name list
 // is CLIPPABLE.
 

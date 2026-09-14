@@ -5,6 +5,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { STATUS_EMOJI } from "../src/agents.js";
+import { GLYPH } from "../src/glyphs.js";
 import {
   assertValidPaneId,
   capturePane,
@@ -947,13 +948,13 @@ describe("parseAgentNameFromTitle", () => {
   });
 
   it("returns the first ' · '-separated token (composed titles)", () => {
-    // Use the actual STATUS_EMOJI codepoints production emits, so this
-    // test breaks loud if STATUS_EMOJI changes shape (any drift between
-    // composeAgentTitle and parseAgentNameFromTitle is the bug we're
-    // guarding against).
+    // Use the shared glyph constants production emits, so this test breaks
+    // loud if title composition and parsing drift apart.
     expect(parseAgentNameFromTitle(`worker-a · ${STATUS_EMOJI.needs_input}`)).toBe("worker-a");
     expect(parseAgentNameFromTitle(`worker-a · ${STATUS_EMOJI.busy} · build_x`)).toBe("worker-a");
-    expect(parseAgentNameFromTitle(`worker-a · ${STATUS_EMOJI.busy} · ⊕3 tasks`)).toBe("worker-a");
+    expect(parseAgentNameFromTitle(`worker-a · ${STATUS_EMOJI.busy} · ${GLYPH.multi}3 tasks`)).toBe(
+      "worker-a",
+    );
   });
 
   it("trims whitespace around the name token", () => {

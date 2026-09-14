@@ -13,9 +13,9 @@
 // column-aligned rows, glanceable subtitle.
 //
 // CARD LAYOUT
-//   glyph  id           STATUS   #blocks   ROI    title
-//   <⛓>    review_x     OPEN     2          75    Review X
-//   <⛓>    cherry_x     OPEN     1          60    Cherry-pick X
+//   glyph      id           STATUS   #blocks   ROI    title
+//   <blocked>  review_x     OPEN     2          75    Review X
+//   <blocked>  cherry_x     OPEN     1          60    Cherry-pick X
 //
 // The glyph is GLYPH.blocked from src/glyphs.ts (a chain link) and
 // reads as "this is blocked / chained to something". Coloured dim — the operator's eye is meant to land

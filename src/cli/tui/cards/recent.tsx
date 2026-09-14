@@ -10,13 +10,13 @@
 // way: TitledBox header, column-aligned rows, glanceable subtitle.
 //
 // CARD LAYOUT
-//   glyph  id           STATUS   when      title
-//   ✓      feat_card_5  CLOSED   3m ago    FEAT: Card 5 — Workspaces
-//   ✓      feat_card_6  CLOSED   12m ago   FEAT: Card 6 — In-progress
+//   glyph     id           STATUS   when      title
+//   <ok>      feat_card_5  CLOSED   3m ago    FEAT: Card 5 — Workspaces
+//   <ok>      feat_card_6  CLOSED   12m ago   FEAT: Card 6 — In-progress
 //
-// Glyph ✓ (U+2713) coloured green — every row in this card is by
-// definition CLOSED (the SDK helper listRecentClosed filters on
-// status='CLOSED'); the green check reads as "shipped".
+// GLYPH.ok is coloured green — every row in this card is by definition
+// CLOSED (the SDK helper listRecentClosed filters on status='CLOSED');
+// the check-circle reads as "shipped".
 //
 // CLIPPING POLICY (per feat_column_aligned_lists)
 //   id, STATUS, when → PROTECT (yankable / identifier / numeric)

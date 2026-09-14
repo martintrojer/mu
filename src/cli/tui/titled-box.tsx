@@ -3,8 +3,8 @@
 // instead of consuming a row of body content.
 //
 //   ╭─ ¹ Agents · 3 free ───────────────────────╮
-//   │  ✓ worker-1   free   build_x   —          │
-//   │  ▶ worker-2   busy   review_x  —          │
+//   │  <free> worker-1   free   build_x   —     │
+//   │  <busy> worker-2   busy   review_x  —     │
 //   ╰───────────────────────────────────────────╯
 //
 // IMPLEMENTATION

@@ -240,7 +240,7 @@ export function AllTasksPopup({
   const agentLookup = agentByName(snapshot);
   const rows = windowed.map((t) => [
     t.name,
-    blockedNames.has(t.name) ? `${t.status} ⛓` : t.status,
+    blockedNames.has(t.name) ? `${t.status} ${GLYPH.blocked}` : t.status,
     formatAgentRefDisplayName(t.ownerName, agentLookup),
     formatRoi(t.impact, t.effortDays),
     t.title,

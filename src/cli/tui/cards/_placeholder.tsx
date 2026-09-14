@@ -34,8 +34,8 @@
 //   });
 //
 // For richer bodies (e.g. an inline code hint that interpolates a
-// workstream name, or the doctor "✓ 12 checks" line with a coloured
-// glyph), pass `children` (a ReactNode) instead of `text`. The helper
+// workstream name, or the doctor's coloured healthy-check line), pass
+// `children` (a ReactNode) instead of `text`. The helper
 // only injects the dimColor wrapper when `text` is used; `children`
 // is rendered verbatim so the caller controls every Text node.
 //

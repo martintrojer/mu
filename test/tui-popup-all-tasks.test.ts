@@ -17,6 +17,7 @@ import {
 } from "../src/cli/tui/popups/all-tasks.js";
 import { applyCursor, centredVisibleSlice } from "../src/cli/tui/popups/scroll.js";
 import { type Db, openDb } from "../src/db.js";
+import { GLYPH } from "../src/glyphs.js";
 import type { WorkstreamSnapshot } from "../src/state.js";
 import { addBlockEdge } from "../src/tasks/edges.js";
 import { sortTasks } from "../src/tasks/sort.js";
@@ -380,7 +381,7 @@ describe("AllTasksPopup", () => {
     expect(applyBlockedFilter(tasks, blockedNames, "hide").map((t) => t.name)).toEqual(["a", "c"]);
   });
 
-  it("shows ⛓ glyph next to status for blocked tasks", async () => {
+  it("shows the shared blocked glyph next to blocked task status", async () => {
     const db = fixtureDb();
     addTask(db, {
       workstream: "demo",
@@ -418,10 +419,9 @@ describe("AllTasksPopup", () => {
     );
     await waitForInkOutput(stdout);
     const text = latestRenderedFrame(stdout).join("\n");
-    // The blocked task should show the chain glyph in its status column
-    expect(text).toMatch(/blocked.*OPEN ⛓/);
-    // The non-blocked task should NOT show the chain glyph
-    expect(text).toMatch(/blocker.*OPEN(?! ⛓)/);
+    expect(text).toContain(`OPEN ${GLYPH.blocked}`);
+    const blockerLine = text.split("\n").find((line) => line.includes("blocker"));
+    expect(blockerLine).not.toContain(GLYPH.blocked);
     instance.unmount();
   });
 

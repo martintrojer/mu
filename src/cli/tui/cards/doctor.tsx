@@ -9,15 +9,14 @@
 // Commits; DAG is keybind-only.
 //
 // CARD LAYOUT
-//   glyph  check        STATUS   detail
-//   ⚠      agents       warn     2 ghost panes; run `mu agent reconcile`
-//   ✗      workspaces   fail     1 orphan dir blocking spawns
+//   glyph    check        STATUS   detail
+//   <warn>   agents       warn     2 ghost panes; run `mu agent reconcile`
+//   <fail>   workspaces   fail     1 orphan dir blocking spawns
 //
-// Glyph + colour priority: ✗ (red) for fail, ⚠ (yellow) for warn,
-// ✓ (green) for ok. The card BODY filters to non-OK rows; when
-// nothing is wrong, the card renders a single "all healthy · ✓ K
-// checks" line so the operator's eye learns to read the presence
-// of rows as "something needs attention."
+// Glyph + colour priority: GLYPH.fail (red), GLYPH.warn (yellow), then
+// GLYPH.ok (green). The card BODY filters to non-OK rows; when nothing
+// is wrong, the card renders one quiet all-healthy row so the operator's
+// eye learns to read the presence of rows as "something needs attention."
 //
 // CLIPPING POLICY (per feat_column_aligned_lists)
 //   glyph, check, STATUS  → PROTECT (identifier; yankable check name)
@@ -92,7 +91,7 @@ export function DoctorCard({ snapshot, rowBudget, cols }: DoctorCardProps): Reac
   const { checks, problemCount } = snapshot.doctor;
   const subtitle = formatSubtitle(problemCount);
 
-  // Healthy path: render the quiet "✓ <K> checks" line so the
+  // Healthy path: render the quiet "GLYPH.ok <K> checks" line so the
   // operator can confirm the card ran (vs. simply being empty).
   if (problemCount === 0) {
     return CardPlaceholder({

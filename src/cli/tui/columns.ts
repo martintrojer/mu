@@ -16,7 +16,7 @@
 //
 // Width counting: `string-width` (transitive via cli-table3) handles
 // emoji / CJK / ANSI escapes correctly; bare `String.length` is wrong
-// for status glyphs (✓ ⚠ ⊕ ⋈) and for any future i18n.
+// for shared state glyphs and for any future i18n.
 //
 // Clipping policy: cells fall into two buckets per the task notes —
 // PROTECTED (task ids, agent names, status tokens, glyphs, ROI nums,

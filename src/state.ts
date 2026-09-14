@@ -9,6 +9,7 @@
 import { type AgentRow, type AgentStatus, type LiveAgentsView, listLiveAgents } from "./agents.js";
 import type { Db } from "./db.js";
 import { type DoctorSummary, loadDoctorSummary } from "./doctor-summary.js";
+import { GLYPH } from "./glyphs.js";
 import { type LogRow, listLogs } from "./logs.js";
 import {
   listBlocked,
@@ -367,7 +368,7 @@ export function agentStatusHistogram(
 // ─── Task helpers ──────────────────────────────────────────────────
 
 export interface OwnedTasksSummary {
-  /** Display token: "—" (none) | "<task_id>" (one) | "⊕<N>" (many). */
+  /** Display token: "—" (none), task id (one), or GLYPH.multi + count (many). */
   bit: string;
   /** Underlying count for callers that want their own format. */
   count: number;
@@ -389,7 +390,7 @@ export function summarizeOwnedTasks(owned: readonly TaskRow[]): OwnedTasksSummar
     if (!only) return { bit: "—", count: 0 };
     return { bit: only.name, count: 1, onlyTaskId: only.name };
   }
-  return { bit: `⊕${count}`, count };
+  return { bit: `${GLYPH.multi}${count}`, count };
 }
 
 // Re-export for convenience: callers wanting to combine listTasksByOwner

@@ -12,7 +12,7 @@
 // into the top — same family as the other four cards.
 //
 // Data shape (per row):
-//   - status glyph    ★ dirty | ⓘ ahead | ✓ clean
+//   - status glyph    GLYPH.dirty | GLYPH.stale | GLYPH.ok
 //   - agent name      e.g. worker-1
 //   - backend         git | jj | sl | none
 //   - behind          coloured int (green ≤2, yellow 3-9, red ≥10)

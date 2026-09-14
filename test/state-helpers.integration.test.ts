@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { AgentRow } from "../src/agents.js";
 import { insertAgent } from "../src/agents.js";
 import { type Db, openDb } from "../src/db.js";
+import { GLYPH } from "../src/glyphs.js";
 import { renderOp } from "../src/log-render.js";
 import {
   agentStatusHistogram,
@@ -103,9 +104,9 @@ describe("summarizeOwnedTasks", () => {
     });
   });
 
-  it("returns ⊕N for many", () => {
+  it("returns the shared multi-task glyph plus N for many", () => {
     const r = summarizeOwnedTasks([task({ name: "a" }), task({ name: "b" })]);
-    expect(r.bit).toBe("⊕2");
+    expect(r.bit).toBe(`${GLYPH.multi}2`);
     expect(r.count).toBe(2);
     expect(r.onlyTaskId).toBeUndefined();
   });
