@@ -8,6 +8,20 @@ breaking changes are called out under "Breaking" in each entry.
 
 ---
 
+## [1.3.3] — 2026-09-14
+
+### Changed
+
+- **Semantic state markers now consistently use `src/glyphs.ts`.** The
+  all-tasks popup uses `GLYPH.blocked`, and multi-task summaries use
+  `GLYPH.multi`, removing the last production literals outside the shared
+  vocabulary. Source comments now name meanings instead of preserving an old
+  visual alphabet.
+
+- **Pane-title state now comes last.** Titles read agent, task context, then
+  state. Long titles truncate the task portion while preserving the agent name
+  used by identity fallback and the final state glyph used for quick scanning.
+
 ## [1.3.2] — 2026-09-13
 
 ### Changed
