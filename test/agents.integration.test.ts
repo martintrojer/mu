@@ -411,7 +411,7 @@ describe("composeAgentTitle", () => {
     ).run();
     const a = getAgent(db, "worker-a", "ws");
     if (!a) throw new Error();
-    expect(composeAgentTitle(db, a)).toBe(`worker-a · ${STATUS_EMOJI.busy} · build_x`);
+    expect(composeAgentTitle(db, a)).toBe(`worker-a · build_x · ${STATUS_EMOJI.busy}`);
   });
 
   it("compresses to '<multi>N tasks' when agent owns multiple tasks", () => {
@@ -426,7 +426,7 @@ describe("composeAgentTitle", () => {
     const a = getAgent(db, "worker-a", "ws");
     if (!a) throw new Error();
     expect(composeAgentTitle(db, a)).toBe(
-      `worker-a · ${STATUS_EMOJI.busy} · ${GLYPH.multi}3 tasks`,
+      `worker-a · ${GLYPH.multi}3 tasks · ${STATUS_EMOJI.busy}`,
     );
   });
 
@@ -443,7 +443,7 @@ describe("composeAgentTitle", () => {
     const a = getAgent(db, "worker-a", "ws");
     if (!a) throw new Error();
     // Only 'live' is OPEN+owned → single-task form, not the multi glyph.
-    expect(composeAgentTitle(db, a)).toBe(`worker-a · ${STATUS_EMOJI.busy} · live`);
+    expect(composeAgentTitle(db, a)).toBe(`worker-a · live · ${STATUS_EMOJI.busy}`);
   });
 
   it("truncates titles longer than 64 chars with '…'", () => {
@@ -464,7 +464,7 @@ describe("composeAgentTitle", () => {
     if (!a) throw new Error();
     const title = composeAgentTitle(db, a);
     expect(title.length).toBeLessThanOrEqual(64);
-    expect(title.endsWith("…")).toBe(true);
+    expect(title.endsWith(`… · ${STATUS_EMOJI.busy}`)).toBe(true);
     // Agent name (canonical identity) MUST remain intact at the start
     // so the claim-protocol parser keeps working.
     expect(title.startsWith(longName)).toBe(true);

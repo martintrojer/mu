@@ -355,11 +355,11 @@ export function shouldOverwriteAgentStatus(current: AgentStatus, detected: Agent
 //   worker-a                                    (no claim, status not
 //                                                 worth surfacing yet)
 //   worker-a · <glyph busy>                     (busy, no claim)
-//   worker-a · <glyph busy> · build_x           (busy, owns one task)
-//   worker-a · <glyph needs_input> · build_x
-//   worker-a · <glyph needs_permission> · build_x
+//   worker-a · build_x · <glyph busy>           (busy, owns one task)
+//   worker-a · build_x · <glyph needs_input>
+//   worker-a · build_x · <glyph needs_permission>
 //   worker-a · <glyph free>                     (free, no claim)
-//   worker-a · <glyph busy> · <glyph multi>2 tasks   (multi-claim case)
+//   worker-a · <glyph multi>2 tasks · <glyph busy>   (multi-claim case)
 //
 // The agent name MUST remain the first ' · '-separated token so the
 // claim protocol's pane-title-as-identity fallback (currentPaneTitle
@@ -422,19 +422,18 @@ export function composeAgentTitle(db: Db, agent: AgentRow): string {
   // workstream can't pollute this title's task list.
   const tasks = listTasksByOwner(db, agent.workstreamName, agent.name);
   let title = agent.name;
-  if (showStatus) {
-    title += ` · ${agentStatusGlyph(agent.status)}`;
-  }
   if (tasks.length === 1) {
     title += ` · ${tasks[0]?.name}`;
   } else if (tasks.length > 1) {
     title += ` · ${GLYPH.multi}${tasks.length} tasks`;
   }
-  if (title.length > MAX_TITLE_LEN) {
-    // Truncate from the END (preserves agent name + status prefix).
-    title = `${title.slice(0, MAX_TITLE_LEN - 1)}…`;
+  const statusSuffix = showStatus ? ` · ${agentStatusGlyph(agent.status)}` : "";
+  if (title.length + statusSuffix.length > MAX_TITLE_LEN) {
+    // Trim the task side, preserving both identity at the start and state at
+    // the end. The state is the most glanceable part of the pane border.
+    title = `${title.slice(0, MAX_TITLE_LEN - statusSuffix.length - 1)}…`;
   }
-  return title;
+  return title + statusSuffix;
 }
 
 /** Push a fresh pane title for `agentName`. Best-effort — a missing

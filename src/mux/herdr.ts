@@ -863,7 +863,7 @@ export async function getPaneTitle(paneId: string): Promise<string | undefined> 
  *
  * Fallback rung only: `$MU_AGENT_NAME` is checked first by
  * `src/tasks/claim.ts` and is backend-independent. Titles are composed
- * as `name · <glyph> · task_id`, so the name is the first token.
+ * as `name · task_id · <glyph>`, so the name is the first token.
  */
 export async function currentAgentName(): Promise<string | undefined> {
   const paneId = process.env.HERDR_PANE_ID;
