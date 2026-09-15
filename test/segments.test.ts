@@ -10,7 +10,7 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type Db, openDb } from "../src/db.js";
-import { formatHlc } from "../src/hlc.js";
+import { formatHlc, parseHlc } from "../src/hlc.js";
 import { appendLog } from "../src/logs.js";
 import { withOpContext } from "../src/op-context.js";
 import {
@@ -745,6 +745,91 @@ describe("segments", () => {
       expect(
         result.defects.some((d) => d.kind === "entity-not-synced" || d.kind === "crc-mismatch"),
       ).toBe(true);
+    });
+
+    // ─── the frozen-watermark incident ──────────────────────────────
+    //
+    // One well-formed line naming an entity this build does not know
+    // (`marker`, written by a peer whose vocabulary included it) used to
+    // stop the ingest AT that line and leave the watermark there
+    // forever — 87% of a 20,305-line segment never applied, and
+    // `mu sync --repair` re-read straight back into the same wall.
+
+    /** Append a line whose entity this build refuses/does not know,
+     *  correctly crc'd, hlc just above the file's last line so ops
+     *  flushed AFTERWARDS still sort above it (a future-dated hlc would
+     *  trip the monotonicity guard instead, which is a different bug). */
+    const appendForeignEntityLine = (path: string, entity: string): void => {
+      const lines = linesOf(path);
+      const last = lines[lines.length - 1];
+      if (last === undefined) throw new Error("need a line to sort after");
+      const prev = parseHlc((JSON.parse(last) as { hlc: string }).hlc);
+      const line = encodeSegmentLine({
+        hlc: formatHlc({ ...prev, counter: prev.counter + 1, machineId: localMachineId(a) }),
+        machineId: localMachineId(a),
+        groupId: "restore-v8-archive-gchatui-df077055",
+        intent: "archive.add",
+        actor: "v8-archive-import",
+        entity,
+        key: "gchatui/gchatui",
+        op: "put",
+        payload: JSON.stringify({ name: "gchatui" }),
+      });
+      writeFileSync(path, `${[...lines, line].join("\n")}\n`);
+    };
+
+    it("an unknown-entity line mid-segment does not block the ops after it", async () => {
+      seedTask(a, "before");
+      await flushSegment(a, dir);
+      const path = segFor(a);
+      appendForeignEntityLine(path, "marker");
+      // Real ops AFTER the foreign line — the 87% that never arrived.
+      seedTask(a, "after");
+      await flushSegment(a, dir);
+
+      const results = ingestAll(b);
+      expect(task(b, "before")?.local_id).toBe("before");
+      expect(task(b, "after")?.local_id).toBe("after");
+      // Unknown ≠ machine-local: nothing to report, nothing skipped.
+      expect(results.flatMap((r) => r.defects)).toEqual([]);
+    });
+
+    it("a machine-local-entity line is skipped, defect reported, tail applied", async () => {
+      seedTask(a, "before");
+      await flushSegment(a, dir);
+      const path = segFor(a);
+      appendForeignEntityLine(path, "agent");
+      seedTask(a, "after");
+      await flushSegment(a, dir);
+
+      const results = ingestAll(b);
+      const defects = results.flatMap((r) => r.defects);
+      expect(defects.map((d) => d.kind)).toEqual(["entity-not-synced"]);
+      // The point of the fix: the watermark moved PAST the refused line.
+      expect(results.every((r) => r.truncatedAt === null)).toBe(true);
+      expect(task(b, "after")?.local_id).toBe("after");
+      // And the refused op was not recorded locally at all.
+      const rows = b.prepare("SELECT COUNT(*) AS n FROM ops WHERE entity = 'agent'").get() as {
+        n: number;
+      };
+      expect(rows.n).toBe(0);
+    });
+
+    it("the watermark reaches the end of the file despite a refused line", async () => {
+      seedTask(a, "before");
+      await flushSegment(a, dir);
+      appendForeignEntityLine(segFor(a), "agent");
+      seedTask(a, "after");
+      await flushSegment(a, dir);
+
+      ingestAll(b);
+      expect(getWatermark(b, localMachineId(a))).toBe(linesOf(segFor(a)).length);
+
+      // A second ingest is a clean no-op, so the ambient hook does not
+      // re-report the same defect on every single mu invocation.
+      const again = ingestAll(b);
+      expect(again.flatMap((r) => r.defects)).toEqual([]);
+      expect(again.every((r) => r.read === 0)).toBe(true);
     });
   });
 

@@ -621,7 +621,7 @@ separately below.
 
 | Module                | Responsibility                                                                            |
 | --------------------- | ----------------------------------------------------------------------------------------- |
-| `src/db.ts`           | Connection (better-sqlite3, WAL), **schema v10** (10 tables + 3 views), `resolveWorkstreamId`. Installs capture on every writable open. Owns `SYNCED_ENTITIES` / `PORTABLE_TABLES` / `MACHINE_LOCAL_TABLES`. Refuses a pre-v10 DB (exit 4). |
+| `src/db.ts`           | Connection (better-sqlite3, WAL), **schema v10** (10 tables + 3 views), `resolveWorkstreamId`. Installs capture on every writable open. Owns `SYNCED_ENTITIES` / `MACHINE_LOCAL_ENTITIES` / `PORTABLE_TABLES` / `MACHINE_LOCAL_TABLES`. Refuses a pre-v10 DB (exit 4). |
 | `src/hlc.ts`          | The **HLC** (VOCABULARY § HLC), serialized as sortable TEXT `<wall_ms:15>.<counter:6>.<machine_id>`. `nextHlc` / `receiveHlc` / `compareHlc` / `parseHlc` / `formatHlc`. Clock state lives in `machine_identity`. |
 | `src/capture.ts`      | **Op capture**: builds the triggers that record every write to a portable table as an op in the same transaction. |
 | `src/apply.ts`        | **The apply path** — capture's counterpart: given one op, local or from a peer, make the tables reflect it. Also owns `reprojectDeferredOps` ([§ ambient sync hook](#the-ambient-sync-hook)). |
@@ -713,6 +713,20 @@ separately below.
 - **Sync never fails a command**: a truncated segment, a garbage
   segment, a sync dir that is a file, a vanished directory all warn on
   stderr and return.
+- **Damage halts; refusal skips.** Stopping at the first bad record is
+  right for DAMAGE, where a gap is indistinguishable from reordering.
+  It is wrong for a well-formed line mu merely declines to project: a
+  refusal lands nothing, so it leaves no hole, and halting made the
+  watermark unrecoverable by any means the CLI offers. One
+  `entity:"marker"` line at position 2533 of a 20,305-line peer segment
+  froze that peer's watermark permanently, and `mu sync --repair` (which
+  only resets the watermark) re-read straight back into the same line.
+  So ingest now distinguishes three cases: damage halts, a KNOWN
+  machine-local entity is a reported defect that is SKIPPED, and an
+  UNRECOGNISED entity applies as a no-op with no defect at all —
+  reader-behind-writer vocabulary is a fact of a mixed fleet, not
+  corruption. `--repair` is only suggested for defects a re-read can
+  clear.
 - **Rebuild is not ingest**: ingest filters to `SYNCED_ENTITIES`, but
   local recovery replays everything, so log-only entities are copied
   verbatim or `mu log` comes back empty. `machine_identity` carries

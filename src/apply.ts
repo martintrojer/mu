@@ -88,7 +88,7 @@
 // than a seen `del` loses; a `del` older than a seen `put` loses. One
 // code path, no special casing.
 
-import { type Db, SYNCED_ENTITIES, type SyncedEntity } from "./db.js";
+import { type Db, MACHINE_LOCAL_ENTITIES, SYNCED_ENTITIES, type SyncedEntity } from "./db.js";
 import { compareHlc } from "./hlc.js";
 import { LEGACY_LOG_ONLY_SQL_EXCLUSION } from "./legacy-ops.js";
 import { withCaptureSuppressed } from "./op-context.js";
@@ -117,15 +117,19 @@ export interface Op {
   payload: string;
 }
 
-/** Thrown when an op names an entity that must never cross machines.
- *  Loud by design: silently ignoring one would mean a peer is running
- *  a different notion of what syncs, which is a bug we want reported,
- *  not absorbed. */
+/** Thrown when an op names an entity this build KNOWS is machine-local
+ *  (see `MACHINE_LOCAL_ENTITIES`). Loud by design: a peer shipping a
+ *  pane id or an absolute path is a real bug we want reported.
+ *
+ *  NOT thrown for an entity we merely do not recognise. That is a
+ *  reader-behind-writer vocabulary skew in a mixed fleet, and treating
+ *  it as a defect froze one peer's watermark permanently — see
+ *  `MACHINE_LOCAL_ENTITIES` in src/db.ts for the incident. */
 export class OpEntityNotSyncedError extends Error {
   constructor(readonly entity: string) {
     super(
-      `op entity ${JSON.stringify(entity)} is not synced and must never arrive from a peer ` +
-        `(expected one of: ${SYNCED_ENTITIES.join(", ")})`,
+      `op entity ${JSON.stringify(entity)} is machine-local and must never arrive from a peer ` +
+        `(synced entities: ${SYNCED_ENTITIES.join(", ")})`,
     );
     this.name = "OpEntityNotSyncedError";
   }
@@ -157,6 +161,12 @@ export interface ApplyResult {
 
 function isSyncedEntity(entity: string): entity is SyncedEntity {
   return (SYNCED_ENTITIES as readonly string[]).includes(entity);
+}
+
+/** Entities this build knows must never travel. Distinct from "unknown":
+ *  only these are a defect. */
+function isKnownMachineLocalEntity(entity: string): boolean {
+  return (MACHINE_LOCAL_ENTITIES as readonly string[]).includes(entity);
 }
 
 // ─── Derived provenance ───────────────────────────────────────────────
@@ -715,7 +725,12 @@ function applyDel(db: Db, op: Op): ApplyResult {
  * peer's segment from zero".
  */
 export function applyOp(db: Db, op: Op): ApplyResult {
-  if (!isSyncedEntity(op.entity)) throw new OpEntityNotSyncedError(op.entity);
+  if (isKnownMachineLocalEntity(op.entity)) throw new OpEntityNotSyncedError(op.entity);
+  // An entity this build does not recognise is a FORWARD-COMPATIBLE
+  // no-op, projected nowhere, exactly like 'message'. Recording the op
+  // is the caller's step and is what preserves it for a later build
+  // (and for `mu rebuild`) without blocking every op behind it.
+  if (!isSyncedEntity(op.entity)) return { changed: false, appliedFields: [] };
 
   return withCaptureSuppressed(db, () => {
     if (op.op === "del") return applyDel(db, op);
@@ -735,7 +750,10 @@ export function applyOp(db: Db, op: Op): ApplyResult {
         // is the caller's step.
         return { changed: false, appliedFields: [] };
       default:
-        throw new OpEntityNotSyncedError(op.entity);
+        // Unreachable: the union is closed and every member is handled
+        // above. Kept as a total return rather than a throw so an
+        // unrecognised entity can never wedge an ingest.
+        return { changed: false, appliedFields: [] };
     }
   });
 }

@@ -245,7 +245,15 @@ function describeDefects(peerShort: string, defects: readonly SegmentDefect[]): 
   const first = defects[0];
   const detail = first === undefined ? "unknown defect" : `${first.kind} at line ${first.line}`;
   const more = defects.length > 1 ? ` (+${defects.length - 1} more)` : "";
-  return `peer ${peerShort}: ${detail}${more} — re-read with \`mu sync --repair ${peerShort}\``;
+  // `--repair` only resets the watermark, so it is advice ONLY for a
+  // defect a re-read can get past (a torn write mid-transfer). A refused
+  // line is deterministic: re-reading hits the identical line and the
+  // hint would be self-referentially useless, which is exactly how the
+  // original incident's operator was sent in a circle.
+  const hint = defects.every((d) => d.kind === "entity-not-synced")
+    ? " — skipped; the rest of the segment applied"
+    : ` — re-read with \`mu sync --repair ${peerShort}\``;
+  return `peer ${peerShort}: ${detail}${more}${hint}`;
 }
 
 /**

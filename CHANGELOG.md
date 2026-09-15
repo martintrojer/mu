@@ -8,6 +8,41 @@ breaking changes are called out under "Breaking" in each entry.
 
 ---
 
+## [Unreleased]
+
+### Fixed
+
+- **A peer's unrecognised op entity no longer freezes its watermark
+  forever.** `applyOp` rejected every entity outside `SYNCED_ENTITIES`,
+  and `ingestSegment` treated that rejection as segment damage: defect
+  recorded, watermark left at the offending line, loop broken. On a real
+  fleet a peer wrote 27 `entity:"marker"` ops (legal on the build that
+  wrote them, whose vocabulary included it), the first at line 2533 of a
+  20,305-line segment, and 87% of that peer's history never applied. The
+  segment was intact — sha256 matched its manifest — so nothing surfaced
+  the cause, and the suggested `mu sync --repair <peer>` only resets the
+  watermark, so it re-read straight back into line 2533. A permanent wall
+  advertised as a stale watermark.
+
+  Ingest now separates three cases that were one:
+
+  - **Damage** (torn write, crc mismatch, non-monotonic HLC, manifest
+    mismatch) still halts at the first bad record. A gap in an ordered
+    log is indistinguishable from reordering.
+  - **A KNOWN machine-local entity** (the new `MACHINE_LOCAL_ENTITIES` in
+    `src/db.ts`: `agent`, `workspace`, `event`, `broadcast`) is still a
+    reported `entity-not-synced` defect — a peer shipping a pane id or an
+    absolute path is a real bug — but the line is now SKIPPED rather than
+    halting. It projects nothing, so it leaves no hole, and the rest of
+    the segment arrives.
+  - **An UNRECOGNISED entity** applies as a forward-compatible no-op,
+    recorded in `ops` and projected nowhere, exactly like `message`. No
+    defect. A reader's vocabulary may legitimately lag a writer's in a
+    mixed fleet; the op survives for a later build and for `mu rebuild`.
+
+  `mu sync` also stops suggesting `--repair` for a defect a re-read
+  cannot clear.
+
 ## [1.3.3] — 2026-09-14
 
 ### Changed

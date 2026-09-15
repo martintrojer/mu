@@ -774,11 +774,16 @@ export interface IngestResult {
 /**
  * Read one peer segment from its watermark and apply each op.
  *
- * STOPS AT THE FIRST BAD RECORD and advances the watermark only that far.
- * Never skips a damaged line to continue past it: in an ordered log, a
- * gap is indistinguishable from reordering, and applying ops around a
+ * STOPS AT THE FIRST DAMAGED RECORD and advances the watermark only that
+ * far. Never skips a damaged line to continue past it: in an ordered log,
+ * a gap is indistinguishable from reordering, and applying ops around a
  * hole risks a state neither machine ever had. The tail is re-read on the
  * next ingest, by which time the transfer has usually completed.
+ *
+ * A REFUSED line is not a damaged one. A well-formed op naming an entity
+ * that must not travel (`entity-not-synced`) is reported as a defect and
+ * SKIPPED: it projects nothing, so it leaves no hole, and halting on it
+ * makes the watermark unrecoverable by any means the CLI offers.
  *
  * Calls `receiveHlc` per op so the local clock advances past the peer's,
  * which is what makes "laptop edits after seeing the devserver's op" order
@@ -880,15 +885,27 @@ export function ingestSegment(db: Db, peer: PeerSegment): IngestResult {
       } catch (err) {
         if (err instanceof OpEntityNotSyncedError) {
           // A peer sent something that must never cross a machine
-          // boundary. Report it as a bad-peer defect rather than
-          // crashing the ingest.
+          // boundary (a pane id, an absolute path). Report it as a
+          // bad-peer defect — and SKIP THE LINE rather than stopping.
+          //
+          // Stopping is right for DAMAGE, where a gap is
+          // indistinguishable from reordering. This line is not
+          // damaged: it decoded, its crc verified, and its hlc is in
+          // order. Refusing it projects nothing, so there is no hole to
+          // reason about, and continuing is strictly safer than the
+          // alternative we actually shipped — one such line at position
+          // 2533 of a 20,305-line segment froze that peer's watermark
+          // permanently, and `mu sync --repair` re-read straight back
+          // into the same wall. A defect is reported; nothing is lost;
+          // the remaining 17,772 ops arrive.
           defects.push({
             kind: "entity-not-synced",
             line: lineNo,
-            detail: `peer sent non-synced entity '${op.entity}'`,
+            detail: `peer sent machine-local entity '${op.entity}' — skipped`,
           });
-          truncatedAt = lineNo;
-          break;
+          previousHlc = op.hlc;
+          watermark = lineNo;
+          continue;
         }
         throw err;
       }

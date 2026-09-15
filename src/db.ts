@@ -427,6 +427,30 @@ export const SYNCED_ENTITIES = ["workstream", "task", "edge", "note", "message"]
  *  adding an entity is a one-line change with no type to keep in step. */
 export type SyncedEntity = (typeof SYNCED_ENTITIES)[number];
 
+/** Op entities this build KNOWS are machine-local: their payloads name
+ *  a pane id or an absolute path, so a peer sending one is a real bug
+ *  and `applyOp` rejects it loudly.
+ *
+ *  WHY THIS LIST EXISTS SEPARATELY FROM "not in SYNCED_ENTITIES"
+ *  ------------------------------------------------------------
+ *  "Unknown" and "known-local" are different failures and were
+ *  conflated, which wedged a real fleet. A peer running a LATER (or
+ *  earlier) mu wrote `entity:"marker"` ops — legal on the writer, whose
+ *  SYNCED_ENTITIES included it. The reader treated every non-synced
+ *  entity as a bad peer, so `ingestSegment` recorded a defect and
+ *  stopped at that line FOREVER: 87% of a 20,305-line segment never
+ *  applied, and `mu sync --repair` (which only resets the watermark)
+ *  marched straight back into the same wall.
+ *
+ *  So the rule is asymmetric on purpose: an entity we know must never
+ *  travel is a defect; an entity we simply do not recognise is tolerated
+ *  forward-compatibly — recorded in `ops`, projected nowhere, exactly
+ *  like 'message'. Reader vocabulary may lag writer vocabulary; that is
+ *  a fact of a mixed fleet, not a corruption. */
+export const MACHINE_LOCAL_ENTITIES = ["agent", "workspace", "event", "broadcast"] as const;
+
+export type MachineLocalEntity = (typeof MACHINE_LOCAL_ENTITIES)[number];
+
 /** **Portable** tables: their rows mean the same thing on any machine,
  *  so their ops ship. Mirrors docs/VOCABULARY.md § portable exactly. */
 export const PORTABLE_TABLES = ["task_edges", "task_notes", "tasks", "workstreams"] as const;

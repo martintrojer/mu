@@ -20,7 +20,7 @@ import {
   OpEntityNotSyncedError,
   OpKeyMalformedError,
 } from "../src/apply.js";
-import { type Db, openDb } from "../src/db.js";
+import { type Db, MACHINE_LOCAL_ENTITIES, openDb } from "../src/db.js";
 import { formatHlc } from "../src/hlc.js";
 import { applyIncomingOp } from "../src/segments.js";
 import { addBlockEdge } from "../src/tasks/edges.js";
@@ -698,11 +698,15 @@ describe("applyOp", () => {
     });
   });
 
-  // ─── non-synced entities are rejected loudly ─────────────────────────
+  // ─── known-machine-local is loud; unknown is forward-compatible ──────
+  //
+  // The asymmetry is the whole point. Conflating the two wedged a real
+  // fleet: a peer wrote entity='marker' (legal on ITS build), this build
+  // called that a bad peer, and the ingest stopped at that line forever.
 
   describe("non-synced entities", () => {
-    it("throws OpEntityNotSyncedError for machine-local entities", () => {
-      for (const entity of ["agent", "workspace", "machine_identity", "sync_peers", "nonsense"]) {
+    it("throws OpEntityNotSyncedError for KNOWN machine-local entities", () => {
+      for (const entity of MACHINE_LOCAL_ENTITIES) {
         expect(() => applyOp(db, makeOp({ hlc: peerHlc(1000), entity, key: "whatever" }))).toThrow(
           OpEntityNotSyncedError,
         );
@@ -716,9 +720,33 @@ describe("applyOp", () => {
       } catch (err) {
         if (!(err instanceof OpEntityNotSyncedError)) throw err;
         expect(err.entity).toBe("agent");
-        expect(err.message).toContain("not synced");
+        expect(err.message).toContain("machine-local");
         expect(err.message).toContain("task");
       }
+    });
+
+    it("treats an UNRECOGNISED entity as a no-op, not an error", () => {
+      // 'marker' is the real entity from the incident: written by a peer
+      // whose SYNCED_ENTITIES included it, unknown to this build.
+      for (const entity of ["marker", "nonsense", "some_future_thing"]) {
+        const result = applyOp(db, makeOp({ hlc: peerHlc(1000), entity, key: "gchatui/gchatui" }));
+        expect(result.changed).toBe(false);
+        expect(result.appliedFields).toEqual([]);
+      }
+    });
+
+    it("records an unrecognised entity's op so a later build can project it", () => {
+      const op = makeOp({
+        hlc: peerHlc(2000),
+        entity: "marker",
+        key: "gchatui/gchatui",
+        intent: "archive.add",
+      });
+      expect(() => applyIncomingOp(db, op)).not.toThrow();
+      const row = db
+        .prepare("SELECT entity, intent FROM ops WHERE machine_id = ? AND hlc = ?")
+        .get(op.machineId, op.hlc) as { entity: string; intent: string | null } | undefined;
+      expect(row).toEqual({ entity: "marker", intent: "archive.add" });
     });
 
     it("rejects a malformed natural key", () => {
