@@ -67,15 +67,42 @@ function seed(
 }
 
 /** Register an agent row, so the "something is running here" exclusion
- *  can be exercised. */
-function seedAgent(workstream: string): void {
+ *  can be exercised. Returns the agent's row id so a workspace can hang
+ *  off it (`vcs_workspaces.agent_id` is NOT NULL). */
+function seedAgent(workstream: string): number {
   const wsId = (
     db.prepare("SELECT id FROM workstreams WHERE name = ?").get(workstream) as { id: number }
   ).id;
+  const result = db
+    .prepare(
+      `INSERT INTO agents (name, workstream_id, pane_id, cli, status, created_at, updated_at)
+       VALUES ('worker-1', ?, '%1', 'pi', 'free', datetime('now'), datetime('now'))`,
+    )
+    .run(wsId);
+  return Number(result.lastInsertRowid);
+}
+
+/**
+ * Register a workspace row (and the agent it hangs off).
+ *
+ * `vcs_workspaces.agent_id` is `NOT NULL ... ON DELETE CASCADE`, so a
+ * workspace row CANNOT outlive its agent — which means every
+ * workspace-bearing workstream is also agent-bearing, and the agents
+ * exclusion in findDormantWorkstreams already covers this case. The
+ * workspace clause is belt-and-braces against a future schema that
+ * relaxes that FK, so this fixture asserts the OUTCOME (never reported,
+ * so the "no checkout is touched" claim is never made) rather than
+ * which of the two clauses did the work.
+ */
+function seedWorkspace(workstream: string): void {
+  const wsId = (
+    db.prepare("SELECT id FROM workstreams WHERE name = ?").get(workstream) as { id: number }
+  ).id;
+  const agentId = seedAgent(workstream);
   db.prepare(
-    `INSERT INTO agents (name, workstream_id, pane_id, cli, status, created_at, updated_at)
-     VALUES ('worker-1', ?, '%1', 'pi', 'free', datetime('now'), datetime('now'))`,
-  ).run(wsId);
+    `INSERT INTO vcs_workspaces (agent_id, workstream_id, backend, path, parent_ref, created_at)
+     VALUES (?, ?, 'git', ?, 'main', datetime('now'))`,
+  ).run(agentId, wsId, `/tmp/ws/${workstream}`);
 }
 
 const names = (opts: { currentWorkstream?: string | null } = {}): string[] =>
@@ -192,6 +219,21 @@ describe("checkDormantWorkstreams", () => {
     expect(text).toContain("done");
     expect(text).toContain("dead");
     expect(hazard.detail).toContain("2 dormant");
+  });
+
+  // THE COUPLING TEST. The abandoned remediation asserts "no checkout is
+  // touched", which is only true because this list excludes workstreams
+  // that have one — `teardownWorkstream` genuinely frees real checkouts
+  // when they exist (`freedWorkspaces`). If that exclusion is ever relaxed,
+  // the sentence becomes a lie about data loss, so pin the claim to the
+  // behaviour rather than trusting a comment to be read.
+  it("never claims 'no checkout is touched' about a workstream that has one", () => {
+    seed("has-checkout", { status: "OPEN", idleDays: ABANDONED_IDLE_DAYS + 99 });
+    seedWorkspace("has-checkout");
+    const hazard = checkDormantWorkstreams(db);
+    expect(findDormantWorkstreams(db)).toEqual([]);
+    // Not reported at all, so the claim is never made about this row.
+    expect(hazard.remediation).toBeUndefined();
   });
 
   it("gives the two buckets DIFFERENT advice", () => {

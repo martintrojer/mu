@@ -270,7 +270,9 @@ housekeeping
     infer-rs                   95d idle, 19 of 202 unclosed
     modelbridge                89d idle, 8 of 75 unclosed
 
-  These are the ones worth a glance: a teardown here discards open work.
+  Removes the task rows and notes — the plan, not the code (no checkout
+  is touched, and `mu undo <group>` puts the rows back). The risk is
+  losing sight of what was left to do, so read it first:
     mu task list -w infer-rs --status OPEN
 
 disk
@@ -314,7 +316,7 @@ in two, because one list would give actively bad advice:
 | Bucket | Test | Advice |
 | --- | --- | --- |
 | **finished** | every task `CLOSED`, idle ≥ 14 days | safe to tear down; the remediation is the `teardown` command |
-| **abandoned** | idle ≥ 60 days *with* unclosed tasks | look first; the remediation lists the open work, because a teardown here discards it |
+| **abandoned** | idle ≥ 60 days *with* unclosed tasks | look first; the remediation lists the open tasks, because those are the record of what was left to do |
 
 The thresholds differ on purpose. A fortnight away from a project is a
 holiday, not abandonment, so anything still holding open tasks has to be
@@ -327,6 +329,15 @@ design), anything with a live agent or a registered workspace, and
 task-less workstreams (those are `mu workstream teardown --empty`'s job,
 which sweeps test litter — zero tasks, agents and workspaces — and never
 matches a workstream with real history).
+
+Neither bucket is a data-loss warning. Teardown removes **task rows and
+notes — the plan, not the code**: no commit, branch or checkout is
+touched, and `mu undo <group>` puts the rows back. (That claim holds
+because this list excludes anything with a registered workspace;
+teardown *does* free real checkouts when they exist.) The reason to look
+before tearing down an abandoned workstream is that its unclosed tasks
+are the only record of what was still outstanding — lose sight of them
+and you re-derive that context from scratch later.
 
 Severity is always `ok`: a tidy-up opportunity is not a fault, so this
 section never makes `mu doctor` claim something needs attention.

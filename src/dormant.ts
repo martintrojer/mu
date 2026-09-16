@@ -225,7 +225,19 @@ export function checkDormantWorkstreams(
           `  ${d.name.padEnd(24)} ${days(d.idleDays).padStart(5)} idle, ${d.unclosed} of ${d.tasks} unclosed`,
       ),
       "",
-      "These are the ones worth a glance: a teardown here discards open work.",
+      // "a teardown here discards open work" was the first wording, and it
+      // was wrong twice: it contradicted the `finished` block above (which
+      // correctly calls teardown reversible), and "work" reads as "my code"
+      // when what teardown removes here is the PLAN — task rows and notes.
+      //
+      // "no checkout is touched" is true only because this list EXCLUDES
+      // workstreams with registered workspaces; teardown does free real
+      // checkouts when they exist (`freedWorkspaces` in teardownWorkstream).
+      // The exclusion in findDormantWorkstreams is what makes this sentence
+      // safe, so the two must not drift apart.
+      "Removes the task rows and notes — the plan, not the code (no checkout",
+      "is touched, and `mu undo <group>` puts the rows back). The risk is",
+      "losing sight of what was left to do, so read it first:",
       ...abandoned.slice(0, 3).map((d) => `  mu task list -w ${d.name} --status OPEN`),
     );
   }

@@ -23,8 +23,12 @@ breaking changes are called out under "Breaking" in each entry.
 
   - **finished** — every task `CLOSED` and idle ≥ 14 days. Nothing is at stake;
     the remediation is the `mu workstream teardown` command.
-  - **abandoned** — idle ≥ 60 days but still holding unclosed tasks. A teardown
-    here discards open work, so the remediation lists the open tasks instead.
+  - **abandoned** — idle ≥ 60 days but still holding unclosed tasks. Those tasks
+    are the record of what was left to do, so the remediation lists them instead
+    of offering a teardown. Teardown removes the plan, not the code: no checkout
+    is touched (this list excludes workstreams that have one) and `mu undo`
+    restores the rows — the cost is losing sight of the outstanding work, not
+    losing it.
 
   The thresholds differ on purpose: a fortnight away from a project is a holiday,
   not abandonment. A single "dormant" list would have invited `--empty`-style
