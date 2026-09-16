@@ -498,9 +498,13 @@ your laptop, so a local-endpoint `git fetch`, `git push`, or rsync
 cannot run inside the job. Collect from the orchestrator as described
 in § Everything is orchestrator-PULL.
 
-**coop does not replace the agent spawn.** A mu agent needs a pane whose
-process mu controls. Use coop for orchestrator commands, detached tmux
-for the agent, and the peer's jump command for interactive access.
+**Use `coop run --tui` for an interactive/full-screen agent when you want
+coop's timeout, runtime, transcript, and cleanup.** Plain `coop run` pipes
+output into the artifact, so attaching finds the pane but no live TUI.
+coop prints the exact murmur jump and `mu agent spawn --command` lines after
+TUI dispatch. mu still needs that local attach pane for read/send/wait; closing
+it detaches without stopping the coop job. Use plain detached remote tmux when
+you need none of coop's artifacts or lifecycle controls.
 
 #### coop exit 3 is a handback
 
