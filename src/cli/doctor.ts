@@ -17,6 +17,12 @@ import { emitJson, resolveWorkstream } from "../cli.js";
 import { CURRENT_SCHEMA_VERSION, type Db, defaultDbPath, EXPECTED_TABLES } from "../db.js";
 import { checkDiskRecon, formatBytes, measureWorkspaceUsage } from "../disk-recon.js";
 import {
+  ABANDONED_IDLE_DAYS,
+  checkDormantWorkstreams,
+  FINISHED_IDLE_DAYS,
+  findDormantWorkstreams,
+} from "../dormant.js";
+import {
   checkCheapDriftInvariant,
   checkDrift,
   DriftDetectedError,
@@ -219,6 +225,28 @@ export async function cmdDoctor(
   console.log(pc.bold("\nfleet"));
   let sawHazard = printHazards(checkFleetHazards(db, { dbPath: defaultDbPath() }));
 
+  // ─ Housekeeping: workstreams that look torn-down-able
+  //
+  // Deliberately its own section rather than a `fleet` row: fleet is
+  // about a MIXED FLEET corrupting itself, and this is about a single
+  // box accumulating finished work. Severity is always `ok`, so this
+  // never contributes to `sawHazard` — a tidy-up opportunity is not a
+  // fault, and treating it as one would make doctor cry wolf forever.
+  console.log(pc.bold("\nhousekeeping"));
+  const dormant = checkDormantWorkstreams(db, { currentWorkstream });
+  console.log(
+    `  ${dormant.name.padEnd(16)} : ${dormant.severity === "ok" && dormant.remediation === undefined ? pc.green("ok") : pc.yellow("note")} ${pc.dim(dormant.detail)}`,
+  );
+  // Printed directly rather than through `printHazards`, which shows a
+  // remediation block only for non-`ok` findings. This finding is
+  // deliberately `ok` AND has the names — which are the entire point of
+  // the row — in its remediation, so routing it through that helper
+  // would report a count and withhold the list.
+  if (dormant.remediation !== undefined) {
+    console.log("");
+    for (const line of dormant.remediation) console.log(`  ${line}`);
+  }
+
   // ─ Disk ↔ DB reconciliation
   //
   // The only section that reads the filesystem. Default tier is readdir
@@ -420,6 +448,23 @@ export async function cmdDoctorJson(
     detail: h.detail,
     remediation: h.remediation ?? [],
   }));
+
+  // Housekeeping: the dormant list, with its rows STRUCTURED rather
+  // than only prose. An agent reading --json should be able to pick a
+  // name without parsing the remediation block, and the `kind` field is
+  // the whole finding — `finished` is safe to tear down, `abandoned`
+  // needs a look first.
+  const dormantHazard = checkDormantWorkstreams(db, { currentWorkstream });
+  const housekeeping = {
+    dormantWorkstreams: {
+      name: dormantHazard.name,
+      severity: dormantHazard.severity,
+      detail: dormantHazard.detail,
+      remediation: dormantHazard.remediation ?? [],
+      workstreams: findDormantWorkstreams(db, { currentWorkstream }),
+      thresholds: { finishedIdleDays: FINISHED_IDLE_DAYS, abandonedIdleDays: ABANDONED_IDLE_DAYS },
+    },
+  };
   const workspaceUsage = opts.disk === true ? measureWorkspaceUsage(db) : null;
 
   // Drift: shallow by default, full rebuild diff under --deep. Same
@@ -456,6 +501,7 @@ export async function cmdDoctorJson(
     workstream: { currentName: currentWorkstream },
     state: workstreamStats,
     fleet: hazards,
+    housekeeping,
     disk,
     workspaceUsage,
     drift,

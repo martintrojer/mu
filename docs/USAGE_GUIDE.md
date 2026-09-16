@@ -263,6 +263,16 @@ fleet
   db-filesystem    : ok DB is on local (0x1021994)
   name-case        : ok no case-colliding workstream names
 
+housekeeping
+  ws-dormant       : note 2 dormant workstream(s): 2 with open tasks
+
+  Idle 60+ days but still holding UNCLOSED tasks — look before tearing down:
+    infer-rs                   95d idle, 19 of 202 unclosed
+    modelbridge                89d idle, 8 of 75 unclosed
+
+  These are the ones worth a glance: a teardown here discards open work.
+    mu task list -w infer-rs --status OPEN
+
 disk
   ws-rows          : ok every workspace row has its dir
   ws-dirs          : ok no orphan workspace dirs
@@ -293,6 +303,36 @@ remediation block and mu runs none of them. An orphan or stranded dir
 may hold the only copy of uncommitted work, so the decision is yours (or
 your agent's) — a diagnostic that deleted checkouts because a readdir
 raced a spawn would be a worse bug than the residue.
+
+### Which workstreams can I tear down? (`housekeeping`)
+
+`mu workstream list` prints row counts and no dates, so the workstream
+you finished in June looks exactly like the one you worked on an hour
+ago. The `housekeeping` section answers "what can go" — and splits it
+in two, because one list would give actively bad advice:
+
+| Bucket | Test | Advice |
+| --- | --- | --- |
+| **finished** | every task `CLOSED`, idle ≥ 14 days | safe to tear down; the remediation is the `teardown` command |
+| **abandoned** | idle ≥ 60 days *with* unclosed tasks | look first; the remediation lists the open work, because a teardown here discards it |
+
+The thresholds differ on purpose. A fortnight away from a project is a
+holiday, not abandonment, so anything still holding open tasks has to be
+cold for two months before it is mentioned at all. A closed-out
+workstream is not suspicious — that is the success state — so it earns
+its row by the work also being cold.
+
+Excluded: the workstream you are in right now, `scratch` (ephemeral by
+design), anything with a live agent or a registered workspace, and
+task-less workstreams (those are `mu workstream teardown --empty`'s job,
+which sweeps test litter — zero tasks, agents and workspaces — and never
+matches a workstream with real history).
+
+Severity is always `ok`: a tidy-up opportunity is not a fault, so this
+section never makes `mu doctor` claim something needs attention.
+Teardown is reversible — tombstone ops are written, so `mu undo <group>`
+puts the rows back and `mu workstream list --torn-down` finds the group
+months later.
 
 `--disk` adds recursive byte accounting per checkout, with the orphan
 share called out as reclaimable:

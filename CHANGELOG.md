@@ -10,6 +10,39 @@ breaking changes are called out under "Breaking" in each entry.
 
 ## [Unreleased]
 
+### Added
+
+- **`mu doctor` has a `housekeeping` section answering "which workstreams can I
+  tear down?"** `mu workstream list` prints row counts and no dates, so the
+  workstream finished in June looked exactly like the one worked on an hour ago.
+  On the dogfood box that meant 11 workstreams, two of them untouched for three
+  months, and nothing ever torn down — teardown is reversible, so the cost of the
+  missing surface was not risk, it was that the list only grew.
+
+  Two buckets, never one number, because merging them gives actively bad advice:
+
+  - **finished** — every task `CLOSED` and idle ≥ 14 days. Nothing is at stake;
+    the remediation is the `mu workstream teardown` command.
+  - **abandoned** — idle ≥ 60 days but still holding unclosed tasks. A teardown
+    here discards open work, so the remediation lists the open tasks instead.
+
+  The thresholds differ on purpose: a fortnight away from a project is a holiday,
+  not abandonment. A single "dormant" list would have invited `--empty`-style
+  sweeping of 27 open tasks on the box this was written against.
+
+  Severity is always `ok` — a tidy-up opportunity is not a fault, and `warn`
+  would make doctor claim something needs attention forever on a healthy box.
+  Excludes the current workstream, `scratch` (ephemeral by design), anything with
+  a live agent or registered workspace, and task-less workstreams (already
+  `mu workstream teardown --empty`'s job). Report-only, like the rest of the
+  `disk` section: every finding names its command and mu runs none of them.
+
+  Idle time is derived from `MAX(tasks.updated_at)`, not a new
+  `workstreams.last_activity` column — no schema change, and no second source of
+  truth that can disagree with the rows it summarises. `mu doctor --json` gains a
+  `housekeeping.dormantWorkstreams` key with the rows structured (`kind`,
+  `idleDays`, `unclosed`) so an agent can act without parsing prose.
+
 ### Fixed
 
 - **A peer's unrecognised op entity no longer freezes its watermark
