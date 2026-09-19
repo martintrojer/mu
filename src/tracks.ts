@@ -13,13 +13,13 @@
 //
 // Algorithm:
 //   1. Get all open goals (tasks with no outgoing edges, not CLOSED).
-//   2. For each goal, compute its prerequisite subgraph
+//   2. In one recursive query, compute each goal's prerequisite subgraph
 //      (everything transitively reachable via reverse edges).
-//   3. Build union-find: merge any two goals whose subgraphs intersect.
+//   3. Build union-find: merge goals while observing shared tasks.
 //   4. Each connected component is one Track.
 
 import type { Db } from "./db.js";
-import { getPrerequisites, listGoals, listReady, type TaskRow } from "./tasks.js";
+import { listGoals, listReady, type TaskRow } from "./tasks.js";
 
 export interface Track {
   /** Goal tasks (no outgoing edges) belonging to this track. */
@@ -46,26 +46,41 @@ export function getParallelTracks(db: Db, workstream: string): Track[] {
   const goals = listGoals(db, workstream).filter((g) => g.status !== "CLOSED");
   if (goals.length === 0) return [];
 
-  // 2. Compute prerequisite subgraph for each goal.
-  const subgraphs = new Map<string, Set<string>>();
-  for (const goal of goals) {
-    subgraphs.set(goal.name, getPrerequisites(db, goal.name, workstream));
-  }
+  // 2. Compute every goal's prerequisite subgraph in one traversal.
+  // Running one recursive query per goal made the TUI's fast tick scale
+  // with the number of goals. The goal id carried through this CTE keeps
+  // the same inclusive per-goal sets in one SQLite round-trip.
+  const reach = db
+    .prepare(
+      `WITH RECURSIVE
+         active_goals(id, local_id) AS (
+           SELECT g.id, g.local_id
+             FROM goals g
+             JOIN workstreams ws ON ws.id = g.workstream_id
+            WHERE ws.name = ?
+         ),
+         reach(goal_id, node_id) AS (
+           SELECT id, id FROM active_goals
+           UNION
+           SELECT r.goal_id, e.from_task_id
+             FROM reach r
+             JOIN task_edges e ON e.to_task_id = r.node_id
+         )
+       SELECT goal.local_id AS goal_id, node.local_id AS task_id
+         FROM reach r
+         JOIN tasks goal ON goal.id = r.goal_id
+         JOIN tasks node ON node.id = r.node_id`,
+    )
+    .all(workstream) as Array<{ goal_id: string; task_id: string }>;
 
-  // 3. Union-find: merge goals whose subgraphs overlap.
-  const uf = new UnionFind(goals.map((g) => g.name));
-  for (let i = 0; i < goals.length; i++) {
-    const a = goals[i];
-    if (!a) continue;
-    for (let j = i + 1; j < goals.length; j++) {
-      const b = goals[j];
-      if (!b) continue;
-      const subA = subgraphs.get(a.name);
-      const subB = subgraphs.get(b.name);
-      if (subA && subB && overlaps(subA, subB)) {
-        uf.union(a.name, b.name);
-      }
-    }
+  const subgraphs = new Map(goals.map((goal) => [goal.name, new Set<string>()]));
+  const uf = new UnionFind(goals.map((goal) => goal.name));
+  const firstGoalByTask = new Map<string, string>();
+  for (const row of reach) {
+    subgraphs.get(row.goal_id)?.add(row.task_id);
+    const firstGoal = firstGoalByTask.get(row.task_id);
+    if (firstGoal === undefined) firstGoalByTask.set(row.task_id, row.goal_id);
+    else uf.union(firstGoal, row.goal_id);
   }
 
   // 4. Group goals + subgraph task ids by union-find root.
@@ -103,13 +118,6 @@ export function getParallelTracks(db: Db, workstream: string): Track[] {
     return an.localeCompare(bn);
   });
   return tracks;
-}
-
-function overlaps(a: Set<string>, b: Set<string>): boolean {
-  // Iterate the smaller set for O(min(|a|, |b|)) lookups.
-  const [small, large] = a.size <= b.size ? [a, b] : [b, a];
-  for (const x of small) if (large.has(x)) return true;
-  return false;
 }
 
 class UnionFind {

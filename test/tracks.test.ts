@@ -459,4 +459,33 @@ describe("getParallelTracks — output is deterministic", () => {
     const tracks = getParallelTracks(db, "test");
     expect(tracks.map((t) => t.roots[0]?.name)).toEqual(["a", "m", "z"]);
   });
+
+  it("uses a bounded number of SQL reads as the number of goals grows", () => {
+    for (let i = 0; i < 100; i++) {
+      addTask(db, {
+        localId: `goal_${i}`,
+        workstream: "test",
+        title: `Goal ${i}`,
+        impact: 50,
+        effortDays: 1,
+      });
+    }
+
+    let prepares = 0;
+    const countedDb = new Proxy(db, {
+      get(target, property) {
+        const value = Reflect.get(target, property);
+        if (property === "prepare") {
+          return (...args: Parameters<Db["prepare"]>) => {
+            prepares++;
+            return target.prepare(...args);
+          };
+        }
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+
+    expect(getParallelTracks(countedDb, "test")).toHaveLength(100);
+    expect(prepares).toBeLessThanOrEqual(6);
+  });
 });

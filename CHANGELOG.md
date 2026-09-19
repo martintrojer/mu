@@ -49,6 +49,14 @@ breaking changes are called out under "Breaking" in each entry.
 
 ### Fixed
 
+- **Parallel-track detection no longer runs one recursive SQL query per active goal.**
+  The TUI recomputes tracks on every fast tick, so a large workstream paid an
+  N+1 query cost once per second. It now traverses every goal's prerequisite
+  subgraph in one recursive CTE and merges goals as shared tasks are observed.
+  On a 1,500-goal fixture this reduced a warm track read from ~170ms to ~8ms;
+  the dogfood workstream with 698 tasks and 1,418 edges retains the same 24
+  tracks.
+
 - **A peer's unrecognised op entity no longer freezes its watermark
   forever.** `applyOp` rejected every entity outside `SYNCED_ENTITIES`,
   and `ingestSegment` treated that rejection as segment damage: defect
