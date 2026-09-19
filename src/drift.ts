@@ -164,6 +164,12 @@ export function checkCheapDriftInvariant(db: Db): CheapDriftReport {
       // src/apply.ts § applyNotePut). So match on the task-key PREFIX
       // rather than the exact key: the question here is "does the log
       // know about a note on this task at all", not "which note".
+      //
+      // Express the prefix as an indexed half-open range. A correlated
+      // `LIKE task_key || '#%'` made SQLite scan every note op for every
+      // live note (seconds on the dogfood DB); '#'..'$' contains exactly
+      // the strings beginning with `task_key || '#'` because task ids
+      // cannot contain either delimiter.
       table: "task_notes",
       sql: `SELECT w.name || '/' || t.local_id || '#' || n.id AS key
               FROM task_notes n
@@ -172,7 +178,8 @@ export function checkCheapDriftInvariant(db: Db): CheapDriftReport {
              WHERE NOT EXISTS (
                SELECT 1 FROM ops o
                 WHERE o.entity = 'note'
-                  AND o.key LIKE w.name || '/' || t.local_id || '#%')`,
+                  AND o.key >= w.name || '/' || t.local_id || '#'
+                  AND o.key <  w.name || '/' || t.local_id || '$')`,
     },
   ];
 

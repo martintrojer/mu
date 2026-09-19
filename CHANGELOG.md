@@ -49,6 +49,14 @@ breaking changes are called out under "Breaking" in each entry.
 
 ### Fixed
 
+- **Switching TUI workstream tabs no longer blocks for seconds on the shallow
+  drift check.** The note invariant used a correlated dynamic-prefix `LIKE`, so
+  SQLite scanned every note op for every live note. The TUI runs Doctor on its
+  eager slow-tier load after a tab switch; 4,384 notes therefore held the Node
+  event loop for ~3 seconds. The equivalent half-open key range now uses the
+  existing `(entity, key)` index and takes ~4ms on that DB. No background jobs,
+  cancellation plumbing, or additional state were needed.
+
 - **Parallel-track detection no longer runs one recursive SQL query per active goal.**
   The TUI recomputes tracks on every fast tick, so a large workstream paid an
   N+1 query cost once per second. It now traverses every goal's prerequisite

@@ -367,21 +367,32 @@ describe("drift detection", () => {
       expect(checkCheapDriftInvariant(db).clean).toBe(true);
     });
 
-    it("is fast enough for the default doctor", () => {
+    it("is fast enough for the default doctor with thousands of notes", () => {
       ensureWorkstream(db, "demo");
-      for (let i = 0; i < 200; i++) {
-        addTask(db, {
-          workstream: "demo",
-          localId: `t${i}`,
-          title: `T${i}`,
-          impact: 50,
-          effortDays: 1,
-        });
-      }
+      const workstream = db.prepare("SELECT id FROM workstreams WHERE name = 'demo'").get() as {
+        id: number;
+      };
+      const insertTask = db.prepare(
+        `INSERT INTO tasks
+           (workstream_id, local_id, title, status, impact, effort_days, created_at, updated_at)
+         VALUES (?, ?, ?, 'OPEN', 50, 1, ?, ?)`,
+      );
+      const insertNote = db.prepare(
+        "INSERT INTO task_notes (task_id, author, content, created_at) VALUES (?, NULL, ?, ?)",
+      );
+      db.transaction(() => {
+        for (let i = 0; i < 2_000; i++) {
+          const now = new Date().toISOString();
+          const result = insertTask.run(workstream.id, `t${i}`, `T${i}`, now, now);
+          insertNote.run(Number(result.lastInsertRowid), `note ${i}`, now);
+        }
+      })();
+
       const report = checkCheapDriftInvariant(db);
-      // Generous bound: the point is "milliseconds, not seconds". Measured
-      // at 2-3ms on a 1000-task DB; the deep check is ~2.3s there.
-      expect(report.elapsedMs).toBeLessThan(250);
+      // Generous bound: the point is "milliseconds, not seconds". The
+      // former prefix-LIKE note probe grew quadratically and crossed this
+      // bound around 2,000 notes (the live 4,384-note DB took ~3 seconds).
+      expect(report.elapsedMs).toBeLessThan(100);
     });
   });
 
