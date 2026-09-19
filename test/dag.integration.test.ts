@@ -91,6 +91,39 @@ describe("tree label rendering", () => {
       expect(out).not.toContain("BUG: child summary line");
     }
   });
+
+  it("renders a task subtree with a bounded number of SQL reads", () => {
+    const db = fixtureDb();
+    for (let i = 0; i < 100; i++) {
+      addTask(db, {
+        workstream: "demo",
+        localId: `t${i}`,
+        title: `T${i}`,
+        impact: 50,
+        effortDays: 1,
+        ...(i === 0 ? {} : { blockedBy: [`t${i - 1}`] }),
+      });
+    }
+    const root = getTaskRow(db, "t0");
+    let prepares = 0;
+    const countedDb = new Proxy(db, {
+      get(target, property) {
+        const value = Reflect.get(target, property);
+        if (property === "prepare") {
+          return (...args: Parameters<Db["prepare"]>) => {
+            prepares++;
+            return target.prepare(...args);
+          };
+        }
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+
+    expect(renderTaskTree(countedDb, "demo", root, "dependents", (t) => t.status)).toContain(
+      "t99  OPEN  T99",
+    );
+    expect(prepares).toBeLessThanOrEqual(4);
+  });
 });
 
 describe("loadFullDag status filter", () => {
@@ -122,5 +155,63 @@ describe("loadFullDag status filter", () => {
     expect([...dag.tasks.keys()]).toEqual(["b"]);
     expect(dag.roots.map((t) => t.name)).toEqual(["b"]);
     expect([...dag.edges.entries()]).toEqual([["b", []]]);
+  });
+
+  it("ignores an invalid cross-workstream edge", () => {
+    const db = fixtureDb();
+    addTaskWithStatus(db, "local", "OPEN");
+    addTask(db, {
+      workstream: "other",
+      localId: "foreign",
+      title: "Foreign",
+      impact: 50,
+      effortDays: 1,
+    });
+    const local = db.prepare("SELECT id FROM tasks WHERE local_id = 'local'").get() as {
+      id: number;
+    };
+    const foreign = db.prepare("SELECT id FROM tasks WHERE local_id = 'foreign'").get() as {
+      id: number;
+    };
+    db.prepare(
+      "INSERT INTO task_edges (from_task_id, to_task_id, created_at) VALUES (?, ?, ?)",
+    ).run(local.id, foreign.id, new Date().toISOString());
+
+    expect([...loadFullDag(db, "demo").edges.entries()]).toEqual([["local", []]]);
+  });
+
+  it("loads a dense workstream DAG in milliseconds", () => {
+    const db = fixtureDb();
+    const workstream = db
+      .prepare("INSERT INTO workstreams (name, created_at) VALUES ('demo', ?) RETURNING id")
+      .get(new Date().toISOString()) as { id: number };
+    const insertTask = db.prepare(
+      `INSERT INTO tasks
+         (workstream_id, local_id, title, status, impact, effort_days, created_at, updated_at)
+       VALUES (?, ?, ?, 'OPEN', 50, 1, ?, ?)`,
+    );
+    const taskIds: number[] = [];
+    db.transaction(() => {
+      for (let i = 0; i < 1_500; i++) {
+        const now = new Date().toISOString();
+        const result = insertTask.run(workstream.id, `t${i}`, `T${i}`, now, now);
+        taskIds.push(Number(result.lastInsertRowid));
+      }
+      const insertEdge = db.prepare(
+        "INSERT INTO task_edges (from_task_id, to_task_id, created_at) VALUES (?, ?, ?)",
+      );
+      const now = new Date().toISOString();
+      for (let i = 1; i < taskIds.length; i++) {
+        const from = taskIds[i - 1];
+        const to = taskIds[i];
+        if (from !== undefined && to !== undefined) insertEdge.run(from, to, now);
+      }
+    })();
+
+    const started = performance.now();
+    expect(loadFullDag(db, "demo").tasks.size).toBe(1_500);
+    // The former join plan was quadratic (~280ms at this size); the
+    // edge-first plan is ~8ms. Leave ample headroom for loaded CI hosts.
+    expect(performance.now() - started).toBeLessThan(150);
   });
 });

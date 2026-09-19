@@ -27,6 +27,19 @@ breaking changes are called out under "Breaking" in each entry.
   duplicated lines at position 21,347 of a 23,192-line segment held back 1,846
   later ops and left two machines in permanent, undiagnosable drift.
 
+- **Full-DAG and single-task tree reads no longer take a query per task or make
+  SQLite compare every task pair.** A redundant same-workstream join predicate
+  made the planner choose a quadratic join for `loadFullDag`, while
+  `renderTaskTree` separately walked the graph with an edge query plus task
+  lookup per node. Both now load the indexed workstream DAG once. On the
+  698-task / 1,418-edge dogfood graph, the full DAG fell from ~77ms to ~2.6ms
+  and a 584-line task tree from 838 SQL prepares / ~36ms to 3 prepares / ~5ms.
+
+- **Opening a large track in the TUI no longer fetches its tasks one by one.**
+  The track drill performed two SQL reads per task; the largest live track made
+  351 lookups and took ~33ms. It now loads the workstream's tasks once and
+  filters them in memory (~2ms on the same data).
+
 ## [1.5.0] — 2026-09-19
 
 ### Changed

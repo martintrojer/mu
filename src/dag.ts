@@ -7,7 +7,7 @@
 import pc from "picocolors";
 import type { Db } from "./db.js";
 import type { TaskStatus } from "./tasks/status.js";
-import { getTask, listTasks, type TaskRow } from "./tasks.js";
+import { listTasks, type TaskRow } from "./tasks.js";
 
 // One-line marker appended to a tree node when its subtree was already
 // rendered earlier in the forest (DAG diamond collapse). Symbol-only
@@ -48,14 +48,20 @@ export function loadFullDag(db: Db, workstream: string, opts: LoadFullDagOptions
     edges.set(task.name, []);
   }
 
+  // Start from task_edges deliberately. With ordinary JOINs plus the
+  // same-workstream guard below, SQLite chose tasks(src) × tasks(dst)
+  // before probing the edge PK — quadratic in workstream size. CROSS JOIN
+  // fixes the loop order at edges → two INTEGER-PK lookups while retaining
+  // the guard against malformed cross-workstream rows.
   const rows = db
     .prepare(
       `SELECT src.local_id AS parent, dst.local_id AS child
          FROM task_edges e
-         JOIN tasks src ON src.id = e.from_task_id
-         JOIN tasks dst ON dst.id = e.to_task_id
-         JOIN workstreams ws ON ws.id = src.workstream_id
-        WHERE ws.name = ?
+   CROSS JOIN tasks src
+   CROSS JOIN tasks dst
+        WHERE src.id = e.from_task_id
+          AND dst.id = e.to_task_id
+          AND src.workstream_id = (SELECT id FROM workstreams WHERE name = ?)
           AND dst.workstream_id = src.workstream_id
         ORDER BY src.local_id, dst.local_id`,
     )
@@ -113,53 +119,17 @@ export function renderTaskTree(
   statusFn: TaskStatusLabelFn,
   opts: RenderTreeOptions = {},
 ): string {
-  const edges = new Map<string, string[]>();
-  const byName = new Map<string, TaskRow>([[root.name, root]]);
-  const visited = new Set<string>();
-  collectTreeEdges(db, workstream, root.name, direction, edges, byName, visited);
-  return renderForest([root], edges, statusFn, byName, opts);
-}
-
-function collectTreeEdges(
-  db: Db,
-  workstream: string,
-  taskName: string,
-  direction: "blockers" | "dependents",
-  edges: Map<string, string[]>,
-  byName: Map<string, TaskRow>,
-  visited: Set<string>,
-): void {
-  if (visited.has(taskName)) return;
-  visited.add(taskName);
-  const rows = db
-    .prepare(
-      direction === "dependents"
-        ? `SELECT child.local_id AS name
-             FROM task_edges e
-             JOIN tasks parent ON parent.id = e.from_task_id
-             JOIN tasks child ON child.id = e.to_task_id
-             JOIN workstreams ws ON ws.id = parent.workstream_id
-            WHERE ws.name = ? AND parent.local_id = ?
-            ORDER BY child.local_id`
-        : `SELECT parent.local_id AS name
-             FROM task_edges e
-             JOIN tasks parent ON parent.id = e.from_task_id
-             JOIN tasks child ON child.id = e.to_task_id
-             JOIN workstreams ws ON ws.id = child.workstream_id
-            WHERE ws.name = ? AND child.local_id = ?
-            ORDER BY parent.local_id`,
-    )
-    .all(workstream, taskName) as { name: string }[];
-  const children = rows.map((r) => r.name);
-  edges.set(taskName, children);
-
-  for (const childName of children) {
-    if (!byName.has(childName)) {
-      const child = getTask(db, childName, workstream);
-      if (child) byName.set(childName, child);
-    }
-    collectTreeEdges(db, workstream, childName, direction, edges, byName, visited);
+  const dag = loadFullDag(db, workstream);
+  if (direction === "dependents") {
+    return renderForest([root], dag.edges, statusFn, dag.tasks, opts);
   }
+
+  const blockers = new Map<string, string[]>([...dag.tasks.keys()].map((name) => [name, []]));
+  for (const [blocker, dependents] of dag.edges) {
+    for (const dependent of dependents) blockers.get(dependent)?.push(blocker);
+  }
+  for (const names of blockers.values()) names.sort();
+  return renderForest([root], blockers, statusFn, dag.tasks, opts);
 }
 
 function renderForestChildren(

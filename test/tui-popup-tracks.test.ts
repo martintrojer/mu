@@ -167,8 +167,21 @@ describe("TracksPopup — drill recursion", () => {
   it("drill view renders the track's resolved tasks", async () => {
     const db = fixtureDb();
     const snapshot = await seed(db);
+    let prepares = 0;
+    const countedDb = new Proxy(db, {
+      get(target, property) {
+        const value = Reflect.get(target, property);
+        if (property === "prepare") {
+          return (...args: Parameters<Db["prepare"]>) => {
+            prepares++;
+            return target.prepare(...args);
+          };
+        }
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
 
-    const { stdout, instance } = mount({ db, snapshot, mode: "drill" });
+    const { stdout, instance } = mount({ db: countedDb, snapshot, mode: "drill" });
     await waitForInkOutput(stdout);
     const frame = latestRenderedFrame(stdout).join("\n");
 
@@ -176,6 +189,7 @@ describe("TracksPopup — drill recursion", () => {
     expect(frame).toContain("shared_prereq");
     expect(frame).toContain("goal_a");
     expect(frame).toContain("goal_b");
+    expect(prepares).toBeLessThanOrEqual(2);
 
     instance.unmount();
   });

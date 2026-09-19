@@ -32,7 +32,7 @@ import { type ReactElement, useEffect, useMemo, useState } from "react";
 import type { Db } from "../../../db.js";
 import { GLYPH } from "../../../glyphs.js";
 import type { WorkstreamSnapshot } from "../../../state.js";
-import { getTask, type TaskRow } from "../../../tasks.js";
+import { listTasks, type TaskRow } from "../../../tasks.js";
 import { type ColumnSpec, contentWidthFromCols, layoutColumns, renderRow } from "../columns.js";
 import { dispatchPopupKeyFromInk, type PopupAction, type PopupActionEnvelope } from "../keys.js";
 import { ListRow } from "../list-row.js";
@@ -140,18 +140,12 @@ export function TracksPopup({
     }
   }, [mode]);
 
-  // Resolve every task id in the focused track to a TaskRow when
-  // we're in drill mode. Memoised on (track, db) so flipping
-  // mode doesn't re-query SQLite needlessly. Sorted by status
-  // (IN_PROGRESS/OPEN first; CLOSED last) so
-  // the "what's still actionable" view is at the top.
+  // Resolve the focused track's tasks with one workstream query. The old
+  // per-id getTask loop issued two SQL reads per task, which made opening a
+  // large track noticeably pause even though the full task list is cheap.
   const drillTasks = useMemo<TaskRow[]>(() => {
     if (mode !== "drill" || !focusedTrack) return [];
-    const out: TaskRow[] = [];
-    for (const id of focusedTrack.taskIds) {
-      const t = getTask(db, id, workstream);
-      if (t !== undefined) out.push(t);
-    }
+    const out = listTasks(db, workstream).filter((task) => focusedTrack.taskIds.has(task.name));
     out.sort((a, b) => statusRank(a.status) - statusRank(b.status) || a.name.localeCompare(b.name));
     return out;
   }, [mode, focusedTrack, db, workstream]);
