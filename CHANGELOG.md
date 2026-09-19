@@ -8,6 +8,34 @@ breaking changes are called out under "Breaking" in each entry.
 
 ---
 
+## [1.5.0] — 2026-09-19
+
+### Changed
+
+- **Node 26 is supported and the npm dependency set is current.** The declared
+  engine range is now Node 22.12 through 26. `better-sqlite3` 13.0.3 loads its
+  N-API binary and executes queries on Node 26; React, React DevTools, Vitest,
+  tsup, Biome, fast-check, and the Node/React type packages move to their latest
+  releases. The remaining direct packages were already current.
+
+### Fixed
+
+- **Switching TUI workstream tabs no longer blocks for seconds on the shallow
+  drift check.** The note invariant used a correlated dynamic-prefix `LIKE`, so
+  SQLite scanned every note op for every live note. The TUI runs Doctor on its
+  eager slow-tier load after a tab switch; 4,384 notes therefore held the Node
+  event loop for ~3 seconds. The equivalent half-open key range now uses the
+  existing `(entity, key)` index and takes ~4ms on that DB. No background jobs,
+  cancellation plumbing, or additional state were needed.
+
+- **Parallel-track detection no longer runs one recursive SQL query per active goal.**
+  The TUI recomputes tracks on every fast tick, so a large workstream paid an
+  N+1 query cost once per second. It now traverses every goal's prerequisite
+  subgraph in one recursive CTE and merges goals as shared tasks are observed.
+  On a 1,500-goal fixture this reduced a warm track read from ~170ms to ~8ms;
+  the dogfood workstream with 698 tasks and 1,418 edges retains the same 24
+  tracks.
+
 ## [1.4.0] — 2026-09-16
 
 ### Added
@@ -48,22 +76,6 @@ breaking changes are called out under "Breaking" in each entry.
   `idleDays`, `unclosed`) so an agent can act without parsing prose.
 
 ### Fixed
-
-- **Switching TUI workstream tabs no longer blocks for seconds on the shallow
-  drift check.** The note invariant used a correlated dynamic-prefix `LIKE`, so
-  SQLite scanned every note op for every live note. The TUI runs Doctor on its
-  eager slow-tier load after a tab switch; 4,384 notes therefore held the Node
-  event loop for ~3 seconds. The equivalent half-open key range now uses the
-  existing `(entity, key)` index and takes ~4ms on that DB. No background jobs,
-  cancellation plumbing, or additional state were needed.
-
-- **Parallel-track detection no longer runs one recursive SQL query per active goal.**
-  The TUI recomputes tracks on every fast tick, so a large workstream paid an
-  N+1 query cost once per second. It now traverses every goal's prerequisite
-  subgraph in one recursive CTE and merges goals as shared tasks are observed.
-  On a 1,500-goal fixture this reduced a warm track read from ~170ms to ~8ms;
-  the dogfood workstream with 698 tasks and 1,418 edges retains the same 24
-  tracks.
 
 - **A peer's unrecognised op entity no longer freezes its watermark
   forever.** `applyOp` rejected every entity outside `SYNCED_ENTITIES`,

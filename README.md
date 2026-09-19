@@ -104,7 +104,7 @@ npx skills add martintrojer/mu          # auto-detects pi / claude-code / codex 
 ```
 
 **Requirements:**
-- Node 22.12–24 (see `.nvmrc`), matching `engines` in `package.json`.
+- Node 22.12–26 (see `.nvmrc`), matching `engines` in `package.json`.
 - A terminal multiplexer: tmux ≥ 3.0, or [herdr](https://github.com/martintrojer/herdr)
   (`mu doctor` reports which one is active). Spawn, send, read and
   status detection work on both; the remaining herdr gaps are narrow
