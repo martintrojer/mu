@@ -249,8 +249,10 @@ function describeDefects(peerShort: string, defects: readonly SegmentDefect[]): 
   // defect a re-read can get past (a torn write mid-transfer). A refused
   // line is deterministic: re-reading hits the identical line and the
   // hint would be self-referentially useless, which is exactly how the
-  // original incident's operator was sent in a circle.
-  const hint = defects.every((d) => d.kind === "entity-not-synced")
+  // original incident's operator was sent in a circle. A re-delivered
+  // op is deterministic for the same reason.
+  const skipped = new Set(["entity-not-synced", "duplicate-op"]);
+  const hint = defects.every((d) => skipped.has(d.kind))
     ? " — skipped; the rest of the segment applied"
     : ` — re-read with \`mu sync --repair ${peerShort}\``;
   return `peer ${peerShort}: ${detail}${more}${hint}`;

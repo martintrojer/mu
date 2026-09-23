@@ -115,7 +115,8 @@ export type SegmentDefectKind =
   | "non-monotonic-hlc"
   | "unknown-version"
   | "malformed-shape"
-  | "entity-not-synced";
+  | "entity-not-synced"
+  | "duplicate-op";
 
 export interface SegmentDefect {
   kind: SegmentDefectKind;
@@ -785,6 +786,15 @@ export interface IngestResult {
  * SKIPPED: it projects nothing, so it leaves no hole, and halting on it
  * makes the watermark unrecoverable by any means the CLI offers.
  *
+ * A RE-DELIVERED line is not a damaged one either. A block of ops the
+ * peer already wrote, appended verbatim a second time, breaks the hlc
+ * ordering (`duplicate-op`) without losing anything: every one of those
+ * ops is already in our `ops` table byte-for-byte, so applying them
+ * again is a no-op by construction. Halting there is unrecoverable —
+ * `--repair` re-reads from zero straight back into the same three
+ * lines, forever — so it is reported and SKIPPED. A non-monotonic line
+ * we have NOT seen before is still real damage and still halts.
+ *
  * Calls `receiveHlc` per op so the local clock advances past the peer's,
  * which is what makes "laptop edits after seeing the devserver's op" order
  * correctly rather than losing to it.
@@ -855,18 +865,6 @@ export function ingestSegment(db: Db, peer: PeerSegment): IngestResult {
         break;
       }
 
-      // LAYER 3: monotonic hlc. Structural, zero extra bytes. Catches
-      // reordering, duplication, and silent mid-file truncation.
-      if (previousHlc !== null && decoded.line.hlc <= previousHlc) {
-        defects.push({
-          kind: "non-monotonic-hlc",
-          line: lineNo,
-          detail: `hlc ${decoded.line.hlc} <= previous ${previousHlc}`,
-        });
-        truncatedAt = lineNo;
-        break;
-      }
-
       const op: Op = {
         hlc: decoded.line.hlc,
         machineId: decoded.line.machine,
@@ -878,6 +876,31 @@ export function ingestSegment(db: Db, peer: PeerSegment): IngestResult {
         op: decoded.line.op,
         payload: decoded.payloadText,
       };
+
+      // LAYER 3: monotonic hlc. Structural, zero extra bytes. Catches
+      // reordering, duplication, and silent mid-file truncation.
+      if (previousHlc !== null && decoded.line.hlc <= previousHlc) {
+        // ... unless we have this exact op already, in which case the
+        // peer re-appended a block it had already written and there is
+        // nothing to reorder: an identical op carries identical state,
+        // so skipping it cannot produce a state neither machine had.
+        if (isAlreadyRecorded(db, op)) {
+          defects.push({
+            kind: "duplicate-op",
+            line: lineNo,
+            detail: `hlc ${decoded.line.hlc} re-delivered — skipped`,
+          });
+          watermark = lineNo;
+          continue;
+        }
+        defects.push({
+          kind: "non-monotonic-hlc",
+          line: lineNo,
+          detail: `hlc ${decoded.line.hlc} <= previous ${previousHlc}`,
+        });
+        truncatedAt = lineNo;
+        break;
+      }
 
       try {
         const result = applyIncomingOp(db, op);
@@ -948,6 +971,34 @@ export function ingestSegment(db: Db, peer: PeerSegment): IngestResult {
  *      makes this idempotent via UNIQUE (machine_id, hlc) — the
  *      property that lets "re-read from zero" be the universal repair.
  */
+/**
+ * Is this exact op already in our `ops` table?
+ *
+ * `UNIQUE (machine_id, hlc)` is the op's identity everywhere else in
+ * the system — it is what makes `applyIncomingOp` idempotent and
+ * "re-read from zero" a safe universal repair — so it is the identity
+ * used here too. Entity and key are matched as well so a hlc collision
+ * between genuinely different ops (which the UNIQUE constraint would
+ * itself refuse) can never be mistaken for a re-delivery.
+ */
+function isAlreadyRecorded(db: Db, op: Op): boolean {
+  const row = db
+    .prepare(
+      `SELECT 1 FROM ops
+        WHERE machine_id = @machineId AND hlc = @hlc
+          AND entity = @entity AND key = @key AND op = @op
+        LIMIT 1`,
+    )
+    .get({
+      machineId: op.machineId,
+      hlc: op.hlc,
+      entity: op.entity,
+      key: op.key,
+      op: op.op,
+    });
+  return row !== undefined;
+}
+
 export function applyIncomingOp(db: Db, op: Op): { changed: boolean } {
   receiveHlc(db, op.hlc);
   const result = applyOp(db, op);

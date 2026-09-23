@@ -459,7 +459,7 @@ describe("segments", () => {
       expect(result.defects.some((d) => d.kind === "non-monotonic-hlc")).toBe(true);
     });
 
-    it("LAYER 3: a duplicated line is detected", async () => {
+    it("LAYER 3: a duplicated line is reported but SKIPPED, not fatal", async () => {
       const path = await seedFour();
       const lines = linesOf(path);
       const first = lines[0];
@@ -469,7 +469,55 @@ describe("segments", () => {
       const peer = peersFor(b)[0];
       if (peer === undefined) throw new Error("expected a peer");
       const result = ingestSegment(b, peer);
+      expect(result.defects.map((d) => d.kind)).toContain("duplicate-op");
+      // The op is already recorded, so re-applying is a no-op; ingest
+      // walks past it and finishes the file rather than wedging.
+      expect(result.truncatedAt).toBeNull();
+      expect(result.watermark).toBe(lines.length + 1);
+    });
+
+    it("LAYER 3: a re-delivered BLOCK mid-file does not wedge the watermark", async () => {
+      // The real incident: a peer's segment had lines 21344-21346
+      // appended a second time as 21347-21349, byte-identical. Ingest
+      // halted there permanently and `--repair` re-read from zero back
+      // into the same three lines, so 1,846 later ops never arrived and
+      // the two machines sat in undiagnosable drift.
+      const path = await seedFour();
+      const lines = linesOf(path);
+      const block = lines.slice(1, 3);
+      if (block.length !== 2) throw new Error("need 4 lines");
+      const damaged = [...lines.slice(0, 3), ...block, ...lines.slice(3)];
+      writeFileSync(path, `${damaged.join("\n")}\n`);
+
+      const peer = peersFor(b)[0];
+      if (peer === undefined) throw new Error("expected a peer");
+      const result = ingestSegment(b, peer);
+
+      expect(result.defects.filter((d) => d.kind === "duplicate-op")).toHaveLength(2);
+      expect(result.defects.some((d) => d.kind === "non-monotonic-hlc")).toBe(false);
+      expect(result.truncatedAt).toBeNull();
+      // Everything past the re-delivered block landed.
+      expect(result.watermark).toBe(damaged.length);
+      const tasks = b.prepare(`SELECT count(*) AS n FROM tasks`).get() as { n: number };
+      expect(tasks.n).toBe(4);
+    });
+
+    it("LAYER 3: an UNSEEN out-of-order line is still fatal", async () => {
+      // Only a byte-identical re-delivery is benign. A line we have
+      // never applied arriving out of order is real damage: a gap is
+      // indistinguishable from reordering, so ingest must still halt.
+      const path = await seedFour();
+      const lines = linesOf(path);
+      const third = lines[2];
+      const fourth = lines[3];
+      if (third === undefined || fourth === undefined) throw new Error("need 4 lines");
+      writeFileSync(path, `${[lines[0], lines[1], fourth, third].join("\n")}\n`);
+
+      const peer = peersFor(b)[0];
+      if (peer === undefined) throw new Error("expected a peer");
+      const result = ingestSegment(b, peer);
       expect(result.defects.some((d) => d.kind === "non-monotonic-hlc")).toBe(true);
+      expect(result.truncatedAt).toBe(4);
     });
 
     it("LAYER 4: the manifest catches truncation on a line boundary", async () => {

@@ -8,6 +8,25 @@ breaking changes are called out under "Breaking" in each entry.
 
 ---
 
+## [Unreleased]
+
+### Fixed
+
+- **A re-delivered block of ops no longer wedges a peer's ingest forever.**
+  When a peer's segment contains a byte-identical repeat of ops it already
+  wrote, the monotonic-hlc check (layer 3) saw a backwards clock and halted,
+  as it must for genuine reordering. But those ops are already in the local
+  `ops` table, identified by the same `UNIQUE (machine_id, hlc)` that makes
+  ingest idempotent, so re-applying them is a no-op and skipping them cannot
+  produce a state neither machine had. Halting was also unrecoverable:
+  `mu sync --repair` re-read from zero straight back into the same lines, and
+  the advertised repair was the only one the CLI offers. Such a line is now
+  reported as a new `duplicate-op` defect and skipped, exactly as
+  `entity-not-synced` already was; a non-monotonic line that is NOT already
+  recorded is still real damage and still halts. Observed in the field: three
+  duplicated lines at position 21,347 of a 23,192-line segment held back 1,846
+  later ops and left two machines in permanent, undiagnosable drift.
+
 ## [1.5.0] — 2026-09-19
 
 ### Changed
