@@ -45,6 +45,7 @@ import {
 } from "../src/cli/tui/state.js";
 import { type Db, openDb } from "../src/db.js";
 import type { WorkstreamSnapshot, WorkstreamSnapshotSlowFields } from "../src/state.js";
+import { ensureWorkstream } from "../src/workstream.js";
 import { CaptureStream, createInkCaptureStream, waitForInkOutput } from "./_ink-render.js";
 
 const openDbs: Db[] = [];
@@ -294,6 +295,7 @@ interface CapturedFrame {
   fastTickNonce: number;
   slowTickNonce: number;
   error: string | null;
+  tornDownWorkstreams: ReadonlySet<string>;
 }
 
 interface HarnessProps {
@@ -325,6 +327,7 @@ function HookHarness({
       fastTickNonce: snap.fastTickNonce,
       slowTickNonce: snap.slowTickNonce,
       error: snap.error,
+      tornDownWorkstreams: snap.tornDownWorkstreams,
     });
   });
   return createElement(Text, null, snap.data === null ? "(loading)" : "(loaded)");
@@ -532,6 +535,41 @@ describe("useDashboardSnapshot — Layer B preserves data reference across no-op
     await waitFor(() => Math.max(...capture.values.map((f) => f.slowTickNonce)) > beforeSlow, 500);
     const afterFast = Math.max(...capture.values.map((f) => f.fastTickNonce));
     expect(afterFast).toBe(beforeFast);
+
+    instance.unmount();
+  });
+});
+
+describe("useDashboardSnapshot — launch-time workstream teardown", () => {
+  it("marks a torn-down workstream on the next fast tick and clears it when recreated", async () => {
+    const db = fixtureDb();
+    ensureWorkstream(db, "alpha");
+    ensureWorkstream(db, "beta");
+    const { loaders } = makeLoaders([makeSnap(), makeSnap(), makeSnap(), makeSnap()]);
+    const stdout = createInkCaptureStream({ columns: 40, rows: 10 });
+    const capture = { values: [] as CapturedFrame[] };
+
+    const instance = render(
+      createElement(HookHarness, {
+        db,
+        workstream: "alpha",
+        tickMs: 30,
+        refreshNonce: 0,
+        loaders,
+        options: { observedWorkstreams: ["alpha", "beta"] },
+        capture,
+      }),
+      { stdout, stdin: process.stdin, stderr: process.stderr, debug: true, patchConsole: false },
+    );
+
+    await waitFor(() => capture.values.length > 0);
+    expect(capture.values.at(-1)?.tornDownWorkstreams.size).toBe(0);
+
+    db.prepare("DELETE FROM workstreams WHERE name = ?").run("beta");
+    await waitFor(() => capture.values.at(-1)?.tornDownWorkstreams.has("beta") === true);
+
+    ensureWorkstream(db, "beta");
+    await waitFor(() => capture.values.at(-1)?.tornDownWorkstreams.size === 0);
 
     instance.unmount();
   });

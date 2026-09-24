@@ -27,14 +27,28 @@ export interface TabStripProps {
    *  hook-free (and therefore safe to call from outside an ink
    *  render tree, e.g. unit tests). */
   terminalColumns: number;
+  /** Launch-time tabs whose workstream row no longer exists. */
+  tornDownWorkstreams?: ReadonlySet<string>;
 }
 
 export function TabStrip({
   workstreams,
   active,
   terminalColumns,
+  tornDownWorkstreams = new Set(),
 }: TabStripProps): ReactElement | null {
-  if (workstreams.length <= 1) return null;
+  const onlyWorkstream = workstreams[0];
+  if (workstreams.length <= 1) {
+    if (onlyWorkstream === undefined || !tornDownWorkstreams.has(onlyWorkstream)) return null;
+    return (
+      <Box flexDirection="row">
+        <Text dimColor>workstreams: </Text>
+        <Text bold color="cyan" dimColor strikethrough>
+          {`▸ ${isScratchWorkstream(onlyWorkstream) ? `*${onlyWorkstream}` : onlyWorkstream}`}
+        </Text>
+      </Box>
+    );
+  }
   const layout = layoutTabStrip(workstreams, active, terminalColumns);
   if (layout === null) return null;
   // The `*` cue signals "ephemeral, not a durable crew" so the
@@ -44,15 +58,16 @@ export function TabStrip({
   for (let i = 0; i < layout.visible.length; i++) {
     const tab = layout.visible[i];
     if (tab === undefined) continue;
+    const tornDown = tornDownWorkstreams.has(tab.name);
     if (tab.isActive) {
       tabs.push(
-        <Text key={`t-${i}`} bold color="cyan">
+        <Text key={`t-${i}`} bold color="cyan" dimColor={tornDown} strikethrough={tornDown}>
           {`▸ ${decorate(tab.name)}`}
         </Text>,
       );
     } else {
       tabs.push(
-        <Text key={`t-${i}`} dimColor>
+        <Text key={`t-${i}`} dimColor strikethrough={tornDown}>
           {decorate(tab.name)}
         </Text>,
       );

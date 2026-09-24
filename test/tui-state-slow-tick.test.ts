@@ -118,7 +118,9 @@ describe("useDashboardSnapshot slow tier contract", () => {
   it("refresh nonce triggers both effects immediately", () => {
     expect(src).toMatch(/void refreshNonce;[\s\S]*?const tick = async/);
     expect(src).toMatch(/void refreshNonce;[\s\S]*?const slowTick = async/);
-    expect(src).toMatch(/\[db,\s*workstream,\s*tickMs,\s*enabled,\s*refreshNonce,\s*loaders\]/);
+    expect(src).toMatch(
+      /\[db,\s*workstream,\s*tickMs,\s*enabled,\s*refreshNonce,\s*loaders,\s*observedWorkstreams\]/,
+    );
     expect(src).toMatch(
       /\[db,\s*workstream,\s*enabled,\s*refreshNonce,\s*loaders,\s*publishNoopSlowTicks\]/,
     );
@@ -136,7 +138,7 @@ describe("useDashboardSnapshot slow tier contract", () => {
       /const changed =[\s\S]*?publishSnapshot\(mergeSnapshotFastSlow\(fast, slow\), setData, publishedKeyRef, errorRef\)[\s\S]*?changed \|\| \(fast !== null && publishNoopSlowTicks\)[\s\S]*?setSlowTickNonce\(\(n\) => n \+ 1\)/,
     );
     expect(src).toMatch(
-      /return \{ data: data\.data, fastTickNonce, slowTickNonce, lastTickMs, error: data\.error \}/,
+      /return \{[\s\S]*?data: data\.data,[\s\S]*?fastTickNonce,[\s\S]*?slowTickNonce,[\s\S]*?lastTickMs,[\s\S]*?error: data\.error,[\s\S]*?tornDownWorkstreams,[\s\S]*?\}/,
     );
   });
 

@@ -30,6 +30,21 @@ function renderToString(node: unknown): string {
   return walk(node);
 }
 
+function textPropsFor(node: unknown, text: string): Record<string, unknown> | undefined {
+  if (node === null || node === undefined || typeof node !== "object") return undefined;
+  if (Array.isArray(node)) {
+    for (const child of node) {
+      const found = textPropsFor(child, text);
+      if (found !== undefined) return found;
+    }
+    return undefined;
+  }
+  if (!("props" in node)) return undefined;
+  const props = (node as { props: Record<string, unknown> }).props;
+  if (renderToString(props.children) === text) return props;
+  return textPropsFor(props.children, text);
+}
+
 describe("TabStrip", () => {
   it("renders nothing when only one workstream is loaded (N=1 = single-ws TUI)", () => {
     // The single-ws case must render null so the frame is identical
@@ -37,6 +52,17 @@ describe("TabStrip", () => {
     // regress every snapshot / acceptance assertion.
     const node = TabStrip({ workstreams: ["alpha"], active: 0, terminalColumns: 200 });
     expect(node).toBeNull();
+  });
+
+  it("renders the normally hidden single tab when that workstream is torn down", () => {
+    const node = TabStrip({
+      workstreams: ["alpha"],
+      active: 0,
+      terminalColumns: 200,
+      tornDownWorkstreams: new Set(["alpha"]),
+    });
+
+    expect(textPropsFor(node, "▸ alpha")?.strikethrough).toBe(true);
   });
 
   it("renders nothing for an empty workstream list (defensive)", () => {
@@ -143,6 +169,19 @@ describe("TabStrip", () => {
       TabStrip({ workstreams: ["alpha", "beta"], active: 0, terminalColumns: 20 }),
     ).not.toThrow();
     expect(() => TabStrip({ workstreams: ["only"], active: 0, terminalColumns: 20 })).not.toThrow();
+  });
+
+  it("strikes through active and inactive workstreams torn down after launch", () => {
+    const node = TabStrip({
+      workstreams: ["alpha", "beta", "gamma"],
+      active: 0,
+      terminalColumns: 200,
+      tornDownWorkstreams: new Set(["alpha", "beta"]),
+    });
+
+    expect(textPropsFor(node, "▸ alpha")?.strikethrough).toBe(true);
+    expect(textPropsFor(node, "beta")?.strikethrough).toBe(true);
+    expect(textPropsFor(node, "gamma")?.strikethrough).not.toBe(true);
   });
 
   it("marks the reserved scratch workstream with a `*` ephemeral cue", () => {

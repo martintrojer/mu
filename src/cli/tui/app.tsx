@@ -168,6 +168,7 @@ const POPUP_REGISTRY: Record<PopupRegistryId, ComponentType<CommonPopupProps>> =
 // (see state.ts publishNoopSlowTicks). This is the single symbolic
 // source of truth, co-located with POPUP_REGISTRY, instead of magic
 // numeric literals scattered in the App body.
+const EMPTY_WORKSTREAM_SET: ReadonlySet<string> = new Set();
 const SUBPROCESS_BACKED_POPUPS: ReadonlySet<PopupRegistryId> = new Set<PopupRegistryId>([
   0, // Commits — git show
   1, // Agents — pane scrollback
@@ -291,6 +292,7 @@ export function App({ db, workstreams, initialActive = 0 }: AppProps): ReactElem
   const workstream = workstreams[safeActive] ?? "";
 
   const snap = useDashboardSnapshot(db, workstream, tickMs, true, refreshNonce, undefined, {
+    observedWorkstreams: workstreams,
     publishNoopSlowTicks: popup !== null && SUBPROCESS_BACKED_POPUPS.has(popup),
   });
 
@@ -300,7 +302,8 @@ export function App({ db, workstreams, initialActive = 0 }: AppProps): ReactElem
   // layout; the explicit guard catches the pathological 10x5 case.
   const { cols, rows } = useTerminalSize();
   const terminalTooSmall = cols < 40 || rows < DASHBOARD_MIN_ROWS;
-  const hasTabStrip = workstreams.length > 1;
+  const tornDownWorkstreams = snap.tornDownWorkstreams ?? EMPTY_WORKSTREAM_SET;
+  const hasTabStrip = workstreams.length > 1 || tornDownWorkstreams.has(workstream);
   const hasSnapshotError = snap.error !== null;
   const availableForCards = dashboardAvailableRows(rows, { hasTabStrip, hasSnapshotError });
   const dashboardModel = buildDashboardLayoutModel(cols, availableForCards, visibility, snap.data);
@@ -563,7 +566,12 @@ export function App({ db, workstreams, initialActive = 0 }: AppProps): ReactElem
           frame. The strip lives INSIDE the height-pinned + clipping
           parent so flexbox accounts for its 1-row height when
           allocating space to the cards below it. */}
-      <TabStrip workstreams={workstreams} active={safeActive} terminalColumns={cols} />
+      <TabStrip
+        workstreams={workstreams}
+        active={safeActive}
+        terminalColumns={cols}
+        tornDownWorkstreams={tornDownWorkstreams}
+      />
       {hasSnapshotError && (
         <Box borderStyle="round" borderColor="red" paddingX={1}>
           <Text color="red">snapshot error: {snap.error}</Text>

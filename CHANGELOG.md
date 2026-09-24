@@ -19,6 +19,12 @@ breaking changes are called out under "Breaking" in each entry.
 
 ### Fixed
 
+- **The running TUI now marks workstreams torn down by another process.**
+  Its launch-time tab set stays stable, while a missing workstream is dimmed
+  and struck through on the next fast tick. A single-workstream TUI surfaces
+  its normally hidden tab when torn down. Recreating the same name restores the
+  tab without restarting the dashboard.
+
 - **A re-delivered block of ops no longer wedges a peer's ingest forever.**
   When a peer's segment contains a byte-identical repeat of ops it already
   wrote, the monotonic-hlc check (layer 3) saw a backwards clock and halted,

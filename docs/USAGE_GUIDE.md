@@ -1088,6 +1088,10 @@ workstreams: ▸ auth-refactor · ui-rewrite · demo   (Tab / Shift-Tab)
 - Wider than the terminal: the strip windows around the active tab and
   shows `‹N` / `›N` counters for hidden workstreams.
 - `*` prefix (e.g. `*scratch`) marks the ephemeral `scratch` bucket.
+- If a loaded workstream is torn down while the TUI runs, its launch-time tab
+  remains in place but appears dimmed with strikethrough. This also surfaces the
+  otherwise hidden tab in a single-workstream TUI. Recreating the same name
+  restores the tab on the next fast tick.
 
 ### Popup drills
 

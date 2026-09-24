@@ -433,8 +433,12 @@ src/cli/tui/
 - **Card visibility** — `Record<CardId, boolean>` toggled by `0`-`9`.
 - **Tick rate** — fast tick interval (1s default; adjustable with
   `+` / `-` / `=` / `0`).
-- **Active workstream tab** — index into the resolved workstream
-  set; `Tab` / `Shift-Tab` cycles when N≥2.
+- **Active workstream tab** — index into the launch-time workstream
+  set; `Tab` / `Shift-Tab` cycles when N≥2. The fast tick checks that
+  each row still exists. A torn-down workstream keeps its stable tab
+  position and renders dimmed with strikethrough until the same name is
+  recreated. A torn-down single workstream also renders its normally hidden
+  tab so the state remains visible.
 - **Footer flash** — transient status-bar message (yank confirm,
   tuicr exit, etc.).
 

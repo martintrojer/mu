@@ -36,7 +36,7 @@
 //   against a stable workstream.
 
 import { useEffect, useRef, useState } from "react";
-import type { Db } from "../../db.js";
+import { type Db, tryResolveWorkstreamId } from "../../db.js";
 import {
   type LoadWorkstreamSnapshotOptions,
   loadWorkstreamSnapshotFast,
@@ -52,6 +52,7 @@ export const TICK_DEFAULT_MS = 1000;
 export const TICK_FLOOR_MS = 100;
 export const TICK_CEILING_MS = 10_000;
 export const SLOW_TICK_MS = 10_000;
+const NO_OBSERVED_WORKSTREAMS: readonly string[] = [];
 
 /**
  * Guard so N workstream tabs do not each run a sync pass on the same
@@ -133,6 +134,8 @@ export interface DashboardSnapshot {
    *  status path does not repaint an otherwise stable frame. */
   lastTickMs: number;
   error: string | null;
+  /** Launch-time workstreams whose DB row has since been torn down. */
+  tornDownWorkstreams: ReadonlySet<string>;
 }
 
 export interface DashboardSnapshotLoaders {
@@ -165,6 +168,8 @@ const SLOW_OPTS: LoadWorkstreamSnapshotOptions = {
 };
 
 export interface DashboardSnapshotOptions {
+  /** Launch-time tabs to check for teardown on every fast tick. */
+  observedWorkstreams?: readonly string[];
   /**
    * When true, slowTickNonce advances even if the slow-tier snapshot
    * is byte-equal. Used only for subprocess-backed popup drills
@@ -203,6 +208,8 @@ export function useDashboardSnapshot(
   options: DashboardSnapshotOptions = {},
 ): DashboardSnapshot {
   const publishNoopSlowTicks = options.publishNoopSlowTicks === true;
+  const observedWorkstreams = options.observedWorkstreams ?? NO_OBSERVED_WORKSTREAMS;
+  const [tornDownWorkstreams, setTornDownWorkstreams] = useState<ReadonlySet<string>>(new Set());
   // Layer A: data + error (the stuff the cards read).
   const [data, setData] = useState<{ data: WorkstreamSnapshot | null; error: string | null }>({
     data: null,
@@ -265,6 +272,12 @@ export function useDashboardSnapshot(
       if (cancelled) return;
       const t0 = performance.now();
       try {
+        const tornDown = new Set(
+          observedWorkstreams.filter((name) => tryResolveWorkstreamId(db, name) === null),
+        );
+        setTornDownWorkstreams((previous) =>
+          sameStringSet(previous, tornDown) ? previous : tornDown,
+        );
         const fast = await loaders.fast(db, workstream, FAST_OPTS);
         if (cancelled) return;
         latestFastRef.current = fast;
@@ -290,7 +303,7 @@ export function useDashboardSnapshot(
     // re-runs the effect, which fires `tick()` immediately. Without
     // this, the binding existed but never poked the poll loop
     // (review_dead_code_refresh_now).
-  }, [db, workstream, tickMs, enabled, refreshNonce, loaders]);
+  }, [db, workstream, tickMs, enabled, refreshNonce, loaders, observedWorkstreams]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -331,7 +344,18 @@ export function useDashboardSnapshot(
     };
   }, [db, workstream, enabled, refreshNonce, loaders, publishNoopSlowTicks]);
 
-  return { data: data.data, fastTickNonce, slowTickNonce, lastTickMs, error: data.error };
+  return {
+    data: data.data,
+    fastTickNonce,
+    slowTickNonce,
+    lastTickMs,
+    error: data.error,
+    tornDownWorkstreams,
+  };
+}
+
+function sameStringSet(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
+  return a.size === b.size && [...a].every((value) => b.has(value));
 }
 
 /**
