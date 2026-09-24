@@ -56,7 +56,7 @@ export async function cmdTaskClose(
     const blockingNextSteps: NextStep[] = [
       {
         intent: "Watch the remaining blockers (returns when one closes)",
-        command: `mu task wait ${r.blockingIds.join(" ")} -w ${ws} --first --any`,
+        command: `mu task wait ${r.blockingIds.join(" ")} -w ${ws} --first --any --on-stall exit`,
       },
       { intent: "Show the umbrella + blockers", command: `mu task show ${localId} -w ${ws}` },
       {

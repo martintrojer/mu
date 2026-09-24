@@ -97,7 +97,7 @@ Close `design` and `build` becomes ready. Details: [§ 3](#3-create-a-workstream
 mu agent spawn worker-1 -w auth --cli sh    # --cli pi for a real agent
 mu task claim design -w auth --for worker-1
 mu agent send worker-1 -w auth 'Design the auth module, then: mu task close design --evidence "..."'
-mu task wait design -w auth --timeout 60    # blocks until CLOSED
+mu task wait design -w auth --timeout 60 --on-stall exit    # blocks until CLOSED
 mu agent close worker-1 -w auth
 ```
 
@@ -1690,7 +1690,7 @@ mu sql "SELECT name FROM sqlite_master WHERE type IN ('table','view') ORDER BY t
 | Replace all blockers atomically                       | `mu task reparent <id> --blocked-by ...`    |
 | Modify scalar fields                                  | `mu task update <id> [--title ...]`     |
 | Read the activity log / subscribe to events           | `mu log [--tail] [--intent task.close]` |
-| Block until tasks reach a status (orchestrator wait)  | `mu task wait <ref> [<ref>...] [--first|--any] [--timeout S]` |
+| Block until tasks reach a status (orchestrator wait)  | `mu task wait <ref> [<ref>...] [--first|--any] [--timeout S] --on-stall exit` |
 | Block until agents finish working (task-less wait)    | `mu agent wait <name> [<name>...] [--first|--any] [--timeout S]` |
 ### `mu agent wait`: the task-less counterpart to `mu task wait`
 
@@ -1731,13 +1731,13 @@ are allowed (bare uses `-w`, qualified uses its prefix).
 
 ```bash
 # All-bare with -w
-mu task wait build_a build_b -w mufeedback-v03 --timeout 1200
+mu task wait build_a build_b -w mufeedback-v03 --timeout 1200 --on-stall exit
 
 # All-qualified  — cross-workstream wait, no -w needed
-mu task wait roadmap-v0-3/archive_phase2 mufeedback-v03/cli_audit --timeout 1800
+mu task wait roadmap-v0-3/archive_phase2 mufeedback-v03/cli_audit --timeout 1800 --on-stall exit
 
 # Mixed  — bare uses -w; qualified ignores it
-mu task wait cli_audit roadmap-v0-3/archive_phase2 -w mufeedback-v03
+mu task wait cli_audit roadmap-v0-3/archive_phase2 -w mufeedback-v03 --on-stall exit
 ```
 
 `--first` is an alias for `--any` that ALSO prints the firing ref's
@@ -1750,7 +1750,7 @@ one verify, one workspace recycle:
 # The dispatch-pipeline recipe: cycle until in_flight is empty.
 in_flight=( mufeedback-v03/foo mufeedback-v03/bar roadmap-v0-3/baz )
 while (( ${#in_flight[@]} > 0 )); do
-  res=$(mu task wait "${in_flight[@]}" --first --timeout 90 --json)
+  res=$(mu task wait "${in_flight[@]}" --first --timeout 90 --on-stall exit --json)
   closed=$(jq -r '.firing.qualifiedId // empty' <<<"$res")
   if [[ -z "$closed" ]]; then break; fi  # timeout or exit 6 — see below
 
@@ -1831,7 +1831,8 @@ wait on its task there too).
 
 ### `mu task wait`: attention detection (`--stuck-after` + `--on-stall`)
 
-Two orthogonal flags govern the behaviour:
+For unattended waits, always pass `--on-stall exit`; otherwise the default
+warning leaves the wait polling. Two orthogonal flags govern the behaviour:
 
 * `--stuck-after <seconds>` — the **trigger**. An IN_PROGRESS task
   whose owner has been in `needs_input` for `>= N` seconds is marked

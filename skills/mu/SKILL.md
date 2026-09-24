@@ -170,7 +170,7 @@ Every turn:
    mu task close <id> -w <ws> --evidence '...'
    ```
 
-6. `mu task wait ... --first --json` (choose stall handling from `--help`).
+6. `mu task wait ... --first --on-stall exit --json`.
 7. Cherry-pick the closed worker's **new** commit(s), verify the MERGE
    (see below), return control. Do not barrier or loop in shell.
 8. Repeat from `mu state`.
@@ -249,8 +249,9 @@ Every turn:
 
 ## `mu task wait`
 
-Use `--first` when the next step needs the firing task: unlike `--any`, it
-populates `.firing`. Exit 6 means a dead pane; exit 7 means the owner sat in
+Use `--first --on-stall exit`: `--first` populates `.firing`, and
+`--on-stall exit` prevents unattended waits from polling forever when a worker
+needs attention. Exit 6 means a dead pane; exit 7 means the owner sat in
 `needs_input`. Read that pane (`mu agent read <owner>`) before acting: the
 worker may be waiting on an answer from you, not merely forgetting to close.
 Answer it — questions are cheaper than rework. For remote workers, see

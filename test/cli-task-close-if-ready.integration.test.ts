@@ -147,8 +147,10 @@ describe("mu task close --if-ready", () => {
     expect(payload.previousStatus).toBe("OPEN");
     expect(payload.status).toBe("OPEN");
     expect(payload.blockingIds).toEqual(["b", "c"]);
-    // Next: hint points at `mu task wait` over the still-blocking set.
-    expect(payload.nextSteps.some((s) => s.command.startsWith("mu task wait b c"))).toBe(true);
+    // Next: hint watches the still-blocking set and exits when a worker needs attention.
+    expect(payload.nextSteps.map((s) => s.command)).toContain(
+      "mu task wait b c -w test --first --any --on-stall exit",
+    );
 
     const check = openDb({ path: dbPath });
     expect(getTask(check, "umbrella", "test")?.status).toBe("OPEN");
@@ -212,5 +214,6 @@ describe("mu task close --if-ready", () => {
     expect(r.stdout).toContain("blocked by 1 task");
     expect(r.stdout).toContain("a");
     expect(r.stdout).toContain("mu task wait a");
+    expect(r.stdout).toContain("--on-stall exit");
   });
 });

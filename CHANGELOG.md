@@ -10,6 +10,13 @@ breaking changes are called out under "Breaking" in each entry.
 
 ## [Unreleased]
 
+### Changed
+
+- **Every operator-facing `mu task wait` hint now includes `--on-stall exit`.**
+  Generated `Next:` output, CLI help examples, the usage guide, and the bundled
+  skill no longer leave unattended orchestrators polling after a worker needs
+  attention. The wait default remains `warn` for direct invocations.
+
 ### Fixed
 
 - **A re-delivered block of ops no longer wedges a peer's ingest forever.**

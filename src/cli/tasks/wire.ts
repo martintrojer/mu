@@ -458,7 +458,7 @@ export function wireTaskCommands(program: Command): void {
   task
     .command("wait <ids...>")
     .description(
-      "Block until the listed tasks reach --status (default CLOSED). Each <id> may be bare (resolves via -w / $MU_SESSION / tmux) or qualified `<workstream>/<name>` (cross-workstream waits don't need -w). Default: every task must reach the target (--all). --any / --first exit on the first one that does; --first additionally prints the firing ref's qualified id to stdout. Exit 0 = condition met; 5 = timeout; 6 = a watched task was reaper-flipped IN_PROGRESS→OPEN (target=CLOSED only).",
+      "Block until the listed tasks reach --status (default CLOSED). Each <id> may be bare (resolves via -w / $MU_SESSION / tmux) or qualified `<workstream>/<name>` (cross-workstream waits don't need -w). Default: every task must reach the target (--all). --any / --first exit on the first one that does; --first additionally prints the firing ref's qualified id to stdout. For unattended waits, pass --on-stall exit so a worker needing attention terminates the wait with exit 7. Exit 0 = condition met; 5 = timeout; 6 = a watched task was reaper-flipped IN_PROGRESS→OPEN (target=CLOSED only); 7 = a worker needs attention (--on-stall exit).",
     )
     .option(
       "--status <status>",
@@ -470,7 +470,7 @@ export function wireTaskCommands(program: Command): void {
     )
     .option(
       "--first",
-      "alias for --any that ALSO prints the firing ref's qualified id to stdout and populates `firing` in --json (which --any leaves null). Use to drive a single-shot dispatch loop: `closed=$(mu task wait a b --first --json | jq -r .firing.qualifiedId)`.",
+      "alias for --any that ALSO prints the firing ref's qualified id to stdout and populates `firing` in --json (which --any leaves null). Use to drive a single-shot dispatch loop: `closed=$(mu task wait a b --first --on-stall exit --json | jq -r .firing.qualifiedId)`.",
     )
     .option("--timeout <seconds>", "max seconds to wait (0 = forever, default 600)", parseLines)
     .option(
